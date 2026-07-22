@@ -11,9 +11,11 @@ import {
 } from "lucide-react";
 import { useMemo, useState } from "react";
 import {
+  addDaybookExpense,
   createDaybookExpenseId,
   DAYBOOK_EXPENSE_CATEGORIES,
   DAYBOOK_PAYMENT_ACCOUNTS,
+  type DaybookExpenseLine,
   type DaybookExpenseScope,
 } from "@/components/dashboard/daybook/daybook-expense-ledger";
 import { Button } from "@/components/ui/button";
@@ -81,7 +83,7 @@ function money(value: number) {
 
 function toAmount(value: string) {
   const parsed = Number.parseFloat(value.replace(/,/g, ""));
-  return Number.isFinite(parsed) ? parsed : 0;
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
 }
 
 export function DaybookExpenseDialog({
@@ -97,6 +99,10 @@ export function DaybookExpenseDialog({
   const [paymentMethod, setPaymentMethod] = useState(PAYMENT_METHODS[0] ?? "");
   const [referenceNo, setReferenceNo] = useState("");
   const [memo, setMemo] = useState("");
+  const [message, setMessage] = useState<{
+    tone: "error" | "success";
+    text: string;
+  } | null>(null);
   const [lines, setLines] = useState<DraftExpenseLine[]>(() => [
     createDraftLine(),
     createDraftLine(),
@@ -135,9 +141,89 @@ export function DaybookExpenseDialog({
         : currentLines.filter((line) => line.id !== lineId),
     );
   };
+  const resetForm = () => {
+    setPayee("");
+    setPaymentAccountId(DAYBOOK_PAYMENT_ACCOUNTS[0]?.id ?? "");
+    setPaymentDate(dateValue());
+    setPaymentMethod(PAYMENT_METHODS[0] ?? "");
+    setReferenceNo("");
+    setMemo("");
+    setLines([createDraftLine(), createDraftLine()]);
+  };
+  const closeDialog = () => {
+    setMessage(null);
+    onOpenChange(false);
+  };
+  const buildExpenseLines = () => {
+    const expenseLines: DaybookExpenseLine[] = [];
+
+    for (const line of lines) {
+      const amount = toAmount(line.amount);
+
+      if (amount <= 0) {
+        continue;
+      }
+
+      expenseLines.push({
+        amount,
+        category: line.category,
+        description: line.description.trim(),
+        id: createDaybookExpenseId("saved-expense-line"),
+      });
+    }
+
+    return expenseLines;
+  };
+  const saveExpense = (closeAfterSave: boolean) => {
+    const paymentAccount = selectedPaymentAccount;
+    const expenseLines = buildExpenseLines();
+    const nextTotal = expenseLines.reduce((sum, line) => sum + line.amount, 0);
+
+    if (!paymentAccount) {
+      setMessage({ text: "Select a payment account.", tone: "error" });
+      return;
+    }
+
+    if (nextTotal <= 0 || expenseLines.length === 0) {
+      setMessage({ text: "Enter at least one expense amount.", tone: "error" });
+      return;
+    }
+
+    addDaybookExpense({
+      createdAt: new Date().toISOString(),
+      id: createDaybookExpenseId("daybook-expense"),
+      lines: expenseLines,
+      memo: memo.trim(),
+      payee: payee.trim() || "Expense",
+      paymentAccountId: paymentAccount.id,
+      paymentAccountName: paymentAccount.name,
+      paymentAccountType: paymentAccount.type,
+      paymentDate,
+      paymentMethod,
+      referenceNo: referenceNo.trim(),
+      scope,
+      total: nextTotal,
+    });
+
+    resetForm();
+    setMessage({ text: "Expense saved.", tone: "success" });
+
+    if (closeAfterSave) {
+      closeDialog();
+    }
+  };
 
   return (
-    <Dialog onOpenChange={onOpenChange} open={open}>
+    <Dialog
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen) {
+          setMessage(null);
+        }
+
+        onOpenChange(nextOpen);
+      }}
+      open={open}
+    >
       <DialogContent className="max-h-[92vh] overflow-y-auto bg-slate-50 p-0 sm:max-w-6xl">
         <DialogHeader className="border-slate-200 border-b bg-white px-5 py-4">
           <DialogTitle className="text-2xl font-bold text-slate-900">
@@ -321,6 +407,18 @@ export function DaybookExpenseDialog({
             </Button>
           </div>
 
+          {message ? (
+            <div
+              className={`mt-4 rounded-lg px-4 py-3 font-medium text-sm ${
+                message.tone === "error"
+                  ? "bg-red-50 text-red-700"
+                  : "bg-emerald-50 text-emerald-700"
+              }`}
+            >
+              {message.text}
+            </div>
+          ) : null}
+
           <div className="mt-8 grid gap-6 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,0.8fr)]">
             <div className="grid gap-2">
               <Label htmlFor="daybook-expense-memo">Memo</Label>
@@ -350,7 +448,7 @@ export function DaybookExpenseDialog({
           <div className="-mx-5 mt-8 flex flex-col gap-3 border-slate-200 border-t bg-white px-5 py-4 sm:flex-row sm:items-center">
             <Button
               className="border-emerald-600 text-emerald-700 hover:bg-emerald-50"
-              onClick={() => onOpenChange(false)}
+              onClick={closeDialog}
               type="button"
               variant="outline"
             >
@@ -367,6 +465,7 @@ export function DaybookExpenseDialog({
             </Button>
             <Button
               className="border-emerald-600 text-emerald-700 hover:bg-emerald-50"
+              onClick={() => saveExpense(false)}
               type="button"
               variant="outline"
             >
@@ -375,6 +474,7 @@ export function DaybookExpenseDialog({
             </Button>
             <Button
               className="bg-emerald-700 hover:bg-emerald-800"
+              onClick={() => saveExpense(true)}
               type="button"
             >
               Save and close
