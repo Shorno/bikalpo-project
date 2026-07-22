@@ -25,6 +25,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { useMemo, useState } from "react";
 import { DaybookExpenseDialog } from "@/components/dashboard/daybook/daybook-expense-dialog";
+import { useDaybookExpenses } from "@/components/dashboard/daybook/use-daybook-expenses";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -425,9 +426,30 @@ const daybookConfigs: Record<DaybookVariant, DaybookConfig> = {
 
 export function DaybookKpiPage({ variant }: { variant: DaybookVariant }) {
   const config = daybookConfigs[variant];
+  const savedExpenses = useDaybookExpenses(variant);
   const [lastUpdated, setLastUpdated] = useState(() => new Date());
   const [expenseDialogOpen, setExpenseDialogOpen] = useState(false);
   const [physicalCash, setPhysicalCash] = useState("");
+  const snapshotTransactions = useMemo(() => {
+    const expenseTransactions = savedExpenses
+      .toSorted(
+        (first, second) =>
+          new Date(second.createdAt).getTime() -
+          new Date(first.createdAt).getTime(),
+      )
+      .map((expense) => ({
+        amount: money(expense.total),
+        reference:
+          expense.referenceNo ||
+          expense.payee ||
+          expense.lines[0]?.category ||
+          expense.paymentAccountName,
+        time: timeLabel(new Date(expense.createdAt)),
+        type: "Expense",
+      }));
+
+    return [...expenseTransactions, ...config.transactions];
+  }, [config.transactions, savedExpenses]);
   const cashDifference = useMemo(() => {
     const parsedCash = Number(physicalCash.replace(/,/g, ""));
     return Number.isFinite(parsedCash) && physicalCash.trim()
@@ -598,7 +620,7 @@ export function DaybookKpiPage({ variant }: { variant: DaybookVariant }) {
           />
           <SimpleTable
             headers={["Time", "Transaction Type", "Amount", "Reference"]}
-            rows={config.transactions.map((item) => [
+            rows={snapshotTransactions.map((item) => [
               item.time,
               item.type,
               <span
