@@ -1,6 +1,14 @@
 "use client";
 
-import { CalendarIcon } from "lucide-react";
+import {
+  CalendarIcon,
+  PaperclipIcon,
+  PlusIcon,
+  PrinterIcon,
+  RepeatIcon,
+  SaveIcon,
+  Trash2Icon,
+} from "lucide-react";
 import { useMemo, useState } from "react";
 import {
   createDaybookExpenseId,
@@ -8,6 +16,7 @@ import {
   DAYBOOK_PAYMENT_ACCOUNTS,
   type DaybookExpenseScope,
 } from "@/components/dashboard/daybook/daybook-expense-ledger";
+import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -24,6 +33,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 
 type DaybookExpenseDialogProps = {
   onOpenChange: (open: boolean) => void;
@@ -86,6 +96,7 @@ export function DaybookExpenseDialog({
   const [paymentDate, setPaymentDate] = useState(dateValue);
   const [paymentMethod, setPaymentMethod] = useState(PAYMENT_METHODS[0] ?? "");
   const [referenceNo, setReferenceNo] = useState("");
+  const [memo, setMemo] = useState("");
   const [lines, setLines] = useState<DraftExpenseLine[]>(() => [
     createDraftLine(),
     createDraftLine(),
@@ -112,6 +123,16 @@ export function DaybookExpenseDialog({
       currentLines.map((line) =>
         line.id === lineId ? { ...line, [field]: value } : line,
       ),
+    );
+  };
+  const addLine = () =>
+    setLines((currentLines) => [...currentLines, createDraftLine()]);
+  const clearLines = () => setLines([createDraftLine(), createDraftLine()]);
+  const removeLine = (lineId: string) => {
+    setLines((currentLines) =>
+      currentLines.length === 1
+        ? [createDraftLine()]
+        : currentLines.filter((line) => line.id !== lineId),
     );
   };
 
@@ -227,16 +248,17 @@ export function DaybookExpenseDialog({
           </div>
 
           <div className="mt-8 overflow-hidden rounded-lg border border-slate-200 bg-white">
-            <div className="grid grid-cols-[56px_minmax(180px,0.9fr)_minmax(260px,1.4fr)_minmax(140px,0.45fr)] border-slate-200 border-b bg-slate-50 px-4 py-3 font-semibold text-slate-700 text-xs uppercase">
+            <div className="grid grid-cols-[56px_minmax(180px,0.9fr)_minmax(260px,1.4fr)_minmax(140px,0.45fr)_56px] border-slate-200 border-b bg-slate-50 px-4 py-3 font-semibold text-slate-700 text-xs uppercase">
               <div>#</div>
               <div>Category</div>
               <div>Description</div>
               <div className="text-right">Amount</div>
+              <div />
             </div>
             <div>
               {lines.map((line, index) => (
                 <div
-                  className="grid grid-cols-[56px_minmax(180px,0.9fr)_minmax(260px,1.4fr)_minmax(140px,0.45fr)] items-center border-slate-200 border-b px-4 py-3 last:border-b-0"
+                  className="grid grid-cols-[56px_minmax(180px,0.9fr)_minmax(260px,1.4fr)_minmax(140px,0.45fr)_56px] items-center border-slate-200 border-b px-4 py-3 last:border-b-0"
                   key={line.id}
                 >
                   <div className="font-medium text-slate-500">{index + 1}</div>
@@ -274,9 +296,89 @@ export function DaybookExpenseDialog({
                     placeholder="0.00"
                     value={line.amount}
                   />
+                  <Button
+                    aria-label={`Remove expense line ${index + 1}`}
+                    className="ml-2 text-slate-400 hover:text-red-600"
+                    onClick={() => removeLine(line.id)}
+                    size="icon-sm"
+                    type="button"
+                    variant="ghost"
+                  >
+                    <Trash2Icon className="size-4" />
+                  </Button>
                 </div>
               ))}
             </div>
+          </div>
+
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Button onClick={addLine} type="button" variant="outline">
+              <PlusIcon data-icon="inline-start" />
+              Add lines
+            </Button>
+            <Button onClick={clearLines} type="button" variant="outline">
+              Clear all lines
+            </Button>
+          </div>
+
+          <div className="mt-8 grid gap-6 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,0.8fr)]">
+            <div className="grid gap-2">
+              <Label htmlFor="daybook-expense-memo">Memo</Label>
+              <Textarea
+                className="min-h-36 bg-white"
+                id="daybook-expense-memo"
+                onChange={(event) => setMemo(event.target.value)}
+                value={memo}
+              />
+            </div>
+
+            <div className="grid content-start gap-2">
+              <Label>Attachments</Label>
+              <div className="flex min-h-28 flex-col items-center justify-center rounded-lg border border-dashed border-slate-300 bg-white p-5 text-center text-slate-500">
+                <PaperclipIcon className="mb-2 size-5 text-blue-600" />
+                <button
+                  className="font-semibold text-blue-700 hover:text-blue-800"
+                  type="button"
+                >
+                  Add attachment
+                </button>
+                <p className="mt-1 text-xs">Max file size: 20 MB</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="-mx-5 mt-8 flex flex-col gap-3 border-slate-200 border-t bg-white px-5 py-4 sm:flex-row sm:items-center">
+            <Button
+              className="border-emerald-600 text-emerald-700 hover:bg-emerald-50"
+              onClick={() => onOpenChange(false)}
+              type="button"
+              variant="outline"
+            >
+              Cancel
+            </Button>
+            <div className="flex-1" />
+            <Button type="button" variant="ghost">
+              <PrinterIcon data-icon="inline-start" />
+              Print
+            </Button>
+            <Button type="button" variant="ghost">
+              <RepeatIcon data-icon="inline-start" />
+              Make recurring
+            </Button>
+            <Button
+              className="border-emerald-600 text-emerald-700 hover:bg-emerald-50"
+              type="button"
+              variant="outline"
+            >
+              <SaveIcon data-icon="inline-start" />
+              Save
+            </Button>
+            <Button
+              className="bg-emerald-700 hover:bg-emerald-800"
+              type="button"
+            >
+              Save and close
+            </Button>
           </div>
         </div>
       </DialogContent>
