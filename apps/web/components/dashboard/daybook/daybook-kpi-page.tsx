@@ -105,6 +105,11 @@ type DaybookConfig = {
 
 const money = (value: number) => `Tk ${value.toLocaleString("en-US")}`;
 
+function moneyToNumber(value: string) {
+  const parsed = Number.parseFloat(value.replace(/[^0-9.-]/g, ""));
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
 const timeLabel = (date: Date) =>
   date.toLocaleTimeString("en-US", {
     hour: "2-digit",
@@ -430,6 +435,32 @@ export function DaybookKpiPage({ variant }: { variant: DaybookVariant }) {
   const [lastUpdated, setLastUpdated] = useState(() => new Date());
   const [expenseDialogOpen, setExpenseDialogOpen] = useState(false);
   const [physicalCash, setPhysicalCash] = useState("");
+  const savedExpenseTotal = useMemo(
+    () => savedExpenses.reduce((sum, expense) => sum + expense.total, 0),
+    [savedExpenses],
+  );
+  const adjustedSystemCash = config.systemCash - savedExpenseTotal;
+  const overviewMetrics = useMemo(
+    () =>
+      config.metrics.map((metric) =>
+        metric.label === "Financial Position"
+          ? { ...metric, value: money(adjustedSystemCash) }
+          : metric,
+      ),
+    [adjustedSystemCash, config.metrics],
+  );
+  const closeSummary = useMemo(
+    () =>
+      config.closeSummary.map((line) =>
+        line.label === "Expense"
+          ? {
+              ...line,
+              value: money(moneyToNumber(line.value) + savedExpenseTotal),
+            }
+          : line,
+      ),
+    [config.closeSummary, savedExpenseTotal],
+  );
   const snapshotTransactions = useMemo(() => {
     const expenseTransactions = savedExpenses
       .toSorted(
@@ -453,9 +484,9 @@ export function DaybookKpiPage({ variant }: { variant: DaybookVariant }) {
   const cashDifference = useMemo(() => {
     const parsedCash = Number(physicalCash.replace(/,/g, ""));
     return Number.isFinite(parsedCash) && physicalCash.trim()
-      ? parsedCash - config.systemCash
+      ? parsedCash - adjustedSystemCash
       : 0;
-  }, [config.systemCash, physicalCash]);
+  }, [adjustedSystemCash, physicalCash]);
 
   return (
     <div className="min-h-screen bg-slate-50/60 px-4 py-5 print:bg-white sm:px-6 lg:px-8">
@@ -540,7 +571,7 @@ export function DaybookKpiPage({ variant }: { variant: DaybookVariant }) {
             title="Daily Overview"
           />
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            {config.metrics.map((metric) => (
+            {overviewMetrics.map((metric) => (
               <OverviewCard key={metric.label} metric={metric} />
             ))}
           </div>
@@ -657,7 +688,7 @@ export function DaybookKpiPage({ variant }: { variant: DaybookVariant }) {
                 Status: Not Closed
               </Badge>
               <div className="grid gap-2">
-                {config.closeSummary.map((line) => (
+                {closeSummary.map((line) => (
                   <SummaryLine
                     key={line.label}
                     label={line.label}
@@ -704,7 +735,7 @@ export function DaybookKpiPage({ variant }: { variant: DaybookVariant }) {
                 <div className="mt-3 grid gap-3">
                   <SummaryLine
                     label="System Cash"
-                    value={money(config.systemCash)}
+                    value={money(adjustedSystemCash)}
                   />
                   <div className="grid gap-1">
                     <label
