@@ -80,6 +80,7 @@ import {
 import { z } from "zod";
 
 import { publicProcedure, shopOwnerProcedure } from "../index";
+import { resolveRetailerOfferLinePrice } from "../services/open-order-domain";
 import {
     recalculateOffersForInventory,
     reconcileOpenOrder,
@@ -5723,7 +5724,8 @@ const openOrderEndpoints = {
                             productSize: orderItem.productSize,
                             quantity: orderItem.quantity,
                             referencePrice: openOrderBidItem.platformPrice,
-                            retailerPrice: inventory.retailPrice,
+                            currentStorePrice: inventory.retailPrice,
+                            offerUnitPrice: openOrderBidItem.sellerPrice,
                             inventoryId: inventory.id,
                         })
                         .from(openOrderBidItem)
@@ -5745,12 +5747,26 @@ const openOrderEndpoints = {
                         priceFrozenAt: offer.priceFrozenAt?.toISOString() ?? null,
                         submittedAt: offer.submittedAt?.toISOString() ?? null,
                         customerArea: offer.shippingArea ?? offer.shippingCity,
-                        items: items.map((item) => ({
-                            ...item,
-                            referencePrice: Number(item.referencePrice),
-                            retailerPrice: Number(item.retailerPrice),
-                            pricingUrl: `/shop/dashboard/pricing?inventoryId=${item.inventoryId}`,
-                        })),
+                        items: items.map((item) => {
+                            const currentStorePrice = Number(item.currentStorePrice ?? 0);
+                            const offerUnitPrice =
+                                item.offerUnitPrice == null ? null : Number(item.offerUnitPrice);
+                            const resolvedPrice = resolveRetailerOfferLinePrice({
+                                currentStorePrice,
+                                offerUnitPrice,
+                                offerDeadline: offer.offerDeadline ?? new Date(0),
+                                priceFrozenAt: offer.priceFrozenAt,
+                            });
+                            return {
+                                ...item,
+                                referencePrice: Number(item.referencePrice),
+                                currentStorePrice,
+                                offerUnitPrice,
+                                retailerPrice: resolvedPrice.displayPrice,
+                                priceSource: resolvedPrice.source,
+                                pricingUrl: `/shop/dashboard/pricing?inventoryId=${item.inventoryId}`,
+                            };
+                        }),
                     };
                 }),
             );

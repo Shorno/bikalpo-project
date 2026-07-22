@@ -5,6 +5,7 @@ import {
   Clock3,
   ExternalLink,
   Loader2,
+  LockKeyhole,
   MapPin,
   Package,
   Radio,
@@ -90,7 +91,8 @@ export default function OpenOrdersPage() {
     const draft = draftFor(offer);
     const subtotal = offer.items.reduce(
       (sum: number, item: any) =>
-        sum + Number(item.retailerPrice) * item.quantity,
+        sum +
+        Number(item.currentStorePrice ?? item.retailerPrice) * item.quantity,
       0,
     );
     const value = Math.max(0, Number(draft.discountValue) || 0);
@@ -189,6 +191,15 @@ export default function OpenOrdersPage() {
                               ? "Offer submitted"
                               : "Needs offer"}
                         </Badge>
+                        {frozen && (
+                          <Badge
+                            variant="outline"
+                            className="border-amber-200 bg-amber-50 text-amber-800"
+                          >
+                            <LockKeyhole className="mr-1 h-3 w-3" /> Offer
+                            prices frozen
+                          </Badge>
+                        )}
                       </div>
                       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-slate-600">
                         <span className="flex items-center gap-1">
@@ -214,7 +225,8 @@ export default function OpenOrdersPage() {
                     <div className="grid gap-6 lg:grid-cols-[1.45fr_0.75fr]">
                       <div>
                         <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                          Exact items · store prices
+                          Exact items ·{" "}
+                          {frozen ? "frozen offer prices" : "store prices"}
                         </p>
                         <div className="divide-y divide-slate-100 rounded-xl border border-slate-200">
                           {offer.items.map((item: any) => (
@@ -246,7 +258,9 @@ export default function OpenOrdersPage() {
                                   {money.format(item.retailerPrice)}
                                 </p>
                                 <p className="text-[11px] text-slate-500">
-                                  Store price
+                                  {frozen
+                                    ? "Frozen offer price"
+                                    : "Current store price"}
                                 </p>
                               </div>
                               {!frozen && (

@@ -59,6 +59,14 @@ export interface ComparableOffer {
   distanceKm: number;
 }
 
+export interface RetailerOfferLinePriceInput {
+  currentStorePrice: number;
+  offerUnitPrice: number | null;
+  offerDeadline: Date;
+  priceFrozenAt: Date | null;
+  now?: Date;
+}
+
 export type StockHoldAction = "reserve" | "release" | "consume";
 export type CartPurchaseMode = "open_order" | "direct";
 
@@ -172,6 +180,18 @@ export function sortComparableOffers<T extends ComparableOffer>(
       left.deliveryCharge - right.deliveryCharge ||
       left.distanceKm - right.distanceKm,
   );
+}
+
+export function resolveRetailerOfferLinePrice(
+  input: RetailerOfferLinePriceInput,
+): { displayPrice: number; source: "current_store" | "frozen_offer" } {
+  const frozen =
+    input.priceFrozenAt !== null ||
+    (input.now ?? new Date()) >= input.offerDeadline;
+  if (frozen && input.offerUnitPrice !== null) {
+    return { displayPrice: input.offerUnitPrice, source: "frozen_offer" };
+  }
+  return { displayPrice: input.currentStorePrice, source: "current_store" };
 }
 
 export function planStockHoldTransition(input: {

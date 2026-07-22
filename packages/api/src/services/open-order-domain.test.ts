@@ -6,8 +6,46 @@ import {
   isEligibleRetailer,
   planStockHoldTransition,
   resolveCartTransition,
+  resolveRetailerOfferLinePrice,
   sortComparableOffers,
 } from "./open-order-domain";
+
+test("retailer line prices use the live store price until the shared deadline", () => {
+  assert.deepEqual(
+    resolveRetailerOfferLinePrice({
+      currentStorePrice: 125,
+      offerUnitPrice: 120,
+      offerDeadline: new Date("2026-07-22T10:05:00.000Z"),
+      priceFrozenAt: null,
+      now: new Date("2026-07-22T10:04:59.000Z"),
+    }),
+    { displayPrice: 125, source: "current_store" },
+  );
+});
+
+test("retailer line prices keep the submitted snapshot after freezing", () => {
+  assert.deepEqual(
+    resolveRetailerOfferLinePrice({
+      currentStorePrice: 140,
+      offerUnitPrice: 120,
+      offerDeadline: new Date("2026-07-22T10:05:00.000Z"),
+      priceFrozenAt: new Date("2026-07-22T10:05:00.000Z"),
+      now: new Date("2026-07-22T10:06:00.000Z"),
+    }),
+    { displayPrice: 120, source: "frozen_offer" },
+  );
+
+  assert.deepEqual(
+    resolveRetailerOfferLinePrice({
+      currentStorePrice: 140,
+      offerUnitPrice: 120,
+      offerDeadline: new Date("2026-07-22T10:05:00.000Z"),
+      priceFrozenAt: null,
+      now: new Date("2026-07-22T10:05:00.000Z"),
+    }),
+    { displayPrice: 120, source: "frozen_offer" },
+  );
+});
 
 test("fixed offer discounts produce a complete comparable total", () => {
   assert.deepEqual(
