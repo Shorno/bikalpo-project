@@ -53,3 +53,21 @@ export const DAYBOOK_PAYMENT_ACCOUNTS: DaybookPaymentAccount[] = [
     type: "bank",
   },
 ];
+
+export const DAYBOOK_EXPENSE_CATEGORIES = [
+  "Bills / Utilities",
+  "Transport & Delivery",
+  "Shop Rent",
+  "Warehouse Rent",
+  "Office Stationery & Supplies",
+  "Packaging & Shopping Bags",
+  "Staff Salary",
+  "Staff Bonus & Incentives",
+  "Internet & Mobile Bill",
+  "Bank Interest & Charges",
+  "Cleaning & Hygiene Supplies",
+  "Equipment & Maintenance",
+  "Advertising & Promotion",
+  "Refreshments & Hospitality",
+  "Miscellaneous Expenses",
+] as const;
