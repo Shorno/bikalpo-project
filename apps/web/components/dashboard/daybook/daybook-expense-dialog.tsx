@@ -1,5 +1,6 @@
 "use client";
 
+import { CalendarIcon } from "lucide-react";
 import { useMemo, useState } from "react";
 import type { DaybookExpenseScope } from "@/components/dashboard/daybook/daybook-expense-ledger";
 import { DAYBOOK_PAYMENT_ACCOUNTS } from "@/components/dashboard/daybook/daybook-expense-ledger";
@@ -26,6 +27,21 @@ type DaybookExpenseDialogProps = {
   scope: DaybookExpenseScope;
 };
 
+const PAYMENT_METHODS = [
+  "Cash",
+  "Cheque",
+  "Card",
+  "Mobile Banking",
+  "Bank Transfer",
+];
+
+function dateValue(date = new Date()) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(
+    2,
+    "0",
+  )}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
 function money(value: number) {
   return `Tk${value.toLocaleString("en-US", {
     maximumFractionDigits: 2,
@@ -42,6 +58,9 @@ export function DaybookExpenseDialog({
   const [paymentAccountId, setPaymentAccountId] = useState(
     DAYBOOK_PAYMENT_ACCOUNTS[0]?.id ?? "",
   );
+  const [paymentDate, setPaymentDate] = useState(dateValue);
+  const [paymentMethod, setPaymentMethod] = useState(PAYMENT_METHODS[0] ?? "");
+  const [referenceNo, setReferenceNo] = useState("");
   const scopeLabel = scope === "warehouse" ? "Warehouse" : "Retailer";
   const selectedPaymentAccount = useMemo(
     () =>
@@ -113,6 +132,52 @@ export function DaybookExpenseDialog({
               <div className="mt-2 font-bold text-4xl text-slate-900 tabular-nums">
                 {money(0)}
               </div>
+            </div>
+          </div>
+
+          <div className="mt-6 grid gap-5 md:grid-cols-[minmax(180px,220px)_minmax(180px,260px)_minmax(180px,260px)]">
+            <div className="grid gap-2">
+              <Label htmlFor="daybook-expense-payment-date">Payment Date</Label>
+              <div className="relative">
+                <Input
+                  id="daybook-expense-payment-date"
+                  onChange={(event) => setPaymentDate(event.target.value)}
+                  type="date"
+                  value={paymentDate}
+                />
+                <CalendarIcon className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-slate-500" />
+              </div>
+            </div>
+
+            <div className="grid gap-2">
+              <Label htmlFor="daybook-expense-payment-method">
+                Payment Method
+              </Label>
+              <Select onValueChange={setPaymentMethod} value={paymentMethod}>
+                <SelectTrigger
+                  className="w-full bg-white"
+                  id="daybook-expense-payment-method"
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {PAYMENT_METHODS.map((method) => (
+                    <SelectItem key={method} value={method}>
+                      {method}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="grid gap-2">
+              <Label htmlFor="daybook-expense-reference">Ref no.</Label>
+              <Input
+                id="daybook-expense-reference"
+                onChange={(event) => setReferenceNo(event.target.value)}
+                placeholder="Reference"
+                value={referenceNo}
+              />
             </div>
           </div>
         </div>
