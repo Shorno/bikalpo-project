@@ -74,9 +74,18 @@ export const DAYBOOK_EXPENSE_CATEGORIES = [
 
 const isBrowser = () => typeof window !== "undefined";
 
-const normalizeEntry = (
-  entry: DaybookExpenseEntry,
-): DaybookExpenseEntry => ({
+export function detectDaybookExpenseScope(): DaybookExpenseScope {
+  if (!isBrowser()) {
+    return "retailer";
+  }
+
+  const { hostname, pathname } = window.location;
+  return hostname.startsWith("warehouse.") || pathname.startsWith("/warehouse")
+    ? "warehouse"
+    : "retailer";
+}
+
+const normalizeEntry = (entry: DaybookExpenseEntry): DaybookExpenseEntry => ({
   ...entry,
   total: Number.isFinite(entry.total) ? entry.total : 0,
   lines: entry.lines.map((line) => ({

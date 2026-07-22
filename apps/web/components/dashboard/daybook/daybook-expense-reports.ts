@@ -22,7 +22,10 @@ export function isDaybookExpenseInRange(
   expense: DaybookExpenseEntry,
   range: ExpenseRange,
 ) {
-  return expense.paymentDate >= range.startDate && expense.paymentDate <= range.endDate;
+  return (
+    expense.paymentDate >= range.startDate &&
+    expense.paymentDate <= range.endDate
+  );
 }
 
 export function getDaybookExpensesInRange(
@@ -59,11 +62,10 @@ export function summarizeDaybookExpensesByPaymentAccount(
   expenses: DaybookExpenseEntry[],
 ) {
   return expenses.reduce<DaybookExpenseAccountSummary>(
-    (summary, expense) => ({
-      ...summary,
-      [expense.paymentAccountType]:
-        summary[expense.paymentAccountType] + expense.total,
-    }),
+    (summary, expense) => {
+      summary[expense.paymentAccountType] += expense.total;
+      return summary;
+    },
     { bank: 0, cash: 0 },
   );
 }

@@ -5,6 +5,7 @@ import {
   DAYBOOK_EXPENSE_EVENT,
   type DaybookExpenseEntry,
   type DaybookExpenseScope,
+  detectDaybookExpenseScope,
   loadDaybookExpenses,
 } from "@/components/dashboard/daybook/daybook-expense-ledger";
 
@@ -25,4 +26,14 @@ export function useDaybookExpenses(scope: DaybookExpenseScope) {
   }, [scope]);
 
   return expenses;
+}
+
+export function useDaybookExpenseScope() {
+  const [scope, setScope] = useState<DaybookExpenseScope>("retailer");
+
+  useEffect(() => {
+    setScope(detectDaybookExpenseScope());
+  }, []);
+
+  return scope;
 }

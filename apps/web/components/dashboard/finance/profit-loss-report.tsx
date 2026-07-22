@@ -5,10 +5,20 @@ import {
   CalendarIcon,
   ChevronDownIcon,
   DownloadIcon,
+  ExternalLinkIcon,
   Loader2,
   RefreshCcwIcon,
 } from "lucide-react";
-import { Fragment, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
+import {
+  getDaybookExpensesInRange,
+  getDaybookExpenseTotal,
+  summarizeDaybookExpensesByCategory,
+} from "@/components/dashboard/daybook/daybook-expense-reports";
+import {
+  useDaybookExpenseScope,
+  useDaybookExpenses,
+} from "@/components/dashboard/daybook/use-daybook-expenses";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -18,48 +28,34 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { orpc } from "@/utils/orpc";
 
-const MONTH_NAMES = [
-  "January",
-  "February",
-  "March",
-  "April",
-  "May",
-  "June",
-  "July",
-  "August",
-  "September",
-  "October",
-  "November",
-  "December",
-];
-
-type AccountLine = {
-  amount: number;
-  label: string;
+type BreakdownRow = {
+  amount: string;
+  category: string;
   muted?: boolean;
-};
-
-type AccountSection = {
-  rows: AccountLine[];
-  title: string;
-  total: number;
-  totalLabel: string;
+  slug?: string | null;
 };
 
 type ReportTotals = {
-  accountSections: AccountSection[];
-  expense: number;
+  cogs: number;
+  cogsRows: BreakdownRow[];
+  grossProfit: number;
+  grossProfitPercent: number;
   income: number;
+  incomeRows: BreakdownRow[];
   isProfit: boolean;
-  monthLabel: string;
   netProfit: number;
+  netProfitPercent: number;
+  operatingExpenseRows: BreakdownRow[];
+  operatingExpenses: number;
 };
 
-function money(value: number) {
-  return `\u09F3${value.toLocaleString("en-US", {
+function money(value: number | string | null | undefined) {
+  const numeric = toNumber(value);
+  const sign = numeric < 0 ? "-" : "";
+
+  return `${sign}\u09F3${Math.abs(numeric).toLocaleString("en-US", {
     maximumFractionDigits: 2,
     minimumFractionDigits: 2,
   })}`;
@@ -74,30 +70,26 @@ function toNumber(value: number | string | null | undefined) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
-function dateValue(year: number, month: number, day: number) {
+function toPercent(value: number, total: number) {
+  if (total === 0) {
+    return 0;
+  }
+
+  return (value / total) * 100;
+}
+
+function dateValue(date: Date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(
+    2,
+    "0",
+  )}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function dateValueFromParts(year: number, month: number, day: number) {
   return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(
     2,
     "0",
   )}`;
-}
-
-function daysInMonth(year: number, month: number) {
-  return new Date(year, month, 0).getDate();
-}
-
-function getDateParts(value: string) {
-  const [rawYear, rawMonth] = value.split("-");
-  const nextYear = Number.parseInt(rawYear ?? "", 10);
-  const nextMonth = Number.parseInt(rawMonth ?? "", 10);
-
-  if (!Number.isFinite(nextYear) || !Number.isFinite(nextMonth)) {
-    return null;
-  }
-
-  return {
-    month: Math.min(Math.max(nextMonth, 1), 12),
-    year: nextYear,
-  };
 }
 
 function formatReportDate(value: string) {
@@ -121,75 +113,169 @@ function formatReportDate(value: string) {
   }).format(new Date(year, month - 1, day));
 }
 
+function yearFromDate(value: string) {
+  const year = Number.parseInt(value.split("-")[0] ?? "", 10);
+  return Number.isFinite(year) ? year : null;
+}
+
+function normalizeRows(
+  rows: BreakdownRow[] | undefined,
+  fallback: BreakdownRow,
+) {
+  if (!rows || rows.length === 0) {
+    return [fallback];
+  }
+
+  return rows;
+}
+
 export function ProfitLossReport() {
   const today = new Date();
   const currentYear = today.getFullYear();
+  const daybookScope = useDaybookExpenseScope();
+  const daybookExpenses = useDaybookExpenses(daybookScope);
   const [year, setYear] = useState(currentYear);
-  const [month, setMonth] = useState(today.getMonth() + 1);
-  const [reportType, setReportType] = useState("accrual");
-  const [view, setView] = useState("details");
+  const [startDate, setStartDate] = useState(
+    dateValueFromParts(currentYear, 1, 1),
+  );
+  const [endDate, setEndDate] = useState(dateValue(today));
 
-  const { data: pnl, isLoading } = useQuery(
+  const {
+    data: pnl,
+    isFetching,
+    isLoading,
+    refetch,
+  } = useQuery(
     orpc.profitLoss.getMonthlyPnL.queryOptions({
-      input: { year, month },
+      input: { endDate, reportType: "accrual", startDate, year },
     }),
   );
 
-  const totals = useMemo(() => {
-    const income = toNumber(pnl?.revenue);
-    const expense = toNumber(pnl?.cogs);
-    const netProfit = income - expense;
+  const totals = useMemo<ReportTotals>(() => {
+    const daybookExpensesInRange = getDaybookExpensesInRange(daybookExpenses, {
+      endDate,
+      startDate,
+    });
+    const daybookExpenseRows = summarizeDaybookExpensesByCategory(
+      daybookExpensesInRange,
+    ).map((row) => ({
+      amount: String(row.amount),
+      category: row.category,
+      slug: `daybook-${row.category.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
+    }));
+    const daybookExpenseTotal = getDaybookExpenseTotal(daybookExpensesInRange);
+    const incomeRows = normalizeRows(
+      pnl?.income?.breakdown,
+      pnl?.revenue
+        ? {
+            amount: pnl.revenue,
+            category: "Product Sales",
+            slug: "product-sales",
+          }
+        : {
+            amount: "0",
+            category: "Product Sales",
+            slug: "product-sales",
+          },
+    );
+    const cogsRows = normalizeRows(
+      pnl?.costOfGoods?.breakdown,
+      pnl?.cogs
+        ? {
+            amount: pnl.cogs,
+            category: "Product Purchase",
+            slug: "product-purchase",
+          }
+        : {
+            amount: "0",
+            category: "Product Purchase",
+            slug: "product-purchase",
+          },
+    );
+    const operatingExpenseRows = normalizeRows(
+      [...(pnl?.expenses?.breakdown ?? []), ...daybookExpenseRows],
+      {
+        amount: "0",
+        category: "No operating expenses",
+        muted: true,
+        slug: "no-operating-expenses",
+      },
+    );
+    const operatingExpenses =
+      toNumber(pnl?.expenses?.total) + daybookExpenseTotal;
+    const income = toNumber(pnl?.income?.total ?? pnl?.revenue);
+    const cogs = toNumber(pnl?.costOfGoods?.total ?? pnl?.cogs);
+    const grossProfit = toNumber(pnl?.grossProfit ?? income - cogs);
+    const netProfit = toNumber(
+      pnl?.netProfit ?? grossProfit - operatingExpenses,
+    );
 
     return {
-      accountSections: [
-        {
-          rows: [{ amount: income, label: "Product Sales" }],
-          title: "Income",
-          total: income,
-          totalLabel: "Total Income",
-        },
-        {
-          rows: [{ amount: expense, label: "Product Purchase" }],
-          title: "Expense",
-          total: expense,
-          totalLabel: "Total Expense",
-        },
-      ],
-      expense,
+      cogs,
+      cogsRows,
+      grossProfit,
+      grossProfitPercent: toNumber(
+        pnl?.grossProfitPercent ?? toPercent(grossProfit, income),
+      ),
       income,
+      incomeRows,
       isProfit: netProfit >= 0,
-      monthLabel: `${MONTH_NAMES[month - 1]} ${year}`,
       netProfit,
+      netProfitPercent: toNumber(
+        pnl?.netProfitPercent ?? toPercent(netProfit, income),
+      ),
+      operatingExpenseRows,
+      operatingExpenses,
     };
-  }, [month, pnl, year]);
+  }, [daybookExpenses, endDate, pnl, startDate]);
 
   const yearOptions = useMemo(
     () => Array.from({ length: 6 }, (_, index) => currentYear - 4 + index),
     [currentYear],
   );
-  const startDate = dateValue(year, month, 1);
-  const endDate = dateValue(year, month, daysInMonth(year, month));
 
-  const updateFromDate = (value: string) => {
-    const next = getDateParts(value);
-
-    if (!next) {
+  const handleYearChange = (value: string) => {
+    const nextYear = Number.parseInt(value, 10);
+    if (!Number.isFinite(nextYear)) {
       return;
     }
 
-    setYear(next.year);
-    setMonth(next.month);
+    setYear(nextYear);
+    setStartDate(dateValueFromParts(nextYear, 1, 1));
+    setEndDate(
+      nextYear === currentYear
+        ? dateValue(today)
+        : dateValueFromParts(nextYear, 12, 31),
+    );
+  };
+
+  const handleStartDateChange = (value: string) => {
+    setStartDate(value);
+    const nextYear = yearFromDate(value);
+    if (nextYear) {
+      setYear(nextYear);
+    }
+  };
+
+  const handleEndDateChange = (value: string) => {
+    setEndDate(value);
+    const nextYear = yearFromDate(value);
+    if (nextYear) {
+      setYear(nextYear);
+    }
   };
 
   return (
     <div className="mx-auto w-full max-w-6xl space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-slate-950">Profit & Loss</h1>
-          <p className="mt-1 text-sm text-slate-500">{totals.monthLabel}</p>
+          <h1 className="text-3xl font-bold text-slate-950">
+            Profit & Loss Statement
+          </h1>
         </div>
         <Button
           className="h-10 w-fit rounded-full border-blue-600 px-5 font-semibold text-blue-700 hover:bg-blue-50 hover:text-blue-800"
+          type="button"
           variant="outline"
         >
           <DownloadIcon />
@@ -200,11 +286,11 @@ export function ProfitLossReport() {
 
       <ReportFilters
         endDate={endDate}
-        onEndDateChange={updateFromDate}
-        onReportTypeChange={setReportType}
-        onStartDateChange={updateFromDate}
-        onYearChange={(value) => setYear(Number.parseInt(value, 10))}
-        reportType={reportType}
+        isFetching={isFetching}
+        onEndDateChange={handleEndDateChange}
+        onRefresh={() => void refetch()}
+        onStartDateChange={handleStartDateChange}
+        onYearChange={handleYearChange}
         startDate={startDate}
         year={year}
         yearOptions={yearOptions}
@@ -215,72 +301,33 @@ export function ProfitLossReport() {
           <Loader2 className="size-8 animate-spin text-slate-400" />
         </div>
       ) : (
-        <>
-          <ReportEquation totals={totals} />
-          <Tabs className="space-y-6" onValueChange={setView} value={view}>
-            <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-7">
-              <div className="h-px bg-slate-200" />
-              <TabsList className="bg-sky-100">
-                <TabsTrigger className="px-5" value="summary">
-                  Summary
-                </TabsTrigger>
-                <TabsTrigger className="px-5" value="details">
-                  Details
-                </TabsTrigger>
-              </TabsList>
-              <div className="h-px bg-slate-200" />
-            </div>
-
-            <TabsContent value="summary">
-              <SummaryTable totals={totals} />
-            </TabsContent>
-            <TabsContent value="details">
-              <AccountDetailsTable
-                endDate={endDate}
-                startDate={startDate}
-                totals={totals}
-              />
-            </TabsContent>
-          </Tabs>
-        </>
+        <AccountDetailsTable
+          endDate={endDate}
+          startDate={startDate}
+          totals={totals}
+        />
       )}
-    </div>
-  );
-}
-
-function ReportEquation({ totals }: { totals: ReportTotals }) {
-  return (
-    <div className="flex flex-wrap items-end justify-center gap-x-5 gap-y-4 py-2 text-center">
-      <EquationMetric label="Income" value={money(totals.income)} />
-      <EquationOperator value="-" />
-      <EquationMetric label="Expense" value={money(totals.expense)} />
-      <EquationOperator value="=" />
-      <EquationMetric
-        emphasis={totals.isProfit ? "profit" : "loss"}
-        label={totals.isProfit ? "Net Profit" : "Net Loss"}
-        value={money(Math.abs(totals.netProfit))}
-      />
     </div>
   );
 }
 
 function ReportFilters({
   endDate,
+  isFetching,
   onEndDateChange,
-  onReportTypeChange,
+  onRefresh,
   onStartDateChange,
   onYearChange,
-  reportType,
   startDate,
   year,
   yearOptions,
 }: {
   endDate: string;
+  isFetching: boolean;
   onEndDateChange: (value: string) => void;
-  onReportTypeChange: (value: string) => void;
+  onRefresh: () => void;
   onStartDateChange: (value: string) => void;
   onYearChange: (value: string) => void;
-  reportType: string;
   startDate: string;
   year: number;
   yearOptions: number[];
@@ -314,35 +361,19 @@ function ReportFilters({
             value={endDate}
           />
         </div>
-        <Button className="h-9 rounded-full bg-blue-600 px-5 hover:bg-blue-700">
-          <RefreshCcwIcon />
-          Update Report
-        </Button>
-      </div>
-
-      <div className="mt-3 grid gap-4 lg:grid-cols-[auto_minmax(0,1fr)] lg:items-center">
-        <div />
-        <button
-          className="w-fit text-sm font-semibold text-blue-600 hover:text-blue-700"
+        <Button
+          className="h-9 rounded-full bg-blue-600 px-5 hover:bg-blue-700"
+          disabled={isFetching}
+          onClick={onRefresh}
           type="button"
         >
-          Compare to a prior period
-        </button>
-      </div>
-
-      <div className="mt-5 grid gap-3 sm:grid-cols-[auto_minmax(180px,235px)] sm:items-center">
-        <label className="text-sm font-medium text-slate-900">
-          Report Type
-        </label>
-        <Select onValueChange={onReportTypeChange} value={reportType}>
-          <SelectTrigger className="h-9 w-full border-blue-200 bg-white">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="accrual">Accrual (Paid & Unpaid)</SelectItem>
-            <SelectItem value="cash">Cash Basis (Paid)</SelectItem>
-          </SelectContent>
-        </Select>
+          {isFetching ? (
+            <Loader2 className="animate-spin" />
+          ) : (
+            <RefreshCcwIcon />
+          )}
+          Update Report
+        </Button>
       </div>
     </div>
   );
@@ -371,41 +402,6 @@ function DateInput({
   );
 }
 
-function EquationMetric({
-  emphasis,
-  label,
-  value,
-}: {
-  emphasis?: "loss" | "profit";
-  label: string;
-  value: string;
-}) {
-  return (
-    <div className="min-w-36">
-      <div className="text-xs font-bold text-slate-600">{label}</div>
-      <div
-        className={`mt-3 text-3xl font-medium tracking-normal ${
-          emphasis === "profit"
-            ? "text-emerald-700"
-            : emphasis === "loss"
-              ? "text-red-700"
-              : "text-slate-950"
-        }`}
-      >
-        {value}
-      </div>
-    </div>
-  );
-}
-
-function EquationOperator({ value }: { value: "-" | "=" }) {
-  return (
-    <div className="pb-1 text-3xl font-semibold leading-none text-slate-950">
-      {value}
-    </div>
-  );
-}
-
 function AccountDetailsTable({
   endDate,
   startDate,
@@ -416,7 +412,7 @@ function AccountDetailsTable({
   totals: ReportTotals;
 }) {
   return (
-    <div className="pt-6">
+    <div className="mx-auto max-w-4xl pt-6">
       <div className="flex items-end justify-between gap-4">
         <h2 className="text-base font-bold text-slate-950">ACCOUNTS</h2>
         <div className="text-right text-sm font-bold text-slate-950">
@@ -426,61 +422,45 @@ function AccountDetailsTable({
       </div>
 
       <div className="mt-3 overflow-x-auto">
-        <table className="w-full min-w-[640px] border-collapse text-sm">
+        <table className="w-full min-w-[680px] border-collapse text-sm">
           <tbody>
-            {totals.accountSections.map((section) => (
-              <Fragment key={section.title}>
-                <tr>
-                  <td
-                    className="bg-slate-200 px-4 py-3 font-bold text-slate-950"
-                    colSpan={2}
-                  >
-                    {section.title}
-                  </td>
-                </tr>
-                {section.rows.map((row) => (
-                  <tr className="border-b border-slate-200" key={row.label}>
-                    <td
-                      className={`px-4 py-3 font-semibold ${
-                        row.muted
-                          ? "text-slate-400"
-                          : "text-blue-700 hover:text-blue-800"
-                      }`}
-                    >
-                      {row.label}
-                    </td>
-                    <td className="px-4 py-3 text-right font-medium text-slate-950">
-                      {money(row.amount)}
-                    </td>
-                  </tr>
-                ))}
-                <tr className="border-b border-slate-300">
-                  <td className="px-4 py-3 font-bold text-slate-950">
-                    {section.totalLabel}
-                  </td>
-                  <td className="px-4 py-3 text-right font-bold text-slate-950">
-                    {money(section.total)}
-                  </td>
-                </tr>
-                <tr>
-                  <td className="py-5" colSpan={2} />
-                </tr>
-              </Fragment>
+            <SectionHeader title="Income" />
+            {totals.incomeRows.map((row) => (
+              <AccountRow key={row.slug ?? row.category} row={row} />
             ))}
+            <TotalRow label="Total Income" value={totals.income} />
 
-            <tr className="border-t-2 border-slate-400">
-              <td className="px-4 py-4 text-base font-bold text-slate-950">
-                {totals.isProfit ? "Net Profit" : "Net Loss"}
-              </td>
-              <td
-                className={`px-4 py-4 text-right text-base font-bold ${
-                  totals.isProfit ? "text-emerald-700" : "text-red-700"
-                }`}
-              >
-                {totals.isProfit ? "" : "-"}
-                {money(Math.abs(totals.netProfit))}
-              </td>
-            </tr>
+            <SpacerRow />
+            <SectionHeader title="Cost of Goods Sold" />
+            {totals.cogsRows.map((row) => (
+              <AccountRow key={row.slug ?? row.category} row={row} />
+            ))}
+            <TotalRow label="Total Cost of Goods Sold" value={totals.cogs} />
+
+            <SpacerRow />
+            <MetricBand
+              label="Gross Profit"
+              percent={totals.grossProfitPercent}
+              value={totals.grossProfit}
+            />
+
+            <SpacerRow />
+            <SectionHeader title="Operating Expenses" />
+            {totals.operatingExpenseRows.map((row) => (
+              <AccountRow key={row.slug ?? row.category} row={row} />
+            ))}
+            <TotalRow
+              label="Total Operating Expenses"
+              value={totals.operatingExpenses}
+            />
+
+            <SpacerRow />
+            <MetricBand
+              emphasis={totals.isProfit ? "profit" : "loss"}
+              label={totals.isProfit ? "Net Profit" : "Net Loss"}
+              percent={totals.netProfitPercent}
+              value={totals.netProfit}
+            />
           </tbody>
         </table>
       </div>
@@ -488,36 +468,101 @@ function AccountDetailsTable({
   );
 }
 
-function SummaryTable({ totals }: { totals: ReportTotals }) {
-  const rows = [
-    { label: "Income", value: totals.income },
-    { label: "Expense", value: totals.expense },
-  ];
-
+function SectionHeader({ title }: { title: string }) {
   return (
-    <div className="mx-auto max-w-2xl border-y border-slate-200">
-      {rows.map((row) => (
-        <div
-          className="grid grid-cols-[minmax(0,1fr)_auto] gap-4 border-b border-slate-200 px-2 py-3 last:border-b-0"
-          key={row.label}
-        >
-          <div className="font-semibold text-slate-700">{row.label}</div>
-          <div className="font-semibold text-slate-950">{money(row.value)}</div>
+    <tr>
+      <td
+        className="bg-slate-200 px-3 py-3 font-bold text-slate-950"
+        colSpan={2}
+      >
+        {title}
+      </td>
+    </tr>
+  );
+}
+
+function AccountRow({ row }: { row: BreakdownRow }) {
+  return (
+    <tr className="border-b border-slate-200">
+      <td
+        className={`px-3 py-3 font-semibold ${
+          row.muted ? "text-slate-400" : "text-blue-700 hover:text-blue-800"
+        }`}
+      >
+        {row.muted ? (
+          row.category
+        ) : (
+          <span className="inline-flex items-center gap-1">
+            {row.category}
+            <ExternalLinkIcon className="size-3" />
+          </span>
+        )}
+      </td>
+      <td className="px-3 py-3 text-right font-medium tabular-nums text-slate-950">
+        {money(row.amount)}
+      </td>
+    </tr>
+  );
+}
+
+function TotalRow({ label, value }: { label: string; value: number }) {
+  return (
+    <tr className="border-b border-slate-300">
+      <td className="px-3 py-3 font-bold text-slate-950">{label}</td>
+      <td className="px-3 py-3 text-right font-bold tabular-nums text-slate-950">
+        {money(value)}
+      </td>
+    </tr>
+  );
+}
+
+function MetricBand({
+  emphasis,
+  label,
+  percent,
+  value,
+}: {
+  emphasis?: "loss" | "profit";
+  label: string;
+  percent: number;
+  value: number;
+}) {
+  return (
+    <tr>
+      <td className="bg-slate-200 px-3 py-3" colSpan={2}>
+        <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-4">
+          <div>
+            <div className="font-bold text-slate-950">{label}</div>
+            <div className="mt-1 text-xs text-slate-600">
+              As a percentage of Total Income
+            </div>
+          </div>
+          <div className="text-right">
+            <div
+              className={`font-bold tabular-nums ${
+                emphasis === "profit"
+                  ? "text-emerald-700"
+                  : emphasis === "loss"
+                    ? "text-red-700"
+                    : "text-slate-950"
+              }`}
+            >
+              {money(value)}
+            </div>
+            <div className="mt-1 text-xs tabular-nums text-slate-600">
+              {percent.toFixed(2)}%
+            </div>
+          </div>
         </div>
-      ))}
-      <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-4 border-t-2 border-slate-400 px-2 py-4">
-        <div className="font-bold text-slate-950">
-          {totals.isProfit ? "Net Profit" : "Net Loss"}
-        </div>
-        <div
-          className={`font-bold ${
-            totals.isProfit ? "text-emerald-700" : "text-red-700"
-          }`}
-        >
-          {totals.isProfit ? "" : "-"}
-          {money(Math.abs(totals.netProfit))}
-        </div>
-      </div>
-    </div>
+      </td>
+    </tr>
+  );
+}
+
+function SpacerRow() {
+  return (
+    <tr>
+      <td className="py-5" colSpan={2} />
+    </tr>
   );
 }
