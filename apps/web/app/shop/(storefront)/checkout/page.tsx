@@ -295,7 +295,7 @@ export default function CustomerCheckoutPage() {
       if (result.order?.id) {
         toast.success("Finding the best shops for you!");
         clearCart();
-        router.push(`/shop/open-order-tracker/${result.order.id}`);
+        router.push(`/open-orders/${result.order.id}`);
       }
     } catch (err: unknown) {
       const message =

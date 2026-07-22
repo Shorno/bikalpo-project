@@ -1,5 +1,7 @@
 "use client";
 
+/** Consumer tracking and offer-selection experience for one Open Order. */
+
 import {
   AlertCircle,
   Check,
