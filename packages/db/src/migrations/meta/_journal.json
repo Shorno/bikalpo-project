@@ -267,6 +267,13 @@
       "when": 1785500000000,
       "tag": "0038_canonical_inventory_guards",
       "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1785800000000,
+      "tag": "0039_atomic_open_orders",
+      "breakpoints": true
     }
   ]
 }

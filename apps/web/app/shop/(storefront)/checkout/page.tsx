@@ -19,9 +19,9 @@ import {
   Trash2,
   User,
 } from "lucide-react";
+import dynamic from "next/dynamic";
 import Image from "next/image";
 import Link from "next/link";
-import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -47,8 +47,8 @@ import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import {
   useEstimatedDeliveryCost,
-  usePlaceOrder,
   usePlaceOpenOrder,
+  usePlaceOrder,
 } from "@/hooks/use-customer-api";
 import { useCart } from "@/hooks/use-orpc-cart";
 import { authClient } from "@/lib/auth-client";
@@ -85,6 +85,7 @@ const CITIES = [
 export default function CustomerCheckoutPage() {
   const router = useRouter();
   const {
+    mode,
     items,
     totalItems,
     totalPrice,
@@ -93,10 +94,12 @@ export default function CustomerCheckoutPage() {
     removeItem,
     isLoading: cartLoading,
   } = useCart();
+  const isOpenOrder = mode === "open_order";
   const { data: session } = authClient.useSession();
   const placeOrderMutation = usePlaceOrder();
   const placeOpenOrderMutation = usePlaceOpenOrder();
-  const isSubmitting = placeOrderMutation.isPending || placeOpenOrderMutation.isPending;
+  const isSubmitting =
+    placeOrderMutation.isPending || placeOpenOrderMutation.isPending;
 
   const [paymentMethod, setPaymentMethod] =
     useState<PaymentMethod>("cash_on_delivery");
@@ -152,8 +155,8 @@ export default function CustomerCheckoutPage() {
           area: address.area || "",
           postalCode: address.postalCode || "",
           customerNote: "",
-          lat: "",
-          lng: "",
+          lat: address.lat || "",
+          lng: address.lng || "",
         });
       } else {
         setSelectedAddressId(null);
@@ -288,7 +291,6 @@ export default function CustomerCheckoutPage() {
           lat: formData.lat,
           lng: formData.lng,
         },
-        paymentMethod,
       });
       if (result.order?.id) {
         toast.success("Finding the best shops for you!");
@@ -344,11 +346,40 @@ export default function CustomerCheckoutPage() {
             Continue Shopping
           </Link>
           <h1 className="text-2xl md:text-3xl font-bold text-gray-900">
-            Checkout
+            {isOpenOrder ? "Request retailer offers" : "Checkout"}
           </h1>
         </div>
 
-        <form onSubmit={handleSubmit}>
+        {mode == null && (
+          <Card className="mb-5 border-amber-200 bg-amber-50 shadow-none">
+            <CardContent className="flex flex-col gap-3 p-4 text-sm text-amber-950 sm:flex-row sm:items-center sm:justify-between">
+              <p>
+                This legacy cart mixes purchase sources. Clear it, then add
+                either public catalog items or items from one retailer.
+              </p>
+              <Button
+                type="button"
+                variant="outline"
+                className="shrink-0 border-amber-300"
+                onClick={() => clearCart()}
+              >
+                Clear legacy cart
+              </Button>
+            </CardContent>
+          </Card>
+        )}
+
+        <form
+          id="checkout-form"
+          onSubmit={
+            isOpenOrder
+              ? (event) => {
+                  event.preventDefault();
+                  void handleOpenOrder();
+                }
+              : handleSubmit
+          }
+        >
           {/* Mobile: Collapsible Order Summary */}
           <div className="md:hidden mb-4">
             <Collapsible open={summaryOpen} onOpenChange={setSummaryOpen}>
@@ -563,7 +594,9 @@ export default function CustomerCheckoutPage() {
 
                   {/* Location Picker Map */}
                   <div className="space-y-1.5">
-                    <Label className="text-sm">Pin Your Location (Optional)</Label>
+                    <Label className="text-sm">
+                      Pin Your Location {isOpenOrder ? "*" : "(Optional)"}
+                    </Label>
                     <AddressPicker
                       lat={formData.lat}
                       lng={formData.lng}
@@ -580,7 +613,11 @@ export default function CustomerCheckoutPage() {
                         const builtAddress =
                           addressParts.length > 0
                             ? addressParts.join(", ")
-                            : resolved.displayName.split(",").slice(0, 3).join(",").trim();
+                            : resolved.displayName
+                                .split(",")
+                                .slice(0, 3)
+                                .join(",")
+                                .trim();
 
                         // Fuzzy city match — check if Nominatim data contains any known city
                         const nominatimLocation = [
@@ -599,87 +636,114 @@ export default function CustomerCheckoutPage() {
                           address: builtAddress || prev.address,
                           area: resolved.area || prev.area,
                           city: matchedCity || prev.city,
-                          postalCode:
-                            resolved.postalCode || prev.postalCode,
+                          postalCode: resolved.postalCode || prev.postalCode,
                         }));
                       }}
                       height="200px"
                     />
                   </div>
+                  {isOpenOrder && !formData.lat && (
+                    <p className="text-xs text-amber-700">
+                      Open orders require a saved or pinned coordinate so the
+                      server can verify the 5 km service radius.
+                    </p>
+                  )}
                 </CardContent>
               </Card>
 
               {/* Payment Method */}
-              <Card className="border-gray-200 shadow-sm py-4">
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2 text-base">
-                    <CreditCard className="h-4 w-4 text-emerald-600" />
-                    Payment Method
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="pt-0">
-                  <RadioGroup
-                    value={paymentMethod}
-                    onValueChange={(value) =>
-                      setPaymentMethod(value as PaymentMethod)
-                    }
-                    className="space-y-2"
-                  >
-                    <div
-                      className={`flex items-center space-x-3 p-3 border rounded-lg cursor-pointer transition-colors ${paymentMethod === "cash_on_delivery" ? "bg-emerald-50 border-emerald-200" : "hover:bg-gray-50"}`}
+              {isOpenOrder ? (
+                <Card className="border-amber-200 bg-amber-50/60 shadow-none py-4">
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2 text-base text-slate-900">
+                      <Banknote className="h-4 w-4 text-emerald-600" />
+                      Cash on delivery after you choose
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-2 pt-0 text-sm leading-6 text-slate-600">
+                    <p>
+                      Retailers have 5 minutes to submit a complete offer.
+                      Prices then freeze.
+                    </p>
+                    <p>
+                      You get another 5 minutes to compare and explicitly accept
+                      one offer. The reference subtotal is not the final payable
+                      amount.
+                    </p>
+                  </CardContent>
+                </Card>
+              ) : (
+                <Card className="border-gray-200 shadow-sm py-4">
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2 text-base">
+                      <CreditCard className="h-4 w-4 text-emerald-600" />
+                      Payment Method
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="pt-0">
+                    <RadioGroup
+                      value={paymentMethod}
+                      onValueChange={(value) =>
+                        setPaymentMethod(value as PaymentMethod)
+                      }
+                      className="space-y-2"
                     >
-                      <RadioGroupItem
-                        value="cash_on_delivery"
-                        id="cod"
-                        className="text-emerald-600"
-                      />
-                      <Label
-                        htmlFor="cod"
-                        className="flex items-center gap-2 cursor-pointer flex-1"
+                      <div
+                        className={`flex items-center space-x-3 p-3 border rounded-lg cursor-pointer transition-colors ${paymentMethod === "cash_on_delivery" ? "bg-emerald-50 border-emerald-200" : "hover:bg-gray-50"}`}
                       >
-                        <Banknote className="h-4 w-4 text-emerald-600" />
-                        <span className="font-medium text-sm">
-                          Cash on Delivery
-                        </span>
-                      </Label>
-                    </div>
+                        <RadioGroupItem
+                          value="cash_on_delivery"
+                          id="cod"
+                          className="text-emerald-600"
+                        />
+                        <Label
+                          htmlFor="cod"
+                          className="flex items-center gap-2 cursor-pointer flex-1"
+                        >
+                          <Banknote className="h-4 w-4 text-emerald-600" />
+                          <span className="font-medium text-sm">
+                            Cash on Delivery
+                          </span>
+                        </Label>
+                      </div>
 
-                    <div
-                      className={`flex items-center space-x-3 p-3 border rounded-lg cursor-pointer transition-colors ${paymentMethod === "bkash" ? "bg-pink-50 border-pink-200" : "hover:bg-gray-50"}`}
-                    >
-                      <RadioGroupItem
-                        value="bkash"
-                        id="bkash"
-                        className="text-pink-600"
-                      />
-                      <Label
-                        htmlFor="bkash"
-                        className="flex items-center gap-2 cursor-pointer flex-1"
+                      <div
+                        className={`flex items-center space-x-3 p-3 border rounded-lg cursor-pointer transition-colors ${paymentMethod === "bkash" ? "bg-pink-50 border-pink-200" : "hover:bg-gray-50"}`}
                       >
-                        <Smartphone className="h-4 w-4 text-pink-600" />
-                        <span className="font-medium text-sm">bKash</span>
-                      </Label>
-                    </div>
+                        <RadioGroupItem
+                          value="bkash"
+                          id="bkash"
+                          className="text-pink-600"
+                        />
+                        <Label
+                          htmlFor="bkash"
+                          className="flex items-center gap-2 cursor-pointer flex-1"
+                        >
+                          <Smartphone className="h-4 w-4 text-pink-600" />
+                          <span className="font-medium text-sm">bKash</span>
+                        </Label>
+                      </div>
 
-                    <div
-                      className={`flex items-center space-x-3 p-3 border rounded-lg cursor-pointer transition-colors ${paymentMethod === "nagad" ? "bg-orange-50 border-orange-200" : "hover:bg-gray-50"}`}
-                    >
-                      <RadioGroupItem
-                        value="nagad"
-                        id="nagad"
-                        className="text-orange-600"
-                      />
-                      <Label
-                        htmlFor="nagad"
-                        className="flex items-center gap-2 cursor-pointer flex-1"
+                      <div
+                        className={`flex items-center space-x-3 p-3 border rounded-lg cursor-pointer transition-colors ${paymentMethod === "nagad" ? "bg-orange-50 border-orange-200" : "hover:bg-gray-50"}`}
                       >
-                        <Smartphone className="h-4 w-4 text-orange-600" />
-                        <span className="font-medium text-sm">Nagad</span>
-                      </Label>
-                    </div>
-                  </RadioGroup>
-                </CardContent>
-              </Card>
+                        <RadioGroupItem
+                          value="nagad"
+                          id="nagad"
+                          className="text-orange-600"
+                        />
+                        <Label
+                          htmlFor="nagad"
+                          className="flex items-center gap-2 cursor-pointer flex-1"
+                        >
+                          <Smartphone className="h-4 w-4 text-orange-600" />
+                          <span className="font-medium text-sm">Nagad</span>
+                        </Label>
+                      </div>
+                    </RadioGroup>
+                  </CardContent>
+                </Card>
+              )}
 
               {/* Order Notes */}
               <Card className="border-gray-200 shadow-sm py-4">
@@ -789,22 +853,28 @@ export default function CustomerCheckoutPage() {
                   {/* Totals */}
                   <div className="space-y-2">
                     <div className="flex justify-between text-sm">
-                      <span className="text-gray-500">Subtotal</span>
+                      <span className="text-gray-500">
+                        {isOpenOrder ? "Reference subtotal" : "Subtotal"}
+                      </span>
                       <span>{formatPrice(totalPrice)}</span>
                     </div>
-                    <div className="flex justify-between text-sm">
-                      <span className="text-gray-500">Delivery</span>
-                      <span>
-                        {shippingCost === 0
-                          ? "Free"
-                          : formatPrice(shippingCost)}
-                      </span>
-                    </div>
+                    {!isOpenOrder && (
+                      <div className="flex justify-between text-sm">
+                        <span className="text-gray-500">Delivery</span>
+                        <span>
+                          {shippingCost === 0
+                            ? "Free"
+                            : formatPrice(shippingCost)}
+                        </span>
+                      </div>
+                    )}
                     <Separator />
                     <div className="flex justify-between font-bold text-lg">
-                      <span>Total</span>
+                      <span>{isOpenOrder ? "Reference only" : "Total"}</span>
                       <span className="text-emerald-600">
-                        {formatPrice(totalPrice + shippingCost)}
+                        {formatPrice(
+                          isOpenOrder ? totalPrice : totalPrice + shippingCost,
+                        )}
                       </span>
                     </div>
                   </div>
@@ -815,47 +885,28 @@ export default function CustomerCheckoutPage() {
                       type="submit"
                       className="w-full bg-emerald-600 hover:bg-emerald-700"
                       size="lg"
-                      disabled={isSubmitting}
+                      disabled={isSubmitting || mode == null}
                     >
-                      {placeOrderMutation.isPending ? (
+                      {(isOpenOrder
+                        ? placeOpenOrderMutation
+                        : placeOrderMutation
+                      ).isPending ? (
                         <>
                           <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                          Processing...
+                          {isOpenOrder
+                            ? "Checking nearby stock…"
+                            : "Processing…"}
                         </>
                       ) : (
                         <>
-                          <CheckCircle className="h-4 w-4 mr-2" />
-                          Place Order
-                        </>
-                      )}
-                    </Button>
-
-                    <div className="relative">
-                      <div className="absolute inset-0 flex items-center">
-                        <span className="w-full border-t" />
-                      </div>
-                      <div className="relative flex justify-center text-xs uppercase">
-                        <span className="bg-white px-2 text-muted-foreground">or</span>
-                      </div>
-                    </div>
-
-                    <Button
-                      type="button"
-                      variant="outline"
-                      className="w-full border-purple-200 text-purple-700 hover:bg-purple-50 hover:text-purple-800"
-                      size="lg"
-                      disabled={isSubmitting}
-                      onClick={handleOpenOrder}
-                    >
-                      {placeOpenOrderMutation.isPending ? (
-                        <>
-                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                          Finding shops...
-                        </>
-                      ) : (
-                        <>
-                          <Search className="h-4 w-4 mr-2" />
-                          Find Best Shop
+                          {isOpenOrder ? (
+                            <Search className="h-4 w-4 mr-2" />
+                          ) : (
+                            <CheckCircle className="h-4 w-4 mr-2" />
+                          )}
+                          {isOpenOrder
+                            ? "Request retailer offers"
+                            : "Place order"}
                         </>
                       )}
                     </Button>
@@ -874,43 +925,32 @@ export default function CustomerCheckoutPage() {
       {/* Mobile: Sticky Bottom Bar */}
       <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t shadow-lg p-4">
         <div className="flex items-center justify-between mb-2">
-          <span className="text-gray-600">Total</span>
+          <span className="text-gray-600">
+            {isOpenOrder ? "Reference subtotal" : "Total"}
+          </span>
           <span className="text-xl font-bold text-emerald-600">
-            {formatPrice(totalPrice + shippingCost)}
+            {formatPrice(isOpenOrder ? totalPrice : totalPrice + shippingCost)}
           </span>
         </div>
-        <div className="flex gap-2">
+        <div>
           <Button
             type="submit"
             form="checkout-form"
-            className="flex-1 bg-emerald-600 hover:bg-emerald-700"
+            className="w-full bg-emerald-600 hover:bg-emerald-700"
             size="lg"
-            disabled={isSubmitting}
-            onClick={handleSubmit}
+            disabled={isSubmitting || mode == null}
           >
-            {placeOrderMutation.isPending ? (
+            {(isOpenOrder ? placeOpenOrderMutation : placeOrderMutation)
+              .isPending ? (
               <Loader2 className="h-4 w-4 animate-spin" />
             ) : (
               <>
-                <CheckCircle className="h-4 w-4 mr-1" />
-                Order
-              </>
-            )}
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            className="flex-1 border-purple-200 text-purple-700"
-            size="lg"
-            disabled={isSubmitting}
-            onClick={handleOpenOrder}
-          >
-            {placeOpenOrderMutation.isPending ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <>
-                <Search className="h-4 w-4 mr-1" />
-                Find Shop
+                {isOpenOrder ? (
+                  <Search className="h-4 w-4 mr-1" />
+                ) : (
+                  <CheckCircle className="h-4 w-4 mr-1" />
+                )}
+                {isOpenOrder ? "Request offers" : "Place order"}
               </>
             )}
           </Button>

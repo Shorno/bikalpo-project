@@ -139,6 +139,7 @@ export default async function ProductPage({
                 productSize={product.size}
                 features={product.features}
                 previewMode={previewMode}
+                purchaseMode="open_order"
               />
 
               {/* Trust Badges */}

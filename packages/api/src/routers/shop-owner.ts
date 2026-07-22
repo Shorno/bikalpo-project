@@ -11,54 +11,54 @@
 
 import { db } from "@bikalpo-project/db";
 import {
+    buildProductTypeFulfillmentProfile,
+    FULFILLMENT_MODE_LABELS,
+    FULFILLMENT_MODES,
+} from "@bikalpo-project/db/fulfillment";
+import {
+    area,
+    brand,
+    carton,
+    cartonConfig,
+    category,
+    complaint,
+    coreProductIdentity,
+    customerAssignment,
+    damageEntry,
+    damageEntryItem,
+    deliveryArea,
+    deliveryGroup,
+    deliveryGroupInvoice,
+    deliverySchedule,
+    inventory,
+    invoice,
+    openOrderBid,
+    openOrderBidItem,
+    order,
+    orderItem,
+    product,
+    productIdentityRequest,
+    productPackRule,
+    productReview,
+    productType,
+    productVariant,
+    purchase,
+    sellerAreaMapping,
+    shopCategoryAssignment,
+    shopProductGenerationTemplate,
+    shopWarehouseConnection,
+    stockAdjustment,
+    stockAdjustmentItem,
+    subCategory,
+    user,
+    variantOption,
+    warehouseApplication,
+} from "@bikalpo-project/db/schema";
+import {
     formatVariantStockQuantity,
     resolveVariantMovementSemantics,
     resolveVariantStockSemantics,
 } from "@bikalpo-project/db/variant-definition";
-import {
-    buildProductTypeFulfillmentProfile,
-    FULFILLMENT_MODES,
-    FULFILLMENT_MODE_LABELS,
-} from "@bikalpo-project/db/fulfillment";
-import {
-    brand,
-    category,
-    product,
-    productReview,
-    productVariant,
-    subCategory,
-    inventory,
-    order,
-    orderItem,
-    user,
-    area,
-    sellerAreaMapping,
-    openOrderBid,
-    openOrderBidItem,
-    shopWarehouseConnection,
-    shopCategoryAssignment,
-    coreProductIdentity,
-    shopProductGenerationTemplate,
-    productType,
-    productIdentityRequest,
-    variantOption,
-    stockAdjustment,
-    stockAdjustmentItem,
-    damageEntry,
-    damageEntryItem,
-    deliveryGroup,
-    deliveryGroupInvoice,
-    productPackRule,
-    purchase,
-    customerAssignment,
-    deliveryArea,
-    deliverySchedule,
-    invoice,
-    carton,
-    cartonConfig,
-    warehouseApplication,
-    complaint,
-} from "@bikalpo-project/db/schema";
 import { ORPCError } from "@orpc/server";
 import {
     and,
@@ -73,15 +73,21 @@ import {
     lte,
     min,
     or,
+    type SQL,
     sql,
     sum,
-    type SQL,
 } from "drizzle-orm";
 import { z } from "zod";
 
-import { shopOwnerProcedure, publicProcedure } from "../index";
-import { convertB2bOrderToRetailInventory } from "./helpers/b2b-conversion";
+import { publicProcedure, shopOwnerProcedure } from "../index";
+import {
+    recalculateOffersForInventory,
+    reconcileOpenOrder,
+    submitRetailerOffer,
+    withdrawRetailerOffer,
+} from "../services/open-order-matching";
 import { ensureShopBuyerTargetVariant } from "./helpers/b2b-buyer-target";
+import { convertB2bOrderToRetailInventory } from "./helpers/b2b-conversion";
 import {
     prepareB2bMovementForApproval,
     releaseB2bOrderReservations,
@@ -114,9 +120,7 @@ const purchaseOrderStatusValues = [
     "cancelled",
 ] as const;
 
-function getPurchaseOrderStatusCondition(
-    status: (typeof purchaseOrderStatusValues)[number],
-): SQL {
+function getPurchaseOrderStatusCondition(status: (typeof purchaseOrderStatusValues)[number]): SQL {
     if (status === "approved") {
         return inArray(order.status, ["approved", "confirmed"]);
     }
@@ -164,10 +168,7 @@ function isOrderPaid(
     orderPaymentStatus: string | null | undefined,
     invoicePaymentStatus: string | null | undefined,
 ) {
-    return (
-        orderPaymentStatus === "paid"
-        || PAID_INVOICE_STATUSES.has(invoicePaymentStatus || "")
-    );
+    return orderPaymentStatus === "paid" || PAID_INVOICE_STATUSES.has(invoicePaymentStatus || "");
 }
 
 function isPurchaseOrderStatus(status: string | null | undefined) {
@@ -176,18 +177,16 @@ function isPurchaseOrderStatus(status: string | null | undefined) {
 
 function getFulfillmentModeLabel(mode?: string | null) {
     return (
-        (mode
-            && mode in FULFILLMENT_MODE_LABELS
-            && FULFILLMENT_MODE_LABELS[
-                mode as keyof typeof FULFILLMENT_MODE_LABELS
-            ])
-        || "Legacy"
+        (mode &&
+            mode in FULFILLMENT_MODE_LABELS &&
+            FULFILLMENT_MODE_LABELS[mode as keyof typeof FULFILLMENT_MODE_LABELS]) ||
+        "Legacy"
     );
 }
 
-function enrichPurchaseOrderItemsFulfillment<
-    TItem extends { supplyMode?: string | null },
->(items: TItem[] | null | undefined) {
+function enrichPurchaseOrderItemsFulfillment<TItem extends { supplyMode?: string | null }>(
+    items: TItem[] | null | undefined,
+) {
     return (items || []).map((item) => ({
         ...item,
         supplyModeLabel: getFulfillmentModeLabel(item.supplyMode),
@@ -200,8 +199,8 @@ function isPayableOrder(
     invoicePaymentStatus: string | null | undefined,
 ) {
     return (
-        PAYABLE_ORDER_STATUSES.has(status || "")
-        && !isOrderPaid(orderPaymentStatus, invoicePaymentStatus)
+        PAYABLE_ORDER_STATUSES.has(status || "") &&
+        !isOrderPaid(orderPaymentStatus, invoicePaymentStatus)
     );
 }
 
@@ -213,10 +212,7 @@ function normalizeDeliveryText(value: string | null | undefined) {
         .trim();
 }
 
-function findNextDeliveryDate(
-    days: number[],
-    today = new Date(),
-) {
+function findNextDeliveryDate(days: number[], today = new Date()) {
     if (days.length === 0) return null;
 
     const currentDay = today.getDay();
@@ -257,10 +253,9 @@ function getConnectedSupplierActivityStatus(
     }
 
     const diffMs = Date.now() - referenceDate.getTime();
-    const activeWindowMs =
-        CONNECTED_SUPPLIER_ACTIVE_WINDOW_DAYS * 24 * 60 * 60 * 1000;
+    const activeWindowMs = CONNECTED_SUPPLIER_ACTIVE_WINDOW_DAYS * 24 * 60 * 60 * 1000;
 
-    return diffMs <= activeWindowMs ? "active" as const : "inactive" as const;
+    return diffMs <= activeWindowMs ? ("active" as const) : ("inactive" as const);
 }
 
 // ────────────────────────────────────────────────────────────────
@@ -323,7 +318,12 @@ const b2bQueries = {
                     where: inArray(subCategory.slug, slugs),
                 });
                 if (subs.length > 0) {
-                    conditions.push(inArray(product.subCategoryId, subs.map((s) => s.id)));
+                    conditions.push(
+                        inArray(
+                            product.subCategoryId,
+                            subs.map((s) => s.id),
+                        ),
+                    );
                 }
             }
 
@@ -390,7 +390,7 @@ const b2bQueries = {
             const totalCount = countResult[0]?.count || 0;
             const productIds = products.map((item) => item.id);
 
-            let startingPriceMap: Record<number, number> = {};
+            const startingPriceMap: Record<number, number> = {};
             if (productIds.length > 0) {
                 const priceRows = await db
                     .select({
@@ -418,9 +418,7 @@ const b2bQueries = {
                     .groupBy(productVariant.productId);
 
                 for (const row of priceRows) {
-                    startingPriceMap[row.productId] = row.minPrice
-                        ? parseFloat(row.minPrice)
-                        : 0;
+                    startingPriceMap[row.productId] = row.minPrice ? parseFloat(row.minPrice) : 0;
                 }
             }
 
@@ -434,8 +432,8 @@ const b2bQueries = {
                         variantPrice > 0
                             ? variantPrice
                             : Number.isFinite(basePrice)
-                                ? basePrice
-                                : 0,
+                              ? basePrice
+                              : 0,
                 };
             });
 
@@ -470,8 +468,7 @@ const b2bQueries = {
                     images: true,
                 },
             });
-            if (!found)
-                throw new ORPCError("NOT_FOUND", { message: "Product not found" });
+            if (!found) throw new ORPCError("NOT_FOUND", { message: "Product not found" });
 
             // Get only TRADE variants visible to shop_owner
             const variants = await db.query.productVariant.findMany({
@@ -525,178 +522,178 @@ const managementQueries = {
      * Aggregated Stock Overview KPIs for the shop dashboard.
      * Returns all metrics in a single call to avoid multiple round-trips.
      */
-    getStockOverview: shopOwnerProcedure
-        .handler(async ({ context }) => {
-            const userId = context.session.user.id;
+    getStockOverview: shopOwnerProcedure.handler(async ({ context }) => {
+        const userId = context.session.user.id;
 
-            // 1. Fetch all inventory for this shop with variant + product + category + brand
-            const shopInventory = await db.query.inventory.findMany({
-                where: and(
-                    eq(inventory.ownerType, "shop"),
-                    eq(inventory.ownerId, userId),
-                ),
-                with: {
-                    variant: {
-                        with: {
-                            catalogVariant: {
-                                columns: { id: true, globalSku: true },
-                            },
-                            product: {
-                                with: {
-                                    category: { columns: { id: true, name: true } },
-                                },
-                            },
-                            brand: { columns: { id: true, name: true } },
-                            sourceVariantOption: true,
+        // 1. Fetch all inventory for this shop with variant + product + category + brand
+        const shopInventory = await db.query.inventory.findMany({
+            where: and(eq(inventory.ownerType, "shop"), eq(inventory.ownerId, userId)),
+            with: {
+                variant: {
+                    with: {
+                        catalogVariant: {
+                            columns: { id: true, globalSku: true },
                         },
+                        product: {
+                            with: {
+                                category: { columns: { id: true, name: true } },
+                            },
+                        },
+                        brand: { columns: { id: true, name: true } },
+                        sourceVariantOption: true,
                     },
                 },
-            });
+            },
+        });
 
-            // 2. Aggregate metrics
-            const LOW_STOCK_THRESHOLD = 5;
-            const AT_RISK_THRESHOLD = 2;
+        // 2. Aggregate metrics
+        const LOW_STOCK_THRESHOLD = 5;
+        const AT_RISK_THRESHOLD = 2;
 
-            let totalSKUs = 0;
-            let inStockCount = 0;
-            let lowStockCount = 0;
-            let outOfStockCount = 0;
-            let totalStockValue = 0;
-            let atRiskCount = 0;
+        let totalSKUs = 0;
+        let inStockCount = 0;
+        let lowStockCount = 0;
+        let outOfStockCount = 0;
+        let totalStockValue = 0;
+        let atRiskCount = 0;
 
-            const productSet = new Set<number>();
-			const categoryMap = new Map<string, { variantCount: number }>();
-            const productStockMap = new Map<number, {
+        const productSet = new Set<number>();
+        const categoryMap = new Map<string, { variantCount: number }>();
+        const productStockMap = new Map<
+            number,
+            {
                 name: string;
                 totalQty: number;
-				stockLines: string[];
+                stockLines: string[];
                 image: string | null;
-            }>();
+            }
+        >();
 
-            for (const inv of shopInventory) {
-				if (!inv.variant?.product || !inv.variant.sourceVariantOption) continue;
-				let semantics;
-				try {
-					semantics = resolveVariantStockSemantics(inv.variant.sourceVariantOption);
-				} catch {
-					continue;
-				}
-
-                totalSKUs++;
-                const qty = parseFloat(inv.availableQty || "0");
-                const retailPrice = parseFloat(inv.retailPrice || "0");
-                const variantPrice = parseFloat(inv.variant.price || "0");
-                const effectivePrice = retailPrice > 0 ? retailPrice : variantPrice;
-
-                totalStockValue += qty * effectivePrice;
-                productSet.add(inv.variant.product.id);
-
-                // Stock status
-                if (qty <= 0) outOfStockCount++;
-                else if (qty <= LOW_STOCK_THRESHOLD) lowStockCount++;
-                else inStockCount++;
-
-                // At risk
-                if (qty > 0 && qty <= AT_RISK_THRESHOLD) atRiskCount++;
-
-                // Category snapshot
-                const catName = inv.variant.product.category?.name || "Uncategorized";
-                const existing = categoryMap.get(catName);
-                if (existing) {
-					existing.variantCount += 1;
-                } else {
-					categoryMap.set(catName, { variantCount: 1 });
-                }
-
-                // Product stock aggregation for top products
-                const pid = inv.variant.product.id;
-                const pEntry = productStockMap.get(pid);
-                if (pEntry) {
-                    pEntry.totalQty += qty;
-					pEntry.stockLines.push(formatVariantStockQuantity(semantics, qty));
-                } else {
-                    productStockMap.set(pid, {
-                        name: inv.variant.product.name,
-                        totalQty: qty,
-						stockLines: [formatVariantStockQuantity(semantics, qty)],
-                        image: inv.variant.product.image,
-                    });
-                }
+        for (const inv of shopInventory) {
+            if (!inv.variant?.product || !inv.variant.sourceVariantOption) continue;
+            let semantics;
+            try {
+                semantics = resolveVariantStockSemantics(inv.variant.sourceVariantOption);
+            } catch {
+                continue;
             }
 
-            // 3. Category snapshot — top 6 categories
-            const categorySnapshot = Array.from(categoryMap.entries())
-                .map(([name, data]) => ({
-                    categoryName: name,
-					totalQty: data.variantCount,
-					unit: "variant SKUs",
-                }))
-                .sort((a, b) => b.totalQty - a.totalQty)
-                .slice(0, 6);
+            totalSKUs++;
+            const qty = parseFloat(inv.availableQty || "0");
+            const retailPrice = parseFloat(inv.retailPrice || "0");
+            const variantPrice = parseFloat(inv.variant.price || "0");
+            const effectivePrice = retailPrice > 0 ? retailPrice : variantPrice;
 
-            // 4. Top products — top 5 by stock qty
-            const topProducts = Array.from(productStockMap.values())
-                .sort((a, b) => b.totalQty - a.totalQty)
-                .slice(0, 5)
-                .map((p) => ({
-                    productName: p.name,
-                    totalQty: Math.round(p.totalQty * 100) / 100,
-					unit: "",
-					stockDisplay: p.stockLines.join(" + "),
-                    image: p.image,
-                    status: p.totalQty > 20
+            totalStockValue += qty * effectivePrice;
+            productSet.add(inv.variant.product.id);
+
+            // Stock status
+            if (qty <= 0) outOfStockCount++;
+            else if (qty <= LOW_STOCK_THRESHOLD) lowStockCount++;
+            else inStockCount++;
+
+            // At risk
+            if (qty > 0 && qty <= AT_RISK_THRESHOLD) atRiskCount++;
+
+            // Category snapshot
+            const catName = inv.variant.product.category?.name || "Uncategorized";
+            const existing = categoryMap.get(catName);
+            if (existing) {
+                existing.variantCount += 1;
+            } else {
+                categoryMap.set(catName, { variantCount: 1 });
+            }
+
+            // Product stock aggregation for top products
+            const pid = inv.variant.product.id;
+            const pEntry = productStockMap.get(pid);
+            if (pEntry) {
+                pEntry.totalQty += qty;
+                pEntry.stockLines.push(formatVariantStockQuantity(semantics, qty));
+            } else {
+                productStockMap.set(pid, {
+                    name: inv.variant.product.name,
+                    totalQty: qty,
+                    stockLines: [formatVariantStockQuantity(semantics, qty)],
+                    image: inv.variant.product.image,
+                });
+            }
+        }
+
+        // 3. Category snapshot — top 6 categories
+        const categorySnapshot = Array.from(categoryMap.entries())
+            .map(([name, data]) => ({
+                categoryName: name,
+                totalQty: data.variantCount,
+                unit: "variant SKUs",
+            }))
+            .sort((a, b) => b.totalQty - a.totalQty)
+            .slice(0, 6);
+
+        // 4. Top products — top 5 by stock qty
+        const topProducts = Array.from(productStockMap.values())
+            .sort((a, b) => b.totalQty - a.totalQty)
+            .slice(0, 5)
+            .map((p) => ({
+                productName: p.name,
+                totalQty: Math.round(p.totalQty * 100) / 100,
+                unit: "",
+                stockDisplay: p.stockLines.join(" + "),
+                image: p.image,
+                status:
+                    p.totalQty > 20
                         ? ("high" as const)
                         : p.totalQty > 5
-                            ? ("available" as const)
-                            : ("low" as const),
-                }));
+                          ? ("available" as const)
+                          : ("low" as const),
+            }));
 
-            // 5. Damage alert — count active damage entries in last 30 days
-            const thirtyDaysAgo = new Date();
-            thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-            const [damageResult] = await db
-                .select({ count: count() })
-                .from(damageEntry)
-                .where(
-                    and(
-                        eq(damageEntry.shopId, userId),
-                        eq(damageEntry.status, "active"),
-                        gte(damageEntry.createdAt, thirtyDaysAgo),
-                    ),
-                );
+        // 5. Damage alert — count active damage entries in last 30 days
+        const thirtyDaysAgo = new Date();
+        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+        const [damageResult] = await db
+            .select({ count: count() })
+            .from(damageEntry)
+            .where(
+                and(
+                    eq(damageEntry.shopId, userId),
+                    eq(damageEntry.status, "active"),
+                    gte(damageEntry.createdAt, thirtyDaysAgo),
+                ),
+            );
 
-            return {
-                // Main KPIs
-                totalProducts: productSet.size,
-                totalSKUs,
-                totalStockValue: Math.round(totalStockValue * 100) / 100,
+        return {
+            // Main KPIs
+            totalProducts: productSet.size,
+            totalSKUs,
+            totalStockValue: Math.round(totalStockValue * 100) / 100,
 
-                // Stock Status
-                inStockCount,
-                lowStockCount,
-                outOfStockCount,
+            // Stock Status
+            inStockCount,
+            lowStockCount,
+            outOfStockCount,
 
-                // Category Snapshot
-                categorySnapshot,
+            // Category Snapshot
+            categorySnapshot,
 
-                // Alert Summary
-                alerts: {
-                    lowStock: lowStockCount,
-                    expiringSoon: 0, // No expiry field yet
-                    damaged: damageResult?.count ?? 0,
-                },
+            // Alert Summary
+            alerts: {
+                lowStock: lowStockCount,
+                expiringSoon: 0, // No expiry field yet
+                damaged: damageResult?.count ?? 0,
+            },
 
-                // Top Products
-                topProducts,
+            // Top Products
+            topProducts,
 
-                // Insights
-                insights: {
-                    fastMoving: null as string | null,  // Needs sales data
-                    slowMoving: null as string | null,  // Needs sales data
-                    atRiskCount,
-                },
-            };
-        }),
+            // Insights
+            insights: {
+                fastMoving: null as string | null, // Needs sales data
+                slowMoving: null as string | null, // Needs sales data
+                atRiskCount,
+            },
+        };
+    }),
 
     /**
      * Real-time stock view grouped by product.
@@ -716,10 +713,7 @@ const managementQueries = {
 
             // 1. Fetch all inventory for this shop
             const shopInventory = await db.query.inventory.findMany({
-                where: and(
-                    eq(inventory.ownerType, "shop"),
-                    eq(inventory.ownerId, userId),
-                ),
+                where: and(eq(inventory.ownerType, "shop"), eq(inventory.ownerId, userId)),
                 with: {
                     variant: {
                         with: {
@@ -752,10 +746,10 @@ const managementQueries = {
                 inCartonQty: number;
                 looseQty: number;
                 retailPrice: number;
-				measurementDimension: "mass" | "volume" | "count";
-				measurementUnit: "KG" | "L" | null;
-				massKgPerUnit: number;
-				volumeLPerUnit: number;
+                measurementDimension: "mass" | "volume" | "count";
+                measurementUnit: "KG" | "L" | null;
+                massKgPerUnit: number;
+                volumeLPerUnit: number;
             };
 
             type ProductGroup = {
@@ -772,19 +766,20 @@ const managementQueries = {
 
             for (const inv of shopInventory) {
                 if (!inv.variant?.product || !inv.variant.sourceVariantOption) continue;
-				let semantics;
-				try {
-					semantics = resolveVariantStockSemantics(inv.variant.sourceVariantOption);
-				} catch {
-					continue;
-				}
+                let semantics;
+                try {
+                    semantics = resolveVariantStockSemantics(inv.variant.sourceVariantOption);
+                } catch {
+                    continue;
+                }
 
                 const prod = inv.variant.product;
                 const pid = prod.id;
                 const qty = parseFloat(inv.availableQty || "0");
                 const cartonQty = parseFloat(inv.inCartonQty || "0");
                 const isLoose = semantics.entryType === "loose";
-                const retailPrice = parseFloat(inv.retailPrice || "0") || parseFloat(inv.variant.price || "0");
+                const retailPrice =
+                    parseFloat(inv.retailPrice || "0") || parseFloat(inv.variant.price || "0");
 
                 if (!productMap.has(pid)) {
                     productMap.set(pid, {
@@ -804,19 +799,19 @@ const managementQueries = {
                     inventoryId: inv.id,
                     sku: inv.variant.sku,
                     brandName: inv.variant.brand?.name ?? null,
-					unitLabel: semantics.displayLabel,
-					packType: semantics.packType,
+                    unitLabel: semantics.displayLabel,
+                    packType: semantics.packType,
                     pcsPerPack: Number(inv.variant.packCountInside || 0),
                     availableQty: qty,
                     inCartonQty: cartonQty,
                     looseQty: isLoose ? qty : Math.max(0, qty - cartonQty),
                     retailPrice,
-					stockDisplay: formatVariantStockQuantity(semantics, qty),
-					operationalUnit: semantics.operationalUnit,
-					measurementDimension: semantics.measurementDimension,
-					measurementUnit: semantics.measurementUnit,
-					massKgPerUnit: semantics.massKgPerUnit,
-					volumeLPerUnit: semantics.volumeLPerUnit,
+                    stockDisplay: formatVariantStockQuantity(semantics, qty),
+                    operationalUnit: semantics.operationalUnit,
+                    measurementDimension: semantics.measurementDimension,
+                    measurementUnit: semantics.measurementUnit,
+                    massKgPerUnit: semantics.massKgPerUnit,
+                    volumeLPerUnit: semantics.volumeLPerUnit,
                 });
             }
 
@@ -843,12 +838,13 @@ const managementQueries = {
             // Status filter
             const withStatus = products.map((p) => {
                 const quantities = p.variants.map((variant) => variant.availableQty);
-                const status: "in_stock" | "low" | "out_of_stock" =
-                    quantities.every((quantity) => quantity <= 0)
-                        ? "out_of_stock"
-                        : quantities.some((quantity) => quantity <= LOW_STOCK_THRESHOLD)
-                            ? "low"
-                            : "in_stock";
+                const status: "in_stock" | "low" | "out_of_stock" = quantities.every(
+                    (quantity) => quantity <= 0,
+                )
+                    ? "out_of_stock"
+                    : quantities.some((quantity) => quantity <= LOW_STOCK_THRESHOLD)
+                      ? "low"
+                      : "in_stock";
                 return { ...p, status };
             });
 
@@ -867,7 +863,10 @@ const managementQueries = {
 
             return {
                 products: filtered.sort((a, b) => a.productName.localeCompare(b.productName)),
-                categories: Array.from(categorySet.entries()).map(([id, name]) => ({ id, name })),
+                categories: Array.from(categorySet.entries()).map(([id, name]) => ({
+                    id,
+                    name,
+                })),
                 totalCount: filtered.length,
             };
         }),
@@ -876,567 +875,580 @@ const managementQueries = {
      * Low stock products — only products with variants below their reorderLevel.
      * Classifies as "low" or "critical" (≤ 50% of threshold).
      */
-    getLowStockProducts: shopOwnerProcedure
-        .handler(async ({ context }) => {
-            const userId = context.session.user.id;
-            const DEFAULT_THRESHOLD = 5;
+    getLowStockProducts: shopOwnerProcedure.handler(async ({ context }) => {
+        const userId = context.session.user.id;
+        const DEFAULT_THRESHOLD = 5;
 
-            // Fetch inventory with variant + product + brand
-            const shopInventory = await db.query.inventory.findMany({
-                where: and(
-                    eq(inventory.ownerType, "shop"),
-                    eq(inventory.ownerId, userId),
-                ),
-                with: {
-                    variant: {
-                        with: {
-                            product: {
-                                with: {
-                                    category: { columns: { id: true, name: true } },
-                                },
+        // Fetch inventory with variant + product + brand
+        const shopInventory = await db.query.inventory.findMany({
+            where: and(eq(inventory.ownerType, "shop"), eq(inventory.ownerId, userId)),
+            with: {
+                variant: {
+                    with: {
+                        product: {
+                            with: {
+                                category: { columns: { id: true, name: true } },
                             },
-                            brand: { columns: { id: true, name: true } },
-                            sourceVariantOption: true,
                         },
+                        brand: { columns: { id: true, name: true } },
+                        sourceVariantOption: true,
                     },
                 },
-            });
+            },
+        });
 
-            // Classify each variant
-            type VariantInfo = {
-                variantId: number;
-                brandName: string | null;
-                unitLabel: string;
-                operationalUnit: string;
-                stockDisplay: string;
-                availableQty: number;
-                inCartonQty: number;
-                looseQty: number;
-                reorderLevel: number;
-                status: "ok" | "low" | "critical" | "out_of_stock";
-            };
+        // Classify each variant
+        type VariantInfo = {
+            variantId: number;
+            brandName: string | null;
+            unitLabel: string;
+            operationalUnit: string;
+            stockDisplay: string;
+            availableQty: number;
+            inCartonQty: number;
+            looseQty: number;
+            reorderLevel: number;
+            status: "ok" | "low" | "critical" | "out_of_stock";
+        };
 
-            type ProductLow = {
-                productId: number;
-                productName: string;
-                productImage: string | null;
-                sku: string | null;
-                issueLabel: string;
-                status: "low" | "critical";
-                variants: VariantInfo[];
-                minimumLevels: { label: string; minimum: number; unit: string }[];
-                alertReasons: string[];
-            };
+        type ProductLow = {
+            productId: number;
+            productName: string;
+            productImage: string | null;
+            sku: string | null;
+            issueLabel: string;
+            status: "low" | "critical";
+            variants: VariantInfo[];
+            minimumLevels: { label: string; minimum: number; unit: string }[];
+            alertReasons: string[];
+        };
 
-            const productMap = new Map<number, ProductLow>();
-            let criticalItems = 0;
-            let shortageVariants = 0;
+        const productMap = new Map<number, ProductLow>();
+        let criticalItems = 0;
+        let shortageVariants = 0;
 
-            for (const inv of shopInventory) {
-                if (!inv.variant?.product || !inv.variant.sourceVariantOption || !inv.variant.isActive) continue;
-                let semantics;
-                try {
-                    semantics = resolveVariantStockSemantics(inv.variant.sourceVariantOption);
-                } catch {
-                    continue;
-                }
+        for (const inv of shopInventory) {
+            if (!inv.variant?.product || !inv.variant.sourceVariantOption || !inv.variant.isActive)
+                continue;
+            let semantics;
+            try {
+                semantics = resolveVariantStockSemantics(inv.variant.sourceVariantOption);
+            } catch {
+                continue;
+            }
 
-                const prod = inv.variant.product;
-                const pid = prod.id;
-                const qty = parseFloat(inv.availableQty || "0");
-                const cartonQty = parseFloat(inv.inCartonQty || "0");
-                const threshold = inv.variant.reorderLevel > 0
+            const prod = inv.variant.product;
+            const pid = prod.id;
+            const qty = parseFloat(inv.availableQty || "0");
+            const cartonQty = parseFloat(inv.inCartonQty || "0");
+            const threshold =
+                inv.variant.reorderLevel > 0
                     ? inv.variant.reorderLevel
-                    : (prod.reorderLevel > 0 ? prod.reorderLevel : DEFAULT_THRESHOLD);
+                    : prod.reorderLevel > 0
+                      ? prod.reorderLevel
+                      : DEFAULT_THRESHOLD;
 
-                // Classify variant
-                let variantStatus: "ok" | "low" | "critical" | "out_of_stock";
-                if (qty <= 0) variantStatus = "out_of_stock";
-                else if (qty <= threshold * 0.5) variantStatus = "critical";
-                else if (qty <= threshold) variantStatus = "low";
-                else variantStatus = "ok";
+            // Classify variant
+            let variantStatus: "ok" | "low" | "critical" | "out_of_stock";
+            if (qty <= 0) variantStatus = "out_of_stock";
+            else if (qty <= threshold * 0.5) variantStatus = "critical";
+            else if (qty <= threshold) variantStatus = "low";
+            else variantStatus = "ok";
 
-                // Skip healthy variants for the low stock page aggregation
-                const isLow = variantStatus !== "ok";
+            // Skip healthy variants for the low stock page aggregation
+            const isLow = variantStatus !== "ok";
 
-                const variantInfo: VariantInfo = {
-                    variantId: inv.variant.id,
-                    brandName: inv.variant.brand?.name ?? null,
-                    unitLabel: semantics.displayLabel,
-                    operationalUnit: semantics.operationalUnit,
-                    stockDisplay: formatVariantStockQuantity(semantics, qty),
-                    availableQty: qty,
-                    inCartonQty: cartonQty,
-                    looseQty: Math.max(0, qty - cartonQty),
-                    reorderLevel: threshold,
-                    status: variantStatus,
-                };
+            const variantInfo: VariantInfo = {
+                variantId: inv.variant.id,
+                brandName: inv.variant.brand?.name ?? null,
+                unitLabel: semantics.displayLabel,
+                operationalUnit: semantics.operationalUnit,
+                stockDisplay: formatVariantStockQuantity(semantics, qty),
+                availableQty: qty,
+                inCartonQty: cartonQty,
+                looseQty: Math.max(0, qty - cartonQty),
+                reorderLevel: threshold,
+                status: variantStatus,
+            };
 
-                // Track KPI metrics for low/critical variants
-                if (isLow) {
-                    if (variantStatus === "critical") criticalItems++;
-                    shortageVariants++;
-                }
+            // Track KPI metrics for low/critical variants
+            if (isLow) {
+                if (variantStatus === "critical") criticalItems++;
+                shortageVariants++;
+            }
 
-                // Group by product — include all variants for expanded detail
-                if (!productMap.has(pid)) {
-                    productMap.set(pid, {
-                        productId: pid,
-                        productName: prod.name,
-                        productImage: prod.image,
-                        sku: prod.sku,
-                        issueLabel: "",
-                        status: "low",
-                        variants: [],
-                        minimumLevels: [],
-                        alertReasons: [],
-                    });
-                }
-
-                const group = productMap.get(pid)!;
-                group.variants.push(variantInfo);
-
-                // Build minimum level config
-                group.minimumLevels.push({
-                    label: semantics.displayLabel,
-                    minimum: threshold,
-                    unit: semantics.operationalUnit,
+            // Group by product — include all variants for expanded detail
+            if (!productMap.has(pid)) {
+                productMap.set(pid, {
+                    productId: pid,
+                    productName: prod.name,
+                    productImage: prod.image,
+                    sku: prod.sku,
+                    issueLabel: "",
+                    status: "low",
+                    variants: [],
+                    minimumLevels: [],
+                    alertReasons: [],
                 });
-
-                // Track alert reasons for low variants
-                if (isLow) {
-                    const reason = `${semantics.displayLabel} ${variantStatus === "critical" ? "Critical" : "Low"}`;
-                    group.alertReasons.push(reason);
-                }
             }
 
-            // Filter to only products that have at least 1 low/critical variant
-            const lowProducts: ProductLow[] = [];
+            const group = productMap.get(pid)!;
+            group.variants.push(variantInfo);
 
-            for (const group of productMap.values()) {
-                const hasLowVariant = group.variants.some(
-                    (v) => v.status === "low" || v.status === "critical" || v.status === "out_of_stock",
-                );
-                if (!hasLowVariant) continue;
-
-                // Determine product-level status and issue label
-                const hasCritical = group.variants.some((v) => v.status === "critical" || v.status === "out_of_stock");
-                group.status = hasCritical ? "critical" : "low";
-
-                // Build issue label from the most urgent variant
-                const worstVariant = group.variants
-                    .filter((v) => v.status !== "ok")
-                    .sort((a, b) => {
-                        const order = { out_of_stock: 0, critical: 1, low: 2, ok: 3 };
-                        return order[a.status] - order[b.status];
-                    })[0];
-
-                if (worstVariant) {
-                    group.issueLabel = `${worstVariant.unitLabel} ${worstVariant.status === "critical" ? "Critical" : "Low"}`;
-                }
-
-                lowProducts.push(group);
-            }
-
-            // Sort: critical first, then low
-            lowProducts.sort((a, b) => {
-                if (a.status === "critical" && b.status !== "critical") return -1;
-                if (a.status !== "critical" && b.status === "critical") return 1;
-                return a.productName.localeCompare(b.productName);
+            // Build minimum level config
+            group.minimumLevels.push({
+                label: semantics.displayLabel,
+                minimum: threshold,
+                unit: semantics.operationalUnit,
             });
 
-            return {
-                summary: {
-                    lowProducts: lowProducts.length,
-                    criticalItems,
-                    shortageVariants,
-                },
-                products: lowProducts,
-            };
-        }),
+            // Track alert reasons for low variants
+            if (isLow) {
+                const reason = `${semantics.displayLabel} ${variantStatus === "critical" ? "Critical" : "Low"}`;
+                group.alertReasons.push(reason);
+            }
+        }
+
+        // Filter to only products that have at least 1 low/critical variant
+        const lowProducts: ProductLow[] = [];
+
+        for (const group of productMap.values()) {
+            const hasLowVariant = group.variants.some(
+                (v) => v.status === "low" || v.status === "critical" || v.status === "out_of_stock",
+            );
+            if (!hasLowVariant) continue;
+
+            // Determine product-level status and issue label
+            const hasCritical = group.variants.some(
+                (v) => v.status === "critical" || v.status === "out_of_stock",
+            );
+            group.status = hasCritical ? "critical" : "low";
+
+            // Build issue label from the most urgent variant
+            const worstVariant = group.variants
+                .filter((v) => v.status !== "ok")
+                .sort((a, b) => {
+                    const order = { out_of_stock: 0, critical: 1, low: 2, ok: 3 };
+                    return order[a.status] - order[b.status];
+                })[0];
+
+            if (worstVariant) {
+                group.issueLabel = `${worstVariant.unitLabel} ${worstVariant.status === "critical" ? "Critical" : "Low"}`;
+            }
+
+            lowProducts.push(group);
+        }
+
+        // Sort: critical first, then low
+        lowProducts.sort((a, b) => {
+            if (a.status === "critical" && b.status !== "critical") return -1;
+            if (a.status !== "critical" && b.status === "critical") return 1;
+            return a.productName.localeCompare(b.productName);
+        });
+
+        return {
+            summary: {
+                lowProducts: lowProducts.length,
+                criticalItems,
+                shortageVariants,
+            },
+            products: lowProducts,
+        };
+    }),
 
     /**
      * Expired products — damage entries with type 'expired',
      * plus expiry-enabled products as a watchlist.
      */
-    getExpiredProducts: shopOwnerProcedure
-        .handler(async ({ context }) => {
-            const userId = context.session.user.id;
+    getExpiredProducts: shopOwnerProcedure.handler(async ({ context }) => {
+        const userId = context.session.user.id;
 
-            // 1. Get all expired damage entries for this shop
-            const expiredEntries = await db.query.damageEntry.findMany({
-                where: and(
-                    eq(damageEntry.shopId, userId),
-                    eq(damageEntry.damageType, "expired"),
-                    eq(damageEntry.status, "active"),
-                ),
-                with: {
-                    items: {
-                        with: {
-                            variant: {
-                                with: {
-                                    product: {
-                                        columns: { id: true, name: true, image: true, sku: true },
-                                    },
-                                    brand: { columns: { id: true, name: true } },
-                                    sourceVariantOption: true,
+        // 1. Get all expired damage entries for this shop
+        const expiredEntries = await db.query.damageEntry.findMany({
+            where: and(
+                eq(damageEntry.shopId, userId),
+                eq(damageEntry.damageType, "expired"),
+                eq(damageEntry.status, "active"),
+            ),
+            with: {
+                items: {
+                    with: {
+                        variant: {
+                            with: {
+                                product: {
+                                    columns: { id: true, name: true, image: true, sku: true },
                                 },
+                                brand: { columns: { id: true, name: true } },
+                                sourceVariantOption: true,
                             },
                         },
                     },
                 },
-                orderBy: [desc(damageEntry.entryDate)],
-            });
+            },
+            orderBy: [desc(damageEntry.entryDate)],
+        });
 
-            // 2. Group expired items by product
-            type ExpiredVariant = {
-                variantId: number;
-                brandName: string | null;
-                unitLabel: string;
-                operationalUnit: string;
-                stockDisplay: string;
-                qty: number;
-                unitPrice: number;
-                totalValue: number;
-                entryDate: string;
-            };
+        // 2. Group expired items by product
+        type ExpiredVariant = {
+            variantId: number;
+            brandName: string | null;
+            unitLabel: string;
+            operationalUnit: string;
+            stockDisplay: string;
+            qty: number;
+            unitPrice: number;
+            totalValue: number;
+            entryDate: string;
+        };
 
-            type ExpiredProduct = {
-                productId: number;
-                productName: string;
-                productImage: string | null;
-                lastExpiryDate: string;
-                status: "expired";
-                lossValue: number;
-                variants: ExpiredVariant[];
-            };
+        type ExpiredProduct = {
+            productId: number;
+            productName: string;
+            productImage: string | null;
+            lastExpiryDate: string;
+            status: "expired";
+            lossValue: number;
+            variants: ExpiredVariant[];
+        };
 
-            const productMap = new Map<number, ExpiredProduct>();
-            let totalLoss = 0;
+        const productMap = new Map<number, ExpiredProduct>();
+        let totalLoss = 0;
 
-            for (const entry of expiredEntries) {
-                for (const item of entry.items) {
-                    if (!item.variant?.product || !item.variant.sourceVariantOption) continue;
-                    let semantics;
-                    try {
-                        semantics = resolveVariantStockSemantics(item.variant.sourceVariantOption);
-                    } catch {
-                        continue;
-                    }
+        for (const entry of expiredEntries) {
+            for (const item of entry.items) {
+                if (!item.variant?.product || !item.variant.sourceVariantOption) continue;
+                let semantics;
+                try {
+                    semantics = resolveVariantStockSemantics(item.variant.sourceVariantOption);
+                } catch {
+                    continue;
+                }
 
-                    const prod = item.variant.product;
-                    const pid = prod.id;
-                    const qty = item.qty;
-                    const unitPrice = parseFloat(item.unitPrice || "0");
-                    const totalValue = parseFloat(item.totalValue || "0");
+                const prod = item.variant.product;
+                const pid = prod.id;
+                const qty = item.qty;
+                const unitPrice = parseFloat(item.unitPrice || "0");
+                const totalValue = parseFloat(item.totalValue || "0");
 
-                    totalLoss += totalValue;
+                totalLoss += totalValue;
 
-                    if (!productMap.has(pid)) {
-                        productMap.set(pid, {
-                            productId: pid,
-                            productName: prod.name,
-                            productImage: prod.image,
-                            lastExpiryDate: entry.entryDate,
-                            status: "expired",
-                            lossValue: 0,
-                            variants: [],
-                        });
-                    }
-
-                    const group = productMap.get(pid)!;
-                    group.lossValue += totalValue;
-
-                    // Keep the most recent entry date
-                    if (entry.entryDate > group.lastExpiryDate) {
-                        group.lastExpiryDate = entry.entryDate;
-                    }
-
-                    group.variants.push({
-                        variantId: item.variant.id,
-                        brandName: item.variant.brand?.name ?? null,
-                        unitLabel: semantics.displayLabel,
-                        operationalUnit: semantics.operationalUnit,
-                        stockDisplay: formatVariantStockQuantity(semantics, qty),
-                        qty,
-                        unitPrice,
-                        totalValue,
-                        entryDate: entry.entryDate,
+                if (!productMap.has(pid)) {
+                    productMap.set(pid, {
+                        productId: pid,
+                        productName: prod.name,
+                        productImage: prod.image,
+                        lastExpiryDate: entry.entryDate,
+                        status: "expired",
+                        lossValue: 0,
+                        variants: [],
                     });
                 }
+
+                const group = productMap.get(pid)!;
+                group.lossValue += totalValue;
+
+                // Keep the most recent entry date
+                if (entry.entryDate > group.lastExpiryDate) {
+                    group.lastExpiryDate = entry.entryDate;
+                }
+
+                group.variants.push({
+                    variantId: item.variant.id,
+                    brandName: item.variant.brand?.name ?? null,
+                    unitLabel: semantics.displayLabel,
+                    operationalUnit: semantics.operationalUnit,
+                    stockDisplay: formatVariantStockQuantity(semantics, qty),
+                    qty,
+                    unitPrice,
+                    totalValue,
+                    entryDate: entry.entryDate,
+                });
             }
+        }
 
-            const expiredProducts = Array.from(productMap.values())
-                .sort((a, b) => b.lastExpiryDate.localeCompare(a.lastExpiryDate));
+        const expiredProducts = Array.from(productMap.values()).sort((a, b) =>
+            b.lastExpiryDate.localeCompare(a.lastExpiryDate),
+        );
 
-            // 3. Get expiry-enabled products in shop inventory (watchlist)
-            const shopInventory = await db.query.inventory.findMany({
-                where: and(
-                    eq(inventory.ownerType, "shop"),
-                    eq(inventory.ownerId, userId),
-                ),
-                with: {
-                    variant: {
-                        with: {
-                            product: {
-                                columns: {
-                                    id: true,
-                                    name: true,
-                                    image: true,
-                                    expiryEnabled: true,
-                                },
+        // 3. Get expiry-enabled products in shop inventory (watchlist)
+        const shopInventory = await db.query.inventory.findMany({
+            where: and(eq(inventory.ownerType, "shop"), eq(inventory.ownerId, userId)),
+            with: {
+                variant: {
+                    with: {
+                        product: {
+                            columns: {
+                                id: true,
+                                name: true,
+                                image: true,
+                                expiryEnabled: true,
                             },
-                            sourceVariantOption: true,
                         },
+                        sourceVariantOption: true,
                     },
                 },
-            });
+            },
+        });
 
-            const watchlistMap = new Map<number, {
+        const watchlistMap = new Map<
+            number,
+            {
                 productId: number;
                 productName: string;
                 productImage: string | null;
                 configuredVariants: number;
                 expiryEnabled: boolean;
                 shelfLife: string | null;
-            }>();
+            }
+        >();
 
-            for (const inv of shopInventory) {
-                if (!inv.variant?.product?.expiryEnabled || !inv.variant.sourceVariantOption || !inv.variant.isActive) continue;
-                try {
-                    resolveVariantStockSemantics(inv.variant.sourceVariantOption);
-                } catch {
-                    continue;
-                }
-
-                const prod = inv.variant.product;
-                const pid = prod.id;
-                const qty = parseFloat(inv.availableQty || "0");
-
-                if (qty <= 0) continue;
-
-                if (!watchlistMap.has(pid)) {
-                    watchlistMap.set(pid, {
-                        productId: pid,
-                        productName: prod.name,
-                        productImage: prod.image,
-                        configuredVariants: 0,
-                        expiryEnabled: true,
-                        shelfLife: inv.variant.shelfLife,
-                    });
-                }
-
-                const w = watchlistMap.get(pid)!;
-                w.configuredVariants++;
+        for (const inv of shopInventory) {
+            if (
+                !inv.variant?.product?.expiryEnabled ||
+                !inv.variant.sourceVariantOption ||
+                !inv.variant.isActive
+            )
+                continue;
+            try {
+                resolveVariantStockSemantics(inv.variant.sourceVariantOption);
+            } catch {
+                continue;
             }
 
-            const expiryEnabledProducts = Array.from(watchlistMap.values());
+            const prod = inv.variant.product;
+            const pid = prod.id;
+            const qty = parseFloat(inv.availableQty || "0");
 
-            return {
-                summary: {
-                    expiredProducts: expiredProducts.length,
-                    expiringSoon: expiryEnabledProducts.length,
-                    lossValue: Math.round(totalLoss * 100) / 100,
-                },
-                expiredProducts,
-                expiryEnabledProducts,
-            };
-        }),
+            if (qty <= 0) continue;
+
+            if (!watchlistMap.has(pid)) {
+                watchlistMap.set(pid, {
+                    productId: pid,
+                    productName: prod.name,
+                    productImage: prod.image,
+                    configuredVariants: 0,
+                    expiryEnabled: true,
+                    shelfLife: inv.variant.shelfLife,
+                });
+            }
+
+            const w = watchlistMap.get(pid)!;
+            w.configuredVariants++;
+        }
+
+        const expiryEnabledProducts = Array.from(watchlistMap.values());
+
+        return {
+            summary: {
+                expiredProducts: expiredProducts.length,
+                expiringSoon: expiryEnabledProducts.length,
+                lossValue: Math.round(totalLoss * 100) / 100,
+            },
+            expiredProducts,
+            expiryEnabledProducts,
+        };
+    }),
 
     /**
      * Empty pack management — aggregates empty pack collections,
      * condition breakdown, and return tracking.
      */
-    getEmptyPackSummary: shopOwnerProcedure
-        .handler(async ({ context }) => {
-            const userId = context.session.user.id;
+    getEmptyPackSummary: shopOwnerProcedure.handler(async ({ context }) => {
+        const userId = context.session.user.id;
 
-            // 1. Get all empty pack records linked to this shop's deliveries
-            // empty_pack is delivery-scoped, so we need to find packs
-            // from deliveries belonging to this shop owner
-            const allPacks = await db.query.emptyPack.findMany({
-                with: {
-                    variant: {
-                        with: {
-                            product: {
-                                columns: { id: true, name: true, image: true },
-                            },
-                            brand: { columns: { id: true, name: true } },
+        // 1. Get all empty pack records linked to this shop's deliveries
+        // empty_pack is delivery-scoped, so we need to find packs
+        // from deliveries belonging to this shop owner
+        const allPacks = await db.query.emptyPack.findMany({
+            with: {
+                variant: {
+                    with: {
+                        product: {
+                            columns: { id: true, name: true, image: true },
                         },
+                        brand: { columns: { id: true, name: true } },
                     },
-                    brand: { columns: { id: true, name: true } },
                 },
-            });
+                brand: { columns: { id: true, name: true } },
+            },
+        });
 
-            // 2. Get pack rules for this shop
-            const packRules = await db.query.productPackRule.findMany({
-                where: and(
-                    eq(productPackRule.ownerType, "shop"),
-                    eq(productPackRule.ownerId, userId),
-                    eq(productPackRule.isActive, true),
-                ),
-            });
-            const ruleMap = new Map(packRules.map((r) => [r.productId, r]));
+        // 2. Get pack rules for this shop
+        const packRules = await db.query.productPackRule.findMany({
+            where: and(
+                eq(productPackRule.ownerType, "shop"),
+                eq(productPackRule.ownerId, userId),
+                eq(productPackRule.isActive, true),
+            ),
+        });
+        const ruleMap = new Map(packRules.map((r) => [r.productId, r]));
 
-            // 3. Get return pack quantities from purchases
-            const shopPurchases = await db.query.purchase.findMany({
-                where: eq(purchase.warehouseId, userId),
-                with: {
-                    items: {
-                        columns: { variantId: true, returnPackQty: true, productName: true },
-                    },
-                    supplier: { columns: { id: true, name: true, returnPackAgreement: true } },
+        // 3. Get return pack quantities from purchases
+        const shopPurchases = await db.query.purchase.findMany({
+            where: eq(purchase.warehouseId, userId),
+            with: {
+                items: {
+                    columns: { variantId: true, returnPackQty: true, productName: true },
                 },
-            });
+                supplier: {
+                    columns: { id: true, name: true, returnPackAgreement: true },
+                },
+            },
+        });
 
-            // Build return tracking from purchases
-            const returnedByVariant = new Map<number, number>();
-            const supplierByProduct = new Map<number, { name: string; hasAgreement: boolean }>();
+        // Build return tracking from purchases
+        const returnedByVariant = new Map<number, number>();
+        const supplierByProduct = new Map<number, { name: string; hasAgreement: boolean }>();
 
-            for (const p of shopPurchases) {
-                for (const item of p.items) {
-                    if (item.variantId && parseFloat(item.returnPackQty || "0") > 0) {
-                        const prev = returnedByVariant.get(item.variantId) || 0;
-                        returnedByVariant.set(item.variantId, prev + parseFloat(item.returnPackQty));
-                    }
+        for (const p of shopPurchases) {
+            for (const item of p.items) {
+                if (item.variantId && parseFloat(item.returnPackQty || "0") > 0) {
+                    const prev = returnedByVariant.get(item.variantId) || 0;
+                    returnedByVariant.set(item.variantId, prev + parseFloat(item.returnPackQty));
                 }
-                if (p.supplier) {
-                    // We don't have productId directly, but we can track supplier info
-                    for (const item of p.items) {
-                        if (item.variantId) {
-                            supplierByProduct.set(item.variantId, {
-                                name: p.supplier.name,
-                                hasAgreement: p.supplier.returnPackAgreement,
-                            });
-                        }
+            }
+            if (p.supplier) {
+                // We don't have productId directly, but we can track supplier info
+                for (const item of p.items) {
+                    if (item.variantId) {
+                        supplierByProduct.set(item.variantId, {
+                            name: p.supplier.name,
+                            hasAgreement: p.supplier.returnPackAgreement,
+                        });
                     }
                 }
             }
+        }
 
-            // 4. Group empty packs by product
-            type PackVariant = {
-                variantId: number | null;
-                brandName: string | null;
-                packDescription: string;
-                collected: number;
-                verified: number;
-                rejected: number;
-                condition: "reusable" | "damaged" | "pending";
-            };
+        // 4. Group empty packs by product
+        type PackVariant = {
+            variantId: number | null;
+            brandName: string | null;
+            packDescription: string;
+            collected: number;
+            verified: number;
+            rejected: number;
+            condition: "reusable" | "damaged" | "pending";
+        };
 
-            type PackProduct = {
-                productId: number;
-                productName: string;
-                productImage: string | null;
-                emptyQty: number;
-                packType: string;
-                isReturnable: boolean;
-                status: "reusable" | "return_pending";
-                variants: PackVariant[];
-                totalCollected: number;
-                totalVerified: number;
-                totalRejected: number;
-                totalReturned: number;
-            };
+        type PackProduct = {
+            productId: number;
+            productName: string;
+            productImage: string | null;
+            emptyQty: number;
+            packType: string;
+            isReturnable: boolean;
+            status: "reusable" | "return_pending";
+            variants: PackVariant[];
+            totalCollected: number;
+            totalVerified: number;
+            totalRejected: number;
+            totalReturned: number;
+        };
 
-            const productMap = new Map<number, PackProduct>();
-            let totalPacks = 0;
-            let returnPending = 0;
-            let reusable = 0;
+        const productMap = new Map<number, PackProduct>();
+        let totalPacks = 0;
+        let returnPending = 0;
+        let reusable = 0;
 
-            for (const pack of allPacks) {
-                const prod = pack.variant?.product;
-                if (!prod) continue;
+        for (const pack of allPacks) {
+            const prod = pack.variant?.product;
+            if (!prod) continue;
 
-                const pid = prod.id;
-                const qty = pack.quantityCollected;
-                totalPacks += qty;
+            const pid = prod.id;
+            const qty = pack.quantityCollected;
+            totalPacks += qty;
 
-                if (pack.status === "verified") reusable += qty;
-                else if (pack.status === "collected" || pack.status === "submitted") returnPending += qty;
+            if (pack.status === "verified") reusable += qty;
+            else if (pack.status === "collected" || pack.status === "submitted")
+                returnPending += qty;
 
-                if (!productMap.has(pid)) {
-                    const rule = ruleMap.get(pid);
-                    productMap.set(pid, {
-                        productId: pid,
-                        productName: prod.name,
-                        productImage: prod.image,
-                        emptyQty: 0,
-                        packType: pack.packDescription || "Pack",
-                        isReturnable: rule?.isEmptyPackReturnable ?? (pack.variant?.isPackReturnRequired ?? false),
-                        status: "reusable",
-                        variants: [],
-                        totalCollected: 0,
-                        totalVerified: 0,
-                        totalRejected: 0,
-                        totalReturned: 0,
-                    });
-                }
-
-                const group = productMap.get(pid)!;
-                group.emptyQty += qty;
-                group.totalCollected += qty;
-
-                if (pack.status === "verified") group.totalVerified += qty;
-                if (pack.status === "rejected") group.totalRejected += qty;
-
-                // Add returned qty from purchases
-                if (pack.variantId) {
-                    group.totalReturned = returnedByVariant.get(pack.variantId) || 0;
-                }
-
-                const brandName = pack.brand?.name ?? pack.variant?.brand?.name ?? null;
-
-                group.variants.push({
-                    variantId: pack.variantId,
-                    brandName,
-                    packDescription: pack.packDescription || "Pack",
-                    collected: qty,
-                    verified: pack.status === "verified" ? qty : 0,
-                    rejected: pack.status === "rejected" ? qty : 0,
-                    condition: pack.status === "rejected" ? "damaged" :
-                        pack.status === "verified" ? "reusable" : "pending",
+            if (!productMap.has(pid)) {
+                const rule = ruleMap.get(pid);
+                productMap.set(pid, {
+                    productId: pid,
+                    productName: prod.name,
+                    productImage: prod.image,
+                    emptyQty: 0,
+                    packType: pack.packDescription || "Pack",
+                    isReturnable:
+                        rule?.isEmptyPackReturnable ?? pack.variant?.isPackReturnRequired ?? false,
+                    status: "reusable",
+                    variants: [],
+                    totalCollected: 0,
+                    totalVerified: 0,
+                    totalRejected: 0,
+                    totalReturned: 0,
                 });
             }
 
-            // Determine product-level status
-            for (const group of productMap.values()) {
-                const hasPending = group.variants.some((v) => v.condition === "pending");
-                group.status = hasPending ? "return_pending" : "reusable";
+            const group = productMap.get(pid)!;
+            group.emptyQty += qty;
+            group.totalCollected += qty;
+
+            if (pack.status === "verified") group.totalVerified += qty;
+            if (pack.status === "rejected") group.totalRejected += qty;
+
+            // Add returned qty from purchases
+            if (pack.variantId) {
+                group.totalReturned = returnedByVariant.get(pack.variantId) || 0;
             }
 
-            const products = Array.from(productMap.values())
-                .sort((a, b) => b.emptyQty - a.emptyQty);
+            const brandName = pack.brand?.name ?? pack.variant?.brand?.name ?? null;
 
-            // 5. Build return tracking list
-            const returnTracking = products
-                .filter((p) => p.isReturnable && p.status === "return_pending")
-                .map((p) => {
-                    const firstVariant = p.variants[0];
-                    const supplierInfo = firstVariant?.variantId
-                        ? supplierByProduct.get(firstVariant.variantId)
-                        : null;
+            group.variants.push({
+                variantId: pack.variantId,
+                brandName,
+                packDescription: pack.packDescription || "Pack",
+                collected: qty,
+                verified: pack.status === "verified" ? qty : 0,
+                rejected: pack.status === "rejected" ? qty : 0,
+                condition:
+                    pack.status === "rejected"
+                        ? "damaged"
+                        : pack.status === "verified"
+                          ? "reusable"
+                          : "pending",
+            });
+        }
 
-                    return {
-                        productId: p.productId,
-                        productName: p.productName,
-                        pendingReturn: p.totalCollected - p.totalReturned,
-                        supplierName: supplierInfo?.name ?? null,
-                        hasReturnAgreement: supplierInfo?.hasAgreement ?? false,
-                    };
-                })
-                .filter((r) => r.pendingReturn > 0);
+        // Determine product-level status
+        for (const group of productMap.values()) {
+            const hasPending = group.variants.some((v) => v.condition === "pending");
+            group.status = hasPending ? "return_pending" : "reusable";
+        }
 
-            return {
-                summary: {
-                    totalEmptyPacks: totalPacks,
-                    returnPending,
-                    reusableStock: reusable,
-                },
-                products,
-                returnTracking,
-            };
-        }),
+        const products = Array.from(productMap.values()).sort((a, b) => b.emptyQty - a.emptyQty);
+
+        // 5. Build return tracking list
+        const returnTracking = products
+            .filter((p) => p.isReturnable && p.status === "return_pending")
+            .map((p) => {
+                const firstVariant = p.variants[0];
+                const supplierInfo = firstVariant?.variantId
+                    ? supplierByProduct.get(firstVariant.variantId)
+                    : null;
+
+                return {
+                    productId: p.productId,
+                    productName: p.productName,
+                    pendingReturn: p.totalCollected - p.totalReturned,
+                    supplierName: supplierInfo?.name ?? null,
+                    hasReturnAgreement: supplierInfo?.hasAgreement ?? false,
+                };
+            })
+            .filter((r) => r.pendingReturn > 0);
+
+        return {
+            summary: {
+                totalEmptyPacks: totalPacks,
+                returnPending,
+                reusableStock: reusable,
+            },
+            products,
+            returnTracking,
+        };
+    }),
 
     /** B2B → B2C conversion history for the shop owner */
     getConversionHistory: shopOwnerProcedure
@@ -1451,10 +1463,7 @@ const managementQueries = {
 
             // Get all B2B orders for this shop
             const b2bOrders = await db.query.order.findMany({
-                where: and(
-                    eq(order.userId, userId),
-                    eq(order.orderType, "b2b"),
-                ),
+                where: and(eq(order.userId, userId), eq(order.orderType, "b2b")),
                 columns: {
                     id: true,
                     orderNumber: true,
@@ -1517,15 +1526,19 @@ const managementQueries = {
 
             for (const o of b2bOrders) {
                 for (const item of o.items) {
-                    const status = item.conversionStatus ?? (o.status === "delivered" ? "converted" : "pending");
+                    const status =
+                        item.conversionStatus ??
+                        (o.status === "delivered" ? "converted" : "pending");
                     if (status === "converted") totalConverted++;
                     else if (status === "failed") totalFailed++;
                     else totalPending++;
 
-                    const modeLabel = item.supplyMode
-                        && item.supplyMode in FULFILLMENT_MODE_LABELS
-                        ? FULFILLMENT_MODE_LABELS[item.supplyMode as keyof typeof FULFILLMENT_MODE_LABELS]
-                        : "Legacy";
+                    const modeLabel =
+                        item.supplyMode && item.supplyMode in FULFILLMENT_MODE_LABELS
+                            ? FULFILLMENT_MODE_LABELS[
+                                  item.supplyMode as keyof typeof FULFILLMENT_MODE_LABELS
+                              ]
+                            : "Legacy";
 
                     conversionItems.push({
                         orderItemId: item.id,
@@ -1587,10 +1600,7 @@ const managementQueries = {
 
             // Get inventory records for this shop owner
             const shopInventory = await db.query.inventory.findMany({
-                where: and(
-                    eq(inventory.ownerType, "shop"),
-                    eq(inventory.ownerId, userId),
-                ),
+                where: and(eq(inventory.ownerType, "shop"), eq(inventory.ownerId, userId)),
                 // Always start from a deterministic database order. The final
                 // taxonomy sort below is applied before pagination, but this ID
                 // tie-breaker also keeps otherwise identical records stable.
@@ -1635,7 +1645,10 @@ const managementQueries = {
             // Match the stable hierarchy used by the admin and warehouse price
             // lists. Price and updatedAt are deliberately excluded so editing a
             // price cannot move its row after the query is refreshed.
-            const compareLabels = (left: string | null | undefined, right: string | null | undefined) =>
+            const compareLabels = (
+                left: string | null | undefined,
+                right: string | null | undefined,
+            ) =>
                 (left ?? "").localeCompare(right ?? "", "en", {
                     numeric: true,
                     sensitivity: "base",
@@ -1651,20 +1664,18 @@ const managementQueries = {
                 item.variant?.sku ??
                 "";
 
-            filtered = [...filtered].sort((left, right) =>
-                compareLabels(
-                    left.variant?.product?.category?.name,
-                    right.variant?.product?.category?.name,
-                ) ||
-                compareLabels(
-                    left.variant?.product?.name,
-                    right.variant?.product?.name,
-                ) ||
-                compareLabels(getBrandName(left), getBrandName(right)) ||
-                (left.variant?.sortOrder ?? 0) - (right.variant?.sortOrder ?? 0) ||
-                compareLabels(getVariantLabel(left), getVariantLabel(right)) ||
-                compareLabels(left.variant?.sku, right.variant?.sku) ||
-                left.id - right.id,
+            filtered = [...filtered].sort(
+                (left, right) =>
+                    compareLabels(
+                        left.variant?.product?.category?.name,
+                        right.variant?.product?.category?.name,
+                    ) ||
+                    compareLabels(left.variant?.product?.name, right.variant?.product?.name) ||
+                    compareLabels(getBrandName(left), getBrandName(right)) ||
+                    (left.variant?.sortOrder ?? 0) - (right.variant?.sortOrder ?? 0) ||
+                    compareLabels(getVariantLabel(left), getVariantLabel(right)) ||
+                    compareLabels(left.variant?.sku, right.variant?.sku) ||
+                    left.id - right.id,
             );
 
             const total = filtered.length;
@@ -1695,10 +1706,7 @@ const managementQueries = {
             const userId = context.session.user.id;
 
             const items = await db.query.inventory.findMany({
-                where: and(
-                    eq(inventory.ownerType, "shop"),
-                    eq(inventory.ownerId, userId),
-                ),
+                where: and(eq(inventory.ownerType, "shop"), eq(inventory.ownerId, userId)),
                 with: {
                     variant: {
                         with: {
@@ -1776,10 +1784,9 @@ const mutations = {
         .input(
             z.object({
                 inventoryId: z.number(),
-                retailPrice: z.string().refine(
-                    (v) => !isNaN(Number(v)) && Number(v) > 0,
-                    { message: "Price must be a positive number" },
-                ),
+                retailPrice: z.string().refine((v) => !isNaN(Number(v)) && Number(v) > 0, {
+                    message: "Price must be a positive number",
+                }),
             }),
         )
         .handler(async ({ input, context }) => {
@@ -1797,7 +1804,7 @@ const mutations = {
                     variant: {
                         columns: {
                             id: true,
-                            price: true,             // base cost price
+                            price: true, // base cost price
                             minMarginPercent: true,
                             minMarginAmount: true,
                             productId: true,
@@ -1831,19 +1838,35 @@ const mutations = {
                 });
             }
 
-            // 3. Update the inventory record's retail price
-            await db
-                .update(inventory)
-                .set({
-                    retailPrice: input.retailPrice,
-                    updatedAt: new Date(),
-                })
-                .where(eq(inventory.id, input.inventoryId));
+            // 3. Update price and recalculate active offers in one transaction.
+            // Invalidating an offer's discount rolls the price update back.
+            let recalculatedOrderIds: number[];
+            try {
+                recalculatedOrderIds = await recalculateOffersForInventory(
+                    input.inventoryId,
+                    userId,
+                    newPrice,
+                );
+            } catch (error) {
+                throw new ORPCError("CONFLICT", {
+                    message:
+                        error instanceof Error
+                            ? error.message
+                            : "The price could not be applied to active offers.",
+                });
+            }
+            for (const orderId of recalculatedOrderIds) {
+                context.realtime.emitToOrder(orderId, "open-order:offer-updated", {
+                    orderId,
+                    reason: "retailer_price_changed",
+                });
+            }
 
             return {
                 success: true,
                 inventoryId: input.inventoryId,
                 retailPrice: input.retailPrice,
+                recalculatedOpenOrders: recalculatedOrderIds.length,
             };
         }),
 
@@ -2031,12 +2054,9 @@ const mutations = {
             }
 
             if (
-                ![
-                    "pending",
-                    "approved",
-                    "confirmed",
-                    "ready_for_dispatch",
-                ].includes(existingOrder.status)
+                !["pending", "approved", "confirmed", "ready_for_dispatch"].includes(
+                    existingOrder.status,
+                )
             ) {
                 throw new ORPCError("BAD_REQUEST", {
                     message: `Cannot cancel an order with status '${existingOrder.status}'`,
@@ -2050,12 +2070,7 @@ const mutations = {
                         status: "cancelled",
                         cancelledAt: new Date(),
                     })
-                    .where(
-                        and(
-                            eq(order.id, input.orderId),
-                            eq(order.status, existingOrder.status),
-                        ),
-                    )
+                    .where(and(eq(order.id, input.orderId), eq(order.status, existingOrder.status)))
                     .returning({ id: order.id });
                 if (cancelled.length === 0) {
                     throw new ORPCError("BAD_REQUEST", {
@@ -2095,9 +2110,7 @@ const orderQueries = {
         })
         .input(
             z.object({
-                status: z
-                    .enum(purchaseOrderStatusValues)
-                    .optional(),
+                status: z.enum(purchaseOrderStatusValues).optional(),
                 page: z.number().default(1),
                 limit: z.number().default(20),
             }),
@@ -2135,10 +2148,7 @@ const orderQueries = {
                     limit,
                     offset,
                 }),
-                db
-                    .select({ count: count() })
-                    .from(order)
-                    .where(where),
+                db.select({ count: count() }).from(order).where(where),
             ]);
 
             const totalCount = countResult[0]?.count || 0;
@@ -2173,9 +2183,7 @@ const orderQueries = {
         .input(
             z.object({
                 search: z.string().optional(),
-                status: z
-                    .enum(purchaseOrderStatusValues)
-                    .optional(),
+                status: z.enum(purchaseOrderStatusValues).optional(),
                 dateFrom: z.string().optional(),
                 dateTo: z.string().optional(),
                 page: z.number().default(1),
@@ -2213,12 +2221,7 @@ const orderQueries = {
                 const orderIds = matchingOrderIds.map((r) => r.orderId);
 
                 if (orderIds.length > 0) {
-                    conditions.push(
-                        or(
-                            ilike(order.orderNumber, s),
-                            inArray(order.id, orderIds),
-                        )!,
-                    );
+                    conditions.push(or(ilike(order.orderNumber, s), inArray(order.id, orderIds))!);
                 } else {
                     conditions.push(ilike(order.orderNumber, s));
                 }
@@ -2249,25 +2252,54 @@ const orderQueries = {
                     limit,
                     offset,
                 }),
-                db
-                    .select({ count: count() })
-                    .from(order)
-                    .where(where),
+                db.select({ count: count() }).from(order).where(where),
                 // KPI aggregation
                 db
                     .select({
                         totalOrders: count(),
-                        pendingCount: sql<number>`count(*) filter (where ${order.status} = 'pending')`.as("pending_count"),
-                        approvedCount: sql<number>`count(*) filter (where ${order.status} in ('approved', 'confirmed'))`.as("approved_count"),
-                        readyForDispatchCount: sql<number>`count(*) filter (where ${order.status} = 'ready_for_dispatch')`.as("ready_for_dispatch_count"),
-                        partiallyInvoicedCount: sql<number>`count(*) filter (where ${order.status} = 'partially_invoiced')`.as("partially_invoiced_count"),
-                        invoicedCount: sql<number>`count(*) filter (where ${order.status} = 'invoiced')`.as("invoiced_count"),
-                        confirmedCount: sql<number>`count(*) filter (where ${order.status} in ('approved', 'confirmed'))`.as("confirmed_count"),
-                        processingCount: sql<number>`count(*) filter (where ${order.status} = 'processing')`.as("processing_count"),
-                        deliveredCount: sql<number>`count(*) filter (where ${order.status} = 'delivered')`.as("delivered_count"),
-                        cancelledCount: sql<number>`count(*) filter (where ${order.status} = 'cancelled')`.as("cancelled_count"),
-                        totalAmount: sql<string>`coalesce(sum(${order.total}), 0)`.as("total_amount"),
-                        pendingAmount: sql<string>`coalesce(sum(case when ${order.status} in ('pending','approved','ready_for_dispatch','partially_invoiced','invoiced','confirmed','processing') then ${order.total} else 0 end), 0)`.as("pending_amount"),
+                        pendingCount:
+                            sql<number>`count(*) filter (where ${order.status} = 'pending')`.as(
+                                "pending_count",
+                            ),
+                        approvedCount:
+                            sql<number>`count(*) filter (where ${order.status} in ('approved', 'confirmed'))`.as(
+                                "approved_count",
+                            ),
+                        readyForDispatchCount:
+                            sql<number>`count(*) filter (where ${order.status} = 'ready_for_dispatch')`.as(
+                                "ready_for_dispatch_count",
+                            ),
+                        partiallyInvoicedCount:
+                            sql<number>`count(*) filter (where ${order.status} = 'partially_invoiced')`.as(
+                                "partially_invoiced_count",
+                            ),
+                        invoicedCount:
+                            sql<number>`count(*) filter (where ${order.status} = 'invoiced')`.as(
+                                "invoiced_count",
+                            ),
+                        confirmedCount:
+                            sql<number>`count(*) filter (where ${order.status} in ('approved', 'confirmed'))`.as(
+                                "confirmed_count",
+                            ),
+                        processingCount:
+                            sql<number>`count(*) filter (where ${order.status} = 'processing')`.as(
+                                "processing_count",
+                            ),
+                        deliveredCount:
+                            sql<number>`count(*) filter (where ${order.status} = 'delivered')`.as(
+                                "delivered_count",
+                            ),
+                        cancelledCount:
+                            sql<number>`count(*) filter (where ${order.status} = 'cancelled')`.as(
+                                "cancelled_count",
+                            ),
+                        totalAmount: sql<string>`coalesce(sum(${order.total}), 0)`.as(
+                            "total_amount",
+                        ),
+                        pendingAmount:
+                            sql<string>`coalesce(sum(case when ${order.status} in ('pending','approved','ready_for_dispatch','partially_invoiced','invoiced','confirmed','processing') then ${order.total} else 0 end), 0)`.as(
+                                "pending_amount",
+                            ),
                     })
                     .from(order)
                     .where(eq(order.userId, userId)),
@@ -2277,7 +2309,9 @@ const orderQueries = {
             const kpi = kpiResult[0];
 
             // Resolve warehouse names for orders that have warehouseId
-            const warehouseIds = [...new Set(orders.map((o: any) => o.warehouseId).filter(Boolean))];
+            const warehouseIds = [
+                ...new Set(orders.map((o: any) => o.warehouseId).filter(Boolean)),
+            ];
             const warehouseMap: Record<string, string> = {};
             if (warehouseIds.length > 0) {
                 const warehouses = await db
@@ -2292,7 +2326,7 @@ const orderQueries = {
             const enrichedOrders = orders.map((o: any) => ({
                 ...o,
                 items: enrichPurchaseOrderItemsFulfillment(o.items),
-                warehouseName: o.warehouseId ? (warehouseMap[o.warehouseId] || "Unknown") : "Admin",
+                warehouseName: o.warehouseId ? warehouseMap[o.warehouseId] || "Unknown" : "Admin",
             }));
 
             return {
@@ -2357,7 +2391,9 @@ const orderQueries = {
             });
 
             if (!result) {
-                throw new ORPCError("NOT_FOUND", { message: "Purchase order not found" });
+                throw new ORPCError("NOT_FOUND", {
+                    message: "Purchase order not found",
+                });
             }
 
             // Resolve warehouse info
@@ -2402,22 +2438,19 @@ const orderQueries = {
             const invoiceIds = invoices.map((invoiceData) => invoiceData.id);
             const deliveryLinks = invoiceIds.length
                 ? await db
-                    .select({
-                        invoiceId: deliveryGroupInvoice.invoiceId,
-                        groupStatus: deliveryGroup.status,
-                        deliverymanId: deliveryGroup.deliverymanId,
-                        assignedAt: deliveryGroup.assignedAt,
-                        startedAt: deliveryGroup.startedAt,
-                        invoiceStatus: deliveryGroupInvoice.status,
-                        deliveredAt: deliveryGroupInvoice.deliveredAt,
-                        deliveryOtp: deliveryGroupInvoice.deliveryOtp,
-                    })
-                    .from(deliveryGroupInvoice)
-                    .innerJoin(
-                        deliveryGroup,
-                        eq(deliveryGroupInvoice.groupId, deliveryGroup.id),
-                    )
-                    .where(inArray(deliveryGroupInvoice.invoiceId, invoiceIds))
+                      .select({
+                          invoiceId: deliveryGroupInvoice.invoiceId,
+                          groupStatus: deliveryGroup.status,
+                          deliverymanId: deliveryGroup.deliverymanId,
+                          assignedAt: deliveryGroup.assignedAt,
+                          startedAt: deliveryGroup.startedAt,
+                          invoiceStatus: deliveryGroupInvoice.status,
+                          deliveredAt: deliveryGroupInvoice.deliveredAt,
+                          deliveryOtp: deliveryGroupInvoice.deliveryOtp,
+                      })
+                      .from(deliveryGroupInvoice)
+                      .innerJoin(deliveryGroup, eq(deliveryGroupInvoice.groupId, deliveryGroup.id))
+                      .where(inArray(deliveryGroupInvoice.invoiceId, invoiceIds))
                 : [];
 
             const flow = buildCanonicalOrderFlow({
@@ -2426,10 +2459,7 @@ const orderQueries = {
                 deliveryLinks,
             });
             const handoffOtps = getRetailerHandoffOtps(invoices, deliveryLinks);
-            const displayStatus = getRetailerOrderDisplayStatus(
-                result.status,
-                deliveryLinks,
-            );
+            const displayStatus = getRetailerOrderDisplayStatus(result.status, deliveryLinks);
 
             const approvedStatuses = [
                 "approved",
@@ -2474,8 +2504,7 @@ const orderQueries = {
                     step: "Partially Invoiced",
                     date: null,
                     completed:
-                        result.status === "partially_invoiced" ||
-                        result.status === "invoiced",
+                        result.status === "partially_invoiced" || result.status === "invoiced",
                 },
                 {
                     step: "Invoiced",
@@ -2539,9 +2568,7 @@ const orderQueries = {
         .input(
             z.object({
                 search: z.string().optional(),
-                status: z
-                    .enum(purchaseOrderStatusValues)
-                    .optional(),
+                status: z.enum(purchaseOrderStatusValues).optional(),
                 dateFrom: z.string().optional(),
                 dateTo: z.string().optional(),
                 page: z.number().default(1),
@@ -2573,9 +2600,7 @@ const orderQueries = {
                     .where(ilike(orderItem.productName, s));
                 const orderIds = matchingOrderIds.map((r) => r.orderId);
                 if (orderIds.length > 0) {
-                    conditions.push(
-                        or(ilike(order.orderNumber, s), inArray(order.id, orderIds))!,
-                    );
+                    conditions.push(or(ilike(order.orderNumber, s), inArray(order.id, orderIds))!);
                 } else {
                     conditions.push(ilike(order.orderNumber, s));
                 }
@@ -2613,7 +2638,9 @@ const orderQueries = {
             const totalCount = countResult[0]?.count || 0;
 
             // Resolve warehouse names
-            const warehouseIds = [...new Set(orders.map((o: any) => o.warehouseId).filter(Boolean))];
+            const warehouseIds = [
+                ...new Set(orders.map((o: any) => o.warehouseId).filter(Boolean)),
+            ];
             const warehouseMap: Record<string, string> = {};
             if (warehouseIds.length > 0) {
                 const warehouses = await db
@@ -2627,10 +2654,20 @@ const orderQueries = {
 
             // Build tracking data for each order
             const trackingOrders = orders.map((o: any) => {
-                const totalOrdered = o.items.reduce((s: number, i: any) => s + (i.modifiedQty ?? i.quantity), 0);
-                const totalDelivered = o.items.reduce((s: number, i: any) => s + (i.deliveredQty || 0), 0);
+                const totalOrdered = o.items.reduce(
+                    (s: number, i: any) => s + (i.modifiedQty ?? i.quantity),
+                    0,
+                );
+                const totalDelivered = o.items.reduce(
+                    (s: number, i: any) => s + (i.deliveredQty || 0),
+                    0,
+                );
                 const isModified = !!o.modifiedByWarehouseAt;
-                const needsApproval = isModified && !o.modificationAcceptedAt && !o.modificationRejectedAt && o.status !== "cancelled";
+                const needsApproval =
+                    isModified &&
+                    !o.modificationAcceptedAt &&
+                    !o.modificationRejectedAt &&
+                    o.status !== "cancelled";
 
                 const approvedStatuses = [
                     "approved",
@@ -2651,26 +2688,66 @@ const orderQueries = {
 
                 const timeline = [
                     { step: "Placed", date: o.createdAt, completed: true },
-                    { step: "Modified", date: o.modifiedByWarehouseAt, completed: !!o.modifiedByWarehouseAt, isModification: true },
-                    { step: "Approved", date: o.modificationAcceptedAt || o.confirmedAt, completed: !!o.confirmedAt || !!o.modificationAcceptedAt || approvedStatuses.includes(o.status) },
-                    { step: "Ready", date: o.readyAt, completed: !!o.readyAt || readyStatuses.includes(o.status) },
-                    { step: "Partially Invoiced", date: null, completed: o.status === "partially_invoiced" || o.status === "invoiced" },
+                    {
+                        step: "Modified",
+                        date: o.modifiedByWarehouseAt,
+                        completed: !!o.modifiedByWarehouseAt,
+                        isModification: true,
+                    },
+                    {
+                        step: "Approved",
+                        date: o.modificationAcceptedAt || o.confirmedAt,
+                        completed:
+                            !!o.confirmedAt ||
+                            !!o.modificationAcceptedAt ||
+                            approvedStatuses.includes(o.status),
+                    },
+                    {
+                        step: "Ready",
+                        date: o.readyAt,
+                        completed: !!o.readyAt || readyStatuses.includes(o.status),
+                    },
+                    {
+                        step: "Partially Invoiced",
+                        date: null,
+                        completed: o.status === "partially_invoiced" || o.status === "invoiced",
+                    },
                     { step: "Invoiced", date: null, completed: o.status === "invoiced" },
-                    { step: "Processing", date: o.processingStartedAt, completed: !!o.processingStartedAt || o.status === "processing" || o.status === "delivered" },
-                    { step: "Packing", date: o.packingStartedAt, completed: !!o.packingStartedAt },
-                    { step: "Delivered", date: o.deliveredAt, completed: !!o.deliveredAt || o.status === "delivered" },
+                    {
+                        step: "Processing",
+                        date: o.processingStartedAt,
+                        completed:
+                            !!o.processingStartedAt ||
+                            o.status === "processing" ||
+                            o.status === "delivered",
+                    },
+                    {
+                        step: "Packing",
+                        date: o.packingStartedAt,
+                        completed: !!o.packingStartedAt,
+                    },
+                    {
+                        step: "Delivered",
+                        date: o.deliveredAt,
+                        completed: !!o.deliveredAt || o.status === "delivered",
+                    },
                     { step: "Received", date: o.receivedAt, completed: !!o.receivedAt },
                 ].filter((t) => !t.isModification || t.completed);
 
                 return {
                     ...o,
                     items: enrichPurchaseOrderItemsFulfillment(o.items),
-                    warehouseName: o.warehouseId ? (warehouseMap[o.warehouseId] || "Unknown") : "Admin",
+                    warehouseName: o.warehouseId
+                        ? warehouseMap[o.warehouseId] || "Unknown"
+                        : "Admin",
                     tracking: {
                         totalOrdered,
                         totalDelivered,
                         remaining: totalOrdered - totalDelivered,
-                        deliveryProgress: totalOrdered > 0 ? Math.round((totalDelivered / totalOrdered) * 100) : 0,
+                        deliveryProgress:
+                            totalOrdered > 0
+                                ? Math.round((totalDelivered / totalOrdered) * 100)
+                                : 0,
                         isPartialDelivery: totalDelivered > 0 && totalDelivered < totalOrdered,
                     },
                     modification: {
@@ -2686,9 +2763,16 @@ const orderQueries = {
             // Alerts / Insights
             const allUserOrders = await db
                 .select({
-                    modifiedCount: sql<number>`count(*) filter (where ${order.modifiedByWarehouseAt} is not null and ${order.modificationAcceptedAt} is null and ${order.modificationRejectedAt} is null and ${order.status} != 'cancelled')`.as("mc"),
-                    pendingApprovals: sql<number>`count(*) filter (where ${order.status} = 'pending')`.as("pa"),
-                    totalActive: sql<number>`count(*) filter (where ${order.status} not in ('delivered', 'cancelled'))`.as("ta"),
+                    modifiedCount:
+                        sql<number>`count(*) filter (where ${order.modifiedByWarehouseAt} is not null and ${order.modificationAcceptedAt} is null and ${order.modificationRejectedAt} is null and ${order.status} != 'cancelled')`.as(
+                            "mc",
+                        ),
+                    pendingApprovals:
+                        sql<number>`count(*) filter (where ${order.status} = 'pending')`.as("pa"),
+                    totalActive:
+                        sql<number>`count(*) filter (where ${order.status} not in ('delivered', 'cancelled'))`.as(
+                            "ta",
+                        ),
                 })
                 .from(order)
                 .where(eq(order.userId, userId));
@@ -2734,11 +2818,15 @@ const orderQueries = {
             }
 
             if (!existingOrder.modifiedByWarehouseAt) {
-                throw new ORPCError("BAD_REQUEST", { message: "This order has no modifications to accept" });
+                throw new ORPCError("BAD_REQUEST", {
+                    message: "This order has no modifications to accept",
+                });
             }
 
             if (existingOrder.modificationAcceptedAt || existingOrder.modificationRejectedAt) {
-                throw new ORPCError("BAD_REQUEST", { message: "Modification already resolved" });
+                throw new ORPCError("BAD_REQUEST", {
+                    message: "Modification already resolved",
+                });
             }
 
             await db
@@ -2781,11 +2869,15 @@ const orderQueries = {
             }
 
             if (!existingOrder.modifiedByWarehouseAt) {
-                throw new ORPCError("BAD_REQUEST", { message: "This order has no modifications to reject" });
+                throw new ORPCError("BAD_REQUEST", {
+                    message: "This order has no modifications to reject",
+                });
             }
 
             if (existingOrder.modificationAcceptedAt || existingOrder.modificationRejectedAt) {
-                throw new ORPCError("BAD_REQUEST", { message: "Modification already resolved" });
+                throw new ORPCError("BAD_REQUEST", {
+                    message: "Modification already resolved",
+                });
             }
 
             if (!["approved", "confirmed"].includes(existingOrder.status)) {
@@ -2924,7 +3016,7 @@ const orderQueries = {
 
             // Resolve warehouse names
             const whIds = [...new Set(orders.map((o: any) => o.warehouseId).filter(Boolean))];
-            let whMap: Record<string, string> = {};
+            const whMap: Record<string, string> = {};
             if (whIds.length > 0) {
                 const whs = await db
                     .select({ id: user.id, name: user.name, shopName: user.shopName })
@@ -2935,10 +3027,13 @@ const orderQueries = {
 
             // Fetch invoices for these orders
             const orderIds = orders.map((o: any) => o.id);
-            let invoiceMap: Record<number, string> = {};
+            const invoiceMap: Record<number, string> = {};
             if (orderIds.length > 0) {
                 const invoices = await db
-                    .select({ orderId: invoice.orderId, invoiceNumber: invoice.invoiceNumber })
+                    .select({
+                        orderId: invoice.orderId,
+                        invoiceNumber: invoice.invoiceNumber,
+                    })
                     .from(invoice)
                     .where(inArray(invoice.orderId, orderIds));
                 for (const inv of invoices) invoiceMap[inv.orderId] = inv.invoiceNumber;
@@ -2946,7 +3041,10 @@ const orderQueries = {
 
             // Build history records
             const historyOrders = orders.map((o: any) => {
-                const totalQty = o.items.reduce((s: number, i: any) => s + (i.modifiedQty ?? i.quantity), 0);
+                const totalQty = o.items.reduce(
+                    (s: number, i: any) => s + (i.modifiedQty ?? i.quantity),
+                    0,
+                );
                 const totalAmount = o.items.reduce((s: number, i: any) => {
                     const qty = i.modifiedQty ?? i.quantity;
                     const price = i.modifiedUnitPrice ?? i.unitPrice;
@@ -2957,11 +3055,23 @@ const orderQueries = {
                 const stockImpact = o.items.map((item: any) => {
                     const qty = item.modifiedQty ?? item.quantity;
                     if (o.status === "delivered") {
-                        return { product: item.productName, change: `+${qty}`, type: "added" };
+                        return {
+                            product: item.productName,
+                            change: `+${qty}`,
+                            type: "added",
+                        };
                     } else if (o.status === "cancelled") {
-                        return { product: item.productName, change: "0", type: "no_impact" };
+                        return {
+                            product: item.productName,
+                            change: "0",
+                            type: "no_impact",
+                        };
                     } else {
-                        return { product: item.productName, change: `-${qty}`, type: "returned" };
+                        return {
+                            product: item.productName,
+                            change: `-${qty}`,
+                            type: "returned",
+                        };
                     }
                 });
 
@@ -2977,7 +3087,7 @@ const orderQueries = {
                     paymentStatus: o.paymentStatus,
                     total: o.total,
                     subtotal: o.subtotal,
-                    warehouseName: o.warehouseId ? (whMap[o.warehouseId] || "Unknown") : "Admin",
+                    warehouseName: o.warehouseId ? whMap[o.warehouseId] || "Unknown" : "Admin",
                     invoiceNumber: invoiceMap[o.id] || null,
                     items: enrichPurchaseOrderItemsFulfillment(o.items),
                     totalQty,
@@ -2995,7 +3105,9 @@ const orderQueries = {
                 .select({
                     day: sql<string>`TO_CHAR(${order.createdAt}, 'YYYY-MM-DD')`.as("day"),
                     orderCount: count(),
-                    totalAmount: sql<number>`COALESCE(SUM(CAST(${order.total} AS numeric)), 0)`.as("total_amount"),
+                    totalAmount: sql<number>`COALESCE(SUM(CAST(${order.total} AS numeric)), 0)`.as(
+                        "total_amount",
+                    ),
                 })
                 .from(order)
                 .where(
@@ -3009,7 +3121,12 @@ const orderQueries = {
                 .orderBy(sql`TO_CHAR(${order.createdAt}, 'YYYY-MM-DD')`);
 
             // Fill missing days
-            const trend: { day: string; label: string; orders: number; amount: number }[] = [];
+            const trend: {
+                day: string;
+                label: string;
+                orders: number;
+                amount: number;
+            }[] = [];
             for (let i = 0; i < 7; i++) {
                 const d = new Date(sevenDaysAgo);
                 d.setDate(d.getDate() + i);
@@ -3024,11 +3141,19 @@ const orderQueries = {
             }
 
             // Distinct wholesalers for filter dropdown
-            const wholesalers = Object.entries(whMap).map(([id, name]) => ({ id, name }));
+            const wholesalers = Object.entries(whMap).map(([id, name]) => ({
+                id,
+                name,
+            }));
 
             return {
                 orders: historyOrders,
-                pagination: { page, limit, totalCount, totalPages: Math.ceil(totalCount / limit) },
+                pagination: {
+                    page,
+                    limit,
+                    totalCount,
+                    totalPages: Math.ceil(totalCount / limit),
+                },
                 trend,
                 wholesalers,
             };
@@ -3111,12 +3236,7 @@ const orderQueries = {
                     invoice,
                     and(eq(invoice.orderId, order.id), eq(invoice.invoiceType, "main")),
                 )
-                .where(
-                    and(
-                        eq(order.userId, shopId),
-                        inArray(order.warehouseId, warehouseIds),
-                    ),
-                );
+                .where(and(eq(order.userId, shopId), inArray(order.warehouseId, warehouseIds)));
 
             const supplierOrderMap = new Map<
                 string,
@@ -3152,8 +3272,8 @@ const orderQueries = {
                 current.totalOrders += 1;
 
                 if (
-                    !current.lastPurchaseDate
-                    || (row.createdAt && row.createdAt > current.lastPurchaseDate)
+                    !current.lastPurchaseDate ||
+                    (row.createdAt && row.createdAt > current.lastPurchaseDate)
                 ) {
                     current.lastPurchaseDate = row.createdAt;
                 }
@@ -3170,13 +3290,7 @@ const orderQueries = {
                     current.totalPaid += total;
                 }
 
-                if (
-                    isPayableOrder(
-                        row.status,
-                        row.paymentStatus,
-                        row.invoicePaymentStatus,
-                    )
-                ) {
+                if (isPayableOrder(row.status, row.paymentStatus, row.invoicePaymentStatus)) {
                     current.totalDue += total;
                 }
             }
@@ -3210,12 +3324,7 @@ const orderQueries = {
                 .innerJoin(order, eq(orderItem.orderId, order.id))
                 .innerJoin(product, eq(orderItem.productId, product.id))
                 .innerJoin(category, eq(product.categoryId, category.id))
-                .where(
-                    and(
-                        eq(order.userId, shopId),
-                        inArray(order.warehouseId, warehouseIds),
-                    ),
-                )
+                .where(and(eq(order.userId, shopId), inArray(order.warehouseId, warehouseIds)))
                 .groupBy(order.warehouseId, category.name);
 
             const inventoryCategoryMap = new Map<
@@ -3259,10 +3368,10 @@ const orderQueries = {
                     pendingOrders: 0,
                     lastPurchaseDate: null,
                 };
-                const primaryCategory = inventoryCategoryMap.get(connection.warehouseId)
-                    ?.categoryName
-                    || orderedCategoryMap.get(connection.warehouseId)?.categoryName
-                    || null;
+                const primaryCategory =
+                    inventoryCategoryMap.get(connection.warehouseId)?.categoryName ||
+                    orderedCategoryMap.get(connection.warehouseId)?.categoryName ||
+                    null;
                 const activityStatus = getConnectedSupplierActivityStatus(
                     orderSummary.lastPurchaseDate,
                     connection.connectedAt,
@@ -3273,10 +3382,7 @@ const orderQueries = {
                     connectionId: connection.connectionId,
                     warehouseId: connection.warehouseId,
                     warehouseSlug: connection.warehouseSlug,
-                    name:
-                        connection.warehouseName
-                        || connection.name
-                        || "Connected Supplier",
+                    name: connection.warehouseName || connection.name || "Connected Supplier",
                     phone: connection.phone,
                     email: connection.email,
                     address: connection.warehouseAddress,
@@ -3305,11 +3411,13 @@ const orderQueries = {
                 ),
             };
 
-            const categories = [...new Set(
-                allSuppliers
-                    .map((supplier) => supplier.primaryCategory)
-                    .filter((value): value is string => Boolean(value)),
-            )].sort((a, b) => a.localeCompare(b));
+            const categories = [
+                ...new Set(
+                    allSuppliers
+                        .map((supplier) => supplier.primaryCategory)
+                        .filter((value): value is string => Boolean(value)),
+                ),
+            ].sort((a, b) => a.localeCompare(b));
 
             let suppliers = allSuppliers;
 
@@ -3337,8 +3445,7 @@ const orderQueries = {
             if (input.category?.trim()) {
                 const categoryFilter = input.category.trim().toLowerCase();
                 suppliers = suppliers.filter(
-                    (supplier) =>
-                        supplier.primaryCategory?.toLowerCase() === categoryFilter,
+                    (supplier) => supplier.primaryCategory?.toLowerCase() === categoryFilter,
                 );
             }
 
@@ -3352,14 +3459,14 @@ const orderQueries = {
                 }
 
                 return (
-                    (b.lastPurchaseDate?.getTime()
-                        || b.lastOrderedAt?.getTime()
-                        || b.connectedAt?.getTime()
-                        || 0)
-                    - (a.lastPurchaseDate?.getTime()
-                        || a.lastOrderedAt?.getTime()
-                        || a.connectedAt?.getTime()
-                        || 0)
+                    (b.lastPurchaseDate?.getTime() ||
+                        b.lastOrderedAt?.getTime() ||
+                        b.connectedAt?.getTime() ||
+                        0) -
+                    (a.lastPurchaseDate?.getTime() ||
+                        a.lastOrderedAt?.getTime() ||
+                        a.connectedAt?.getTime() ||
+                        0)
                 );
             });
 
@@ -3473,9 +3580,7 @@ const orderQueries = {
                     invoice,
                     and(eq(invoice.orderId, order.id), eq(invoice.invoiceType, "main")),
                 )
-                .where(
-                    and(eq(order.userId, shopId), eq(order.warehouseId, warehouseId)),
-                )
+                .where(and(eq(order.userId, shopId), eq(order.warehouseId, warehouseId)))
                 .orderBy(desc(order.createdAt));
 
             const orderStats = {
@@ -3513,19 +3618,13 @@ const orderQueries = {
                 }
 
                 if (
-                    isPurchaseOrderStatus(row.status)
-                    && isOrderPaid(row.paymentStatus, row.invoicePaymentStatus)
+                    isPurchaseOrderStatus(row.status) &&
+                    isOrderPaid(row.paymentStatus, row.invoicePaymentStatus)
                 ) {
                     totalPaid += total;
                 }
 
-                if (
-                    isPayableOrder(
-                        row.status,
-                        row.paymentStatus,
-                        row.invoicePaymentStatus,
-                    )
-                ) {
+                if (isPayableOrder(row.status, row.paymentStatus, row.invoicePaymentStatus)) {
                     totalDue += total;
                     payableOrders += 1;
                     if (row.status === "delivered") {
@@ -3535,10 +3634,12 @@ const orderQueries = {
             }
 
             const latestOrder = supplierOrders[0] || null;
-            const lastPayment = supplierOrders.find((row) =>
-                isPurchaseOrderStatus(row.status)
-                && isOrderPaid(row.paymentStatus, row.invoicePaymentStatus)
-            ) || null;
+            const lastPayment =
+                supplierOrders.find(
+                    (row) =>
+                        isPurchaseOrderStatus(row.status) &&
+                        isOrderPaid(row.paymentStatus, row.invoicePaymentStatus),
+                ) || null;
 
             const pendingOrders = await db.query.order.findMany({
                 where: and(
@@ -3562,37 +3663,37 @@ const orderQueries = {
             });
 
             const pendingOrderIds = pendingOrders.map((row) => row.id);
-            const pendingInvoices = pendingOrderIds.length > 0
-                ? await db
-                    .select({
-                        orderId: invoice.orderId,
-                        deliveryStatus: invoice.deliveryStatus,
-                        expectedDeliveryAt: invoice.expectedDeliveryAt,
-                    })
-                    .from(invoice)
-                    .where(
-                        and(
-                            eq(invoice.invoiceType, "main"),
-                            inArray(invoice.orderId, pendingOrderIds),
-                        ),
-                    )
-                : [];
+            const pendingInvoices =
+                pendingOrderIds.length > 0
+                    ? await db
+                          .select({
+                              orderId: invoice.orderId,
+                              deliveryStatus: invoice.deliveryStatus,
+                              expectedDeliveryAt: invoice.expectedDeliveryAt,
+                          })
+                          .from(invoice)
+                          .where(
+                              and(
+                                  eq(invoice.invoiceType, "main"),
+                                  inArray(invoice.orderId, pendingOrderIds),
+                              ),
+                          )
+                    : [];
 
-            const pendingInvoiceMap = new Map(
-                pendingInvoices.map((row) => [row.orderId, row]),
-            );
+            const pendingInvoiceMap = new Map(pendingInvoices.map((row) => [row.orderId, row]));
 
             const historyOrderRows = supplierOrders.slice(0, 5);
             const historyOrderIds = historyOrderRows.map((row) => row.id);
-            const historyItems = historyOrderIds.length > 0
-                ? await db
-                    .select({
-                        orderId: orderItem.orderId,
-                        productName: orderItem.productName,
-                    })
-                    .from(orderItem)
-                    .where(inArray(orderItem.orderId, historyOrderIds))
-                : [];
+            const historyItems =
+                historyOrderIds.length > 0
+                    ? await db
+                          .select({
+                              orderId: orderItem.orderId,
+                              productName: orderItem.productName,
+                          })
+                          .from(orderItem)
+                          .where(inArray(orderItem.orderId, historyOrderIds))
+                    : [];
 
             const historyItemMap = new Map<number, string[]>();
             for (const item of historyItems) {
@@ -3604,9 +3705,10 @@ const orderQueries = {
             const purchaseHistory = historyOrderRows.map((row) => {
                 const total = toSafeNumber(row.total);
                 const productNames = historyItemMap.get(row.id) ?? [];
-                const productSummary = productNames.length <= 2
-                    ? productNames.join(", ")
-                    : `${productNames[0]}, ${productNames[1]} +${productNames.length - 2} more`;
+                const productSummary =
+                    productNames.length <= 2
+                        ? productNames.join(", ")
+                        : `${productNames[0]}, ${productNames[1]} +${productNames.length - 2} more`;
                 const paid = isOrderPaid(row.paymentStatus, row.invoicePaymentStatus);
                 const dueAmount = isPayableOrder(
                     row.status,
@@ -3623,11 +3725,7 @@ const orderQueries = {
                     productSummary: productSummary || "Multiple products",
                     amount: total,
                     orderStatus: row.status,
-                    paymentStatus: paid
-                        ? "paid"
-                        : dueAmount > 0
-                            ? "due"
-                            : "pending",
+                    paymentStatus: paid ? "paid" : dueAmount > 0 ? "due" : "pending",
                     dueAmount,
                 };
             });
@@ -3636,22 +3734,26 @@ const orderQueries = {
                 .select({
                     productName: orderItem.productName,
                     productImage: orderItem.productImage,
-                    totalQty: sql<number>`SUM(COALESCE(${orderItem.modifiedQty}, ${orderItem.quantity}))`.as("tq"),
+                    totalQty:
+                        sql<number>`SUM(COALESCE(${orderItem.modifiedQty}, ${orderItem.quantity}))`.as(
+                            "tq",
+                        ),
                     orderCount: count(),
                 })
                 .from(orderItem)
                 .innerJoin(order, eq(orderItem.orderId, order.id))
                 .where(and(eq(order.userId, shopId), eq(order.warehouseId, warehouseId)))
                 .groupBy(orderItem.productName, orderItem.productImage)
-                .orderBy(
-                    sql`SUM(COALESCE(${orderItem.modifiedQty}, ${orderItem.quantity})) DESC`,
-                )
+                .orderBy(sql`SUM(COALESCE(${orderItem.modifiedQty}, ${orderItem.quantity})) DESC`)
                 .limit(5);
 
             const topCategories = await db
                 .select({
                     categoryName: category.name,
-                    totalQty: sql<number>`SUM(COALESCE(${orderItem.modifiedQty}, ${orderItem.quantity}))`.as("tq"),
+                    totalQty:
+                        sql<number>`SUM(COALESCE(${orderItem.modifiedQty}, ${orderItem.quantity}))`.as(
+                            "tq",
+                        ),
                     orderCount: count(),
                 })
                 .from(orderItem)
@@ -3660,9 +3762,7 @@ const orderQueries = {
                 .innerJoin(category, eq(product.categoryId, category.id))
                 .where(and(eq(order.userId, shopId), eq(order.warehouseId, warehouseId)))
                 .groupBy(category.name)
-                .orderBy(
-                    sql`SUM(COALESCE(${orderItem.modifiedQty}, ${orderItem.quantity})) DESC`,
-                )
+                .orderBy(sql`SUM(COALESCE(${orderItem.modifiedQty}, ${orderItem.quantity})) DESC`)
                 .limit(3);
 
             const [skuSummary] = await db
@@ -3677,9 +3777,16 @@ const orderQueries = {
 
             const perfData = await db
                 .select({
-                    avgDays: sql<number>`AVG(EXTRACT(EPOCH FROM (${order.deliveredAt} - ${order.createdAt})) / 86400)`.as("ad"),
-                    modifiedCount: sql<number>`count(*) filter (where ${order.modifiedByWarehouseAt} is not null)`.as("mc"),
-                    deliveredTotal: sql<number>`count(*) filter (where ${order.status} = 'delivered')`.as("dt"),
+                    avgDays:
+                        sql<number>`AVG(EXTRACT(EPOCH FROM (${order.deliveredAt} - ${order.createdAt})) / 86400)`.as(
+                            "ad",
+                        ),
+                    modifiedCount:
+                        sql<number>`count(*) filter (where ${order.modifiedByWarehouseAt} is not null)`.as(
+                            "mc",
+                        ),
+                    deliveredTotal:
+                        sql<number>`count(*) filter (where ${order.status} = 'delivered')`.as("dt"),
                 })
                 .from(order)
                 .where(
@@ -3692,11 +3799,10 @@ const orderQueries = {
 
             const avgDeliveryDays = Math.round(Number(perfData[0]?.avgDays) || 0);
             const deliveredTotal = Number(perfData[0]?.deliveredTotal) || 0;
-            const modifiedRate = deliveredTotal > 0
-                ? Math.round(
-                    ((Number(perfData[0]?.modifiedCount) || 0) / deliveredTotal) * 100,
-                )
-                : 0;
+            const modifiedRate =
+                deliveredTotal > 0
+                    ? Math.round(((Number(perfData[0]?.modifiedCount) || 0) / deliveredTotal) * 100)
+                    : 0;
 
             const complaintRows = await db
                 .select({
@@ -3720,12 +3826,11 @@ const orderQueries = {
 
             const totalIssues = complaintRows.length;
             const resolvedIssues = complaintRows.filter((row) =>
-                ["resolved", "closed"].includes(row.status)
+                ["resolved", "closed"].includes(row.status),
             ).length;
             const latestIssue = complaintRows[0] || null;
-            const issueRate = orderStats.total > 0
-                ? Math.round((totalIssues / orderStats.total) * 100)
-                : 0;
+            const issueRate =
+                orderStats.total > 0 ? Math.round((totalIssues / orderStats.total) * 100) : 0;
 
             const assignment = await db.query.customerAssignment.findFirst({
                 where: eq(customerAssignment.customerId, shopId),
@@ -3743,16 +3848,17 @@ const orderQueries = {
                 },
             });
 
-            const assignedSalesman = assignment?.salesman
-                && assignment.salesman.role === "salesman"
-                && assignment.salesman.warehouseId === warehouseId
-                ? {
-                    id: assignment.salesman.id,
-                    name: assignment.salesman.name,
-                    phone: assignment.salesman.phoneNumber,
-                    status: assignment.salesman.banned ? "inactive" : "active",
-                }
-                : null;
+            const assignedSalesman =
+                assignment?.salesman &&
+                assignment.salesman.role === "salesman" &&
+                assignment.salesman.warehouseId === warehouseId
+                    ? {
+                          id: assignment.salesman.id,
+                          name: assignment.salesman.name,
+                          phone: assignment.salesman.phoneNumber,
+                          status: assignment.salesman.banned ? "inactive" : "active",
+                      }
+                    : null;
 
             const warehouseAreas = await db.query.deliveryArea.findMany({
                 where: and(
@@ -3805,8 +3911,8 @@ const orderQueries = {
 
                 const matchedHint = deliveryHints.find((hint) => {
                     const normalizedHint = normalizeDeliveryText(hint.value);
-                    return areaTerms.some((term) =>
-                        normalizedHint.includes(term) || term.includes(normalizedHint)
+                    return areaTerms.some(
+                        (term) => normalizedHint.includes(term) || term.includes(normalizedHint),
                     );
                 });
 
@@ -3859,21 +3965,21 @@ const orderQueries = {
             );
             const matchedWeeklyDays = matchedArea
                 ? matchedArea.schedules.map((schedule) => ({
-                    dayOfWeek: schedule.dayOfWeek,
-                    dayName: DAY_NAMES[schedule.dayOfWeek] || "Unknown",
-                    areaNames: [matchedArea!.name],
-                    riderName: schedule.defaultRider?.name ?? null,
-                    riderPhone: schedule.defaultRider?.phoneNumber ?? null,
-                }))
+                      dayOfWeek: schedule.dayOfWeek,
+                      dayName: DAY_NAMES[schedule.dayOfWeek] || "Unknown",
+                      areaNames: [matchedArea!.name],
+                      riderName: schedule.defaultRider?.name ?? null,
+                      riderPhone: schedule.defaultRider?.phoneNumber ?? null,
+                  }))
                 : [];
-            const deliveryScope = matchedWeeklyDays.length > 0
-                ? "matched_area"
-                : warehouseWeeklyDays.length > 0
-                    ? "warehouse"
-                    : "none";
-            const effectiveWeeklyDays = deliveryScope === "matched_area"
-                ? matchedWeeklyDays
-                : warehouseWeeklyDays;
+            const deliveryScope =
+                matchedWeeklyDays.length > 0
+                    ? "matched_area"
+                    : warehouseWeeklyDays.length > 0
+                      ? "warehouse"
+                      : "none";
+            const effectiveWeeklyDays =
+                deliveryScope === "matched_area" ? matchedWeeklyDays : warehouseWeeklyDays;
             const today = new Date();
             const todayDayOfWeek = today.getDay();
             const hasDeliveryToday = effectiveWeeklyDays.some(
@@ -3897,8 +4003,7 @@ const orderQueries = {
                 : "warehouse_supplier";
             const bestCategory = topCategories[0]?.categoryName || null;
 
-            let reliability: "Excellent" | "Good" | "Stable" | "Needs attention" =
-                "Stable";
+            let reliability: "Excellent" | "Good" | "Stable" | "Needs attention" = "Stable";
             if (issueRate === 0 && modifiedRate <= 5) {
                 reliability = "Excellent";
             } else if (issueRate <= 2 && modifiedRate <= 10) {
@@ -3913,10 +4018,7 @@ const orderQueries = {
                     warehouseSlug: warehouseUser.warehouseSlug,
                     name: warehouseUser.warehouseName || warehouseUser.name,
                     type: businessType,
-                    location:
-                        locationParts.join(", ")
-                        || warehouseUser.address
-                        || null,
+                    location: locationParts.join(", ") || warehouseUser.address || null,
                     phone: warehouseUser.phoneNumber,
                     email: warehouseUser.email,
                     image: warehouseUser.image,
@@ -3929,8 +4031,7 @@ const orderQueries = {
                     category: warehouseProfile?.businessCategory || null,
                     yearsInBusiness: warehouseProfile?.yearsInBusiness || null,
                     yourStoreName: shopUser?.shopName || shopUser?.name || null,
-                    yourAddress:
-                        shopUser?.shopAddress || latestOrder?.shippingAddress || null,
+                    yourAddress: shopUser?.shopAddress || latestOrder?.shippingAddress || null,
                 },
                 documents: {
                     applicationStatus: warehouseProfile?.status || null,
@@ -3982,10 +4083,10 @@ const orderQueries = {
                     payableOrders,
                     lastPayment: lastPayment
                         ? {
-                            orderNumber: lastPayment.orderNumber,
-                            amount: toSafeNumber(lastPayment.total),
-                            date: lastPayment.createdAt,
-                        }
+                              orderNumber: lastPayment.orderNumber,
+                              amount: toSafeNumber(lastPayment.total),
+                              date: lastPayment.createdAt,
+                          }
                         : null,
                     alert:
                         totalDue > 0
@@ -4015,10 +4116,10 @@ const orderQueries = {
                         avgDeliveryDays <= 1
                             ? "Fast"
                             : avgDeliveryDays <= 3
-                                ? "Normal"
-                                : avgDeliveryDays > 0
-                                    ? "Slow"
-                                    : "No delivery data",
+                              ? "Normal"
+                              : avgDeliveryDays > 0
+                                ? "Slow"
+                                : "No delivery data",
                     orderAccuracy: deliveredTotal > 0 ? 100 - modifiedRate : 100,
                     reliability,
                     issueRate,
@@ -4029,31 +4130,30 @@ const orderQueries = {
                     unresolvedIssues: totalIssues - resolvedIssues,
                     lastIssue: latestIssue
                         ? {
-                            type: latestIssue.type,
-                            status: latestIssue.status,
-                            description: latestIssue.description,
-                            delayReason: latestIssue.delayReason,
-                            createdAt: latestIssue.createdAt,
-                        }
+                              type: latestIssue.type,
+                              status: latestIssue.status,
+                              description: latestIssue.description,
+                              delayReason: latestIssue.delayReason,
+                              createdAt: latestIssue.createdAt,
+                          }
                         : null,
                 },
                 salesman: assignedSalesman,
                 delivery: {
                     scope: deliveryScope,
                     matchSource,
-                    yourAddress:
-                        shopUser?.shopAddress || latestOrder?.shippingAddress || null,
+                    yourAddress: shopUser?.shopAddress || latestOrder?.shippingAddress || null,
                     areaHint:
-                        latestOrder?.shippingArea
-                        || latestOrder?.shippingCity
-                        || shopUser?.serviceArea
-                        || null,
+                        latestOrder?.shippingArea ||
+                        latestOrder?.shippingCity ||
+                        shopUser?.serviceArea ||
+                        null,
                     matchedArea: matchedArea
                         ? {
-                            id: matchedArea.id,
-                            name: matchedArea.name,
-                            description: matchedArea.description,
-                        }
+                              id: matchedArea.id,
+                              name: matchedArea.name,
+                              description: matchedArea.description,
+                          }
                         : null,
                     availableAreas: warehouseAreas.map((areaRow) => areaRow.name),
                     weeklyDays: effectiveWeeklyDays,
@@ -4066,20 +4166,20 @@ const orderQueries = {
                     headline: bestCategory
                         ? `This supplier performs strongest in ${bestCategory}.`
                         : orderStats.total > 0
-                            ? "This supplier already has purchase activity."
-                            : "Connection is active, but no transactions have been recorded yet.",
+                          ? "This supplier already has purchase activity."
+                          : "Connection is active, but no transactions have been recorded yet.",
                     warning:
                         totalDue > 0
                             ? `Outstanding payable balance: Tk ${totalDue.toLocaleString("en-BD")}`
                             : latestIssue
-                                ? `Latest issue: ${latestIssue.type.replace(/_/g, " ")}`
-                                : null,
+                              ? `Latest issue: ${latestIssue.type.replace(/_/g, " ")}`
+                              : null,
                     suggestion:
                         totalDue > 0
                             ? "Settle pending dues before scaling order volume."
                             : orderStats.pending + orderStats.confirmed + orderStats.processing > 0
-                                ? "Track active orders closely against the delivery schedule."
-                                : "Use this connection to expand repeat purchasing in strong categories.",
+                              ? "Track active orders closely against the delivery schedule."
+                              : "Use this connection to expand repeat purchasing in strong categories.",
                     compareCategory: bestCategory,
                 },
                 emptyState: {
@@ -4120,10 +4220,7 @@ const orderQueries = {
                 .from(order)
                 .leftJoin(
                     invoice,
-                    and(
-                        eq(invoice.orderId, order.id),
-                        eq(invoice.invoiceType, "main"),
-                    ),
+                    and(eq(invoice.orderId, order.id), eq(invoice.invoiceType, "main")),
                 )
                 .where(and(eq(order.userId, userId), sql`${order.warehouseId} is not null`));
 
@@ -4173,8 +4270,8 @@ const orderQueries = {
                 existing.totalOrders += 1;
 
                 if (
-                    !existing.lastOrderDate
-                    || (row.createdAt && row.createdAt > existing.lastOrderDate)
+                    !existing.lastOrderDate ||
+                    (row.createdAt && row.createdAt > existing.lastOrderDate)
                 ) {
                     existing.lastOrderDate = row.createdAt;
                     existing.lastPurchaseAmount = total;
@@ -4192,13 +4289,7 @@ const orderQueries = {
                     existing.totalPaid += total;
                 }
 
-                if (
-                    isPayableOrder(
-                        row.status,
-                        row.paymentStatus,
-                        row.invoicePaymentStatus,
-                    )
-                ) {
+                if (isPayableOrder(row.status, row.paymentStatus, row.invoicePaymentStatus)) {
                     existing.totalPayable += total;
                     existing.payableOrders += 1;
                 }
@@ -4301,9 +4392,7 @@ const orderQueries = {
                     return b.totalPurchased - a.totalPurchased;
                 }
 
-                return (
-                    (b.lastOrderDate?.getTime() || 0) - (a.lastOrderDate?.getTime() || 0)
-                );
+                return (b.lastOrderDate?.getTime() || 0) - (a.lastOrderDate?.getTime() || 0);
             });
 
             return {
@@ -4391,10 +4480,7 @@ const orderQueries = {
                 .from(order)
                 .leftJoin(
                     invoice,
-                    and(
-                        eq(invoice.orderId, order.id),
-                        eq(invoice.invoiceType, "main"),
-                    ),
+                    and(eq(invoice.orderId, order.id), eq(invoice.invoiceType, "main")),
                 )
                 .where(and(eq(order.userId, userId), eq(order.warehouseId, whId)))
                 .orderBy(desc(order.createdAt));
@@ -4429,19 +4515,13 @@ const orderQueries = {
                 }
 
                 if (
-                    isPurchaseOrderStatus(row.status)
-                    && isOrderPaid(row.paymentStatus, row.invoicePaymentStatus)
+                    isPurchaseOrderStatus(row.status) &&
+                    isOrderPaid(row.paymentStatus, row.invoicePaymentStatus)
                 ) {
                     totalPaid += total;
                 }
 
-                if (
-                    isPayableOrder(
-                        row.status,
-                        row.paymentStatus,
-                        row.invoicePaymentStatus,
-                    )
-                ) {
+                if (isPayableOrder(row.status, row.paymentStatus, row.invoicePaymentStatus)) {
                     totalDue += total;
                     payableOrders += 1;
                 }
@@ -4457,7 +4537,13 @@ const orderQueries = {
                 ),
                 with: {
                     items: {
-                        columns: { id: true, productName: true, productImage: true, quantity: true, modifiedQty: true },
+                        columns: {
+                            id: true,
+                            productName: true,
+                            productImage: true,
+                            quantity: true,
+                            modifiedQty: true,
+                        },
                     },
                 },
                 orderBy: [desc(order.createdAt)],
@@ -4468,12 +4554,12 @@ const orderQueries = {
             const historyOrderIds = historyOrderRows.map((row) => row.id);
             const historyItems = historyOrderIds.length
                 ? await db
-                    .select({
-                        orderId: orderItem.orderId,
-                        productName: orderItem.productName,
-                    })
-                    .from(orderItem)
-                    .where(inArray(orderItem.orderId, historyOrderIds))
+                      .select({
+                          orderId: orderItem.orderId,
+                          productName: orderItem.productName,
+                      })
+                      .from(orderItem)
+                      .where(inArray(orderItem.orderId, historyOrderIds))
                 : [];
 
             const historyItemMap = new Map<number, string[]>();
@@ -4486,9 +4572,10 @@ const orderQueries = {
             const purchaseHistory = historyOrderRows.map((row) => {
                 const total = toSafeNumber(row.total);
                 const productNames = historyItemMap.get(row.id) ?? [];
-                const productSummary = productNames.length <= 2
-                    ? productNames.join(", ")
-                    : `${productNames[0]}, ${productNames[1]} +${productNames.length - 2} more`;
+                const productSummary =
+                    productNames.length <= 2
+                        ? productNames.join(", ")
+                        : `${productNames[0]}, ${productNames[1]} +${productNames.length - 2} more`;
                 const paid = isOrderPaid(row.paymentStatus, row.invoicePaymentStatus);
                 const dueAmount = isPayableOrder(
                     row.status,
@@ -4505,19 +4592,13 @@ const orderQueries = {
                     productSummary: productSummary || "Multiple products",
                     amount: total,
                     orderStatus: row.status,
-                    paymentStatus: paid
-                        ? "paid"
-                        : dueAmount > 0
-                            ? "due"
-                            : "pending",
+                    paymentStatus: paid ? "paid" : dueAmount > 0 ? "due" : "pending",
                     dueAmount,
                 };
             });
 
             const recentHistory = supplierOrders
-                .filter((row) =>
-                    ["delivered", "cancelled", "returned"].includes(row.status),
-                )
+                .filter((row) => ["delivered", "cancelled", "returned"].includes(row.status))
                 .slice(0, 5)
                 .map((row) => ({
                     id: row.id,
@@ -4531,7 +4612,10 @@ const orderQueries = {
                 .select({
                     productName: orderItem.productName,
                     productImage: orderItem.productImage,
-                    totalQty: sql<number>`SUM(COALESCE(${orderItem.modifiedQty}, ${orderItem.quantity}))`.as("tq"),
+                    totalQty:
+                        sql<number>`SUM(COALESCE(${orderItem.modifiedQty}, ${orderItem.quantity}))`.as(
+                            "tq",
+                        ),
                     orderCount: count(),
                 })
                 .from(orderItem)
@@ -4543,9 +4627,16 @@ const orderQueries = {
 
             const perfData = await db
                 .select({
-                    avgDays: sql<number>`AVG(EXTRACT(EPOCH FROM (${order.deliveredAt} - ${order.createdAt})) / 86400)`.as("ad"),
-                    modifiedCount: sql<number>`count(*) filter (where ${order.modifiedByWarehouseAt} is not null)`.as("mc"),
-                    deliveredTotal: sql<number>`count(*) filter (where ${order.status} = 'delivered')`.as("dt"),
+                    avgDays:
+                        sql<number>`AVG(EXTRACT(EPOCH FROM (${order.deliveredAt} - ${order.createdAt})) / 86400)`.as(
+                            "ad",
+                        ),
+                    modifiedCount:
+                        sql<number>`count(*) filter (where ${order.modifiedByWarehouseAt} is not null)`.as(
+                            "mc",
+                        ),
+                    deliveredTotal:
+                        sql<number>`count(*) filter (where ${order.status} = 'delivered')`.as("dt"),
                 })
                 .from(order)
                 .where(
@@ -4558,7 +4649,9 @@ const orderQueries = {
 
             const avgDeliveryDays = Math.round(Number(perfData[0]?.avgDays) || 0);
             const deliveredTotal = Number(perfData[0]?.deliveredTotal) || 1;
-            const modifiedRate = Math.round(((Number(perfData[0]?.modifiedCount) || 0) / deliveredTotal) * 100);
+            const modifiedRate = Math.round(
+                ((Number(perfData[0]?.modifiedCount) || 0) / deliveredTotal) * 100,
+            );
 
             const assignment = await db.query.customerAssignment.findFirst({
                 where: eq(customerAssignment.customerId, userId),
@@ -4576,22 +4669,20 @@ const orderQueries = {
                 },
             });
 
-            const assignedSalesman = assignment?.salesman
-                && assignment.salesman.role === "salesman"
-                && assignment.salesman.warehouseId === whId
-                ? {
-                    id: assignment.salesman.id,
-                    name: assignment.salesman.name,
-                    phone: assignment.salesman.phoneNumber,
-                    status: assignment.salesman.banned ? "inactive" : "active",
-                }
-                : null;
+            const assignedSalesman =
+                assignment?.salesman &&
+                assignment.salesman.role === "salesman" &&
+                assignment.salesman.warehouseId === whId
+                    ? {
+                          id: assignment.salesman.id,
+                          name: assignment.salesman.name,
+                          phone: assignment.salesman.phoneNumber,
+                          status: assignment.salesman.banned ? "inactive" : "active",
+                      }
+                    : null;
 
             const warehouseAreas = await db.query.deliveryArea.findMany({
-                where: and(
-                    eq(deliveryArea.warehouseId, whId),
-                    eq(deliveryArea.status, "active"),
-                ),
+                where: and(eq(deliveryArea.warehouseId, whId), eq(deliveryArea.status, "active")),
                 with: {
                     schedules: {
                         where: eq(deliverySchedule.isActive, true),
@@ -4632,18 +4723,14 @@ const orderQueries = {
             let matchSource: string | null = null;
 
             for (const areaRow of warehouseAreas) {
-                const areaTerms = [
-                    areaRow.name,
-                    areaRow.slug,
-                    areaRow.description,
-                ]
+                const areaTerms = [areaRow.name, areaRow.slug, areaRow.description]
                     .map((value) => normalizeDeliveryText(value))
                     .filter(Boolean);
 
                 const matchedHint = deliveryHints.find((hint) => {
                     const normalizedHint = normalizeDeliveryText(hint.value);
-                    return areaTerms.some((term) =>
-                        normalizedHint.includes(term) || term.includes(normalizedHint)
+                    return areaTerms.some(
+                        (term) => normalizedHint.includes(term) || term.includes(normalizedHint),
                     );
                 });
 
@@ -4696,21 +4783,21 @@ const orderQueries = {
             );
             const matchedWeeklyDays = matchedArea
                 ? matchedArea.schedules.map((schedule) => ({
-                    dayOfWeek: schedule.dayOfWeek,
-                    dayName: DAY_NAMES[schedule.dayOfWeek] || "Unknown",
-                    areaNames: [matchedArea!.name],
-                    riderName: schedule.defaultRider?.name ?? null,
-                    riderPhone: schedule.defaultRider?.phoneNumber ?? null,
-                }))
+                      dayOfWeek: schedule.dayOfWeek,
+                      dayName: DAY_NAMES[schedule.dayOfWeek] || "Unknown",
+                      areaNames: [matchedArea!.name],
+                      riderName: schedule.defaultRider?.name ?? null,
+                      riderPhone: schedule.defaultRider?.phoneNumber ?? null,
+                  }))
                 : [];
-            const deliveryScope = matchedWeeklyDays.length > 0
-                ? "matched_area"
-                : warehouseWeeklyDays.length > 0
-                    ? "warehouse"
-                    : "none";
-            const effectiveWeeklyDays = deliveryScope === "matched_area"
-                ? matchedWeeklyDays
-                : warehouseWeeklyDays;
+            const deliveryScope =
+                matchedWeeklyDays.length > 0
+                    ? "matched_area"
+                    : warehouseWeeklyDays.length > 0
+                      ? "warehouse"
+                      : "none";
+            const effectiveWeeklyDays =
+                deliveryScope === "matched_area" ? matchedWeeklyDays : warehouseWeeklyDays;
             const today = new Date();
             const todayDayOfWeek = today.getDay();
             const hasDeliveryToday = effectiveWeeklyDays.some(
@@ -4752,13 +4839,17 @@ const orderQueries = {
                     scope: deliveryScope,
                     matchSource,
                     yourAddress: shopUser?.shopAddress || latestOrder?.shippingAddress || null,
-                    areaHint: latestOrder?.shippingArea || latestOrder?.shippingCity || shopUser?.serviceArea || null,
+                    areaHint:
+                        latestOrder?.shippingArea ||
+                        latestOrder?.shippingCity ||
+                        shopUser?.serviceArea ||
+                        null,
                     matchedArea: matchedArea
                         ? {
-                            id: matchedArea.id,
-                            name: matchedArea.name,
-                            description: matchedArea.description,
-                        }
+                              id: matchedArea.id,
+                              name: matchedArea.name,
+                              description: matchedArea.description,
+                          }
                         : null,
                     availableAreas: warehouseAreas.map((areaRow) => areaRow.name),
                     weeklyDays: effectiveWeeklyDays,
@@ -4779,12 +4870,11 @@ const orderQueries = {
                     lastOrderStatus: latestOrder?.status || null,
                     pendingOrders:
                         orderStats.pending + orderStats.confirmed + orderStats.processing,
-                    activeOrders:
-                        orderStats.pending + orderStats.confirmed + orderStats.processing,
+                    activeOrders: orderStats.pending + orderStats.confirmed + orderStats.processing,
                     payableOrders,
                     lastDeliveredAt:
-                        supplierOrders.find((row) => row.status === "delivered")
-                            ?.deliveredAt || null,
+                        supplierOrders.find((row) => row.status === "delivered")?.deliveredAt ||
+                        null,
                 },
                 pendingOrders: pendingOrders.map((o: any) => ({
                     id: o.id,
@@ -4811,7 +4901,8 @@ const orderQueries = {
                     avgDeliveryDays,
                     modificationRate: modifiedRate,
                     orderAccuracy: 100 - modifiedRate,
-                    deliverySpeed: avgDeliveryDays <= 1 ? "Fast" : avgDeliveryDays <= 3 ? "Normal" : "Slow",
+                    deliverySpeed:
+                        avgDeliveryDays <= 1 ? "Fast" : avgDeliveryDays <= 3 ? "Normal" : "Slow",
                 },
             };
         }),
@@ -4842,23 +4933,13 @@ const orderQueries = {
             const [pendingStats] = await db
                 .select({ count: count(order.id) })
                 .from(order)
-                .where(
-                    and(
-                        eq(order.userId, userId),
-                        eq(order.status, "pending"),
-                    ),
-                );
+                .where(and(eq(order.userId, userId), eq(order.status, "pending")));
 
             // Delivered orders
             const [deliveredStats] = await db
                 .select({ count: count(order.id) })
                 .from(order)
-                .where(
-                    and(
-                        eq(order.userId, userId),
-                        eq(order.status, "delivered"),
-                    ),
-                );
+                .where(and(eq(order.userId, userId), eq(order.status, "delivered")));
 
             // Retail catalog size (inventory items)
             const [inventoryStats] = await db
@@ -4867,12 +4948,7 @@ const orderQueries = {
                     totalStock: sum(inventory.availableQty),
                 })
                 .from(inventory)
-                .where(
-                    and(
-                        eq(inventory.ownerType, "shop"),
-                        eq(inventory.ownerId, userId),
-                    ),
-                );
+                .where(and(eq(inventory.ownerType, "shop"), eq(inventory.ownerId, userId)));
 
             return {
                 totalOrders: orderStats?.totalOrders || 0,
@@ -4900,7 +4976,9 @@ const incomingOrderQueries = {
         })
         .input(
             z.object({
-                status: z.enum(["all", "pending", "confirmed", "processing", "delivered", "cancelled"]).default("all"),
+                status: z
+                    .enum(["all", "pending", "confirmed", "processing", "delivered", "cancelled"])
+                    .default("all"),
                 page: z.number().default(1),
                 limit: z.number().default(20),
             }),
@@ -4911,10 +4989,7 @@ const incomingOrderQueries = {
             const limit = input.limit;
             const offset = (page - 1) * limit;
 
-            const conditions: SQL[] = [
-                eq(order.shopId, userId),
-                eq(order.orderType, "b2c"),
-            ];
+            const conditions: SQL[] = [eq(order.shopId, userId), eq(order.orderType, "b2c")];
 
             if (input.status !== "all") {
                 conditions.push(eq(order.status, input.status));
@@ -4950,20 +5025,15 @@ const incomingOrderQueries = {
                     .orderBy(desc(order.createdAt))
                     .limit(limit)
                     .offset(offset),
-                db
-                    .select({ count: count() })
-                    .from(order)
-                    .where(where),
+                db.select({ count: count() }).from(order).where(where),
             ]);
 
             // Fetch items for each order
             const orderIds = orders.map((o) => o.id);
-            const items = orderIds.length > 0
-                ? await db
-                    .select()
-                    .from(orderItem)
-                    .where(inArray(orderItem.orderId, orderIds))
-                : [];
+            const items =
+                orderIds.length > 0
+                    ? await db.select().from(orderItem).where(inArray(orderItem.orderId, orderIds))
+                    : [];
 
             const itemsByOrder = new Map<number, typeof items>();
             for (const item of items) {
@@ -5027,10 +5097,7 @@ const incomingOrderQueries = {
             if (input.status === "delivered") updateData.deliveredAt = new Date();
             if (input.status === "cancelled") updateData.cancelledAt = new Date();
 
-            await db
-                .update(order)
-                .set(updateData)
-                .where(eq(order.id, input.orderId));
+            await db.update(order).set(updateData).where(eq(order.id, input.orderId));
 
             return {
                 success: true,
@@ -5052,22 +5119,26 @@ const warehouseOrderQueries = {
         .input(
             z.object({
                 warehouseSlug: z.string(),
-                items: z.array(
-                    z.object({
-                        variantId: z.number(),
-                        quantity: z.number().int().min(1),
-                        supplyMode: warehouseOrderModeSchema.optional(),
-                        fulfillmentMode: warehouseOrderModeSchema.optional(),
-                        targetVariantId: z.number().optional().nullable(),
-                    }),
-                ).min(1),
+                items: z
+                    .array(
+                        z.object({
+                            variantId: z.number(),
+                            quantity: z.number().int().min(1),
+                            supplyMode: warehouseOrderModeSchema.optional(),
+                            fulfillmentMode: warehouseOrderModeSchema.optional(),
+                            targetVariantId: z.number().optional().nullable(),
+                        }),
+                    )
+                    .min(1),
                 shippingName: z.string().min(1),
                 shippingPhone: z.string().min(1),
                 shippingAddress: z.string().min(1),
                 shippingCity: z.string().min(1),
                 shippingArea: z.string().optional(),
                 customerNote: z.string().optional(),
-                paymentMethod: z.enum(["cash_on_delivery", "bkash", "nagad", "bank_transfer", "card"]).default("cash_on_delivery"),
+                paymentMethod: z
+                    .enum(["cash_on_delivery", "bkash", "nagad", "bank_transfer", "card"])
+                    .default("cash_on_delivery"),
             }),
         )
         .handler(async ({ context, input }) => {
@@ -5075,14 +5146,13 @@ const warehouseOrderQueries = {
 
             // 1. Find warehouse
             const warehouseUser = await db
-                .select({ id: user.id, name: user.name, warehouseName: user.warehouseName })
+                .select({
+                    id: user.id,
+                    name: user.name,
+                    warehouseName: user.warehouseName,
+                })
                 .from(user)
-                .where(
-                    and(
-                        eq(user.warehouseSlug, input.warehouseSlug),
-                        eq(user.role, "warehouse"),
-                    ),
-                )
+                .where(and(eq(user.warehouseSlug, input.warehouseSlug), eq(user.role, "warehouse")))
                 .limit(1);
 
             if (warehouseUser.length === 0) {
@@ -5096,8 +5166,8 @@ const warehouseOrderQueries = {
                 where: and(
                     eq(shopWarehouseConnection.shopId, userId),
                     eq(shopWarehouseConnection.warehouseId, warehouseId),
-                    eq(shopWarehouseConnection.status, "active")
-                )
+                    eq(shopWarehouseConnection.status, "active"),
+                ),
             });
 
             if (!connection) {
@@ -5178,11 +5248,13 @@ const warehouseOrderQueries = {
                 const [cartonCountResult] = await db
                     .select({ cnt: count() })
                     .from(carton)
-                    .where(and(
-                        eq(carton.warehouseId, warehouseId),
-                        eq(carton.variantId, item.variantId),
-                        eq(carton.status, "active"),
-                    ));
+                    .where(
+                        and(
+                            eq(carton.warehouseId, warehouseId),
+                            eq(carton.variantId, item.variantId),
+                            eq(carton.status, "active"),
+                        ),
+                    );
                 const activeCartonCount = cartonCountResult?.cnt ?? 0;
                 const requestedMode = item.fulfillmentMode ?? item.supplyMode ?? null;
                 const resolvedMode = resolveWarehouseOrderMode({
@@ -5233,12 +5305,13 @@ const warehouseOrderQueries = {
 
                 const isLooseVariant = (inv.variant?.packType || "").toLowerCase() === "loose";
                 const isLooseOrder = resolvedMode.mode === "loose";
-                const usesContainerPricing =
-                    resolvedMode.stockStrategy === "container_count";
+                const usesContainerPricing = resolvedMode.stockStrategy === "container_count";
 
                 if (isLooseOrder) {
                     // ═══ LOOSE ORDER: Use variant's base price directly — no carton calculation ═══
-                    console.log(`[ORDER-PRICE] variant=${item.variantId}: Loose order — using base variant price: ${unitPrice}`);
+                    console.log(
+                        `[ORDER-PRICE] variant=${item.variantId}: Loose order — using base variant price: ${unitPrice}`,
+                    );
                 } else if (usesContainerPricing) {
                     // ═══ PACK/CARTON ORDER: Resolve per-carton price ═══
 
@@ -5267,35 +5340,50 @@ const warehouseOrderQueries = {
 
                     // Price resolution: carton.cartonPrice → carton.config.cartonPrice → cartonConfig.cartonPrice → calculated
                     const cartonRecordPrice = Number(activeCarton?.cartonPrice || 0);
-                    const linkedConfigPrice = Number((activeCarton as any)?.config?.cartonPrice || 0);
+                    const linkedConfigPrice = Number(
+                        (activeCarton as any)?.config?.cartonPrice || 0,
+                    );
                     const directConfigPrice = Number(variantConfig?.cartonPrice || 0);
 
                     if (cartonRecordPrice > 0) {
                         unitPrice = activeCarton!.cartonPrice!;
-                        console.log(`[ORDER-PRICE] variant=${item.variantId}: Using carton record price: ${unitPrice}`);
+                        console.log(
+                            `[ORDER-PRICE] variant=${item.variantId}: Using carton record price: ${unitPrice}`,
+                        );
                     } else if (linkedConfigPrice > 0) {
                         unitPrice = (activeCarton as any).config.cartonPrice;
-                        console.log(`[ORDER-PRICE] variant=${item.variantId}: Using linked config price: ${unitPrice}`);
+                        console.log(
+                            `[ORDER-PRICE] variant=${item.variantId}: Using linked config price: ${unitPrice}`,
+                        );
                     } else if (directConfigPrice > 0) {
                         unitPrice = variantConfig!.cartonPrice;
-                        console.log(`[ORDER-PRICE] variant=${item.variantId}: Using direct config price: ${unitPrice}`);
+                        console.log(
+                            `[ORDER-PRICE] variant=${item.variantId}: Using direct config price: ${unitPrice}`,
+                        );
                     } else if (isLooseVariant && activeCarton) {
                         // Loose fallback: calculate from per-KG price × carton weight
                         const variantWeightKg = Number(inv.variant?.weightKg || 0);
                         const rawUnitPrice = Number(unitPrice);
                         const cartonWeightKg = Number(activeCarton.totalWeightKg) || 0;
-                        const perKg = variantWeightKg > 0 ? rawUnitPrice / variantWeightKg : rawUnitPrice;
+                        const perKg =
+                            variantWeightKg > 0 ? rawUnitPrice / variantWeightKg : rawUnitPrice;
                         unitPrice = (perKg * cartonWeightKg).toFixed(2);
-                        console.log(`[ORDER-PRICE] variant=${item.variantId}: Loose calc: perKg=${perKg}, cartonKg=${cartonWeightKg}, price=${unitPrice}`);
+                        console.log(
+                            `[ORDER-PRICE] variant=${item.variantId}: Loose calc: perKg=${perKg}, cartonKg=${cartonWeightKg}, price=${unitPrice}`,
+                        );
                     } else if (!isLooseVariant && activeCarton) {
                         // Pack fallback: multiply per-pack price by packs per carton
                         const packsPerCarton = activeCarton.totalPacks || 0;
                         if (packsPerCarton > 0) {
                             unitPrice = (Number(unitPrice) * packsPerCarton).toFixed(2);
-                            console.log(`[ORDER-PRICE] variant=${item.variantId}: Pack calc: packPrice=${inv.retailPrice || inv.variant?.price} × ${packsPerCarton} = ${unitPrice}`);
+                            console.log(
+                                `[ORDER-PRICE] variant=${item.variantId}: Pack calc: packPrice=${inv.retailPrice || inv.variant?.price} × ${packsPerCarton} = ${unitPrice}`,
+                            );
                         }
                     } else {
-                        console.log(`[ORDER-PRICE] variant=${item.variantId}: No carton found, using raw pack price: ${unitPrice}`);
+                        console.log(
+                            `[ORDER-PRICE] variant=${item.variantId}: No carton found, using raw pack price: ${unitPrice}`,
+                        );
                     }
                 } else {
                     console.log(
@@ -5307,13 +5395,13 @@ const warehouseOrderQueries = {
 
                 // Validate targetVariantId only when the fulfillment strategy needs it.
                 const canCarryOptionalTargetVariant =
-                    resolvedMode.profile.inventoryBehaviour === "loose_convert"
-                    && (resolvedMode.mode === "drum"
-                        || resolvedMode.mode === "loose"
-                        || resolvedMode.stockStrategy === "container_count");
+                    resolvedMode.profile.inventoryBehaviour === "loose_convert" &&
+                    (resolvedMode.mode === "drum" ||
+                        resolvedMode.mode === "loose" ||
+                        resolvedMode.stockStrategy === "container_count");
                 const shouldPersistTargetVariant =
-                    resolvedMode.requiresTargetVariant
-                    || (canCarryOptionalTargetVariant && !!item.targetVariantId);
+                    resolvedMode.requiresTargetVariant ||
+                    (canCarryOptionalTargetVariant && !!item.targetVariantId);
 
                 if (resolvedMode.requiresTargetVariant && !item.targetVariantId) {
                     throw new ORPCError("BAD_REQUEST", {
@@ -5321,8 +5409,9 @@ const warehouseOrderQueries = {
                     });
                 }
 
-                const resolvedTargetVariantId: number | null =
-                    shouldPersistTargetVariant ? (item.targetVariantId ?? null) : null;
+                const resolvedTargetVariantId: number | null = shouldPersistTargetVariant
+                    ? (item.targetVariantId ?? null)
+                    : null;
 
                 if (resolvedTargetVariantId) {
                     const targetVar = await db.query.productVariant.findFirst({
@@ -5363,16 +5452,13 @@ const warehouseOrderQueries = {
                     currentQty: inv.availableQty,
                     supplyMode: preparedMovement.mode,
                     targetVariantId:
-                        preparedMovement.targetVariantId ===
-                        preparedMovement.sourceVariantId
+                        preparedMovement.targetVariantId === preparedMovement.sourceVariantId
                             ? null
                             : preparedMovement.targetVariantId,
                     quantityUnit: preparedMovement.movement.quantityUnit,
                     inventoryUnit: preparedMovement.movement.inventoryUnit,
-                    conversionFactor:
-                        preparedMovement.movement.conversionFactor.toFixed(4),
-                    inventoryQty:
-                        preparedMovement.movement.sourceInventoryQty.toFixed(2),
+                    conversionFactor: preparedMovement.movement.conversionFactor.toFixed(4),
+                    inventoryQty: preparedMovement.movement.sourceInventoryQty.toFixed(2),
                 });
             }
 
@@ -5477,7 +5563,9 @@ const warehouseOrderQueries = {
     getMyWarehouseOrders: shopOwnerProcedure
         .input(
             z.object({
-                status: z.enum(["pending", "confirmed", "processing", "delivered", "cancelled"]).optional(),
+                status: z
+                    .enum(["pending", "confirmed", "processing", "delivered", "cancelled"])
+                    .optional(),
                 page: z.number().default(1),
                 limit: z.number().default(20),
             }),
@@ -5514,18 +5602,21 @@ const warehouseOrderQueries = {
                     limit,
                     offset,
                 }),
-                db
-                    .select({ count: count() })
-                    .from(order)
-                    .where(where),
+                db.select({ count: count() }).from(order).where(where),
             ]);
 
             // Get warehouse names
-            const warehouseIds = [...new Set(orders.map((o: any) => o.warehouseId).filter(Boolean))];
-            let warehouseMap = new Map<string, string>();
+            const warehouseIds = [
+                ...new Set(orders.map((o: any) => o.warehouseId).filter(Boolean)),
+            ];
+            const warehouseMap = new Map<string, string>();
             if (warehouseIds.length > 0) {
                 const warehouses = await db
-                    .select({ id: user.id, warehouseName: user.warehouseName, name: user.name })
+                    .select({
+                        id: user.id,
+                        warehouseName: user.warehouseName,
+                        name: user.name,
+                    })
                     .from(user)
                     .where(inArray(user.id, warehouseIds as string[]));
                 for (const w of warehouses) {
@@ -5540,10 +5631,12 @@ const warehouseOrderQueries = {
                     ...o,
                     items: (o.items || []).map((item: any) => ({
                         ...item,
-                        supplyModeLabel: item.supplyMode
-                            && item.supplyMode in FULFILLMENT_MODE_LABELS
-                            ? FULFILLMENT_MODE_LABELS[item.supplyMode as keyof typeof FULFILLMENT_MODE_LABELS]
-                            : "Legacy",
+                        supplyModeLabel:
+                            item.supplyMode && item.supplyMode in FULFILLMENT_MODE_LABELS
+                                ? FULFILLMENT_MODE_LABELS[
+                                      item.supplyMode as keyof typeof FULFILLMENT_MODE_LABELS
+                                  ]
+                                : "Legacy",
                     })),
                     warehouseName: warehouseMap.get(o.warehouseId) || "Unknown Warehouse",
                 })),
@@ -5562,35 +5655,50 @@ const warehouseOrderQueries = {
 // ────────────────────────────────────────────────────────────────
 
 const openOrderEndpoints = {
-    /** List available open orders for this shop (broadcasts) */
+    /** Active requests and submitted offers, with no customer PII before acceptance. */
     getOpenOrderPool: shopOwnerProcedure
         .route({
             method: "GET",
             path: "/shop-owner/open-orders/pool",
             tags: ["Shop Owner", "Open Order"],
-            summary: "Get available open order broadcasts",
+            summary: "List active open-order offers",
         })
         .handler(async ({ context }) => {
             const shopId = context.session.user.id;
+            const candidates = await db
+                .select({ orderId: openOrderBid.subOrderId })
+                .from(openOrderBid)
+                .innerJoin(order, eq(order.id, openOrderBid.subOrderId))
+                .where(
+                    and(
+                        eq(openOrderBid.shopId, shopId),
+                        inArray(order.status, ["matching_shop", "negotiating"]),
+                    ),
+                );
+            for (const orderId of [...new Set(candidates.map((row) => row.orderId))]) {
+                await reconcileOpenOrder(orderId);
+            }
 
-            // Get all bids for this shop that are available or locked (by this shop)
-            const bids = await db
+            const offers = await db
                 .select({
                     bidId: openOrderBid.id,
-                    subOrderId: openOrderBid.subOrderId,
+                    orderId: openOrderBid.subOrderId,
                     status: openOrderBid.status,
-                    rank: openOrderBid.rank,
                     distanceKm: openOrderBid.distanceKm,
-                    lockedAt: openOrderBid.lockedAt,
-                    expiresAt: openOrderBid.expiresAt,
-                    timeoutSeconds: openOrderBid.timeoutSeconds,
+                    itemSubtotal: openOrderBid.itemSubtotal,
+                    discountType: openOrderBid.discountType,
+                    discountValue: openOrderBid.discountValue,
+                    discountAmount: openOrderBid.discountAmount,
+                    deliveryCharge: openOrderBid.deliveryCharge,
+                    finalTotal: openOrderBid.totalBid,
+                    priceFrozenAt: openOrderBid.priceFrozenAt,
+                    reservationState: openOrderBid.reservationState,
+                    submittedAt: openOrderBid.submittedAt,
                     createdAt: openOrderBid.createdAt,
-                    // Order data
                     orderNumber: order.orderNumber,
-                    orderSubtotal: order.subtotal,
-                    subOrderLabel: order.subOrderLabel,
-                    broadcastExpiresAt: order.broadcastExpiresAt,
-                    shippingAddress: order.shippingAddress,
+                    referenceSubtotal: order.subtotal,
+                    offerDeadline: order.broadcastExpiresAt,
+                    selectionDeadline: order.selectionExpiresAt,
                     shippingCity: order.shippingCity,
                     shippingArea: order.shippingArea,
                 })
@@ -5599,266 +5707,178 @@ const openOrderEndpoints = {
                 .where(
                     and(
                         eq(openOrderBid.shopId, shopId),
-                        inArray(openOrderBid.status, ["available", "locked"]),
+                        inArray(openOrderBid.status, ["available", "submitted"]),
                         inArray(order.status, ["matching_shop", "negotiating"]),
                     ),
                 )
-                .orderBy(asc(openOrderBid.createdAt));
+                .orderBy(asc(order.broadcastExpiresAt), asc(openOrderBid.createdAt));
 
-            // For each bid, get the order items
-            const result = await Promise.all(
-                bids.map(async (bid) => {
-                    // Check for expired locks lazily
-                    if (bid.status === "locked" && bid.expiresAt && new Date() > bid.expiresAt) {
-                        await db
-                            .update(openOrderBid)
-                            .set({ status: "expired" })
-                            .where(eq(openOrderBid.id, bid.bidId));
-                        return null; // Skip expired bids
-                    }
-
-                    const items = await db.query.orderItem.findMany({
-                        where: eq(orderItem.orderId, bid.subOrderId),
-                    });
-
+            const pool = await Promise.all(
+                offers.map(async (offer) => {
+                    const items = await db
+                        .select({
+                            id: orderItem.id,
+                            productName: orderItem.productName,
+                            productImage: orderItem.productImage,
+                            productSize: orderItem.productSize,
+                            quantity: orderItem.quantity,
+                            referencePrice: openOrderBidItem.platformPrice,
+                            retailerPrice: inventory.retailPrice,
+                            inventoryId: inventory.id,
+                        })
+                        .from(openOrderBidItem)
+                        .innerJoin(orderItem, eq(orderItem.id, openOrderBidItem.orderItemId))
+                        .innerJoin(inventory, eq(inventory.id, openOrderBidItem.inventoryId))
+                        .where(eq(openOrderBidItem.bidId, offer.bidId));
                     return {
-                        bidId: bid.bidId,
-                        subOrderId: bid.subOrderId,
-                        status: bid.status,
-                        rank: bid.rank,
-                        distanceKm: bid.distanceKm,
-                        orderNumber: bid.orderNumber,
-                        subOrderLabel: bid.subOrderLabel,
-                        subtotal: bid.orderSubtotal,
-                        broadcastExpiresAt: bid.broadcastExpiresAt?.toISOString() ?? null,
-                        lockedAt: bid.lockedAt?.toISOString() ?? null,
-                        expiresAt: bid.expiresAt?.toISOString() ?? null,
-                        timeoutSeconds: bid.timeoutSeconds,
-                        shippingArea: bid.shippingArea ?? bid.shippingCity,
-                        items: items.map((i) => ({
-                            id: i.id,
-                            productName: i.productName,
-                            productImage: i.productImage,
-                            productSize: i.productSize,
-                            quantity: i.quantity,
-                            unitPrice: i.unitPrice,
-                            totalPrice: i.totalPrice,
+                        ...offer,
+                        distanceKm: Number(offer.distanceKm ?? 0),
+                        referenceSubtotal: Number(offer.referenceSubtotal),
+                        itemSubtotal:
+                            offer.itemSubtotal == null ? null : Number(offer.itemSubtotal),
+                        discountValue: Number(offer.discountValue ?? 0),
+                        discountAmount: Number(offer.discountAmount ?? 0),
+                        deliveryCharge: Number(offer.deliveryCharge ?? 0),
+                        finalTotal: offer.finalTotal == null ? null : Number(offer.finalTotal),
+                        offerDeadline: offer.offerDeadline?.toISOString() ?? null,
+                        selectionDeadline: offer.selectionDeadline?.toISOString() ?? null,
+                        priceFrozenAt: offer.priceFrozenAt?.toISOString() ?? null,
+                        submittedAt: offer.submittedAt?.toISOString() ?? null,
+                        customerArea: offer.shippingArea ?? offer.shippingCity,
+                        items: items.map((item) => ({
+                            ...item,
+                            referencePrice: Number(item.referencePrice),
+                            retailerPrice: Number(item.retailerPrice),
+                            pricingUrl: `/shop/dashboard/pricing?inventoryId=${item.inventoryId}`,
                         })),
                     };
                 }),
             );
-
-            return { pool: result.filter(Boolean) };
+            return { pool, activeCount: pool.length };
         }),
 
-    /** Lock a bid — starts the countdown timer */
-    lockOpenOrder: shopOwnerProcedure
+    getOpenOrderHistory: shopOwnerProcedure
         .route({
-            method: "POST",
-            path: "/shop-owner/open-orders/lock",
+            method: "GET",
+            path: "/shop-owner/open-orders/history",
             tags: ["Shop Owner", "Open Order"],
-            summary: "Lock an open order bid to start negotiating",
+            summary: "List completed open-order offer outcomes",
         })
-        .input(z.object({ bidId: z.number() }))
-        .handler(async ({ context, input }) => {
+        .handler(async ({ context }) => {
             const shopId = context.session.user.id;
-
-            // Get the bid
-            const bid = await db.query.openOrderBid.findFirst({
-                where: and(
-                    eq(openOrderBid.id, input.bidId),
-                    eq(openOrderBid.shopId, shopId),
-                ),
-            });
-
-            if (!bid) {
-                throw new ORPCError("NOT_FOUND", { message: "Bid not found" });
-            }
-            if (bid.status !== "available") {
-                throw new ORPCError("BAD_REQUEST", {
-                    message: `Cannot lock bid with status '${bid.status}'`,
-                });
-            }
-
-            const now = new Date();
-            const expiresAt = new Date(now.getTime() + bid.timeoutSeconds * 1000);
-
-            // Lock the bid
-            const [updated] = await db
-                .update(openOrderBid)
-                .set({
-                    status: "locked",
-                    lockedAt: now,
-                    expiresAt,
+            const history = await db
+                .select({
+                    offerId: openOrderBid.id,
+                    orderId: openOrderBid.subOrderId,
+                    orderNumber: order.orderNumber,
+                    status: openOrderBid.status,
+                    isWinner: openOrderBid.isWinner,
+                    finalTotal: openOrderBid.totalBid,
+                    createdAt: openOrderBid.createdAt,
+                    confirmedAt: order.confirmedAt,
+                    cancelledAt: order.cancelledAt,
                 })
-                .where(eq(openOrderBid.id, bid.id))
-                .returning();
-
-            // Update sub-order status to negotiating
-            await db
-                .update(order)
-                .set({ status: "negotiating" })
-                .where(eq(order.id, bid.subOrderId));
-
-            // Get bid items
-            const bidItems = await db.query.openOrderBidItem.findMany({
-                where: eq(openOrderBidItem.bidId, bid.id),
-            });
-
+                .from(openOrderBid)
+                .innerJoin(order, eq(order.id, openOrderBid.subOrderId))
+                .where(
+                    and(
+                        eq(openOrderBid.shopId, shopId),
+                        or(
+                            inArray(openOrderBid.status, ["released", "lost", "expired"]),
+                            eq(openOrderBid.isWinner, true),
+                        ),
+                    ),
+                )
+                .orderBy(desc(openOrderBid.createdAt));
             return {
-                success: true,
-                bid: {
-                    id: updated!.id,
-                    status: updated!.status,
-                    lockedAt: updated!.lockedAt?.toISOString(),
-                    expiresAt: updated!.expiresAt?.toISOString(),
-                    timeoutSeconds: updated!.timeoutSeconds,
-                },
-                items: bidItems.map((bi) => ({
-                    id: bi.id,
-                    orderItemId: bi.orderItemId,
-                    platformPrice: bi.platformPrice,
-                    sellerPrice: bi.sellerPrice,
+                history: history.map((entry) => ({
+                    ...entry,
+                    finalTotal: entry.finalTotal == null ? null : Number(entry.finalTotal),
+                    outcome: entry.isWinner
+                        ? "accepted"
+                        : entry.status === "released"
+                          ? "withdrawn"
+                          : entry.status === "expired"
+                            ? "expired"
+                            : "not_selected",
                 })),
             };
         }),
 
-    /** Submit an offer with per-item prices and delivery charge */
+    /** Submit or revise discount and delivery; line prices always come from inventory. */
     submitOffer: shopOwnerProcedure
         .route({
             method: "POST",
             path: "/shop-owner/open-orders/submit",
             tags: ["Shop Owner", "Open Order"],
-            summary: "Submit a bid offer with prices",
+            summary: "Submit or revise an open-order offer",
         })
         .input(
             z.object({
                 bidId: z.number(),
-                deliveryCharge: z.string(),
-                items: z.array(
-                    z.object({
-                        bidItemId: z.number(),
-                        sellerPrice: z.string(),
-                    }),
-                ),
+                discountType: z.enum(["fixed", "percentage"]),
+                discountValue: z.coerce.number().min(0),
+                deliveryCharge: z.coerce.number().min(0),
             }),
         )
         .handler(async ({ context, input }) => {
-            const shopId = context.session.user.id;
-
-            // Get the bid
-            const bid = await db.query.openOrderBid.findFirst({
-                where: and(
-                    eq(openOrderBid.id, input.bidId),
-                    eq(openOrderBid.shopId, shopId),
-                ),
-            });
-
-            if (!bid) {
-                throw new ORPCError("NOT_FOUND", { message: "Bid not found" });
-            }
-            if (bid.status !== "locked") {
-                throw new ORPCError("BAD_REQUEST", {
-                    message: `Cannot submit offer on bid with status '${bid.status}'`,
+            try {
+                const offer = await submitRetailerOffer({
+                    ...input,
+                    shopId: context.session.user.id,
+                });
+                context.realtime.emitToOrder(
+                    offer.subOrderId,
+                    offer.wasRevision ? "open-order:offer-updated" : "open-order:offer-received",
+                    {
+                        orderId: offer.subOrderId,
+                        offerCountChanged: !offer.wasRevision,
+                    },
+                );
+                return {
+                    success: true,
+                    offer: {
+                        id: offer.id,
+                        status: offer.status,
+                        itemSubtotal: Number(offer.itemSubtotal),
+                        discountAmount: Number(offer.discountAmount),
+                        deliveryCharge: Number(offer.deliveryCharge),
+                        finalTotal: Number(offer.totalBid),
+                        submittedAt: offer.submittedAt?.toISOString() ?? null,
+                    },
+                };
+            } catch (error) {
+                throw new ORPCError("CONFLICT", {
+                    message:
+                        error instanceof Error ? error.message : "Offer could not be submitted.",
                 });
             }
-
-            // Check if lock has expired
-            if (bid.expiresAt && new Date() > bid.expiresAt) {
-                await db
-                    .update(openOrderBid)
-                    .set({ status: "expired" })
-                    .where(eq(openOrderBid.id, bid.id));
-                throw new ORPCError("BAD_REQUEST", {
-                    message: "Lock has expired. Please try a new order.",
-                });
-            }
-
-            // Update seller prices on each bid item
-            let totalItemCost = 0;
-            for (const item of input.items) {
-                // Get the bid item to know the quantity
-                const bidItem = await db.query.openOrderBidItem.findFirst({
-                    where: eq(openOrderBidItem.id, item.bidItemId),
-                });
-                if (!bidItem) continue;
-
-                await db
-                    .update(openOrderBidItem)
-                    .set({ sellerPrice: item.sellerPrice })
-                    .where(eq(openOrderBidItem.id, item.bidItemId));
-
-                // Get quantity from the order item
-                const oi = await db.query.orderItem.findFirst({
-                    where: eq(orderItem.id, bidItem.orderItemId),
-                });
-                totalItemCost += Number(item.sellerPrice) * (oi?.quantity ?? 1);
-            }
-
-            const totalBid = totalItemCost + Number(input.deliveryCharge);
-
-            // Update bid: submitted
-            const [updated] = await db
-                .update(openOrderBid)
-                .set({
-                    status: "submitted",
-                    submittedAt: new Date(),
-                    deliveryCharge: input.deliveryCharge,
-                    totalBid: totalBid.toFixed(2),
-                })
-                .where(eq(openOrderBid.id, bid.id))
-                .returning();
-
-            return {
-                success: true,
-                bid: {
-                    id: updated!.id,
-                    status: updated!.status,
-                    totalBid: updated!.totalBid,
-                    deliveryCharge: updated!.deliveryCharge,
-                    submittedAt: updated!.submittedAt?.toISOString(),
-                },
-            };
         }),
 
-    /** Release a locked bid — order goes back to pool */
-    releaseOpenOrder: shopOwnerProcedure
+    withdrawOpenOrder: shopOwnerProcedure
         .route({
             method: "POST",
-            path: "/shop-owner/open-orders/release",
+            path: "/shop-owner/open-orders/withdraw",
             tags: ["Shop Owner", "Open Order"],
-            summary: "Release a locked open order bid",
+            summary: "Withdraw an open-order offer before the deadline",
         })
         .input(z.object({ bidId: z.number() }))
         .handler(async ({ context, input }) => {
-            const shopId = context.session.user.id;
-
-            const bid = await db.query.openOrderBid.findFirst({
-                where: and(
-                    eq(openOrderBid.id, input.bidId),
-                    eq(openOrderBid.shopId, shopId),
-                ),
-            });
-
-            if (!bid) {
-                throw new ORPCError("NOT_FOUND", { message: "Bid not found" });
-            }
-            if (bid.status !== "locked") {
-                throw new ORPCError("BAD_REQUEST", {
-                    message: `Cannot release bid with status '${bid.status}'`,
+            try {
+                const result = await withdrawRetailerOffer({
+                    bidId: input.bidId,
+                    shopId: context.session.user.id,
+                });
+                context.realtime.emitToOrder(result.orderId, "open-order:offer-withdrawn", {
+                    orderId: result.orderId,
+                });
+                return { success: true };
+            } catch (error) {
+                throw new ORPCError("CONFLICT", {
+                    message:
+                        error instanceof Error ? error.message : "Offer could not be withdrawn.",
                 });
             }
-
-            await db
-                .update(openOrderBid)
-                .set({
-                    status: "released",
-                    lockedAt: null,
-                    expiresAt: null,
-                })
-                .where(eq(openOrderBid.id, bid.id));
-
-            return { success: true };
         }),
 };
 
@@ -5893,12 +5913,7 @@ const warehouseConnectionEndpoints = {
                     image: user.image,
                 })
                 .from(user)
-                .where(
-                    and(
-                        eq(user.warehouseSlug, input.warehouseSlug),
-                        eq(user.role, "warehouse"),
-                    ),
-                )
+                .where(and(eq(user.warehouseSlug, input.warehouseSlug), eq(user.role, "warehouse")))
                 .limit(1);
 
             if (warehouseUser.length === 0) {
@@ -5958,12 +5973,7 @@ const warehouseConnectionEndpoints = {
                     warehouseSlug: user.warehouseSlug,
                 })
                 .from(user)
-                .where(
-                    and(
-                        eq(user.warehouseSlug, input.warehouseSlug),
-                        eq(user.role, "warehouse"),
-                    ),
-                )
+                .where(and(eq(user.warehouseSlug, input.warehouseSlug), eq(user.role, "warehouse")))
                 .limit(1);
 
             if (warehouseUser.length === 0) {
@@ -5991,7 +6001,7 @@ const warehouseConnectionEndpoints = {
                         message: "You are already connected to this warehouse.",
                     };
                 }
-                
+
                 if (existingConn.status === "pending") {
                     return {
                         status: "already_pending" as const,
@@ -6006,7 +6016,7 @@ const warehouseConnectionEndpoints = {
                     .update(shopWarehouseConnection)
                     .set({ status: "pending", connectedAt: null })
                     .where(eq(shopWarehouseConnection.id, existingConn.id));
-                
+
                 return {
                     status: "pending" as const,
                     warehouse: warehouseUser[0]!,
@@ -6039,69 +6049,69 @@ const warehouseConnectionEndpoints = {
             summary: "Get all warehouse connections (active/pending/rejected)",
         })
         .input(
-            z.object({
-                status: z.enum(["all", "active", "pending", "disconnected"]).default("all"),
-            }).optional(),
+            z
+                .object({
+                    status: z.enum(["all", "active", "pending", "disconnected"]).default("all"),
+                })
+                .optional(),
         )
-        .handler(
-            async ({ context, input }) => {
-                const shopId = context.session.user.id;
-                const statusFilter = input?.status || "all";
+        .handler(async ({ context, input }) => {
+            const shopId = context.session.user.id;
+            const statusFilter = input?.status || "all";
 
-                const conditions: SQL[] = [eq(shopWarehouseConnection.shopId, shopId)];
-                if (statusFilter !== "all") {
-                    conditions.push(eq(shopWarehouseConnection.status, statusFilter));
-                }
+            const conditions: SQL[] = [eq(shopWarehouseConnection.shopId, shopId)];
+            if (statusFilter !== "all") {
+                conditions.push(eq(shopWarehouseConnection.status, statusFilter));
+            }
 
-                const connections = await db
-                    .select({
-                        connectionId: shopWarehouseConnection.id,
-                        status: shopWarehouseConnection.status,
-                        connectedAt: shopWarehouseConnection.connectedAt,
-                        lastOrderedAt: shopWarehouseConnection.lastOrderedAt,
-                        warehouseId: user.id,
-                        warehouseName: user.warehouseName,
-                        warehouseSlug: user.warehouseSlug,
-                        warehouseAddress: user.warehouseAddress,
-                        name: user.name,
-                        image: user.image,
-                    })
-                    .from(shopWarehouseConnection)
-                    .innerJoin(
-                        user,
-                        eq(shopWarehouseConnection.warehouseId, user.id),
-                    )
-                    .where(and(...conditions))
-                    .orderBy(desc(shopWarehouseConnection.lastOrderedAt), desc(shopWarehouseConnection.connectedAt));
-
-                // Get product counts for active warehouses
-                const result = await Promise.all(
-                    connections.map(async (conn) => {
-                        if (conn.status !== "active") {
-                            return { ...conn, productCount: 0 };
-                        }
-                        
-                        const [countResult] = await db
-                            .select({ count: count() })
-                            .from(inventory)
-                            .where(
-                                and(
-                                    eq(inventory.ownerType, "warehouse"),
-                                    eq(inventory.ownerId, conn.warehouseId),
-                                    sql`CAST(${inventory.availableQty} AS NUMERIC) > 0`,
-                                ),
-                            );
-
-                        return {
-                            ...conn,
-                            productCount: countResult?.count || 0,
-                        };
-                    }),
+            const connections = await db
+                .select({
+                    connectionId: shopWarehouseConnection.id,
+                    status: shopWarehouseConnection.status,
+                    connectedAt: shopWarehouseConnection.connectedAt,
+                    lastOrderedAt: shopWarehouseConnection.lastOrderedAt,
+                    warehouseId: user.id,
+                    warehouseName: user.warehouseName,
+                    warehouseSlug: user.warehouseSlug,
+                    warehouseAddress: user.warehouseAddress,
+                    name: user.name,
+                    image: user.image,
+                })
+                .from(shopWarehouseConnection)
+                .innerJoin(user, eq(shopWarehouseConnection.warehouseId, user.id))
+                .where(and(...conditions))
+                .orderBy(
+                    desc(shopWarehouseConnection.lastOrderedAt),
+                    desc(shopWarehouseConnection.connectedAt),
                 );
 
-                return { warehouses: result };
-            },
-        ),
+            // Get product counts for active warehouses
+            const result = await Promise.all(
+                connections.map(async (conn) => {
+                    if (conn.status !== "active") {
+                        return { ...conn, productCount: 0 };
+                    }
+
+                    const [countResult] = await db
+                        .select({ count: count() })
+                        .from(inventory)
+                        .where(
+                            and(
+                                eq(inventory.ownerType, "warehouse"),
+                                eq(inventory.ownerId, conn.warehouseId),
+                                sql`CAST(${inventory.availableQty} AS NUMERIC) > 0`,
+                            ),
+                        );
+
+                    return {
+                        ...conn,
+                        productCount: countResult?.count || 0,
+                    };
+                }),
+            );
+
+            return { warehouses: result };
+        }),
 
     /**
      * Cancel a pending warehouse connection request
@@ -6125,7 +6135,7 @@ const warehouseConnectionEndpoints = {
                 where: and(
                     eq(shopWarehouseConnection.id, input.connectionId),
                     eq(shopWarehouseConnection.shopId, shopId),
-                    eq(shopWarehouseConnection.status, "pending")
+                    eq(shopWarehouseConnection.status, "pending"),
                 ),
             });
 
@@ -6135,7 +6145,9 @@ const warehouseConnectionEndpoints = {
                 });
             }
 
-            await db.delete(shopWarehouseConnection).where(eq(shopWarehouseConnection.id, input.connectionId));
+            await db
+                .delete(shopWarehouseConnection)
+                .where(eq(shopWarehouseConnection.id, input.connectionId));
 
             return { success: true, message: "Request cancelled" };
         }),
@@ -6162,7 +6174,7 @@ const warehouseConnectionEndpoints = {
                 where: and(
                     eq(shopWarehouseConnection.id, input.connectionId),
                     eq(shopWarehouseConnection.shopId, shopId),
-                    eq(shopWarehouseConnection.status, "active")
+                    eq(shopWarehouseConnection.status, "active"),
                 ),
             });
 
@@ -6191,59 +6203,54 @@ const warehouseConnectionEndpoints = {
             tags: ["Shop Owner"],
             summary: "Get recently connected warehouses (smart memory)",
         })
-        .handler(
-            async ({ context }) => {
-                const shopId = context.session.user.id;
+        .handler(async ({ context }) => {
+            const shopId = context.session.user.id;
 
-                const connections = await db
-                    .select({
-                        connectionId: shopWarehouseConnection.id,
-                        status: shopWarehouseConnection.status,
-                        connectedAt: shopWarehouseConnection.connectedAt,
-                        lastOrderedAt: shopWarehouseConnection.lastOrderedAt,
-                        warehouseId: user.id,
-                        warehouseName: user.warehouseName,
-                        warehouseSlug: user.warehouseSlug,
-                        warehouseAddress: user.warehouseAddress,
-                        name: user.name,
-                    })
-                    .from(shopWarehouseConnection)
-                    .innerJoin(
-                        user,
-                        eq(shopWarehouseConnection.warehouseId, user.id),
-                    )
-                    .where(
-                        and(
-                            eq(shopWarehouseConnection.shopId, shopId),
-                            eq(shopWarehouseConnection.status, "active"),
-                        ),
-                    )
-                    .orderBy(desc(shopWarehouseConnection.lastOrderedAt));
+            const connections = await db
+                .select({
+                    connectionId: shopWarehouseConnection.id,
+                    status: shopWarehouseConnection.status,
+                    connectedAt: shopWarehouseConnection.connectedAt,
+                    lastOrderedAt: shopWarehouseConnection.lastOrderedAt,
+                    warehouseId: user.id,
+                    warehouseName: user.warehouseName,
+                    warehouseSlug: user.warehouseSlug,
+                    warehouseAddress: user.warehouseAddress,
+                    name: user.name,
+                })
+                .from(shopWarehouseConnection)
+                .innerJoin(user, eq(shopWarehouseConnection.warehouseId, user.id))
+                .where(
+                    and(
+                        eq(shopWarehouseConnection.shopId, shopId),
+                        eq(shopWarehouseConnection.status, "active"),
+                    ),
+                )
+                .orderBy(desc(shopWarehouseConnection.lastOrderedAt));
 
-                // Get product counts for each warehouse
-                const result = await Promise.all(
-                    connections.map(async (conn) => {
-                        const [countResult] = await db
-                            .select({ count: count() })
-                            .from(inventory)
-                            .where(
-                                and(
-                                    eq(inventory.ownerType, "warehouse"),
-                                    eq(inventory.ownerId, conn.warehouseId),
-                                    sql`CAST(${inventory.availableQty} AS NUMERIC) > 0`,
-                                ),
-                            );
+            // Get product counts for each warehouse
+            const result = await Promise.all(
+                connections.map(async (conn) => {
+                    const [countResult] = await db
+                        .select({ count: count() })
+                        .from(inventory)
+                        .where(
+                            and(
+                                eq(inventory.ownerType, "warehouse"),
+                                eq(inventory.ownerId, conn.warehouseId),
+                                sql`CAST(${inventory.availableQty} AS NUMERIC) > 0`,
+                            ),
+                        );
 
-                        return {
-                            ...conn,
-                            productCount: countResult?.count || 0,
-                        };
-                    }),
-                );
+                    return {
+                        ...conn,
+                        productCount: countResult?.count || 0,
+                    };
+                }),
+            );
 
-                return { warehouses: result };
-            },
-        ),
+            return { warehouses: result };
+        }),
 
     /**
      * Step 4: Get warehouse products filtered by shop's allowed categories.
@@ -6272,12 +6279,7 @@ const warehouseConnectionEndpoints = {
             const warehouseUser = await db
                 .select({ id: user.id })
                 .from(user)
-                .where(
-                    and(
-                        eq(user.warehouseSlug, input.warehouseSlug),
-                        eq(user.role, "warehouse"),
-                    ),
-                )
+                .where(and(eq(user.warehouseSlug, input.warehouseSlug), eq(user.role, "warehouse")))
                 .limit(1);
 
             if (warehouseUser.length === 0) {
@@ -6293,8 +6295,8 @@ const warehouseConnectionEndpoints = {
                 where: and(
                     eq(shopWarehouseConnection.shopId, shopId),
                     eq(shopWarehouseConnection.warehouseId, warehouseId),
-                    eq(shopWarehouseConnection.status, "active")
-                )
+                    eq(shopWarehouseConnection.status, "active"),
+                ),
             });
 
             if (!connection) {
@@ -6313,13 +6315,9 @@ const warehouseConnectionEndpoints = {
                 .where(eq(shopCategoryAssignment.shopId, shopId));
 
             const allowedSubcatIds = new Set(
-                shopAssignments
-                    .map((a) => a.subcategoryId)
-                    .filter(Boolean) as number[],
+                shopAssignments.map((a) => a.subcategoryId).filter(Boolean) as number[],
             );
-            const allowedCatIds = new Set(
-                shopAssignments.map((a) => a.categoryId),
-            );
+            const allowedCatIds = new Set(shopAssignments.map((a) => a.categoryId));
             const hasAssignments = shopAssignments.length > 0;
 
             // Get warehouse inventory with product info
@@ -6341,21 +6339,13 @@ const warehouseConnectionEndpoints = {
 
             if (input.search) {
                 const s = `%${input.search}%`;
-                conditions.push(
-                    or(
-                        ilike(product.name, s),
-                        ilike(productVariant.sku ?? "", s),
-                    )!,
-                );
+                conditions.push(or(ilike(product.name, s), ilike(productVariant.sku ?? "", s))!);
             }
 
             const pageProducts = await db
                 .selectDistinct({ productId: product.id })
                 .from(inventory)
-                .innerJoin(
-                    productVariant,
-                    eq(inventory.variantId, productVariant.id),
-                )
+                .innerJoin(productVariant, eq(inventory.variantId, productVariant.id))
                 .innerJoin(product, eq(productVariant.productId, product.id))
                 .where(and(...conditions))
                 .orderBy(asc(product.id))
@@ -6383,8 +6373,7 @@ const warehouseConnectionEndpoints = {
                     productTypeName: productType.name,
                     productTypeSlug: productType.slug,
                     productTypeFamily: productType.family,
-                    productTypeInventoryBehaviour:
-                        productType.inventoryBehaviour,
+                    productTypeInventoryBehaviour: productType.inventoryBehaviour,
                     variantUnitLabel: productVariant.unitLabel,
                     variantWeightKg: productVariant.weightKg,
                     variantSku: productVariant.sku,
@@ -6404,33 +6393,17 @@ const warehouseConnectionEndpoints = {
                     brandName: brand.name,
                 })
                 .from(inventory)
-                .innerJoin(
-                    productVariant,
-                    eq(inventory.variantId, productVariant.id),
-                )
-                .innerJoin(
-                    product,
-                    eq(productVariant.productId, product.id),
-                )
-                .leftJoin(
-                    category,
-                    eq(product.categoryId, category.id),
-                )
-                .leftJoin(
-                    productType,
-                    eq(category.typeId, productType.id),
-                )
+                .innerJoin(productVariant, eq(inventory.variantId, productVariant.id))
+                .innerJoin(product, eq(productVariant.productId, product.id))
+                .leftJoin(category, eq(product.categoryId, category.id))
+                .leftJoin(productType, eq(category.typeId, productType.id))
                 // Prefer variant-level brand, fall back to product-level brand
                 .leftJoin(
                     brand,
                     eq(brand.id, sql`COALESCE(${productVariant.brandId}, ${product.brandId})`),
                 )
                 .where(and(...conditions, inArray(product.id, pageProductIds)))
-                .orderBy(
-                    asc(category.name),
-                    asc(product.name),
-                    asc(productVariant.sortOrder),
-                );
+                .orderBy(asc(category.name), asc(product.name), asc(productVariant.sortOrder));
 
             // Annotate each product with canOrder flag
             const products = items.map((item) => {
@@ -6454,8 +6427,7 @@ const warehouseConnectionEndpoints = {
                     family: item.productTypeFamily,
                     name: item.productTypeName,
                     slug: item.productTypeSlug,
-                    inventoryBehaviour:
-                        item.productTypeInventoryBehaviour ?? "fixed_pack",
+                    inventoryBehaviour: item.productTypeInventoryBehaviour ?? "fixed_pack",
                     trackingType: item.productTrackingType,
                     isReturnablePack: item.productIsReturnablePack,
                 });
@@ -6478,9 +6450,7 @@ const warehouseConnectionEndpoints = {
                             family: item.productTypeFamily,
                             name: item.productTypeName ?? "Generic",
                             slug: item.productTypeSlug,
-                            inventoryBehaviour:
-                                item.productTypeInventoryBehaviour
-                                ?? "fixed_pack",
+                            inventoryBehaviour: item.productTypeInventoryBehaviour ?? "fixed_pack",
                             trackingType: item.productTrackingType,
                             isReturnablePack: item.productIsReturnablePack,
                         },
@@ -6512,15 +6482,18 @@ const warehouseConnectionEndpoints = {
 
             // Enrich with carton data per variant (single query)
             const allVariantIds = products.map((p) => p.variantId);
-            let cartonMap = new Map<number, { cartonCount: number; totalWeightKg: number }>();
-            const cartonOptionsByVariant = new Map<number, {
-                weightKg: number;
-                count: number;
-                totalKg: number;
-                packsPerCarton: number;
-                cartonPrice: string | null;
-                deliveryCost: string | null;
-            }[]>();
+            const cartonMap = new Map<number, { cartonCount: number; totalWeightKg: number }>();
+            const cartonOptionsByVariant = new Map<
+                number,
+                {
+                    weightKg: number;
+                    count: number;
+                    totalKg: number;
+                    packsPerCarton: number;
+                    cartonPrice: string | null;
+                    deliveryCost: string | null;
+                }[]
+            >();
 
             if (allVariantIds.length > 0) {
                 const activeCartons = await db.query.carton.findMany({
@@ -6575,11 +6548,22 @@ const warehouseConnectionEndpoints = {
                     } else {
                         // Price priority: carton record → linked config → config by variantId → null
                         const linkedConfigPrice = (c as any).config?.cartonPrice || null;
-                        const linkedConfigDelivery = (c as any).config?.deliveryCostPerCarton || null;
-                        const resolvedPrice = c.cartonPrice || linkedConfigPrice || configPriceMap.get(c.variantId) || null;
-                        const resolvedDelivery = c.deliveryCostPerUnit || linkedConfigDelivery || configDeliveryCostMap.get(c.variantId) || null;
+                        const linkedConfigDelivery =
+                            (c as any).config?.deliveryCostPerCarton || null;
+                        const resolvedPrice =
+                            c.cartonPrice ||
+                            linkedConfigPrice ||
+                            configPriceMap.get(c.variantId) ||
+                            null;
+                        const resolvedDelivery =
+                            c.deliveryCostPerUnit ||
+                            linkedConfigDelivery ||
+                            configDeliveryCostMap.get(c.variantId) ||
+                            null;
 
-                        console.log(`[CARTON PRICE DEBUG] variant=${c.variantId} carton.cartonPrice=${c.cartonPrice} linkedConfig=${linkedConfigPrice} configMap=${configPriceMap.get(c.variantId)} → resolved=${resolvedPrice}`);
+                        console.log(
+                            `[CARTON PRICE DEBUG] variant=${c.variantId} carton.cartonPrice=${c.cartonPrice} linkedConfig=${linkedConfigPrice} configMap=${configPriceMap.get(c.variantId)} → resolved=${resolvedPrice}`,
+                        );
 
                         list.push({
                             weightKg: wt,
@@ -6639,12 +6623,7 @@ const shopStorefrontEndpoints = {
                     image: user.image,
                 })
                 .from(user)
-                .where(
-                    and(
-                        eq(user.shopSlug, input.slug),
-                        eq(user.isSeller, true),
-                    ),
-                )
+                .where(and(eq(user.shopSlug, input.slug), eq(user.isSeller, true)))
                 .limit(1);
 
             if (shopUser.length === 0) {
@@ -6686,12 +6665,7 @@ const shopStorefrontEndpoints = {
             const shopUser = await db
                 .select({ id: user.id })
                 .from(user)
-                .where(
-                    and(
-                        eq(user.shopSlug, input.slug),
-                        eq(user.isSeller, true),
-                    ),
-                )
+                .where(and(eq(user.shopSlug, input.slug), eq(user.isSeller, true)))
                 .limit(1);
 
             if (shopUser.length === 0) {
@@ -6721,7 +6695,10 @@ const shopStorefrontEndpoints = {
             });
 
             // Extract unique categories
-            const categoryMap = new Map<number, { id: number; name: string; slug: string; productCount: number }>();
+            const categoryMap = new Map<
+                number,
+                { id: number; name: string; slug: string; productCount: number }
+            >();
             for (const inv of inventoryItems) {
                 const cat = inv.variant?.product?.category;
                 if (!cat) continue;
@@ -6753,9 +6730,11 @@ const shopStorefrontEndpoints = {
             summary: "Get shop storefront products",
         })
         .input(
-            z.object({
-                slug: z.string(),
-            }).merge(productFiltersSchema),
+            z
+                .object({
+                    slug: z.string(),
+                })
+                .merge(productFiltersSchema),
         )
         .handler(async ({ input }) => {
             const {
@@ -6771,12 +6750,7 @@ const shopStorefrontEndpoints = {
             const shopUser = await db
                 .select({ id: user.id })
                 .from(user)
-                .where(
-                    and(
-                        eq(user.shopSlug, slug),
-                        eq(user.isSeller, true),
-                    ),
-                )
+                .where(and(eq(user.shopSlug, slug), eq(user.isSeller, true)))
                 .limit(1);
 
             if (shopUser.length === 0) {
@@ -6811,20 +6785,23 @@ const shopStorefrontEndpoints = {
             });
 
             // Group inventory items by product
-            const productMap = new Map<number, {
-                product: any;
-                variants: Array<{
-                    variantId: number;
-                    unitLabel: string;
-                    weightKg: string;
-                    packType: string | null;
-                    price: number;
-                    retailPrice: number | null;
-                    availableQty: string;
-                    sku: string | null;
-                }>;
-                minPrice: number;
-            }>();
+            const productMap = new Map<
+                number,
+                {
+                    product: any;
+                    variants: Array<{
+                        variantId: number;
+                        unitLabel: string;
+                        weightKg: string;
+                        packType: string | null;
+                        price: number;
+                        retailPrice: number | null;
+                        availableQty: string;
+                        sku: string | null;
+                    }>;
+                    minPrice: number;
+                }
+            >();
 
             for (const inv of shopInventory) {
                 const variant = inv.variant;
@@ -6876,7 +6853,7 @@ const shopStorefrontEndpoints = {
             }
 
             // Convert to array and sort
-            let products = Array.from(productMap.values());
+            const products = Array.from(productMap.values());
 
             products.sort((a, b) => {
                 switch (sort) {
@@ -6937,9 +6914,7 @@ const publicCatalogEndpoints = {
             const shopId = context.session.user.id;
 
             // 1. Build conditions for core products
-            const conditions: SQL[] = [
-                eq(coreProductIdentity.creatorSource, "admin"),
-            ];
+            const conditions: SQL[] = [eq(coreProductIdentity.creatorSource, "admin")];
 
             if (input.search?.trim()) {
                 conditions.push(ilike(coreProductIdentity.name, `%${input.search.trim()}%`));
@@ -6978,9 +6953,17 @@ const publicCatalogEndpoints = {
                     offset,
                     with: {
                         category: {
-                            columns: { id: true, name: true, slug: true, typeId: true, skuCode: true },
+                            columns: {
+                                id: true,
+                                name: true,
+                                slug: true,
+                                typeId: true,
+                                skuCode: true,
+                            },
                             with: {
-                                type: { columns: { id: true, name: true, slug: true, skuCode: true } },
+                                type: {
+                                    columns: { id: true, name: true, slug: true, skuCode: true },
+                                },
                             },
                         },
                         subCategory: {
@@ -6988,32 +6971,33 @@ const publicCatalogEndpoints = {
                         },
                     },
                 }),
-                db
-                    .select({ count: count() })
-                    .from(coreProductIdentity)
-                    .where(where),
+                db.select({ count: count() }).from(coreProductIdentity).where(where),
             ]);
 
             const coreProductIds = coreProducts.map((cp) => cp.id);
-            const [shopProducts, shopTemplates] = coreProductIds.length > 0
-                ? await Promise.all([
-                    db.query.product.findMany({
-                        where: and(
-                            eq(product.creatorSource, "shop"),
-                            eq(product.createdById, shopId),
-                            inArray(product.coreProductId, coreProductIds),
-                        ),
-                        columns: { coreProductId: true, brandId: true },
-                    }),
-                    db.query.shopProductGenerationTemplate.findMany({
-                        where: and(
-                            eq(shopProductGenerationTemplate.shopId, shopId),
-                            inArray(shopProductGenerationTemplate.coreProductId, coreProductIds),
-                        ),
-                        columns: { coreProductId: true },
-                    }),
-                ])
-                : [[], []];
+            const [shopProducts, shopTemplates] =
+                coreProductIds.length > 0
+                    ? await Promise.all([
+                          db.query.product.findMany({
+                              where: and(
+                                  eq(product.creatorSource, "shop"),
+                                  eq(product.createdById, shopId),
+                                  inArray(product.coreProductId, coreProductIds),
+                              ),
+                              columns: { coreProductId: true, brandId: true },
+                          }),
+                          db.query.shopProductGenerationTemplate.findMany({
+                              where: and(
+                                  eq(shopProductGenerationTemplate.shopId, shopId),
+                                  inArray(
+                                      shopProductGenerationTemplate.coreProductId,
+                                      coreProductIds,
+                                  ),
+                              ),
+                              columns: { coreProductId: true },
+                          }),
+                      ])
+                    : [[], []];
             const shopBrandsByCore = new Map<number, Set<number>>();
             for (const row of shopProducts) {
                 if (row.coreProductId == null || row.brandId == null) continue;
@@ -7021,9 +7005,7 @@ const publicCatalogEndpoints = {
                 brands.add(row.brandId);
                 shopBrandsByCore.set(row.coreProductId, brands);
             }
-            const templatedCoreIds = new Set(
-                shopTemplates.map((row) => row.coreProductId),
-            );
+            const templatedCoreIds = new Set(shopTemplates.map((row) => row.coreProductId));
 
             // 4. Compose hierarchical SKU and retailer configuration state
             const items = coreProducts.map((cp) => {
@@ -7041,13 +7023,25 @@ const publicCatalogEndpoints = {
                     image: cp.image,
                     description: cp.description,
                     type: cp.category?.type
-                        ? { id: cp.category.type.id, name: cp.category.type.name, slug: cp.category.type.slug }
+                        ? {
+                              id: cp.category.type.id,
+                              name: cp.category.type.name,
+                              slug: cp.category.type.slug,
+                          }
                         : null,
                     category: cp.category
-                        ? { id: cp.category.id, name: cp.category.name, slug: cp.category.slug }
+                        ? {
+                              id: cp.category.id,
+                              name: cp.category.name,
+                              slug: cp.category.slug,
+                          }
                         : null,
                     subCategory: cp.subCategory
-                        ? { id: cp.subCategory.id, name: cp.subCategory.name, slug: cp.subCategory.slug }
+                        ? {
+                              id: cp.subCategory.id,
+                              name: cp.subCategory.name,
+                              slug: cp.subCategory.slug,
+                          }
                         : null,
                     shopBrandCount: shopBrandsByCore.get(cp.id)?.size ?? 0,
                     hasShopTemplate: templatedCoreIds.has(cp.id),
@@ -7205,7 +7199,11 @@ const publicCatalogEndpoints = {
                     description: coreProduct.description,
                     type: coreProduct.category?.type || null,
                     category: coreProduct.category
-                        ? { id: coreProduct.category.id, name: coreProduct.category.name, slug: coreProduct.category.slug }
+                        ? {
+                              id: coreProduct.category.id,
+                              name: coreProduct.category.name,
+                              slug: coreProduct.category.slug,
+                          }
                         : null,
                     subCategory: coreProduct.subCategory || null,
                 },
@@ -7228,32 +7226,31 @@ const publicCatalogEndpoints = {
     /**
      * Get filter options for the catalog: active types, categories, subcategories.
      */
-    getPublicFilterOptions: publicProcedure
-        .handler(async () => {
-            const [types, categories, subCategories, brands] = await Promise.all([
-                db.query.productType.findMany({
-                    where: eq(productType.isActive, true),
-                    orderBy: [productType.displayOrder, productType.name],
-                    columns: { id: true, name: true, slug: true },
-                }),
-                db.query.category.findMany({
-                    where: eq(category.isActive, true),
-                    orderBy: [category.displayOrder, category.name],
-                    columns: { id: true, name: true, slug: true, typeId: true },
-                }),
-                db.query.subCategory.findMany({
-                    where: eq(subCategory.isActive, true),
-                    orderBy: [subCategory.displayOrder, subCategory.name],
-                    columns: { id: true, name: true, slug: true, categoryId: true },
-                }),
-                db.query.brand.findMany({
-                    orderBy: [brand.name],
-                    columns: { id: true, name: true },
-                }),
-            ]);
+    getPublicFilterOptions: publicProcedure.handler(async () => {
+        const [types, categories, subCategories, brands] = await Promise.all([
+            db.query.productType.findMany({
+                where: eq(productType.isActive, true),
+                orderBy: [productType.displayOrder, productType.name],
+                columns: { id: true, name: true, slug: true },
+            }),
+            db.query.category.findMany({
+                where: eq(category.isActive, true),
+                orderBy: [category.displayOrder, category.name],
+                columns: { id: true, name: true, slug: true, typeId: true },
+            }),
+            db.query.subCategory.findMany({
+                where: eq(subCategory.isActive, true),
+                orderBy: [subCategory.displayOrder, subCategory.name],
+                columns: { id: true, name: true, slug: true, categoryId: true },
+            }),
+            db.query.brand.findMany({
+                orderBy: [brand.name],
+                columns: { id: true, name: true },
+            }),
+        ]);
 
-            return { types, categories, subCategories, brands };
-        }),
+        return { types, categories, subCategories, brands };
+    }),
 
     /**
      * Submit a product identity request (shop owner only).
@@ -7306,9 +7303,7 @@ const publicCatalogEndpoints = {
         .handler(async ({ context, input }) => {
             const userId = context.session.user.id;
 
-            const conditions: SQL[] = [
-                eq(productIdentityRequest.requestedBy, userId),
-            ];
+            const conditions: SQL[] = [eq(productIdentityRequest.requestedBy, userId)];
             if (input.status) {
                 conditions.push(eq(productIdentityRequest.status, input.status));
             }
@@ -7326,26 +7321,15 @@ const publicCatalogEndpoints = {
 // Shop Product Management (Retail Control Panel)
 // ────────────────────────────────────────────────────────────────
 
-type RetailerProductStockStatus =
-    | "in_stock"
-    | "attention"
-    | "out_of_stock"
-    | "setup_required";
+type RetailerProductStockStatus = "in_stock" | "attention" | "out_of_stock" | "setup_required";
 
 function resolveRetailerProductStockStatus(
     variants: StructuredStockVariant[],
 ): RetailerProductStockStatus {
-    if (
-        variants.some(
-            (variant) => variant.configurationState === "needs_admin_variant_setup",
-        )
-    ) {
+    if (variants.some((variant) => variant.configurationState === "needs_admin_variant_setup")) {
         return "setup_required";
     }
-    if (
-        variants.length === 0
-        || variants.every((variant) => variant.status === "out_of_stock")
-    ) {
+    if (variants.length === 0 || variants.every((variant) => variant.status === "out_of_stock")) {
         return "out_of_stock";
     }
     if (variants.some((variant) => variant.status !== "in_stock")) {
@@ -7372,60 +7356,51 @@ function buildRetailerProductGroups(rows: StructuredBrandStockSourceRow[]) {
             );
             if (!detail) return [];
 
-            return [{
-                productId,
-                name: first.productName,
-                image: first.productImage || first.coreProductImage,
-                category: {
-                    id: first.categoryId,
-                    name: first.categoryName,
+            return [
+                {
+                    productId,
+                    name: first.productName,
+                    image: first.productImage || first.coreProductImage,
+                    category: {
+                        id: first.categoryId,
+                        name: first.categoryName,
+                    },
+                    brand: {
+                        id: first.brandId,
+                        name: first.brandName,
+                        logo: first.brandLogo,
+                        slug: first.brandSlug,
+                    },
+                    coreProduct: first.coreProductId
+                        ? {
+                              id: first.coreProductId,
+                              name: first.coreProductName || first.productName,
+                              sku: first.coreProductSku,
+                          }
+                        : null,
+                    productTypeName: first.productTypeName,
+                    variantCount: detail.identity.variantCount,
+                    quantityGroups: detail.quantityGroups,
+                    stockStatus: detail.stockStatus,
+                    aggregateStatus: resolveRetailerProductStockStatus(detail.variants),
+                    configurationIssueCount: detail.configurationIssueCount,
+                    variants: detail.variants,
                 },
-                brand: {
-                    id: first.brandId,
-                    name: first.brandName,
-                    logo: first.brandLogo,
-                    slug: first.brandSlug,
-                },
-                coreProduct: first.coreProductId
-                    ? {
-                            id: first.coreProductId,
-                            name: first.coreProductName || first.productName,
-                            sku: first.coreProductSku,
-                        }
-                    : null,
-                productTypeName: first.productTypeName,
-                variantCount: detail.identity.variantCount,
-                quantityGroups: detail.quantityGroups,
-                stockStatus: detail.stockStatus,
-                aggregateStatus: resolveRetailerProductStockStatus(detail.variants),
-                configurationIssueCount: detail.configurationIssueCount,
-                variants: detail.variants,
-            }];
+            ];
         })
-        .sort(
-            (a, b) =>
-                a.name.localeCompare(b.name)
-                || a.brand.name.localeCompare(b.brand.name),
-        );
+        .sort((a, b) => a.name.localeCompare(b.name) || a.brand.name.localeCompare(b.brand.name));
 }
 
 async function loadRetailerProductStockSnapshot(ownerId: string) {
-    const rows = await loadStructuredBrandStockRows(
-        { ownerType: "shop" },
-        ownerId,
-    );
+    const rows = await loadStructuredBrandStockRows({ ownerType: "shop" }, ownerId);
     const structured = buildStructuredStockOverview(rows);
     const products = buildRetailerProductGroups(rows);
 
     const categories = Array.from(
-        new Map(
-            products.map((item) => [item.category.id, item.category]),
-        ).values(),
+        new Map(products.map((item) => [item.category.id, item.category])).values(),
     ).sort((a, b) => a.name.localeCompare(b.name));
     const brands = Array.from(
-        new Map(
-            products.map((item) => [item.brand.id, item.brand]),
-        ).values(),
+        new Map(products.map((item) => [item.brand.id, item.brand])).values(),
     ).sort((a, b) => a.name.localeCompare(b.name));
 
     return {
@@ -7475,14 +7450,9 @@ const shopProductEndpoints = {
             z.object({
                 search: z.string().optional(),
                 categoryId: z.number().optional(),
-                stockStatus: z.enum([
-                    "all",
-                    "in_stock",
-                    "attention",
-                    "out_of_stock",
-                    "setup_required",
-                    "low",
-                ]).default("all"),
+                stockStatus: z
+                    .enum(["all", "in_stock", "attention", "out_of_stock", "setup_required", "low"])
+                    .default("all"),
                 brandId: z.number().optional(),
                 page: z.number().default(1),
                 limit: z.number().default(20),
@@ -7499,14 +7469,14 @@ const shopProductEndpoints = {
                 const s = search.toLowerCase();
                 items = items.filter(
                     (item) =>
-                        item.name.toLowerCase().includes(s)
-                        || item.brand.name.toLowerCase().includes(s)
-                        || item.coreProduct?.name.toLowerCase().includes(s)
-                        || item.coreProduct?.sku?.toLowerCase().includes(s)
-                        || item.variants.some(
+                        item.name.toLowerCase().includes(s) ||
+                        item.brand.name.toLowerCase().includes(s) ||
+                        item.coreProduct?.name.toLowerCase().includes(s) ||
+                        item.coreProduct?.sku?.toLowerCase().includes(s) ||
+                        item.variants.some(
                             (variant) =>
-                                variant.sku?.toLowerCase().includes(s)
-                                || variant.canonicalLabel?.toLowerCase().includes(s),
+                                variant.sku?.toLowerCase().includes(s) ||
+                                variant.canonicalLabel?.toLowerCase().includes(s),
                         ),
                 );
             }
@@ -7517,12 +7487,8 @@ const shopProductEndpoints = {
                 items = items.filter((item) => item.brand.id === brandId);
             }
             if (stockStatus !== "all") {
-                const normalizedStatus = stockStatus === "low"
-                    ? "attention"
-                    : stockStatus;
-                items = items.filter(
-                    (item) => item.aggregateStatus === normalizedStatus,
-                );
+                const normalizedStatus = stockStatus === "low" ? "attention" : stockStatus;
+                items = items.filter((item) => item.aggregateStatus === normalizedStatus);
             }
 
             const totalCount = items.length;
@@ -7546,19 +7512,17 @@ const shopProductEndpoints = {
     /**
      * Product and variant summary derived from the same structured snapshot.
      */
-    getShopProductKPIs: shopOwnerProcedure
-        .handler(async ({ context }) => {
-            const userId = context.session.user.id;
-            const snapshot = await loadRetailerProductStockSnapshot(userId);
-            return {
-                activeProducts: snapshot.products.length,
-                activeVariants: snapshot.dashboard.summary.activeVariants,
-                lowStockVariants: snapshot.dashboard.stockStatus.lowStock,
-                outOfStockVariants: snapshot.dashboard.stockStatus.outOfStock,
-                configurationIssueCount:
-                    snapshot.dashboard.configurationIssueCount,
-            };
-        }),
+    getShopProductKPIs: shopOwnerProcedure.handler(async ({ context }) => {
+        const userId = context.session.user.id;
+        const snapshot = await loadRetailerProductStockSnapshot(userId);
+        return {
+            activeProducts: snapshot.products.length,
+            activeVariants: snapshot.dashboard.summary.activeVariants,
+            lowStockVariants: snapshot.dashboard.stockStatus.lowStock,
+            outOfStockVariants: snapshot.dashboard.stockStatus.outOfStock,
+            configurationIssueCount: snapshot.dashboard.configurationIssueCount,
+        };
+    }),
 
     /**
      * Detailed view of a retailer brand product using canonical variants.
@@ -7580,7 +7544,9 @@ const shopProductEndpoints = {
                 with: {
                     category: { columns: { id: true, name: true, slug: true } },
                     subCategory: { columns: { id: true, name: true } },
-                    coreProduct: { columns: { id: true, name: true, sku: true, image: true } },
+                    coreProduct: {
+                        columns: { id: true, name: true, sku: true, image: true },
+                    },
                     images: true,
                 },
             });
@@ -7607,21 +7573,16 @@ const shopProductEndpoints = {
                     images: prod.images,
                     brand: productGroup.brand,
                     productTypeName: productGroup.productTypeName,
-                    isRetailerOwned:
-                        prod.creatorSource === "shop" && prod.createdById === userId,
+                    isRetailerOwned: prod.creatorSource === "shop" && prod.createdById === userId,
                 },
                 summary: {
                     variantCount: productGroup.variantCount,
                     quantityGroups: productGroup.quantityGroups,
                     stockStatus: productGroup.stockStatus,
                     aggregateStatus: productGroup.aggregateStatus,
-                    configurationIssueCount:
-                        productGroup.configurationIssueCount,
+                    configurationIssueCount: productGroup.configurationIssueCount,
                 },
-                variants: productGroup.variants.map(({
-                    warehouseSellingPrice,
-                    ...variant
-                }) => ({
+                variants: productGroup.variants.map(({ warehouseSellingPrice, ...variant }) => ({
                     ...variant,
                     retailPrice: warehouseSellingPrice,
                 })),
@@ -7670,11 +7631,20 @@ const shopProductEndpoints = {
 
             // Core products filtered by category+subcategory
             const cpConditions: SQL[] = [];
-            if (input.categoryId) cpConditions.push(eq(coreProductIdentity.categoryId, input.categoryId));
-            if (input.subCategoryId) cpConditions.push(eq(coreProductIdentity.subCategoryId, input.subCategoryId));
+            if (input.categoryId)
+                cpConditions.push(eq(coreProductIdentity.categoryId, input.categoryId));
+            if (input.subCategoryId)
+                cpConditions.push(eq(coreProductIdentity.subCategoryId, input.subCategoryId));
             const coreProducts = await db.query.coreProductIdentity.findMany({
                 where: cpConditions.length > 0 ? and(...cpConditions) : undefined,
-                columns: { id: true, name: true, sku: true, image: true, categoryId: true, subCategoryId: true },
+                columns: {
+                    id: true,
+                    name: true,
+                    sku: true,
+                    image: true,
+                    categoryId: true,
+                    subCategoryId: true,
+                },
                 orderBy: [coreProductIdentity.name],
             });
 
@@ -7706,287 +7676,291 @@ const shopProductEndpoints = {
             const variantOptions = await db.query.variantOption.findMany({
                 where: and(...voConditions),
                 orderBy: [variantOption.sortOrder, variantOption.name],
-                columns: { id: true, name: true, unit: true, size: true, variantType: true },
+                columns: {
+                    id: true,
+                    name: true,
+                    unit: true,
+                    size: true,
+                    variantType: true,
+                },
             });
 
-            return { types, categories, subCategories, coreProducts, brands, variantOptions };
+            return {
+                types,
+                categories,
+                subCategories,
+                coreProducts,
+                brands,
+                variantOptions,
+            };
         }),
 
     /**
      * Create a new shop product — full 8-step data.
      * Creates product, product_brand links, product_variants, and initial inventory.
      */
-    createShopProduct: shopOwnerProcedure
-        .input(z.unknown())
-        .handler(async () => {
-            throw new ORPCError("BAD_REQUEST", {
-                message: "Retailer products must be configured from Product Catalog",
-            });
-        }),
+    createShopProduct: shopOwnerProcedure.input(z.unknown()).handler(async () => {
+        throw new ORPCError("BAD_REQUEST", {
+            message: "Retailer products must be configured from Product Catalog",
+        });
+    }),
 
-    getMyStorePreview: shopOwnerProcedure
-        .handler(async ({ context }) => {
-            const userId = context.session.user.id;
+    getMyStorePreview: shopOwnerProcedure.handler(async ({ context }) => {
+        const userId = context.session.user.id;
 
-            // 1. Get store identity from user row
-            const storeUser = await db.query.user.findFirst({
-                where: eq(user.id, userId),
-                columns: {
-                    id: true,
-                    name: true,
-                    shopName: true,
-                    shopSlug: true,
-                    shopAddress: true,
-                    shopLat: true,
-                    shopLng: true,
-                    phoneNumber: true,
-                    ownerName: true,
-                    image: true,
-                },
-            });
+        // 1. Get store identity from user row
+        const storeUser = await db.query.user.findFirst({
+            where: eq(user.id, userId),
+            columns: {
+                id: true,
+                name: true,
+                shopName: true,
+                shopSlug: true,
+                shopAddress: true,
+                shopLat: true,
+                shopLng: true,
+                phoneNumber: true,
+                ownerName: true,
+                image: true,
+            },
+        });
 
-            if (!storeUser) throw new ORPCError("NOT_FOUND", { message: "User not found" });
+        if (!storeUser) throw new ORPCError("NOT_FOUND", { message: "User not found" });
 
-            // 2. Get all inventory for this shop owner with full product+variant+brand info
-            const shopInventory = await db.query.inventory.findMany({
-                where: and(
-                    eq(inventory.ownerType, "shop"),
-                    eq(inventory.ownerId, userId),
-                ),
-                with: {
-                    variant: {
-                        columns: {
-                            id: true,
-                            productId: true,
-                            sku: true,
-                            unitLabel: true,
-                            weightKg: true,
-                            price: true,
-                            packType: true,
-                            brandId: true,
-                            color: true,
-                            size: true,
-                            isActive: true,
-                            isPackReturnRequired: true,
-                            packDepositAmount: true,
-                            sourceVariantOptionId: true,
-                        },
-                        with: {
-                            product: {
-                                columns: {
-                                    id: true,
-                                    name: true,
-                                    slug: true,
-                                    image: true,
-                                    categoryId: true,
-                                    coreProductId: true,
-                                    status: true,
-                                    reorderLevel: true,
-                                    shortDescription: true,
-                                    isReturnablePack: true,
-                                },
-                                with: {
-                                    category: { columns: { id: true, name: true, slug: true } },
-                                },
+        // 2. Get all inventory for this shop owner with full product+variant+brand info
+        const shopInventory = await db.query.inventory.findMany({
+            where: and(eq(inventory.ownerType, "shop"), eq(inventory.ownerId, userId)),
+            with: {
+                variant: {
+                    columns: {
+                        id: true,
+                        productId: true,
+                        sku: true,
+                        unitLabel: true,
+                        weightKg: true,
+                        price: true,
+                        packType: true,
+                        brandId: true,
+                        color: true,
+                        size: true,
+                        isActive: true,
+                        isPackReturnRequired: true,
+                        packDepositAmount: true,
+                        sourceVariantOptionId: true,
+                    },
+                    with: {
+                        product: {
+                            columns: {
+                                id: true,
+                                name: true,
+                                slug: true,
+                                image: true,
+                                categoryId: true,
+                                coreProductId: true,
+                                status: true,
+                                reorderLevel: true,
+                                shortDescription: true,
+                                isReturnablePack: true,
                             },
-                            brand: { columns: { id: true, name: true, logo: true } },
+                            with: {
+                                category: { columns: { id: true, name: true, slug: true } },
+                            },
                         },
+                        brand: { columns: { id: true, name: true, logo: true } },
                     },
                 },
-            });
+            },
+        });
 
-            // 3. Group by product
-            type VariantInfo = {
-                variantId: number;
-                sku: string | null;
-                unitLabel: string;
-                weightKg: string;
-                packType: string | null;
-                brandId: number | null;
-                brandName: string | null;
-                brandLogo: string | null;
-                retailPrice: string | null;
-                availableQty: number;
-                isPackReturnRequired: boolean | null;
-                packDepositAmount: string | null;
-            };
+        // 3. Group by product
+        type VariantInfo = {
+            variantId: number;
+            sku: string | null;
+            unitLabel: string;
+            weightKg: string;
+            packType: string | null;
+            brandId: number | null;
+            brandName: string | null;
+            brandLogo: string | null;
+            retailPrice: string | null;
+            availableQty: number;
+            isPackReturnRequired: boolean | null;
+            packDepositAmount: string | null;
+        };
 
-            const productMap = new Map<number, {
-                product: typeof shopInventory[0]["variant"]["product"];
+        const productMap = new Map<
+            number,
+            {
+                product: (typeof shopInventory)[0]["variant"]["product"];
                 variants: VariantInfo[];
                 totalStock: number;
                 brands: Map<number, { id: number; name: string; logo: string | null }>;
-            }>();
+            }
+        >();
 
-            for (const inv of shopInventory) {
-                if (!inv.variant?.product) continue;
-                const pid = inv.variant.product.id;
+        for (const inv of shopInventory) {
+            if (!inv.variant?.product) continue;
+            const pid = inv.variant.product.id;
 
-                if (!productMap.has(pid)) {
-                    productMap.set(pid, {
-                        product: inv.variant.product,
-                        variants: [],
-                        totalStock: 0,
-                        brands: new Map(),
-                    });
-                }
-
-                const entry = productMap.get(pid)!;
-                const qty = Number(inv.availableQty);
-                entry.totalStock += qty;
-
-                entry.variants.push({
-                    variantId: inv.variant.id,
-                    sku: inv.variant.sku,
-                    unitLabel: inv.variant.unitLabel,
-                    weightKg: inv.variant.weightKg,
-					packType: inv.variant.packType,
-                    brandId: inv.variant.brandId,
-                    brandName: inv.variant.brand?.name ?? null,
-                    brandLogo: inv.variant.brand?.logo ?? null,
-                    retailPrice: inv.retailPrice,
-                    availableQty: qty,
-                    isPackReturnRequired: inv.variant.isPackReturnRequired,
-                    packDepositAmount: inv.variant.packDepositAmount,
+            if (!productMap.has(pid)) {
+                productMap.set(pid, {
+                    product: inv.variant.product,
+                    variants: [],
+                    totalStock: 0,
+                    brands: new Map(),
                 });
-
-                if (inv.variant.brand) {
-                    entry.brands.set(inv.variant.brand.id, {
-                        id: inv.variant.brand.id,
-                        name: inv.variant.brand.name,
-                        logo: inv.variant.brand.logo,
-                    });
-                }
             }
 
-            // 4. Derive categories
-            const categoryMap = new Map<number, { id: number; name: string; slug: string; productCount: number }>();
-            for (const entry of productMap.values()) {
-                const cat = entry.product.category;
-                if (cat) {
-                    const existing = categoryMap.get(cat.id);
-                    if (existing) {
-                        existing.productCount++;
-                    } else {
-                        categoryMap.set(cat.id, { ...cat, productCount: 1 });
-                    }
+            const entry = productMap.get(pid)!;
+            const qty = Number(inv.availableQty);
+            entry.totalStock += qty;
+
+            entry.variants.push({
+                variantId: inv.variant.id,
+                sku: inv.variant.sku,
+                unitLabel: inv.variant.unitLabel,
+                weightKg: inv.variant.weightKg,
+                packType: inv.variant.packType,
+                brandId: inv.variant.brandId,
+                brandName: inv.variant.brand?.name ?? null,
+                brandLogo: inv.variant.brand?.logo ?? null,
+                retailPrice: inv.retailPrice,
+                availableQty: qty,
+                isPackReturnRequired: inv.variant.isPackReturnRequired,
+                packDepositAmount: inv.variant.packDepositAmount,
+            });
+
+            if (inv.variant.brand) {
+                entry.brands.set(inv.variant.brand.id, {
+                    id: inv.variant.brand.id,
+                    name: inv.variant.brand.name,
+                    logo: inv.variant.brand.logo,
+                });
+            }
+        }
+
+        // 4. Derive categories
+        const categoryMap = new Map<
+            number,
+            { id: number; name: string; slug: string; productCount: number }
+        >();
+        for (const entry of productMap.values()) {
+            const cat = entry.product.category;
+            if (cat) {
+                const existing = categoryMap.get(cat.id);
+                if (existing) {
+                    existing.productCount++;
+                } else {
+                    categoryMap.set(cat.id, { ...cat, productCount: 1 });
                 }
             }
+        }
 
-            // 5. Build product list
-            const REORDER_THRESHOLD = 10;
-            const products = Array.from(productMap.values())
-                .sort((a, b) => a.product.name.localeCompare(b.product.name))
-                .map((entry) => {
-                    const reorderLevel = entry.product.reorderLevel || REORDER_THRESHOLD;
-                    let stockStatus: "in_stock" | "low" | "out_of_stock";
-                    if (entry.totalStock <= 0) stockStatus = "out_of_stock";
-                    else if (entry.totalStock <= reorderLevel) stockStatus = "low";
-                    else stockStatus = "in_stock";
+        // 5. Build product list
+        const REORDER_THRESHOLD = 10;
+        const products = Array.from(productMap.values())
+            .sort((a, b) => a.product.name.localeCompare(b.product.name))
+            .map((entry) => {
+                const reorderLevel = entry.product.reorderLevel || REORDER_THRESHOLD;
+                let stockStatus: "in_stock" | "low" | "out_of_stock";
+                if (entry.totalStock <= 0) stockStatus = "out_of_stock";
+                else if (entry.totalStock <= reorderLevel) stockStatus = "low";
+                else stockStatus = "in_stock";
 
-                    // Lowest retail price across variants
-                    const prices = entry.variants
-                        .map((v) => Number(v.retailPrice))
-                        .filter((p) => p > 0);
-                    const lowestPrice = prices.length > 0 ? Math.min(...prices) : null;
+                // Lowest retail price across variants
+                const prices = entry.variants
+                    .map((v) => Number(v.retailPrice))
+                    .filter((p) => p > 0);
+                const lowestPrice = prices.length > 0 ? Math.min(...prices) : null;
 
-                    return {
-                        productId: entry.product.id,
-                        name: entry.product.name,
-                        slug: entry.product.slug,
-                        image: entry.product.image,
-                        shortDescription: entry.product.shortDescription,
-                        isReturnablePack: entry.product.isReturnablePack,
-                        category: entry.product.category,
-                        brands: Array.from(entry.brands.values()),
-                        variants: entry.variants,
-                        totalStock: entry.totalStock,
-                        stockStatus,
-                        lowestPrice,
-                        variantCount: entry.variants.length,
-                    };
-                });
+                return {
+                    productId: entry.product.id,
+                    name: entry.product.name,
+                    slug: entry.product.slug,
+                    image: entry.product.image,
+                    shortDescription: entry.product.shortDescription,
+                    isReturnablePack: entry.product.isReturnablePack,
+                    category: entry.product.category,
+                    brands: Array.from(entry.brands.values()),
+                    variants: entry.variants,
+                    totalStock: entry.totalStock,
+                    stockStatus,
+                    lowestPrice,
+                    variantCount: entry.variants.length,
+                };
+            });
 
-            return {
-                store: {
-                    name: storeUser.shopName || storeUser.name,
-                    slug: storeUser.shopSlug,
-                    address: storeUser.shopAddress,
-                    lat: storeUser.shopLat,
-                    lng: storeUser.shopLng,
-                    phoneNumber: storeUser.phoneNumber,
-                    ownerName: storeUser.ownerName,
-                    image: storeUser.image,
-                },
-                categories: Array.from(categoryMap.values()),
-                products,
-                totalProducts: products.length,
-            };
-        }),
+        return {
+            store: {
+                name: storeUser.shopName || storeUser.name,
+                slug: storeUser.shopSlug,
+                address: storeUser.shopAddress,
+                lat: storeUser.shopLat,
+                lng: storeUser.shopLng,
+                phoneNumber: storeUser.phoneNumber,
+                ownerName: storeUser.ownerName,
+                image: storeUser.image,
+            },
+            categories: Array.from(categoryMap.values()),
+            products,
+            totalProducts: products.length,
+        };
+    }),
 
     /**
      * Get store KPI stats: total orders, customers, avg rating.
      */
-    getMyStoreStats: shopOwnerProcedure
-        .handler(async ({ context }) => {
-            const userId = context.session.user.id;
+    getMyStoreStats: shopOwnerProcedure.handler(async ({ context }) => {
+        const userId = context.session.user.id;
 
-            // Count B2C orders for this shop
-            const [orderStats] = await db
-                .select({
-                    totalOrders: count(),
-                    totalCustomers: sql<number>`COUNT(DISTINCT ${order.userId})`,
-                })
-                .from(order)
-                .where(
-                    and(
-                        eq(order.shopId, userId),
-                        eq(order.orderType, "b2c"),
-                    ),
-                );
+        // Count B2C orders for this shop
+        const [orderStats] = await db
+            .select({
+                totalOrders: count(),
+                totalCustomers: sql<number>`COUNT(DISTINCT ${order.userId})`,
+            })
+            .from(order)
+            .where(and(eq(order.shopId, userId), eq(order.orderType, "b2c")));
 
-            // Get average product rating from reviews on shop's products
-            const shopVariantIds = await db.query.inventory.findMany({
-                where: and(
-                    eq(inventory.ownerType, "shop"),
-                    eq(inventory.ownerId, userId),
-                ),
-                columns: { variantId: true },
+        // Get average product rating from reviews on shop's products
+        const shopVariantIds = await db.query.inventory.findMany({
+            where: and(eq(inventory.ownerType, "shop"), eq(inventory.ownerId, userId)),
+            columns: { variantId: true },
+        });
+
+        const variantIds = shopVariantIds.map((i) => i.variantId);
+        let avgRating = 0;
+        let reviewCount = 0;
+
+        if (variantIds.length > 0) {
+            // Get product IDs from variant IDs
+            const variants = await db.query.productVariant.findMany({
+                where: inArray(productVariant.id, variantIds),
+                columns: { productId: true },
             });
+            const productIds = [...new Set(variants.map((v) => v.productId))];
 
-            const variantIds = shopVariantIds.map((i) => i.variantId);
-            let avgRating = 0;
-            let reviewCount = 0;
+            if (productIds.length > 0) {
+                const [stats] = await db
+                    .select({
+                        avgRating: avg(productReview.rating),
+                        reviewCount: count(),
+                    })
+                    .from(productReview)
+                    .where(inArray(productReview.productId, productIds));
 
-            if (variantIds.length > 0) {
-                // Get product IDs from variant IDs
-                const variants = await db.query.productVariant.findMany({
-                    where: inArray(productVariant.id, variantIds),
-                    columns: { productId: true },
-                });
-                const productIds = [...new Set(variants.map((v) => v.productId))];
-
-                if (productIds.length > 0) {
-                    const [stats] = await db
-                        .select({
-                            avgRating: avg(productReview.rating),
-                            reviewCount: count(),
-                        })
-                        .from(productReview)
-                        .where(inArray(productReview.productId, productIds));
-
-                    avgRating = Number(stats?.avgRating) || 0;
-                    reviewCount = Number(stats?.reviewCount) || 0;
-                }
+                avgRating = Number(stats?.avgRating) || 0;
+                reviewCount = Number(stats?.reviewCount) || 0;
             }
+        }
 
-            return {
-                totalOrders: Number(orderStats?.totalOrders) || 0,
-                totalCustomers: Number(orderStats?.totalCustomers) || 0,
-                avgRating: Math.round(avgRating * 10) / 10,
-                reviewCount,
-            };
-        }),
+        return {
+            totalOrders: Number(orderStats?.totalOrders) || 0,
+            totalCustomers: Number(orderStats?.totalCustomers) || 0,
+            avgRating: Math.round(avgRating * 10) / 10,
+            reviewCount,
+        };
+    }),
 
     /**
      * Search shop products for stock entry — returns products with their variants
@@ -8004,16 +7978,19 @@ const shopProductEndpoints = {
 
             // Get all inventory for this shop, grouped by product
             const shopInventory = await db.query.inventory.findMany({
-                where: and(
-                    eq(inventory.ownerType, "shop"),
-                    eq(inventory.ownerId, userId),
-                ),
+                where: and(eq(inventory.ownerType, "shop"), eq(inventory.ownerId, userId)),
                 with: {
                     variant: {
                         with: {
-							sourceVariantOption: true,
+                            sourceVariantOption: true,
                             product: {
-                                columns: { id: true, name: true, slug: true, image: true, categoryId: true },
+                                columns: {
+                                    id: true,
+                                    name: true,
+                                    slug: true,
+                                    image: true,
+                                    categoryId: true,
+                                },
                                 with: {
                                     category: { columns: { id: true, name: true } },
                                     productBrands: {
@@ -8028,32 +8005,40 @@ const shopProductEndpoints = {
             });
 
             // Group by product
-            const productMap = new Map<number, {
-                id: number;
-                name: string;
-                image: string | null;
-                category: { id: number; name: string } | null;
-                variants: {
-                    variantId: number;
-                    inventoryId: number;
-                    unitLabel: string;
-                    weightKg: string;
-                    brandName: string | null;
-                    currentStock: number;
-                    retailPrice: string | null;
-					operationalUnit: string;
-					stockDisplay: string;
-                }[];
-            }>();
+            const productMap = new Map<
+                number,
+                {
+                    id: number;
+                    name: string;
+                    image: string | null;
+                    category: { id: number; name: string } | null;
+                    variants: {
+                        variantId: number;
+                        inventoryId: number;
+                        unitLabel: string;
+                        weightKg: string;
+                        brandName: string | null;
+                        currentStock: number;
+                        retailPrice: string | null;
+                        operationalUnit: string;
+                        stockDisplay: string;
+                    }[];
+                }
+            >();
 
             for (const inv of shopInventory) {
-				if (!inv.variant?.product || !inv.variant.sourceVariantOption || !inv.variant.isActive) continue;
-				let semantics;
-				try {
-					semantics = resolveVariantStockSemantics(inv.variant.sourceVariantOption);
-				} catch {
-					continue;
-				}
+                if (
+                    !inv.variant?.product ||
+                    !inv.variant.sourceVariantOption ||
+                    !inv.variant.isActive
+                )
+                    continue;
+                let semantics;
+                try {
+                    semantics = resolveVariantStockSemantics(inv.variant.sourceVariantOption);
+                } catch {
+                    continue;
+                }
                 const prod = inv.variant.product;
                 const pid = prod.id;
 
@@ -8068,20 +8053,21 @@ const shopProductEndpoints = {
                 }
 
                 // Resolve brand
-                const brandName = inv.variant.brand?.name
-                    || (prod as any).productBrands?.[0]?.brand?.name
-                    || null;
+                const brandName =
+                    inv.variant.brand?.name ||
+                    (prod as any).productBrands?.[0]?.brand?.name ||
+                    null;
 
                 productMap.get(pid)!.variants.push({
                     variantId: inv.variant.id,
                     inventoryId: inv.id,
-					unitLabel: semantics.displayLabel,
+                    unitLabel: semantics.displayLabel,
                     weightKg: inv.variant.weightKg,
                     brandName,
                     currentStock: Number(inv.availableQty),
                     retailPrice: inv.retailPrice,
-					operationalUnit: semantics.operationalUnit,
-					stockDisplay: formatVariantStockQuantity(semantics, Number(inv.availableQty)),
+                    operationalUnit: semantics.operationalUnit,
+                    stockDisplay: formatVariantStockQuantity(semantics, Number(inv.availableQty)),
                 });
             }
 
@@ -8108,13 +8094,17 @@ const shopProductEndpoints = {
     addShopStock: shopOwnerProcedure
         .input(
             z.object({
-                entries: z.array(
-                    z.object({
-                        inventoryId: z.number().int(),
-                        addQuantity: z.number().min(0),
-                    }),
-                ).min(1, "At least one entry is required"),
-                stockType: z.enum(["purchase", "return", "adjustment", "opening"]).default("purchase"),
+                entries: z
+                    .array(
+                        z.object({
+                            inventoryId: z.number().int(),
+                            addQuantity: z.number().min(0),
+                        }),
+                    )
+                    .min(1, "At least one entry is required"),
+                stockType: z
+                    .enum(["purchase", "return", "adjustment", "opening"])
+                    .default("purchase"),
                 note: z.string().optional(),
             }),
         )
@@ -8122,17 +8112,19 @@ const shopProductEndpoints = {
             const userId = context.session.user.id;
 
             // Validate all inventory rows belong to this shop
-			const inventoryIds = input.entries.map((e) => e.inventoryId);
-			if (new Set(inventoryIds).size !== inventoryIds.length) {
-				throw new ORPCError("BAD_REQUEST", { message: "Duplicate inventory entries are not allowed" });
-			}
+            const inventoryIds = input.entries.map((e) => e.inventoryId);
+            if (new Set(inventoryIds).size !== inventoryIds.length) {
+                throw new ORPCError("BAD_REQUEST", {
+                    message: "Duplicate inventory entries are not allowed",
+                });
+            }
             const ownedInventory = await db.query.inventory.findMany({
                 where: and(
                     inArray(inventory.id, inventoryIds),
                     eq(inventory.ownerType, "shop"),
                     eq(inventory.ownerId, userId),
-				),
-				with: { variant: { with: { sourceVariantOption: true } } },
+                ),
+                with: { variant: { with: { sourceVariantOption: true } } },
             });
 
             if (ownedInventory.length !== inventoryIds.length) {
@@ -8140,25 +8132,34 @@ const shopProductEndpoints = {
                     message: "Some inventory items do not belong to your shop",
                 });
             }
-			for (const row of ownedInventory) {
-				if (!row.variant?.isActive || !row.variant.sourceVariantOption) {
-					throw new ORPCError("BAD_REQUEST", { message: "Stock can only be added to an active generated variant" });
-				}
-				try {
-					resolveVariantStockSemantics(row.variant.sourceVariantOption);
-				} catch (error) {
-					throw new ORPCError("BAD_REQUEST", {
-						message: error instanceof Error ? error.message : "Variant definition is invalid",
-					});
-				}
-			}
+            for (const row of ownedInventory) {
+                if (!row.variant?.isActive || !row.variant.sourceVariantOption) {
+                    throw new ORPCError("BAD_REQUEST", {
+                        message: "Stock can only be added to an active generated variant",
+                    });
+                }
+                try {
+                    resolveVariantStockSemantics(row.variant.sourceVariantOption);
+                } catch (error) {
+                    throw new ORPCError("BAD_REQUEST", {
+                        message:
+                            error instanceof Error
+                                ? error.message
+                                : "Variant definition is invalid",
+                    });
+                }
+            }
 
             // Build a lookup
             const invLookup = new Map(ownedInventory.map((inv) => [inv.id, inv]));
 
             // Update quantities in a transaction
             const results = await db.transaction(async (tx) => {
-                const updated: { inventoryId: number; oldQty: number; newQty: number }[] = [];
+                const updated: {
+                    inventoryId: number;
+                    oldQty: number;
+                    newQty: number;
+                }[] = [];
 
                 for (const entry of input.entries) {
                     if (entry.addQuantity <= 0) continue;
@@ -8241,17 +8242,10 @@ const shopProductEndpoints = {
                     variantPrice: productVariant.price,
                 })
                 .from(inventory)
-                .innerJoin(
-                    productVariant,
-                    eq(inventory.variantId, productVariant.id),
-                )
+                .innerJoin(productVariant, eq(inventory.variantId, productVariant.id))
                 .innerJoin(product, eq(productVariant.productId, product.id))
                 .leftJoin(brand, eq(productVariant.brandId, brand.id))
-                .where(
-                    searchCondition
-                        ? and(baseConditions, searchCondition)
-                        : baseConditions,
-                )
+                .where(searchCondition ? and(baseConditions, searchCondition) : baseConditions)
                 .orderBy(product.name)
                 .limit(input.limit);
 
@@ -8271,7 +8265,8 @@ const shopProductEndpoints = {
                     productImage: r.productImage,
                     brandName: r.brandName,
                     availableQty: parseFloat(r.availableQty || "0"),
-                    retailPrice: parseFloat(r.retailPrice || "0") || parseFloat(r.variantPrice || "0"),
+                    retailPrice:
+                        parseFloat(r.retailPrice || "0") || parseFloat(r.variantPrice || "0"),
                 })),
             };
         }),
@@ -8283,13 +8278,7 @@ const shopProductEndpoints = {
     createShopAdjustment: shopOwnerProcedure
         .input(
             z.object({
-                adjustmentType: z.enum([
-                    "increase",
-                    "decrease",
-                    "damage",
-                    "loss",
-                    "correction",
-                ]),
+                adjustmentType: z.enum(["increase", "decrease", "damage", "loss", "correction"]),
                 reason: z.enum([
                     "physical_count",
                     "damage",
@@ -8349,9 +8338,7 @@ const shopProductEndpoints = {
                 });
             }
 
-            const invLookup = new Map(
-                ownedInventory.map((inv) => [inv.id, inv]),
-            );
+            const invLookup = new Map(ownedInventory.map((inv) => [inv.id, inv]));
 
             // 2. Generate adjustment number (ADJ-S-xxxx for shop)
             const [maxResult] = await db
@@ -8373,9 +8360,9 @@ const shopProductEndpoints = {
                 const adjustQty = item.actualQty - currentQty;
                 const movement = inv.variant?.sourceVariantOption
                     ? resolveVariantMovementSemantics(
-                        inv.variant.sourceVariantOption,
-                        inv.variant.product?.category?.type?.family ?? "generic",
-                    )
+                          inv.variant.sourceVariantOption,
+                          inv.variant.product?.category?.type?.family ?? "generic",
+                      )
                     : null;
                 if (
                     movement?.inventoryUnit === "cylinder" &&
@@ -8398,13 +8385,12 @@ const shopProductEndpoints = {
             });
 
             // Filter out items with zero change
-            const changedItems = lineItems.filter(
-                (li) => parseFloat(li.adjustQty) !== 0,
-            );
+            const changedItems = lineItems.filter((li) => parseFloat(li.adjustQty) !== 0);
 
             if (changedItems.length === 0) {
                 throw new ORPCError("BAD_REQUEST", {
-                    message: "No stock changes detected — all actual quantities match current stock",
+                    message:
+                        "No stock changes detected — all actual quantities match current stock",
                 });
             }
 
@@ -8495,20 +8481,14 @@ const shopProductEndpoints = {
             const userId = context.session.user.id;
             const offset = (input.page - 1) * input.pageSize;
 
-            const conditions: SQL[] = [
-                eq(stockAdjustment.warehouseId, userId),
-            ];
+            const conditions: SQL[] = [eq(stockAdjustment.warehouseId, userId)];
 
             if (input.adjustmentType) {
-                conditions.push(
-                    eq(stockAdjustment.adjustmentType, input.adjustmentType),
-                );
+                conditions.push(eq(stockAdjustment.adjustmentType, input.adjustmentType));
             }
             if (input.search?.trim()) {
                 const term = `%${input.search.trim()}%`;
-                conditions.push(
-                    ilike(stockAdjustment.adjustmentNo, term),
-                );
+                conditions.push(ilike(stockAdjustment.adjustmentNo, term));
             }
 
             const where = and(...conditions);
@@ -8532,10 +8512,7 @@ const shopProductEndpoints = {
                     .orderBy(desc(stockAdjustment.createdAt))
                     .limit(input.pageSize)
                     .offset(offset),
-                db
-                    .select({ count: sql<number>`COUNT(*)::int` })
-                    .from(stockAdjustment)
-                    .where(where),
+                db.select({ count: sql<number>`COUNT(*)::int` }).from(stockAdjustment).where(where),
             ]);
 
             const totalCount = countResult[0]?.count ?? 0;
@@ -8595,9 +8572,7 @@ const shopProductEndpoints = {
                 });
             }
 
-            const invLookup = new Map(
-                ownedInventory.map((inv) => [inv.id, inv]),
-            );
+            const invLookup = new Map(ownedInventory.map((inv) => [inv.id, inv]));
 
             // 2. Validate stock is sufficient
             for (const item of input.items) {
@@ -8651,10 +8626,7 @@ const shopProductEndpoints = {
             });
 
             const totalQty = lineItems.reduce((s, li) => s + li.qty, 0);
-            const totalLossValue = lineItems.reduce(
-                (s, li) => s + parseFloat(li.totalValue),
-                0,
-            );
+            const totalLossValue = lineItems.reduce((s, li) => s + parseFloat(li.totalValue), 0);
 
             // 5. Transaction: insert entry + items + deduct inventory
             const result = await db.transaction(async (tx) => {
@@ -8717,9 +8689,7 @@ const shopProductEndpoints = {
         .input(
             z.object({
                 search: z.string().optional(),
-                damageType: z
-                    .enum(["physical", "expired", "lost"])
-                    .optional(),
+                damageType: z.enum(["physical", "expired", "lost"]).optional(),
                 page: z.number().int().min(1).default(1),
                 pageSize: z.number().int().min(1).max(100).default(20),
             }),
@@ -8734,9 +8704,7 @@ const shopProductEndpoints = {
             ];
 
             if (input.damageType) {
-                conditions.push(
-                    eq(damageEntry.damageType, input.damageType),
-                );
+                conditions.push(eq(damageEntry.damageType, input.damageType));
             }
             if (input.search?.trim()) {
                 const term = `%${input.search.trim()}%`;
@@ -8762,10 +8730,7 @@ const shopProductEndpoints = {
                     .orderBy(desc(damageEntry.createdAt))
                     .limit(input.pageSize)
                     .offset(offset),
-                db
-                    .select({ count: sql<number>`COUNT(*)::int` })
-                    .from(damageEntry)
-                    .where(where),
+                db.select({ count: sql<number>`COUNT(*)::int` }).from(damageEntry).where(where),
             ]);
 
             const totalCount = countResult[0]?.count ?? 0;
@@ -8790,12 +8755,7 @@ const shopProductEndpoints = {
             const entry = await db
                 .select()
                 .from(damageEntry)
-                .where(
-                    and(
-                        eq(damageEntry.id, input.id),
-                        eq(damageEntry.shopId, userId),
-                    ),
-                )
+                .where(and(eq(damageEntry.id, input.id), eq(damageEntry.shopId, userId)))
                 .limit(1);
 
             if (!entry[0]) {
@@ -8821,10 +8781,7 @@ const shopProductEndpoints = {
                     categoryName: category.name,
                 })
                 .from(damageEntryItem)
-                .innerJoin(
-                    productVariant,
-                    eq(damageEntryItem.variantId, productVariant.id),
-                )
+                .innerJoin(productVariant, eq(damageEntryItem.variantId, productVariant.id))
                 .innerJoin(product, eq(productVariant.productId, product.id))
                 .leftJoin(brand, eq(productVariant.brandId, brand.id))
                 .leftJoin(category, eq(product.categoryId, category.id))
@@ -8837,31 +8794,24 @@ const shopProductEndpoints = {
     /**
      * KPI summary for damage management.
      */
-    getDamageSummary: shopOwnerProcedure
-        .input(z.void())
-        .handler(async ({ context }) => {
-            const userId = context.session.user.id;
+    getDamageSummary: shopOwnerProcedure.input(z.void()).handler(async ({ context }) => {
+        const userId = context.session.user.id;
 
-            const [result] = await db
-                .select({
-                    totalEntries: sql<number>`COUNT(*)::int`,
-                    totalDamageQty: sql<number>`COALESCE(SUM(${damageEntry.totalQty}), 0)::int`,
-                    totalLossValue: sql<string>`COALESCE(SUM(${damageEntry.totalLossValue}::numeric), 0)::text`,
-                })
-                .from(damageEntry)
-                .where(
-                    and(
-                        eq(damageEntry.shopId, userId),
-                        eq(damageEntry.status, "active"),
-                    ),
-                );
+        const [result] = await db
+            .select({
+                totalEntries: sql<number>`COUNT(*)::int`,
+                totalDamageQty: sql<number>`COALESCE(SUM(${damageEntry.totalQty}), 0)::int`,
+                totalLossValue: sql<string>`COALESCE(SUM(${damageEntry.totalLossValue}::numeric), 0)::text`,
+            })
+            .from(damageEntry)
+            .where(and(eq(damageEntry.shopId, userId), eq(damageEntry.status, "active")));
 
-            return {
-                totalEntries: result?.totalEntries ?? 0,
-                totalDamageQty: result?.totalDamageQty ?? 0,
-                totalLossValue: parseFloat(result?.totalLossValue ?? "0"),
-            };
-        }),
+        return {
+            totalEntries: result?.totalEntries ?? 0,
+            totalDamageQty: result?.totalDamageQty ?? 0,
+            totalLossValue: parseFloat(result?.totalLossValue ?? "0"),
+        };
+    }),
 };
 
 // ────────────────────────────────────────────────────────────────

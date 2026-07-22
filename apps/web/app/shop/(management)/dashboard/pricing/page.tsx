@@ -15,7 +15,8 @@ import {
 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -116,6 +117,8 @@ function getStockStatus(qty: number) {
 // ─── Main Page ─────────────────────────────────────────────────
 
 export default function PricingPage() {
+  const searchParams = useSearchParams();
+  const targetInventoryId = Number(searchParams.get("inventoryId"));
   const { data, isLoading, isError } = useMyRetailProducts({ limit: 200 });
   const updatePrice = useUpdateRetailPrice();
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -125,6 +128,15 @@ export default function PricingPage() {
   const [brandFilter, setBrandFilter] = useState("all");
 
   const items: any[] = data?.items ?? [];
+
+  useEffect(() => {
+    if (!Number.isFinite(targetInventoryId) || editingId != null) return;
+    const target = items.find((item: any) => item.id === targetInventoryId);
+    if (target) {
+      setEditingId(target.id);
+      setEditValue(target.retailPrice?.toString() ?? "");
+    }
+  }, [editingId, items, targetInventoryId]);
 
   // ─── Derive categories, brands, grouped data ──────────────────
 
@@ -455,7 +467,7 @@ export default function PricingPage() {
                             return (
                               <div
                                 key={item.id}
-                                className="grid min-w-[900px] grid-cols-[minmax(90px,1fr)_minmax(190px,1.7fr)_70px_240px_100px_60px_50px] items-center px-4 py-2.5 transition-colors hover:bg-gray-50/50"
+                                className={`grid min-w-[900px] grid-cols-[minmax(90px,1fr)_minmax(190px,1.7fr)_70px_240px_100px_60px_50px] items-center px-4 py-2.5 transition-colors hover:bg-gray-50/50 ${item.id === targetInventoryId ? "bg-emerald-50 ring-1 ring-inset ring-emerald-300" : ""}`}
                               >
                                 {/* Brand */}
                                 <div className="text-sm text-gray-700 font-medium truncate">

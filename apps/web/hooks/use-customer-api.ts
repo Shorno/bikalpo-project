@@ -199,7 +199,6 @@ export function useAddToCart() {
       toast.success(data.message);
       qc.invalidateQueries({ queryKey: orpc.customer.getCart.key() });
     },
-    onError: (err) => toast.error(err.message),
   });
 }
 
@@ -565,11 +564,47 @@ export function usePlaceOpenOrder() {
 }
 
 /** Get open order status (polls) */
-export function useOpenOrderStatus(orderId: number | undefined, refetchInterval?: number) {
+export function useOpenOrderStatus(
+  orderId: number | undefined,
+  refetchInterval?: number,
+) {
   return useQuery(
     orpc.customer.getOpenOrderStatus.queryOptions({
       input: orderId != null ? { orderId } : skipToken,
       refetchInterval: refetchInterval ?? 5000,
     }),
   );
+}
+
+export function useAcceptOpenOrderOffer() {
+  const qc = useQueryClient();
+  return useMutation({
+    ...orpc.customer.acceptOpenOrderOffer.mutationOptions(),
+    onSuccess: (_, variables) => {
+      toast.success("Offer accepted. Your order is confirmed.");
+      qc.invalidateQueries({
+        queryKey: orpc.customer.getOpenOrderStatus.key({
+          input: { orderId: variables.orderId },
+        }),
+      });
+      qc.invalidateQueries({ queryKey: orpc.customer.getMyOrders.key() });
+    },
+    onError: (error) => toast.error(error.message),
+  });
+}
+
+export function useCancelOpenOrder() {
+  const qc = useQueryClient();
+  return useMutation({
+    ...orpc.customer.cancelOpenOrder.mutationOptions(),
+    onSuccess: (_, variables) => {
+      toast.success("Open order cancelled.");
+      qc.invalidateQueries({
+        queryKey: orpc.customer.getOpenOrderStatus.key({
+          input: { orderId: variables.orderId },
+        }),
+      });
+    },
+    onError: (error) => toast.error(error.message),
+  });
 }

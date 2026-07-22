@@ -7,9 +7,9 @@
 
 "use client";
 
+import type { FulfillmentMode } from "@bikalpo-project/db/fulfillment";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import type { FulfillmentMode } from "@bikalpo-project/db/fulfillment";
 import { orpc } from "@/utils/orpc";
 
 // ────────────────────────────────────────────────────────────────
@@ -644,17 +644,13 @@ export function useOpenOrderPool() {
   );
 }
 
-/** Lock an open order bid */
-export function useLockOpenOrder() {
-  const qc = useQueryClient();
-  return useMutation({
-    ...orpc.shopOwner.lockOpenOrder.mutationOptions(),
-    onSuccess: () => {
-      toast.success("Order locked! You have 100 seconds to submit your offer.");
-      qc.invalidateQueries({ queryKey: orpc.shopOwner.getOpenOrderPool.key() });
-    },
-    onError: (err) => toast.error(err.message),
-  });
+export function useOpenOrderHistory() {
+  return useQuery(
+    orpc.shopOwner.getOpenOrderHistory.queryOptions({
+      staleTime: 1000 * 15,
+      refetchInterval: 1000 * 30,
+    }),
+  );
 }
 
 /** Submit a bid offer */
@@ -670,14 +666,17 @@ export function useSubmitOffer() {
   });
 }
 
-/** Release a locked order */
-export function useReleaseOpenOrder() {
+/** Withdraw an offer before the shared deadline. */
+export function useWithdrawOpenOrder() {
   const qc = useQueryClient();
   return useMutation({
-    ...orpc.shopOwner.releaseOpenOrder.mutationOptions(),
+    ...orpc.shopOwner.withdrawOpenOrder.mutationOptions(),
     onSuccess: () => {
-      toast.info("Order released back to pool.");
+      toast.info("Offer withdrawn and stock released.");
       qc.invalidateQueries({ queryKey: orpc.shopOwner.getOpenOrderPool.key() });
+      qc.invalidateQueries({
+        queryKey: orpc.shopOwner.getOpenOrderHistory.key(),
+      });
     },
     onError: (err) => toast.error(err.message),
   });

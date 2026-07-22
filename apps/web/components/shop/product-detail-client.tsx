@@ -128,7 +128,12 @@ export function ProductDetailClient({
                   image: product.image,
                   size: product.size,
                   inStock: product.inStock,
-                  stockQuantity: product.stockQuantity,
+                  stockQuantity: Math.max(
+                    0,
+                    ...normalizedVariants.map(
+                      (variant) => variant.stockQuantity ?? 0,
+                    ),
+                  ),
                 }}
                 variants={normalizedVariants}
                 categoryName={product.category?.name || ""}
