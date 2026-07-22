@@ -11,7 +11,7 @@ Earlier drafts allowed partial matches, multiple sellers, retailer confirmation 
 
 ## Decision
 
-An Open Order is one order with one item set. A retailer is eligible only when one of its exact inventory rows can cover the full requested quantity of every catalog variant, it serves the consumer's area, and it is within five kilometres.
+An Open Order is one order with one item set. A retailer is eligible only when one of its exact inventory rows can cover the full requested quantity of every catalog variant, it serves the consumer's area, and it is within ten kilometres.
 
 Eligible retailers may submit, revise, or withdraw complete Offers during one shared Offer Window. Submitting reserves all required inventory atomically. Retailer inventory prices are the source of line prices; an Offer only controls its discount and delivery charge. When the window ends, prices freeze and the consumer receives a separate Selection Window. The consumer explicitly accepts one Offer, which immediately confirms the order, consumes the winning Stock Hold, and releases every losing hold.
 

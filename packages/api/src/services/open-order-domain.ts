@@ -1,5 +1,7 @@
 export type OfferDiscountType = "fixed" | "percentage";
 
+export const OPEN_ORDER_RADIUS_KM = 10;
+
 export interface OfferLineInput {
   quantity: number;
   unitPrice: number;
@@ -51,6 +53,17 @@ export interface EligibleRetailerInput {
   distanceKm: number;
   retailerAreaIds: number[];
   consumerAreaId: number;
+}
+
+export interface RetailerInventorySource {
+  inventoryOwnerId: string;
+  inventoryOwnerType: string;
+  productCreatorSource: string | null;
+  productOwnerId: string | null;
+  productStatus: string;
+  retailerId: string;
+  variantActive: boolean;
+  variantType?: string | null;
 }
 
 export interface ComparableOffer {
@@ -147,7 +160,7 @@ export function getOpenOrderStage(input: OpenOrderStageInput): OpenOrderStage {
 export function isEligibleRetailer(input: EligibleRetailerInput): boolean {
   if (
     !Number.isFinite(input.distanceKm) ||
-    input.distanceKm > 5 ||
+    input.distanceKm > OPEN_ORDER_RADIUS_KM ||
     !input.retailerAreaIds.includes(input.consumerAreaId)
   ) {
     return false;
@@ -168,6 +181,19 @@ export function isEligibleRetailer(input: EligibleRetailerInput): boolean {
           stock.catalogVariantId === catalogVariantId &&
           stock.availableQty >= quantity,
       ),
+  );
+}
+
+export function isRetailerInventorySource(
+  input: RetailerInventorySource,
+): boolean {
+  return (
+    input.inventoryOwnerType === "shop" &&
+    input.inventoryOwnerId === input.retailerId &&
+    input.productCreatorSource === "shop" &&
+    input.productOwnerId === input.retailerId &&
+    input.productStatus === "active" &&
+    input.variantActive
   );
 }
 

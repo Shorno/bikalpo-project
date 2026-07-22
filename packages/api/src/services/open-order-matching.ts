@@ -7,6 +7,7 @@ import {
   openOrderBidItem,
   order,
   orderItem,
+  product,
   productVariant,
   sellerAreaMapping,
   user,
@@ -16,10 +17,11 @@ import { and, asc, eq, inArray, isNull, lte, or, sql } from "drizzle-orm";
 import { findAreasForPoint } from "./location-service";
 import {
   calculateOfferTotals,
+  isRetailerInventorySource,
+  OPEN_ORDER_RADIUS_KM,
   type OfferDiscountType,
 } from "./open-order-domain";
 
-export const OPEN_ORDER_RADIUS_KM = 5;
 export const OFFER_WINDOW_SECONDS = positiveSeconds(
   process.env.OPEN_ORDER_OFFER_WINDOW_SECONDS,
   300,
@@ -133,14 +135,22 @@ export async function findEligibleSellers(
     db
       .select({
         inventoryId: inventory.id,
+        inventoryOwnerId: inventory.ownerId,
+        inventoryOwnerType: inventory.ownerType,
         shopId: inventory.ownerId,
         retailerVariantId: inventory.variantId,
         catalogVariantId: productVariant.catalogVariantId,
         availableQty: inventory.availableQty,
         retailPrice: inventory.retailPrice,
+        productCreatorSource: product.creatorSource,
+        productOwnerId: product.createdById,
+        productStatus: product.status,
+        variantActive: productVariant.isActive,
+        variantType: productVariant.variantType,
       })
       .from(inventory)
       .innerJoin(productVariant, eq(productVariant.id, inventory.variantId))
+      .innerJoin(product, eq(product.id, productVariant.productId))
       .where(
         and(
           eq(inventory.ownerType, "shop"),
@@ -158,7 +168,21 @@ export async function findEligibleSellers(
   }
   const stockByShop = new Map<string, MatchedInventory[]>();
   for (const row of stock) {
-    if (!row.catalogVariantId) continue;
+    if (
+      !row.catalogVariantId ||
+      !isRetailerInventorySource({
+        inventoryOwnerId: row.inventoryOwnerId,
+        inventoryOwnerType: row.inventoryOwnerType,
+        productCreatorSource: row.productCreatorSource,
+        productOwnerId: row.productOwnerId,
+        productStatus: row.productStatus,
+        retailerId: row.shopId,
+        variantActive: row.variantActive,
+        variantType: row.variantType,
+      })
+    ) {
+      continue;
+    }
     const rows = stockByShop.get(row.shopId) ?? [];
     rows.push({
       inventoryId: row.inventoryId,

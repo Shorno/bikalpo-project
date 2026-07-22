@@ -3,7 +3,7 @@
  *
  * Contains all queries and mutations for the B2C marketplace customer view.
  * - No admin, dealer, shop owner, inventory write, ledger, or analytics logic
- * - Only retail variants (B2C)
+ * - Canonical catalog variants for public reference products
  * - Read-only access to stock and pricing
  * - Location-based filtering where applicable
  */
@@ -100,6 +100,7 @@ import {
 import {
   getReferenceProductEffectivePrice,
   getReferenceSellerKey,
+  isOpenOrderReferenceSelectionEligible,
   sortReferenceProducts,
 } from "./helpers/reference-product-catalog";
 import {
@@ -1091,6 +1092,7 @@ const queries = {
         ...getWebViewProductConditions(),
         eq(product.creatorSource, "admin"),
         isNotNull(product.coreProductId),
+        isNotNull(product.brandId),
       ];
 
       if (categorySlug) {
@@ -1146,7 +1148,7 @@ const queries = {
       if (inStockString === "false")
         conditions.push(eq(product.inStock, false));
 
-      const referenceProducts = await db.query.product.findMany({
+      const referenceProductRows = await db.query.product.findMany({
         where: and(...conditions),
         with: {
           category: { columns: { slug: true, name: true } },
@@ -1157,11 +1159,23 @@ const queries = {
           images: true,
           variants: {
             columns: {
+              catalogVariantId: true,
+              id: true,
               isActive: true,
               price: true,
+              productId: true,
               sourceVariantPriceId: true,
-              variantType: true,
               visibilityRole: true,
+            },
+            with: {
+              catalogVariant: {
+                columns: {
+                  brandId: true,
+                  configurationState: true,
+                  coreProductId: true,
+                  isActive: true,
+                },
+              },
             },
           },
           variantPrices: {
@@ -1173,6 +1187,16 @@ const queries = {
           },
         },
       });
+
+      const referenceProducts = referenceProductRows.filter(
+        (referenceProduct) =>
+          referenceProduct.variants.some((variant) =>
+            isOpenOrderReferenceSelectionEligible({
+              product: referenceProduct,
+              variant,
+            }),
+          ),
+      );
 
       const productIds = referenceProducts.map(
         (referenceProduct) => referenceProduct.id,
@@ -1523,28 +1547,45 @@ const queries = {
       if (!found)
         throw new ORPCError("NOT_FOUND", { message: "Product not found" });
 
-      // Get RETAIL variants only for consumer-facing detail page
-      // (TRADE variants are for shop owners / B2B)
-      const variants = await db.query.productVariant.findMany({
-        where: and(
-          eq(productVariant.productId, found.id),
-          or(
-            eq(productVariant.variantType, "retail"),
-            isNull(productVariant.variantType),
-          ),
-        ),
+      const isAdminReference = found.creatorSource === "admin";
+      const variantRows = await db.query.productVariant.findMany({
+        where: eq(productVariant.productId, found.id),
+        with: {
+          catalogVariant: {
+            columns: {
+              brandId: true,
+              configurationState: true,
+              coreProductId: true,
+              isActive: true,
+            },
+          },
+        },
         orderBy: [asc(productVariant.sortOrder)],
       });
+      const variants = variantRows.filter((variant) =>
+        isAdminReference
+          ? isOpenOrderReferenceSelectionEligible({
+              product: found,
+              variant,
+            })
+          : variant.variantType === "retail" || variant.variantType == null,
+      );
+      if (variants.length === 0) {
+        throw new ORPCError("NOT_FOUND", { message: "Product not found" });
+      }
 
       // Serialize product and variants with proper price conversion
       const foundSerialized = {
         ...found,
         price: parseFloat(found.price),
       };
-      const variantsSerialized = variants.map((v) => ({
-        ...v,
-        price: parseFloat(v.price),
-      }));
+      const variantsSerialized = variants.map((variant) => {
+        const { catalogVariant: _catalogVariant, ...variantData } = variant;
+        return {
+          ...variantData,
+          price: parseFloat(variant.price),
+        };
+      });
 
       // Get review stats
       const reviewStats = await db
@@ -3456,15 +3497,25 @@ const mutations = {
               where: and(
                 eq(productVariant.id, input.variantId),
                 eq(productVariant.productId, input.productId),
-                eq(productVariant.isActive, true),
               ),
-              columns: { catalogVariantId: true, variantType: true },
+              with: {
+                catalogVariant: {
+                  columns: {
+                    brandId: true,
+                    configurationState: true,
+                    coreProductId: true,
+                    isActive: true,
+                  },
+                },
+              },
             })
           : null;
         if (
-          productData.creatorSource !== "admin" ||
-          !referenceVariant?.catalogVariantId ||
-          referenceVariant.variantType !== "retail"
+          !referenceVariant ||
+          !isOpenOrderReferenceSelectionEligible({
+            product: productData,
+            variant: referenceVariant,
+          })
         ) {
           throw new ORPCError("BAD_REQUEST", {
             message:
@@ -4774,8 +4825,10 @@ const openOrderEndpoints = {
             !item.variant ||
             !item.variant.catalogVariantId ||
             !item.variant.catalogVariant ||
-            item.product.creatorSource !== "admin" ||
-            !item.variant.isActive
+            !isOpenOrderReferenceSelectionEligible({
+              product: item.product,
+              variant: item.variant,
+            })
           ) {
             throw new ORPCError("BAD_REQUEST", {
               message: `${item.product.name} no longer has an orderable catalog variant.`,
@@ -4987,6 +5040,7 @@ const openOrderEndpoints = {
         (offer) =>
           offer.status === "submitted" ||
           offer.isWinner ||
+          (request.status === "confirmed" && offer.status === "lost") ||
           (offer.status === "expired" && !!offer.priceFrozenAt),
       );
       const canReveal =

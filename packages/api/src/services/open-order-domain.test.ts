@@ -4,11 +4,56 @@ import {
   calculateOfferTotals,
   getOpenOrderStage,
   isEligibleRetailer,
+  isRetailerInventorySource,
+  OPEN_ORDER_RADIUS_KM,
   planStockHoldTransition,
   resolveCartTransition,
   resolveRetailerOfferLinePrice,
   sortComparableOffers,
 } from "./open-order-domain";
+
+test("retailer inventory matching uses active owner products, not channel type", () => {
+  const validSource = {
+    inventoryOwnerId: "shop-a",
+    inventoryOwnerType: "shop",
+    productCreatorSource: "shop",
+    productOwnerId: "shop-a",
+    productStatus: "active",
+    retailerId: "shop-a",
+    variantActive: true,
+    variantType: "trade",
+  } as const;
+
+  assert.equal(isRetailerInventorySource(validSource), true);
+  assert.equal(
+    isRetailerInventorySource({
+      ...validSource,
+      inventoryOwnerType: "warehouse",
+    }),
+    false,
+  );
+  assert.equal(
+    isRetailerInventorySource({
+      ...validSource,
+      productCreatorSource: "warehouse",
+    }),
+    false,
+  );
+  assert.equal(
+    isRetailerInventorySource({
+      ...validSource,
+      productOwnerId: "shop-b",
+    }),
+    false,
+  );
+  assert.equal(
+    isRetailerInventorySource({
+      ...validSource,
+      productStatus: "inactive",
+    }),
+    false,
+  );
+});
 
 test("retailer line prices use the live store price until the shared deadline", () => {
   assert.deepEqual(
@@ -189,7 +234,7 @@ test("eligible retailers match every exact catalog variant and full quantity", (
         { catalogVariantId: 11, availableQty: 2 },
         { catalogVariantId: 22, availableQty: 5 },
       ],
-      distanceKm: 4.99,
+      distanceKm: 9.99,
       retailerAreaIds: [7],
       consumerAreaId: 7,
     }),
@@ -236,7 +281,7 @@ test("eligible retailers match every exact catalog variant and full quantity", (
   );
 });
 
-test("retailer eligibility enforces the five kilometre radius and service area", () => {
+test("retailer eligibility enforces the ten kilometre radius and service area", () => {
   const base = {
     requestedItems: [{ catalogVariantId: 11, quantity: 1 }],
     inventory: [{ catalogVariantId: 11, availableQty: 1 }],
@@ -244,7 +289,17 @@ test("retailer eligibility enforces the five kilometre radius and service area",
     consumerAreaId: 7,
   };
 
-  assert.equal(isEligibleRetailer({ ...base, distanceKm: 5.01 }), false);
+  assert.equal(
+    isEligibleRetailer({ ...base, distanceKm: OPEN_ORDER_RADIUS_KM }),
+    true,
+  );
+  assert.equal(
+    isEligibleRetailer({
+      ...base,
+      distanceKm: OPEN_ORDER_RADIUS_KM + 0.01,
+    }),
+    false,
+  );
   assert.equal(
     isEligibleRetailer({ ...base, distanceKm: 2, consumerAreaId: 9 }),
     false,
