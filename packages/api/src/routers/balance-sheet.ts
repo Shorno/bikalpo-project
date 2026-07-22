@@ -1,0 +1,565 @@
+import { db } from "@bikalpo-project/db";
+import {
+  deliveryGroupInvoice,
+  expense,
+  financialLedger,
+  invoice,
+  order,
+  purchase,
+  warehouseDueCollection,
+  warehousePosSale,
+} from "@bikalpo-project/db/schema";
+import { ORPCError } from "@orpc/server";
+import { and, eq, gte, inArray, isNotNull, lte } from "drizzle-orm";
+import { z } from "zod";
+
+import { protectedProcedure } from "../index";
+
+const ACTIVE_SALE_STATUSES = new Set(["confirmed", "processing", "delivered"]);
+const PAID_INVOICE_STATUSES = new Set(["collected", "settled"]);
+const PAYABLE_ORDER_STATUSES = new Set([
+  "confirmed",
+  "processing",
+  "delivered",
+]);
+
+function toNumber(value: number | string | null | undefined) {
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : 0;
+  }
+
+  const parsed = Number(value ?? 0);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function toMoney(value: number) {
+  return value.toFixed(2);
+}
+
+function isOrderPaid(
+  orderPaymentStatus: string | null | undefined,
+  invoicePaymentStatus: string | null | undefined,
+) {
+  return (
+    orderPaymentStatus === "paid" ||
+    PAID_INVOICE_STATUSES.has(invoicePaymentStatus || "")
+  );
+}
+
+function isPayableOrder(
+  status: string | null | undefined,
+  orderPaymentStatus: string | null | undefined,
+  invoicePaymentStatus: string | null | undefined,
+) {
+  return (
+    PAYABLE_ORDER_STATUSES.has(status || "") &&
+    !isOrderPaid(orderPaymentStatus, invoicePaymentStatus)
+  );
+}
+
+function formatReportDate(value: string) {
+  const [rawYear, rawMonth, rawDay] = value.split("-");
+  const year = Number.parseInt(rawYear ?? "", 10);
+  const month = Number.parseInt(rawMonth ?? "", 10);
+  const day = Number.parseInt(rawDay ?? "", 10);
+
+  if (
+    !Number.isFinite(year) ||
+    !Number.isFinite(month) ||
+    !Number.isFinite(day)
+  ) {
+    return value;
+  }
+
+  return new Intl.DateTimeFormat("en-US", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  }).format(new Date(year, month - 1, day));
+}
+
+function withinActiveSales(status: string | null | undefined) {
+  return ACTIVE_SALE_STATUSES.has(status || "");
+}
+
+export const balanceSheetRouter = {
+  getBalanceSheet: protectedProcedure
+    .route({
+      method: "POST",
+      path: "/balance-sheet",
+      tags: ["Balance Sheet"],
+      summary: "Balance sheet",
+      description: "As-of balance sheet for warehouse and retailer accounts",
+    })
+    .input(
+      z.object({
+        year: z.number().int().min(2020).max(2100),
+        startDate: z
+          .string()
+          .regex(/^\d{4}-\d{2}-\d{2}$/)
+          .optional(),
+        endDate: z
+          .string()
+          .regex(/^\d{4}-\d{2}-\d{2}$/)
+          .optional(),
+        asOfDate: z
+          .string()
+          .regex(/^\d{4}-\d{2}-\d{2}$/)
+          .optional(),
+        reportType: z.enum(["accrual", "cash"]).default("accrual"),
+      }),
+    )
+    .handler(async ({ context, input }) => {
+      const role = context.session.user.role;
+      if (role !== "shop_owner" && role !== "warehouse") {
+        throw new ORPCError("FORBIDDEN", {
+          message: "Balance sheet access required",
+        });
+      }
+
+      const ownerId = context.session.user.id;
+      const ownerType = role === "warehouse" ? "warehouse" : "shop";
+      const startDate = input.startDate ?? `${input.year}-01-01`;
+      const endDate = input.endDate ?? input.asOfDate ?? `${input.year}-12-31`;
+      const startDateTime = new Date(`${startDate}T00:00:00.000`);
+      const asOfEnd = new Date(`${endDate}T23:59:59.999`);
+      const isCashBasis = input.reportType === "cash";
+
+      const expenseRows = await db
+        .select({ total: expense.amount })
+        .from(expense)
+        .where(
+          and(
+            eq(expense.ownerId, ownerId),
+            eq(expense.ownerType, ownerType),
+            eq(expense.isVoided, false),
+            gte(expense.paymentDate, startDate),
+            lte(expense.paymentDate, endDate),
+          ),
+        );
+
+      const expenses = expenseRows.reduce(
+        (sum, row) => sum + toNumber(row.total),
+        0,
+      );
+
+      let revenue = 0;
+      let expenseTotal = expenses;
+      let receivable = 0;
+      let payable = 0;
+
+      if (role === "warehouse") {
+        const [orderRows, purchaseRows, supplierPaymentRows, posRows] =
+          await Promise.all([
+            db
+              .select({
+                total: order.total,
+                status: order.status,
+                paymentStatus: order.paymentStatus,
+                invoicePaymentStatus: invoice.paymentStatus,
+              })
+              .from(order)
+              .leftJoin(
+                invoice,
+                and(
+                  eq(invoice.orderId, order.id),
+                  eq(invoice.invoiceType, "main"),
+                ),
+              )
+              .where(
+                and(
+                  eq(order.warehouseId, ownerId),
+                  eq(order.orderType, "b2b"),
+                  gte(order.createdAt, startDateTime),
+                  lte(order.createdAt, asOfEnd),
+                ),
+              ),
+            db
+              .select({
+                total: purchase.total,
+                paymentType: purchase.paymentType,
+              })
+              .from(purchase)
+              .where(
+                and(
+                  eq(purchase.warehouseId, ownerId),
+                  eq(purchase.status, "received"),
+                  gte(purchase.purchaseDate, startDate),
+                  lte(purchase.purchaseDate, endDate),
+                ),
+              ),
+            db
+              .select({ amount: financialLedger.amount })
+              .from(financialLedger)
+              .where(
+                and(
+                  eq(financialLedger.ownerId, ownerId),
+                  eq(financialLedger.ownerType, "warehouse"),
+                  eq(financialLedger.referenceType, "supplier_payment"),
+                  gte(financialLedger.createdAt, startDateTime),
+                  lte(financialLedger.createdAt, asOfEnd),
+                ),
+              ),
+            db
+              .select({
+                due: warehousePosSale.due,
+                paid: warehousePosSale.paid,
+                total: warehousePosSale.total,
+              })
+              .from(warehousePosSale)
+              .where(
+                and(
+                  eq(warehousePosSale.warehouseId, ownerId),
+                  eq(warehousePosSale.status, "completed"),
+                  gte(warehousePosSale.createdAt, startDateTime),
+                  lte(warehousePosSale.createdAt, asOfEnd),
+                ),
+              ),
+          ]);
+
+        const invoiceRows = await db
+          .select({
+            id: invoice.id,
+            grandTotal: invoice.grandTotal,
+            paymentStatus: invoice.paymentStatus,
+          })
+          .from(invoice)
+          .innerJoin(order, eq(invoice.orderId, order.id))
+          .where(
+            and(
+              eq(order.warehouseId, ownerId),
+              eq(order.orderType, "b2b"),
+              eq(invoice.invoiceType, "main"),
+              gte(invoice.createdAt, startDateTime),
+              lte(invoice.createdAt, asOfEnd),
+            ),
+          );
+
+        const invoiceIds = invoiceRows.map((row) => row.id);
+        const [deliveryPayments, dueCollections] = await Promise.all([
+          invoiceIds.length
+            ? db
+                .select({
+                  invoiceId: deliveryGroupInvoice.invoiceId,
+                  amount: deliveryGroupInvoice.amountCollected,
+                })
+                .from(deliveryGroupInvoice)
+                .where(
+                  and(
+                    inArray(deliveryGroupInvoice.invoiceId, invoiceIds),
+                    gte(deliveryGroupInvoice.createdAt, startDateTime),
+                    lte(deliveryGroupInvoice.createdAt, asOfEnd),
+                  ),
+                )
+            : Promise.resolve([]),
+          invoiceIds.length
+            ? db
+                .select({
+                  invoiceId: warehouseDueCollection.invoiceId,
+                  amount: warehouseDueCollection.amount,
+                })
+                .from(warehouseDueCollection)
+                .where(
+                  and(
+                    inArray(warehouseDueCollection.invoiceId, invoiceIds),
+                    gte(warehouseDueCollection.createdAt, startDateTime),
+                    lte(warehouseDueCollection.createdAt, asOfEnd),
+                  ),
+                )
+            : Promise.resolve([]),
+        ]);
+
+        const paidByInvoice = new Map<number, number>();
+        for (const payment of deliveryPayments) {
+          const amount = toNumber(payment.amount);
+          if (amount <= 0) {
+            continue;
+          }
+          paidByInvoice.set(
+            payment.invoiceId,
+            (paidByInvoice.get(payment.invoiceId) ?? 0) + amount,
+          );
+        }
+        for (const collection of dueCollections) {
+          const amount = toNumber(collection.amount);
+          if (amount <= 0) {
+            continue;
+          }
+          paidByInvoice.set(
+            collection.invoiceId,
+            (paidByInvoice.get(collection.invoiceId) ?? 0) + amount,
+          );
+        }
+
+        const invoiceDue = invoiceRows.reduce((sum, row) => {
+          const total = toNumber(row.grandTotal);
+          const paid = PAID_INVOICE_STATUSES.has(row.paymentStatus)
+            ? total
+            : (paidByInvoice.get(row.id) ?? 0);
+          return sum + Math.max(0, total - paid);
+        }, 0);
+
+        const orderRevenue = orderRows.reduce((sum, row) => {
+          if (!withinActiveSales(row.status)) {
+            return sum;
+          }
+          if (
+            isCashBasis &&
+            !isOrderPaid(row.paymentStatus, row.invoicePaymentStatus)
+          ) {
+            return sum;
+          }
+          return sum + toNumber(row.total);
+        }, 0);
+        const posRevenue = posRows.reduce(
+          (sum, row) => sum + toNumber(isCashBasis ? row.paid : row.total),
+          0,
+        );
+        const posDue = posRows.reduce(
+          (sum, row) => sum + Math.max(0, toNumber(row.due)),
+          0,
+        );
+
+        revenue = orderRevenue + posRevenue;
+        receivable = isCashBasis ? 0 : invoiceDue + posDue;
+
+        const purchaseExpense = purchaseRows.reduce((sum, row) => {
+          if (isCashBasis && row.paymentType !== "cash") {
+            return sum;
+          }
+          return sum + toNumber(row.total);
+        }, 0);
+        expenseTotal += purchaseExpense;
+
+        const creditPurchases = purchaseRows.reduce(
+          (sum, row) =>
+            sum + (row.paymentType === "credit" ? toNumber(row.total) : 0),
+          0,
+        );
+        const supplierPayments = supplierPaymentRows.reduce(
+          (sum, row) => sum + toNumber(row.amount),
+          0,
+        );
+        payable = isCashBasis
+          ? 0
+          : Math.max(0, creditPurchases - supplierPayments);
+      } else {
+        const [salesRows, purchaseOrderRows] = await Promise.all([
+          db
+            .select({
+              total: order.total,
+              status: order.status,
+              paymentStatus: order.paymentStatus,
+              invoicePaymentStatus: invoice.paymentStatus,
+            })
+            .from(order)
+            .leftJoin(
+              invoice,
+              and(
+                eq(invoice.orderId, order.id),
+                eq(invoice.invoiceType, "main"),
+              ),
+            )
+            .where(
+              and(
+                eq(order.shopId, ownerId),
+                eq(order.orderType, "b2c"),
+                gte(order.createdAt, startDateTime),
+                lte(order.createdAt, asOfEnd),
+              ),
+            ),
+          db
+            .select({
+              total: order.total,
+              status: order.status,
+              paymentStatus: order.paymentStatus,
+              invoicePaymentStatus: invoice.paymentStatus,
+            })
+            .from(order)
+            .leftJoin(
+              invoice,
+              and(
+                eq(invoice.orderId, order.id),
+                eq(invoice.invoiceType, "main"),
+              ),
+            )
+            .where(
+              and(
+                eq(order.userId, ownerId),
+                eq(order.orderType, "b2b"),
+                isNotNull(order.warehouseId),
+                gte(order.createdAt, startDateTime),
+                lte(order.createdAt, asOfEnd),
+              ),
+            ),
+        ]);
+
+        revenue = salesRows.reduce((sum, row) => {
+          if (!withinActiveSales(row.status)) {
+            return sum;
+          }
+          if (
+            isCashBasis &&
+            !isOrderPaid(row.paymentStatus, row.invoicePaymentStatus)
+          ) {
+            return sum;
+          }
+          return sum + toNumber(row.total);
+        }, 0);
+
+        receivable = isCashBasis
+          ? 0
+          : salesRows.reduce((sum, row) => {
+              if (!withinActiveSales(row.status)) {
+                return sum;
+              }
+              if (isOrderPaid(row.paymentStatus, row.invoicePaymentStatus)) {
+                return sum;
+              }
+              return sum + toNumber(row.total);
+            }, 0);
+
+        const purchaseExpense = purchaseOrderRows.reduce((sum, row) => {
+          if (!withinActiveSales(row.status)) {
+            return sum;
+          }
+          if (
+            isCashBasis &&
+            !isOrderPaid(row.paymentStatus, row.invoicePaymentStatus)
+          ) {
+            return sum;
+          }
+          return sum + toNumber(row.total);
+        }, 0);
+        expenseTotal += purchaseExpense;
+
+        payable = isCashBasis
+          ? 0
+          : purchaseOrderRows.reduce((sum, row) => {
+              if (
+                !isPayableOrder(
+                  row.status,
+                  row.paymentStatus,
+                  row.invoicePaymentStatus,
+                )
+              ) {
+                return sum;
+              }
+              return sum + toNumber(row.total);
+            }, 0);
+      }
+
+      const retainedEarnings = revenue - expenseTotal;
+      const cashAndBank = retainedEarnings + payable - receivable;
+      const totalAssets = cashAndBank + receivable;
+      const totalLiabilities = payable;
+      const totalEquity = totalAssets - totalLiabilities;
+      const netAssets = cashAndBank + receivable - payable;
+      const asOfLabel = formatReportDate(endDate);
+      const startLabel = formatReportDate(startDate);
+
+      return {
+        period: {
+          asOfDate: endDate,
+          asOfLabel,
+          endDate,
+          reportType: input.reportType,
+          startDate,
+          year: input.year,
+          yearLabel: startLabel,
+          yearStart: startDate,
+        },
+        summary: {
+          cashAndBank: toMoney(cashAndBank),
+          receivable: toMoney(receivable),
+          payable: toMoney(payable),
+          netAssets: toMoney(netAssets),
+          retainedEarnings: toMoney(retainedEarnings),
+          totalAssets: toMoney(totalAssets),
+          totalLiabilities: toMoney(totalLiabilities),
+          totalEquity: toMoney(totalEquity),
+        },
+        sections: [
+          {
+            title: "Assets",
+            groups: [
+              {
+                title: "Cash and Bank",
+                rows: [{ label: "Cash on Hand", amount: toMoney(cashAndBank) }],
+                total: toMoney(cashAndBank),
+                totalLabel: "Total Cash and Bank",
+              },
+              {
+                title: "Other Current Assets",
+                rows: [
+                  {
+                    label: "Accounts Receivable",
+                    amount: toMoney(receivable),
+                  },
+                ],
+                total: toMoney(receivable),
+                totalLabel: "Total Other Current Assets",
+              },
+              {
+                title: "Long-term Assets",
+                rows: [
+                  {
+                    label: "Other Long-term Assets",
+                    amount: toMoney(0),
+                    muted: true,
+                  },
+                ],
+                total: toMoney(0),
+                totalLabel: "Total Long-term Assets",
+              },
+            ],
+            total: toMoney(totalAssets),
+            totalLabel: "Total Assets",
+          },
+          {
+            title: "Liabilities",
+            groups: [
+              {
+                title: "Current Liabilities",
+                rows: [{ label: "Accounts Payable", amount: toMoney(payable) }],
+                total: toMoney(payable),
+                totalLabel: "Total Current Liabilities",
+              },
+              {
+                title: "Long-term Liabilities",
+                rows: [
+                  {
+                    label: "Bank Loan",
+                    amount: toMoney(0),
+                    muted: true,
+                  },
+                ],
+                total: toMoney(0),
+                totalLabel: "Total Long-term Liabilities",
+              },
+            ],
+            total: toMoney(totalLiabilities),
+            totalLabel: "Total Liabilities",
+          },
+          {
+            title: "Equity",
+            groups: [
+              {
+                title: "Retained Earnings",
+                rows: [
+                  {
+                    label: `Profit between ${startLabel} and ${asOfLabel}`,
+                    amount: toMoney(retainedEarnings),
+                  },
+                ],
+                total: toMoney(retainedEarnings),
+                totalLabel: "Total Retained Earnings",
+              },
+            ],
+            total: toMoney(totalEquity),
+            totalLabel: "Total Equity",
+          },
+        ],
+      };
+    }),
+};

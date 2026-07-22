@@ -32,6 +32,7 @@ import { adminUserManagementRouter } from "./admin-user-management";
 import { adminVariantOptionRouter } from "./admin-variant-option";
 import { adminWarehouseAssignmentRouter } from "./admin-warehouse-assignment";
 import { auditRouter } from "./audit";
+import { balanceSheetRouter } from "./balance-sheet";
 import { barikoiRouter } from "./barikoi";
 import { brandRouter } from "./brand";
 import {
@@ -136,6 +137,7 @@ export const appRouter = {
   payee: payeeRouter,
   expense: expenseRouter,
   supplierPayment: supplierPaymentRouter,
+  balanceSheet: balanceSheetRouter,
   profitLoss: profitLossRouter,
   purchase: purchaseRouter,
   stockOverview: stockOverviewRouter,
