@@ -477,7 +477,56 @@ export const financeRouter = {
             isDefault: account.isDefault,
             name: account.name,
             type: account.type as "cash" | "bank",
-          })),
+        })),
+      };
+    }),
+
+  getFixedAssetAccounts: protectedProcedure
+    .route({
+      method: "POST",
+      path: "/finance/fixed-asset-accounts",
+      tags: ["Finance"],
+      summary: "Get fixed asset accounts",
+    })
+    .input(z.object({}).optional())
+    .handler(async ({ context }) => {
+      const ownerId = context.session.user.id;
+      const ownerType = resolveOwnerScope(context.session.user.role);
+      const categoryId = await resolveFixedAssetCategoryId();
+
+      const accounts = await db.query.financeAccount.findMany({
+        where: (
+          table,
+          { and: andFn, eq: eqFn, isNull: isNullFn, or: orFn },
+        ) =>
+          andFn(
+            eqFn(table.accountType, "asset"),
+            orFn(
+              eqFn(table.balanceSheetLine, "fixed_assets"),
+              eqFn(table.categoryId, categoryId),
+            ),
+            orFn(
+              andFn(isNullFn(table.ownerId), isNullFn(table.ownerType)),
+              andFn(
+                eqFn(table.ownerId, ownerId),
+                eqFn(table.ownerType, ownerType),
+              ),
+            ),
+          ),
+        orderBy: (table, { asc: ascFn, desc: descFn }) => [
+          descFn(table.ownerId),
+          ascFn(table.sortOrder),
+          ascFn(table.name),
+        ],
+      });
+
+      return {
+        accounts: accounts.map((account) => ({
+          balance: parseMoney(account.currentBalance),
+          id: String(account.id),
+          isDefault: account.isSystem,
+          name: account.name,
+        })),
       };
     }),
 
