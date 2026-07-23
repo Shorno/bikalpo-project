@@ -11,7 +11,7 @@ import {
   warehousePosSale,
 } from "@bikalpo-project/db/schema";
 import { ORPCError } from "@orpc/server";
-import { and, eq, gte, inArray, isNotNull, lte } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, isNotNull, lte } from "drizzle-orm";
 import { z } from "zod";
 
 import { protectedProcedure } from "../index";
@@ -139,7 +139,8 @@ export const balanceSheetRouter = {
             eq(financeAccount.accountType, "asset"),
             eq(financeAccount.balanceSheetLine, "fixed_assets"),
           ),
-        );
+        )
+        .orderBy(asc(financeAccount.sortOrder), asc(financeAccount.name));
       const longTermAssetRows = fixedAssetRows
         .map((row) => ({
           amount: toNumber(row.amount),
