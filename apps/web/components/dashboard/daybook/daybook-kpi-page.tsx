@@ -512,10 +512,13 @@ export function DaybookKpiPage({ variant }: { variant: DaybookVariant }) {
       .map((purchase) => ({
         amount: money(purchase.total),
         reference:
-          purchase.referenceNo ||
-          purchase.billNo ||
-          purchase.supplier ||
-          purchase.paymentAccountName,
+          [
+            purchase.lines[0]?.productName || purchase.lines[0]?.accountName,
+            purchase.supplier,
+            purchase.referenceNo || purchase.billNo,
+          ]
+            .filter(Boolean)
+            .join(" - ") || purchase.paymentAccountName,
         time: timeLabel(new Date(purchase.createdAt)),
         type: "Fixed Asset Purchase",
       }));
