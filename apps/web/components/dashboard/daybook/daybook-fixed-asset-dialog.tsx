@@ -388,7 +388,7 @@ export function DaybookFixedAssetDialog({
             </div>
           </div>
 
-          <div className="mt-6 grid gap-5 md:grid-cols-[minmax(180px,220px)_minmax(180px,260px)_minmax(180px,260px)]">
+          <div className="mt-6 grid gap-5 md:grid-cols-2 xl:grid-cols-[minmax(180px,220px)_minmax(180px,240px)_minmax(180px,240px)_minmax(180px,240px)]">
             <div className="grid gap-2">
               <Label htmlFor="fixed-asset-payment-date">Payment Date</Label>
               <div className="relative">
@@ -428,6 +428,16 @@ export function DaybookFixedAssetDialog({
                 onChange={(event) => setReferenceNo(event.target.value)}
                 placeholder="Reference"
                 value={referenceNo}
+              />
+            </div>
+
+            <div className="grid gap-2">
+              <Label htmlFor="fixed-asset-bill-no">Bill no.</Label>
+              <Input
+                id="fixed-asset-bill-no"
+                onChange={(event) => setBillNo(event.target.value)}
+                placeholder="Bill number"
+                value={billNo}
               />
             </div>
           </div>
