@@ -8,6 +8,7 @@ import {
   CalendarDaysIcon,
   ClipboardCheckIcon,
   DownloadIcon,
+  Building2Icon,
   FileTextIcon,
   LockKeyholeIcon,
   PackageIcon,
@@ -25,7 +26,9 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { useMemo, useState } from "react";
 import { DaybookExpenseDialog } from "@/components/dashboard/daybook/daybook-expense-dialog";
+import { DaybookFixedAssetDialog } from "@/components/dashboard/daybook/daybook-fixed-asset-dialog";
 import { useDaybookExpenses } from "@/components/dashboard/daybook/use-daybook-expenses";
+import { useDaybookFixedAssetPurchases } from "@/components/dashboard/daybook/use-daybook-fixed-assets";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -60,7 +63,7 @@ type Metric = {
 type ActionItem = {
   href?: string;
   icon: ReactNode;
-  kind?: "expense";
+  kind?: "expense" | "fixedAsset";
   label: string;
   primary?: boolean;
 };
@@ -229,6 +232,11 @@ const daybookConfigs: Record<DaybookVariant, DaybookConfig> = {
         kind: "expense",
         label: "Expense",
       },
+      {
+        icon: <Building2Icon className="size-4" />,
+        kind: "fixedAsset",
+        label: "Fixed Asset",
+      },
     ],
     stockPanels: [
       {
@@ -379,6 +387,11 @@ const daybookConfigs: Record<DaybookVariant, DaybookConfig> = {
         label: "Expense",
       },
       {
+        icon: <Building2Icon className="size-4" />,
+        kind: "fixedAsset",
+        label: "Fixed Asset",
+      },
+      {
         href: "/warehouse/dashboard/stock/add",
         icon: <PackagePlusIcon className="size-4" />,
         label: "Add Stock",
@@ -432,14 +445,25 @@ const daybookConfigs: Record<DaybookVariant, DaybookConfig> = {
 export function DaybookKpiPage({ variant }: { variant: DaybookVariant }) {
   const config = daybookConfigs[variant];
   const savedExpenses = useDaybookExpenses(variant);
+  const savedFixedAssetPurchases = useDaybookFixedAssetPurchases(variant);
   const [lastUpdated, setLastUpdated] = useState(() => new Date());
   const [expenseDialogOpen, setExpenseDialogOpen] = useState(false);
+  const [fixedAssetDialogOpen, setFixedAssetDialogOpen] = useState(false);
   const [physicalCash, setPhysicalCash] = useState("");
   const savedExpenseTotal = useMemo(
     () => savedExpenses.reduce((sum, expense) => sum + expense.total, 0),
     [savedExpenses],
   );
-  const adjustedSystemCash = config.systemCash - savedExpenseTotal;
+  const savedFixedAssetTotal = useMemo(
+    () =>
+      savedFixedAssetPurchases.reduce(
+        (sum, purchase) => sum + purchase.total,
+        0,
+      ),
+    [savedFixedAssetPurchases],
+  );
+  const adjustedSystemCash =
+    config.systemCash - savedExpenseTotal - savedFixedAssetTotal;
   const overviewMetrics = useMemo(
     () =>
       config.metrics.map((metric) =>
@@ -479,8 +503,25 @@ export function DaybookKpiPage({ variant }: { variant: DaybookVariant }) {
         type: "Expense",
       }));
 
-    return [...expenseTransactions, ...config.transactions];
-  }, [config.transactions, savedExpenses]);
+    const fixedAssetTransactions = savedFixedAssetPurchases
+      .toSorted(
+        (first, second) =>
+          new Date(second.createdAt).getTime() -
+          new Date(first.createdAt).getTime(),
+      )
+      .map((purchase) => ({
+        amount: money(purchase.total),
+        reference:
+          purchase.referenceNo ||
+          purchase.billNo ||
+          purchase.supplier ||
+          purchase.paymentAccountName,
+        time: timeLabel(new Date(purchase.createdAt)),
+        type: "Fixed Asset Purchase",
+      }));
+
+    return [...fixedAssetTransactions, ...expenseTransactions, ...config.transactions];
+  }, [config.transactions, savedExpenses, savedFixedAssetPurchases]);
   const cashDifference = useMemo(() => {
     const parsedCash = Number(physicalCash.replace(/,/g, ""));
     return Number.isFinite(parsedCash) && physicalCash.trim()
@@ -587,6 +628,7 @@ export function DaybookKpiPage({ variant }: { variant: DaybookVariant }) {
               <QuickAction
                 action={action}
                 key={action.label}
+                onFixedAssetClick={() => setFixedAssetDialogOpen(true)}
                 onExpenseClick={() => setExpenseDialogOpen(true)}
               />
             ))}
@@ -777,6 +819,11 @@ export function DaybookKpiPage({ variant }: { variant: DaybookVariant }) {
         open={expenseDialogOpen}
         scope={variant}
       />
+      <DaybookFixedAssetDialog
+        onOpenChange={setFixedAssetDialogOpen}
+        open={fixedAssetDialogOpen}
+        scope={variant}
+      />
     </div>
   );
 }
@@ -871,9 +918,11 @@ function OverviewCard({ metric }: { metric: Metric }) {
 
 function QuickAction({
   action,
+  onFixedAssetClick,
   onExpenseClick,
 }: {
   action: ActionItem;
+  onFixedAssetClick: () => void;
   onExpenseClick: () => void;
 }) {
   if (action.kind === "expense") {
@@ -884,6 +933,23 @@ function QuickAction({
           !action.primary && "bg-slate-100 text-slate-800 hover:bg-slate-200",
         )}
         onClick={onExpenseClick}
+        type="button"
+        variant={action.primary ? "default" : "secondary"}
+      >
+        {action.icon}
+        {action.label}
+      </Button>
+    );
+  }
+
+  if (action.kind === "fixedAsset") {
+    return (
+      <Button
+        className={cn(
+          "h-10 justify-start rounded-lg",
+          !action.primary && "bg-slate-100 text-slate-800 hover:bg-slate-200",
+        )}
+        onClick={onFixedAssetClick}
         type="button"
         variant={action.primary ? "default" : "secondary"}
       >
