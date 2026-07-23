@@ -216,3 +216,93 @@ export const BALANCE_SHEET_LINE_METADATA: Record<
     sortOrder: 120,
   },
 };
+
+export const ACCOUNTING_TRANSACTION_TYPES = [
+  "opening_stock",
+  "owner_capital_invested",
+  "fixed_asset_purchase",
+  "loan_received",
+  "product_purchase_cash",
+  "product_purchase_due",
+  "supplier_advance_payment",
+  "product_sale_cash",
+  "product_sale_due",
+  "customer_advance_payment",
+  "operating_expense",
+  "owner_drawing",
+] as const;
+
+export type AccountingTransactionType =
+  (typeof ACCOUNTING_TRANSACTION_TYPES)[number];
+
+export type AccountingTransactionTypeMetadata = {
+  label: string;
+  phase: "balance_sheet_only" | "profit_and_balance";
+  sortOrder: number;
+};
+
+export const ACCOUNTING_TRANSACTION_TYPE_METADATA: Record<
+  AccountingTransactionType,
+  AccountingTransactionTypeMetadata
+> = {
+  opening_stock: {
+    label: "Opening Stock",
+    phase: "balance_sheet_only",
+    sortOrder: 10,
+  },
+  owner_capital_invested: {
+    label: "Owner Capital Invested",
+    phase: "balance_sheet_only",
+    sortOrder: 20,
+  },
+  fixed_asset_purchase: {
+    label: "Fixed Asset Purchase",
+    phase: "balance_sheet_only",
+    sortOrder: 30,
+  },
+  loan_received: {
+    label: "Loan Received",
+    phase: "balance_sheet_only",
+    sortOrder: 40,
+  },
+  product_purchase_cash: {
+    label: "Product Purchase - Cash",
+    phase: "profit_and_balance",
+    sortOrder: 50,
+  },
+  product_purchase_due: {
+    label: "Product Purchase - Due",
+    phase: "profit_and_balance",
+    sortOrder: 60,
+  },
+  supplier_advance_payment: {
+    label: "Supplier Advance Payment",
+    phase: "balance_sheet_only",
+    sortOrder: 70,
+  },
+  product_sale_cash: {
+    label: "Product Sale - Cash",
+    phase: "profit_and_balance",
+    sortOrder: 80,
+  },
+  product_sale_due: {
+    label: "Product Sale - Due",
+    phase: "profit_and_balance",
+    sortOrder: 90,
+  },
+  customer_advance_payment: {
+    label: "Customer Advance Payment",
+    phase: "balance_sheet_only",
+    sortOrder: 100,
+  },
+  operating_expense: {
+    label: "Operating Expense",
+    phase: "profit_and_balance",
+    sortOrder: 110,
+  },
+  owner_drawing: {
+    label: "Owner Drawing",
+    phase: "balance_sheet_only",
+    sortOrder: 120,
+  },
+};
