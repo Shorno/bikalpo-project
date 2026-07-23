@@ -48,6 +48,7 @@ import { deliverymanRouter } from "./deliveryman";
 import { devOtpRouter } from "./dev-otp";
 import { employeeRouter } from "./employee";
 import { expenseRouter } from "./expense";
+import { financeRouter } from "./finance";
 import { inventoryRouter } from "./inventory";
 import { landingRouter } from "./landing";
 import { marketingRouter } from "./marketing";
@@ -136,6 +137,7 @@ export const appRouter = {
   devOtp: devOtpRouter,
   payee: payeeRouter,
   expense: expenseRouter,
+  finance: financeRouter,
   supplierPayment: supplierPaymentRouter,
   balanceSheet: balanceSheetRouter,
   profitLoss: profitLossRouter,
