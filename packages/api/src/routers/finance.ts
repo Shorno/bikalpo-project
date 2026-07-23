@@ -690,6 +690,185 @@ export const financeRouter = {
       };
     }),
 
+  createFixedAssetPurchase: protectedProcedure
+    .route({
+      method: "POST",
+      path: "/finance/fixed-asset-purchases/create",
+      tags: ["Finance"],
+      summary: "Create fixed asset purchase",
+      description:
+        "Record a paid fixed asset purchase without changing Profit & Loss.",
+    })
+    .input(
+      z.object({
+        billNo: z.string().max(120).optional().nullable(),
+        lines: z
+          .array(
+            z.object({
+              accountId: z.union([z.string(), z.number()]).optional().nullable(),
+              accountName: z.string().min(1).max(180),
+              price: z.union([z.string(), z.number()]),
+              productName: z.string().min(1).max(220),
+            }),
+          )
+          .min(1),
+        notes: z.string().max(1000).optional().nullable(),
+        paymentAccountId: z.union([z.string(), z.number()]),
+        paymentDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        paymentMethod: z.enum(PAYMENT_METHODS),
+        referenceNo: z.string().max(120).optional().nullable(),
+        supplier: z.string().max(200).optional().nullable(),
+      }),
+    )
+    .handler(async ({ context, input }) => {
+      const ownerId = context.session.user.id;
+      const ownerType = resolveOwnerScope(context.session.user.role);
+      const paymentAccountId = Number(input.paymentAccountId);
+
+      if (!Number.isFinite(paymentAccountId)) {
+        throw new ORPCError("BAD_REQUEST", {
+          message: "Select a valid payment account",
+        });
+      }
+
+      await ensureDefaultFinancePaymentAccounts({ ownerId, ownerType });
+
+      const paymentAccount = await db.query.financePaymentAccount.findFirst({
+        where: (table, { and: andFn, eq: eqFn }) =>
+          andFn(
+            eqFn(table.id, paymentAccountId),
+            eqFn(table.ownerId, ownerId),
+            eqFn(table.ownerType, ownerType),
+          ),
+      });
+
+      if (
+        !paymentAccount ||
+        (paymentAccount.type !== "cash" && paymentAccount.type !== "bank")
+      ) {
+        throw new ORPCError("NOT_FOUND", {
+          message: "Cash or bank payment account not found",
+        });
+      }
+
+      const validLines = input.lines
+        .map((line) => ({
+          accountId:
+            line.accountId === null || line.accountId === undefined
+              ? null
+              : Number(line.accountId),
+          accountName: line.accountName.trim(),
+          price: parseMoney(line.price),
+          productName: line.productName.trim(),
+        }))
+        .filter(
+          (line) =>
+            line.price > 0 &&
+            line.accountName.length > 0 &&
+            line.productName.length > 0,
+        );
+
+      if (validLines.length === 0) {
+        throw new ORPCError("BAD_REQUEST", {
+          message: "Enter at least one fixed asset amount",
+        });
+      }
+
+      const assetLines = [];
+      for (const line of validLines) {
+        const account = await resolveFixedAssetAccount({
+          accountId:
+            line.accountId && Number.isFinite(line.accountId)
+              ? line.accountId
+              : null,
+          accountName: line.accountName,
+          ownerId,
+          ownerType,
+        });
+
+        assetLines.push({
+          ...line,
+          account,
+        });
+      }
+
+      const total = assetLines.reduce((sum, line) => sum + line.price, 0);
+      const balanceBefore = parseMoney(paymentAccount.currentBalance);
+      const balanceAfter = balanceBefore - total;
+      const accountTotals = new Map<
+        number,
+        { accountName: string; currentBalance: number; total: number }
+      >();
+
+      for (const line of assetLines) {
+        const existing = accountTotals.get(line.account.id);
+        accountTotals.set(line.account.id, {
+          accountName: line.account.name,
+          currentBalance:
+            existing?.currentBalance ?? line.account.currentBalance,
+          total: (existing?.total ?? 0) + line.price,
+        });
+      }
+
+      await db.transaction(async (tx) => {
+        await tx
+          .update(financePaymentAccount)
+          .set({
+            currentBalance: toMoney(balanceAfter),
+            updatedAt: new Date(),
+          })
+          .where(eq(financePaymentAccount.id, paymentAccount.id));
+
+        for (const [accountId, account] of accountTotals) {
+          await tx
+            .update(financeAccount)
+            .set({
+              balanceSheetLine: "fixed_assets",
+              currentBalance: toMoney(account.currentBalance + account.total),
+              updatedAt: new Date(),
+            })
+            .where(eq(financeAccount.id, accountId));
+        }
+
+        await tx.insert(financialLedger).values({
+          amount: toMoney(total),
+          balanceAfter: toMoney(balanceAfter),
+          balanceBefore: toMoney(balanceBefore),
+          description: [
+            "Fixed asset purchase",
+            input.supplier?.trim() ? `Supplier: ${input.supplier.trim()}` : null,
+            input.billNo?.trim() ? `Bill: ${input.billNo.trim()}` : null,
+            input.referenceNo?.trim()
+              ? `Reference: ${input.referenceNo.trim()}`
+              : null,
+            `Assets: ${assetLines
+              .map((line) => `${line.productName} (${line.account.name})`)
+              .join(", ")}`,
+          ]
+            .filter(Boolean)
+            .join(" | "),
+          direction: "debit",
+          entryType: "adjustment",
+          ownerId,
+          ownerType,
+          referenceId: paymentAccount.id,
+          referenceType: "adjustment",
+        });
+      });
+
+      return {
+        assets: assetLines.map((line) => ({
+          accountId: String(line.account.id),
+          accountName: line.account.name,
+          amount: toMoney(line.price),
+          productName: line.productName,
+        })),
+        balanceAfter: toMoney(balanceAfter),
+        message: "Fixed asset purchase saved and Balance Sheet updated",
+        total: toMoney(total),
+      };
+    }),
+
   createCategory: protectedProcedure
     .route({
       method: "POST",
