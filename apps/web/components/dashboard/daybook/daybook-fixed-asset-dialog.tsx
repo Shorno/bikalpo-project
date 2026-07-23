@@ -53,6 +53,16 @@ type DraftFixedAssetLine = {
 
 const PAYMENT_METHODS = ["Cash", "Bank"] as const;
 
+type PaymentMethodLabel = (typeof PAYMENT_METHODS)[number];
+
+function paymentTypeToMethod(type?: "cash" | "bank"): PaymentMethodLabel {
+  return type === "bank" ? "Bank" : "Cash";
+}
+
+function methodToPaymentType(method: PaymentMethodLabel): "cash" | "bank" {
+  return method === "Bank" ? "bank" : "cash";
+}
+
 function dateValue(date = new Date()) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(
     2,
@@ -106,7 +116,7 @@ export function DaybookFixedAssetDialog({
     paymentAccounts[0]?.id ?? "",
   );
   const [paymentDate, setPaymentDate] = useState(dateValue);
-  const [paymentMethod, setPaymentMethod] = useState(
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethodLabel>(
     PAYMENT_METHODS[0] ?? "Cash",
   );
   const [notes, setNotes] = useState("");
@@ -135,6 +145,10 @@ export function DaybookFixedAssetDialog({
       setPaymentAccountId(paymentAccounts[0]?.id ?? "");
     }
   }, [paymentAccountId, paymentAccounts]);
+
+  useEffect(() => {
+    setPaymentMethod(paymentTypeToMethod(selectedPaymentAccount?.type));
+  }, [selectedPaymentAccount]);
 
   useEffect(() => {
     if (!open) {
@@ -184,6 +198,17 @@ export function DaybookFixedAssetDialog({
     setLines((currentLines) => [...currentLines, createDraftLine()]);
 
   const clearLines = () => setLines([createDraftLine()]);
+
+  const changePaymentMethod = (method: PaymentMethodLabel) => {
+    setPaymentMethod(method);
+    const matchingAccount = paymentAccounts.find(
+      (account) => account.type === methodToPaymentType(method),
+    );
+
+    if (matchingAccount) {
+      setPaymentAccountId(matchingAccount.id);
+    }
+  };
 
   const removeLine = (lineId: string) => {
     setLines((currentLines) =>
@@ -262,6 +287,8 @@ export function DaybookFixedAssetDialog({
     }
 
     const nextTotal = purchaseLines.reduce((sum, line) => sum + line.amount, 0);
+    const selectedPaymentMethod =
+      selectedPaymentAccount.type ?? methodToPaymentType(paymentMethod);
 
     const localPurchase = {
       billNo: billNo.trim(),
@@ -273,7 +300,7 @@ export function DaybookFixedAssetDialog({
       paymentAccountName: selectedPaymentAccount.name,
       paymentAccountType: selectedPaymentAccount.type,
       paymentDate,
-      paymentMethod: selectedPaymentAccount.type,
+      paymentMethod: selectedPaymentMethod,
       referenceNo: referenceNo.trim(),
       scope,
       supplier: supplier.trim() || "Vendor",
@@ -292,7 +319,7 @@ export function DaybookFixedAssetDialog({
         notes: notes.trim() || undefined,
         paymentAccountId: selectedPaymentAccount.id,
         paymentDate,
-        paymentMethod: selectedPaymentAccount.type,
+        paymentMethod: selectedPaymentMethod,
         referenceNo: referenceNo.trim() || undefined,
         supplier: supplier.trim() || undefined,
       });
@@ -404,7 +431,12 @@ export function DaybookFixedAssetDialog({
 
             <div className="grid gap-2">
               <Label htmlFor="fixed-asset-payment-method">Payment Method</Label>
-              <Select onValueChange={setPaymentMethod} value={paymentMethod}>
+              <Select
+                onValueChange={(value) =>
+                  changePaymentMethod(value as PaymentMethodLabel)
+                }
+                value={paymentMethod}
+              >
                 <SelectTrigger
                   className="w-full bg-white"
                   id="fixed-asset-payment-method"
