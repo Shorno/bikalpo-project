@@ -36,6 +36,20 @@ type UIAccountType = (typeof UI_ACCOUNT_TYPES)[number];
 
 const PAYMENT_METHODS = ["cash", "bank"] as const;
 
+type ResolvedFixedAssetAccount = {
+  currentBalance: number;
+  id: number;
+  name: string;
+};
+
+type FixedAssetPurchaseLine = {
+  account: ResolvedFixedAssetAccount;
+  accountId: number | null;
+  accountName: string;
+  price: number;
+  productName: string;
+};
+
 function resolveOwnerScope(role?: string | null): AccountingOwnerType {
   return role === "warehouse" ? "warehouse" : "shop";
 }
@@ -225,7 +239,7 @@ async function ensureOwnerFixedAssetAccount(input: {
   categoryId: number;
   ownerId: string;
   ownerType: AccountingOwnerType;
-}) {
+}): Promise<ResolvedFixedAssetAccount> {
   const name = input.accountName.trim() || "Furniture";
 
   const existing = await db.query.financeAccount.findFirst({
@@ -307,7 +321,7 @@ async function resolveFixedAssetAccount(input: {
   accountName: string;
   ownerId: string;
   ownerType: AccountingOwnerType;
-}) {
+}): Promise<ResolvedFixedAssetAccount> {
   const categoryId = await resolveFixedAssetCategoryId();
 
   if (input.accountId && Number.isFinite(input.accountId)) {
@@ -774,7 +788,7 @@ export const financeRouter = {
         });
       }
 
-      const assetLines = [];
+      const assetLines: FixedAssetPurchaseLine[] = [];
       for (const line of validLines) {
         const account = await resolveFixedAssetAccount({
           accountId:
