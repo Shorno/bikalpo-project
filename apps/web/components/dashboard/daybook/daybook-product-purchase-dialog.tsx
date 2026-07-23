@@ -16,6 +16,7 @@ import {
   addDaybookProductPurchase,
   createDaybookProductPurchaseId,
   type DaybookProductPurchaseItem,
+  type DaybookProductPurchasePaymentType,
 } from "@/components/dashboard/daybook/daybook-product-purchase-ledger";
 import { Button } from "@/components/ui/button";
 import {
@@ -51,6 +52,13 @@ type DraftPurchaseItem = {
 };
 
 const PAYMENT_METHODS = ["Cash", "Bank"] as const;
+const PRODUCT_PURCHASE_PAYMENT_TYPES = [
+  { label: "Cash / Bank", value: "cash" },
+  { label: "Due to supplier", value: "due" },
+] as const satisfies {
+  label: string;
+  value: DaybookProductPurchasePaymentType;
+}[];
 
 type PaymentMethodLabel = (typeof PAYMENT_METHODS)[number];
 
@@ -113,6 +121,8 @@ export function DaybookProductPurchaseDialog({
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethodLabel>(
     PAYMENT_METHODS[0] ?? "Cash",
   );
+  const [purchasePaymentType, setPurchasePaymentType] =
+    useState<DaybookProductPurchasePaymentType>("cash");
   const [notes, setNotes] = useState("");
   const [message, setMessage] = useState<{
     tone: "error" | "success";
@@ -130,19 +140,23 @@ export function DaybookProductPurchaseDialog({
     () => items.reduce((sum, item) => sum + toAmount(item.amount), 0),
     [items],
   );
+  const isDuePurchase = purchasePaymentType === "due";
 
   useEffect(() => {
     if (
+      !isDuePurchase &&
       paymentAccounts.length > 0 &&
       !paymentAccounts.some((account) => account.id === paymentAccountId)
     ) {
       setPaymentAccountId(paymentAccounts[0]?.id ?? "");
     }
-  }, [paymentAccountId, paymentAccounts]);
+  }, [isDuePurchase, paymentAccountId, paymentAccounts]);
 
   useEffect(() => {
-    setPaymentMethod(paymentTypeToMethod(selectedPaymentAccount?.type));
-  }, [selectedPaymentAccount]);
+    if (!isDuePurchase) {
+      setPaymentMethod(paymentTypeToMethod(selectedPaymentAccount?.type));
+    }
+  }, [isDuePurchase, selectedPaymentAccount]);
 
   useEffect(() => {
     if (!open) {
@@ -153,6 +167,7 @@ export function DaybookProductPurchaseDialog({
       setPaymentAccountId(paymentAccounts[0]?.id ?? "");
       setPaymentDate(dateValue());
       setPaymentMethod(PAYMENT_METHODS[0] ?? "Cash");
+      setPurchasePaymentType("cash");
       setNotes("");
       setItems([createDraftItem()]);
     }
@@ -221,6 +236,9 @@ export function DaybookProductPurchaseDialog({
         queryKey: orpc.finance.getPaymentAccounts.key(),
       }),
       queryClient.invalidateQueries({
+        queryKey: orpc.finance.getChartOfAccounts.key(),
+      }),
+      queryClient.invalidateQueries({
         queryKey: orpc.balanceSheet.getBalanceSheet.key(),
       }),
       queryClient.invalidateQueries({
@@ -236,13 +254,14 @@ export function DaybookProductPurchaseDialog({
     setPaymentAccountId(paymentAccounts[0]?.id ?? "");
     setPaymentDate(dateValue());
     setPaymentMethod(PAYMENT_METHODS[0] ?? "Cash");
+    setPurchasePaymentType("cash");
     setNotes("");
     setItems([createDraftItem()]);
   };
 
   const savePurchase = async (closeAfterSave: boolean) => {
     const purchaseItems = buildPurchaseItems();
-    if (!selectedPaymentAccount) {
+    if (!isDuePurchase && !selectedPaymentAccount) {
       setMessage({ text: "Select a payment account.", tone: "error" });
       return;
     }
@@ -256,8 +275,9 @@ export function DaybookProductPurchaseDialog({
     }
 
     const nextTotal = purchaseItems.reduce((sum, item) => sum + item.amount, 0);
-    const selectedPaymentMethod =
-      selectedPaymentAccount.type ?? methodToPaymentType(paymentMethod);
+    const selectedPaymentMethod = selectedPaymentAccount
+      ? (selectedPaymentAccount.type ?? methodToPaymentType(paymentMethod))
+      : methodToPaymentType(paymentMethod);
 
     const localPurchase = {
       billNo: billNo.trim(),
@@ -265,11 +285,18 @@ export function DaybookProductPurchaseDialog({
       id: createDaybookProductPurchaseId("daybook-product-purchase"),
       items: purchaseItems,
       notes: notes.trim(),
-      paymentAccountId: selectedPaymentAccount.id,
-      paymentAccountName: selectedPaymentAccount.name,
-      paymentAccountType: selectedPaymentAccount.type,
+      paymentAccountId: isDuePurchase
+        ? "accounts-payable"
+        : (selectedPaymentAccount?.id ?? ""),
+      paymentAccountName: isDuePurchase
+        ? "Accounts Payable"
+        : (selectedPaymentAccount?.name ?? ""),
+      paymentAccountType: isDuePurchase
+        ? undefined
+        : selectedPaymentAccount?.type,
       paymentDate,
-      paymentMethod: selectedPaymentMethod,
+      paymentMethod: isDuePurchase ? undefined : selectedPaymentMethod,
+      paymentType: purchasePaymentType,
       referenceNo: referenceNo.trim(),
       scope,
       supplier: supplier.trim() || "Supplier",
@@ -285,9 +312,12 @@ export function DaybookProductPurchaseDialog({
           productName: item.productName,
         })),
         notes: notes.trim() || undefined,
-        paymentAccountId: selectedPaymentAccount.id,
+        paymentAccountId: isDuePurchase
+          ? undefined
+          : selectedPaymentAccount?.id,
         paymentDate,
-        paymentMethod: selectedPaymentMethod,
+        paymentMethod: isDuePurchase ? undefined : selectedPaymentMethod,
+        paymentType: purchasePaymentType,
         referenceNo: referenceNo.trim() || undefined,
         supplier: supplier.trim() || undefined,
       });
@@ -325,13 +355,13 @@ export function DaybookProductPurchaseDialog({
             Product Purchase
           </DialogTitle>
           <DialogDescription>
-            Record cash product purchase cost for {scopeLabel}.
+            Record product purchase cost for {scopeLabel}.
           </DialogDescription>
         </DialogHeader>
 
         <div className="px-5 py-6">
           <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_280px]">
-            <div className="grid gap-5 md:grid-cols-[minmax(220px,360px)_minmax(260px,1fr)]">
+            <div className="grid gap-5 md:grid-cols-[minmax(200px,1fr)_minmax(180px,220px)_minmax(240px,1fr)]">
               <div className="grid gap-2">
                 <Label htmlFor="product-purchase-supplier">Supplier</Label>
                 <Input
@@ -343,30 +373,69 @@ export function DaybookProductPurchaseDialog({
               </div>
 
               <div className="grid gap-2">
+                <Label htmlFor="product-purchase-payment-type">
+                  Payment type
+                </Label>
+                <Select
+                  onValueChange={(value) =>
+                    setPurchasePaymentType(
+                      value as DaybookProductPurchasePaymentType,
+                    )
+                  }
+                  value={purchasePaymentType}
+                >
+                  <SelectTrigger
+                    className="w-full bg-white"
+                    id="product-purchase-payment-type"
+                  >
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {PRODUCT_PURCHASE_PAYMENT_TYPES.map((type) => (
+                      <SelectItem key={type.value} value={type.value}>
+                        {type.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="grid gap-2">
                 <Label htmlFor="product-purchase-payment-account">
                   Payment account
                 </Label>
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                  <Select
-                    onValueChange={setPaymentAccountId}
-                    value={paymentAccountId}
-                  >
-                    <SelectTrigger
-                      className="w-full border-emerald-500 bg-white"
+                  {isDuePurchase ? (
+                    <Input
+                      className="border-amber-300 bg-white"
+                      disabled
                       id="product-purchase-payment-account"
+                      value="Accounts Payable"
+                    />
+                  ) : (
+                    <Select
+                      onValueChange={setPaymentAccountId}
+                      value={paymentAccountId}
                     >
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {paymentAccounts.map((account) => (
-                        <SelectItem key={account.id} value={account.id}>
-                          {account.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                      <SelectTrigger
+                        className="w-full border-emerald-500 bg-white"
+                        id="product-purchase-payment-account"
+                      >
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {paymentAccounts.map((account) => (
+                          <SelectItem key={account.id} value={account.id}>
+                            {account.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
                   <span className="whitespace-nowrap font-medium text-slate-600 text-sm">
-                    Balance {money(selectedPaymentAccount?.balance ?? 0)}
+                    {isDuePurchase
+                      ? "Supplier due"
+                      : `Balance ${money(selectedPaymentAccount?.balance ?? 0)}`}
                   </span>
                 </div>
               </div>
@@ -380,7 +449,9 @@ export function DaybookProductPurchaseDialog({
                 {money(total)}
               </div>
               <p className="mt-2 text-slate-500 text-sm">
-                Product Purchase Cost
+                {isDuePurchase
+                  ? "COGS + Accounts Payable"
+                  : "Product Purchase Cost"}
               </p>
               <div className="mt-4 grid gap-2 border-slate-200 border-t pt-4 text-sm">
                 <div className="flex items-center justify-between gap-3">
@@ -392,12 +463,14 @@ export function DaybookProductPurchaseDialog({
                 <div className="flex items-center justify-between gap-3">
                   <span className="text-slate-500">Total Paid</span>
                   <span className="font-semibold tabular-nums">
-                    {money(total)}
+                    {money(isDuePurchase ? 0 : total)}
                   </span>
                 </div>
                 <div className="flex items-center justify-between gap-3">
                   <span className="text-slate-500">Amount Due</span>
-                  <span className="font-semibold tabular-nums">{money(0)}</span>
+                  <span className="font-semibold tabular-nums">
+                    {money(isDuePurchase ? total : 0)}
+                  </span>
                 </div>
               </div>
             </div>
@@ -423,26 +496,34 @@ export function DaybookProductPurchaseDialog({
               <Label htmlFor="product-purchase-payment-method">
                 Payment Method
               </Label>
-              <Select
-                onValueChange={(value) =>
-                  changePaymentMethod(value as PaymentMethodLabel)
-                }
-                value={paymentMethod}
-              >
-                <SelectTrigger
-                  className="w-full bg-white"
+              {isDuePurchase ? (
+                <Input
+                  disabled
                   id="product-purchase-payment-method"
+                  value="Due"
+                />
+              ) : (
+                <Select
+                  onValueChange={(value) =>
+                    changePaymentMethod(value as PaymentMethodLabel)
+                  }
+                  value={paymentMethod}
                 >
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {PAYMENT_METHODS.map((method) => (
-                    <SelectItem key={method} value={method}>
-                      {method}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                  <SelectTrigger
+                    className="w-full bg-white"
+                    id="product-purchase-payment-method"
+                  >
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {PAYMENT_METHODS.map((method) => (
+                      <SelectItem key={method} value={method}>
+                        {method}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
             </div>
 
             <div className="grid gap-2">

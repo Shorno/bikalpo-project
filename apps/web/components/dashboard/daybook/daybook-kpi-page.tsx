@@ -486,9 +486,11 @@ export function DaybookKpiPage({ variant }: { variant: DaybookVariant }) {
     () => savedLoans.reduce((sum, loan) => sum + loan.total, 0),
     [savedLoans],
   );
-  const savedProductPurchaseTotal = useMemo(
+  const savedProductPurchaseCashTotal = useMemo(
     () =>
-      savedProductPurchases.reduce((sum, purchase) => sum + purchase.total, 0),
+      savedProductPurchases
+        .filter((purchase) => purchase.paymentType !== "due")
+        .reduce((sum, purchase) => sum + purchase.total, 0),
     [savedProductPurchases],
   );
   const adjustedSystemCash =
@@ -496,7 +498,7 @@ export function DaybookKpiPage({ variant }: { variant: DaybookVariant }) {
     savedExpenseTotal -
     savedFixedAssetTotal +
     savedLoanTotal -
-    savedProductPurchaseTotal;
+    savedProductPurchaseCashTotal;
   const overviewMetrics = useMemo(
     () =>
       config.metrics.map((metric) =>
@@ -593,7 +595,10 @@ export function DaybookKpiPage({ variant }: { variant: DaybookVariant }) {
             .filter(Boolean)
             .join(" - ") || purchase.paymentAccountName,
         time: timeLabel(new Date(purchase.createdAt)),
-        type: "Product Purchase",
+        type:
+          purchase.paymentType === "due"
+            ? "Product Purchase Due"
+            : "Product Purchase",
       }));
 
     return [

@@ -35,6 +35,7 @@ const UI_ACCOUNT_TYPES = [
 type UIAccountType = (typeof UI_ACCOUNT_TYPES)[number];
 
 const PAYMENT_METHODS = ["cash", "bank"] as const;
+const PRODUCT_PURCHASE_PAYMENT_TYPES = ["cash", "due"] as const;
 
 type ResolvedFixedAssetAccount = {
   currentBalance: number;
@@ -61,6 +62,12 @@ type LoanReceivedLine = {
   amount: number;
   description: string;
   loanType: string;
+};
+
+type ResolvedPayableAccount = {
+  currentBalance: number;
+  id: number;
+  name: string;
 };
 
 function resolveOwnerScope(role?: string | null): AccountingOwnerType {
@@ -130,6 +137,17 @@ function resolveAccountReportLines(input: {
   ) {
     return {
       balanceSheetLine: "loan_payable",
+      profitAndLossLine: null,
+    };
+  }
+
+  if (
+    input.accountType === "liability" &&
+    (input.categoryCode === "liability-accounts-payable" ||
+      input.categoryName.toLowerCase() === "accounts payable")
+  ) {
+    return {
+      balanceSheetLine: "accounts_payable",
       profitAndLossLine: null,
     };
   }
@@ -273,6 +291,27 @@ async function resolveLoanPayableCategoryId() {
   if (!category) {
     throw new ORPCError("INTERNAL_SERVER_ERROR", {
       message: "Loan payable category is not configured",
+    });
+  }
+
+  return category.id;
+}
+
+async function resolveAccountsPayableCategoryId() {
+  await ensureDefaultFinanceAccounts();
+
+  const category = await db.query.financeCategory.findFirst({
+    where: (table, { and: andFn, eq: eqFn, isNull: isNullFn }) =>
+      andFn(
+        eqFn(table.code, "liability-accounts-payable"),
+        isNullFn(table.ownerId),
+        isNullFn(table.ownerType),
+      ),
+  });
+
+  if (!category) {
+    throw new ORPCError("INTERNAL_SERVER_ERROR", {
+      message: "Accounts payable category is not configured",
     });
   }
 
@@ -514,6 +553,100 @@ async function resolveLoanAccount(input: {
 
   return ensureOwnerLoanAccount({
     accountName: input.accountName,
+    categoryId,
+    ownerId: input.ownerId,
+    ownerType: input.ownerType,
+  });
+}
+
+async function ensureOwnerAccountsPayableAccount(input: {
+  categoryId: number;
+  ownerId: string;
+  ownerType: AccountingOwnerType;
+}): Promise<ResolvedPayableAccount> {
+  const name = "Accounts Payable";
+
+  const existing = await db.query.financeAccount.findFirst({
+    where: (table, { and: andFn, eq: eqFn }) =>
+      andFn(
+        eqFn(table.accountType, "liability"),
+        eqFn(table.categoryId, input.categoryId),
+        eqFn(table.name, name),
+        eqFn(table.ownerId, input.ownerId),
+        eqFn(table.ownerType, input.ownerType),
+      ),
+  });
+
+  if (existing) {
+    if (existing.balanceSheetLine !== "accounts_payable") {
+      await db
+        .update(financeAccount)
+        .set({
+          balanceSheetLine: "accounts_payable",
+          updatedAt: new Date(),
+        })
+        .where(eq(financeAccount.id, existing.id));
+    }
+
+    return {
+      currentBalance: parseMoney(existing.currentBalance),
+      id: existing.id,
+      name: existing.name,
+    };
+  }
+
+  const code = await generateUniqueCode(
+    financeAccount,
+    input.ownerId,
+    input.ownerType,
+    "liability-accounts-payable",
+  );
+
+  const [created] = await db
+    .insert(financeAccount)
+    .values({
+      accountType: "liability",
+      balanceSheetLine: "accounts_payable",
+      categoryId: input.categoryId,
+      code,
+      currentBalance: "0.00",
+      description: "Supplier due balances from unpaid product purchases.",
+      isActive: true,
+      isPaymentAccount: false,
+      isSystem: false,
+      name,
+      normalBalance: "credit",
+      openingBalance: "0.00",
+      ownerId: input.ownerId,
+      ownerType: input.ownerType,
+      parentAccountId: null,
+      profitAndLossLine: null,
+      sortOrder: 900,
+    })
+    .returning({
+      id: financeAccount.id,
+    });
+
+  if (!created) {
+    throw new ORPCError("INTERNAL_SERVER_ERROR", {
+      message: "Failed to create accounts payable account",
+    });
+  }
+
+  return {
+    currentBalance: 0,
+    id: created.id,
+    name,
+  };
+}
+
+async function resolveAccountsPayableAccount(input: {
+  ownerId: string;
+  ownerType: AccountingOwnerType;
+}): Promise<ResolvedPayableAccount> {
+  const categoryId = await resolveAccountsPayableCategoryId();
+
+  return ensureOwnerAccountsPayableAccount({
     categoryId,
     ownerId: input.ownerId,
     ownerType: input.ownerType,
@@ -1097,7 +1230,7 @@ export const financeRouter = {
       tags: ["Finance"],
       summary: "Create product purchase",
       description:
-        "Record a paid product purchase as Product Purchase Cost without creating operating expense rows.",
+        "Record a product purchase as Product Purchase Cost without creating operating expense rows.",
     })
     .input(
       z.object({
@@ -1112,9 +1245,10 @@ export const financeRouter = {
           )
           .min(1),
         notes: z.string().max(1000).optional().nullable(),
-        paymentAccountId: z.union([z.string(), z.number()]),
+        paymentAccountId: z.union([z.string(), z.number()]).optional().nullable(),
         paymentDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-        paymentMethod: z.enum(PAYMENT_METHODS),
+        paymentMethod: z.enum(PAYMENT_METHODS).optional().nullable(),
+        paymentType: z.enum(PRODUCT_PURCHASE_PAYMENT_TYPES).default("cash"),
         referenceNo: z.string().max(120).optional().nullable(),
         supplier: z.string().max(200).optional().nullable(),
       }),
@@ -1122,38 +1256,43 @@ export const financeRouter = {
     .handler(async ({ context, input }) => {
       const ownerId = context.session.user.id;
       const ownerType = resolveOwnerScope(context.session.user.role);
+      const isDuePurchase = input.paymentType === "due";
       const paymentAccountId = Number(input.paymentAccountId);
-
-      if (!Number.isFinite(paymentAccountId)) {
-        throw new ORPCError("BAD_REQUEST", {
-          message: "Select a valid payment account",
-        });
-      }
 
       await ensureDefaultFinancePaymentAccounts({ ownerId, ownerType });
 
-      const paymentAccount = await db.query.financePaymentAccount.findFirst({
-        where: (table, { and: andFn, eq: eqFn }) =>
-          andFn(
-            eqFn(table.id, paymentAccountId),
-            eqFn(table.ownerId, ownerId),
-            eqFn(table.ownerType, ownerType),
-          ),
-      });
+      const paymentAccount = isDuePurchase
+        ? null
+        : await db.query.financePaymentAccount.findFirst({
+            where: (table, { and: andFn, eq: eqFn }) =>
+              andFn(
+                eqFn(table.id, paymentAccountId),
+                eqFn(table.ownerId, ownerId),
+                eqFn(table.ownerType, ownerType),
+              ),
+          });
 
-      if (
-        !paymentAccount ||
-        (paymentAccount.type !== "cash" && paymentAccount.type !== "bank")
-      ) {
-        throw new ORPCError("NOT_FOUND", {
-          message: "Cash or bank payment account not found",
-        });
-      }
+      if (!isDuePurchase) {
+        if (!Number.isFinite(paymentAccountId)) {
+          throw new ORPCError("BAD_REQUEST", {
+            message: "Select a valid payment account",
+          });
+        }
 
-      if (paymentAccount.type !== input.paymentMethod) {
-        throw new ORPCError("BAD_REQUEST", {
-          message: "Payment method must match the selected payment account",
-        });
+        if (
+          !paymentAccount ||
+          (paymentAccount.type !== "cash" && paymentAccount.type !== "bank")
+        ) {
+          throw new ORPCError("NOT_FOUND", {
+            message: "Cash or bank payment account not found",
+          });
+        }
+
+        if (paymentAccount.type !== input.paymentMethod) {
+          throw new ORPCError("BAD_REQUEST", {
+            message: "Payment method must match the selected payment account",
+          });
+        }
       }
 
       const validItems = input.items
@@ -1171,24 +1310,44 @@ export const financeRouter = {
       }
 
       const total = validItems.reduce((sum, item) => sum + item.amount, 0);
-      const balanceBefore = parseMoney(paymentAccount.currentBalance);
-      const balanceAfter = balanceBefore - total;
+      const balanceBefore = paymentAccount
+        ? parseMoney(paymentAccount.currentBalance)
+        : 0;
+      const balanceAfter = paymentAccount ? balanceBefore - total : 0;
+      const accountsPayable = isDuePurchase
+        ? await resolveAccountsPayableAccount({ ownerId, ownerType })
+        : null;
 
       await db.transaction(async (tx) => {
-        await tx
-          .update(financePaymentAccount)
-          .set({
-            currentBalance: toMoney(balanceAfter),
-            updatedAt: new Date(),
-          })
-          .where(eq(financePaymentAccount.id, paymentAccount.id));
+        if (paymentAccount) {
+          await tx
+            .update(financePaymentAccount)
+            .set({
+              currentBalance: toMoney(balanceAfter),
+              updatedAt: new Date(),
+            })
+            .where(eq(financePaymentAccount.id, paymentAccount.id));
+        }
+
+        if (accountsPayable) {
+          await tx
+            .update(financeAccount)
+            .set({
+              balanceSheetLine: "accounts_payable",
+              currentBalance: toMoney(
+                accountsPayable.currentBalance + total,
+              ),
+              updatedAt: new Date(),
+            })
+            .where(eq(financeAccount.id, accountsPayable.id));
+        }
 
         await tx.insert(financialLedger).values({
           amount: toMoney(total),
-          balanceAfter: toMoney(balanceAfter),
-          balanceBefore: toMoney(balanceBefore),
+          balanceAfter: paymentAccount ? toMoney(balanceAfter) : null,
+          balanceBefore: paymentAccount ? toMoney(balanceBefore) : null,
           description: [
-            "Product purchase",
+            isDuePurchase ? "Product purchase due" : "Product purchase",
             input.supplier?.trim() ? `Supplier: ${input.supplier.trim()}` : null,
             input.billNo?.trim() ? `Bill: ${input.billNo.trim()}` : null,
             input.referenceNo?.trim()
@@ -1201,22 +1360,27 @@ export const financeRouter = {
             .filter(Boolean)
             .join(" | "),
           direction: "debit",
-          entryType: "purchase_cash",
+          entryType: isDuePurchase ? "purchase_credit" : "purchase_cash",
           ownerId,
           ownerType,
-          referenceId: paymentAccount.id,
+          referenceId: paymentAccount?.id ?? accountsPayable?.id ?? 0,
           referenceType: "adjustment",
         });
       });
 
       return {
-        balanceAfter: toMoney(balanceAfter),
+        balanceAfter: paymentAccount ? toMoney(balanceAfter) : null,
+        payableAfter: accountsPayable
+          ? toMoney(accountsPayable.currentBalance + total)
+          : null,
         items: validItems.map((item) => ({
           amount: toMoney(item.amount),
           description: item.description,
           productName: item.productName,
         })),
-        message: "Product purchase saved and Profit & Loss updated",
+        message: isDuePurchase
+          ? "Product purchase due saved and Accounts Payable updated"
+          : "Product purchase saved and Profit & Loss updated",
         total: toMoney(total),
       };
     }),

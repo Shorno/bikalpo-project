@@ -19,6 +19,8 @@ export type DaybookProductPurchaseItem = {
   productName: string;
 };
 
+export type DaybookProductPurchasePaymentType = "cash" | "due";
+
 export type DaybookProductPurchaseEntry = {
   billNo: string;
   createdAt: string;
@@ -28,9 +30,10 @@ export type DaybookProductPurchaseEntry = {
   notes: string;
   paymentAccountId: string;
   paymentAccountName: string;
-  paymentAccountType: DaybookPaymentAccountType;
+  paymentAccountType?: DaybookPaymentAccountType;
   paymentDate: string;
-  paymentMethod: DaybookPaymentAccountType;
+  paymentMethod?: DaybookPaymentAccountType;
+  paymentType: DaybookProductPurchasePaymentType;
   referenceNo: string;
   scope: DaybookExpenseScope;
   supplier: string;
@@ -48,6 +51,7 @@ const normalizePurchase = (
     ...item,
     amount: Number.isFinite(item.amount) ? item.amount : 0,
   })),
+  paymentType: purchase.paymentType ?? "cash",
   total: Number.isFinite(purchase.total) ? purchase.total : 0,
 });
 

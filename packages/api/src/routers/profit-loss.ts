@@ -96,6 +96,9 @@ export const profitLossRouter = {
       const role = context.session.user.role;
       const ownerType = role === "warehouse" ? "warehouse" : "shop";
       const isCashBasis = input.reportType === "cash";
+      const manualPurchaseEntryTypes = isCashBasis
+        ? (["purchase_cash"] as const)
+        : (["purchase_cash", "purchase_credit"] as const);
 
       const expenseRows = await db
         .select({
@@ -125,7 +128,7 @@ export const profitLossRouter = {
           and(
             eq(financialLedger.ownerId, ownerId),
             eq(financialLedger.ownerType, ownerType),
-            eq(financialLedger.entryType, "purchase_cash"),
+            inArray(financialLedger.entryType, manualPurchaseEntryTypes),
             eq(financialLedger.referenceType, "adjustment"),
             gte(financialLedger.createdAt, startDateTime),
             lte(financialLedger.createdAt, endDateTime),

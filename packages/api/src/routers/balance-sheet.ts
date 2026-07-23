@@ -125,6 +125,9 @@ export const balanceSheetRouter = {
       const startDateTime = new Date(`${startDate}T00:00:00.000`);
       const asOfEnd = new Date(`${endDate}T23:59:59.999`);
       const isCashBasis = input.reportType === "cash";
+      const manualPurchaseEntryTypes = isCashBasis
+        ? (["purchase_cash"] as const)
+        : (["purchase_cash", "purchase_credit"] as const);
 
       const fixedAssetRows = await db
         .select({
@@ -178,6 +181,34 @@ export const balanceSheetRouter = {
         0,
       );
 
+      const accountsPayableRows = await db
+        .select({
+          amount: financeAccount.currentBalance,
+          label: financeAccount.name,
+        })
+        .from(financeAccount)
+        .where(
+          and(
+            eq(financeAccount.ownerId, ownerId),
+            eq(financeAccount.ownerType, ownerType),
+            eq(financeAccount.accountType, "liability"),
+            eq(financeAccount.balanceSheetLine, "accounts_payable"),
+          ),
+        )
+        .orderBy(asc(financeAccount.sortOrder), asc(financeAccount.name));
+      const currentAccountsPayableRows = accountsPayableRows
+        .map((row) => ({
+          amount: toNumber(row.amount),
+          label: row.label,
+        }))
+        .filter((row) => row.amount !== 0);
+      const manualAccountsPayable = isCashBasis
+        ? 0
+        : currentAccountsPayableRows.reduce(
+            (sum, row) => sum + row.amount,
+            0,
+          );
+
       const expenseRows = await db
         .select({ total: expense.amount })
         .from(expense)
@@ -203,7 +234,7 @@ export const balanceSheetRouter = {
           and(
             eq(financialLedger.ownerId, ownerId),
             eq(financialLedger.ownerType, ownerType),
-            eq(financialLedger.entryType, "purchase_cash"),
+            inArray(financialLedger.entryType, manualPurchaseEntryTypes),
             eq(financialLedger.referenceType, "adjustment"),
             gte(financialLedger.createdAt, startDateTime),
             lte(financialLedger.createdAt, asOfEnd),
@@ -519,6 +550,8 @@ export const balanceSheetRouter = {
               return sum + toNumber(row.total);
             }, 0);
       }
+
+      payable += manualAccountsPayable;
 
       const retainedEarnings = revenue - expenseTotal;
       const cashAndBank =
