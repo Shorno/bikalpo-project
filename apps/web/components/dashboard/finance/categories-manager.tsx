@@ -1,6 +1,8 @@
 "use client";
 
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
 import { AddAccountDialog } from "@/components/dashboard/finance/add-account-dialog";
 import {
   type AccountTypeFilter,
@@ -8,26 +10,65 @@ import {
 } from "@/components/dashboard/finance/categories-filters";
 import { CategoriesTable } from "@/components/dashboard/finance/categories-table";
 import { CategoriesToolbar } from "@/components/dashboard/finance/categories-toolbar";
-import type {
-  AccountType,
-  ChartAccount,
-  FinanceCategory,
-} from "@/components/dashboard/finance/chart-of-accounts-data";
 import {
-  createChartAccountId,
-  loadChartAccountState,
-  saveChartAccountState,
-} from "@/components/dashboard/finance/chart-of-accounts-storage";
+  type AccountType,
+  type ChartAccount,
+  DEFAULT_CHART_ACCOUNTS,
+  DEFAULT_FINANCE_CATEGORIES,
+  type FinanceCategory,
+} from "@/components/dashboard/finance/chart-of-accounts-data";
 import { NewCategoryDialog } from "@/components/dashboard/finance/new-category-dialog";
+import { orpc } from "@/utils/orpc";
 
 export function CategoriesManager() {
-  const [categories, setCategories] = useState<FinanceCategory[]>([]);
-  const [accounts, setAccounts] = useState<ChartAccount[]>([]);
+  const queryClient = useQueryClient();
+  const [categories, setCategories] = useState<FinanceCategory[]>(
+    DEFAULT_FINANCE_CATEGORIES,
+  );
+  const [accounts, setAccounts] = useState<ChartAccount[]>(
+    DEFAULT_CHART_ACCOUNTS,
+  );
   const [addAccountOpen, setAddAccountOpen] = useState(false);
   const [addCategoryOpen, setAddCategoryOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [accountTypeFilter, setAccountTypeFilter] =
     useState<AccountTypeFilter>("ALL");
+
+  const { data } = useQuery(
+    orpc.finance.getChartOfAccounts.queryOptions({ input: {} }),
+  );
+
+  const createCategoryMutation = useMutation(
+    orpc.finance.createCategory.mutationOptions({
+      onSuccess: (result) => {
+        toast.success(result.message);
+        void queryClient.invalidateQueries({
+          queryKey: orpc.finance.getChartOfAccounts.key(),
+        });
+        setAccountTypeFilter(result.category.accountType);
+        setSearchTerm(result.category.name);
+      },
+      onError: (error) => {
+        toast.error(error.message || "Failed to create category");
+      },
+    }),
+  );
+
+  const createAccountMutation = useMutation(
+    orpc.finance.createAccount.mutationOptions({
+      onSuccess: (result) => {
+        toast.success(result.message);
+        void queryClient.invalidateQueries({
+          queryKey: orpc.finance.getChartOfAccounts.key(),
+        });
+        setAccountTypeFilter(result.account.accountType);
+        setSearchTerm(result.account.name);
+      },
+      onError: (error) => {
+        toast.error(error.message || "Failed to create account");
+      },
+    }),
+  );
 
   const categoryById = useMemo(
     () => new Map(categories.map((category) => [category.id, category])),
@@ -52,71 +93,47 @@ export function CategoriesManager() {
     });
   }, [accountTypeFilter, accounts, categoryById, searchTerm]);
 
+  useEffect(() => {
+    if (!data) {
+      return;
+    }
+
+    setCategories(data.categories);
+    setAccounts(data.accounts);
+  }, [data]);
+
   const handleCreateCategory = (category: {
     accountType: AccountType;
     name: string;
   }) => {
-    const exists = categories.some(
-      (item) =>
-        item.accountType === category.accountType &&
-        item.name.toLowerCase() === category.name.toLowerCase(),
-    );
-
-    if (!exists) {
-      setCategories((currentCategories) => [
-        ...currentCategories,
-        {
-          id: createChartAccountId("category"),
-          accountType: category.accountType,
-          name: category.name,
-          isDefault: false,
-        },
-      ]);
-    }
-
-    setAccountTypeFilter(category.accountType);
-    setSearchTerm(category.name);
+    createCategoryMutation.mutate(category);
   };
 
   const handleCreateAccount = (account: Omit<ChartAccount, "id">) => {
-    setAccounts((currentAccounts) => [
-      ...currentAccounts,
-      {
-        ...account,
-        id: createChartAccountId("account"),
-      },
-    ]);
-    setAccountTypeFilter(account.accountType);
-    setSearchTerm(account.name);
+    createAccountMutation.mutate({
+      accountType: account.accountType,
+      amount: account.amount,
+      categoryId: account.categoryId,
+      description: account.description,
+      isSubaccount: account.isSubaccount,
+      name: account.name,
+      parentAccountId: account.parentAccountId || null,
+    });
   };
-
-  useEffect(() => {
-    const state = loadChartAccountState();
-    setCategories(state.categories);
-    setAccounts(state.accounts);
-  }, []);
-
-  useEffect(() => {
-    if (categories.length === 0 && accounts.length === 0) {
-      return;
-    }
-
-    saveChartAccountState({ categories, accounts });
-  }, [accounts, categories]);
 
   return (
     <main className="min-h-screen bg-background px-4 py-6 sm:px-6 lg:px-8">
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-6">
         <header className="flex flex-col gap-1">
-          <h1 className="font-semibold text-2xl text-foreground">Categories</h1>
-          <p className="text-muted-foreground text-sm">
+          <h1 className="text-2xl font-semibold text-foreground">Categories</h1>
+          <p className="text-sm text-muted-foreground">
             Manage your categories
           </p>
         </header>
 
         <section className="flex flex-col gap-4">
-          <div className="border-border border-b pb-2">
-            <h2 className="font-medium text-foreground text-sm uppercase tracking-normal">
+          <div className="border-b border-border pb-2">
+            <h2 className="text-sm font-medium uppercase tracking-normal text-foreground">
               Chart of Accounts
             </h2>
           </div>
