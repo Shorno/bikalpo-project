@@ -1,5 +1,6 @@
 "use client";
 
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   CalendarIcon,
   PaperclipIcon,
@@ -9,7 +10,7 @@ import {
   SaveIcon,
   Trash2Icon,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   addDaybookExpense,
   createDaybookExpenseId,
@@ -36,6 +37,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { orpc } from "@/utils/orpc";
 
 type DaybookExpenseDialogProps = {
   onOpenChange: (open: boolean) => void;
@@ -91,9 +93,23 @@ export function DaybookExpenseDialog({
   open,
   scope,
 }: DaybookExpenseDialogProps) {
+  const queryClient = useQueryClient();
+  const { data: paymentAccountsData } = useQuery(
+    orpc.finance.getPaymentAccounts.queryOptions({ input: {} }),
+  );
+  const createExpenseMutation = useMutation(
+    orpc.finance.createDaybookExpense.mutationOptions(),
+  );
+  const paymentAccounts = useMemo(
+    () =>
+      paymentAccountsData?.paymentAccounts?.length
+        ? paymentAccountsData.paymentAccounts
+        : DAYBOOK_PAYMENT_ACCOUNTS,
+    [paymentAccountsData],
+  );
   const [payee, setPayee] = useState("");
   const [paymentAccountId, setPaymentAccountId] = useState(
-    DAYBOOK_PAYMENT_ACCOUNTS[0]?.id ?? "",
+    paymentAccounts[0]?.id ?? DAYBOOK_PAYMENT_ACCOUNTS[0]?.id ?? "",
   );
   const [paymentDate, setPaymentDate] = useState(dateValue);
   const [paymentMethod, setPaymentMethod] = useState(PAYMENT_METHODS[0] ?? "");
@@ -110,11 +126,19 @@ export function DaybookExpenseDialog({
   const scopeLabel = scope === "warehouse" ? "Warehouse" : "Retailer";
   const selectedPaymentAccount = useMemo(
     () =>
-      DAYBOOK_PAYMENT_ACCOUNTS.find(
-        (account) => account.id === paymentAccountId,
-      ) ?? DAYBOOK_PAYMENT_ACCOUNTS[0],
-    [paymentAccountId],
+      paymentAccounts.find((account) => account.id === paymentAccountId) ??
+      paymentAccounts[0] ??
+      DAYBOOK_PAYMENT_ACCOUNTS[0],
+    [paymentAccountId, paymentAccounts],
   );
+  useEffect(() => {
+    if (
+      paymentAccounts.length > 0 &&
+      !paymentAccounts.some((account) => account.id === paymentAccountId)
+    ) {
+      setPaymentAccountId(paymentAccounts[0]?.id ?? "");
+    }
+  }, [paymentAccountId, paymentAccounts]);
   const total = useMemo(
     () => lines.reduce((sum, line) => sum + toAmount(line.amount), 0),
     [lines],
@@ -143,7 +167,9 @@ export function DaybookExpenseDialog({
   };
   const resetForm = () => {
     setPayee("");
-    setPaymentAccountId(DAYBOOK_PAYMENT_ACCOUNTS[0]?.id ?? "");
+    setPaymentAccountId(
+      paymentAccounts[0]?.id ?? DAYBOOK_PAYMENT_ACCOUNTS[0]?.id ?? "",
+    );
     setPaymentDate(dateValue());
     setPaymentMethod(PAYMENT_METHODS[0] ?? "");
     setReferenceNo("");
@@ -174,7 +200,23 @@ export function DaybookExpenseDialog({
 
     return expenseLines;
   };
-  const saveExpense = (closeAfterSave: boolean) => {
+  const invalidateFinanceQueries = async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({
+        queryKey: orpc.finance.getPaymentAccounts.key(),
+      }),
+      queryClient.invalidateQueries({
+        queryKey: orpc.profitLoss.getMonthlyPnL.key(),
+      }),
+      queryClient.invalidateQueries({
+        queryKey: orpc.balanceSheet.getBalanceSheet.key(),
+      }),
+      queryClient.invalidateQueries({
+        queryKey: orpc.expense.getExpenses.key(),
+      }),
+    ]);
+  };
+  const saveExpense = async (closeAfterSave: boolean) => {
     const paymentAccount = selectedPaymentAccount;
     const expenseLines = buildExpenseLines();
     const nextTotal = expenseLines.reduce((sum, line) => sum + line.amount, 0);
@@ -189,7 +231,7 @@ export function DaybookExpenseDialog({
       return;
     }
 
-    addDaybookExpense({
+    const localExpense = {
       createdAt: new Date().toISOString(),
       id: createDaybookExpenseId("daybook-expense"),
       lines: expenseLines,
@@ -203,13 +245,49 @@ export function DaybookExpenseDialog({
       referenceNo: referenceNo.trim(),
       scope,
       total: nextTotal,
-    });
+    };
 
-    resetForm();
-    setMessage({ text: "Expense saved.", tone: "success" });
+    try {
+      const result = await createExpenseMutation.mutateAsync({
+        lines: expenseLines.map((line) => ({
+          amount: line.amount,
+          category: line.category,
+          description: line.description,
+        })),
+        memo: memo.trim() || undefined,
+        payee: payee.trim() || undefined,
+        paymentAccountId: paymentAccount.id,
+        paymentDate,
+        paymentMethod: paymentAccount.type,
+        referenceNo: referenceNo.trim() || undefined,
+      });
 
-    if (closeAfterSave) {
-      closeDialog();
+      addDaybookExpense({
+        ...localExpense,
+        isSynced: true,
+        serverExpenseIds: result.expenses.map((expense) => expense.id),
+      });
+      await invalidateFinanceQueries();
+      resetForm();
+      setMessage({ text: result.message, tone: "success" });
+
+      if (closeAfterSave) {
+        closeDialog();
+      }
+    } catch (error) {
+      addDaybookExpense({ ...localExpense, isSynced: false });
+      resetForm();
+      setMessage({
+        text:
+          error instanceof Error
+            ? `Expense saved locally. Sync failed: ${error.message}`
+            : "Expense saved locally. Sync failed.",
+        tone: "error",
+      });
+
+      if (closeAfterSave) {
+        closeDialog();
+      }
     }
   };
 
@@ -263,7 +341,7 @@ export function DaybookExpenseDialog({
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      {DAYBOOK_PAYMENT_ACCOUNTS.map((account) => (
+                      {paymentAccounts.map((account) => (
                         <SelectItem key={account.id} value={account.id}>
                           {account.name}
                         </SelectItem>
@@ -465,6 +543,7 @@ export function DaybookExpenseDialog({
             </Button>
             <Button
               className="border-emerald-600 text-emerald-700 hover:bg-emerald-50"
+              disabled={createExpenseMutation.isPending}
               onClick={() => saveExpense(false)}
               type="button"
               variant="outline"
@@ -474,6 +553,7 @@ export function DaybookExpenseDialog({
             </Button>
             <Button
               className="bg-emerald-700 hover:bg-emerald-800"
+              disabled={createExpenseMutation.isPending}
               onClick={() => saveExpense(true)}
               type="button"
             >

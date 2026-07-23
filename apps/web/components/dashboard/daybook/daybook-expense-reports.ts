@@ -32,7 +32,9 @@ export function getDaybookExpensesInRange(
   expenses: DaybookExpenseEntry[],
   range: ExpenseRange,
 ) {
-  return expenses.filter((expense) => isDaybookExpenseInRange(expense, range));
+  return expenses.filter(
+    (expense) => !expense.isSynced && isDaybookExpenseInRange(expense, range),
+  );
 }
 
 export function getDaybookExpenseTotal(expenses: DaybookExpenseEntry[]) {

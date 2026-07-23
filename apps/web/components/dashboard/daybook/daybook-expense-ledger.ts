@@ -26,6 +26,7 @@ export type DaybookExpenseLine = {
 export type DaybookExpenseEntry = {
   createdAt: string;
   id: string;
+  isSynced?: boolean;
   memo: string;
   payee: string;
   paymentAccountId: string;
@@ -35,6 +36,7 @@ export type DaybookExpenseEntry = {
   paymentMethod: string;
   referenceNo: string;
   scope: DaybookExpenseScope;
+  serverExpenseIds?: number[];
   total: number;
   lines: DaybookExpenseLine[];
 };
@@ -87,6 +89,10 @@ export function detectDaybookExpenseScope(): DaybookExpenseScope {
 
 const normalizeEntry = (entry: DaybookExpenseEntry): DaybookExpenseEntry => ({
   ...entry,
+  isSynced: Boolean(entry.isSynced),
+  serverExpenseIds: Array.isArray(entry.serverExpenseIds)
+    ? entry.serverExpenseIds.filter((id) => Number.isFinite(id))
+    : [],
   total: Number.isFinite(entry.total) ? entry.total : 0,
   lines: entry.lines.map((line) => ({
     ...line,
