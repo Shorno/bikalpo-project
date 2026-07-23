@@ -5,7 +5,12 @@ import {
   DEFAULT_FINANCE_ACCOUNT_SEEDS,
   DEFAULT_FINANCE_CATEGORY_SEEDS,
 } from "./accounting-defaults";
-import { financeAccount, financeCategory } from "./schema";
+import type { AccountingOwnerType } from "./accounting";
+import {
+  financeAccount,
+  financeCategory,
+  financePaymentAccount,
+} from "./schema";
 
 export type AccountingSeedDatabase = typeof db;
 
@@ -20,6 +25,19 @@ export type SeededFinanceAccountResult = {
   created: number;
   idsByCode: Map<string, number>;
   skipped: number;
+};
+
+export type SeededFinancePaymentAccountResult = {
+  accounts: SeededFinanceAccountResult;
+  created: number;
+  idsByCode: Map<string, number>;
+  skipped: number;
+};
+
+export type SeedFinancePaymentAccountInput = {
+  database?: AccountingSeedDatabase;
+  ownerId: string;
+  ownerType: AccountingOwnerType;
 };
 
 async function findSystemFinanceCategory(
@@ -62,6 +80,36 @@ async function findSystemFinanceAccount(
     .limit(1);
 
   return account;
+}
+
+async function findOwnerFinancePaymentAccount(
+  database: AccountingSeedDatabase,
+  input: Pick<SeedFinancePaymentAccountInput, "ownerId" | "ownerType">,
+  code: string,
+) {
+  const [paymentAccount] = await database
+    .select({
+      id: financePaymentAccount.id,
+    })
+    .from(financePaymentAccount)
+    .where(
+      and(
+        eq(financePaymentAccount.code, code),
+        eq(financePaymentAccount.ownerId, input.ownerId),
+        eq(financePaymentAccount.ownerType, input.ownerType),
+      ),
+    )
+    .limit(1);
+
+  return paymentAccount;
+}
+
+function resolvePaymentAccountType(code: string) {
+  if (code.includes("bank")) {
+    return "bank";
+  }
+
+  return "cash";
 }
 
 export async function ensureDefaultFinanceCategories(
@@ -111,6 +159,71 @@ export async function ensureDefaultFinanceCategories(
   }
 
   return {
+    created,
+    idsByCode,
+    skipped,
+  };
+}
+
+export async function ensureDefaultFinancePaymentAccounts({
+  database = db,
+  ownerId,
+  ownerType,
+}: SeedFinancePaymentAccountInput): Promise<SeededFinancePaymentAccountResult> {
+  const accounts = await ensureDefaultFinanceAccounts(database);
+  const idsByCode = new Map<string, number>();
+  let created = 0;
+  let skipped = 0;
+
+  for (const seed of DEFAULT_FINANCE_ACCOUNT_SEEDS.filter(
+    (accountSeed) => accountSeed.isPaymentAccount,
+  )) {
+    const existingPaymentAccount = await findOwnerFinancePaymentAccount(
+      database,
+      { ownerId, ownerType },
+      seed.code,
+    );
+
+    if (existingPaymentAccount) {
+      idsByCode.set(seed.code, existingPaymentAccount.id);
+      skipped += 1;
+      continue;
+    }
+
+    const financeAccountId = accounts.idsByCode.get(seed.code);
+
+    if (!financeAccountId) {
+      throw new Error(`Missing finance account ${seed.code}`);
+    }
+
+    const [insertedPaymentAccount] = await database
+      .insert(financePaymentAccount)
+      .values({
+        code: seed.code,
+        currentBalance: seed.openingBalance,
+        financeAccountId,
+        isActive: true,
+        isDefault: seed.code === "1001-cash-on-hand",
+        name: seed.name,
+        openingBalance: seed.openingBalance,
+        ownerId,
+        ownerType,
+        type: resolvePaymentAccountType(seed.code),
+      })
+      .returning({
+        id: financePaymentAccount.id,
+      });
+
+    if (!insertedPaymentAccount) {
+      throw new Error(`Failed to seed payment account ${seed.code}`);
+    }
+
+    idsByCode.set(seed.code, insertedPaymentAccount.id);
+    created += 1;
+  }
+
+  return {
+    accounts,
     created,
     idsByCode,
     skipped,
