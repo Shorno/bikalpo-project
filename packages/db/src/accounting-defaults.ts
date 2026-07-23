@@ -1,8 +1,9 @@
-import type {
-  AccountingAccountType,
-  AccountingNormalBalance,
-  BalanceSheetLine,
-  ProfitAndLossLine,
+import {
+  ACCOUNTING_POSTING_RULES,
+  type AccountingAccountType,
+  type AccountingNormalBalance,
+  type BalanceSheetLine,
+  type ProfitAndLossLine,
 } from "./accounting";
 
 export type DefaultFinanceCategorySeed = {
@@ -407,3 +408,69 @@ export const DEFAULT_FINANCE_ACCOUNT_SEEDS: DefaultFinanceAccountSeed[] = [
     sortOrder: 510 + index,
   })),
 ];
+
+function findDuplicateValues(values: string[]) {
+  const seen = new Set<string>();
+  const duplicates = new Set<string>();
+
+  for (const value of values) {
+    if (seen.has(value)) {
+      duplicates.add(value);
+      continue;
+    }
+
+    seen.add(value);
+  }
+
+  return Array.from(duplicates);
+}
+
+export function validateDefaultFinanceSeeds() {
+  const errors: string[] = [];
+  const categoryCodes = DEFAULT_FINANCE_CATEGORY_SEEDS.map(
+    (category) => category.code,
+  );
+  const accountCodes = DEFAULT_FINANCE_ACCOUNT_SEEDS.map(
+    (account) => account.code,
+  );
+  const duplicateCategoryCodes = findDuplicateValues(categoryCodes);
+  const duplicateAccountCodes = findDuplicateValues(accountCodes);
+  const categoryCodeSet = new Set(categoryCodes);
+  const accountCodeSet = new Set(accountCodes);
+
+  for (const duplicate of duplicateCategoryCodes) {
+    errors.push(`Duplicate finance category seed code: ${duplicate}`);
+  }
+
+  for (const duplicate of duplicateAccountCodes) {
+    errors.push(`Duplicate finance account seed code: ${duplicate}`);
+  }
+
+  for (const account of DEFAULT_FINANCE_ACCOUNT_SEEDS) {
+    if (!categoryCodeSet.has(account.categoryCode)) {
+      errors.push(
+        `Finance account seed ${account.code} references missing category ${account.categoryCode}`,
+      );
+    }
+  }
+
+  for (const rule of Object.values(ACCOUNTING_POSTING_RULES)) {
+    for (const line of rule.lines) {
+      if (!accountCodeSet.has(line.accountCode)) {
+        errors.push(
+          `Posting rule ${rule.transactionType} references missing account ${line.accountCode}`,
+        );
+      }
+    }
+  }
+
+  return errors;
+}
+
+export function assertDefaultFinanceSeeds() {
+  const errors = validateDefaultFinanceSeeds();
+
+  if (errors.length > 0) {
+    throw new Error(errors.join("\n"));
+  }
+}
