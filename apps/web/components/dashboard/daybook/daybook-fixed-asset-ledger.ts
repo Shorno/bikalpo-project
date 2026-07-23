@@ -9,8 +9,7 @@ import {
 export const DAYBOOK_FIXED_ASSET_STORAGE_KEY =
   "bikalpo.daybook.fixed-asset-purchases.v1";
 
-export const DAYBOOK_FIXED_ASSET_EVENT =
-  "bikalpo:daybook-fixed-assets-changed";
+export const DAYBOOK_FIXED_ASSET_EVENT = "bikalpo:daybook-fixed-assets-changed";
 
 export type DaybookFixedAssetLine = {
   accountId: string;

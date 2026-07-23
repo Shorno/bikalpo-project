@@ -1,12 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import type { DaybookExpenseScope } from "@/components/dashboard/daybook/daybook-expense-ledger";
 import {
   DAYBOOK_FIXED_ASSET_EVENT,
   type DaybookFixedAssetPurchase,
   loadDaybookFixedAssetPurchases,
 } from "@/components/dashboard/daybook/daybook-fixed-asset-ledger";
-import type { DaybookExpenseScope } from "@/components/dashboard/daybook/daybook-expense-ledger";
 
 export function useDaybookFixedAssetPurchases(scope: DaybookExpenseScope) {
   const [purchases, setPurchases] = useState<DaybookFixedAssetPurchase[]>([]);

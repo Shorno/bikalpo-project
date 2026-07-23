@@ -324,11 +324,15 @@ async function resolveFixedAssetAccount(input: {
 }): Promise<ResolvedFixedAssetAccount> {
   const categoryId = await resolveFixedAssetCategoryId();
 
-  if (input.accountId && Number.isFinite(input.accountId)) {
+  if (
+    typeof input.accountId === "number" &&
+    Number.isFinite(input.accountId)
+  ) {
+    const accountId = input.accountId;
     const selected = await db.query.financeAccount.findFirst({
       where: (table, { and: andFn, eq: eqFn, isNull: isNullFn, or: orFn }) =>
         andFn(
-          eqFn(table.id, input.accountId),
+          eqFn(table.id, accountId),
           eqFn(table.accountType, "asset"),
           orFn(
             eqFn(table.balanceSheetLine, "fixed_assets"),

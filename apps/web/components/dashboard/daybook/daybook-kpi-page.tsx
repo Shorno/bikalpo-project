@@ -5,10 +5,10 @@ import {
   BanknoteIcon,
   BellIcon,
   BookOpenIcon,
+  Building2Icon,
   CalendarDaysIcon,
   ClipboardCheckIcon,
   DownloadIcon,
-  Building2Icon,
   FileTextIcon,
   LockKeyholeIcon,
   PackageIcon,
@@ -523,7 +523,11 @@ export function DaybookKpiPage({ variant }: { variant: DaybookVariant }) {
         type: "Fixed Asset Purchase",
       }));
 
-    return [...fixedAssetTransactions, ...expenseTransactions, ...config.transactions];
+    return [
+      ...fixedAssetTransactions,
+      ...expenseTransactions,
+      ...config.transactions,
+    ];
   }, [config.transactions, savedExpenses, savedFixedAssetPurchases]);
   const cashDifference = useMemo(() => {
     const parsedCash = Number(physicalCash.replace(/,/g, ""));

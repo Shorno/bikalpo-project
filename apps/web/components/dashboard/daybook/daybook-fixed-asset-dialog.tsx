@@ -11,12 +11,12 @@ import {
   Trash2Icon,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import type { DaybookExpenseScope } from "@/components/dashboard/daybook/daybook-expense-ledger";
 import {
   addDaybookFixedAssetPurchase,
   createDaybookFixedAssetId,
   type DaybookFixedAssetLine,
 } from "@/components/dashboard/daybook/daybook-fixed-asset-ledger";
-import type { DaybookExpenseScope } from "@/components/dashboard/daybook/daybook-expense-ledger";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -627,7 +627,7 @@ export function DaybookFixedAssetDialog({
               variant="outline"
             >
               <SaveIcon data-icon="inline-start" />
-              Save
+              Save & Share
             </Button>
             <Button
               className="bg-emerald-700 hover:bg-emerald-800"
@@ -635,7 +635,7 @@ export function DaybookFixedAssetDialog({
               onClick={() => savePurchase(true)}
               type="button"
             >
-              Save and close
+              Save & Close
             </Button>
           </div>
         </div>
