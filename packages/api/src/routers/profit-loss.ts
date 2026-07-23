@@ -2,6 +2,7 @@ import { db } from "@bikalpo-project/db";
 import {
   expense,
   expenseCategory,
+  financialLedger,
   invoice,
   order,
   purchase,
@@ -114,6 +115,26 @@ export const profitLossRouter = {
           ),
         )
         .groupBy(expenseCategory.name, expenseCategory.slug);
+
+      const manualProductPurchaseRows = await db
+        .select({
+          total: financialLedger.amount,
+        })
+        .from(financialLedger)
+        .where(
+          and(
+            eq(financialLedger.ownerId, ownerId),
+            eq(financialLedger.ownerType, ownerType),
+            eq(financialLedger.entryType, "purchase_cash"),
+            eq(financialLedger.referenceType, "adjustment"),
+            gte(financialLedger.createdAt, startDateTime),
+            lte(financialLedger.createdAt, endDateTime),
+          ),
+        );
+      const manualProductPurchase = manualProductPurchaseRows.reduce(
+        (sum, row) => sum + toNumber(row.total),
+        0,
+      );
 
       let productSales = 0;
       let productPurchase = 0;
@@ -270,6 +291,8 @@ export const profitLossRouter = {
 
       const uncategorizedIncome = 0;
       const revenue = productSales + uncategorizedIncome;
+      productPurchase += manualProductPurchase;
+
       const cogs = productPurchase;
       const grossProfit = revenue - cogs;
       const totalExpenses = expenseRows.reduce(

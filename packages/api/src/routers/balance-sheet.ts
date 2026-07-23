@@ -196,8 +196,26 @@ export const balanceSheetRouter = {
         0,
       );
 
+      const manualProductPurchaseRows = await db
+        .select({ total: financialLedger.amount })
+        .from(financialLedger)
+        .where(
+          and(
+            eq(financialLedger.ownerId, ownerId),
+            eq(financialLedger.ownerType, ownerType),
+            eq(financialLedger.entryType, "purchase_cash"),
+            eq(financialLedger.referenceType, "adjustment"),
+            gte(financialLedger.createdAt, startDateTime),
+            lte(financialLedger.createdAt, asOfEnd),
+          ),
+        );
+      const manualProductPurchase = manualProductPurchaseRows.reduce(
+        (sum, row) => sum + toNumber(row.total),
+        0,
+      );
+
       let revenue = 0;
-      let expenseTotal = expenses;
+      let expenseTotal = expenses + manualProductPurchase;
       let receivable = 0;
       let payable = 0;
 

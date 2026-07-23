@@ -29,9 +29,11 @@ import { useMemo, useState } from "react";
 import { DaybookExpenseDialog } from "@/components/dashboard/daybook/daybook-expense-dialog";
 import { DaybookFixedAssetDialog } from "@/components/dashboard/daybook/daybook-fixed-asset-dialog";
 import { DaybookLoanDialog } from "@/components/dashboard/daybook/daybook-loan-dialog";
+import { DaybookProductPurchaseDialog } from "@/components/dashboard/daybook/daybook-product-purchase-dialog";
 import { useDaybookExpenses } from "@/components/dashboard/daybook/use-daybook-expenses";
 import { useDaybookFixedAssetPurchases } from "@/components/dashboard/daybook/use-daybook-fixed-assets";
 import { useDaybookLoans } from "@/components/dashboard/daybook/use-daybook-loans";
+import { useDaybookProductPurchases } from "@/components/dashboard/daybook/use-daybook-product-purchases";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -66,7 +68,7 @@ type Metric = {
 type ActionItem = {
   href?: string;
   icon: ReactNode;
-  kind?: "expense" | "fixedAsset" | "loan";
+  kind?: "expense" | "fixedAsset" | "loan" | "productPurchase";
   label: string;
   primary?: boolean;
 };
@@ -216,8 +218,8 @@ const daybookConfigs: Record<DaybookVariant, DaybookConfig> = {
         primary: true,
       },
       {
-        href: "/dashboard/orders",
         icon: <PackageIcon className="size-4" />,
+        kind: "productPurchase",
         label: "Create Purchase",
       },
       {
@@ -375,8 +377,8 @@ const daybookConfigs: Record<DaybookVariant, DaybookConfig> = {
         primary: true,
       },
       {
-        href: "/warehouse/dashboard/quick-purchase",
         icon: <PackageIcon className="size-4" />,
+        kind: "productPurchase",
         label: "Create Purchase",
       },
       {
@@ -460,10 +462,13 @@ export function DaybookKpiPage({ variant }: { variant: DaybookVariant }) {
   const savedExpenses = useDaybookExpenses(variant);
   const savedFixedAssetPurchases = useDaybookFixedAssetPurchases(variant);
   const savedLoans = useDaybookLoans(variant);
+  const savedProductPurchases = useDaybookProductPurchases(variant);
   const [lastUpdated, setLastUpdated] = useState(() => new Date());
   const [expenseDialogOpen, setExpenseDialogOpen] = useState(false);
   const [fixedAssetDialogOpen, setFixedAssetDialogOpen] = useState(false);
   const [loanDialogOpen, setLoanDialogOpen] = useState(false);
+  const [productPurchaseDialogOpen, setProductPurchaseDialogOpen] =
+    useState(false);
   const [physicalCash, setPhysicalCash] = useState("");
   const savedExpenseTotal = useMemo(
     () => savedExpenses.reduce((sum, expense) => sum + expense.total, 0),
@@ -481,11 +486,17 @@ export function DaybookKpiPage({ variant }: { variant: DaybookVariant }) {
     () => savedLoans.reduce((sum, loan) => sum + loan.total, 0),
     [savedLoans],
   );
+  const savedProductPurchaseTotal = useMemo(
+    () =>
+      savedProductPurchases.reduce((sum, purchase) => sum + purchase.total, 0),
+    [savedProductPurchases],
+  );
   const adjustedSystemCash =
     config.systemCash -
     savedExpenseTotal -
     savedFixedAssetTotal +
-    savedLoanTotal;
+    savedLoanTotal -
+    savedProductPurchaseTotal;
   const overviewMetrics = useMemo(
     () =>
       config.metrics.map((metric) =>
@@ -565,8 +576,29 @@ export function DaybookKpiPage({ variant }: { variant: DaybookVariant }) {
         type: "Loan Received",
       }));
 
+    const productPurchaseTransactions = savedProductPurchases
+      .toSorted(
+        (first, second) =>
+          new Date(second.createdAt).getTime() -
+          new Date(first.createdAt).getTime(),
+      )
+      .map((purchase) => ({
+        amount: money(purchase.total),
+        reference:
+          [
+            purchase.items[0]?.productName,
+            purchase.supplier,
+            purchase.referenceNo || purchase.billNo,
+          ]
+            .filter(Boolean)
+            .join(" - ") || purchase.paymentAccountName,
+        time: timeLabel(new Date(purchase.createdAt)),
+        type: "Product Purchase",
+      }));
+
     return [
       ...loanTransactions,
+      ...productPurchaseTransactions,
       ...fixedAssetTransactions,
       ...expenseTransactions,
       ...config.transactions,
@@ -576,6 +608,7 @@ export function DaybookKpiPage({ variant }: { variant: DaybookVariant }) {
     savedExpenses,
     savedFixedAssetPurchases,
     savedLoans,
+    savedProductPurchases,
   ]);
   const cashDifference = useMemo(() => {
     const parsedCash = Number(physicalCash.replace(/,/g, ""));
@@ -686,6 +719,9 @@ export function DaybookKpiPage({ variant }: { variant: DaybookVariant }) {
                 onFixedAssetClick={() => setFixedAssetDialogOpen(true)}
                 onExpenseClick={() => setExpenseDialogOpen(true)}
                 onLoanClick={() => setLoanDialogOpen(true)}
+                onProductPurchaseClick={() =>
+                  setProductPurchaseDialogOpen(true)
+                }
               />
             ))}
           </div>
@@ -885,6 +921,11 @@ export function DaybookKpiPage({ variant }: { variant: DaybookVariant }) {
         open={loanDialogOpen}
         scope={variant}
       />
+      <DaybookProductPurchaseDialog
+        onOpenChange={setProductPurchaseDialogOpen}
+        open={productPurchaseDialogOpen}
+        scope={variant}
+      />
     </div>
   );
 }
@@ -982,11 +1023,13 @@ function QuickAction({
   onFixedAssetClick,
   onExpenseClick,
   onLoanClick,
+  onProductPurchaseClick,
 }: {
   action: ActionItem;
   onFixedAssetClick: () => void;
   onExpenseClick: () => void;
   onLoanClick: () => void;
+  onProductPurchaseClick: () => void;
 }) {
   if (action.kind === "expense") {
     return (
@@ -1030,6 +1073,23 @@ function QuickAction({
           !action.primary && "bg-slate-100 text-slate-800 hover:bg-slate-200",
         )}
         onClick={onLoanClick}
+        type="button"
+        variant={action.primary ? "default" : "secondary"}
+      >
+        {action.icon}
+        {action.label}
+      </Button>
+    );
+  }
+
+  if (action.kind === "productPurchase") {
+    return (
+      <Button
+        className={cn(
+          "h-10 justify-start rounded-lg",
+          !action.primary && "bg-slate-100 text-slate-800 hover:bg-slate-200",
+        )}
+        onClick={onProductPurchaseClick}
         type="button"
         variant={action.primary ? "default" : "secondary"}
       >

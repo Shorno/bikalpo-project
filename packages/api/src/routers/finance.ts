@@ -1090,6 +1090,137 @@ export const financeRouter = {
       };
     }),
 
+  createProductPurchase: protectedProcedure
+    .route({
+      method: "POST",
+      path: "/finance/product-purchases/create",
+      tags: ["Finance"],
+      summary: "Create product purchase",
+      description:
+        "Record a paid product purchase as Product Purchase Cost without creating operating expense rows.",
+    })
+    .input(
+      z.object({
+        billNo: z.string().max(120).optional().nullable(),
+        items: z
+          .array(
+            z.object({
+              amount: z.union([z.string(), z.number()]),
+              description: z.string().max(260).optional().nullable(),
+              productName: z.string().min(1).max(220),
+            }),
+          )
+          .min(1),
+        notes: z.string().max(1000).optional().nullable(),
+        paymentAccountId: z.union([z.string(), z.number()]),
+        paymentDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        paymentMethod: z.enum(PAYMENT_METHODS),
+        referenceNo: z.string().max(120).optional().nullable(),
+        supplier: z.string().max(200).optional().nullable(),
+      }),
+    )
+    .handler(async ({ context, input }) => {
+      const ownerId = context.session.user.id;
+      const ownerType = resolveOwnerScope(context.session.user.role);
+      const paymentAccountId = Number(input.paymentAccountId);
+
+      if (!Number.isFinite(paymentAccountId)) {
+        throw new ORPCError("BAD_REQUEST", {
+          message: "Select a valid payment account",
+        });
+      }
+
+      await ensureDefaultFinancePaymentAccounts({ ownerId, ownerType });
+
+      const paymentAccount = await db.query.financePaymentAccount.findFirst({
+        where: (table, { and: andFn, eq: eqFn }) =>
+          andFn(
+            eqFn(table.id, paymentAccountId),
+            eqFn(table.ownerId, ownerId),
+            eqFn(table.ownerType, ownerType),
+          ),
+      });
+
+      if (
+        !paymentAccount ||
+        (paymentAccount.type !== "cash" && paymentAccount.type !== "bank")
+      ) {
+        throw new ORPCError("NOT_FOUND", {
+          message: "Cash or bank payment account not found",
+        });
+      }
+
+      if (paymentAccount.type !== input.paymentMethod) {
+        throw new ORPCError("BAD_REQUEST", {
+          message: "Payment method must match the selected payment account",
+        });
+      }
+
+      const validItems = input.items
+        .map((item) => ({
+          amount: parseMoney(item.amount),
+          description: item.description?.trim() || "Product Purchased",
+          productName: item.productName.trim(),
+        }))
+        .filter((item) => item.amount > 0 && item.productName.length > 0);
+
+      if (validItems.length === 0) {
+        throw new ORPCError("BAD_REQUEST", {
+          message: "Enter at least one product purchase amount",
+        });
+      }
+
+      const total = validItems.reduce((sum, item) => sum + item.amount, 0);
+      const balanceBefore = parseMoney(paymentAccount.currentBalance);
+      const balanceAfter = balanceBefore - total;
+
+      await db.transaction(async (tx) => {
+        await tx
+          .update(financePaymentAccount)
+          .set({
+            currentBalance: toMoney(balanceAfter),
+            updatedAt: new Date(),
+          })
+          .where(eq(financePaymentAccount.id, paymentAccount.id));
+
+        await tx.insert(financialLedger).values({
+          amount: toMoney(total),
+          balanceAfter: toMoney(balanceAfter),
+          balanceBefore: toMoney(balanceBefore),
+          description: [
+            "Product purchase",
+            input.supplier?.trim() ? `Supplier: ${input.supplier.trim()}` : null,
+            input.billNo?.trim() ? `Bill: ${input.billNo.trim()}` : null,
+            input.referenceNo?.trim()
+              ? `Reference: ${input.referenceNo.trim()}`
+              : null,
+            `Items: ${validItems
+              .map((item) => `${item.productName} (${item.description})`)
+              .join(", ")}`,
+          ]
+            .filter(Boolean)
+            .join(" | "),
+          direction: "debit",
+          entryType: "purchase_cash",
+          ownerId,
+          ownerType,
+          referenceId: paymentAccount.id,
+          referenceType: "adjustment",
+        });
+      });
+
+      return {
+        balanceAfter: toMoney(balanceAfter),
+        items: validItems.map((item) => ({
+          amount: toMoney(item.amount),
+          description: item.description,
+          productName: item.productName,
+        })),
+        message: "Product purchase saved and Profit & Loss updated",
+        total: toMoney(total),
+      };
+    }),
+
   createLoanReceived: protectedProcedure
     .route({
       method: "POST",
