@@ -603,6 +603,12 @@ export const financeRouter = {
         });
       }
 
+      if (paymentAccount.type !== input.paymentMethod) {
+        throw new ORPCError("BAD_REQUEST", {
+          message: "Payment method must match the selected payment account",
+        });
+      }
+
       const validLines = input.lines
         .map((line) => ({
           amount: parseMoney(line.amount),
@@ -762,6 +768,12 @@ export const financeRouter = {
       ) {
         throw new ORPCError("NOT_FOUND", {
           message: "Cash or bank payment account not found",
+        });
+      }
+
+      if (paymentAccount.type !== input.paymentMethod) {
+        throw new ORPCError("BAD_REQUEST", {
+          message: "Payment method must match the selected payment account",
         });
       }
 
