@@ -152,6 +152,32 @@ export const balanceSheetRouter = {
         0,
       );
 
+      const loanPayableRows = await db
+        .select({
+          amount: financeAccount.currentBalance,
+          label: financeAccount.name,
+        })
+        .from(financeAccount)
+        .where(
+          and(
+            eq(financeAccount.ownerId, ownerId),
+            eq(financeAccount.ownerType, ownerType),
+            eq(financeAccount.accountType, "liability"),
+            eq(financeAccount.balanceSheetLine, "loan_payable"),
+          ),
+        )
+        .orderBy(asc(financeAccount.sortOrder), asc(financeAccount.name));
+      const currentLoanRows = loanPayableRows
+        .map((row) => ({
+          amount: toNumber(row.amount),
+          label: row.label,
+        }))
+        .filter((row) => row.amount !== 0);
+      const loanPayable = currentLoanRows.reduce(
+        (sum, row) => sum + row.amount,
+        0,
+      );
+
       const expenseRows = await db
         .select({ total: expense.amount })
         .from(expense)
@@ -477,11 +503,13 @@ export const balanceSheetRouter = {
       }
 
       const retainedEarnings = revenue - expenseTotal;
-      const cashAndBank = retainedEarnings + payable - receivable - fixedAssets;
+      const cashAndBank =
+        retainedEarnings + payable + loanPayable - receivable - fixedAssets;
       const totalAssets = cashAndBank + receivable + fixedAssets;
-      const totalLiabilities = payable;
+      const totalLiabilities = payable + loanPayable;
       const totalEquity = totalAssets - totalLiabilities;
-      const netAssets = cashAndBank + receivable + fixedAssets - payable;
+      const netAssets =
+        cashAndBank + receivable + fixedAssets - payable - loanPayable;
       const asOfLabel = formatReportDate(endDate);
       const startLabel = formatReportDate(startDate);
 
@@ -554,8 +582,14 @@ export const balanceSheetRouter = {
             groups: [
               {
                 title: "Current Liabilities",
-                rows: [{ label: "Accounts Payable", amount: toMoney(payable) }],
-                total: toMoney(payable),
+                rows: [
+                  { label: "Accounts Payable", amount: toMoney(payable) },
+                  ...currentLoanRows.map((row) => ({
+                    label: row.label,
+                    amount: toMoney(row.amount),
+                  })),
+                ],
+                total: toMoney(payable + loanPayable),
                 totalLabel: "Total Current Liabilities",
               },
               {

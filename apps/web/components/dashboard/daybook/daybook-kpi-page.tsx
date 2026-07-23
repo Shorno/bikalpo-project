@@ -10,6 +10,7 @@ import {
   ClipboardCheckIcon,
   DownloadIcon,
   FileTextIcon,
+  LandmarkIcon,
   LockKeyholeIcon,
   PackageIcon,
   PackagePlusIcon,
@@ -27,8 +28,10 @@ import type { ReactNode } from "react";
 import { useMemo, useState } from "react";
 import { DaybookExpenseDialog } from "@/components/dashboard/daybook/daybook-expense-dialog";
 import { DaybookFixedAssetDialog } from "@/components/dashboard/daybook/daybook-fixed-asset-dialog";
+import { DaybookLoanDialog } from "@/components/dashboard/daybook/daybook-loan-dialog";
 import { useDaybookExpenses } from "@/components/dashboard/daybook/use-daybook-expenses";
 import { useDaybookFixedAssetPurchases } from "@/components/dashboard/daybook/use-daybook-fixed-assets";
+import { useDaybookLoans } from "@/components/dashboard/daybook/use-daybook-loans";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -63,7 +66,7 @@ type Metric = {
 type ActionItem = {
   href?: string;
   icon: ReactNode;
-  kind?: "expense" | "fixedAsset";
+  kind?: "expense" | "fixedAsset" | "loan";
   label: string;
   primary?: boolean;
 };
@@ -237,6 +240,11 @@ const daybookConfigs: Record<DaybookVariant, DaybookConfig> = {
         kind: "fixedAsset",
         label: "Fixed Asset",
       },
+      {
+        icon: <LandmarkIcon className="size-4" />,
+        kind: "loan",
+        label: "Loan",
+      },
     ],
     stockPanels: [
       {
@@ -392,6 +400,11 @@ const daybookConfigs: Record<DaybookVariant, DaybookConfig> = {
         label: "Fixed Asset",
       },
       {
+        icon: <LandmarkIcon className="size-4" />,
+        kind: "loan",
+        label: "Loan",
+      },
+      {
         href: "/warehouse/dashboard/stock/add",
         icon: <PackagePlusIcon className="size-4" />,
         label: "Add Stock",
@@ -446,9 +459,11 @@ export function DaybookKpiPage({ variant }: { variant: DaybookVariant }) {
   const config = daybookConfigs[variant];
   const savedExpenses = useDaybookExpenses(variant);
   const savedFixedAssetPurchases = useDaybookFixedAssetPurchases(variant);
+  const savedLoans = useDaybookLoans(variant);
   const [lastUpdated, setLastUpdated] = useState(() => new Date());
   const [expenseDialogOpen, setExpenseDialogOpen] = useState(false);
   const [fixedAssetDialogOpen, setFixedAssetDialogOpen] = useState(false);
+  const [loanDialogOpen, setLoanDialogOpen] = useState(false);
   const [physicalCash, setPhysicalCash] = useState("");
   const savedExpenseTotal = useMemo(
     () => savedExpenses.reduce((sum, expense) => sum + expense.total, 0),
@@ -462,8 +477,15 @@ export function DaybookKpiPage({ variant }: { variant: DaybookVariant }) {
       ),
     [savedFixedAssetPurchases],
   );
+  const savedLoanTotal = useMemo(
+    () => savedLoans.reduce((sum, loan) => sum + loan.total, 0),
+    [savedLoans],
+  );
   const adjustedSystemCash =
-    config.systemCash - savedExpenseTotal - savedFixedAssetTotal;
+    config.systemCash -
+    savedExpenseTotal -
+    savedFixedAssetTotal +
+    savedLoanTotal;
   const overviewMetrics = useMemo(
     () =>
       config.metrics.map((metric) =>
@@ -523,12 +545,38 @@ export function DaybookKpiPage({ variant }: { variant: DaybookVariant }) {
         type: "Fixed Asset Purchase",
       }));
 
+    const loanTransactions = savedLoans
+      .toSorted(
+        (first, second) =>
+          new Date(second.createdAt).getTime() -
+          new Date(first.createdAt).getTime(),
+      )
+      .map((loan) => ({
+        amount: money(loan.total),
+        reference:
+          [
+            loan.lines[0]?.loanType,
+            loan.lender,
+            loan.referenceNo || loan.loanNo,
+          ]
+            .filter(Boolean)
+            .join(" - ") || loan.paymentAccountName,
+        time: timeLabel(new Date(loan.createdAt)),
+        type: "Loan Received",
+      }));
+
     return [
+      ...loanTransactions,
       ...fixedAssetTransactions,
       ...expenseTransactions,
       ...config.transactions,
     ];
-  }, [config.transactions, savedExpenses, savedFixedAssetPurchases]);
+  }, [
+    config.transactions,
+    savedExpenses,
+    savedFixedAssetPurchases,
+    savedLoans,
+  ]);
   const cashDifference = useMemo(() => {
     const parsedCash = Number(physicalCash.replace(/,/g, ""));
     return Number.isFinite(parsedCash) && physicalCash.trim()
@@ -630,13 +678,14 @@ export function DaybookKpiPage({ variant }: { variant: DaybookVariant }) {
             icon={<ShoppingCartIcon className="size-4" />}
             title="Quick Entry"
           />
-          <div className="grid gap-2 p-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+          <div className="grid gap-2 p-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8">
             {config.quickActions.map((action) => (
               <QuickAction
                 action={action}
                 key={action.label}
                 onFixedAssetClick={() => setFixedAssetDialogOpen(true)}
                 onExpenseClick={() => setExpenseDialogOpen(true)}
+                onLoanClick={() => setLoanDialogOpen(true)}
               />
             ))}
           </div>
@@ -831,6 +880,11 @@ export function DaybookKpiPage({ variant }: { variant: DaybookVariant }) {
         open={fixedAssetDialogOpen}
         scope={variant}
       />
+      <DaybookLoanDialog
+        onOpenChange={setLoanDialogOpen}
+        open={loanDialogOpen}
+        scope={variant}
+      />
     </div>
   );
 }
@@ -927,10 +981,12 @@ function QuickAction({
   action,
   onFixedAssetClick,
   onExpenseClick,
+  onLoanClick,
 }: {
   action: ActionItem;
   onFixedAssetClick: () => void;
   onExpenseClick: () => void;
+  onLoanClick: () => void;
 }) {
   if (action.kind === "expense") {
     return (
@@ -957,6 +1013,23 @@ function QuickAction({
           !action.primary && "bg-slate-100 text-slate-800 hover:bg-slate-200",
         )}
         onClick={onFixedAssetClick}
+        type="button"
+        variant={action.primary ? "default" : "secondary"}
+      >
+        {action.icon}
+        {action.label}
+      </Button>
+    );
+  }
+
+  if (action.kind === "loan") {
+    return (
+      <Button
+        className={cn(
+          "h-10 justify-start rounded-lg",
+          !action.primary && "bg-slate-100 text-slate-800 hover:bg-slate-200",
+        )}
+        onClick={onLoanClick}
         type="button"
         variant={action.primary ? "default" : "secondary"}
       >
