@@ -1,6 +1,8 @@
 import { db } from "@bikalpo-project/db";
 import type {
   AccountingAccountType,
+  BalanceSheetLine,
+  ProfitAndLossLine,
   AccountingOwnerType,
 } from "@bikalpo-project/db/accounting";
 import {
@@ -73,6 +75,31 @@ function parseMoney(value: string | number | null | undefined) {
 
 function toMoney(value: number) {
   return value.toFixed(2);
+}
+
+function resolveAccountReportLines(input: {
+  accountType: AccountingAccountType;
+  categoryCode: string;
+  categoryName: string;
+}): {
+  balanceSheetLine: BalanceSheetLine | null;
+  profitAndLossLine: ProfitAndLossLine | null;
+} {
+  if (
+    input.accountType === "asset" &&
+    (input.categoryCode === "asset-fixed" ||
+      input.categoryName.toLowerCase() === "fixed assets")
+  ) {
+    return {
+      balanceSheetLine: "fixed_assets",
+      profitAndLossLine: null,
+    };
+  }
+
+  return {
+    balanceSheetLine: null,
+    profitAndLossLine: null,
+  };
 }
 
 function scopeWhere<TTable extends { ownerId: any; ownerType: any }>(
@@ -634,12 +661,17 @@ export const financeRouter = {
         baseCode,
       );
       const openingBalance = parseMoney(input.amount);
+      const reportLines = resolveAccountReportLines({
+        accountType,
+        categoryCode: category.code,
+        categoryName: category.name,
+      });
 
       const [created] = await db
         .insert(financeAccount)
         .values({
           accountType,
-          balanceSheetLine: null,
+          balanceSheetLine: reportLines.balanceSheetLine,
           categoryId: parsedCategoryId,
           code,
           currentBalance: String(openingBalance),
@@ -658,7 +690,7 @@ export const financeRouter = {
           ownerId,
           ownerType,
           parentAccountId: null,
-          profitAndLossLine: null,
+          profitAndLossLine: reportLines.profitAndLossLine,
           sortOrder: 900,
         })
         .returning({ id: financeAccount.id });
