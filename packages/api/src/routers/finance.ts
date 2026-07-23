@@ -199,6 +199,167 @@ async function resolveExpenseCategoryId(ownerId: string, name: string) {
   return created.id;
 }
 
+async function resolveFixedAssetCategoryId() {
+  await ensureDefaultFinanceAccounts();
+
+  const category = await db.query.financeCategory.findFirst({
+    where: (table, { and: andFn, eq: eqFn, isNull: isNullFn }) =>
+      andFn(
+        eqFn(table.code, "asset-fixed"),
+        isNullFn(table.ownerId),
+        isNullFn(table.ownerType),
+      ),
+  });
+
+  if (!category) {
+    throw new ORPCError("INTERNAL_SERVER_ERROR", {
+      message: "Fixed asset category is not configured",
+    });
+  }
+
+  return category.id;
+}
+
+async function ensureOwnerFixedAssetAccount(input: {
+  accountName: string;
+  categoryId: number;
+  ownerId: string;
+  ownerType: AccountingOwnerType;
+}) {
+  const name = input.accountName.trim() || "Furniture";
+
+  const existing = await db.query.financeAccount.findFirst({
+    where: (table, { and: andFn, eq: eqFn }) =>
+      andFn(
+        eqFn(table.accountType, "asset"),
+        eqFn(table.categoryId, input.categoryId),
+        eqFn(table.name, name),
+        eqFn(table.ownerId, input.ownerId),
+        eqFn(table.ownerType, input.ownerType),
+      ),
+  });
+
+  if (existing) {
+    if (existing.balanceSheetLine !== "fixed_assets") {
+      await db
+        .update(financeAccount)
+        .set({
+          balanceSheetLine: "fixed_assets",
+          updatedAt: new Date(),
+        })
+        .where(eq(financeAccount.id, existing.id));
+    }
+
+    return {
+      currentBalance: parseMoney(existing.currentBalance),
+      id: existing.id,
+      name: existing.name,
+    };
+  }
+
+  const code = await generateUniqueCode(
+    financeAccount,
+    input.ownerId,
+    input.ownerType,
+    `asset-${slugify(name) || "fixed-asset"}`,
+  );
+
+  const [created] = await db
+    .insert(financeAccount)
+    .values({
+      accountType: "asset",
+      balanceSheetLine: "fixed_assets",
+      categoryId: input.categoryId,
+      code,
+      currentBalance: "0.00",
+      description: "Fixed asset account for furniture and equipment.",
+      isActive: true,
+      isPaymentAccount: false,
+      isSystem: false,
+      name,
+      normalBalance: "debit",
+      openingBalance: "0.00",
+      ownerId: input.ownerId,
+      ownerType: input.ownerType,
+      parentAccountId: null,
+      profitAndLossLine: null,
+      sortOrder: 910,
+    })
+    .returning({
+      id: financeAccount.id,
+    });
+
+  if (!created) {
+    throw new ORPCError("INTERNAL_SERVER_ERROR", {
+      message: "Failed to create fixed asset account",
+    });
+  }
+
+  return {
+    currentBalance: 0,
+    id: created.id,
+    name,
+  };
+}
+
+async function resolveFixedAssetAccount(input: {
+  accountId?: number | null;
+  accountName: string;
+  ownerId: string;
+  ownerType: AccountingOwnerType;
+}) {
+  const categoryId = await resolveFixedAssetCategoryId();
+
+  if (input.accountId && Number.isFinite(input.accountId)) {
+    const selected = await db.query.financeAccount.findFirst({
+      where: (table, { and: andFn, eq: eqFn, isNull: isNullFn, or: orFn }) =>
+        andFn(
+          eqFn(table.id, input.accountId),
+          eqFn(table.accountType, "asset"),
+          orFn(
+            eqFn(table.balanceSheetLine, "fixed_assets"),
+            eqFn(table.categoryId, categoryId),
+          ),
+          orFn(
+            andFn(isNullFn(table.ownerId), isNullFn(table.ownerType)),
+            andFn(
+              eqFn(table.ownerId, input.ownerId),
+              eqFn(table.ownerType, input.ownerType),
+            ),
+          ),
+        ),
+    });
+
+    if (!selected) {
+      throw new ORPCError("NOT_FOUND", {
+        message: "Fixed asset account not found",
+      });
+    }
+
+    if (selected.ownerId === input.ownerId) {
+      return {
+        currentBalance: parseMoney(selected.currentBalance),
+        id: selected.id,
+        name: selected.name,
+      };
+    }
+
+    return ensureOwnerFixedAssetAccount({
+      accountName: input.accountName.trim() || selected.name,
+      categoryId,
+      ownerId: input.ownerId,
+      ownerType: input.ownerType,
+    });
+  }
+
+  return ensureOwnerFixedAssetAccount({
+    accountName: input.accountName,
+    categoryId,
+    ownerId: input.ownerId,
+    ownerType: input.ownerType,
+  });
+}
+
 export const financeRouter = {
   getChartOfAccounts: protectedProcedure
     .route({
