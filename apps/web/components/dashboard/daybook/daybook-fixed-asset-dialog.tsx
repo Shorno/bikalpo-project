@@ -412,6 +412,24 @@ export function DaybookFixedAssetDialog({
                 {money(total)}
               </div>
               <p className="mt-2 text-slate-500 text-sm">Paid from cash/bank</p>
+              <div className="mt-4 grid gap-2 border-slate-200 border-t pt-4 text-sm">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-slate-500">Subtotal</span>
+                  <span className="font-semibold tabular-nums">
+                    {money(total)}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-slate-500">Total Paid</span>
+                  <span className="font-semibold tabular-nums">
+                    {money(total)}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-slate-500">Amount Due</span>
+                  <span className="font-semibold tabular-nums">{money(0)}</span>
+                </div>
+              </div>
             </div>
           </div>
 
