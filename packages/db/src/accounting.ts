@@ -306,3 +306,238 @@ export const ACCOUNTING_TRANSACTION_TYPE_METADATA: Record<
     sortOrder: 120,
   },
 };
+
+export const ACCOUNTING_AMOUNT_FIELDS = [
+  "amount",
+  "sales_amount",
+  "cost_amount",
+] as const;
+
+export type AccountingAmountField = (typeof ACCOUNTING_AMOUNT_FIELDS)[number];
+
+export type AccountingPostingRuleLine = {
+  accountCode: string;
+  amountField: AccountingAmountField;
+  side: AccountingNormalBalance;
+};
+
+export type AccountingPostingRule = {
+  description: string;
+  lines: AccountingPostingRuleLine[];
+  transactionType: AccountingTransactionType;
+};
+
+export const ACCOUNTING_POSTING_RULES: Record<
+  AccountingTransactionType,
+  AccountingPostingRule
+> = {
+  opening_stock: {
+    description: "Opening stock increases inventory and owner capital.",
+    lines: [
+      { accountCode: "1003-inventory", amountField: "amount", side: "debit" },
+      {
+        accountCode: "3001-owner-capital",
+        amountField: "amount",
+        side: "credit",
+      },
+    ],
+    transactionType: "opening_stock",
+  },
+  owner_capital_invested: {
+    description: "Owner investment increases cash and owner capital.",
+    lines: [
+      {
+        accountCode: "1001-cash-on-hand",
+        amountField: "amount",
+        side: "debit",
+      },
+      {
+        accountCode: "3001-owner-capital",
+        amountField: "amount",
+        side: "credit",
+      },
+    ],
+    transactionType: "owner_capital_invested",
+  },
+  fixed_asset_purchase: {
+    description: "Cash paid for a long-term fixed asset.",
+    lines: [
+      {
+        accountCode: "1501-fixed-assets",
+        amountField: "amount",
+        side: "debit",
+      },
+      {
+        accountCode: "1001-cash-on-hand",
+        amountField: "amount",
+        side: "credit",
+      },
+    ],
+    transactionType: "fixed_asset_purchase",
+  },
+  loan_received: {
+    description: "Loan proceeds increase cash and loan payable.",
+    lines: [
+      {
+        accountCode: "1001-cash-on-hand",
+        amountField: "amount",
+        side: "debit",
+      },
+      {
+        accountCode: "2501-loan-payable",
+        amountField: "amount",
+        side: "credit",
+      },
+    ],
+    transactionType: "loan_received",
+  },
+  product_purchase_cash: {
+    description: "Cash product purchase recorded as product purchase cost.",
+    lines: [
+      {
+        accountCode: "5001-product-purchase-cost",
+        amountField: "amount",
+        side: "debit",
+      },
+      {
+        accountCode: "1001-cash-on-hand",
+        amountField: "amount",
+        side: "credit",
+      },
+    ],
+    transactionType: "product_purchase_cash",
+  },
+  product_purchase_due: {
+    description: "Due product purchase creates supplier payable.",
+    lines: [
+      {
+        accountCode: "5001-product-purchase-cost",
+        amountField: "amount",
+        side: "debit",
+      },
+      {
+        accountCode: "2001-accounts-payable",
+        amountField: "amount",
+        side: "credit",
+      },
+    ],
+    transactionType: "product_purchase_due",
+  },
+  supplier_advance_payment: {
+    description: "Supplier advance is an asset until applied to a purchase.",
+    lines: [
+      {
+        accountCode: "1103-supplier-advance",
+        amountField: "amount",
+        side: "debit",
+      },
+      {
+        accountCode: "1001-cash-on-hand",
+        amountField: "amount",
+        side: "credit",
+      },
+    ],
+    transactionType: "supplier_advance_payment",
+  },
+  product_sale_cash: {
+    description: "Cash sale records revenue and releases sold inventory cost.",
+    lines: [
+      {
+        accountCode: "1001-cash-on-hand",
+        amountField: "sales_amount",
+        side: "debit",
+      },
+      {
+        accountCode: "5001-product-purchase-cost",
+        amountField: "cost_amount",
+        side: "debit",
+      },
+      {
+        accountCode: "4001-product-sales",
+        amountField: "sales_amount",
+        side: "credit",
+      },
+      {
+        accountCode: "1003-inventory",
+        amountField: "cost_amount",
+        side: "credit",
+      },
+    ],
+    transactionType: "product_sale_cash",
+  },
+  product_sale_due: {
+    description:
+      "Due sale creates receivable and releases sold inventory cost.",
+    lines: [
+      {
+        accountCode: "1101-accounts-receivable",
+        amountField: "sales_amount",
+        side: "debit",
+      },
+      {
+        accountCode: "5001-product-purchase-cost",
+        amountField: "cost_amount",
+        side: "debit",
+      },
+      {
+        accountCode: "4001-product-sales",
+        amountField: "sales_amount",
+        side: "credit",
+      },
+      {
+        accountCode: "1003-inventory",
+        amountField: "cost_amount",
+        side: "credit",
+      },
+    ],
+    transactionType: "product_sale_due",
+  },
+  customer_advance_payment: {
+    description: "Customer advance increases cash and current liability.",
+    lines: [
+      {
+        accountCode: "1001-cash-on-hand",
+        amountField: "amount",
+        side: "debit",
+      },
+      {
+        accountCode: "2101-customer-advance",
+        amountField: "amount",
+        side: "credit",
+      },
+    ],
+    transactionType: "customer_advance_payment",
+  },
+  operating_expense: {
+    description: "Paid expense reduces cash and increases operating expenses.",
+    lines: [
+      {
+        accountCode: "6001-operating-expenses",
+        amountField: "amount",
+        side: "debit",
+      },
+      {
+        accountCode: "1001-cash-on-hand",
+        amountField: "amount",
+        side: "credit",
+      },
+    ],
+    transactionType: "operating_expense",
+  },
+  owner_drawing: {
+    description: "Owner withdrawal reduces cash and owner equity.",
+    lines: [
+      {
+        accountCode: "3003-owner-drawings",
+        amountField: "amount",
+        side: "debit",
+      },
+      {
+        accountCode: "1001-cash-on-hand",
+        amountField: "amount",
+        side: "credit",
+      },
+    ],
+    transactionType: "owner_drawing",
+  },
+};
