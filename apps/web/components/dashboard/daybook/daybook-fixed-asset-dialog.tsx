@@ -369,7 +369,7 @@ export function DaybookFixedAssetDialog({
                 <Input
                   id="fixed-asset-supplier"
                   onChange={(event) => setSupplier(event.target.value)}
-                  placeholder="Supplier name"
+                  placeholder="ABC Furniture"
                   value={supplier}
                 />
               </div>
@@ -476,7 +476,7 @@ export function DaybookFixedAssetDialog({
               <Input
                 id="fixed-asset-reference"
                 onChange={(event) => setReferenceNo(event.target.value)}
-                placeholder="Reference"
+                placeholder="REF-001"
                 value={referenceNo}
               />
             </div>
@@ -486,7 +486,7 @@ export function DaybookFixedAssetDialog({
               <Input
                 id="fixed-asset-bill-no"
                 onChange={(event) => setBillNo(event.target.value)}
-                placeholder="Bill number"
+                placeholder="INV-2026-001"
                 value={billNo}
               />
             </div>
@@ -535,7 +535,7 @@ export function DaybookFixedAssetDialog({
                     onChange={(event) =>
                       updateLine(line.id, "amount", event.target.value)
                     }
-                    placeholder="0.00"
+                    placeholder="40,000.00"
                     value={line.amount}
                   />
                   <Button
