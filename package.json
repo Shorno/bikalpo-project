@@ -17,6 +17,7 @@
     "db:studio": "turbo -F @bikalpo-project/db db:studio",
     "db:generate": "turbo -F @bikalpo-project/db db:generate",
     "db:migrate": "turbo -F @bikalpo-project/db db:migrate",
+    "db:seed-accounting": "turbo -F @bikalpo-project/db db:seed-accounting",
     "db:reset-product-flow": "pnpm --filter @bikalpo-project/db db:reset-product-flow"
   },
   "dependencies": {
