@@ -1,3 +1,5 @@
+import { resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import { and, eq, isNull } from "drizzle-orm";
 import { db } from "./index";
 import {
@@ -5,7 +7,10 @@ import {
   DEFAULT_FINANCE_ACCOUNT_SEEDS,
   DEFAULT_FINANCE_CATEGORY_SEEDS,
 } from "./accounting-defaults";
-import type { AccountingOwnerType } from "./accounting";
+import {
+  ACCOUNTING_OWNER_TYPES,
+  type AccountingOwnerType,
+} from "./accounting";
 import {
   financeAccount,
   financeCategory,
@@ -112,6 +117,20 @@ function resolvePaymentAccountType(code: string) {
   return "cash";
 }
 
+function isAccountingOwnerType(value: string): value is AccountingOwnerType {
+  return ACCOUNTING_OWNER_TYPES.includes(value as AccountingOwnerType);
+}
+
+function shouldRunCli() {
+  const entryPoint = process.argv[1];
+
+  if (!entryPoint) {
+    return false;
+  }
+
+  return import.meta.url === pathToFileURL(resolve(entryPoint)).href;
+}
+
 export async function ensureDefaultFinanceCategories(
   database: AccountingSeedDatabase = db,
 ): Promise<SeededFinanceCategoryResult> {
@@ -163,6 +182,56 @@ export async function ensureDefaultFinanceCategories(
     idsByCode,
     skipped,
   };
+}
+
+async function runAccountingSeedCli() {
+  const ownerId = process.env.ACCOUNTING_SEED_OWNER_ID;
+  const ownerType = process.env.ACCOUNTING_SEED_OWNER_TYPE ?? "shop";
+
+  if (!isAccountingOwnerType(ownerType)) {
+    throw new Error(
+      `ACCOUNTING_SEED_OWNER_TYPE must be one of: ${ACCOUNTING_OWNER_TYPES.join(
+        ", ",
+      )}`,
+    );
+  }
+
+  if (ownerId) {
+    const paymentAccounts = await ensureDefaultFinancePaymentAccounts({
+      ownerId,
+      ownerType,
+    });
+
+    console.log(
+      `Seeded finance categories: ${paymentAccounts.accounts.categories.created} created, ${paymentAccounts.accounts.categories.skipped} skipped`,
+    );
+    console.log(
+      `Seeded finance accounts: ${paymentAccounts.accounts.created} created, ${paymentAccounts.accounts.skipped} skipped`,
+    );
+    console.log(
+      `Seeded finance payment accounts: ${paymentAccounts.created} created, ${paymentAccounts.skipped} skipped`,
+    );
+    return;
+  }
+
+  const accounts = await ensureDefaultFinanceAccounts();
+
+  console.log(
+    `Seeded finance categories: ${accounts.categories.created} created, ${accounts.categories.skipped} skipped`,
+  );
+  console.log(
+    `Seeded finance accounts: ${accounts.created} created, ${accounts.skipped} skipped`,
+  );
+  console.log(
+    "Set ACCOUNTING_SEED_OWNER_ID to also seed owner payment accounts.",
+  );
+}
+
+if (shouldRunCli()) {
+  runAccountingSeedCli().catch((error: unknown) => {
+    console.error(error);
+    process.exit(1);
+  });
 }
 
 export async function ensureDefaultFinancePaymentAccounts({
