@@ -2,6 +2,7 @@ import { db } from "@bikalpo-project/db";
 import {
   deliveryGroupInvoice,
   expense,
+  financeAccount,
   financialLedger,
   invoice,
   order,
@@ -124,6 +125,31 @@ export const balanceSheetRouter = {
       const startDateTime = new Date(`${startDate}T00:00:00.000`);
       const asOfEnd = new Date(`${endDate}T23:59:59.999`);
       const isCashBasis = input.reportType === "cash";
+
+      const fixedAssetRows = await db
+        .select({
+          amount: financeAccount.currentBalance,
+          label: financeAccount.name,
+        })
+        .from(financeAccount)
+        .where(
+          and(
+            eq(financeAccount.ownerId, ownerId),
+            eq(financeAccount.ownerType, ownerType),
+            eq(financeAccount.accountType, "asset"),
+            eq(financeAccount.balanceSheetLine, "fixed_assets"),
+          ),
+        );
+      const longTermAssetRows = fixedAssetRows
+        .map((row) => ({
+          amount: toNumber(row.amount),
+          label: row.label,
+        }))
+        .filter((row) => row.amount !== 0);
+      const fixedAssets = longTermAssetRows.reduce(
+        (sum, row) => sum + row.amount,
+        0,
+      );
 
       const expenseRows = await db
         .select({ total: expense.amount })
@@ -450,11 +476,11 @@ export const balanceSheetRouter = {
       }
 
       const retainedEarnings = revenue - expenseTotal;
-      const cashAndBank = retainedEarnings + payable - receivable;
-      const totalAssets = cashAndBank + receivable;
+      const cashAndBank = retainedEarnings + payable - receivable - fixedAssets;
+      const totalAssets = cashAndBank + receivable + fixedAssets;
       const totalLiabilities = payable;
       const totalEquity = totalAssets - totalLiabilities;
-      const netAssets = cashAndBank + receivable - payable;
+      const netAssets = cashAndBank + receivable + fixedAssets - payable;
       const asOfLabel = formatReportDate(endDate);
       const startLabel = formatReportDate(startDate);
 
@@ -502,14 +528,20 @@ export const balanceSheetRouter = {
               },
               {
                 title: "Long-term Assets",
-                rows: [
-                  {
-                    label: "Other Long-term Assets",
-                    amount: toMoney(0),
-                    muted: true,
-                  },
-                ],
-                total: toMoney(0),
+                rows:
+                  longTermAssetRows.length > 0
+                    ? longTermAssetRows.map((row) => ({
+                        label: row.label,
+                        amount: toMoney(row.amount),
+                      }))
+                    : [
+                        {
+                          label: "Other Long-term Assets",
+                          amount: toMoney(0),
+                          muted: true,
+                        },
+                      ],
+                total: toMoney(fixedAssets),
                 totalLabel: "Total Long-term Assets",
               },
             ],
