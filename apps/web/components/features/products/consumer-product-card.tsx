@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowRight, Package, Star, Store } from "lucide-react";
+import { ArrowRight, Package, Star } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { useState } from "react";
@@ -43,7 +43,6 @@ export function ConsumerProductCard({
   const price = Number.isFinite(rawPrice) ? rawPrice : 0;
   const rating = product.reviewStats?.averageRating ?? 0;
   const reviewCount = product.reviewStats?.totalReviews ?? 0;
-  const sellerCount = product.sellerCount ?? 0;
   const context = [product.brand?.name, product.category?.name]
     .filter(Boolean)
     .join(" · ");
@@ -93,7 +92,7 @@ export function ConsumerProductCard({
         <div className="mt-4 flex items-end justify-between gap-3">
           <div>
             <p className="text-[10px] font-medium text-muted-foreground">
-              {price > 0 ? "Starting from" : "Price"}
+              {price > 0 ? "Reference price" : "Price"}
             </p>
             <p className="mt-0.5 text-lg font-bold tracking-[-0.02em] tabular-nums text-foreground sm:text-xl">
               {price > 0
@@ -105,7 +104,7 @@ export function ConsumerProductCard({
           </div>
         </div>
 
-        {rating > 0 || sellerCount > 0 ? (
+        {rating > 0 ? (
           <div className="mt-3 flex min-h-5 flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
             {rating > 0 && reviewCount > 0 ? (
               <span className="inline-flex items-center gap-1">
@@ -114,12 +113,6 @@ export function ConsumerProductCard({
                   {rating.toFixed(1)}
                 </span>
                 <span>({reviewCount})</span>
-              </span>
-            ) : null}
-            {sellerCount > 0 ? (
-              <span className="inline-flex items-center gap-1">
-                <Store className="size-3.5 text-primary" />
-                {sellerCount} {sellerCount === 1 ? "seller" : "sellers"}
               </span>
             ) : null}
           </div>

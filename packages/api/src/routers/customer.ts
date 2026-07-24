@@ -3,16 +3,12 @@
  *
  * Contains all queries and mutations for the B2C marketplace customer view.
  * - No admin, dealer, shop owner, inventory write, ledger, or analytics logic
- * - Only retail variants (B2C)
+ * - Canonical catalog variants for public reference products
  * - Read-only access to stock and pricing
  * - Location-based filtering where applicable
  */
 
 import { db } from "@bikalpo-project/db";
-import {
-  resolveVariantMovementSemantics,
-  resolveVariantOption,
-} from "@bikalpo-project/db/variant-definition";
 import {
   address,
   announcement,
@@ -47,6 +43,10 @@ import {
   user,
   userProfile,
 } from "@bikalpo-project/db/schema";
+import {
+  resolveVariantMovementSemantics,
+  resolveVariantOption,
+} from "@bikalpo-project/db/variant-definition";
 import { ORPCError } from "@orpc/server";
 import {
   and,
@@ -80,13 +80,18 @@ import {
   findSellersNearPoint,
 } from "../services/location-service";
 import {
-  type CartItemForSplit,
-  checkAndExpireBids,
-  checkBroadcastExpiry,
-  createBidsForSubOrder,
-  DEFAULT_BROADCAST_MINUTES,
+  resolveCartTransition,
+  sortComparableOffers,
+} from "../services/open-order-domain";
+import {
+  acceptOpenOrderOffer,
+  type CartItemForOpenOrder,
+  cancelOpenOrder,
+  createOffersForOrder,
   findEligibleSellers,
-  splitCartIntoSubOrders,
+  OFFER_WINDOW_SECONDS,
+  reconcileOpenOrder,
+  SELECTION_WINDOW_SECONDS,
 } from "../services/open-order-matching";
 import {
   convertEstimateToB2bOrder,
@@ -95,6 +100,7 @@ import {
 import {
   getReferenceProductEffectivePrice,
   getReferenceSellerKey,
+  isOpenOrderReferenceSelectionEligible,
   sortReferenceProducts,
 } from "./helpers/reference-product-catalog";
 import {
@@ -150,6 +156,8 @@ const addressFormSchema = z.object({
   city: z.string().min(2, "City is required"),
   area: z.string().optional(),
   postalCode: z.string().optional(),
+  lat: z.string().optional(),
+  lng: z.string().optional(),
   isDefault: z.boolean().optional(),
 });
 
@@ -559,9 +567,8 @@ async function getReferenceSellerCountMap(
 
   for (const row of sellerRows) {
     if (row.coreProductId == null) continue;
-    sellerCountMap[
-      getReferenceSellerKey(row.coreProductId, row.brandId)
-    ] = row.sellerCount || 0;
+    sellerCountMap[getReferenceSellerKey(row.coreProductId, row.brandId)] =
+      row.sellerCount || 0;
   }
 
   return sellerCountMap;
@@ -587,7 +594,9 @@ async function getReferenceReviewStatsMap(productIds: number[]) {
 
   for (const row of reviewRows) {
     reviewStatsMap[row.productId] = {
-      averageRating: row.averageRating ? Number.parseFloat(row.averageRating) : 0,
+      averageRating: row.averageRating
+        ? Number.parseFloat(row.averageRating)
+        : 0,
       totalReviews: row.totalReviews || 0,
     };
   }
@@ -1083,6 +1092,7 @@ const queries = {
         ...getWebViewProductConditions(),
         eq(product.creatorSource, "admin"),
         isNotNull(product.coreProductId),
+        isNotNull(product.brandId),
       ];
 
       if (categorySlug) {
@@ -1138,7 +1148,7 @@ const queries = {
       if (inStockString === "false")
         conditions.push(eq(product.inStock, false));
 
-      const referenceProducts = await db.query.product.findMany({
+      const referenceProductRows = await db.query.product.findMany({
         where: and(...conditions),
         with: {
           category: { columns: { slug: true, name: true } },
@@ -1149,11 +1159,23 @@ const queries = {
           images: true,
           variants: {
             columns: {
+              catalogVariantId: true,
+              id: true,
               isActive: true,
               price: true,
+              productId: true,
               sourceVariantPriceId: true,
-              variantType: true,
               visibilityRole: true,
+            },
+            with: {
+              catalogVariant: {
+                columns: {
+                  brandId: true,
+                  configurationState: true,
+                  coreProductId: true,
+                  isActive: true,
+                },
+              },
             },
           },
           variantPrices: {
@@ -1166,6 +1188,16 @@ const queries = {
         },
       });
 
+      const referenceProducts = referenceProductRows.filter(
+        (referenceProduct) =>
+          referenceProduct.variants.some((variant) =>
+            isOpenOrderReferenceSelectionEligible({
+              product: referenceProduct,
+              variant,
+            }),
+          ),
+      );
+
       const productIds = referenceProducts.map(
         (referenceProduct) => referenceProduct.id,
       );
@@ -1175,9 +1207,8 @@ const queries = {
       ]);
 
       let serializedProducts = referenceProducts.map((referenceProduct) => {
-        const effectivePrice = getReferenceProductEffectivePrice(
-          referenceProduct,
-        );
+        const effectivePrice =
+          getReferenceProductEffectivePrice(referenceProduct);
         const {
           variantPrices: _variantPrices,
           variants: _variants,
@@ -1516,28 +1547,45 @@ const queries = {
       if (!found)
         throw new ORPCError("NOT_FOUND", { message: "Product not found" });
 
-      // Get RETAIL variants only for consumer-facing detail page
-      // (TRADE variants are for shop owners / B2B)
-      const variants = await db.query.productVariant.findMany({
-        where: and(
-          eq(productVariant.productId, found.id),
-          or(
-            eq(productVariant.variantType, "retail"),
-            isNull(productVariant.variantType),
-          ),
-        ),
+      const isAdminReference = found.creatorSource === "admin";
+      const variantRows = await db.query.productVariant.findMany({
+        where: eq(productVariant.productId, found.id),
+        with: {
+          catalogVariant: {
+            columns: {
+              brandId: true,
+              configurationState: true,
+              coreProductId: true,
+              isActive: true,
+            },
+          },
+        },
         orderBy: [asc(productVariant.sortOrder)],
       });
+      const variants = variantRows.filter((variant) =>
+        isAdminReference
+          ? isOpenOrderReferenceSelectionEligible({
+              product: found,
+              variant,
+            })
+          : variant.variantType === "retail" || variant.variantType == null,
+      );
+      if (variants.length === 0) {
+        throw new ORPCError("NOT_FOUND", { message: "Product not found" });
+      }
 
       // Serialize product and variants with proper price conversion
       const foundSerialized = {
         ...found,
         price: parseFloat(found.price),
       };
-      const variantsSerialized = variants.map((v) => ({
-        ...v,
-        price: parseFloat(v.price),
-      }));
+      const variantsSerialized = variants.map((variant) => {
+        const { catalogVariant: _catalogVariant, ...variantData } = variant;
+        return {
+          ...variantData,
+          price: parseFloat(variant.price),
+        };
+      });
 
       // Get review stats
       const reviewStats = await db
@@ -1850,7 +1898,7 @@ const queries = {
     .handler(async ({ context }) => {
       const userId = context.session.user.id;
       const orders = await db.query.order.findMany({
-        where: eq(order.userId, userId),
+        where: and(eq(order.userId, userId), eq(order.isOpenOrder, false)),
         with: { items: true },
         orderBy: [desc(order.createdAt)],
       });
@@ -1872,6 +1920,7 @@ const queries = {
         where: and(
           eq(order.orderNumber, input.orderNumber),
           eq(order.userId, userId),
+          eq(order.isOpenOrder, false),
         ),
         with: { items: true },
       });
@@ -1923,7 +1972,13 @@ const queries = {
       const [orderData] = await db
         .select()
         .from(order)
-        .where(and(eq(order.id, input.orderId), eq(order.userId, userId)))
+        .where(
+          and(
+            eq(order.id, input.orderId),
+            eq(order.userId, userId),
+            eq(order.isOpenOrder, false),
+          ),
+        )
         .limit(1);
 
       if (!orderData)
@@ -1949,7 +2004,7 @@ const queries = {
     .handler(async ({ context }) => {
       const userId = context.session.user.id;
       const activeOrder = await db.query.order.findFirst({
-        where: sql`${order.userId} = ${userId} AND ${order.status} NOT IN ('delivered', 'cancelled')`,
+        where: sql`${order.userId} = ${userId} AND ${order.isOpenOrder} = false AND ${order.status} NOT IN ('delivered', 'cancelled')`,
         with: { items: true },
         orderBy: [desc(order.createdAt)],
       });
@@ -2030,7 +2085,15 @@ const queries = {
         },
       });
 
-      if (!userCart) return { items: [], totalItems: 0, totalPrice: 0 };
+      if (!userCart) {
+        return {
+          mode: null,
+          directShopId: null,
+          items: [],
+          totalItems: 0,
+          totalPrice: 0,
+        };
+      }
 
       // Resolve shop names for B2C items
       const shopIds = [
@@ -2086,7 +2149,13 @@ const queries = {
         0,
       );
 
-      return { items, totalItems, totalPrice };
+      return {
+        mode: userCart.mode,
+        directShopId: userCart.directShopId,
+        items,
+        totalItems,
+        totalPrice,
+      };
     }),
 
   // ── Profile (authenticated customer) ─────────────────────────
@@ -3404,17 +3473,64 @@ const mutations = {
         quantity: z.number().min(1).default(1),
         variantId: z.number().optional(),
         shopId: z.string().optional(), // B2C: which shop to buy from
+        purchaseMode: z.enum(["open_order", "direct"]).optional(),
+        replaceCart: z.boolean().default(false),
       }),
     )
     .handler(async ({ context, input }) => {
       const userId = context.session.user.id;
+
+      const purchaseMode =
+        input.purchaseMode ?? (input.shopId ? "direct" : "open_order");
+      if (purchaseMode === "direct" && !input.shopId) {
+        throw new ORPCError("BAD_REQUEST", {
+          message: "A direct cart requires a retailer.",
+        });
+      }
+      if (purchaseMode === "open_order" && input.shopId) {
+        throw new ORPCError("BAD_REQUEST", {
+          message: "Open-order items cannot be tied to a retailer.",
+        });
+      }
 
       const productData = await db.query.product.findFirst({
         where: eq(product.id, input.productId),
       });
       if (!productData)
         throw new ORPCError("NOT_FOUND", { message: "Product not found" });
-      if (!productData.inStock)
+      if (purchaseMode === "open_order") {
+        const referenceVariant = input.variantId
+          ? await db.query.productVariant.findFirst({
+              where: and(
+                eq(productVariant.id, input.variantId),
+                eq(productVariant.productId, input.productId),
+              ),
+              with: {
+                catalogVariant: {
+                  columns: {
+                    brandId: true,
+                    configurationState: true,
+                    coreProductId: true,
+                    isActive: true,
+                  },
+                },
+              },
+            })
+          : null;
+        if (
+          !referenceVariant ||
+          !isOpenOrderReferenceSelectionEligible({
+            product: productData,
+            variant: referenceVariant,
+          })
+        ) {
+          throw new ORPCError("BAD_REQUEST", {
+            message:
+              "Choose an active public catalog variant for an open order.",
+          });
+        }
+      }
+      if (purchaseMode === "direct" && !productData.inStock)
         throw new ORPCError("BAD_REQUEST", {
           message: "Product is out of stock",
         });
@@ -3472,13 +3588,50 @@ const mutations = {
         }
       }
 
-      // Get or create cart
+      // Get or create an explicitly typed cart.
       let userCart = await db.query.cart.findFirst({
         where: eq(cart.userId, userId),
+        with: { items: { columns: { id: true } } },
       });
       if (!userCart) {
-        const [newCart] = await db.insert(cart).values({ userId }).returning();
-        userCart = newCart!;
+        const [newCart] = await db
+          .insert(cart)
+          .values({
+            userId,
+            mode: purchaseMode,
+            directShopId: purchaseMode === "direct" ? input.shopId! : null,
+          })
+          .returning();
+        userCart = { ...newCart!, items: [] };
+      } else {
+        try {
+          const transition = resolveCartTransition({
+            hasItems: userCart.items.length > 0,
+            currentMode: userCart.mode,
+            currentDirectShopId: userCart.directShopId,
+            requestedMode: purchaseMode,
+            requestedDirectShopId:
+              purchaseMode === "direct" ? input.shopId! : null,
+            replaceCart: input.replaceCart,
+          });
+          if (transition.replaceExistingItems) {
+            await db.delete(cartItem).where(eq(cartItem.cartId, userCart.id));
+          }
+          await db
+            .update(cart)
+            .set({
+              mode: purchaseMode,
+              directShopId: purchaseMode === "direct" ? input.shopId! : null,
+            })
+            .where(eq(cart.id, userCart.id));
+        } catch (error) {
+          throw new ORPCError("CONFLICT", {
+            message:
+              error instanceof Error
+                ? error.message
+                : "Replace the current cart first.",
+          });
+        }
       }
 
       // Check if same item + variant + shop combo exists
@@ -3493,6 +3646,8 @@ const mutations = {
       }
       if (input.shopId) {
         dupConditions.push(eq(cartItem.shopId, input.shopId));
+      } else {
+        dupConditions.push(isNull(cartItem.shopId));
       }
       const existing = await db.query.cartItem.findFirst({
         where: and(...dupConditions),
@@ -3517,7 +3672,14 @@ const mutations = {
         });
       }
 
-      return { success: true, message: "Item added to cart" };
+      return {
+        success: true,
+        message:
+          purchaseMode === "open_order"
+            ? "Added to open order"
+            : "Item added to cart",
+        mode: purchaseMode,
+      };
     }),
 
   /** Update cart item quantity */
@@ -3542,6 +3704,16 @@ const mutations = {
 
       if (input.quantity < 1) {
         await db.delete(cartItem).where(eq(cartItem.id, input.cartItemId));
+        const remaining = await db.query.cartItem.findFirst({
+          where: eq(cartItem.cartId, item.cartId),
+          columns: { id: true },
+        });
+        if (!remaining) {
+          await db
+            .update(cart)
+            .set({ mode: null, directShopId: null })
+            .where(eq(cart.id, item.cartId));
+        }
         return { success: true, message: "Item removed from cart" };
       }
 
@@ -3574,6 +3746,16 @@ const mutations = {
       }
 
       await db.delete(cartItem).where(eq(cartItem.id, input.cartItemId));
+      const remaining = await db.query.cartItem.findFirst({
+        where: eq(cartItem.cartId, item.cartId),
+        columns: { id: true },
+      });
+      if (!remaining) {
+        await db
+          .update(cart)
+          .set({ mode: null, directShopId: null })
+          .where(eq(cart.id, item.cartId));
+      }
       return { success: true, message: "Item removed from cart" };
     }),
 
@@ -3592,6 +3774,10 @@ const mutations = {
       });
       if (userCart) {
         await db.delete(cartItem).where(eq(cartItem.cartId, userCart.id));
+        await db
+          .update(cart)
+          .set({ mode: null, directShopId: null })
+          .where(eq(cart.id, userCart.id));
       }
       return { success: true, message: "Cart cleared" };
     }),
@@ -3649,6 +3835,14 @@ const mutations = {
 
       if (!userCart || userCart.items.length === 0) {
         throw new ORPCError("BAD_REQUEST", { message: "Your cart is empty" });
+      }
+      if (
+        context.session.user.role === "consumer" &&
+        userCart.mode !== "direct"
+      ) {
+        throw new ORPCError("CONFLICT", {
+          message: "Use Request offers to check out an open-order cart.",
+        });
       }
 
       // Validate stock & build order items
@@ -3882,6 +4076,10 @@ const mutations = {
 
         // Clear cart
         await tx.delete(cartItem).where(eq(cartItem.cartId, userCart.id));
+        await tx
+          .update(cart)
+          .set({ mode: null, directShopId: null })
+          .where(eq(cart.id, userCart.id));
 
         return newOrder!;
       });
@@ -3939,11 +4137,13 @@ const mutations = {
                   availableQty: sql`${inventory.availableQty}::numeric + ${item.inventoryQty ?? item.quantity}`,
                   updatedAt: new Date(),
                 })
-                .where(and(
-                  eq(inventory.ownerType, "shop"),
-                  eq(inventory.ownerId, orderData.shopId),
-                  eq(inventory.variantId, item.variantId),
-                ));
+                .where(
+                  and(
+                    eq(inventory.ownerType, "shop"),
+                    eq(inventory.ownerId, orderData.shopId),
+                    eq(inventory.variantId, item.variantId),
+                  ),
+                );
             } else {
               await tx
                 .update(productVariant)
@@ -3956,7 +4156,6 @@ const mutations = {
             // product-level stockQuantity removed — stock is tracked via inventory
           }
         }
-
       });
 
       return { success: true, message: "Order cancelled" };
@@ -4064,6 +4263,8 @@ const mutations = {
           city: input.city,
           area: input.area || null,
           postalCode: input.postalCode || null,
+          lat: input.lat || null,
+          lng: input.lng || null,
           isDefault: input.isDefault || !existing,
         })
         .returning();
@@ -4107,6 +4308,8 @@ const mutations = {
           city: data.city,
           area: data.area || null,
           postalCode: data.postalCode || null,
+          lat: data.lat || null,
+          lng: data.lng || null,
           isDefault: data.isDefault ?? existing.isDefault,
           updatedAt: new Date(),
         })
@@ -4553,467 +4756,619 @@ const mutations = {
 // ════════════════════════════════════════════════════════════════
 
 const openOrderEndpoints = {
-  /** Place an open order: auto-split + broadcast to sellers */
-  placeOpenOrder: protectedProcedure
+  /** Preflight exact stock, then create one atomic request and its retailer offers. */
+  placeOpenOrder: consumerProcedure
     .route({
       method: "POST",
       path: "/customer/open-orders",
       tags: ["Customer", "Open Order"],
-      summary: "Place an open order (auto-match shops)",
+      summary: "Place an atomic open order request",
     })
-    .input(
-      z.object({
-        shippingInfo: shippingInfoSchema,
-        paymentMethod: z
-          .enum(["cash_on_delivery", "bkash", "nagad", "bank_transfer", "card"])
-          .default("cash_on_delivery"),
-      }),
-    )
+    .input(z.object({ shippingInfo: shippingInfoSchema }))
     .handler(async ({ context, input }) => {
       const userId = context.session.user.id;
-
-      // Validate location is provided
-      if (!input.shippingInfo.lat || !input.shippingInfo.lng) {
+      const lat = Number(input.shippingInfo.lat);
+      const lng = Number(input.shippingInfo.lng);
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
         throw new ORPCError("BAD_REQUEST", {
-          message: "Location (lat/lng) is required for open orders",
+          message: "Pin a valid delivery location before requesting offers.",
         });
       }
 
-      const consumerLat = parseFloat(input.shippingInfo.lat);
-      const consumerLng = parseFloat(input.shippingInfo.lng);
-      if (isNaN(consumerLat) || isNaN(consumerLng)) {
-        throw new ORPCError("BAD_REQUEST", {
-          message: "Invalid location coordinates",
+      const activeRequest = await db.query.order.findFirst({
+        where: and(
+          eq(order.userId, userId),
+          eq(order.isOpenOrder, true),
+          inArray(order.status, ["matching_shop", "negotiating"]),
+        ),
+        columns: { id: true },
+      });
+      if (activeRequest) {
+        await reconcileOpenOrder(activeRequest.id);
+        const stillActive = await db.query.order.findFirst({
+          where: and(
+            eq(order.id, activeRequest.id),
+            inArray(order.status, ["matching_shop", "negotiating"]),
+          ),
+          columns: { id: true },
         });
+        if (stillActive) {
+          throw new ORPCError("CONFLICT", {
+            message:
+              "Finish or cancel your active open order before starting another.",
+          });
+        }
       }
 
-      // Get cart with product + variant + category data
       const userCart = await db.query.cart.findFirst({
         where: eq(cart.userId, userId),
         with: {
           items: {
-            with: { product: true, variant: true },
+            with: {
+              product: true,
+              variant: { with: { catalogVariant: true } },
+            },
           },
         },
       });
-
-      if (!userCart || userCart.items.length === 0) {
-        throw new ORPCError("BAD_REQUEST", { message: "Your cart is empty" });
+      if (!userCart?.items.length) {
+        throw new ORPCError("BAD_REQUEST", { message: "Your cart is empty." });
       }
-
-      // Build items with category info for splitting
-      const cartItemsForSplit: CartItemForSplit[] = [];
-      let subtotal = 0;
-
-      for (const item of userCart.items) {
-        if (!item.product) {
-          throw new ORPCError("BAD_REQUEST", {
-            message: "Product not found for cart item",
-          });
-        }
-
-        // Get category name
-        let categoryName: string | null = null;
-        let categoryId: number | null = null;
-        if (item.product.categoryId) {
-          const cat = await db.query.category.findFirst({
-            where: eq(category.id, item.product.categoryId),
-            columns: { id: true, name: true },
-          });
-          if (cat) {
-            categoryId = cat.id;
-            categoryName = cat.name;
-          }
-        }
-
-        const itemTotal = Number(item.price) * item.quantity;
-        subtotal += itemTotal;
-
-        cartItemsForSplit.push({
-          productId: item.productId,
-          variantId: item.variantId ?? null,
-          shopId: null, // Open order: no shop selected
-          productName: item.product.name,
-          productImage: item.product.image,
-          productSize: item.variant?.quantitySelectorLabel ?? item.product.size,
-          quantity: item.quantity,
-          unitPrice: item.price,
-          totalPrice: itemTotal.toFixed(2),
-          categoryId,
-          categoryName,
+      if (
+        userCart.mode !== "open_order" ||
+        userCart.directShopId ||
+        userCart.items.some((item) => item.shopId)
+      ) {
+        throw new ORPCError("CONFLICT", {
+          message:
+            "This cart is not an open-order cart. Replace it before requesting offers.",
         });
       }
 
-      // Split into sub-order groups by category
-      const subOrderGroups = splitCartIntoSubOrders(cartItemsForSplit);
-
-      // Compute area fields
-      const areaFields = await computeOrderAreaFields(consumerLat, consumerLng);
-
-      // Broadcast expiry
-      const broadcastExpiresAt = new Date(
-        Date.now() + DEFAULT_BROADCAST_MINUTES * 60 * 1000,
+      let referenceSubtotal = 0;
+      const requestedItems: CartItemForOpenOrder[] = userCart.items.map(
+        (item) => {
+          if (
+            !item.variant ||
+            !item.variant.catalogVariantId ||
+            !item.variant.catalogVariant ||
+            !isOpenOrderReferenceSelectionEligible({
+              product: item.product,
+              variant: item.variant,
+            })
+          ) {
+            throw new ORPCError("BAD_REQUEST", {
+              message: `${item.product.name} no longer has an orderable catalog variant.`,
+            });
+          }
+          const totalPrice = Number(item.price) * item.quantity;
+          referenceSubtotal += totalPrice;
+          return {
+            productId: item.productId,
+            variantId: item.variant.id,
+            catalogVariantId: item.variant.catalogVariantId,
+            globalSkuSnapshot: item.variant.catalogVariant.globalSku,
+            sourceSkuSnapshot: item.variant.sku,
+            productName: item.product.name,
+            productImage: item.product.image,
+            productSize:
+              item.variant.quantitySelectorLabel ?? item.product.size,
+            quantity: item.quantity,
+            unitPrice: item.price,
+            totalPrice: totalPrice.toFixed(2),
+          };
+        },
       );
 
-      // Transaction: create parent order + sub-orders + bids
-      const result = await db.transaction(async (tx) => {
-        // Create parent order
-        const [parentOrder] = await tx
-          .insert(order)
-          .values({
-            orderNumber: generateOrderNumber(),
-            userId,
-            orderType: "b2c",
-            isOpenOrder: true,
-            status: "matching_shop",
-            subtotal: subtotal.toFixed(2),
-            shippingCost: "0",
-            discount: "0",
-            total: subtotal.toFixed(2),
-            paymentStatus: "pending",
-            paymentMethod: input.paymentMethod,
-            shippingName: input.shippingInfo.name,
-            shippingPhone: input.shippingInfo.phone,
-            shippingEmail: input.shippingInfo.email,
-            shippingAddress: input.shippingInfo.address,
-            shippingCity: input.shippingInfo.city,
-            shippingArea: input.shippingInfo.area,
-            shippingPostalCode: input.shippingInfo.postalCode,
-            customerNote: input.shippingInfo.customerNote,
-            broadcastExpiresAt,
-            ...(areaFields.consumerAreaId && {
-              consumerAreaId: areaFields.consumerAreaId,
-            }),
-            ...(areaFields.matchedAreaId && {
-              matchedAreaId: areaFields.matchedAreaId,
-            }),
-            ...(areaFields.locationLat && {
-              locationLat: areaFields.locationLat,
-            }),
-            ...(areaFields.locationLng && {
-              locationLng: areaFields.locationLng,
-            }),
-          })
-          .returning();
-
-        const parentId = parentOrder!.id;
-
-        // Create sub-orders
-        const subOrders: Array<{
-          id: number;
-          label: string;
-          itemIds: number[];
-          items: CartItemForSplit[];
-        }> = [];
-
-        for (const group of subOrderGroups) {
-          let subOrderId: number;
-          let subOrderItemIds: number[];
-
-          if (subOrderGroups.length === 1) {
-            // Single group — use parent order directly (no split)
-            subOrderId = parentId;
-
-            // Insert order items on the parent
-            const insertedItems = await tx
-              .insert(orderItem)
-              .values(
-                group.items.map((it) => ({
-                  orderId: parentId,
-                  productId: it.productId,
-                  variantId: it.variantId,
-                  productName: it.productName,
-                  productImage: it.productImage,
-                  productSize: it.productSize,
-                  quantity: it.quantity,
-                  unitPrice: it.unitPrice,
-                  totalPrice: it.totalPrice,
-                })),
-              )
-              .returning();
-
-            subOrderItemIds = insertedItems.map((i) => i.id);
-
-            // Update parent with sub-order label
-            await tx
-              .update(order)
-              .set({ subOrderLabel: group.label })
-              .where(eq(order.id, parentId));
-          } else {
-            // Multiple groups — create child sub-orders
-            const groupSubtotal = group.items.reduce(
-              (sum, it) => sum + Number(it.totalPrice),
-              0,
-            );
-
-            const [subOrder] = await tx
-              .insert(order)
-              .values({
-                orderNumber: `${parentOrder!.orderNumber}-${subOrders.length + 1}`,
-                userId,
-                orderType: "b2c",
-                isOpenOrder: true,
-                parentOrderId: parentId,
-                subOrderLabel: group.label,
-                status: "matching_shop",
-                subtotal: groupSubtotal.toFixed(2),
-                shippingCost: "0",
-                discount: "0",
-                total: groupSubtotal.toFixed(2),
-                paymentStatus: "pending",
-                paymentMethod: input.paymentMethod,
-                shippingName: input.shippingInfo.name,
-                shippingPhone: input.shippingInfo.phone,
-                shippingAddress: input.shippingInfo.address,
-                shippingCity: input.shippingInfo.city,
-                shippingArea: input.shippingInfo.area,
-                broadcastExpiresAt,
-                ...(areaFields.consumerAreaId && {
-                  consumerAreaId: areaFields.consumerAreaId,
-                }),
-                ...(areaFields.locationLat && {
-                  locationLat: areaFields.locationLat,
-                }),
-                ...(areaFields.locationLng && {
-                  locationLng: areaFields.locationLng,
-                }),
-              })
-              .returning();
-
-            subOrderId = subOrder!.id;
-
-            const insertedItems = await tx
-              .insert(orderItem)
-              .values(
-                group.items.map((it) => ({
-                  orderId: subOrderId,
-                  productId: it.productId,
-                  variantId: it.variantId,
-                  productName: it.productName,
-                  productImage: it.productImage,
-                  productSize: it.productSize,
-                  quantity: it.quantity,
-                  unitPrice: it.unitPrice,
-                  totalPrice: it.totalPrice,
-                })),
-              )
-              .returning();
-
-            subOrderItemIds = insertedItems.map((i) => i.id);
-          }
-
-          subOrders.push({
-            id: subOrderId,
-            label: group.label,
-            itemIds: subOrderItemIds,
-            items: group.items,
-          });
-        }
-
-        // Clear cart
-        await tx.delete(cartItem).where(eq(cartItem.cartId, userCart.id));
-
-        return { parentOrder: parentOrder!, subOrders };
-      });
-
-      // Post-transaction: find eligible sellers and create bids
-      for (const sub of result.subOrders) {
-        const sellers = await findEligibleSellers(
-          consumerLat,
-          consumerLng,
-          sub.items,
-        );
-
-        if (sellers.length > 0) {
-          await createBidsForSubOrder(sub.id, sellers, sub.itemIds);
-
-          // Emit WebSocket broadcast to each eligible shop
-          try {
-            const { io } = await import("../../server/src/socket" as any).catch(
-              () => ({ io: null }),
-            );
-            // We'll emit from the API layer using a direct import pattern
-            // For now, bids are created — shops will discover via polling
-          } catch {
-            // Socket not available in this context — shops will poll
-          }
-        } else {
-          // No eligible sellers — cancel this sub-order immediately
-          await db
-            .update(order)
-            .set({ status: "cancelled" })
-            .where(eq(order.id, sub.id));
-        }
+      const areaFields = await computeOrderAreaFields(lat, lng);
+      const sellers = await findEligibleSellers(
+        lat,
+        lng,
+        requestedItems,
+        areaFields.consumerAreaId ?? undefined,
+      );
+      if (sellers.length === 0) {
+        throw new ORPCError("BAD_REQUEST", {
+          message:
+            "No nearby retailer currently has every requested variant in full. Your cart has been kept—adjust quantities or try again later.",
+        });
       }
 
+      const now = new Date();
+      const offerDeadline = new Date(
+        now.getTime() + OFFER_WINDOW_SECONDS * 1000,
+      );
+      const selectionDeadline = new Date(
+        offerDeadline.getTime() + SELECTION_WINDOW_SECONDS * 1000,
+      );
+      const result = await db
+        .transaction(async (tx) => {
+          const [request] = await tx
+            .insert(order)
+            .values({
+              orderNumber: generateOrderNumber(),
+              userId,
+              orderType: "b2c",
+              isOpenOrder: true,
+              status: "matching_shop",
+              subtotal: referenceSubtotal.toFixed(2),
+              shippingCost: "0",
+              discount: "0",
+              total: referenceSubtotal.toFixed(2),
+              paymentStatus: "pending",
+              paymentMethod: "cash_on_delivery",
+              shippingName: input.shippingInfo.name,
+              shippingPhone: input.shippingInfo.phone,
+              shippingEmail: input.shippingInfo.email,
+              shippingAddress: input.shippingInfo.address,
+              shippingCity: input.shippingInfo.city,
+              shippingArea: input.shippingInfo.area,
+              shippingPostalCode: input.shippingInfo.postalCode,
+              customerNote: input.shippingInfo.customerNote,
+              broadcastExpiresAt: offerDeadline,
+              selectionExpiresAt: selectionDeadline,
+              consumerAreaId: areaFields.consumerAreaId ?? null,
+              matchedAreaId: areaFields.matchedAreaId ?? null,
+              locationLat: String(lat),
+              locationLng: String(lng),
+            })
+            .returning();
+          if (!request) throw new Error("Open order could not be created.");
+
+          const insertedItems = await tx
+            .insert(orderItem)
+            .values(
+              requestedItems.map((item) => ({
+                orderId: request.id,
+                productId: item.productId,
+                variantId: item.variantId,
+                catalogVariantId: item.catalogVariantId,
+                globalSkuSnapshot: item.globalSkuSnapshot,
+                sourceSkuSnapshot: item.sourceSkuSnapshot,
+                productName: item.productName,
+                productImage: item.productImage,
+                productSize: item.productSize,
+                quantity: item.quantity,
+                unitPrice: item.unitPrice,
+                totalPrice: item.totalPrice,
+              })),
+            )
+            .returning();
+
+          await createOffersForOrder(
+            tx,
+            request.id,
+            sellers,
+            insertedItems.map((item) => ({
+              id: item.id,
+              catalogVariantId: item.catalogVariantId!,
+              quantity: item.quantity,
+              unitPrice: item.unitPrice,
+            })),
+          );
+          await tx.delete(cartItem).where(eq(cartItem.cartId, userCart.id));
+          await tx
+            .update(cart)
+            .set({ mode: null, directShopId: null })
+            .where(eq(cart.id, userCart.id));
+          return request;
+        })
+        .catch((error: unknown) => {
+          const databaseError = error as { code?: string; constraint?: string };
+          if (
+            databaseError.code === "23505" &&
+            databaseError.constraint ===
+              "order_one_active_open_request_per_user_idx"
+          ) {
+            throw new ORPCError("CONFLICT", {
+              message:
+                "Finish or cancel your active open order before starting another.",
+            });
+          }
+          throw error;
+        });
+
+      for (const seller of sellers) {
+        context.realtime.emitToShop(seller.shopId, "open-order:new-request", {
+          orderId: result.id,
+          offerDeadline: offerDeadline.toISOString(),
+        });
+      }
       return {
         success: true,
-        order: {
-          id: result.parentOrder.id,
-          orderNumber: result.parentOrder.orderNumber,
-        },
-        subOrders: result.subOrders.map((s) => ({
-          id: s.id,
-          label: s.label,
-          itemCount: s.items.length,
-        })),
-        broadcastExpiresAt: broadcastExpiresAt.toISOString(),
+        order: { id: result.id, orderNumber: result.orderNumber },
+        offerDeadline: offerDeadline.toISOString(),
+        selectionDeadline: selectionDeadline.toISOString(),
+        eligibleRetailerCount: sellers.length,
       };
     }),
 
-  /** Get open order status (consumer polls this) */
-  getOpenOrderStatus: protectedProcedure
+  /** List every Open Order separately from direct retailer orders. */
+  getOpenOrderHistory: consumerProcedure
+    .route({
+      method: "GET",
+      path: "/customer/open-orders",
+      tags: ["Customer", "Open Order"],
+      summary: "List the consumer's Open Order requests",
+    })
+    .handler(async ({ context }) => {
+      const userId = context.session.user.id;
+      const activeRequest = await db.query.order.findFirst({
+        where: and(
+          eq(order.userId, userId),
+          eq(order.isOpenOrder, true),
+          inArray(order.status, ["matching_shop", "negotiating"]),
+        ),
+        columns: { id: true },
+      });
+
+      if (activeRequest) {
+        const transition = await reconcileOpenOrder(activeRequest.id);
+        if (transition !== "unchanged") {
+          const event =
+            transition === "offer_window_closed"
+              ? "open-order:offer-window-closed"
+              : transition === "no_offers"
+                ? "open-order:no-offers"
+                : `open-order:${transition}`;
+          context.realtime.emitToOrder(activeRequest.id, event, {
+            orderId: activeRequest.id,
+          });
+        }
+      }
+
+      const requests = await db.query.order.findMany({
+        where: and(eq(order.userId, userId), eq(order.isOpenOrder, true)),
+        with: { items: true },
+        orderBy: [desc(order.createdAt)],
+      });
+      if (requests.length === 0) return { history: [] };
+
+      const requestIds = requests.map((request) => request.id);
+      const bids = await db
+        .select({
+          orderId: openOrderBid.subOrderId,
+          submittedAt: openOrderBid.submittedAt,
+          isWinner: openOrderBid.isWinner,
+        })
+        .from(openOrderBid)
+        .where(inArray(openOrderBid.subOrderId, requestIds));
+      const offerCountByOrder = new Map<number, number>();
+      for (const bid of bids) {
+        if (!bid.submittedAt && !bid.isWinner) continue;
+        offerCountByOrder.set(
+          bid.orderId,
+          (offerCountByOrder.get(bid.orderId) ?? 0) + 1,
+        );
+      }
+
+      const selectedShopIds = [
+        ...new Set(
+          requests
+            .map((request) => request.shopId)
+            .filter((shopId): shopId is string => !!shopId),
+        ),
+      ];
+      const selectedShops =
+        selectedShopIds.length > 0
+          ? await db.query.user.findMany({
+              where: inArray(user.id, selectedShopIds),
+              columns: { id: true, shopName: true },
+            })
+          : [];
+      const shopNameById = new Map(
+        selectedShops.map((shop) => [
+          shop.id,
+          shop.shopName ?? "Selected retailer",
+        ]),
+      );
+
+      const now = new Date();
+      return {
+        history: requests.map((request) => {
+          let requestStage:
+            | "collecting_offers"
+            | "selecting_offer"
+            | "confirmed"
+            | "cancelled"
+            | "no_offers"
+            | "expired";
+          if (
+            !["matching_shop", "negotiating", "cancelled"].includes(
+              request.status,
+            )
+          ) {
+            requestStage = "confirmed";
+          } else if (request.status === "cancelled") {
+            if (request.openOrderOutcome === "no_offers") {
+              requestStage = "no_offers";
+            } else if (request.openOrderOutcome === "selection_expired") {
+              requestStage = "expired";
+            } else {
+              requestStage = "cancelled";
+            }
+          } else if (
+            request.broadcastExpiresAt &&
+            now < request.broadcastExpiresAt
+          ) {
+            requestStage = "collecting_offers";
+          } else {
+            requestStage = "selecting_offer";
+          }
+
+          return {
+            orderId: request.id,
+            orderNumber: request.orderNumber,
+            requestStage,
+            fulfillmentStatus: request.status,
+            offerCount: offerCountByOrder.get(request.id) ?? 0,
+            referenceSubtotal: Number(
+              request.previousTotal ?? request.subtotal,
+            ),
+            finalTotal: request.shopId
+              ? Number(request.confirmedTotal ?? request.total)
+              : null,
+            selectedRetailer: request.shopId
+              ? (shopNameById.get(request.shopId) ?? "Selected retailer")
+              : null,
+            offerDeadline: request.broadcastExpiresAt?.toISOString() ?? null,
+            selectionDeadline:
+              request.selectionExpiresAt?.toISOString() ?? null,
+            createdAt: request.createdAt.toISOString(),
+            updatedAt: request.updatedAt.toISOString(),
+            items: request.items.map((item) => ({
+              id: item.id,
+              productName: item.productName,
+              productImage: item.productImage,
+              productSize: item.productSize,
+              quantity: item.quantity,
+            })),
+          };
+        }),
+      };
+    }),
+
+  /** Polling-safe status; comparable offers stay hidden until prices freeze. */
+  getOpenOrderStatus: consumerProcedure
     .route({
       method: "GET",
       path: "/customer/open-orders/{orderId}/status",
       tags: ["Customer", "Open Order"],
-      summary: "Get open order status with bids",
+      summary: "Get an open order request and frozen comparable offers",
     })
     .input(z.object({ orderId: z.number() }))
     .handler(async ({ context, input }) => {
       const userId = context.session.user.id;
-
-      // Get the parent order
-      const parentOrder = await db.query.order.findFirst({
+      const owned = await db.query.order.findFirst({
         where: and(
           eq(order.id, input.orderId),
           eq(order.userId, userId),
           eq(order.isOpenOrder, true),
         ),
-        with: { items: true },
+        columns: { id: true },
       });
+      if (!owned)
+        throw new ORPCError("NOT_FOUND", { message: "Open order not found." });
 
-      if (!parentOrder) {
-        throw new ORPCError("NOT_FOUND", { message: "Open order not found" });
+      const transition = await reconcileOpenOrder(input.orderId);
+      if (transition !== "unchanged") {
+        const event =
+          transition === "offer_window_closed"
+            ? "open-order:offer-window-closed"
+            : transition === "no_offers"
+              ? "open-order:no-offers"
+              : `open-order:${transition}`;
+        context.realtime.emitToOrder(input.orderId, event, {
+          orderId: input.orderId,
+        });
       }
-
-      // Get sub-orders (or use parent if no children)
-      let subOrders: (typeof parentOrder)[];
-      const children = await db.query.order.findMany({
-        where: and(
-          eq(order.parentOrderId, parentOrder.id),
-          eq(order.isOpenOrder, true),
-        ),
+      const request = await db.query.order.findFirst({
+        where: eq(order.id, input.orderId),
         with: { items: true },
       });
+      if (!request)
+        throw new ORPCError("NOT_FOUND", { message: "Open order not found." });
 
-      subOrders = children.length > 0 ? children : [parentOrder];
+      const rawOffers = await db
+        .select({
+          id: openOrderBid.id,
+          shopId: openOrderBid.shopId,
+          shopName: user.shopName,
+          status: openOrderBid.status,
+          distanceKm: openOrderBid.distanceKm,
+          itemSubtotal: openOrderBid.itemSubtotal,
+          discountType: openOrderBid.discountType,
+          discountValue: openOrderBid.discountValue,
+          discountAmount: openOrderBid.discountAmount,
+          deliveryCharge: openOrderBid.deliveryCharge,
+          finalTotal: openOrderBid.totalBid,
+          priceFrozenAt: openOrderBid.priceFrozenAt,
+          isWinner: openOrderBid.isWinner,
+        })
+        .from(openOrderBid)
+        .leftJoin(user, eq(user.id, openOrderBid.shopId))
+        .where(eq(openOrderBid.subOrderId, request.id));
+      const submitted = rawOffers.filter(
+        (offer) =>
+          offer.status === "submitted" ||
+          offer.isWinner ||
+          (request.status === "confirmed" && offer.status === "lost") ||
+          (offer.status === "expired" && !!offer.priceFrozenAt),
+      );
+      const canReveal =
+        request.status === "confirmed" ||
+        (!!request.broadcastExpiresAt &&
+          new Date() >= request.broadcastExpiresAt);
 
-      // For each sub-order, get bids and check timeouts
-      const subOrderData = await Promise.all(
-        subOrders.map(async (sub) => {
-          // Lazy timeout check
-          await checkAndExpireBids(sub.id);
-          const expiryResult = await checkBroadcastExpiry(sub.id);
-
-          // Refresh sub-order status after potential changes
-          const freshSub = await db.query.order.findFirst({
-            where: eq(order.id, sub.id),
-            with: { items: true },
-          });
-
-          // Get all bids for this sub-order
-          const bids = await db
-            .select({
-              id: openOrderBid.id,
-              shopId: openOrderBid.shopId,
-              status: openOrderBid.status,
-              rank: openOrderBid.rank,
-              distanceKm: openOrderBid.distanceKm,
-              totalBid: openOrderBid.totalBid,
-              deliveryCharge: openOrderBid.deliveryCharge,
-              isWinner: openOrderBid.isWinner,
-              lockedAt: openOrderBid.lockedAt,
-              submittedAt: openOrderBid.submittedAt,
-              expiresAt: openOrderBid.expiresAt,
-              shopName: user.shopName,
-            })
-            .from(openOrderBid)
-            .leftJoin(user, eq(user.id, openOrderBid.shopId))
-            .where(eq(openOrderBid.subOrderId, sub.id))
-            .orderBy(
-              sql`CAST(${openOrderBid.totalBid} AS numeric) ASC NULLS LAST`,
-            );
-
-          // Get bid items for submitted bids
-          const submittedBidIds = bids
-            .filter((b) => b.status === "submitted" || b.isWinner)
-            .map((b) => b.id);
-
-          let bidItems: any[] = [];
-          if (submittedBidIds.length > 0) {
-            bidItems = await db
-              .select()
+      const bidItems =
+        canReveal && submitted.length > 0
+          ? await db
+              .select({
+                bidId: openOrderBidItem.bidId,
+                orderItemId: openOrderBidItem.orderItemId,
+                platformPrice: openOrderBidItem.platformPrice,
+                sellerPrice: openOrderBidItem.sellerPrice,
+              })
               .from(openOrderBidItem)
-              .where(inArray(openOrderBidItem.bidId, submittedBidIds));
-          }
-
-          return {
-            subOrderId: sub.id,
-            label: freshSub?.subOrderLabel ?? sub.subOrderLabel,
-            status: freshSub?.status ?? sub.status,
-            items: (freshSub ?? sub).items.map((i) => ({
-              id: i.id,
-              productName: i.productName,
-              productImage: i.productImage,
-              productSize: i.productSize,
-              quantity: i.quantity,
-              unitPrice: i.unitPrice,
-              totalPrice: i.totalPrice,
-            })),
-            bids: bids.map((b) => ({
-              bidId: b.id,
-              shopName: b.shopName ?? "Shop",
-              status: b.status,
-              distanceKm: b.distanceKm,
-              totalBid: b.totalBid,
-              deliveryCharge: b.deliveryCharge,
-              isWinner: b.isWinner,
-              expiresAt: b.expiresAt?.toISOString() ?? null,
+              .where(
+                inArray(
+                  openOrderBidItem.bidId,
+                  submitted.map((offer) => offer.id),
+                ),
+              )
+          : [];
+      const offers = canReveal
+        ? sortComparableOffers(
+            submitted.map((offer) => ({
+              offerId: offer.id,
+              shopName: offer.shopName ?? "Retailer",
+              distanceKm: Number(offer.distanceKm ?? 0),
+              itemSubtotal: Number(offer.itemSubtotal ?? 0),
+              discountType: offer.discountType,
+              discountValue: Number(offer.discountValue ?? 0),
+              discountAmount: Number(offer.discountAmount ?? 0),
+              deliveryCharge: Number(offer.deliveryCharge ?? 0),
+              finalTotal: Number(offer.finalTotal ?? 0),
+              priceFrozenAt: offer.priceFrozenAt?.toISOString() ?? null,
+              isWinner: offer.isWinner,
               items: bidItems
-                .filter((bi) => bi.bidId === b.id)
-                .map((bi) => ({
-                  orderItemId: bi.orderItemId,
-                  platformPrice: bi.platformPrice,
-                  sellerPrice: bi.sellerPrice,
+                .filter((item) => item.bidId === offer.id)
+                .map((item) => ({
+                  orderItemId: item.orderItemId,
+                  referencePrice: Number(item.platformPrice),
+                  retailerPrice: Number(item.sellerPrice),
                 })),
             })),
-            offersReceived: bids.filter((b) => b.status === "submitted").length,
-            winnerShopName: bids.find((b) => b.isWinner)?.shopName ?? null,
-          };
-        }),
+          ).map((offer, index) => ({ ...offer, isLowestTotal: index === 0 }))
+        : [];
+      const referencePriceByOrderItem = new Map(
+        bidItems.map((item) => [item.orderItemId, Number(item.platformPrice)]),
       );
 
-      // Determine overall progress stage
-      const allStatuses = subOrderData.map((s) => s.status);
+      const now = new Date();
       let stage:
-        | "splitting"
-        | "broadcasting"
-        | "negotiating"
-        | "finalizing"
+        | "collecting_offers"
+        | "selecting_offer"
         | "confirmed"
-        | "cancelled";
-
-      if (allStatuses.every((s) => s === "confirmed")) {
-        stage = "confirmed";
-      } else if (allStatuses.every((s) => s === "cancelled")) {
-        stage = "cancelled";
-      } else if (allStatuses.some((s) => s === "confirmed")) {
-        stage = "finalizing";
-      } else if (subOrderData.some((s) => s.offersReceived > 0)) {
-        stage = "negotiating";
-      } else {
-        stage = "broadcasting";
-      }
+        | "cancelled"
+        | "no_offers"
+        | "expired";
+      if (request.status === "confirmed") stage = "confirmed";
+      else if (request.status === "cancelled") {
+        if (request.openOrderOutcome === "no_offers") stage = "no_offers";
+        else if (request.openOrderOutcome === "selection_expired") {
+          stage = "expired";
+        } else stage = "cancelled";
+      } else if (
+        request.broadcastExpiresAt &&
+        now < request.broadcastExpiresAt
+      ) {
+        stage = "collecting_offers";
+      } else stage = "selecting_offer";
 
       return {
-        orderId: parentOrder.id,
-        orderNumber: parentOrder.orderNumber,
+        orderId: request.id,
+        orderNumber: request.orderNumber,
         stage,
-        broadcastExpiresAt:
-          parentOrder.broadcastExpiresAt?.toISOString() ?? null,
-        subOrders: subOrderData,
+        offerDeadline: request.broadcastExpiresAt?.toISOString() ?? null,
+        selectionDeadline: request.selectionExpiresAt?.toISOString() ?? null,
+        offerCount: submitted.length,
+        offers,
+        items: request.items.map((item) => ({
+          id: item.id,
+          productName: item.productName,
+          productImage: item.productImage,
+          productSize: item.productSize,
+          quantity: item.quantity,
+          referenceUnitPrice:
+            referencePriceByOrderItem.get(item.id) ?? Number(item.unitPrice),
+          referenceTotal:
+            (referencePriceByOrderItem.get(item.id) ?? Number(item.unitPrice)) *
+            item.quantity,
+        })),
+        referenceSubtotal: Number(request.previousTotal ?? request.subtotal),
+        finalRetailer:
+          request.status === "confirmed"
+            ? (offers.find((offer) => offer.isWinner)?.shopName ?? null)
+            : null,
       };
+    }),
+
+  acceptOpenOrderOffer: consumerProcedure
+    .route({
+      method: "POST",
+      path: "/customer/open-orders/{orderId}/accept",
+      tags: ["Customer", "Open Order"],
+      summary: "Accept one frozen retailer offer",
+    })
+    .input(z.object({ orderId: z.number(), offerId: z.number() }))
+    .handler(async ({ context, input }) => {
+      try {
+        const accepted = await acceptOpenOrderOffer({
+          userId: context.session.user.id,
+          orderId: input.orderId,
+          bidId: input.offerId,
+        });
+        context.realtime.emitToOrder(input.orderId, "open-order:accepted", {
+          orderId: input.orderId,
+          shopId: accepted.winningOffer.shopId,
+        });
+        context.realtime.emitToShop(
+          accepted.winningOffer.shopId,
+          "open-order:accepted",
+          { orderId: input.orderId },
+        );
+        for (const shopId of accepted.losingShopIds) {
+          context.realtime.emitToShop(shopId, "open-order:not-selected", {
+            orderId: input.orderId,
+          });
+        }
+        return { success: true, orderId: input.orderId };
+      } catch (error) {
+        throw new ORPCError("CONFLICT", {
+          message:
+            error instanceof Error
+              ? error.message
+              : "Offer could not be accepted.",
+        });
+      }
+    }),
+
+  cancelOpenOrder: consumerProcedure
+    .route({
+      method: "POST",
+      path: "/customer/open-orders/{orderId}/cancel",
+      tags: ["Customer", "Open Order"],
+      summary: "Cancel an active open order request",
+    })
+    .input(z.object({ orderId: z.number() }))
+    .handler(async ({ context, input }) => {
+      try {
+        const cancelled = await cancelOpenOrder(
+          context.session.user.id,
+          input.orderId,
+        );
+        context.realtime.emitToOrder(input.orderId, "open-order:cancelled", {
+          orderId: input.orderId,
+        });
+        const shops = await db
+          .select({ shopId: openOrderBid.shopId })
+          .from(openOrderBid)
+          .where(eq(openOrderBid.subOrderId, input.orderId));
+        for (const shop of shops) {
+          context.realtime.emitToShop(shop.shopId, "open-order:cancelled", {
+            orderId: input.orderId,
+          });
+        }
+        return { success: true, orderNumber: cancelled.orderNumber };
+      } catch (error) {
+        throw new ORPCError("CONFLICT", {
+          message:
+            error instanceof Error
+              ? error.message
+              : "Open order could not be cancelled.",
+        });
+      }
     }),
 };
 

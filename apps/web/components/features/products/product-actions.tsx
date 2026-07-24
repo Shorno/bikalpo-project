@@ -24,6 +24,7 @@ interface ProductActionsProps {
   categoryName?: string;
   brandName?: string;
   shopId?: string;
+  purchaseMode?: "open_order" | "direct";
 }
 
 export function ProductActions({
@@ -36,11 +37,15 @@ export function ProductActions({
   categoryName,
   brandName,
   shopId,
+  purchaseMode = shopId ? "direct" : "open_order",
 }: ProductActionsProps) {
   const effectiveMin = Math.max(1, orderMin);
-  const effectiveMax = orderMax
-    ? Math.min(orderMax, product.stockQuantity)
-    : product.stockQuantity;
+  const effectiveMax =
+    purchaseMode === "open_order"
+      ? (orderMax ?? 999)
+      : orderMax
+        ? Math.min(orderMax, product.stockQuantity)
+        : product.stockQuantity;
   const step = Math.max(1, orderIncrement);
 
   const [quantity, setQuantity] = useState(effectiveMin);
@@ -65,13 +70,15 @@ export function ProductActions({
   const handleAddToCart = async () => {
     setIsAdding(true);
     try {
-      await addItem(product.id, quantity, variantId, shopId);
+      await addItem(product.id, quantity, variantId, shopId, purchaseMode);
     } finally {
       setIsAdding(false);
     }
   };
 
-  const isOutOfStock = !product.inStock || product.stockQuantity === 0;
+  const isOutOfStock =
+    purchaseMode === "direct" &&
+    (!product.inStock || product.stockQuantity === 0);
   const isEmerald = variant === "emerald";
 
   return (
@@ -96,7 +103,7 @@ export function ProductActions({
               size="icon"
               className="h-10 w-10 rounded-l-none"
               onClick={handleIncrement}
-              disabled={quantity >= product.stockQuantity || isAdding}
+              disabled={quantity >= effectiveMax || isAdding}
             >
               <Plus className="h-4 w-4" />
             </Button>
@@ -131,14 +138,20 @@ export function ProductActions({
           <Button
             className={`flex-1 h-12 text-base ${isEmerald ? "bg-emerald-600 hover:bg-emerald-700" : ""}`}
             onClick={handleAddToCart}
-            disabled={isAdding}
+            disabled={isAdding || (purchaseMode === "direct" && !shopId)}
           >
             {isAdding ? (
               <Loader2 className="mr-2 h-5 w-5 animate-spin" />
             ) : (
               <ShoppingCart className="mr-2 h-5 w-5" />
             )}
-            {isAdding ? "Adding..." : "Add to Cart"}
+            {purchaseMode === "direct" && !shopId
+              ? "Choose a retailer"
+              : isAdding
+                ? "Adding..."
+                : purchaseMode === "open_order"
+                  ? "Add to open order"
+                  : "Add to cart"}
           </Button>
         )}
       </div>
@@ -147,7 +160,11 @@ export function ProductActions({
       {!isOutOfStock && isEmerald && (
         <div className="bg-gray-50 rounded-lg p-4">
           <div className="flex justify-between items-center">
-            <span className="text-gray-600">Total Price:</span>
+            <span className="text-gray-600">
+              {purchaseMode === "open_order"
+                ? "Reference subtotal:"
+                : "Total price:"}
+            </span>
             <span className="text-2xl font-bold text-gray-900">
               ৳{(product.price * quantity).toLocaleString("en-BD")}
             </span>

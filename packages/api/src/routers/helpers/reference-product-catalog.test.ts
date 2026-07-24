@@ -3,8 +3,171 @@ import test from "node:test";
 import {
   getReferenceProductEffectivePrice,
   getReferenceSellerKey,
+  isOpenOrderReferenceSelectionEligible,
   sortReferenceProducts,
 } from "./reference-product-catalog";
+
+test("canonical Open Order eligibility ignores the legacy channel type", () => {
+  const product = {
+    brandId: 16,
+    coreProductId: 1,
+    creatorSource: "admin",
+    id: 2,
+    scheduledAt: null,
+    status: "active",
+    visibility: "public",
+  } as const;
+  const canonicalVariant = {
+    catalogVariant: {
+      brandId: 16,
+      configurationState: "configured",
+      coreProductId: 1,
+      isActive: true,
+    },
+    catalogVariantId: 5,
+    isActive: true,
+    productId: 2,
+    visibilityRole: "all",
+  } as const;
+
+  assert.equal(
+    isOpenOrderReferenceSelectionEligible({
+      product,
+      variant: { ...canonicalVariant, variantType: null },
+    }),
+    true,
+  );
+  assert.equal(
+    isOpenOrderReferenceSelectionEligible({
+      product,
+      variant: { ...canonicalVariant, variantType: "trade" },
+    }),
+    true,
+  );
+});
+
+test("canonical Open Order eligibility rejects a mismatched owner variant", () => {
+  assert.equal(
+    isOpenOrderReferenceSelectionEligible({
+      product: {
+        brandId: 16,
+        coreProductId: 1,
+        creatorSource: "admin",
+        id: 2,
+        scheduledAt: null,
+        status: "active",
+        visibility: "public",
+      },
+      variant: {
+        catalogVariant: {
+          brandId: 16,
+          configurationState: "configured",
+          coreProductId: 1,
+          isActive: true,
+        },
+        catalogVariantId: 5,
+        isActive: true,
+        productId: 9,
+        visibilityRole: "all",
+      },
+    }),
+    false,
+  );
+});
+
+test("canonical Open Order eligibility rejects unpublished or broken references", () => {
+  const now = new Date("2026-07-22T12:00:00.000Z");
+  const product = {
+    brandId: 16,
+    coreProductId: 1,
+    creatorSource: "admin",
+    id: 2,
+    scheduledAt: null,
+    status: "active",
+    visibility: "public",
+  } as const;
+  const variant = {
+    catalogVariant: {
+      brandId: 16,
+      configurationState: "configured",
+      coreProductId: 1,
+      isActive: true,
+    },
+    catalogVariantId: 5,
+    isActive: true,
+    productId: 2,
+    visibilityRole: "consumer",
+  } as const;
+
+  const candidates = [
+    { product: { ...product, status: "inactive" }, variant },
+    { product: { ...product, visibility: "private" }, variant },
+    {
+      product: { ...product, scheduledAt: "2026-07-23T12:00:00.000Z" },
+      variant,
+    },
+    { product, variant: { ...variant, catalogVariantId: null } },
+    { product, variant: { ...variant, isActive: false } },
+    {
+      product,
+      variant: {
+        ...variant,
+        catalogVariant: { ...variant.catalogVariant, isActive: false },
+      },
+    },
+    {
+      product,
+      variant: {
+        ...variant,
+        catalogVariant: {
+          ...variant.catalogVariant,
+          configurationState: "draft",
+        },
+      },
+    },
+    {
+      product,
+      variant: {
+        ...variant,
+        catalogVariant: { ...variant.catalogVariant, brandId: 99 },
+      },
+    },
+  ];
+
+  for (const candidate of candidates) {
+    assert.equal(
+      isOpenOrderReferenceSelectionEligible({ ...candidate, now }),
+      false,
+    );
+  }
+});
+
+test("reference pricing follows canonical variants instead of legacy channel type", () => {
+  assert.equal(
+    getReferenceProductEffectivePrice({
+      price: "1900.00",
+      variantPrices: [
+        { id: 1, consumerPrice: "1500.00", isActive: true },
+        { id: 2, consumerPrice: "900.00", isActive: true },
+      ],
+      variants: [
+        {
+          catalogVariant: {
+            configurationState: "configured",
+            isActive: true,
+          },
+          catalogVariantId: 5,
+          isActive: true,
+          price: "1450.00",
+          sourceVariantPriceId: 1,
+          variantType: "trade",
+          visibilityRole: "all",
+        },
+      ],
+    }),
+    1500,
+  );
+});
 
 test("uses the lowest active linked consumer reference price", () => {
   const price = getReferenceProductEffectivePrice({
@@ -16,6 +179,11 @@ test("uses the lowest active linked consumer reference price", () => {
     ],
     variants: [
       {
+        catalogVariant: {
+          configurationState: "configured",
+          isActive: true,
+        },
+        catalogVariantId: 1,
         isActive: true,
         price: "1450.00",
         sourceVariantPriceId: 1,
@@ -23,6 +191,11 @@ test("uses the lowest active linked consumer reference price", () => {
         visibilityRole: "consumer",
       },
       {
+        catalogVariant: {
+          configurationState: "configured",
+          isActive: true,
+        },
+        catalogVariantId: 2,
         isActive: true,
         price: "1350.00",
         sourceVariantPriceId: 2,
@@ -35,12 +208,17 @@ test("uses the lowest active linked consumer reference price", () => {
   assert.equal(price, 1400);
 });
 
-test("falls back to a retail variant, then the product base price", () => {
+test("falls back to a canonical variant, then the product base price", () => {
   assert.equal(
     getReferenceProductEffectivePrice({
       price: "1900.00",
       variants: [
         {
+          catalogVariant: {
+            configurationState: "configured",
+            isActive: true,
+          },
+          catalogVariantId: 1,
           isActive: true,
           price: "1700.00",
           variantType: "retail",

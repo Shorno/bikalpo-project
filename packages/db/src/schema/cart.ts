@@ -3,6 +3,7 @@ import {
     decimal,
     index,
     integer,
+    pgEnum,
     pgTable,
     serial,
     text,
@@ -12,6 +13,8 @@ import { user } from "./auth-schema";
 import { product } from "./product";
 import { productVariant } from "./product-variant";
 
+export const cartModeEnum = pgEnum("cart_mode", ["open_order", "direct"]);
+
 export const cart = pgTable(
     "cart",
     {
@@ -19,13 +22,21 @@ export const cart = pgTable(
         userId: text("user_id")
             .notNull()
             .references(() => user.id, { onDelete: "cascade" }),
+        mode: cartModeEnum("mode"),
+        directShopId: text("direct_shop_id").references(() => user.id, {
+            onDelete: "cascade",
+        }),
         createdAt: timestamp("created_at").defaultNow().notNull(),
         updatedAt: timestamp("updated_at")
             .defaultNow()
             .$onUpdate(() => new Date())
             .notNull(),
     },
-    (table) => [index("cart_userId_idx").on(table.userId)],
+    (table) => [
+        index("cart_userId_idx").on(table.userId),
+        index("cart_mode_idx").on(table.mode),
+        index("cart_directShopId_idx").on(table.directShopId),
+    ],
 );
 
 export const cartItem = pgTable(
@@ -65,6 +76,11 @@ export const cartRelations = relations(cart, ({ one, many }) => ({
     user: one(user, {
         fields: [cart.userId],
         references: [user.id],
+    }),
+    directShop: one(user, {
+        fields: [cart.directShopId],
+        references: [user.id],
+        relationName: "cartDirectShop",
     }),
     items: many(cartItem),
 }));

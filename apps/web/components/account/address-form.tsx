@@ -3,6 +3,7 @@
 import type { Address } from "@bikalpo-project/db/schema";
 import { useForm } from "@tanstack/react-form";
 import { Loader2, X } from "lucide-react";
+import dynamic from "next/dynamic";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Field, FieldLabel } from "@/components/ui/field";
@@ -15,6 +16,13 @@ interface AddressFormProps {
 }
 
 const labelOptions = ["Home", "Office", "Other"];
+const AddressPicker = dynamic(
+  () =>
+    import("@/components/shared/address-picker").then(
+      (module) => module.AddressPicker,
+    ),
+  { ssr: false },
+);
 
 export function AddressForm({ address, onClose }: AddressFormProps) {
   const isEditing = !!address;
@@ -30,6 +38,8 @@ export function AddressForm({ address, onClose }: AddressFormProps) {
       city: address?.city || "",
       area: address?.area || "",
       postalCode: address?.postalCode || "",
+      lat: address?.lat || "",
+      lng: address?.lng || "",
       isDefault: address?.isDefault || false,
     },
     onSubmit: async ({ value }) => {
@@ -41,6 +51,8 @@ export function AddressForm({ address, onClose }: AddressFormProps) {
         city: value.city,
         area: value.area || undefined,
         postalCode: value.postalCode || undefined,
+        lat: value.lat || undefined,
+        lng: value.lng || undefined,
         isDefault: value.isDefault,
       };
 
@@ -188,6 +200,29 @@ export function AddressForm({ address, onClose }: AddressFormProps) {
             </Field>
           )}
         </form.Field>
+
+        <div className="space-y-2">
+          <FieldLabel>Saved map pin</FieldLabel>
+          <form.Subscribe
+            selector={(state) => [state.values.lat, state.values.lng] as const}
+          >
+            {([lat, lng]) => (
+              <AddressPicker
+                lat={lat}
+                lng={lng}
+                height="180px"
+                onLocationChange={(nextLat, nextLng) => {
+                  form.setFieldValue("lat", nextLat);
+                  form.setFieldValue("lng", nextLng);
+                }}
+              />
+            )}
+          </form.Subscribe>
+          <p className="text-xs text-gray-500">
+            Saving a pin lets this address qualify nearby retailers during
+            open-order checkout.
+          </p>
+        </div>
 
         {/* Set as Default */}
         <form.Field name="isDefault">

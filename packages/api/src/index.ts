@@ -12,6 +12,7 @@ const requireAuth = o.middleware(async ({ context, next }) => {
   }
   return next({
     context: {
+      ...context,
       session: context.session,
     },
   });
@@ -28,6 +29,7 @@ const requireConsumer = o.middleware(async ({ context, next }) => {
   }
   return next({
     context: {
+      ...context,
       session: context.session,
     },
   });
@@ -45,6 +47,7 @@ const requireAdmin = o.middleware(async ({ context, next }) => {
   }
   return next({
     context: {
+      ...context,
       session: context.session,
     },
   });
@@ -62,6 +65,7 @@ const requireSalesman = o.middleware(async ({ context, next }) => {
   }
   return next({
     context: {
+      ...context,
       session: context.session,
     },
   });
@@ -81,6 +85,7 @@ const requireDeliveryman = o.middleware(async ({ context, next }) => {
   }
   return next({
     context: {
+      ...context,
       session: context.session,
     },
   });
@@ -98,6 +103,7 @@ const requireShopOwner = o.middleware(async ({ context, next }) => {
   }
   return next({
     context: {
+      ...context,
       session: context.session,
     },
   });
@@ -115,6 +121,7 @@ const requireWarehouse = o.middleware(async ({ context, next }) => {
   }
   return next({
     context: {
+      ...context,
       session: context.session,
     },
   });
@@ -127,14 +134,22 @@ const requireWarehouseOrAdmin = o.middleware(async ({ context, next }) => {
   if (!context.session?.user) {
     throw new ORPCError("UNAUTHORIZED");
   }
-  if (context.session.user.role !== "warehouse" && context.session.user.role !== "admin") {
-    throw new ORPCError("FORBIDDEN", { message: "Warehouse or admin access required" });
+  if (
+    context.session.user.role !== "warehouse" &&
+    context.session.user.role !== "admin"
+  ) {
+    throw new ORPCError("FORBIDDEN", {
+      message: "Warehouse or admin access required",
+    });
   }
   return next({
     context: {
+      ...context,
       session: context.session,
     },
   });
 });
 
-export const warehouseOrAdminProcedure = publicProcedure.use(requireWarehouseOrAdmin);
+export const warehouseOrAdminProcedure = publicProcedure.use(
+  requireWarehouseOrAdmin,
+);

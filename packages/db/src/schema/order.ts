@@ -1,4 +1,4 @@
-import { relations } from "drizzle-orm";
+import { relations, sql } from "drizzle-orm";
 import {
     boolean,
     decimal,
@@ -9,12 +9,13 @@ import {
     serial,
     text,
     timestamp,
+    uniqueIndex,
     varchar,
 } from "drizzle-orm/pg-core";
 import { user } from "./auth-schema";
+import { catalogVariant } from "./catalog-variant";
 import { product } from "./product";
 import { productVariant } from "./product-variant";
-import { catalogVariant } from "./catalog-variant";
 
 // Order status enum
 export const orderStatusEnum = pgEnum("order_status", [
@@ -51,6 +52,12 @@ export const orderSourceEnum = pgEnum("order_source", [
     "pre_order",
 ]);
 
+export const openOrderOutcomeEnum = pgEnum("open_order_outcome", [
+    "consumer_cancelled",
+    "no_offers",
+    "selection_expired",
+]);
+
 // Payment method enum
 export const paymentMethodEnum = pgEnum("payment_method", [
     "cash_on_delivery",
@@ -71,15 +78,15 @@ export const order = pgTable(
 
         // Order type: b2b (shop→admin wholesale) or b2c (consumer→shop retail)
         orderType: b2bOrderTypeEnum("order_type").default("b2c").notNull(),
-        orderSource: orderSourceEnum("order_source")
-            .default("direct")
-            .notNull(),
+        orderSource: orderSourceEnum("order_source").default("direct").notNull(),
 
         // For B2C orders: which shop this order is placed with (null = B2B/admin)
         shopId: text("shop_id").references(() => user.id, { onDelete: "set null" }),
 
         // For warehouse orders: which warehouse this order is placed with
-        warehouseId: text("warehouse_id").references(() => user.id, { onDelete: "set null" }),
+        warehouseId: text("warehouse_id").references(() => user.id, {
+            onDelete: "set null",
+        }),
 
         // === Open Order fields ===
         /** True if this is an open order (no shop pre-selected) */
@@ -90,6 +97,10 @@ export const order = pgTable(
         subOrderLabel: text("sub_order_label"),
         /** Broadcast deadline — all bids must be in by this time */
         broadcastExpiresAt: timestamp("broadcast_expires_at"),
+        /** Consumer deadline for explicitly accepting one frozen offer */
+        selectionExpiresAt: timestamp("selection_expires_at"),
+        /** Stable terminal reason for a cancelled open-order request */
+        openOrderOutcome: openOrderOutcomeEnum("open_order_outcome"),
 
         // === Area & Location tracking ===
         /** The area the consumer placed the order from */
@@ -103,12 +114,8 @@ export const order = pgTable(
 
         // Order totals
         subtotal: decimal("subtotal", { precision: 10, scale: 2 }).notNull(),
-        shippingCost: decimal("shipping_cost", { precision: 10, scale: 2 })
-            .default("0")
-            .notNull(),
-        discount: decimal("discount", { precision: 10, scale: 2 })
-            .default("0")
-            .notNull(),
+        shippingCost: decimal("shipping_cost", { precision: 10, scale: 2 }).default("0").notNull(),
+        discount: decimal("discount", { precision: 10, scale: 2 }).default("0").notNull(),
         total: decimal("total", { precision: 10, scale: 2 }).notNull(),
 
         // Pending price change (admin changed price while order was pending)
@@ -124,12 +131,8 @@ export const order = pgTable(
 
         // Status
         status: orderStatusEnum("status").default("pending").notNull(),
-        paymentStatus: paymentStatusEnum("payment_status")
-            .default("pending")
-            .notNull(),
-        paymentMethod: paymentMethodEnum("payment_method")
-            .default("cash_on_delivery")
-            .notNull(),
+        paymentStatus: paymentStatusEnum("payment_status").default("pending").notNull(),
+        paymentMethod: paymentMethodEnum("payment_method").default("cash_on_delivery").notNull(),
 
         // Shipping address
         shippingName: text("shipping_name").notNull(),
@@ -186,6 +189,17 @@ export const order = pgTable(
         index("order_orderType_idx").on(table.orderType),
         index("order_orderSource_idx").on(table.orderSource),
         index("order_shopId_idx").on(table.shopId),
+        index("order_openOrder_deadlines_idx").on(
+            table.isOpenOrder,
+            table.status,
+            table.broadcastExpiresAt,
+            table.selectionExpiresAt,
+        ),
+        uniqueIndex("order_one_active_open_request_per_user_idx")
+            .on(table.userId)
+            .where(
+                sql`${table.isOpenOrder} = true AND ${table.status} IN ('matching_shop', 'negotiating')`,
+            ),
     ],
 );
 
@@ -216,7 +230,10 @@ export const orderItem = pgTable(
         /** Modified quantity set by warehouse (null = no change) */
         modifiedQty: integer("modified_qty"),
         /** Modified unit price set by warehouse (null = no change) */
-        modifiedUnitPrice: decimal("modified_unit_price", { precision: 10, scale: 2 }),
+        modifiedUnitPrice: decimal("modified_unit_price", {
+            precision: 10,
+            scale: 2,
+        }),
 
         // === Partial Delivery Tracking ===
         /** How many units have been delivered so far for this item */
@@ -230,12 +247,12 @@ export const orderItem = pgTable(
         supplyMode: varchar("supply_mode", { length: 20 }),
 
         /** Target RETAIL variant for pack conversion (the 1KG/2KG/5KG variant) */
-        targetVariantId: integer("target_variant_id")
-            .references(() => productVariant.id, { onDelete: "set null" }),
+        targetVariantId: integer("target_variant_id").references(() => productVariant.id, {
+            onDelete: "set null",
+        }),
 
         /** Conversion result: pending | converted | failed */
-        conversionStatus: varchar("conversion_status", { length: 20 })
-            .default("pending"),
+        conversionStatus: varchar("conversion_status", { length: 20 }).default("pending"),
 
         /** Actual quantity received in shop inventory after conversion */
         convertedQty: decimal("converted_qty", { precision: 12, scale: 2 }),
@@ -247,10 +264,9 @@ export const orderItem = pgTable(
         inventoryQty: decimal("inventory_qty", { precision: 12, scale: 2 }),
 
         /** Canonical trade-item identity and immutable order-time identifiers. */
-        catalogVariantId: integer("catalog_variant_id").references(
-            () => catalogVariant.id,
-            { onDelete: "restrict" },
-        ),
+        catalogVariantId: integer("catalog_variant_id").references(() => catalogVariant.id, {
+            onDelete: "restrict",
+        }),
         globalSkuSnapshot: varchar("global_sku_snapshot", { length: 14 }),
         sourceSkuSnapshot: varchar("source_sku_snapshot", { length: 100 }),
         targetSkuSnapshot: varchar("target_sku_snapshot", { length: 100 }),

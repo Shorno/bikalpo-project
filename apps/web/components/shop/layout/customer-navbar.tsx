@@ -25,9 +25,10 @@ export function ShopNavbar() {
               <Link href="/" className="flex items-center shrink-0">
                 <Image
                   src={"/logos/site-logo-white.svg"}
-                  alt="Logo"
+                  alt="Bikalpo"
                   width={isMobile ? 100 : 120}
-                  height={isMobile ? 100 : 120}
+                  height={isMobile ? 45 : 54}
+                  className="h-auto object-contain"
                 />
               </Link>
             </div>
