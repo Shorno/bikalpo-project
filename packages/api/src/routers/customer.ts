@@ -75,6 +75,10 @@ import {
   publicProcedure,
 } from "../index";
 import {
+  getDirectCartInventoryIssue,
+  resolveDirectCartInventorySnapshot,
+} from "../services/direct-cart-domain";
+import {
   computeOrderAreaFields,
   findAreasForPoint,
   findSellersNearPoint,
@@ -93,6 +97,7 @@ import {
   reconcileOpenOrder,
   SELECTION_WINDOW_SECONDS,
 } from "../services/open-order-matching";
+import { buildStoreProductDetail } from "../services/retailer-store-product-detail";
 import {
   convertEstimateToB2bOrder,
   estimateOrderAcceptSchema,
@@ -2114,6 +2119,36 @@ const queries = {
         }
       }
 
+      const directVariantIds = [
+        ...new Set(
+          userCart.items
+            .filter((item) => item.shopId && item.variantId)
+            .map((item) => item.variantId as number),
+        ),
+      ];
+      const directInventoryRows =
+        shopIds.length > 0 && directVariantIds.length > 0
+          ? await db.query.inventory.findMany({
+              where: and(
+                eq(inventory.ownerType, "shop"),
+                inArray(inventory.ownerId, shopIds),
+                inArray(inventory.variantId, directVariantIds),
+              ),
+              columns: {
+                ownerId: true,
+                variantId: true,
+                availableQty: true,
+                retailPrice: true,
+              },
+            })
+          : [];
+      const directInventoryMap = new Map(
+        directInventoryRows.map((row) => [
+          `${row.ownerId}:${row.variantId}`,
+          row,
+        ]),
+      );
+
       const items = userCart.items.map((item) => {
         const variant = item.variant;
         // Use variant-specific data when available
@@ -2121,9 +2156,25 @@ const queries = {
           ? `${item.product.name} — ${variant.unitLabel}`
           : item.product.name;
         const displaySize = variant ? variant.unitLabel : item.product.size;
-        const currentPrice = variant
-          ? Number(variant.price)
-          : Number(item.product.price);
+        const directInventory =
+          item.shopId && item.variantId
+            ? directInventoryMap.get(`${item.shopId}:${item.variantId}`)
+            : undefined;
+        const directSnapshot =
+          item.shopId && item.variantId
+            ? resolveDirectCartInventorySnapshot({
+                availableQuantity: Number(
+                  directInventory?.availableQty ?? Number.NaN,
+                ),
+                requestedQuantity: item.quantity,
+                retailPrice: Number(directInventory?.retailPrice ?? Number.NaN),
+              })
+            : null;
+        const currentPrice = directSnapshot
+          ? directSnapshot.currentPrice
+          : variant
+            ? Number(variant.price)
+            : Number(item.product.price);
 
         return {
           id: item.id,
@@ -2134,10 +2185,12 @@ const queries = {
           categorySlug: undefined as string | undefined,
           image: item.product.image,
           size: displaySize,
-          price: Number(item.price),
+          price: directSnapshot ? currentPrice : Number(item.price),
           currentPrice,
           quantity: item.quantity,
-          inStock: item.product.inStock,
+          inStock: directSnapshot
+            ? directSnapshot.inStock
+            : item.product.inStock,
           shopId: item.shopId,
           shopName: item.shopId ? shopMap.get(item.shopId) || null : null,
         };
@@ -3124,6 +3177,7 @@ const queries = {
     .input(
       z.object({
         slug: z.string(),
+        productSlug: z.string().trim().max(200).optional().nullable(),
         search: z.string().trim().max(150).optional().nullable(),
         category: z.string().trim().max(150).optional().nullable(),
         subcategory: z.string().trim().max(150).optional().nullable(),
@@ -3188,6 +3242,9 @@ const queries = {
                   description: true,
                   status: true,
                   visibility: true,
+                  scheduledAt: true,
+                  creatorSource: true,
+                  createdById: true,
                   createdAt: true,
                 },
                 with: {
@@ -3210,6 +3267,9 @@ const queries = {
           !inv.variant?.isActive ||
           prod.status !== "active" ||
           prod.visibility !== "public" ||
+          prod.creatorSource !== "shop" ||
+          prod.createdById !== shopData.id ||
+          (prod.scheduledAt != null && prod.scheduledAt > new Date()) ||
           Number(inv.availableQty || 0) <= 0 ||
           Number(inv.retailPrice || 0) <= 0
         ) {
@@ -3256,6 +3316,7 @@ const queries = {
       const filteredProducts = filterAndSortRetailerStorefrontProducts(
         completeCatalog,
         {
+          productSlug: input.productSlug,
           search: input.search,
           category: input.category,
           subcategory: input.subcategory,
@@ -3279,6 +3340,116 @@ const queries = {
           totalPages,
         },
       };
+    }),
+
+  /** Get one retailer-owned product with exact store inventory and prices. */
+  getStoreProductDetail: publicProcedure
+    .route({
+      method: "GET",
+      path: "/customer/shops/{shopSlug}/products/{productSlug}",
+      tags: ["Customer"],
+      summary: "Get a retailer-owned product detail",
+    })
+    .input(
+      z.object({
+        shopSlug: z.string().trim().min(1),
+        productSlug: z.string().trim().min(1),
+      }),
+    )
+    .handler(async ({ input }) => {
+      const shop = await db.query.user.findFirst({
+        where: and(
+          eq(user.shopSlug, input.shopSlug),
+          eq(user.role, "shop_owner"),
+          eq(user.sellerStatus, "approved"),
+        ),
+        columns: {
+          id: true,
+          name: true,
+          shopName: true,
+          shopSlug: true,
+          shopAddress: true,
+          businessType: true,
+          image: true,
+          shopLat: true,
+          shopLng: true,
+        },
+      });
+
+      if (!shop) {
+        throw new ORPCError("NOT_FOUND", { message: "Shop not found" });
+      }
+
+      const foundProduct = await db.query.product.findFirst({
+        where: and(
+          eq(product.slug, input.productSlug),
+          eq(product.creatorSource, "shop"),
+          eq(product.createdById, shop.id),
+          ...getWebViewProductConditions(),
+        ),
+        with: {
+          category: { columns: { name: true, slug: true } },
+          subCategory: { columns: { name: true, slug: true } },
+          brand: { columns: { id: true, name: true, slug: true } },
+          images: { columns: { imageUrl: true } },
+        },
+      });
+
+      if (!foundProduct) {
+        throw new ORPCError("NOT_FOUND", {
+          message: "Store product not found",
+        });
+      }
+
+      const variantRows = await db.query.productVariant.findMany({
+        where: eq(productVariant.productId, foundProduct.id),
+        orderBy: [asc(productVariant.sortOrder), asc(productVariant.id)],
+      });
+      const variantIds = variantRows.map((variant) => variant.id);
+      const inventoryRows =
+        variantIds.length > 0
+          ? await db.query.inventory.findMany({
+              where: and(
+                eq(inventory.ownerType, "shop"),
+                eq(inventory.ownerId, shop.id),
+                inArray(inventory.variantId, variantIds),
+              ),
+              columns: {
+                variantId: true,
+                availableQty: true,
+                retailPrice: true,
+              },
+            })
+          : [];
+      const inventoryByVariantId = new Map(
+        inventoryRows.map((row) => [row.variantId, row]),
+      );
+
+      const detail = buildStoreProductDetail({
+        shop,
+        product: foundProduct,
+        variants: variantRows.map((variant) => {
+          const inventoryRow = inventoryByVariantId.get(variant.id);
+          return {
+            ...variant,
+            inventory:
+              inventoryRow?.retailPrice != null
+                ? {
+                    availableQty: inventoryRow.availableQty,
+                    retailPrice: inventoryRow.retailPrice,
+                  }
+                : null,
+          };
+        }),
+      });
+
+      if (!detail) {
+        throw new ORPCError("NOT_FOUND", {
+          message: "Store product has no purchasable variants",
+        });
+      }
+
+      return detail;
     }),
 
   /** Get all sellers who have a specific product in stock */
@@ -3530,61 +3701,76 @@ const mutations = {
           });
         }
       }
-      if (purchaseMode === "direct" && !productData.inStock)
-        throw new ORPCError("BAD_REQUEST", {
-          message: "Product is out of stock",
+
+      let directInventory: typeof inventory.$inferSelect | null | undefined =
+        null;
+      if (purchaseMode === "direct") {
+        if (
+          productData.creatorSource !== "shop" ||
+          productData.createdById !== input.shopId ||
+          productData.status !== "active" ||
+          productData.visibility !== "public" ||
+          (productData.scheduledAt != null &&
+            productData.scheduledAt > new Date())
+        ) {
+          throw new ORPCError("BAD_REQUEST", {
+            message: "This product does not belong to the selected retailer.",
+          });
+        }
+
+        if (!input.variantId) {
+          throw new ORPCError("BAD_REQUEST", {
+            message: "Choose a retailer variant before adding this item.",
+          });
+        }
+
+        const directVariant = await db.query.productVariant.findFirst({
+          where: and(
+            eq(productVariant.id, input.variantId),
+            eq(productVariant.productId, input.productId),
+            eq(productVariant.isActive, true),
+          ),
+          columns: { id: true },
         });
+        if (!directVariant) {
+          throw new ORPCError("BAD_REQUEST", {
+            message: "The selected retailer variant is unavailable.",
+          });
+        }
+
+        directInventory = await db.query.inventory.findFirst({
+          where: and(
+            eq(inventory.ownerType, "shop"),
+            eq(inventory.ownerId, input.shopId!),
+            eq(inventory.variantId, input.variantId),
+          ),
+        });
+        const inventoryIssue = directInventory
+          ? getDirectCartInventoryIssue({
+              availableQuantity: Number(directInventory.availableQty),
+              requestedQuantity: input.quantity,
+              retailPrice: Number(directInventory.retailPrice),
+            })
+          : "The selected variant is not stocked by this retailer.";
+        if (inventoryIssue) {
+          throw new ORPCError("BAD_REQUEST", {
+            message: inventoryIssue,
+          });
+        }
+      }
 
       // Determine price: shop retail price (B2C) > variant base price > product price
       let itemPrice = productData.price;
 
-      if (input.variantId) {
-        // First: check if there's a shop-specific retail price (B2C)
-        if (input.shopId) {
-          // Try exact variant match first
-          let shopInv = await db.query.inventory.findFirst({
-            where: and(
-              eq(inventory.ownerType, "shop"),
-              eq(inventory.ownerId, input.shopId),
-              eq(inventory.variantId, input.variantId),
-            ),
-          });
-
-          // If not found, the shop's inventory might be on a different variant
-          // (e.g. TRADE variant when consumer browsed RETAIL variant)
-          // Search by product: find any inventory this shop has for this product
-          if (!shopInv) {
-            const productVariants = await db.query.productVariant.findMany({
-              where: eq(productVariant.productId, input.productId),
-              columns: { id: true },
-            });
-            const variantIds = productVariants.map((v) => v.id);
-            if (variantIds.length > 0) {
-              shopInv = await db.query.inventory.findFirst({
-                where: and(
-                  eq(inventory.ownerType, "shop"),
-                  eq(inventory.ownerId, input.shopId),
-                  inArray(inventory.variantId, variantIds),
-                  sql`CAST(${inventory.availableQty} AS numeric) > 0`,
-                ),
-              });
-            }
-          }
-
-          if (shopInv?.retailPrice) {
-            itemPrice = shopInv.retailPrice;
-          }
-        }
-
-        // If no shop price was found, use the variant's own base price
-        if (itemPrice === productData.price) {
-          const variantData = await db.query.productVariant.findFirst({
-            where: eq(productVariant.id, input.variantId),
-            columns: { price: true },
-          });
-          if (variantData?.price) {
-            itemPrice = variantData.price;
-          }
+      if (purchaseMode === "direct" && directInventory?.retailPrice) {
+        itemPrice = directInventory.retailPrice;
+      } else if (input.variantId) {
+        const variantData = await db.query.productVariant.findFirst({
+          where: eq(productVariant.id, input.variantId),
+          columns: { price: true },
+        });
+        if (variantData?.price) {
+          itemPrice = variantData.price;
         }
       }
 
@@ -3653,6 +3839,19 @@ const mutations = {
         where: and(...dupConditions),
       });
 
+      if (purchaseMode === "direct" && directInventory) {
+        const inventoryIssue = getDirectCartInventoryIssue({
+          availableQuantity: Number(directInventory.availableQty),
+          requestedQuantity: (existing?.quantity ?? 0) + input.quantity,
+          retailPrice: Number(directInventory.retailPrice),
+        });
+        if (inventoryIssue) {
+          throw new ORPCError("BAD_REQUEST", {
+            message: inventoryIssue,
+          });
+        }
+      }
+
       if (existing) {
         await db
           .update(cartItem)
@@ -3715,6 +3914,34 @@ const mutations = {
             .where(eq(cart.id, item.cartId));
         }
         return { success: true, message: "Item removed from cart" };
+      }
+
+      if (item.cart.mode === "direct") {
+        if (!item.variantId || !item.shopId) {
+          throw new ORPCError("BAD_REQUEST", {
+            message: "This direct cart item is missing its retailer variant.",
+          });
+        }
+
+        const directInventory = await db.query.inventory.findFirst({
+          where: and(
+            eq(inventory.ownerType, "shop"),
+            eq(inventory.ownerId, item.shopId),
+            eq(inventory.variantId, item.variantId),
+          ),
+        });
+        const inventoryIssue = directInventory
+          ? getDirectCartInventoryIssue({
+              availableQuantity: Number(directInventory.availableQty),
+              requestedQuantity: input.quantity,
+              retailPrice: Number(directInventory.retailPrice),
+            })
+          : "The selected variant is not stocked by this retailer.";
+        if (inventoryIssue) {
+          throw new ORPCError("BAD_REQUEST", {
+            message: inventoryIssue,
+          });
+        }
       }
 
       await db
@@ -3844,6 +4071,26 @@ const mutations = {
           message: "Use Request offers to check out an open-order cart.",
         });
       }
+      if (userCart.mode === "direct") {
+        if (!userCart.directShopId) {
+          throw new ORPCError("BAD_REQUEST", {
+            message: "This direct cart is missing its retailer.",
+          });
+        }
+        const activeRetailer = await db.query.user.findFirst({
+          where: and(
+            eq(user.id, userCart.directShopId),
+            eq(user.role, "shop_owner"),
+            eq(user.sellerStatus, "approved"),
+          ),
+          columns: { id: true },
+        });
+        if (!activeRetailer) {
+          throw new ORPCError("BAD_REQUEST", {
+            message: "The selected retailer is no longer available.",
+          });
+        }
+      }
 
       // Validate stock & build order items
       const orderItems: Array<{
@@ -3870,10 +4117,30 @@ const mutations = {
           throw new ORPCError("BAD_REQUEST", {
             message: "Product not found for cart item",
           });
-        if (!item.product.inStock)
+        const isDirectItem =
+          userCart.mode === "direct" &&
+          item.shopId != null &&
+          item.variantId != null;
+        if (!isDirectItem && !item.product.inStock)
           throw new ORPCError("BAD_REQUEST", {
             message: `${item.product.name} is out of stock`,
           });
+        if (
+          isDirectItem &&
+          (item.product.creatorSource !== "shop" ||
+            item.product.createdById !== item.shopId ||
+            item.shopId !== userCart.directShopId ||
+            item.product.status !== "active" ||
+            item.product.visibility !== "public" ||
+            (item.product.scheduledAt != null &&
+              item.product.scheduledAt > new Date()) ||
+            item.variant?.productId !== item.productId ||
+            item.variant?.isActive !== true)
+        ) {
+          throw new ORPCError("BAD_REQUEST", {
+            message: `${item.product.name} is not owned by the selected retailer`,
+          });
+        }
 
         // B2B orders (shop_owner) MUST have a variant selected
         if (context.session.user.role === "shop_owner" && !item.variantId) {
@@ -3884,6 +4151,7 @@ const mutations = {
 
         // Check stock: for B2C (with shopId), check shop inventory; otherwise check variant/product stock
         let stockQty: number;
+        let unitPrice = Number(item.price);
         if (item.shopId) {
           // Capacity-specific products must resolve the exact selected variant.
           const shopInv = item.variantId
@@ -3895,7 +4163,18 @@ const mutations = {
                 ),
               })
             : null;
-          stockQty = shopInv ? Number(shopInv.availableQty) : 0;
+          const directSnapshot = resolveDirectCartInventorySnapshot({
+            availableQuantity: Number(shopInv?.availableQty ?? Number.NaN),
+            requestedQuantity: item.quantity,
+            retailPrice: Number(shopInv?.retailPrice ?? Number.NaN),
+          });
+          if (directSnapshot.issue) {
+            throw new ORPCError("BAD_REQUEST", {
+              message: directSnapshot.issue,
+            });
+          }
+          stockQty = Number(shopInv?.availableQty ?? 0);
+          unitPrice = directSnapshot.currentPrice;
         } else {
           stockQty = item.variant ? item.variant.stockQuantity : 999; // product-level stockQuantity removed; skip product-level check
         }
@@ -3921,7 +4200,7 @@ const mutations = {
           });
         }
 
-        const itemTotal = Number(item.price) * item.quantity;
+        const itemTotal = unitPrice * item.quantity;
         subtotal += itemTotal;
 
         const weightPerUnit = item.variant
@@ -3949,7 +4228,7 @@ const mutations = {
             null,
           conversionFactor: movementSemantics?.conversionFactor ?? "1",
           inventoryQty: String(item.quantity),
-          unitPrice: item.price,
+          unitPrice: unitPrice.toFixed(2),
           totalPrice: itemTotal.toFixed(2),
         });
       }
