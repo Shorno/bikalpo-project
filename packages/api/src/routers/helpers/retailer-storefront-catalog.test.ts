@@ -9,6 +9,7 @@ const products = [
   {
     id: 1,
     name: "Omera LPG Cylinder",
+    slug: "omera-lpg-cylinder",
     createdAt: "2026-07-14",
     lowestRetailPrice: 1600,
     category: { name: "LPG", slug: "lpg" },
@@ -18,6 +19,7 @@ const products = [
   {
     id: 2,
     name: "Fresh LPG Cylinder",
+    slug: "fresh-lpg-cylinder",
     createdAt: "2026-07-16",
     lowestRetailPrice: 2050,
     category: { name: "LPG", slug: "lpg" },
@@ -27,6 +29,7 @@ const products = [
   {
     id: 3,
     name: "Safety regulator",
+    slug: "safety-regulator",
     createdAt: "2026-07-15",
     lowestRetailPrice: 850,
     category: { name: "Accessories", slug: "accessories" },
@@ -69,6 +72,16 @@ test("searches product names and retailer SKUs case-insensitively", () => {
       sort: "recommended",
     }).map((product) => product.name),
     ["Fresh LPG Cylinder", "Omera LPG Cylinder"],
+  );
+});
+
+test("selects one exact retailer product by slug for direct-order details", () => {
+  assert.deepEqual(
+    filterAndSortRetailerStorefrontProducts(products, {
+      productSlug: "fresh-lpg-cylinder",
+      sort: "recommended",
+    }).map((product) => product.id),
+    [2],
   );
 });
 

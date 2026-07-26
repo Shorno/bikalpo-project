@@ -6,6 +6,7 @@ import { RPCLink } from "@orpc/client/fetch";
 import { createTanstackQueryUtils } from "@orpc/tanstack-query";
 import { QueryCache, QueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { shouldLogRpcResponseAsError } from "@/lib/orpc-error-logging";
 
 const queryCache = new QueryCache({
   onError: (error, query) => {
@@ -44,7 +45,7 @@ export const link = new RPCLink({
         ...init,
         credentials: "include",
       });
-      if (!response.ok) {
+      if (!response.ok && shouldLogRpcResponseAsError(response.status)) {
         const errText = await response.clone().text();
         console.error("orpc response error", {
           ...requestInfo,
@@ -77,7 +78,9 @@ export const link = new RPCLink({
         const headerStore = await nextHeaders();
         const cookie = headerStore.get("cookie");
         if (cookie) return { cookie };
-      } catch { /* client-side or build-time */ }
+      } catch {
+        /* client-side or build-time */
+      }
     }
     return {};
   },

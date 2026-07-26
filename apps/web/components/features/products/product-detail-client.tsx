@@ -52,7 +52,8 @@ interface ProductDetailClientProps {
   productSize: string;
   features?: ProductFeatureGroup[] | null;
   previewMode?: boolean;
-  purchaseMode?: "open_order" | "retailer_selection";
+  purchaseMode?: "open_order" | "retailer_selection" | "direct";
+  directShopId?: string;
 }
 
 /* ── Component ────────────────────────────────────── */
@@ -67,6 +68,7 @@ export function ProductDetailClient({
   features,
   previewMode = false,
   purchaseMode = "retailer_selection",
+  directShopId,
 }: ProductDetailClientProps) {
   const { data: session } = authClient.useSession();
   const userRole = session?.user?.role as string | undefined;
@@ -250,7 +252,9 @@ export function ProductDetailClient({
             stockQuantity: displayStock,
           }}
           variantId={selected?.id}
-          shopId={selectedSeller?.shopId}
+          shopId={
+            purchaseMode === "direct" ? directShopId : selectedSeller?.shopId
+          }
           purchaseMode={purchaseMode === "open_order" ? "open_order" : "direct"}
           orderMin={selected?.orderMin ? Number(selected.orderMin) : undefined}
           orderMax={selected?.orderMax ? Number(selected.orderMax) : undefined}
