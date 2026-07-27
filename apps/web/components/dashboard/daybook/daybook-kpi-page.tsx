@@ -633,6 +633,26 @@ export function DaybookKpiPage({ variant }: { variant: DaybookVariant }) {
         type: "Supplier Advance Payment",
       }));
 
+    const productSaleTransactions = savedProductSales
+      .toSorted(
+        (first, second) =>
+          new Date(second.createdAt).getTime() -
+          new Date(first.createdAt).getTime(),
+      )
+      .map((sale) => ({
+        amount: money(sale.totalSales),
+        reference:
+          [
+            sale.items[0]?.productName,
+            sale.customer,
+            sale.referenceNo || sale.saleNo,
+          ]
+            .filter(Boolean)
+            .join(" - ") || sale.paymentAccountName,
+        time: timeLabel(new Date(sale.createdAt)),
+        type: sale.paymentType === "due" ? "Product Sale Due" : "Product Sale",
+      }));
+
     const productPurchaseTransactions = savedProductPurchases
       .toSorted(
         (first, second) =>
@@ -657,6 +677,7 @@ export function DaybookKpiPage({ variant }: { variant: DaybookVariant }) {
       }));
 
     return [
+      ...productSaleTransactions,
       ...supplierAdvanceTransactions,
       ...loanTransactions,
       ...productPurchaseTransactions,
@@ -670,6 +691,7 @@ export function DaybookKpiPage({ variant }: { variant: DaybookVariant }) {
     savedFixedAssetPurchases,
     savedLoans,
     savedProductPurchases,
+    savedProductSales,
     savedSupplierAdvances,
   ]);
   const cashDifference = useMemo(() => {
