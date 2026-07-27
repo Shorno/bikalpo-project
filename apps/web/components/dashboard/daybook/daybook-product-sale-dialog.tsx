@@ -312,9 +312,7 @@ export function DaybookProductSaleDialog({
       paymentAccountName: isDueSale
         ? "Accounts Receivable"
         : (selectedPaymentAccount?.name ?? ""),
-      paymentAccountType: isDueSale
-        ? undefined
-        : selectedPaymentAccount?.type,
+      paymentAccountType: isDueSale ? undefined : selectedPaymentAccount?.type,
       paymentMethod: isDueSale ? undefined : selectedPaymentMethod,
       paymentType: salePaymentType,
       referenceNo: referenceNo.trim(),
@@ -335,9 +333,7 @@ export function DaybookProductSaleDialog({
           saleAmount: item.saleAmount,
         })),
         notes: notes.trim() || undefined,
-        paymentAccountId: isDueSale
-          ? undefined
-          : selectedPaymentAccount?.id,
+        paymentAccountId: isDueSale ? undefined : selectedPaymentAccount?.id,
         paymentMethod: isDueSale ? undefined : selectedPaymentMethod,
         paymentType: salePaymentType,
         referenceNo: referenceNo.trim() || undefined,

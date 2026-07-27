@@ -14,6 +14,7 @@ type ProductSaleTotals = {
   cashSales: number;
   dueSales: number;
   grossProfit: number;
+  bankSales: number;
   totalCost: number;
   totalSales: number;
 };
@@ -40,6 +41,7 @@ function emptyTotals(): ProductSaleTotals {
     cashSales: 0,
     dueSales: 0,
     grossProfit: 0,
+    bankSales: 0,
     totalCost: 0,
     totalSales: 0,
   };
@@ -52,9 +54,7 @@ export function getUnsyncedDaybookProductSalesInRange(
   return sales.filter((sale) => !sale.isSynced && isSaleInRange(sale, range));
 }
 
-export function summarizeDaybookProductSales(
-  sales: DaybookProductSaleEntry[],
-) {
+export function summarizeDaybookProductSales(sales: DaybookProductSaleEntry[]) {
   return sales.reduce<ProductSaleTotals>((totals, sale) => {
     const paymentType: DaybookProductSalePaymentType =
       sale.paymentType ?? "cash";
@@ -65,6 +65,8 @@ export function summarizeDaybookProductSales(
 
     if (paymentType === "due") {
       totals.dueSales += sale.totalSales;
+    } else if (sale.paymentAccountType === "bank") {
+      totals.bankSales += sale.totalSales;
     } else {
       totals.cashSales += sale.totalSales;
     }

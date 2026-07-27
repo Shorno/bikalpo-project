@@ -16,9 +16,14 @@ import {
   summarizeDaybookExpensesByCategory,
 } from "@/components/dashboard/daybook/daybook-expense-reports";
 import {
+  getUnsyncedDaybookProductSalesInRange,
+  summarizeDaybookProductSales,
+} from "@/components/dashboard/daybook/daybook-product-sale-reports";
+import {
   useDaybookExpenseScope,
   useDaybookExpenses,
 } from "@/components/dashboard/daybook/use-daybook-expenses";
+import { useDaybookProductSales } from "@/components/dashboard/daybook/use-daybook-product-sales";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -129,11 +134,50 @@ function normalizeRows(
   return rows;
 }
 
+function addToBreakdownRow(
+  rows: BreakdownRow[],
+  slug: string,
+  fallbackCategory: string,
+  amount: number,
+) {
+  if (amount <= 0) {
+    return rows;
+  }
+
+  let foundRow = false;
+  const adjustedRows = rows.map((row) => {
+    if (row.slug !== slug && row.category !== fallbackCategory) {
+      return row;
+    }
+
+    foundRow = true;
+    return {
+      ...row,
+      amount: String(toNumber(row.amount) + amount),
+      muted: false,
+    };
+  });
+
+  if (foundRow) {
+    return adjustedRows;
+  }
+
+  return [
+    ...adjustedRows,
+    {
+      amount: String(amount),
+      category: fallbackCategory,
+      slug,
+    },
+  ];
+}
+
 export function ProfitLossReport() {
   const today = new Date();
   const currentYear = today.getFullYear();
   const daybookScope = useDaybookExpenseScope();
   const daybookExpenses = useDaybookExpenses(daybookScope);
+  const daybookProductSales = useDaybookProductSales(daybookScope);
   const [year, setYear] = useState(currentYear);
   const [startDate, setStartDate] = useState(
     dateValueFromParts(currentYear, 1, 1),
@@ -164,6 +208,15 @@ export function ProfitLossReport() {
       slug: `daybook-${row.category.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
     }));
     const daybookExpenseTotal = getDaybookExpenseTotal(daybookExpensesInRange);
+    const unsyncedProductSales = getUnsyncedDaybookProductSalesInRange(
+      daybookProductSales,
+      {
+        endDate,
+        startDate,
+      },
+    );
+    const productSaleTotals =
+      summarizeDaybookProductSales(unsyncedProductSales);
     const incomeRows = normalizeRows(
       pnl?.income?.breakdown,
       pnl?.revenue
@@ -192,6 +245,18 @@ export function ProfitLossReport() {
             slug: "product-purchase",
           },
     );
+    const adjustedIncomeRows = addToBreakdownRow(
+      incomeRows,
+      "product-sales",
+      "Product Sales",
+      productSaleTotals.totalSales,
+    );
+    const adjustedCogsRows = addToBreakdownRow(
+      cogsRows,
+      "product-purchase",
+      "Product Purchase",
+      productSaleTotals.totalCost,
+    );
     const operatingExpenseRows = normalizeRows(
       [...(pnl?.expenses?.breakdown ?? []), ...daybookExpenseRows],
       {
@@ -203,27 +268,31 @@ export function ProfitLossReport() {
     );
     const operatingExpenses =
       toNumber(pnl?.expenses?.total) + daybookExpenseTotal;
-    const income = toNumber(pnl?.income?.total ?? pnl?.revenue);
-    const cogs = toNumber(pnl?.costOfGoods?.total ?? pnl?.cogs);
-    const grossProfit = toNumber(pnl?.grossProfit ?? income - cogs);
+    const income =
+      toNumber(pnl?.income?.total ?? pnl?.revenue) +
+      productSaleTotals.totalSales;
+    const cogs =
+      toNumber(pnl?.costOfGoods?.total ?? pnl?.cogs) +
+      productSaleTotals.totalCost;
+    const grossProfit = income - cogs;
     const netProfit = grossProfit - operatingExpenses;
 
     return {
       cogs,
-      cogsRows,
+      cogsRows: adjustedCogsRows,
       grossProfit,
       grossProfitPercent: toNumber(
         pnl?.grossProfitPercent ?? toPercent(grossProfit, income),
       ),
       income,
-      incomeRows,
+      incomeRows: adjustedIncomeRows,
       isProfit: netProfit >= 0,
       netProfit,
       netProfitPercent: toPercent(netProfit, income),
       operatingExpenseRows,
       operatingExpenses,
     };
-  }, [daybookExpenses, endDate, pnl, startDate]);
+  }, [daybookExpenses, daybookProductSales, endDate, pnl, startDate]);
 
   const yearOptions = useMemo(
     () => Array.from({ length: 6 }, (_, index) => currentYear - 4 + index),

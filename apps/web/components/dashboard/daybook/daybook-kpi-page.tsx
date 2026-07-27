@@ -544,22 +544,20 @@ export function DaybookKpiPage({ variant }: { variant: DaybookVariant }) {
     savedProductSaleCashTotal;
   const overviewMetrics = useMemo(
     () =>
-      config.metrics.map((metric) =>
-        {
-          if (metric.label === "Financial Position") {
-            return { ...metric, value: money(adjustedSystemCash) };
-          }
+      config.metrics.map((metric) => {
+        if (metric.label === "Financial Position") {
+          return { ...metric, value: money(adjustedSystemCash) };
+        }
 
-          if (metric.label === "Sales Today") {
-            return {
-              ...metric,
-              value: money(moneyToNumber(metric.value) + savedProductSaleTotal),
-            };
-          }
+        if (metric.label === "Sales Today") {
+          return {
+            ...metric,
+            value: money(moneyToNumber(metric.value) + savedProductSaleTotal),
+          };
+        }
 
-          return metric;
-        },
-      ),
+        return metric;
+      }),
     [adjustedSystemCash, config.metrics, savedProductSaleTotal],
   );
   const closeSummary = useMemo(

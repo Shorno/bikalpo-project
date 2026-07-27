@@ -13,7 +13,11 @@ import {
   useDaybookExpenseScope,
   useDaybookExpenses,
 } from "@/components/dashboard/daybook/use-daybook-expenses";
-import { applyDaybookExpensesToBalanceSheet } from "@/components/dashboard/finance/balance-sheet-daybook-adjustments";
+import { useDaybookProductSales } from "@/components/dashboard/daybook/use-daybook-product-sales";
+import {
+  applyDaybookExpensesToBalanceSheet,
+  applyUnsyncedDaybookProductSalesToBalanceSheet,
+} from "@/components/dashboard/finance/balance-sheet-daybook-adjustments";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -114,6 +118,7 @@ export function BalanceSheetReport() {
   const currentYear = today.getFullYear();
   const daybookScope = useDaybookExpenseScope();
   const daybookExpenses = useDaybookExpenses(daybookScope);
+  const daybookProductSales = useDaybookProductSales(daybookScope);
   const [year, setYear] = useState(currentYear);
   const [startDate, setStartDate] = useState(
     dateValueFromParts(currentYear, 1, 1),
@@ -134,12 +139,19 @@ export function BalanceSheetReport() {
   const adjustedReport = useMemo(
     () =>
       report
-        ? applyDaybookExpensesToBalanceSheet(report, daybookExpenses, {
-            endDate,
-            startDate,
-          })
+        ? applyUnsyncedDaybookProductSalesToBalanceSheet(
+            applyDaybookExpensesToBalanceSheet(report, daybookExpenses, {
+              endDate,
+              startDate,
+            }),
+            daybookProductSales,
+            {
+              endDate,
+              startDate,
+            },
+          )
         : null,
-    [daybookExpenses, endDate, report, startDate],
+    [daybookExpenses, daybookProductSales, endDate, report, startDate],
   );
 
   const yearOptions = useMemo(
