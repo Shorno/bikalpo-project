@@ -258,6 +258,28 @@ export const balanceSheetRouter = {
         ? 0
         : currentAccountsPayableRows.reduce((sum, row) => sum + row.amount, 0);
 
+      const accountsReceivableRows = await db
+        .select({
+          amount: financeAccount.currentBalance,
+          label: financeAccount.name,
+        })
+        .from(financeAccount)
+        .where(
+          and(
+            eq(financeAccount.ownerId, ownerId),
+            eq(financeAccount.ownerType, ownerType),
+            eq(financeAccount.accountType, "asset"),
+            eq(financeAccount.balanceSheetLine, "accounts_receivable"),
+          ),
+        )
+        .orderBy(asc(financeAccount.sortOrder), asc(financeAccount.name));
+      const manualAccountsReceivable = isCashBasis
+        ? 0
+        : accountsReceivableRows.reduce(
+            (sum, row) => sum + toNumber(row.amount),
+            0,
+          );
+
       const expenseRows = await db
         .select({ total: expense.amount })
         .from(expense)
@@ -601,6 +623,7 @@ export const balanceSheetRouter = {
       }
 
       payable += manualAccountsPayable;
+      receivable += manualAccountsReceivable;
 
       const retainedEarnings = revenue - expenseTotal;
       const cashAndBank =
