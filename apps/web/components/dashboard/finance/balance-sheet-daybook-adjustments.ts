@@ -31,6 +31,7 @@ type BalanceSheetSummary = {
   payable: string;
   receivable: string;
   retainedEarnings: string;
+  supplierAdvance: string;
   totalAssets: string;
   totalEquity: string;
   totalLiabilities: string;

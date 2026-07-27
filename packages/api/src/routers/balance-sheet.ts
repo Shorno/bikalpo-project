@@ -230,10 +230,7 @@ export const balanceSheetRouter = {
         .filter((row) => row.amount !== 0);
       const manualAccountsPayable = isCashBasis
         ? 0
-        : currentAccountsPayableRows.reduce(
-            (sum, row) => sum + row.amount,
-            0,
-          );
+        : currentAccountsPayableRows.reduce((sum, row) => sum + row.amount, 0);
 
       const expenseRows = await db
         .select({ total: expense.amount })
@@ -615,6 +612,7 @@ export const balanceSheetRouter = {
         summary: {
           cashAndBank: toMoney(cashAndBank),
           receivable: toMoney(receivable),
+          supplierAdvance: toMoney(supplierAdvance),
           payable: toMoney(payable),
           netAssets: toMoney(netAssets),
           retainedEarnings: toMoney(retainedEarnings),
