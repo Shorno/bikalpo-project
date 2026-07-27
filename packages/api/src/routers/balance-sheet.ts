@@ -181,6 +181,32 @@ export const balanceSheetRouter = {
         0,
       );
 
+      const inventoryRows = await db
+        .select({
+          amount: financeAccount.currentBalance,
+          label: financeAccount.name,
+        })
+        .from(financeAccount)
+        .where(
+          and(
+            eq(financeAccount.ownerId, ownerId),
+            eq(financeAccount.ownerType, ownerType),
+            eq(financeAccount.accountType, "asset"),
+            eq(financeAccount.balanceSheetLine, "inventory"),
+          ),
+        )
+        .orderBy(asc(financeAccount.sortOrder), asc(financeAccount.name));
+      const currentInventoryRows = inventoryRows
+        .map((row) => ({
+          amount: toNumber(row.amount),
+          label: row.label,
+        }))
+        .filter((row) => row.amount !== 0);
+      const inventory = currentInventoryRows.reduce(
+        (sum, row) => sum + row.amount,
+        0,
+      );
+
       const loanPayableRows = await db
         .select({
           amount: financeAccount.currentBalance,
@@ -583,15 +609,17 @@ export const balanceSheetRouter = {
         loanPayable -
         receivable -
         supplierAdvance -
+        inventory -
         fixedAssets;
       const totalAssets =
-        cashAndBank + receivable + supplierAdvance + fixedAssets;
+        cashAndBank + receivable + supplierAdvance + inventory + fixedAssets;
       const totalLiabilities = payable + loanPayable;
       const totalEquity = totalAssets - totalLiabilities;
       const netAssets =
         cashAndBank +
         receivable +
         supplierAdvance +
+        inventory +
         fixedAssets -
         payable -
         loanPayable;
@@ -611,6 +639,7 @@ export const balanceSheetRouter = {
         },
         summary: {
           cashAndBank: toMoney(cashAndBank),
+          inventory: toMoney(inventory),
           receivable: toMoney(receivable),
           supplierAdvance: toMoney(supplierAdvance),
           payable: toMoney(payable),
@@ -629,6 +658,24 @@ export const balanceSheetRouter = {
                 rows: [{ label: "Cash on Hand", amount: toMoney(cashAndBank) }],
                 total: toMoney(cashAndBank),
                 totalLabel: "Total Cash and Bank",
+              },
+              {
+                title: "Inventory",
+                rows:
+                  currentInventoryRows.length > 0
+                    ? currentInventoryRows.map((row) => ({
+                        label: row.label,
+                        amount: toMoney(row.amount),
+                      }))
+                    : [
+                        {
+                          label: "Inventory",
+                          amount: toMoney(0),
+                          muted: true,
+                        },
+                      ],
+                total: toMoney(inventory),
+                totalLabel: "Total Inventory",
               },
               {
                 title: "Supplier Advance",
