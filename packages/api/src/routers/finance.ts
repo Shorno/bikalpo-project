@@ -36,6 +36,7 @@ type UIAccountType = (typeof UI_ACCOUNT_TYPES)[number];
 
 const PAYMENT_METHODS = ["cash", "bank"] as const;
 const PRODUCT_PURCHASE_PAYMENT_TYPES = ["cash", "due"] as const;
+const PRODUCT_SALE_PAYMENT_TYPES = ["cash", "due"] as const;
 
 type ResolvedFixedAssetAccount = {
   currentBalance: number;
@@ -74,6 +75,25 @@ type ResolvedSupplierAdvanceAccount = {
   currentBalance: number;
   id: number;
   name: string;
+};
+
+type ResolvedInventoryAccount = {
+  currentBalance: number;
+  id: number;
+  name: string;
+};
+
+type ResolvedReceivableAccount = {
+  currentBalance: number;
+  id: number;
+  name: string;
+};
+
+type ProductSaleItem = {
+  description: string;
+  productCost: number;
+  productName: string;
+  saleAmount: number;
 };
 
 function resolveOwnerScope(role?: string | null): AccountingOwnerType {
