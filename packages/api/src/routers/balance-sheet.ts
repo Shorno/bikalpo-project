@@ -315,6 +315,36 @@ export const balanceSheetRouter = {
         (sum, row) => sum + toNumber(row.total),
         0,
       );
+      const manualProductSaleRows = await db
+        .select({
+          balanceBefore: financialLedger.balanceBefore,
+          direction: financialLedger.direction,
+          total: financialLedger.amount,
+        })
+        .from(financialLedger)
+        .where(
+          and(
+            eq(financialLedger.ownerId, ownerId),
+            eq(financialLedger.ownerType, ownerType),
+            eq(financialLedger.entryType, "sale"),
+            eq(financialLedger.referenceType, "adjustment"),
+            gte(financialLedger.createdAt, startDateTime),
+            lte(financialLedger.createdAt, asOfEnd),
+          ),
+        );
+      const recognizedManualSales = isCashBasis
+        ? manualProductSaleRows.filter((row) => row.balanceBefore !== null)
+        : manualProductSaleRows;
+      const manualProductSales = recognizedManualSales.reduce(
+        (sum, row) =>
+          row.direction === "credit" ? sum + toNumber(row.total) : sum,
+        0,
+      );
+      const manualProductSaleCost = recognizedManualSales.reduce(
+        (sum, row) =>
+          row.direction === "debit" ? sum + toNumber(row.total) : sum,
+        0,
+      );
 
       let revenue = 0;
       let expenseTotal = expenses + manualProductPurchase;
@@ -624,6 +654,8 @@ export const balanceSheetRouter = {
 
       payable += manualAccountsPayable;
       receivable += manualAccountsReceivable;
+      revenue += manualProductSales;
+      expenseTotal += manualProductSaleCost;
 
       const retainedEarnings = revenue - expenseTotal;
       const cashAndBank =
