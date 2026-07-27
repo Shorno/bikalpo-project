@@ -157,9 +157,16 @@ export function DaybookProductPurchaseDialog({
 
   useEffect(() => {
     if (!isDuePurchase) {
-      setPaymentMethod(paymentTypeToMethod(selectedPaymentAccount?.type));
+      const nextPaymentMethod = paymentTypeToMethod(
+        selectedPaymentAccount?.type,
+      );
+      setPaymentMethod((currentPaymentMethod) =>
+        currentPaymentMethod === nextPaymentMethod
+          ? currentPaymentMethod
+          : nextPaymentMethod,
+      );
     }
-  }, [isDuePurchase, selectedPaymentAccount]);
+  }, [isDuePurchase, selectedPaymentAccount?.type]);
 
   const updateItem = (
     itemId: string,

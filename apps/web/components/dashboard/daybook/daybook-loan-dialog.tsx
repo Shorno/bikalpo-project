@@ -151,8 +151,13 @@ export function DaybookLoanDialog({
   }, [paymentAccountId, paymentAccounts]);
 
   useEffect(() => {
-    setPaymentMethod(paymentTypeToMethod(selectedPaymentAccount?.type));
-  }, [selectedPaymentAccount]);
+    const nextPaymentMethod = paymentTypeToMethod(selectedPaymentAccount?.type);
+    setPaymentMethod((currentPaymentMethod) =>
+      currentPaymentMethod === nextPaymentMethod
+        ? currentPaymentMethod
+        : nextPaymentMethod,
+    );
+  }, [selectedPaymentAccount?.type]);
 
   const updateLine = (
     lineId: string,
