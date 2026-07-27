@@ -135,6 +135,69 @@ export async function getProductBySlug(slug: string, revalidate = 30) {
   }
 }
 
+export async function getRetailerProductBySlug(
+  shopSlug: string,
+  productSlug: string,
+  revalidate = 0,
+) {
+  const client = getPublicOrpcClient(revalidate);
+
+  try {
+    return await client.customer.getShopBySlug({
+      slug: shopSlug,
+      productSlug,
+      sort: "recommended",
+      page: 1,
+      limit: 1,
+    });
+  } catch {
+    return null;
+  }
+}
+
+export async function getStoreProductDetail(
+  shopSlug: string,
+  productSlug: string,
+  revalidate = 0,
+) {
+  const client = getPublicOrpcClient(revalidate);
+
+  try {
+    return await client.customer.getStoreProductDetail({
+      shopSlug,
+      productSlug,
+    });
+  } catch {
+    return null;
+  }
+}
+
+export async function getStoreCatalog(
+  shopSlug: string,
+  options: {
+    category?: string;
+    productSlug?: string;
+    page?: number;
+    limit?: number;
+  } = {},
+  revalidate = 0,
+) {
+  const client = getPublicOrpcClient(revalidate);
+
+  try {
+    return await client.customer.getShopBySlug({
+      slug: shopSlug,
+      category: options.category,
+      productSlug: options.productSlug,
+      sort: "recommended",
+      page: options.page ?? 1,
+      limit: options.limit ?? 8,
+    });
+  } catch {
+    return null;
+  }
+}
+
 export async function getProductsWithQuery(
   filters: ProductListFilters,
   revalidate = 60,

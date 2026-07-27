@@ -30,6 +30,7 @@ import {
   Warehouse as WarehouseIcon,
 } from "lucide-react";
 import Link from "next/link";
+import { useMemo } from "react";
 import { type NavGroup, NavGrouped } from "@/components/dashboard/nav-grouped";
 import { NavUser } from "@/components/dashboard/nav-user";
 import UserNavSkeleton from "@/components/dashboard/user-nav-skeleton";
@@ -39,6 +40,7 @@ import {
   SidebarFooter,
   SidebarHeader,
 } from "@/components/ui/sidebar";
+import { useOpenOrderPool } from "@/hooks/use-shop-owner-api";
 import { authClient } from "@/lib/auth-client";
 
 const D = "/dashboard";
@@ -203,6 +205,11 @@ const shopOwnerNavGroups: NavGroup[] = [
         url: `${D}/incoming-orders`,
         icon: ShoppingCartIcon,
       },
+      {
+        title: "Open Orders",
+        url: `${D}/open-orders`,
+        icon: PackageIcon,
+      },
     ],
   },
   {
@@ -263,6 +270,19 @@ const shopOwnerNavGroups: NavGroup[] = [
 
 export function ShopOwnerSidebar(props: React.ComponentProps<typeof Sidebar>) {
   const { data, isPending } = authClient.useSession();
+  const { data: openOrders } = useOpenOrderPool();
+  const navGroups = useMemo(
+    () =>
+      shopOwnerNavGroups.map((group) => ({
+        ...group,
+        items: group.items.map((item) =>
+          item.url === `${D}/open-orders`
+            ? { ...item, badge: (openOrders as any)?.activeCount ?? 0 }
+            : item,
+        ),
+      })),
+    [openOrders],
+  );
 
   return (
     <Sidebar collapsible="offcanvas" {...props}>
@@ -287,7 +307,7 @@ export function ShopOwnerSidebar(props: React.ComponentProps<typeof Sidebar>) {
         </a>
       </SidebarHeader>
       <SidebarContent className="mt-4 thin-scrollbar">
-        <NavGrouped groups={shopOwnerNavGroups} />
+        <NavGrouped groups={navGroups} />
       </SidebarContent>
       <SidebarFooter>
         {isPending || !data ? (

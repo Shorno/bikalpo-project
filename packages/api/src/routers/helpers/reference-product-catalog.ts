@@ -1,4 +1,11 @@
 export type ReferenceCatalogVariant = {
+  catalogVariant?: {
+    brandId?: number | null;
+    configurationState?: string | null;
+    coreProductId?: number | null;
+    isActive?: boolean | null;
+  } | null;
+  catalogVariantId?: number | null;
   isActive?: boolean | null;
   price: string | number;
   sourceVariantPriceId?: number | null;
@@ -12,11 +19,65 @@ export type ReferenceCatalogVariantPrice = {
   isActive?: boolean | null;
 };
 
-export type ReferenceCatalogPriceSource = {
+export type ReferenceCatalogPriceSource = OpenOrderReferenceProduct & {
   price: string | number;
   variantPrices?: ReferenceCatalogVariantPrice[] | null;
   variants?: ReferenceCatalogVariant[] | null;
 };
+
+export type OpenOrderReferenceProduct = {
+  brandId?: number | null;
+  coreProductId?: number | null;
+  creatorSource?: string | null;
+  id?: number | null;
+  scheduledAt?: Date | string | null;
+  status?: string | null;
+  visibility?: string | null;
+};
+
+export type OpenOrderReferenceVariant = {
+  catalogVariant?: {
+    brandId?: number | null;
+    configurationState?: string | null;
+    coreProductId?: number | null;
+    isActive?: boolean | null;
+  } | null;
+  catalogVariantId?: number | null;
+  isActive?: boolean | null;
+  productId?: number | null;
+  variantType?: string | null;
+  visibilityRole?: string | null;
+};
+
+export function isOpenOrderReferenceSelectionEligible(input: {
+  product: OpenOrderReferenceProduct;
+  variant: OpenOrderReferenceVariant;
+  now?: Date;
+}): boolean {
+  const { product, variant } = input;
+  const now = input.now ?? new Date();
+  const scheduledAt = product.scheduledAt
+    ? new Date(product.scheduledAt)
+    : null;
+  const isPublished =
+    scheduledAt === null ||
+    (Number.isFinite(scheduledAt.getTime()) && scheduledAt <= now);
+  return (
+    product.creatorSource === "admin" &&
+    product.status === "active" &&
+    product.visibility === "public" &&
+    product.coreProductId != null &&
+    product.brandId != null &&
+    isPublished &&
+    variant.isActive === true &&
+    variant.productId === product.id &&
+    variant.catalogVariantId != null &&
+    variant.catalogVariant?.isActive === true &&
+    variant.catalogVariant.configurationState === "configured" &&
+    variant.catalogVariant.coreProductId === product.coreProductId &&
+    variant.catalogVariant.brandId === product.brandId
+  );
+}
 
 type SortableReferenceProduct = {
   createdAt: Date | string;
@@ -30,22 +91,24 @@ function asNumber(value: unknown): number {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
-function isConsumerVisibleVariant(variant: ReferenceCatalogVariant): boolean {
-  const isRetailType =
-    variant.variantType === "retail" || variant.variantType == null;
-  const isConsumerRole =
-    variant.visibilityRole === "consumer" ||
-    variant.visibilityRole === "all" ||
-    variant.visibilityRole == null;
-
-  return variant.isActive !== false && isRetailType && isConsumerRole;
+function isCanonicalReferenceVariant(
+  variant: ReferenceCatalogVariant,
+): boolean {
+  return (
+    variant.isActive === true &&
+    variant.catalogVariantId != null &&
+    variant.catalogVariant?.isActive === true &&
+    variant.catalogVariant.configurationState === "configured"
+  );
 }
 
 export function getReferenceProductEffectivePrice(
   product: ReferenceCatalogPriceSource,
 ): number {
-  const consumerVariants = (product.variants ?? []).filter(
-    isConsumerVisibleVariant,
+  const consumerVariants = (product.variants ?? []).filter((variant) =>
+    product.creatorSource === "admin"
+      ? isOpenOrderReferenceSelectionEligible({ product, variant })
+      : isCanonicalReferenceVariant(variant),
   );
   const linkedPriceIds = new Set(
     consumerVariants

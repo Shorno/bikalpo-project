@@ -1,6 +1,7 @@
 // Server reload: fixed catalog input validation for Zod v4 nullish
 import { createContext } from "@bikalpo-project/api/context";
 import { appRouter } from "@bikalpo-project/api/routers/index";
+import { processDueOpenOrders } from "@bikalpo-project/api/services/open-order-matching";
 import { auth } from "@bikalpo-project/auth";
 import { env } from "@bikalpo-project/env/server";
 import { OpenAPIHandler } from "@orpc/openapi/fetch";
@@ -11,10 +12,11 @@ import { ZodToJsonSchemaConverter } from "@orpc/zod/zod4";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
-import { engine } from "./socket";
+import { engine, openOrderRealtime } from "./socket";
 
 const app = new Hono();
-const localFrontendOriginPattern = /^https?:\/\/(?:[a-z0-9-]+\.)?bikalpo\.localhost:3001$/i;
+const localFrontendOriginPattern =
+  /^https?:\/\/(?:[a-z0-9-]+\.)?bikalpo\.localhost:3001$/i;
 
 function resolveCorsOrigin(origin?: string) {
   if (!origin) {
@@ -26,7 +28,10 @@ function resolveCorsOrigin(origin?: string) {
   }
 
   // Keep local subdomains working even if a developer's .env.local is missing one.
-  if (env.NODE_ENV !== "production" && localFrontendOriginPattern.test(origin)) {
+  if (
+    env.NODE_ENV !== "production" &&
+    localFrontendOriginPattern.test(origin)
+  ) {
     return origin;
   }
 
@@ -92,7 +97,7 @@ export const rpcHandler = new RPCHandler(appRouter, {
 app.use("/*", async (c, next) => {
   let context;
   try {
-    context = await createContext({ context: c });
+    context = await createContext({ context: c, realtime: openOrderRealtime });
   } catch (err) {
     console.error("ERROR CREATING CONTEXT:", err);
     return c.json({ error: "Context creation failed" }, 500);
@@ -142,6 +147,32 @@ app.get("/", (c) => {
 // ─── Bun.serve export with Socket.IO integration ───
 
 const { websocket } = engine.handler();
+
+const dueOrderTimer = setInterval(async () => {
+  try {
+    const results = await processDueOpenOrders();
+    for (const result of results) {
+      if (result.action === "unchanged") continue;
+      const event =
+        result.action === "offer_window_closed"
+          ? "open-order:offer-window-closed"
+          : result.action === "no_offers"
+            ? "open-order:no-offers"
+            : `open-order:${result.action}`;
+      openOrderRealtime.emitToOrder(result.orderId, event, {
+        orderId: result.orderId,
+      });
+      for (const shopId of result.shopIds) {
+        openOrderRealtime.emitToShop(shopId, event, {
+          orderId: result.orderId,
+        });
+      }
+    }
+  } catch (error) {
+    console.error("[Open Order Reconciler]", error);
+  }
+}, 5_000);
+dueOrderTimer.unref?.();
 
 export default {
   port: new URL(env.BETTER_AUTH_URL).port || 3000,

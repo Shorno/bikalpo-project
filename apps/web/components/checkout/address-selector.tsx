@@ -54,24 +54,41 @@ export function AddressSelector({
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center py-4">
-        <Loader2 className="h-5 w-5 animate-spin text-emerald-600" />
-        <span className="ml-2 text-sm text-gray-500">Loading addresses...</span>
+      <div className="flex min-h-20 items-center justify-center rounded-xl border border-slate-200 bg-slate-50/70">
+        <Loader2 className="size-4 animate-spin text-emerald-600" />
+        <span className="ml-2 text-sm text-slate-500">
+          Loading saved addresses…
+        </span>
       </div>
     );
   }
 
   if (addresses.length === 0) {
     return (
-      <div className="mb-4">
-        <button
-          type="button"
-          onClick={() => setShowAddModal(true)}
-          className="w-full p-3 rounded-lg border border-dashed border-emerald-300 bg-emerald-50/50 hover:bg-emerald-50 text-emerald-700 flex items-center justify-center gap-2 transition-colors"
-        >
-          <Plus className="h-4 w-4" />
-          <span className="text-sm font-medium">Add a Saved Address</span>
-        </button>
+      <div>
+        <div className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-slate-50/70 p-3.5 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex min-w-0 items-start gap-3">
+            <span className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 shadow-sm">
+              <Home className="size-4" aria-hidden="true" />
+            </span>
+            <div>
+              <p className="text-sm font-semibold text-slate-900">
+                Save an address for next time
+              </p>
+              <p className="mt-0.5 text-xs leading-5 text-slate-500">
+                You can still enter delivery details manually below.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setShowAddModal(true)}
+            className="inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 shadow-sm transition-colors hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
+          >
+            <Plus className="size-4" aria-hidden="true" />
+            Add saved address
+          </button>
+        </div>
 
         {/* Add Address Modal */}
         <Dialog open={showAddModal} onOpenChange={setShowAddModal}>
@@ -90,20 +107,20 @@ export function AddressSelector({
   }
 
   return (
-    <div className="space-y-3 mb-4">
+    <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <p className="text-sm font-medium text-gray-700">Saved Addresses</p>
+        <p className="text-sm font-semibold text-slate-800">Saved addresses</p>
         <button
           type="button"
           onClick={() => setShowAddModal(true)}
-          className="text-xs text-emerald-600 hover:text-emerald-700 flex items-center gap-1"
+          className="flex min-h-8 items-center gap-1 rounded-md px-2 text-xs font-semibold text-emerald-700 transition-colors hover:bg-emerald-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
         >
-          <Plus className="h-3 w-3" />
-          Add New
+          <Plus className="size-3.5" aria-hidden="true" />
+          Add new
         </button>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
         {addresses.map((address) => {
           const isSelected = selectedAddressId === address.id;
           return (
@@ -112,27 +129,33 @@ export function AddressSelector({
               type="button"
               onClick={() => onSelectAddress(address)}
               className={cn(
-                "relative p-3 rounded-lg border text-left transition-all",
+                "relative min-h-24 rounded-xl border p-3.5 text-left transition-all focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600 motion-reduce:transition-none",
                 isSelected
                   ? "border-emerald-500 bg-emerald-50 ring-1 ring-emerald-500"
-                  : "border-gray-200 hover:border-emerald-300 hover:bg-gray-50",
+                  : "border-slate-200 bg-white hover:border-emerald-300 hover:bg-slate-50",
               )}
             >
               {/* Selection indicator */}
               {isSelected && (
-                <div className="absolute top-2 right-2 h-5 w-5 rounded-full bg-emerald-500 flex items-center justify-center">
-                  <Check className="h-3 w-3 text-white" />
+                <div className="absolute top-3 right-3 flex size-5 items-center justify-center rounded-full bg-emerald-600">
+                  <Check className="size-3 text-white" aria-hidden="true" />
                 </div>
               )}
 
               {/* Address label with icon */}
-              <div className="flex items-center gap-1.5 mb-1">
+              <div className="mb-1.5 flex items-center gap-1.5 pr-6">
                 {address.label.toLowerCase() === "home" ? (
-                  <Home className="h-3.5 w-3.5 text-gray-400" />
+                  <Home
+                    className="size-3.5 text-slate-400"
+                    aria-hidden="true"
+                  />
                 ) : (
-                  <MapPin className="h-3.5 w-3.5 text-gray-400" />
+                  <MapPin
+                    className="size-3.5 text-slate-400"
+                    aria-hidden="true"
+                  />
                 )}
-                <span className="text-sm font-medium text-gray-900">
+                <span className="text-sm font-semibold text-slate-900">
                   {address.label}
                 </span>
                 {address.isDefault && (
@@ -146,10 +169,10 @@ export function AddressSelector({
               </div>
 
               {/* Address details */}
-              <p className="text-xs text-gray-600 line-clamp-1">
+              <p className="line-clamp-1 text-xs text-slate-600">
                 {address.recipientName} • {address.phone}
               </p>
-              <p className="text-xs text-gray-500 line-clamp-1">
+              <p className="mt-1 line-clamp-2 text-xs leading-5 text-slate-500">
                 {address.address}, {address.city}
                 {address.area && `, ${address.area}`}
               </p>
@@ -162,14 +185,16 @@ export function AddressSelector({
           type="button"
           onClick={() => onSelectAddress(null)}
           className={cn(
-            "p-3 rounded-lg border text-left transition-all flex items-center justify-center gap-2",
+            "flex min-h-24 items-center justify-center gap-2 rounded-xl border p-3.5 text-left transition-all focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600 motion-reduce:transition-none",
             selectedAddressId === null
               ? "border-emerald-500 bg-emerald-50 ring-1 ring-emerald-500"
-              : "border-dashed border-gray-300 hover:border-emerald-300 hover:bg-gray-50",
+              : "border-dashed border-slate-300 bg-white hover:border-emerald-300 hover:bg-slate-50",
           )}
         >
-          <Plus className="h-4 w-4 text-gray-400" />
-          <span className="text-sm text-gray-600">Use a different address</span>
+          <Plus className="size-4 text-slate-400" aria-hidden="true" />
+          <span className="text-sm font-medium text-slate-600">
+            Enter another address
+          </span>
         </button>
       </div>
 

@@ -11,6 +11,7 @@ import {
   LogOut,
   MapPin,
   Package,
+  ReceiptText,
   ShoppingCart,
   Truck,
   User,
@@ -39,6 +40,11 @@ const sidebarItems = [
     label: "My Orders History",
     href: "/account/orders",
     icon: Package,
+  },
+  {
+    label: "Open Order History",
+    href: "/account/open-orders",
+    icon: ReceiptText,
   },
   {
     label: "Track Order",

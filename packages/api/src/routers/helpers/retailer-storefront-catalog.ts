@@ -16,6 +16,7 @@ export interface RetailerStorefrontVariant {
 export interface RetailerStorefrontProduct {
   id: number;
   name: string;
+  slug: string;
   createdAt: Date | string;
   lowestRetailPrice: number;
   category?: { name: string; slug: string } | null;
@@ -89,6 +90,7 @@ export function filterAndSortRetailerStorefrontProducts<
 >(
   products: T[],
   options: {
+    productSlug?: string | null;
     search?: string | null;
     category?: string | null;
     subcategory?: string | null;
@@ -97,6 +99,9 @@ export function filterAndSortRetailerStorefrontProducts<
 ): T[] {
   const query = options.search?.trim().toLocaleLowerCase() ?? "";
   const filtered = products.filter((product) => {
+    if (options.productSlug && product.slug !== options.productSlug) {
+      return false;
+    }
     if (options.category && product.category?.slug !== options.category) {
       return false;
     }

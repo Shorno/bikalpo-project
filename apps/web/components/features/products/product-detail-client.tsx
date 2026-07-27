@@ -52,6 +52,8 @@ interface ProductDetailClientProps {
   productSize: string;
   features?: ProductFeatureGroup[] | null;
   previewMode?: boolean;
+  purchaseMode?: "open_order" | "retailer_selection" | "direct";
+  directShopId?: string;
 }
 
 /* ── Component ────────────────────────────────────── */
@@ -65,6 +67,8 @@ export function ProductDetailClient({
   productSize,
   features,
   previewMode = false,
+  purchaseMode = "retailer_selection",
+  directShopId,
 }: ProductDetailClientProps) {
   const { data: session } = authClient.useSession();
   const userRole = session?.user?.role as string | undefined;
@@ -118,9 +122,12 @@ export function ProductDetailClient({
     : selected
       ? Number(selected.price)
       : Number(product.price);
-  const displayStock = selected
-    ? (selected.stockQuantity ?? 0)
-    : product.stockQuantity;
+  const displayStock =
+    purchaseMode === "open_order"
+      ? 999
+      : selected
+        ? (selected.stockQuantity ?? 0)
+        : product.stockQuantity;
   const displaySize = selected ? selected.unitLabel : product.size;
   const hasMultiple = sorted.length > 1;
 
@@ -128,6 +135,11 @@ export function ProductDetailClient({
     <div className="flex flex-col">
       {/* ── Price ── */}
       <div className="mb-4">
+        {purchaseMode === "open_order" && (
+          <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-emerald-700">
+            Reference price
+          </p>
+        )}
         {displayPrice > 0 ? (
           <div className="flex items-baseline gap-2">
             <span className="text-3xl font-bold text-gray-900">
@@ -194,11 +206,21 @@ export function ProductDetailClient({
       )}
 
       {/* ── Sellers selling this product ── */}
-      <ProductSellers
-        productId={product.id}
-        selectedSeller={selectedSeller}
-        onSelectSeller={setSelectedSeller}
-      />
+      {purchaseMode === "retailer_selection" && (
+        <ProductSellers
+          productId={product.id}
+          selectedSeller={selectedSeller}
+          onSelectSeller={setSelectedSeller}
+        />
+      )}
+
+      {purchaseMode === "open_order" && (
+        <div className="mb-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-950">
+          Add exact variants to one request. Nearby retailers with the complete
+          stock can offer their store price, discount, and delivery charge. You
+          choose only after all prices freeze.
+        </div>
+      )}
 
       {/* ── Specs ── */}
       <div className="mb-6">
@@ -230,7 +252,10 @@ export function ProductDetailClient({
             stockQuantity: displayStock,
           }}
           variantId={selected?.id}
-          shopId={selectedSeller?.shopId}
+          shopId={
+            purchaseMode === "direct" ? directShopId : selectedSeller?.shopId
+          }
+          purchaseMode={purchaseMode === "open_order" ? "open_order" : "direct"}
           orderMin={selected?.orderMin ? Number(selected.orderMin) : undefined}
           orderMax={selected?.orderMax ? Number(selected.orderMax) : undefined}
           orderIncrement={

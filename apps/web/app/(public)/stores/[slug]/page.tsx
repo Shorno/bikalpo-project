@@ -19,8 +19,9 @@ import {
 } from "@/components/storefront/retailer-storefront";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { useAddToCart } from "@/hooks/use-customer-api";
+import { useCart } from "@/hooks/use-orpc-cart";
 import { isCustomerStorefrontPreview } from "@/lib/customer-storefront-preview";
+import { addRetailerProductToCart } from "@/lib/retailer-quick-add";
 import { orpc } from "@/utils/orpc";
 
 const sortValues = [
@@ -59,8 +60,11 @@ export default function ShopStorePage({
   const sort = getSafeSort(searchParams.get("sort"));
   const page = getSafePage(searchParams.get("page"));
   const [searchInput, setSearchInput] = useState(query);
+  const [quickAddingProductId, setQuickAddingProductId] = useState<
+    number | null
+  >(null);
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const addToCart = useAddToCart();
+  const { addItem } = useCart();
 
   const updateUrl = useCallback(
     (
@@ -151,17 +155,21 @@ export default function ShopStorePage({
     });
   };
 
-  const handleQuickAdd = (product: StorefrontProduct) => {
+  const handleQuickAdd = async (product: StorefrontProduct) => {
     if (previewMode || product.variantCount !== 1 || !data?.shop) return;
     const variant = product.variants[0];
     if (!variant) return;
 
-    addToCart.mutate({
-      productId: product.id,
-      variantId: variant.variantId,
-      shopId: data.shop.id,
-      quantity: 1,
-    });
+    setQuickAddingProductId(product.id);
+    try {
+      await addRetailerProductToCart(addItem, {
+        productId: product.id,
+        variantId: variant.variantId,
+        shopId: data.shop.id,
+      });
+    } finally {
+      setQuickAddingProductId(null);
+    }
   };
 
   if (isLoading && !data) return <StorefrontSkeleton />;
@@ -345,11 +353,9 @@ export default function ShopStorePage({
                       <StorefrontProductCard
                         key={product.id}
                         product={product}
+                        storeSlug={slug}
                         previewMode={previewMode}
-                        isAdding={
-                          addToCart.isPending &&
-                          addToCart.variables?.productId === product.id
-                        }
+                        isAdding={quickAddingProductId === product.id}
                         onQuickAdd={handleQuickAdd}
                       />
                     ))}
