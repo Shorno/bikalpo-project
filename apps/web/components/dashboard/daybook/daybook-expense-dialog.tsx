@@ -267,16 +267,26 @@ export function DaybookExpenseDialog({
         isSynced: true,
         serverExpenseIds: result.expenses.map((expense) => expense.id),
       });
+
+      if (closeAfterSave) {
+        resetForm();
+        closeDialog();
+        void invalidateFinanceQueries();
+        return;
+      }
+
       await invalidateFinanceQueries();
       resetForm();
       setMessage({ text: result.message, tone: "success" });
-
-      if (closeAfterSave) {
-        closeDialog();
-      }
     } catch (error) {
       addDaybookExpense({ ...localExpense, isSynced: false });
       resetForm();
+
+      if (closeAfterSave) {
+        closeDialog();
+        return;
+      }
+
       setMessage({
         text:
           error instanceof Error
@@ -284,10 +294,6 @@ export function DaybookExpenseDialog({
             : "Expense saved locally. Sync failed.",
         tone: "error",
       });
-
-      if (closeAfterSave) {
-        closeDialog();
-      }
     }
   };
 

@@ -309,18 +309,28 @@ export function DaybookLoanDialog({
       });
 
       addDaybookLoan({ ...localLoan, isSynced: true });
+
+      if (closeAfterSave) {
+        setMessage(null);
+        resetForm();
+        onOpenChange(false);
+        void invalidateQueries();
+        return;
+      }
+
       await invalidateQueries();
+      resetForm();
+      setMessage({ text: result.message, tone: "success" });
+    } catch (error) {
+      addDaybookLoan({ ...localLoan, isSynced: false });
       resetForm();
 
       if (closeAfterSave) {
         setMessage(null);
         onOpenChange(false);
-      } else {
-        setMessage({ text: result.message, tone: "success" });
+        return;
       }
-    } catch (error) {
-      addDaybookLoan({ ...localLoan, isSynced: false });
-      resetForm();
+
       setMessage({
         text:
           error instanceof Error
@@ -328,10 +338,6 @@ export function DaybookLoanDialog({
             : "Saved locally. Sync failed.",
         tone: "error",
       });
-
-      if (closeAfterSave) {
-        onOpenChange(false);
-      }
     }
   };
 

@@ -331,18 +331,28 @@ export function DaybookFixedAssetDialog({
       });
 
       addDaybookFixedAssetPurchase({ ...localPurchase, isSynced: true });
+
+      if (closeAfterSave) {
+        setMessage(null);
+        resetForm();
+        onOpenChange(false);
+        void invalidateQueries();
+        return;
+      }
+
       await invalidateQueries();
+      resetForm();
+      setMessage({ text: result.message, tone: "success" });
+    } catch (error) {
+      addDaybookFixedAssetPurchase({ ...localPurchase, isSynced: false });
       resetForm();
 
       if (closeAfterSave) {
         setMessage(null);
         onOpenChange(false);
-      } else {
-        setMessage({ text: result.message, tone: "success" });
+        return;
       }
-    } catch (error) {
-      addDaybookFixedAssetPurchase({ ...localPurchase, isSynced: false });
-      resetForm();
+
       setMessage({
         text:
           error instanceof Error
@@ -350,10 +360,6 @@ export function DaybookFixedAssetDialog({
             : "Saved locally. Sync failed.",
         tone: "error",
       });
-
-      if (closeAfterSave) {
-        onOpenChange(false);
-      }
     }
   };
 
