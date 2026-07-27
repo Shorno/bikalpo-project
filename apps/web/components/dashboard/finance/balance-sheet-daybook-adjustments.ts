@@ -27,6 +27,7 @@ type AccountSection = {
 
 type BalanceSheetSummary = {
   cashAndBank: string;
+  inventory: string;
   netAssets: string;
   payable: string;
   receivable: string;

@@ -59,6 +59,7 @@ type BalanceSheetData = {
   sections: AccountSection[];
   summary: {
     cashAndBank: string;
+    inventory: string;
     netAssets: string;
     payable: string;
     receivable: string;
