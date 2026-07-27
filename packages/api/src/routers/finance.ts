@@ -847,6 +847,100 @@ async function resolveInventoryAccount(input: {
   });
 }
 
+async function ensureOwnerAccountsReceivableAccount(input: {
+  categoryId: number;
+  ownerId: string;
+  ownerType: AccountingOwnerType;
+}): Promise<ResolvedReceivableAccount> {
+  const name = "Accounts Receivable";
+
+  const existing = await db.query.financeAccount.findFirst({
+    where: (table, { and: andFn, eq: eqFn }) =>
+      andFn(
+        eqFn(table.accountType, "asset"),
+        eqFn(table.categoryId, input.categoryId),
+        eqFn(table.name, name),
+        eqFn(table.ownerId, input.ownerId),
+        eqFn(table.ownerType, input.ownerType),
+      ),
+  });
+
+  if (existing) {
+    if (existing.balanceSheetLine !== "accounts_receivable") {
+      await db
+        .update(financeAccount)
+        .set({
+          balanceSheetLine: "accounts_receivable",
+          updatedAt: new Date(),
+        })
+        .where(eq(financeAccount.id, existing.id));
+    }
+
+    return {
+      currentBalance: parseMoney(existing.currentBalance),
+      id: existing.id,
+      name: existing.name,
+    };
+  }
+
+  const code = await generateUniqueCode(
+    financeAccount,
+    input.ownerId,
+    input.ownerType,
+    "asset-accounts-receivable",
+  );
+
+  const [created] = await db
+    .insert(financeAccount)
+    .values({
+      accountType: "asset",
+      balanceSheetLine: "accounts_receivable",
+      categoryId: input.categoryId,
+      code,
+      currentBalance: "0.00",
+      description: "Customer due balances from unpaid product sales.",
+      isActive: true,
+      isPaymentAccount: false,
+      isSystem: false,
+      name,
+      normalBalance: "debit",
+      openingBalance: "0.00",
+      ownerId: input.ownerId,
+      ownerType: input.ownerType,
+      parentAccountId: null,
+      profitAndLossLine: null,
+      sortOrder: 885,
+    })
+    .returning({
+      id: financeAccount.id,
+    });
+
+  if (!created) {
+    throw new ORPCError("INTERNAL_SERVER_ERROR", {
+      message: "Failed to create accounts receivable account",
+    });
+  }
+
+  return {
+    currentBalance: 0,
+    id: created.id,
+    name,
+  };
+}
+
+async function resolveAccountsReceivableAccount(input: {
+  ownerId: string;
+  ownerType: AccountingOwnerType;
+}): Promise<ResolvedReceivableAccount> {
+  const categoryId = await resolveAccountsReceivableCategoryId();
+
+  return ensureOwnerAccountsReceivableAccount({
+    categoryId,
+    ownerId: input.ownerId,
+    ownerType: input.ownerType,
+  });
+}
+
 async function ensureOwnerAccountsPayableAccount(input: {
   categoryId: number;
   ownerId: string;
