@@ -753,6 +753,100 @@ async function resolveSupplierAdvanceAccount(input: {
   });
 }
 
+async function ensureOwnerInventoryAccount(input: {
+  categoryId: number;
+  ownerId: string;
+  ownerType: AccountingOwnerType;
+}): Promise<ResolvedInventoryAccount> {
+  const name = "Inventory";
+
+  const existing = await db.query.financeAccount.findFirst({
+    where: (table, { and: andFn, eq: eqFn }) =>
+      andFn(
+        eqFn(table.accountType, "asset"),
+        eqFn(table.categoryId, input.categoryId),
+        eqFn(table.name, name),
+        eqFn(table.ownerId, input.ownerId),
+        eqFn(table.ownerType, input.ownerType),
+      ),
+  });
+
+  if (existing) {
+    if (existing.balanceSheetLine !== "inventory") {
+      await db
+        .update(financeAccount)
+        .set({
+          balanceSheetLine: "inventory",
+          updatedAt: new Date(),
+        })
+        .where(eq(financeAccount.id, existing.id));
+    }
+
+    return {
+      currentBalance: parseMoney(existing.currentBalance),
+      id: existing.id,
+      name: existing.name,
+    };
+  }
+
+  const code = await generateUniqueCode(
+    financeAccount,
+    input.ownerId,
+    input.ownerType,
+    "asset-inventory",
+  );
+
+  const [created] = await db
+    .insert(financeAccount)
+    .values({
+      accountType: "asset",
+      balanceSheetLine: "inventory",
+      categoryId: input.categoryId,
+      code,
+      currentBalance: "0.00",
+      description: "Product inventory value held for sale.",
+      isActive: true,
+      isPaymentAccount: false,
+      isSystem: false,
+      name,
+      normalBalance: "debit",
+      openingBalance: "0.00",
+      ownerId: input.ownerId,
+      ownerType: input.ownerType,
+      parentAccountId: null,
+      profitAndLossLine: null,
+      sortOrder: 880,
+    })
+    .returning({
+      id: financeAccount.id,
+    });
+
+  if (!created) {
+    throw new ORPCError("INTERNAL_SERVER_ERROR", {
+      message: "Failed to create inventory account",
+    });
+  }
+
+  return {
+    currentBalance: 0,
+    id: created.id,
+    name,
+  };
+}
+
+async function resolveInventoryAccount(input: {
+  ownerId: string;
+  ownerType: AccountingOwnerType;
+}): Promise<ResolvedInventoryAccount> {
+  const categoryId = await resolveInventoryCategoryId();
+
+  return ensureOwnerInventoryAccount({
+    categoryId,
+    ownerId: input.ownerId,
+    ownerType: input.ownerType,
+  });
+}
+
 async function ensureOwnerAccountsPayableAccount(input: {
   categoryId: number;
   ownerId: string;
