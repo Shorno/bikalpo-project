@@ -30,11 +30,13 @@ import { DaybookExpenseDialog } from "@/components/dashboard/daybook/daybook-exp
 import { DaybookFixedAssetDialog } from "@/components/dashboard/daybook/daybook-fixed-asset-dialog";
 import { DaybookLoanDialog } from "@/components/dashboard/daybook/daybook-loan-dialog";
 import { DaybookProductPurchaseDialog } from "@/components/dashboard/daybook/daybook-product-purchase-dialog";
+import { DaybookProductSaleDialog } from "@/components/dashboard/daybook/daybook-product-sale-dialog";
 import { DaybookSupplierAdvanceDialog } from "@/components/dashboard/daybook/daybook-supplier-advance-dialog";
 import { useDaybookExpenses } from "@/components/dashboard/daybook/use-daybook-expenses";
 import { useDaybookFixedAssetPurchases } from "@/components/dashboard/daybook/use-daybook-fixed-assets";
 import { useDaybookLoans } from "@/components/dashboard/daybook/use-daybook-loans";
 import { useDaybookProductPurchases } from "@/components/dashboard/daybook/use-daybook-product-purchases";
+import { useDaybookProductSales } from "@/components/dashboard/daybook/use-daybook-product-sales";
 import { useDaybookSupplierAdvances } from "@/components/dashboard/daybook/use-daybook-supplier-advances";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -75,6 +77,7 @@ type ActionItem = {
     | "fixedAsset"
     | "loan"
     | "productPurchase"
+    | "productSale"
     | "supplierAdvance";
   label: string;
   primary?: boolean;
@@ -219,8 +222,8 @@ const daybookConfigs: Record<DaybookVariant, DaybookConfig> = {
     ],
     quickActions: [
       {
-        href: "/dashboard/sales",
         icon: <ReceiptIcon className="size-4" />,
+        kind: "productSale",
         label: "Sale",
         primary: true,
       },
@@ -383,8 +386,8 @@ const daybookConfigs: Record<DaybookVariant, DaybookConfig> = {
     ],
     quickActions: [
       {
-        href: "/warehouse/dashboard/pos",
         icon: <ReceiptIcon className="size-4" />,
+        kind: "productSale",
         label: "Sale (POS)",
         primary: true,
       },
@@ -480,6 +483,7 @@ export function DaybookKpiPage({ variant }: { variant: DaybookVariant }) {
   const savedFixedAssetPurchases = useDaybookFixedAssetPurchases(variant);
   const savedLoans = useDaybookLoans(variant);
   const savedProductPurchases = useDaybookProductPurchases(variant);
+  const savedProductSales = useDaybookProductSales(variant);
   const savedSupplierAdvances = useDaybookSupplierAdvances(variant);
   const [lastUpdated, setLastUpdated] = useState(() => new Date());
   const [expenseDialogOpen, setExpenseDialogOpen] = useState(false);
@@ -487,6 +491,7 @@ export function DaybookKpiPage({ variant }: { variant: DaybookVariant }) {
   const [loanDialogOpen, setLoanDialogOpen] = useState(false);
   const [productPurchaseDialogOpen, setProductPurchaseDialogOpen] =
     useState(false);
+  const [productSaleDialogOpen, setProductSaleDialogOpen] = useState(false);
   const [supplierAdvanceDialogOpen, setSupplierAdvanceDialogOpen] =
     useState(false);
   const [physicalCash, setPhysicalCash] = useState("");
@@ -513,6 +518,13 @@ export function DaybookKpiPage({ variant }: { variant: DaybookVariant }) {
         .reduce((sum, purchase) => sum + purchase.total, 0),
     [savedProductPurchases],
   );
+  const savedProductSaleCashTotal = useMemo(
+    () =>
+      savedProductSales
+        .filter((sale) => sale.paymentType !== "due")
+        .reduce((sum, sale) => sum + sale.totalSales, 0),
+    [savedProductSales],
+  );
   const savedSupplierAdvanceTotal = useMemo(
     () =>
       savedSupplierAdvances.reduce((sum, advance) => sum + advance.amount, 0),
@@ -524,7 +536,8 @@ export function DaybookKpiPage({ variant }: { variant: DaybookVariant }) {
     savedFixedAssetTotal +
     savedLoanTotal -
     savedProductPurchaseCashTotal -
-    savedSupplierAdvanceTotal;
+    savedSupplierAdvanceTotal +
+    savedProductSaleCashTotal;
   const overviewMetrics = useMemo(
     () =>
       config.metrics.map((metric) =>
@@ -771,6 +784,7 @@ export function DaybookKpiPage({ variant }: { variant: DaybookVariant }) {
                 onProductPurchaseClick={() =>
                   setProductPurchaseDialogOpen(true)
                 }
+                onProductSaleClick={() => setProductSaleDialogOpen(true)}
                 onSupplierAdvanceClick={() =>
                   setSupplierAdvanceDialogOpen(true)
                 }
@@ -978,6 +992,11 @@ export function DaybookKpiPage({ variant }: { variant: DaybookVariant }) {
         open={productPurchaseDialogOpen}
         scope={variant}
       />
+      <DaybookProductSaleDialog
+        onOpenChange={setProductSaleDialogOpen}
+        open={productSaleDialogOpen}
+        scope={variant}
+      />
       <DaybookSupplierAdvanceDialog
         onOpenChange={setSupplierAdvanceDialogOpen}
         open={supplierAdvanceDialogOpen}
@@ -1081,6 +1100,7 @@ function QuickAction({
   onExpenseClick,
   onLoanClick,
   onProductPurchaseClick,
+  onProductSaleClick,
   onSupplierAdvanceClick,
 }: {
   action: ActionItem;
@@ -1088,8 +1108,26 @@ function QuickAction({
   onExpenseClick: () => void;
   onLoanClick: () => void;
   onProductPurchaseClick: () => void;
+  onProductSaleClick: () => void;
   onSupplierAdvanceClick: () => void;
 }) {
+  if (action.kind === "productSale") {
+    return (
+      <Button
+        className={cn(
+          "h-10 justify-start rounded-lg",
+          !action.primary && "bg-slate-100 text-slate-800 hover:bg-slate-200",
+        )}
+        onClick={onProductSaleClick}
+        type="button"
+        variant={action.primary ? "default" : "secondary"}
+      >
+        {action.icon}
+        {action.label}
+      </Button>
+    );
+  }
+
   if (action.kind === "expense") {
     return (
       <Button
