@@ -253,6 +253,24 @@ function buildExpenseNumber(prefix: string, sequence: number) {
   return `${prefix}${String(sequence).padStart(3, "0")}`;
 }
 
+function buildProductSaleItems(
+  items: Array<{
+    description?: string | null;
+    productCost: string | number;
+    productName: string;
+    saleAmount: string | number;
+  }>,
+): ProductSaleItem[] {
+  return items
+    .map((item) => ({
+      description: item.description?.trim() || "Product Sold",
+      productCost: Math.max(0, parseMoney(item.productCost)),
+      productName: item.productName.trim(),
+      saleAmount: parseMoney(item.saleAmount),
+    }))
+    .filter((item) => item.saleAmount > 0 && item.productName.length > 0);
+}
+
 async function resolveExpenseCategoryId(ownerId: string, name: string) {
   const categoryName = name.trim();
   const slug = slugify(categoryName) || "miscellaneous-expenses";
