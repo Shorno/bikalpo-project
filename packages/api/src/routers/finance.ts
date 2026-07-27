@@ -70,6 +70,12 @@ type ResolvedPayableAccount = {
   name: string;
 };
 
+type ResolvedSupplierAdvanceAccount = {
+  currentBalance: number;
+  id: number;
+  name: string;
+};
+
 function resolveOwnerScope(role?: string | null): AccountingOwnerType {
   return role === "warehouse" ? "warehouse" : "shop";
 }
@@ -126,6 +132,17 @@ function resolveAccountReportLines(input: {
   ) {
     return {
       balanceSheetLine: "fixed_assets",
+      profitAndLossLine: null,
+    };
+  }
+
+  if (
+    input.accountType === "asset" &&
+    (input.categoryCode === "asset-supplier-advance" ||
+      input.categoryName.toLowerCase() === "supplier advance")
+  ) {
+    return {
+      balanceSheetLine: "supplier_advance",
       profitAndLossLine: null,
     };
   }
@@ -291,6 +308,27 @@ async function resolveLoanPayableCategoryId() {
   if (!category) {
     throw new ORPCError("INTERNAL_SERVER_ERROR", {
       message: "Loan payable category is not configured",
+    });
+  }
+
+  return category.id;
+}
+
+async function resolveSupplierAdvanceCategoryId() {
+  await ensureDefaultFinanceAccounts();
+
+  const category = await db.query.financeCategory.findFirst({
+    where: (table, { and: andFn, eq: eqFn, isNull: isNullFn }) =>
+      andFn(
+        eqFn(table.code, "asset-supplier-advance"),
+        isNullFn(table.ownerId),
+        isNullFn(table.ownerType),
+      ),
+  });
+
+  if (!category) {
+    throw new ORPCError("INTERNAL_SERVER_ERROR", {
+      message: "Supplier advance category is not configured",
     });
   }
 
@@ -553,6 +591,100 @@ async function resolveLoanAccount(input: {
 
   return ensureOwnerLoanAccount({
     accountName: input.accountName,
+    categoryId,
+    ownerId: input.ownerId,
+    ownerType: input.ownerType,
+  });
+}
+
+async function ensureOwnerSupplierAdvanceAccount(input: {
+  categoryId: number;
+  ownerId: string;
+  ownerType: AccountingOwnerType;
+}): Promise<ResolvedSupplierAdvanceAccount> {
+  const name = "Supplier Advance";
+
+  const existing = await db.query.financeAccount.findFirst({
+    where: (table, { and: andFn, eq: eqFn }) =>
+      andFn(
+        eqFn(table.accountType, "asset"),
+        eqFn(table.categoryId, input.categoryId),
+        eqFn(table.name, name),
+        eqFn(table.ownerId, input.ownerId),
+        eqFn(table.ownerType, input.ownerType),
+      ),
+  });
+
+  if (existing) {
+    if (existing.balanceSheetLine !== "supplier_advance") {
+      await db
+        .update(financeAccount)
+        .set({
+          balanceSheetLine: "supplier_advance",
+          updatedAt: new Date(),
+        })
+        .where(eq(financeAccount.id, existing.id));
+    }
+
+    return {
+      currentBalance: parseMoney(existing.currentBalance),
+      id: existing.id,
+      name: existing.name,
+    };
+  }
+
+  const code = await generateUniqueCode(
+    financeAccount,
+    input.ownerId,
+    input.ownerType,
+    "asset-supplier-advance",
+  );
+
+  const [created] = await db
+    .insert(financeAccount)
+    .values({
+      accountType: "asset",
+      balanceSheetLine: "supplier_advance",
+      categoryId: input.categoryId,
+      code,
+      currentBalance: "0.00",
+      description: "Supplier advances paid before bills are applied.",
+      isActive: true,
+      isPaymentAccount: false,
+      isSystem: false,
+      name,
+      normalBalance: "debit",
+      openingBalance: "0.00",
+      ownerId: input.ownerId,
+      ownerType: input.ownerType,
+      parentAccountId: null,
+      profitAndLossLine: null,
+      sortOrder: 905,
+    })
+    .returning({
+      id: financeAccount.id,
+    });
+
+  if (!created) {
+    throw new ORPCError("INTERNAL_SERVER_ERROR", {
+      message: "Failed to create supplier advance account",
+    });
+  }
+
+  return {
+    currentBalance: 0,
+    id: created.id,
+    name,
+  };
+}
+
+async function resolveSupplierAdvanceAccount(input: {
+  ownerId: string;
+  ownerType: AccountingOwnerType;
+}): Promise<ResolvedSupplierAdvanceAccount> {
+  const categoryId = await resolveSupplierAdvanceCategoryId();
+
+  return ensureOwnerSupplierAdvanceAccount({
     categoryId,
     ownerId: input.ownerId,
     ownerType: input.ownerType,
