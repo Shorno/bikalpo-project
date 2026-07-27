@@ -525,6 +525,10 @@ export function DaybookKpiPage({ variant }: { variant: DaybookVariant }) {
         .reduce((sum, sale) => sum + sale.totalSales, 0),
     [savedProductSales],
   );
+  const savedProductSaleTotal = useMemo(
+    () => savedProductSales.reduce((sum, sale) => sum + sale.totalSales, 0),
+    [savedProductSales],
+  );
   const savedSupplierAdvanceTotal = useMemo(
     () =>
       savedSupplierAdvances.reduce((sum, advance) => sum + advance.amount, 0),
@@ -541,23 +545,43 @@ export function DaybookKpiPage({ variant }: { variant: DaybookVariant }) {
   const overviewMetrics = useMemo(
     () =>
       config.metrics.map((metric) =>
-        metric.label === "Financial Position"
-          ? { ...metric, value: money(adjustedSystemCash) }
-          : metric,
+        {
+          if (metric.label === "Financial Position") {
+            return { ...metric, value: money(adjustedSystemCash) };
+          }
+
+          if (metric.label === "Sales Today") {
+            return {
+              ...metric,
+              value: money(moneyToNumber(metric.value) + savedProductSaleTotal),
+            };
+          }
+
+          return metric;
+        },
       ),
-    [adjustedSystemCash, config.metrics],
+    [adjustedSystemCash, config.metrics, savedProductSaleTotal],
   );
   const closeSummary = useMemo(
     () =>
-      config.closeSummary.map((line) =>
-        line.label === "Expense"
-          ? {
-              ...line,
-              value: money(moneyToNumber(line.value) + savedExpenseTotal),
-            }
-          : line,
-      ),
-    [config.closeSummary, savedExpenseTotal],
+      config.closeSummary.map((line) => {
+        if (line.label === "Expense") {
+          return {
+            ...line,
+            value: money(moneyToNumber(line.value) + savedExpenseTotal),
+          };
+        }
+
+        if (line.label === "Sales") {
+          return {
+            ...line,
+            value: money(moneyToNumber(line.value) + savedProductSaleTotal),
+          };
+        }
+
+        return line;
+      }),
+    [config.closeSummary, savedExpenseTotal, savedProductSaleTotal],
   );
   const snapshotTransactions = useMemo(() => {
     const expenseTransactions = savedExpenses
