@@ -1,0 +1,502 @@
+"use client";
+
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  CalendarIcon,
+  PaperclipIcon,
+  PrinterIcon,
+  RepeatIcon,
+  SaveIcon,
+} from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import type { DaybookExpenseScope } from "@/components/dashboard/daybook/daybook-expense-ledger";
+import {
+  addDaybookSupplierAdvance,
+  createDaybookSupplierAdvanceId,
+} from "@/components/dashboard/daybook/daybook-supplier-advance-ledger";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
+import { orpc } from "@/utils/orpc";
+
+type DaybookSupplierAdvanceDialogProps = {
+  onOpenChange: (open: boolean) => void;
+  open: boolean;
+  scope: DaybookExpenseScope;
+};
+
+const PAYMENT_METHODS = ["Cash", "Bank"] as const;
+
+type PaymentMethodLabel = (typeof PAYMENT_METHODS)[number];
+
+function paymentTypeToMethod(type?: "cash" | "bank"): PaymentMethodLabel {
+  return type === "bank" ? "Bank" : "Cash";
+}
+
+function methodToPaymentType(method: PaymentMethodLabel): "cash" | "bank" {
+  return method === "Bank" ? "bank" : "cash";
+}
+
+function dateValue(date = new Date()) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(
+    2,
+    "0",
+  )}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function money(value: number) {
+  return `Tk${value.toLocaleString("en-US", {
+    maximumFractionDigits: 2,
+    minimumFractionDigits: 2,
+  })}`;
+}
+
+function toAmount(value: string) {
+  const parsed = Number.parseFloat(value.replace(/,/g, ""));
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+}
+
+export function DaybookSupplierAdvanceDialog({
+  onOpenChange,
+  open,
+  scope,
+}: DaybookSupplierAdvanceDialogProps) {
+  const queryClient = useQueryClient();
+  const { data: paymentAccountsData } = useQuery(
+    orpc.finance.getPaymentAccounts.queryOptions({ input: {} }),
+  );
+  const createAdvanceMutation = useMutation(
+    orpc.finance.createSupplierAdvancePayment.mutationOptions(),
+  );
+  const paymentAccounts = useMemo(
+    () => paymentAccountsData?.paymentAccounts ?? [],
+    [paymentAccountsData?.paymentAccounts],
+  );
+  const [supplier, setSupplier] = useState("");
+  const [advanceNo, setAdvanceNo] = useState("");
+  const [referenceNo, setReferenceNo] = useState("");
+  const [paymentAccountId, setPaymentAccountId] = useState(
+    paymentAccounts[0]?.id ?? "",
+  );
+  const [paymentDate, setPaymentDate] = useState(dateValue);
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethodLabel>(
+    PAYMENT_METHODS[0] ?? "Cash",
+  );
+  const [amount, setAmount] = useState("");
+  const [notes, setNotes] = useState("");
+  const [message, setMessage] = useState<{
+    tone: "error" | "success";
+    text: string;
+  } | null>(null);
+  const scopeLabel = scope === "warehouse" ? "Warehouse" : "Retailer";
+  const selectedPaymentAccount = useMemo(
+    () => paymentAccounts.find((account) => account.id === paymentAccountId),
+    [paymentAccountId, paymentAccounts],
+  );
+  const total = useMemo(() => toAmount(amount), [amount]);
+  const cashOutLabel = total > 0 ? `-${money(total)}` : money(0);
+
+  useEffect(() => {
+    if (
+      paymentAccounts.length > 0 &&
+      !paymentAccounts.some((account) => account.id === paymentAccountId)
+    ) {
+      setPaymentAccountId(paymentAccounts[0]?.id ?? "");
+    }
+  }, [paymentAccountId, paymentAccounts]);
+
+  useEffect(() => {
+    const nextPaymentMethod = paymentTypeToMethod(selectedPaymentAccount?.type);
+    setPaymentMethod((currentPaymentMethod) =>
+      currentPaymentMethod === nextPaymentMethod
+        ? currentPaymentMethod
+        : nextPaymentMethod,
+    );
+  }, [selectedPaymentAccount?.type]);
+
+  const changePaymentMethod = (method: PaymentMethodLabel) => {
+    setPaymentMethod(method);
+    const matchingAccount = paymentAccounts.find(
+      (account) => account.type === methodToPaymentType(method),
+    );
+
+    if (matchingAccount) {
+      setPaymentAccountId(matchingAccount.id);
+    }
+  };
+
+  const invalidateQueries = async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({
+        queryKey: orpc.finance.getPaymentAccounts.key(),
+      }),
+      queryClient.invalidateQueries({
+        queryKey: orpc.finance.getChartOfAccounts.key(),
+      }),
+      queryClient.invalidateQueries({
+        queryKey: orpc.balanceSheet.getBalanceSheet.key(),
+      }),
+      queryClient.invalidateQueries({
+        queryKey: orpc.profitLoss.getMonthlyPnL.key(),
+      }),
+    ]);
+  };
+
+  const resetForm = () => {
+    setSupplier("");
+    setAdvanceNo("");
+    setReferenceNo("");
+    setPaymentAccountId(paymentAccounts[0]?.id ?? "");
+    setPaymentDate(dateValue());
+    setPaymentMethod(PAYMENT_METHODS[0] ?? "Cash");
+    setAmount("");
+    setNotes("");
+  };
+
+  const handleDialogOpenChange = (nextOpen: boolean) => {
+    if (!nextOpen) {
+      setMessage(null);
+      resetForm();
+    }
+
+    onOpenChange(nextOpen);
+  };
+
+  const saveAdvance = async (closeAfterSave: boolean) => {
+    if (!selectedPaymentAccount) {
+      setMessage({ text: "Select a payment account.", tone: "error" });
+      return;
+    }
+
+    if (total <= 0) {
+      setMessage({
+        text: "Enter a supplier advance amount.",
+        tone: "error",
+      });
+      return;
+    }
+
+    const selectedPaymentMethod =
+      selectedPaymentAccount.type ?? methodToPaymentType(paymentMethod);
+    const localAdvance = {
+      advanceNo: advanceNo.trim(),
+      amount: total,
+      createdAt: new Date().toISOString(),
+      id: createDaybookSupplierAdvanceId("daybook-supplier-advance"),
+      notes: notes.trim(),
+      paymentAccountId: selectedPaymentAccount.id,
+      paymentAccountName: selectedPaymentAccount.name,
+      paymentAccountType: selectedPaymentAccount.type,
+      paymentDate,
+      paymentMethod: selectedPaymentMethod,
+      referenceNo: referenceNo.trim(),
+      scope,
+      supplier: supplier.trim() || "ABC Supplier",
+    };
+
+    try {
+      const result = await createAdvanceMutation.mutateAsync({
+        advanceNo: advanceNo.trim() || undefined,
+        amount: total,
+        notes: notes.trim() || undefined,
+        paymentAccountId: selectedPaymentAccount.id,
+        paymentDate,
+        paymentMethod: selectedPaymentMethod,
+        referenceNo: referenceNo.trim() || undefined,
+        supplier: supplier.trim() || undefined,
+      });
+
+      addDaybookSupplierAdvance({ ...localAdvance, isSynced: true });
+      await invalidateQueries();
+      resetForm();
+
+      if (closeAfterSave) {
+        setMessage(null);
+        onOpenChange(false);
+      } else {
+        setMessage({ text: result.message, tone: "success" });
+      }
+    } catch (error) {
+      addDaybookSupplierAdvance({ ...localAdvance, isSynced: false });
+      resetForm();
+      setMessage({
+        text:
+          error instanceof Error
+            ? `Saved locally. Sync failed: ${error.message}`
+            : "Saved locally. Sync failed.",
+        tone: "error",
+      });
+
+      if (closeAfterSave) {
+        onOpenChange(false);
+      }
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={handleDialogOpenChange}>
+      <DialogContent className="max-h-[92vh] overflow-y-auto bg-slate-50 p-0 sm:max-w-5xl">
+        <DialogHeader className="border-slate-200 border-b bg-white px-5 py-4">
+          <DialogTitle className="text-2xl font-bold text-slate-900">
+            Supplier Advance Payment
+          </DialogTitle>
+          <DialogDescription>
+            Record cash or bank advance paid to a supplier for {scopeLabel}.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="px-5 py-6">
+          <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_280px]">
+            <div className="grid gap-5 md:grid-cols-2">
+              <div className="grid gap-2">
+                <Label htmlFor="supplier-advance-supplier">Supplier</Label>
+                <Input
+                  id="supplier-advance-supplier"
+                  onChange={(event) => setSupplier(event.target.value)}
+                  placeholder="ABC Supplier"
+                  value={supplier}
+                />
+              </div>
+
+              <div className="grid gap-2">
+                <Label htmlFor="supplier-advance-payment-account">
+                  Payment account
+                </Label>
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                  <Select
+                    onValueChange={setPaymentAccountId}
+                    value={paymentAccountId}
+                  >
+                    <SelectTrigger
+                      className="w-full border-emerald-500 bg-white"
+                      id="supplier-advance-payment-account"
+                    >
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {paymentAccounts.map((account) => (
+                        <SelectItem key={account.id} value={account.id}>
+                          {account.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <span className="whitespace-nowrap font-medium text-slate-600 text-sm">
+                    Balance {money(selectedPaymentAccount?.balance ?? 0)}
+                  </span>
+                </div>
+              </div>
+
+              <div className="grid gap-2">
+                <Label htmlFor="supplier-advance-amount">Advance Amount</Label>
+                <Input
+                  id="supplier-advance-amount"
+                  inputMode="decimal"
+                  onChange={(event) => setAmount(event.target.value)}
+                  placeholder="50,000.00"
+                  value={amount}
+                />
+              </div>
+
+              <div className="grid content-end gap-2">
+                <div className="rounded-lg border border-slate-200 bg-white px-4 py-3">
+                  <div className="font-semibold text-slate-500 text-xs uppercase">
+                    Accounting
+                  </div>
+                  <div className="mt-2 grid gap-1 text-sm">
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-slate-500">Cash & Bank</span>
+                      <span className="font-semibold text-red-600 tabular-nums">
+                        {cashOutLabel}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-slate-500">Supplier Advance</span>
+                      <span className="font-semibold text-emerald-700 tabular-nums">
+                        {money(total)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-lg bg-white p-4 text-right">
+              <div className="font-semibold text-slate-500 text-xs uppercase">
+                Amount
+              </div>
+              <div className="mt-2 font-bold text-4xl text-slate-900 tabular-nums">
+                {money(total)}
+              </div>
+              <p className="mt-2 text-slate-500 text-sm">Balance Sheet Only</p>
+              <div className="mt-4 grid gap-2 border-slate-200 border-t pt-4 text-sm">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-slate-500">P&L Effect</span>
+                  <span className="font-semibold tabular-nums">{money(0)}</span>
+                </div>
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-slate-500">Outstanding</span>
+                  <span className="font-semibold tabular-nums">{money(0)}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-6 grid gap-5 md:grid-cols-2 xl:grid-cols-[minmax(180px,220px)_minmax(180px,240px)_minmax(180px,240px)_minmax(180px,240px)]">
+            <div className="grid gap-2">
+              <Label htmlFor="supplier-advance-payment-date">
+                Payment Date
+              </Label>
+              <div className="relative">
+                <Input
+                  id="supplier-advance-payment-date"
+                  onChange={(event) => setPaymentDate(event.target.value)}
+                  type="date"
+                  value={paymentDate}
+                />
+                <CalendarIcon className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-slate-500" />
+              </div>
+            </div>
+
+            <div className="grid gap-2">
+              <Label htmlFor="supplier-advance-payment-method">
+                Payment Method
+              </Label>
+              <Select
+                onValueChange={(value) =>
+                  changePaymentMethod(value as PaymentMethodLabel)
+                }
+                value={paymentMethod}
+              >
+                <SelectTrigger
+                  className="w-full bg-white"
+                  id="supplier-advance-payment-method"
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {PAYMENT_METHODS.map((method) => (
+                    <SelectItem key={method} value={method}>
+                      {method}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="grid gap-2">
+              <Label htmlFor="supplier-advance-reference">Ref no.</Label>
+              <Input
+                id="supplier-advance-reference"
+                onChange={(event) => setReferenceNo(event.target.value)}
+                placeholder="REF-001"
+                value={referenceNo}
+              />
+            </div>
+
+            <div className="grid gap-2">
+              <Label htmlFor="supplier-advance-number">Advance no.</Label>
+              <Input
+                id="supplier-advance-number"
+                onChange={(event) => setAdvanceNo(event.target.value)}
+                placeholder="ADV-2026-001"
+                value={advanceNo}
+              />
+            </div>
+          </div>
+
+          {message ? (
+            <div
+              className={`mt-4 rounded-lg px-4 py-3 font-medium text-sm ${
+                message.tone === "error"
+                  ? "bg-red-50 text-red-700"
+                  : "bg-emerald-50 text-emerald-700"
+              }`}
+            >
+              {message.text}
+            </div>
+          ) : null}
+
+          <div className="mt-8 grid gap-6 lg:grid-cols-[minmax(0,0.8fr)_minmax(0,0.8fr)]">
+            <div className="grid gap-2">
+              <Label htmlFor="supplier-advance-notes">Notes</Label>
+              <Textarea
+                className="min-h-36 bg-white"
+                id="supplier-advance-notes"
+                onChange={(event) => setNotes(event.target.value)}
+                value={notes}
+              />
+            </div>
+
+            <div className="grid content-start gap-2">
+              <Label>Attachments</Label>
+              <div className="flex min-h-28 flex-col items-center justify-center rounded-lg border border-dashed border-slate-300 bg-white p-5 text-center text-slate-500">
+                <PaperclipIcon className="mb-2 size-5 text-blue-600" />
+                <button
+                  className="font-semibold text-blue-700 hover:text-blue-800"
+                  type="button"
+                >
+                  Add attachment
+                </button>
+                <p className="mt-1 text-xs">Max file size: 20 MB</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="-mx-5 mt-8 flex flex-col gap-3 border-slate-200 border-t bg-white px-5 py-4 sm:flex-row sm:items-center">
+            <Button
+              className="border-emerald-600 text-emerald-700 hover:bg-emerald-50"
+              onClick={() => handleDialogOpenChange(false)}
+              type="button"
+              variant="outline"
+            >
+              Cancel
+            </Button>
+            <div className="flex-1" />
+            <Button type="button" variant="ghost">
+              <PrinterIcon data-icon="inline-start" />
+              Print
+            </Button>
+            <Button type="button" variant="ghost">
+              <RepeatIcon data-icon="inline-start" />
+              Make recurring
+            </Button>
+            <Button
+              className="border-emerald-600 text-emerald-700 hover:bg-emerald-50"
+              disabled={createAdvanceMutation.isPending}
+              onClick={() => saveAdvance(false)}
+              type="button"
+              variant="outline"
+            >
+              <SaveIcon data-icon="inline-start" />
+              Save & Share
+            </Button>
+            <Button
+              className="bg-emerald-700 hover:bg-emerald-800"
+              disabled={createAdvanceMutation.isPending}
+              onClick={() => saveAdvance(true)}
+              type="button"
+            >
+              Save & Close
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
