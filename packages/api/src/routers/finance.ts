@@ -376,6 +376,27 @@ async function resolveInventoryCategoryId() {
   return category.id;
 }
 
+async function resolveAccountsReceivableCategoryId() {
+  await ensureDefaultFinanceAccounts();
+
+  const category = await db.query.financeCategory.findFirst({
+    where: (table, { and: andFn, eq: eqFn, isNull: isNullFn }) =>
+      andFn(
+        eqFn(table.code, "asset-accounts-receivable"),
+        isNullFn(table.ownerId),
+        isNullFn(table.ownerType),
+      ),
+  });
+
+  if (!category) {
+    throw new ORPCError("INTERNAL_SERVER_ERROR", {
+      message: "Accounts receivable category is not configured",
+    });
+  }
+
+  return category.id;
+}
+
 async function resolveAccountsPayableCategoryId() {
   await ensureDefaultFinanceAccounts();
 
