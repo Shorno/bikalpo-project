@@ -1785,6 +1785,208 @@ export const financeRouter = {
       };
     }),
 
+  createProductSale: protectedProcedure
+    .route({
+      method: "POST",
+      path: "/finance/product-sales/create",
+      tags: ["Finance"],
+      summary: "Create product sale",
+      description:
+        "Record a product sale, recognize Product Sales and COGS, reduce inventory, and update cash or Accounts Receivable.",
+    })
+    .input(
+      z.object({
+        customer: z.string().max(200).optional().nullable(),
+        items: z
+          .array(
+            z.object({
+              description: z.string().max(260).optional().nullable(),
+              productCost: z.union([z.string(), z.number()]),
+              productName: z.string().min(1).max(220),
+              saleAmount: z.union([z.string(), z.number()]),
+            }),
+          )
+          .min(1),
+        notes: z.string().max(1000).optional().nullable(),
+        paymentAccountId: z.union([z.string(), z.number()]).optional().nullable(),
+        paymentMethod: z.enum(PAYMENT_METHODS).optional().nullable(),
+        paymentType: z.enum(PRODUCT_SALE_PAYMENT_TYPES).default("cash"),
+        referenceNo: z.string().max(120).optional().nullable(),
+        saleDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        saleNo: z.string().max(120).optional().nullable(),
+      }),
+    )
+    .handler(async ({ context, input }) => {
+      const ownerId = context.session.user.id;
+      const ownerType = resolveOwnerScope(context.session.user.role);
+      const isDueSale = input.paymentType === "due";
+      const paymentAccountId = Number(input.paymentAccountId);
+
+      await ensureDefaultFinancePaymentAccounts({ ownerId, ownerType });
+
+      const paymentAccount = isDueSale
+        ? null
+        : await db.query.financePaymentAccount.findFirst({
+            where: (table, { and: andFn, eq: eqFn }) =>
+              andFn(
+                eqFn(table.id, paymentAccountId),
+                eqFn(table.ownerId, ownerId),
+                eqFn(table.ownerType, ownerType),
+              ),
+          });
+
+      if (!isDueSale) {
+        if (!Number.isFinite(paymentAccountId)) {
+          throw new ORPCError("BAD_REQUEST", {
+            message: "Select a valid payment account",
+          });
+        }
+
+        if (
+          !paymentAccount ||
+          (paymentAccount.type !== "cash" && paymentAccount.type !== "bank")
+        ) {
+          throw new ORPCError("NOT_FOUND", {
+            message: "Cash or bank payment account not found",
+          });
+        }
+
+        if (paymentAccount.type !== input.paymentMethod) {
+          throw new ORPCError("BAD_REQUEST", {
+            message: "Payment method must match the selected payment account",
+          });
+        }
+      }
+
+      const saleItems = buildProductSaleItems(input.items);
+
+      if (saleItems.length === 0) {
+        throw new ORPCError("BAD_REQUEST", {
+          message: "Enter at least one product sale amount",
+        });
+      }
+
+      const saleTotal = saleItems.reduce(
+        (sum, item) => sum + item.saleAmount,
+        0,
+      );
+      const productCostTotal = saleItems.reduce(
+        (sum, item) => sum + item.productCost,
+        0,
+      );
+      const grossProfit = saleTotal - productCostTotal;
+      const inventoryAccount = await resolveInventoryAccount({
+        ownerId,
+        ownerType,
+      });
+      const accountsReceivable = isDueSale
+        ? await resolveAccountsReceivableAccount({ ownerId, ownerType })
+        : null;
+      const balanceBefore = paymentAccount
+        ? parseMoney(paymentAccount.currentBalance)
+        : 0;
+      const balanceAfter = paymentAccount ? balanceBefore + saleTotal : 0;
+      const receivableAfter = accountsReceivable
+        ? accountsReceivable.currentBalance + saleTotal
+        : null;
+      const inventoryAfter =
+        inventoryAccount.currentBalance - productCostTotal;
+      const saleDescription = [
+        isDueSale ? "Product sale due" : "Product sale",
+        input.customer?.trim() ? `Customer: ${input.customer.trim()}` : null,
+        input.saleNo?.trim() ? `Sale: ${input.saleNo.trim()}` : null,
+        input.referenceNo?.trim()
+          ? `Reference: ${input.referenceNo.trim()}`
+          : null,
+        `Payment type: ${input.paymentType}`,
+        `Items: ${saleItems
+          .map((item) => `${item.productName} (${item.description})`)
+          .join(", ")}`,
+      ]
+        .filter(Boolean)
+        .join(" | ");
+
+      await db.transaction(async (tx) => {
+        if (paymentAccount) {
+          await tx
+            .update(financePaymentAccount)
+            .set({
+              currentBalance: toMoney(balanceAfter),
+              updatedAt: new Date(),
+            })
+            .where(eq(financePaymentAccount.id, paymentAccount.id));
+        }
+
+        if (accountsReceivable && receivableAfter !== null) {
+          await tx
+            .update(financeAccount)
+            .set({
+              balanceSheetLine: "accounts_receivable",
+              currentBalance: toMoney(receivableAfter),
+              updatedAt: new Date(),
+            })
+            .where(eq(financeAccount.id, accountsReceivable.id));
+        }
+
+        await tx
+          .update(financeAccount)
+          .set({
+            balanceSheetLine: "inventory",
+            currentBalance: toMoney(inventoryAfter),
+            updatedAt: new Date(),
+          })
+          .where(eq(financeAccount.id, inventoryAccount.id));
+
+        await tx.insert(financialLedger).values({
+          amount: toMoney(saleTotal),
+          balanceAfter: paymentAccount ? toMoney(balanceAfter) : null,
+          balanceBefore: paymentAccount ? toMoney(balanceBefore) : null,
+          description: saleDescription,
+          direction: "credit",
+          entryType: "sale",
+          ownerId,
+          ownerType,
+          referenceId:
+            paymentAccount?.id ?? accountsReceivable?.id ?? inventoryAccount.id,
+          referenceType: "adjustment",
+        });
+
+        if (productCostTotal > 0) {
+          await tx.insert(financialLedger).values({
+            amount: toMoney(productCostTotal),
+            balanceAfter: paymentAccount ? "0.00" : null,
+            balanceBefore: paymentAccount ? "0.00" : null,
+            description: `${saleDescription} | COGS`,
+            direction: "debit",
+            entryType: "sale",
+            ownerId,
+            ownerType,
+            referenceId: inventoryAccount.id,
+            referenceType: "adjustment",
+          });
+        }
+      });
+
+      return {
+        balanceAfter: paymentAccount ? toMoney(balanceAfter) : null,
+        grossProfit: toMoney(grossProfit),
+        inventoryAfter: toMoney(inventoryAfter),
+        items: saleItems.map((item) => ({
+          description: item.description,
+          productCost: toMoney(item.productCost),
+          productName: item.productName,
+          saleAmount: toMoney(item.saleAmount),
+        })),
+        message: isDueSale
+          ? "Product sale due saved and Accounts Receivable updated"
+          : "Product sale saved and Profit & Loss updated",
+        receivableAfter:
+          receivableAfter === null ? null : toMoney(receivableAfter),
+        saleTotal: toMoney(saleTotal),
+        totalCost: toMoney(productCostTotal),
+      };
+    }),
+
   createLoanReceived: protectedProcedure
     .route({
       method: "POST",
