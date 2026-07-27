@@ -355,6 +355,27 @@ async function resolveSupplierAdvanceCategoryId() {
   return category.id;
 }
 
+async function resolveInventoryCategoryId() {
+  await ensureDefaultFinanceAccounts();
+
+  const category = await db.query.financeCategory.findFirst({
+    where: (table, { and: andFn, eq: eqFn, isNull: isNullFn }) =>
+      andFn(
+        eqFn(table.code, "asset-inventory"),
+        isNullFn(table.ownerId),
+        isNullFn(table.ownerType),
+      ),
+  });
+
+  if (!category) {
+    throw new ORPCError("INTERNAL_SERVER_ERROR", {
+      message: "Inventory category is not configured",
+    });
+  }
+
+  return category.id;
+}
+
 async function resolveAccountsPayableCategoryId() {
   await ensureDefaultFinanceAccounts();
 
