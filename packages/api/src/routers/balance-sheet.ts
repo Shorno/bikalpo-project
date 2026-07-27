@@ -155,6 +155,32 @@ export const balanceSheetRouter = {
         0,
       );
 
+      const supplierAdvanceRows = await db
+        .select({
+          amount: financeAccount.currentBalance,
+          label: financeAccount.name,
+        })
+        .from(financeAccount)
+        .where(
+          and(
+            eq(financeAccount.ownerId, ownerId),
+            eq(financeAccount.ownerType, ownerType),
+            eq(financeAccount.accountType, "asset"),
+            eq(financeAccount.balanceSheetLine, "supplier_advance"),
+          ),
+        )
+        .orderBy(asc(financeAccount.sortOrder), asc(financeAccount.name));
+      const currentSupplierAdvanceRows = supplierAdvanceRows
+        .map((row) => ({
+          amount: toNumber(row.amount),
+          label: row.label,
+        }))
+        .filter((row) => row.amount !== 0);
+      const supplierAdvance = currentSupplierAdvanceRows.reduce(
+        (sum, row) => sum + row.amount,
+        0,
+      );
+
       const loanPayableRows = await db
         .select({
           amount: financeAccount.currentBalance,
@@ -555,12 +581,23 @@ export const balanceSheetRouter = {
 
       const retainedEarnings = revenue - expenseTotal;
       const cashAndBank =
-        retainedEarnings + payable + loanPayable - receivable - fixedAssets;
-      const totalAssets = cashAndBank + receivable + fixedAssets;
+        retainedEarnings +
+        payable +
+        loanPayable -
+        receivable -
+        supplierAdvance -
+        fixedAssets;
+      const totalAssets =
+        cashAndBank + receivable + supplierAdvance + fixedAssets;
       const totalLiabilities = payable + loanPayable;
       const totalEquity = totalAssets - totalLiabilities;
       const netAssets =
-        cashAndBank + receivable + fixedAssets - payable - loanPayable;
+        cashAndBank +
+        receivable +
+        supplierAdvance +
+        fixedAssets -
+        payable -
+        loanPayable;
       const asOfLabel = formatReportDate(endDate);
       const startLabel = formatReportDate(startDate);
 
@@ -594,6 +631,24 @@ export const balanceSheetRouter = {
                 rows: [{ label: "Cash on Hand", amount: toMoney(cashAndBank) }],
                 total: toMoney(cashAndBank),
                 totalLabel: "Total Cash and Bank",
+              },
+              {
+                title: "Supplier Advance",
+                rows:
+                  currentSupplierAdvanceRows.length > 0
+                    ? currentSupplierAdvanceRows.map((row) => ({
+                        label: row.label,
+                        amount: toMoney(row.amount),
+                      }))
+                    : [
+                        {
+                          label: "Supplier Advance",
+                          amount: toMoney(0),
+                          muted: true,
+                        },
+                      ],
+                total: toMoney(supplierAdvance),
+                totalLabel: "Total Supplier Advance",
               },
               {
                 title: "Other Current Assets",
