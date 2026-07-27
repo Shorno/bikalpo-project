@@ -107,8 +107,14 @@ export function DaybookFixedAssetDialog({
   const createPurchaseMutation = useMutation(
     orpc.finance.createFixedAssetPurchase.mutationOptions(),
   );
-  const paymentAccounts = paymentAccountsData?.paymentAccounts ?? [];
-  const assetAccounts = assetAccountsData?.accounts ?? [];
+  const paymentAccounts = useMemo(
+    () => paymentAccountsData?.paymentAccounts ?? [],
+    [paymentAccountsData?.paymentAccounts],
+  );
+  const assetAccounts = useMemo(
+    () => assetAccountsData?.accounts ?? [],
+    [assetAccountsData?.accounts],
+  );
   const [supplier, setSupplier] = useState("");
   const [billNo, setBillNo] = useState("");
   const [referenceNo, setReferenceNo] = useState("");
@@ -149,20 +155,6 @@ export function DaybookFixedAssetDialog({
   useEffect(() => {
     setPaymentMethod(paymentTypeToMethod(selectedPaymentAccount?.type));
   }, [selectedPaymentAccount]);
-
-  useEffect(() => {
-    if (!open) {
-      setMessage(null);
-      setSupplier("");
-      setBillNo("");
-      setReferenceNo("");
-      setPaymentAccountId(paymentAccounts[0]?.id ?? "");
-      setPaymentDate(dateValue());
-      setPaymentMethod(PAYMENT_METHODS[0] ?? "Cash");
-      setNotes("");
-      setLines([createDraftLine()]);
-    }
-  }, [open, paymentAccounts]);
 
   const updateLine = (
     lineId: string,
@@ -271,6 +263,15 @@ export function DaybookFixedAssetDialog({
     setLines([createDraftLine()]);
   };
 
+  const handleDialogOpenChange = (nextOpen: boolean) => {
+    if (!nextOpen) {
+      setMessage(null);
+      resetForm();
+    }
+
+    onOpenChange(nextOpen);
+  };
+
   const savePurchase = async (closeAfterSave: boolean) => {
     const purchaseLines = buildPurchaseLines();
     if (!selectedPaymentAccount) {
@@ -327,10 +328,12 @@ export function DaybookFixedAssetDialog({
       addDaybookFixedAssetPurchase({ ...localPurchase, isSynced: true });
       await invalidateQueries();
       resetForm();
-      setMessage({ text: result.message, tone: "success" });
 
       if (closeAfterSave) {
+        setMessage(null);
         onOpenChange(false);
+      } else {
+        setMessage({ text: result.message, tone: "success" });
       }
     } catch (error) {
       addDaybookFixedAssetPurchase({ ...localPurchase, isSynced: false });
@@ -350,7 +353,7 @@ export function DaybookFixedAssetDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleDialogOpenChange}>
       <DialogContent className="max-h-[92vh] overflow-y-auto bg-slate-50 p-0 sm:max-w-6xl">
         <DialogHeader className="border-slate-200 border-b bg-white px-5 py-4">
           <DialogTitle className="text-2xl font-bold text-slate-900">
@@ -604,7 +607,7 @@ export function DaybookFixedAssetDialog({
           <div className="-mx-5 mt-8 flex flex-col gap-3 border-slate-200 border-t bg-white px-5 py-4 sm:flex-row sm:items-center">
             <Button
               className="border-emerald-600 text-emerald-700 hover:bg-emerald-50"
-              onClick={() => onOpenChange(false)}
+              onClick={() => handleDialogOpenChange(false)}
               type="button"
               variant="outline"
             >

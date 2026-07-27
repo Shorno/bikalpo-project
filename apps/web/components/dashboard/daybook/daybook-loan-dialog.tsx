@@ -105,8 +105,14 @@ export function DaybookLoanDialog({
   const createLoanMutation = useMutation(
     orpc.finance.createLoanReceived.mutationOptions(),
   );
-  const paymentAccounts = paymentAccountsData?.paymentAccounts ?? [];
-  const loanAccounts = loanAccountsData?.accounts ?? [];
+  const paymentAccounts = useMemo(
+    () => paymentAccountsData?.paymentAccounts ?? [],
+    [paymentAccountsData?.paymentAccounts],
+  );
+  const loanAccounts = useMemo(
+    () => loanAccountsData?.accounts ?? [],
+    [loanAccountsData?.accounts],
+  );
   const [lender, setLender] = useState("");
   const [loanNo, setLoanNo] = useState("");
   const [referenceNo, setReferenceNo] = useState("");
@@ -147,20 +153,6 @@ export function DaybookLoanDialog({
   useEffect(() => {
     setPaymentMethod(paymentTypeToMethod(selectedPaymentAccount?.type));
   }, [selectedPaymentAccount]);
-
-  useEffect(() => {
-    if (!open) {
-      setMessage(null);
-      setLender("");
-      setLoanNo("");
-      setReferenceNo("");
-      setPaymentAccountId(paymentAccounts[0]?.id ?? "");
-      setReceiveDate(dateValue());
-      setPaymentMethod(PAYMENT_METHODS[0] ?? "Cash");
-      setNotes("");
-      setLines([createDraftLine()]);
-    }
-  }, [open, paymentAccounts]);
 
   const updateLine = (
     lineId: string,
@@ -250,6 +242,15 @@ export function DaybookLoanDialog({
     setLines([createDraftLine()]);
   };
 
+  const handleDialogOpenChange = (nextOpen: boolean) => {
+    if (!nextOpen) {
+      setMessage(null);
+      resetForm();
+    }
+
+    onOpenChange(nextOpen);
+  };
+
   const saveLoan = async (closeAfterSave: boolean) => {
     const loanLines = buildLoanLines();
     if (!selectedPaymentAccount) {
@@ -305,10 +306,12 @@ export function DaybookLoanDialog({
       addDaybookLoan({ ...localLoan, isSynced: true });
       await invalidateQueries();
       resetForm();
-      setMessage({ text: result.message, tone: "success" });
 
       if (closeAfterSave) {
+        setMessage(null);
         onOpenChange(false);
+      } else {
+        setMessage({ text: result.message, tone: "success" });
       }
     } catch (error) {
       addDaybookLoan({ ...localLoan, isSynced: false });
@@ -328,7 +331,7 @@ export function DaybookLoanDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleDialogOpenChange}>
       <DialogContent className="max-h-[92vh] overflow-y-auto bg-slate-50 p-0 sm:max-w-6xl">
         <DialogHeader className="border-slate-200 border-b bg-white px-5 py-4">
           <DialogTitle className="text-2xl font-bold text-slate-900">
@@ -582,7 +585,7 @@ export function DaybookLoanDialog({
           <div className="-mx-5 mt-8 flex flex-col gap-3 border-slate-200 border-t bg-white px-5 py-4 sm:flex-row sm:items-center">
             <Button
               className="border-emerald-600 text-emerald-700 hover:bg-emerald-50"
-              onClick={() => onOpenChange(false)}
+              onClick={() => handleDialogOpenChange(false)}
               type="button"
               variant="outline"
             >

@@ -110,7 +110,10 @@ export function DaybookProductPurchaseDialog({
   const createPurchaseMutation = useMutation(
     orpc.finance.createProductPurchase.mutationOptions(),
   );
-  const paymentAccounts = paymentAccountsData?.paymentAccounts ?? [];
+  const paymentAccounts = useMemo(
+    () => paymentAccountsData?.paymentAccounts ?? [],
+    [paymentAccountsData?.paymentAccounts],
+  );
   const [supplier, setSupplier] = useState("");
   const [billNo, setBillNo] = useState("");
   const [referenceNo, setReferenceNo] = useState("");
@@ -157,21 +160,6 @@ export function DaybookProductPurchaseDialog({
       setPaymentMethod(paymentTypeToMethod(selectedPaymentAccount?.type));
     }
   }, [isDuePurchase, selectedPaymentAccount]);
-
-  useEffect(() => {
-    if (!open) {
-      setMessage(null);
-      setSupplier("");
-      setBillNo("");
-      setReferenceNo("");
-      setPaymentAccountId(paymentAccounts[0]?.id ?? "");
-      setPaymentDate(dateValue());
-      setPaymentMethod(PAYMENT_METHODS[0] ?? "Cash");
-      setPurchasePaymentType("cash");
-      setNotes("");
-      setItems([createDraftItem()]);
-    }
-  }, [open, paymentAccounts]);
 
   const updateItem = (
     itemId: string,
@@ -259,6 +247,15 @@ export function DaybookProductPurchaseDialog({
     setItems([createDraftItem()]);
   };
 
+  const handleDialogOpenChange = (nextOpen: boolean) => {
+    if (!nextOpen) {
+      setMessage(null);
+      resetForm();
+    }
+
+    onOpenChange(nextOpen);
+  };
+
   const savePurchase = async (closeAfterSave: boolean) => {
     const purchaseItems = buildPurchaseItems();
     if (!isDuePurchase && !selectedPaymentAccount) {
@@ -325,10 +322,12 @@ export function DaybookProductPurchaseDialog({
       addDaybookProductPurchase({ ...localPurchase, isSynced: true });
       await invalidateQueries();
       resetForm();
-      setMessage({ text: result.message, tone: "success" });
 
       if (closeAfterSave) {
+        setMessage(null);
         onOpenChange(false);
+      } else {
+        setMessage({ text: result.message, tone: "success" });
       }
     } catch (error) {
       addDaybookProductPurchase({ ...localPurchase, isSynced: false });
@@ -348,7 +347,7 @@ export function DaybookProductPurchaseDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleDialogOpenChange}>
       <DialogContent className="max-h-[92vh] overflow-y-auto bg-slate-50 p-0 sm:max-w-6xl">
         <DialogHeader className="border-slate-200 border-b bg-white px-5 py-4">
           <DialogTitle className="text-2xl font-bold text-slate-900">
@@ -653,7 +652,7 @@ export function DaybookProductPurchaseDialog({
           <div className="-mx-5 mt-8 flex flex-col gap-3 border-slate-200 border-t bg-white px-5 py-4 sm:flex-row sm:items-center">
             <Button
               className="border-emerald-600 text-emerald-700 hover:bg-emerald-50"
-              onClick={() => onOpenChange(false)}
+              onClick={() => handleDialogOpenChange(false)}
               type="button"
               variant="outline"
             >
