@@ -1687,6 +1687,132 @@ export const financeRouter = {
       };
     }),
 
+  createSupplierAdvancePayment: protectedProcedure
+    .route({
+      method: "POST",
+      path: "/finance/supplier-advances/create",
+      tags: ["Finance"],
+      summary: "Create supplier advance payment",
+      description:
+        "Record cash or bank advance paid to a supplier without changing Profit & Loss.",
+    })
+    .input(
+      z.object({
+        advanceNo: z.string().max(120).optional().nullable(),
+        amount: z.union([z.string(), z.number()]),
+        notes: z.string().max(1000).optional().nullable(),
+        paymentAccountId: z.union([z.string(), z.number()]),
+        paymentDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        paymentMethod: z.enum(PAYMENT_METHODS),
+        referenceNo: z.string().max(120).optional().nullable(),
+        supplier: z.string().max(200).optional().nullable(),
+      }),
+    )
+    .handler(async ({ context, input }) => {
+      const ownerId = context.session.user.id;
+      const ownerType = resolveOwnerScope(context.session.user.role);
+      const paymentAccountId = Number(input.paymentAccountId);
+      const amount = parseMoney(input.amount);
+
+      if (!Number.isFinite(paymentAccountId)) {
+        throw new ORPCError("BAD_REQUEST", {
+          message: "Select a valid payment account",
+        });
+      }
+
+      if (amount <= 0) {
+        throw new ORPCError("BAD_REQUEST", {
+          message: "Enter a supplier advance amount",
+        });
+      }
+
+      await ensureDefaultFinancePaymentAccounts({ ownerId, ownerType });
+
+      const paymentAccount = await db.query.financePaymentAccount.findFirst({
+        where: (table, { and: andFn, eq: eqFn }) =>
+          andFn(
+            eqFn(table.id, paymentAccountId),
+            eqFn(table.ownerId, ownerId),
+            eqFn(table.ownerType, ownerType),
+          ),
+      });
+
+      if (
+        !paymentAccount ||
+        (paymentAccount.type !== "cash" && paymentAccount.type !== "bank")
+      ) {
+        throw new ORPCError("NOT_FOUND", {
+          message: "Cash or bank payment account not found",
+        });
+      }
+
+      if (paymentAccount.type !== input.paymentMethod) {
+        throw new ORPCError("BAD_REQUEST", {
+          message: "Payment method must match the selected payment account",
+        });
+      }
+
+      const supplierAdvanceAccount = await resolveSupplierAdvanceAccount({
+        ownerId,
+        ownerType,
+      });
+      const balanceBefore = parseMoney(paymentAccount.currentBalance);
+      const balanceAfter = balanceBefore - amount;
+      const advanceAfter = supplierAdvanceAccount.currentBalance + amount;
+
+      await db.transaction(async (tx) => {
+        await tx
+          .update(financePaymentAccount)
+          .set({
+            currentBalance: toMoney(balanceAfter),
+            updatedAt: new Date(),
+          })
+          .where(eq(financePaymentAccount.id, paymentAccount.id));
+
+        await tx
+          .update(financeAccount)
+          .set({
+            balanceSheetLine: "supplier_advance",
+            currentBalance: toMoney(advanceAfter),
+            updatedAt: new Date(),
+          })
+          .where(eq(financeAccount.id, supplierAdvanceAccount.id));
+
+        await tx.insert(financialLedger).values({
+          amount: toMoney(amount),
+          balanceAfter: toMoney(balanceAfter),
+          balanceBefore: toMoney(balanceBefore),
+          description: [
+            "Supplier advance payment",
+            input.supplier?.trim() ? `Supplier: ${input.supplier.trim()}` : null,
+            input.advanceNo?.trim()
+              ? `Advance: ${input.advanceNo.trim()}`
+              : null,
+            input.referenceNo?.trim()
+              ? `Reference: ${input.referenceNo.trim()}`
+              : null,
+            `Payment account: ${paymentAccount.name}`,
+          ]
+            .filter(Boolean)
+            .join(" | "),
+          direction: "debit",
+          entryType: "adjustment",
+          ownerId,
+          ownerType,
+          referenceId: supplierAdvanceAccount.id,
+          referenceType: "adjustment",
+        });
+      });
+
+      return {
+        advanceAfter: toMoney(advanceAfter),
+        balanceAfter: toMoney(balanceAfter),
+        message: "Supplier advance payment saved and Balance Sheet updated",
+        supplierAdvanceAccountId: String(supplierAdvanceAccount.id),
+        total: toMoney(amount),
+      };
+    }),
+
   createCategory: protectedProcedure
     .route({
       method: "POST",
