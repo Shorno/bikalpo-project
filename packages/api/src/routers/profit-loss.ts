@@ -121,6 +121,7 @@ export const profitLossRouter = {
 
       const manualProductPurchaseRows = await db
         .select({
+          balanceBefore: financialLedger.balanceBefore,
           total: financialLedger.amount,
         })
         .from(financialLedger)
@@ -136,6 +137,36 @@ export const profitLossRouter = {
         );
       const manualProductPurchase = manualProductPurchaseRows.reduce(
         (sum, row) => sum + toNumber(row.total),
+        0,
+      );
+      const manualProductSaleRows = await db
+        .select({
+          balanceBefore: financialLedger.balanceBefore,
+          direction: financialLedger.direction,
+          total: financialLedger.amount,
+        })
+        .from(financialLedger)
+        .where(
+          and(
+            eq(financialLedger.ownerId, ownerId),
+            eq(financialLedger.ownerType, ownerType),
+            eq(financialLedger.entryType, "sale"),
+            eq(financialLedger.referenceType, "adjustment"),
+            gte(financialLedger.createdAt, startDateTime),
+            lte(financialLedger.createdAt, endDateTime),
+          ),
+        );
+      const recognizedManualSales = isCashBasis
+        ? manualProductSaleRows.filter((row) => row.balanceBefore !== null)
+        : manualProductSaleRows;
+      const manualProductSales = recognizedManualSales.reduce(
+        (sum, row) =>
+          row.direction === "credit" ? sum + toNumber(row.total) : sum,
+        0,
+      );
+      const manualProductSaleCost = recognizedManualSales.reduce(
+        (sum, row) =>
+          row.direction === "debit" ? sum + toNumber(row.total) : sum,
         0,
       );
 
@@ -293,8 +324,9 @@ export const profitLossRouter = {
       }
 
       const uncategorizedIncome = 0;
+      productSales += manualProductSales;
       const revenue = productSales + uncategorizedIncome;
-      productPurchase += manualProductPurchase;
+      productPurchase += manualProductPurchase + manualProductSaleCost;
 
       const cogs = productPurchase;
       const grossProfit = revenue - cogs;
