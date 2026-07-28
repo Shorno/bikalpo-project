@@ -1,39 +1,29 @@
 "use client";
 
-import type { OrderWithItems } from "@bikalpo-project/db/schema";
 import { format } from "date-fns";
 import { Image as ImageIcon } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { getConsumerPhasePresentationForMode } from "@/lib/consumer-order-presentation";
 import { formatPrice } from "@/utils/currency";
+import type { ConsumerOrder } from "./order-tabs";
 
 interface OrderCardProps {
-  order: OrderWithItems;
+  order: ConsumerOrder;
 }
-
-const statusConfig: Record<
-  string,
-  { color: string; bg: string; label: string }
-> = {
-  pending: { color: "text-yellow-700", bg: "bg-yellow-50", label: "Pending" },
-  confirmed: { color: "text-blue-700", bg: "bg-blue-50", label: "Confirmed" },
-  processing: {
-    color: "text-purple-700",
-    bg: "bg-purple-50",
-    label: "Processing",
-  },
-  delivered: { color: "text-green-700", bg: "bg-green-50", label: "Delivered" },
-  cancelled: { color: "text-red-700", bg: "bg-red-50", label: "Cancelled" },
-};
 
 export function OrderCard({ order }: OrderCardProps) {
   const itemCount = order.items.length;
-  const config = statusConfig[order.status] || statusConfig.pending;
+  const isPickup = order.journey.fulfillmentMode === "self_pickup";
+  const presentation = getConsumerPhasePresentationForMode(
+    order.journey.phase,
+    order.journey.fulfillmentMode,
+  );
 
   return (
-    <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden hover:shadow-md hover:border-gray-300 transition-all">
+    <div className="overflow-hidden rounded-xl border border-slate-200 bg-white transition-colors hover:border-blue-200">
       {/* Header */}
       <div className="p-4 border-b border-gray-100">
         {/* Top row: Order number and status */}
@@ -42,9 +32,10 @@ export function OrderCard({ order }: OrderCardProps) {
             Order #{order.orderNumber.replace("ORD-", "")}
           </h3>
           <Badge
-            className={`${config.bg} ${config.color} border-0 text-xs shrink-0`}
+            variant="outline"
+            className={`${presentation.badgeClassName} shrink-0 text-xs`}
           >
-            {config.label}
+            {presentation.label}
           </Badge>
         </div>
 
@@ -62,7 +53,7 @@ export function OrderCard({ order }: OrderCardProps) {
             </span>
           </div>
           <div className="flex items-center gap-2">
-            {order.status === "delivered" && (
+            {order.journey.phase === "delivered" && (
               <Button
                 variant="outline"
                 size="sm"
@@ -76,7 +67,7 @@ export function OrderCard({ order }: OrderCardProps) {
               variant="outline"
               size="sm"
               asChild
-              className="shrink-0 border-emerald-200 text-emerald-600 hover:bg-emerald-50 hover:text-emerald-700"
+              className="shrink-0 border-blue-200 text-blue-700 hover:bg-blue-50 hover:text-blue-800"
             >
               <Link href={`/account/orders/${order.orderNumber}`}>Details</Link>
             </Button>
@@ -86,16 +77,23 @@ export function OrderCard({ order }: OrderCardProps) {
 
       {/* Delivery Info */}
       <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-100 text-sm text-gray-600">
-        <span className="text-gray-500">Deliver to: </span>
+        <span className="text-gray-500">
+          {isPickup ? "Pick up at: " : "Deliver to: "}
+        </span>
         <span className="font-medium text-gray-900">
-          {order.shippingAddress}, {order.shippingCity}
-          {order.shippingPostalCode && ` - ${order.shippingPostalCode}`}
+          {isPickup && order.journey.pickupLocation
+            ? order.journey.pickupLocation.address
+            : `${order.shippingAddress}, ${order.shippingCity}`}
+          {!isPickup &&
+            order.shippingPostalCode &&
+            ` - ${order.shippingPostalCode}`}
         </span>
         {order.deliveredAt && (
           <>
             <span className="mx-2">•</span>
             <span className="text-green-600 font-medium">
-              Delivered: {format(new Date(order.deliveredAt), "MMM d, yyyy")}
+              {isPickup ? "Picked up" : "Delivered"}:{" "}
+              {format(new Date(order.deliveredAt), "MMM d, yyyy")}
             </span>
           </>
         )}

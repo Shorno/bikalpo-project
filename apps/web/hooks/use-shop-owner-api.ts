@@ -594,8 +594,11 @@ export function useIncomingOrders(params?: {
     | "all"
     | "pending"
     | "confirmed"
+    | "ready_for_dispatch"
+    | "invoiced"
     | "processing"
     | "delivered"
+    | "returned"
     | "cancelled";
   page?: number;
   limit?: number;
@@ -612,20 +615,248 @@ export function useIncomingOrders(params?: {
   );
 }
 
-/** Update status of an incoming B2C order */
-export function useUpdateIncomingOrderStatus() {
-  const queryClient = useQueryClient();
+function invalidateIncomingOrderQueries(
+  queryClient: ReturnType<typeof useQueryClient>,
+) {
+  return Promise.all([
+    queryClient.invalidateQueries({
+      queryKey: orpc.shopOwner.getIncomingOrders.key(),
+    }),
+    queryClient.invalidateQueries({
+      queryKey: orpc.shopOwner.getDashboardStats.key(),
+    }),
+    queryClient.invalidateQueries({
+      queryKey: orpc.shopOwner.getRetailDeliverymen.key(),
+    }),
+  ]);
+}
 
+export function useConfirmIncomingOrder() {
+  const queryClient = useQueryClient();
   return useMutation(
-    orpc.shopOwner.updateIncomingOrderStatus.mutationOptions({
+    orpc.shopOwner.confirmIncomingOrder.mutationOptions({
+      onSuccess: () => invalidateIncomingOrderQueries(queryClient),
+    }),
+  );
+}
+
+export function useApproveIncomingOrder() {
+  const queryClient = useQueryClient();
+  return useMutation(
+    orpc.shopOwner.approveIncomingOrder.mutationOptions({
+      onSuccess: () => invalidateIncomingOrderQueries(queryClient),
+    }),
+  );
+}
+
+export function useCancelIncomingOrder() {
+  const queryClient = useQueryClient();
+  return useMutation(
+    orpc.shopOwner.cancelIncomingOrder.mutationOptions({
+      onSuccess: () => invalidateIncomingOrderQueries(queryClient),
+    }),
+  );
+}
+
+export function useCreateIncomingOrderInvoice() {
+  const queryClient = useQueryClient();
+  return useMutation(
+    orpc.shopOwner.createIncomingOrderInvoice.mutationOptions({
+      onSuccess: () => invalidateIncomingOrderQueries(queryClient),
+    }),
+  );
+}
+
+export function useConfigureIncomingOrderFulfillment() {
+  const queryClient = useQueryClient();
+  return useMutation(
+    orpc.shopOwner.configureIncomingOrderFulfillment.mutationOptions({
+      onSuccess: () => invalidateIncomingOrderQueries(queryClient),
+    }),
+  );
+}
+
+export function useVerifyIncomingSelfPickup() {
+  const queryClient = useQueryClient();
+  return useMutation(
+    orpc.shopOwner.verifyIncomingSelfPickup.mutationOptions({
+      onSuccess: () => invalidateIncomingOrderQueries(queryClient),
+    }),
+  );
+}
+
+export function useCreateIncomingDeliveryGroup() {
+  const queryClient = useQueryClient();
+  return useMutation(
+    orpc.shopOwner.createIncomingDeliveryGroup.mutationOptions({
+      onSuccess: () => invalidateIncomingOrderQueries(queryClient),
+    }),
+  );
+}
+
+export function useAssignIncomingDeliveryman() {
+  const queryClient = useQueryClient();
+  return useMutation(
+    orpc.shopOwner.assignIncomingDeliveryman.mutationOptions({
+      onSuccess: () => invalidateIncomingOrderQueries(queryClient),
+    }),
+  );
+}
+
+export function useRetryIncomingDelivery() {
+  const queryClient = useQueryClient();
+  return useMutation(
+    orpc.shopOwner.retryIncomingDelivery.mutationOptions({
+      onSuccess: () => invalidateIncomingOrderQueries(queryClient),
+    }),
+  );
+}
+
+export function useRetailDeliverymen() {
+  return useQuery(
+    orpc.shopOwner.getRetailDeliverymen.queryOptions({
+      staleTime: 1000 * 30,
+    }),
+  );
+}
+
+export function useIncomingOrderDetail(orderId: number) {
+  return useQuery(
+    orpc.shopOwner.getIncomingOrderById.queryOptions({
+      input: { orderId },
+      enabled: Number.isFinite(orderId),
+      staleTime: 1000 * 20,
+    }),
+  );
+}
+
+export function useRetailDispatchOrders(
+  view: "ready_for_dispatch" | "invoiced",
+  search?: string,
+) {
+  return useQuery(
+    orpc.shopOwner.getRetailDispatchOrders.queryOptions({
+      input: { view, search: search || undefined },
+      staleTime: 1000 * 15,
+    }),
+  );
+}
+
+export function useRetailDeliveryInvoices(
+  status:
+    | "all"
+    | "not_assigned"
+    | "pending"
+    | "out_for_delivery"
+    | "delivered"
+    | "failed"
+    | "returned" = "all",
+) {
+  return useQuery(
+    orpc.shopOwner.getRetailDeliveryInvoices.queryOptions({
+      input: { status },
+      staleTime: 1000 * 15,
+    }),
+  );
+}
+
+export function useRetailAssignmentOverview() {
+  return useQuery(
+    orpc.shopOwner.getRetailAssignmentOverview.queryOptions({
+      staleTime: 1000 * 15,
+    }),
+  );
+}
+
+export function useCreateRetailDeliveryman() {
+  const queryClient = useQueryClient();
+  return useMutation(
+    orpc.shopOwner.createRetailDeliveryman.mutationOptions({
       onSuccess: () => {
         queryClient.invalidateQueries({
-          queryKey: orpc.shopOwner.getIncomingOrders.key(),
-        });
-        queryClient.invalidateQueries({
-          queryKey: orpc.shopOwner.getDashboardStats.key(),
+          queryKey: orpc.shopOwner.getRetailDeliverymen.key(),
         });
       },
+    }),
+  );
+}
+
+function invalidateRetailFulfillmentQueries(
+  queryClient: ReturnType<typeof useQueryClient>,
+) {
+  return Promise.all([
+    invalidateIncomingOrderQueries(queryClient),
+    queryClient.invalidateQueries({
+      queryKey: orpc.shopOwner.getRetailDispatchOrders.key(),
+    }),
+    queryClient.invalidateQueries({
+      queryKey: orpc.shopOwner.getRetailDeliveryInvoices.key(),
+    }),
+    queryClient.invalidateQueries({
+      queryKey: orpc.shopOwner.getRetailAssignmentOverview.key(),
+    }),
+    queryClient.invalidateQueries({
+      queryKey: orpc.deliveryman.getGroups.key(),
+    }),
+  ]);
+}
+
+export function useCreateRetailDeliveryGroup() {
+  const queryClient = useQueryClient();
+  return useMutation(
+    orpc.deliveryman.createGroup.mutationOptions({
+      onSuccess: () => invalidateRetailFulfillmentQueries(queryClient),
+    }),
+  );
+}
+
+export function useAddRetailInvoicesToGroup() {
+  const queryClient = useQueryClient();
+  return useMutation(
+    orpc.deliveryman.addInvoicesToGroup.mutationOptions({
+      onSuccess: () => invalidateRetailFulfillmentQueries(queryClient),
+    }),
+  );
+}
+
+export function useAssignRetailDeliveryman() {
+  const queryClient = useQueryClient();
+  return useMutation(
+    orpc.deliveryman.assignDeliveryman.mutationOptions({
+      onSuccess: () => invalidateRetailFulfillmentQueries(queryClient),
+    }),
+  );
+}
+
+export function useUpdateRetailDeliveryman() {
+  const queryClient = useQueryClient();
+  return useMutation(
+    orpc.shopOwner.updateRetailDeliveryman.mutationOptions({
+      onSuccess: () => invalidateRetailFulfillmentQueries(queryClient),
+    }),
+  );
+}
+
+export function useToggleRetailDeliverymanBan() {
+  const queryClient = useQueryClient();
+  return useMutation(
+    orpc.shopOwner.toggleRetailDeliverymanBan.mutationOptions({
+      onSuccess: () => invalidateRetailFulfillmentQueries(queryClient),
+    }),
+  );
+}
+
+export function useResetRetailDeliverymanPassword() {
+  return useMutation(
+    orpc.shopOwner.resetRetailDeliverymanPassword.mutationOptions(),
+  );
+}
+
+export function useDeleteRetailDeliveryman() {
+  const queryClient = useQueryClient();
+  return useMutation(
+    orpc.shopOwner.deleteRetailDeliveryman.mutationOptions({
+      onSuccess: () => invalidateRetailFulfillmentQueries(queryClient),
     }),
   );
 }

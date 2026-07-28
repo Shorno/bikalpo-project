@@ -6,6 +6,7 @@ import {
   BarChart3Icon,
   BookOpenIcon,
   BoxesIcon,
+  ClipboardListIcon,
   CreditCardIcon,
   DollarSignIcon,
   ExternalLinkIcon,
@@ -15,6 +16,7 @@ import {
   LayoutDashboardIcon,
   MegaphoneIcon,
   PackageIcon,
+  PackageSearchIcon,
   PlusCircleIcon,
   ReceiptIcon,
   SettingsIcon,
@@ -24,6 +26,7 @@ import {
   StoreIcon,
   TrendingDownIcon,
   TrendingUpIcon,
+  TruckIcon,
   UsersIcon,
   WalletIcon,
   Warehouse as WarehouseIcon,
@@ -114,6 +117,7 @@ const shopOwnerNavGroups: NavGroup[] = [
   {
     label: "Sales",
     items: [
+      { title: "Point of Sale", url: `${D}/pos`, icon: ReceiptIcon },
       { title: "Sales", url: `${D}/sales`, icon: ShoppingCartIcon },
       { title: "Daybook", url: `${D}/daybook`, icon: BookOpenIcon },
       { title: "EMI Management", url: `${D}/emi`, icon: ReceiptIcon },
@@ -161,7 +165,7 @@ const shopOwnerNavGroups: NavGroup[] = [
     ],
   },
   {
-    label: "E-Commerce Store",
+    label: "E-Commerce & Fulfillment",
     items: [
       { title: "Product Sync", url: `${D}/product-sync`, icon: PackageIcon },
       {
@@ -173,6 +177,27 @@ const shopOwnerNavGroups: NavGroup[] = [
         title: "Open Orders",
         url: `${D}/open-orders`,
         icon: PackageIcon,
+      },
+      {
+        title: "Dispatch Orders",
+        url: `${D}/dispatch-orders`,
+        icon: TruckIcon,
+      },
+      {
+        title: "Delivery Management",
+        url: `${D}/delivery-management`,
+        icon: PackageSearchIcon,
+      },
+    ],
+  },
+  {
+    label: "Team Management",
+    items: [
+      { title: "Delivery Team", url: `${D}/delivery-team`, icon: TruckIcon },
+      {
+        title: "Delivery Assignment",
+        url: `${D}/delivery-team/assignments`,
+        icon: ClipboardListIcon,
       },
     ],
   },

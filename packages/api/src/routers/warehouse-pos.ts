@@ -25,6 +25,7 @@ import {
 import { ORPCError } from "@orpc/server";
 import { z } from "zod";
 import { warehouseProcedure } from "../index";
+import { ensurePosWalkInCustomer } from "../services/owner-pos-store";
 
 const catalogFilterSchema = z.object({
     search: z.string().optional(),
@@ -106,33 +107,7 @@ function formatPackLabel(variant: {
 }
 
 async function ensureWalkInCustomer(warehouseId: string, userId: string) {
-    const existing = await db.query.warehousePosCustomer.findFirst({
-        where: and(
-            eq(warehousePosCustomer.warehouseId, warehouseId),
-            eq(warehousePosCustomer.isDefault, true),
-        ),
-    });
-
-    if (existing) return existing;
-
-    const [created] = await db
-        .insert(warehousePosCustomer)
-        .values({
-            warehouseId,
-            name: "Walk-in Customer",
-            customerType: "walk_in",
-            isDefault: true,
-            createdById: userId,
-        })
-        .returning();
-
-    if (!created) {
-        throw new ORPCError("INTERNAL_SERVER_ERROR", {
-            message: "Failed to create default walk-in customer",
-        });
-    }
-
-    return created;
+    return ensurePosWalkInCustomer({ kind: "warehouse", id: warehouseId }, userId);
 }
 
 async function generateInvoiceNo(

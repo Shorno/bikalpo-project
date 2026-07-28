@@ -48,7 +48,7 @@ export const faqData: FAQCategory[] = [
       {
         question: "How can I track my order?",
         answer:
-          "Go to 'My Orders' in your account, click on the order, and select 'Track Order' to see real-time delivery updates.",
+          "Go to 'My Orders' in your account and open the order details to see its latest delivery progress.",
       },
       {
         question: "Do you deliver outside Dhaka?",

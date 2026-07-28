@@ -1,172 +1,69 @@
 "use client";
 
-import { ArrowRight, KeyRound, Package, Truck } from "lucide-react";
+import { ArrowRight, Package, Truck } from "lucide-react";
 import Link from "next/link";
 import { useActiveOrder } from "@/hooks/use-customer-api";
+import { getConsumerPhasePresentationForMode } from "@/lib/consumer-order-presentation";
 import { cn } from "@/lib/utils";
 import { formatPrice } from "@/utils/currency";
 
-const STATUS_CONFIG: Record<
-  string,
-  {
-    label: string;
-    textColor: string;
-    bgColor: string;
-    badgeBg: string;
-    borderColor: string;
-    icon?: React.ElementType;
-  }
-> = {
-  pending: {
-    label: "Pending",
-    textColor: "text-amber-700",
-    bgColor: "bg-amber-50",
-    badgeBg: "bg-amber-600",
-    borderColor: "border-amber-200",
-  },
-  confirmed: {
-    label: "Confirmed",
-    textColor: "text-blue-700",
-    bgColor: "bg-blue-50",
-    badgeBg: "bg-blue-600",
-    borderColor: "border-blue-200",
-  },
-  processing: {
-    label: "Processing",
-    textColor: "text-purple-700",
-    bgColor: "bg-purple-50",
-    badgeBg: "bg-purple-600",
-    borderColor: "border-purple-200",
-  },
-  out_for_delivery: {
-    label: "On the Way",
-    textColor: "text-emerald-700",
-    bgColor: "bg-emerald-50",
-    badgeBg: "bg-emerald-600",
-    borderColor: "border-emerald-200",
-    icon: Truck,
-  },
-};
-
-// Desktop: Pill-shaped status + amount + OTP badge in navbar
 export function OrderStatusButton() {
   const { data, isLoading } = useActiveOrder();
+  if (isLoading || !data?.order || !data.journey) return null;
 
-  if (isLoading) return null;
-  if (!data?.order) return null;
+  const { order, journey } = data;
+  const presentation = getConsumerPhasePresentationForMode(
+    journey.phase,
+    journey.fulfillmentMode,
+  );
+  const Icon = journey.phase === "out_for_delivery" ? Truck : Package;
 
-  const order = data.order;
-  const deliveryInfo = data.deliveryInfo;
-
-  const displayStatus =
-    deliveryInfo?.status === "out_for_delivery"
-      ? "out_for_delivery"
-      : order.status;
-
-  const config = STATUS_CONFIG[displayStatus] || {
-    label: order.status,
-    textColor: "text-gray-700",
-    bgColor: "bg-gray-50",
-    badgeBg: "bg-gray-600",
-    borderColor: "border-gray-200",
-  };
-
-  const Icon = config.icon || Package;
-  const orderTotal = order.total ? Number(order.total) : 0;
-  const otp = deliveryInfo?.otp ?? null;
-  const isOutForDelivery = displayStatus === "out_for_delivery";
-
-  // Standard status display
   return (
     <Link
-      href="/shop/account/track"
+      href={`/account/orders/${order.orderNumber}`}
       className={cn(
-        "hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full border transition-all hover:shadow-sm",
-        config.bgColor,
-        config.borderColor,
+        "hidden min-h-10 items-center gap-2 rounded-full border px-3 text-sm outline-none transition-colors hover:border-blue-300 focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2 sm:flex",
+        presentation.badgeClassName,
       )}
+      aria-label={`${presentation.label} for order ${order.orderNumber}. View order details.`}
     >
-      <div className="flex items-center gap-1.5">
-        <Icon className={cn("h-4 w-4", config.textColor)} />
-        {isOutForDelivery && otp ? (
-          <div className="flex items-center gap-1 bg-emerald-600 text-white px-2 py-0.5 rounded-full">
-            <KeyRound className="h-3 w-3" />
-            <span className="text-xs font-bold tracking-wider">{otp}</span>
-          </div>
-        ) : (
-          <span className={cn("text-sm font-medium", config.textColor)}>
-            {config.label}
-          </span>
-        )}
-      </div>
-
-      {orderTotal > 0 && (
+      <Icon className="h-4 w-4" />
+      <span className="font-medium">{presentation.label}</span>
+      {Number(order.total) > 0 && (
         <>
-          <div className="w-px h-4 bg-gray-300/60" />
-          <span className={cn("text-sm font-semibold", config.textColor)}>
-            {formatPrice(orderTotal)}
+          <span aria-hidden="true" className="h-4 w-px bg-current opacity-20" />
+          <span className="font-semibold tabular-nums">
+            {formatPrice(Number(order.total))}
           </span>
         </>
       )}
-      <ArrowRight className={cn("h-3.5 w-3.5 ml-0.5", config.textColor)} />
+      <ArrowRight className="h-3.5 w-3.5" />
     </Link>
   );
 }
 
-// Mobile: Compact status badge for inside the navbar
 export function MobileOrderStatus() {
   const { data, isLoading } = useActiveOrder();
+  if (isLoading || !data?.order || !data.journey) return null;
 
-  // Don't show anything while loading or if no active order
-  if (isLoading || !data?.order) return null;
+  const { order, journey } = data;
+  const presentation = getConsumerPhasePresentationForMode(
+    journey.phase,
+    journey.fulfillmentMode,
+  );
+  const Icon = journey.phase === "out_for_delivery" ? Truck : Package;
 
-  const order = data.order;
-  const deliveryInfo = data.deliveryInfo;
-
-  const displayStatus =
-    deliveryInfo?.status === "out_for_delivery"
-      ? "out_for_delivery"
-      : order.status;
-
-  const config = STATUS_CONFIG[displayStatus] || {
-    label: order.status,
-    textColor: "text-gray-700",
-    bgColor: "bg-gray-50",
-    badgeBg: "bg-gray-600",
-    borderColor: "border-gray-200",
-  };
-
-  const Icon = config.icon || Package;
-  const otp = deliveryInfo?.otp ?? null;
-  const isOutForDelivery = displayStatus === "out_for_delivery";
-
-  // Standard status - compact icon + label + OTP
   return (
     <Link
-      href="/shop/account/track"
+      href={`/account/orders/${order.orderNumber}`}
       className={cn(
-        "sm:hidden flex items-center gap-1.5 px-2 py-1 rounded-lg border",
-        config.bgColor,
-        config.borderColor,
+        "flex min-h-9 items-center gap-1.5 rounded-lg border px-2 text-xs font-medium outline-none focus-visible:ring-2 focus-visible:ring-blue-600 sm:hidden",
+        presentation.badgeClassName,
       )}
+      aria-label={`${presentation.label}. View order ${order.orderNumber}.`}
     >
-      <div
-        className={cn(
-          "flex items-center justify-center h-5 w-5 rounded-full",
-          config.badgeBg,
-        )}
-      >
-        <Icon className="h-2.5 w-2.5 text-white" />
-      </div>
-      {isOutForDelivery && otp ? (
-        <span className="text-xs font-bold text-emerald-700 tracking-wider">
-          OTP: {otp}
-        </span>
-      ) : (
-        <span className={cn("text-xs font-medium", config.textColor)}>
-          {config.label}
-        </span>
-      )}
+      <Icon className="h-3.5 w-3.5" />
+      <span>{presentation.label}</span>
     </Link>
   );
 }

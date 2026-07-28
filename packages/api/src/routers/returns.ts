@@ -1,10 +1,58 @@
 import { db } from "@bikalpo-project/db";
-import { inventory, orderReturn, order, product } from "@bikalpo-project/db/schema";
+import { inventory, orderReturn, order } from "@bikalpo-project/db/schema";
 import { ORPCError } from "@orpc/server";
 import { and, desc, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { protectedProcedure } from "../index";
+
+function deliverymanOrderScope(context: { session: { user: unknown } }) {
+    const rider = context.session.user as {
+        id: string;
+        warehouseId?: string | null;
+        shopId?: string | null;
+    };
+    const ownerScope = rider.warehouseId
+        ? sql`scoped_group."warehouse_id" = ${rider.warehouseId}`
+        : rider.shopId
+            ? sql`scoped_group."shop_id" = ${rider.shopId}`
+            : sql`false`;
+    return sql`EXISTS (
+        SELECT 1
+        FROM "invoice" scoped_invoice
+        JOIN "delivery_group_invoice" scoped_link
+          ON scoped_link."invoice_id" = scoped_invoice."id"
+        JOIN "delivery_group" scoped_group
+          ON scoped_group."id" = scoped_link."group_id"
+        WHERE scoped_invoice."order_id" = ${order.id}
+          AND scoped_group."deliveryman_id" = ${rider.id}
+          AND ${ownerScope}
+    )`;
+}
+
+function deliverymanReturnScope(context: { session: { user: unknown } }) {
+    const rider = context.session.user as {
+        id: string;
+        warehouseId?: string | null;
+        shopId?: string | null;
+    };
+    const ownerScope = rider.warehouseId
+        ? sql`scoped_group."warehouse_id" = ${rider.warehouseId}`
+        : rider.shopId
+            ? sql`scoped_group."shop_id" = ${rider.shopId}`
+            : sql`false`;
+    return sql`EXISTS (
+        SELECT 1
+        FROM "invoice" scoped_invoice
+        JOIN "delivery_group_invoice" scoped_link
+          ON scoped_link."invoice_id" = scoped_invoice."id"
+        JOIN "delivery_group" scoped_group
+          ON scoped_group."id" = scoped_link."group_id"
+        WHERE scoped_invoice."order_id" = ${orderReturn.orderId}
+          AND scoped_group."deliveryman_id" = ${rider.id}
+          AND ${ownerScope}
+    )`;
+}
 
 // Zod schemas for input validation
 const returnItemSchema = z.object({
@@ -41,13 +89,13 @@ export const returnsRouter = {
         })
         .handler(async ({ context }) => {
             const isAdmin = context.session.user.role === "admin";
-            const isEmployee =
-                context.session.user.role === "deliveryman" ||
-                context.session.user.role === "salesman";
+            const isEmployee = context.session.user.role === "salesman";
 
             const conditions = [];
 
-            if (!isAdmin && !isEmployee) {
+            if (context.session.user.role === "deliveryman") {
+                conditions.push(deliverymanReturnScope(context));
+            } else if (!isAdmin && !isEmployee) {
                 conditions.push(eq(orderReturn.userId, context.session.user.id));
             }
 
@@ -101,11 +149,15 @@ export const returnsRouter = {
         .handler(async ({ input, context }) => {
             const isStaff =
                 context.session.user.role === "admin" ||
-                context.session.user.role === "deliveryman" ||
                 context.session.user.role === "salesman";
 
+            const conditions = [eq(orderReturn.id, input.id)];
+            if (context.session.user.role === "deliveryman") {
+                conditions.push(deliverymanReturnScope(context));
+            }
+
             const returnData = await db.query.orderReturn.findFirst({
-                where: eq(orderReturn.id, input.id),
+                where: and(...conditions),
                 with: {
                     order: {
                         with: {
@@ -142,7 +194,11 @@ export const returnsRouter = {
                 throw new ORPCError("NOT_FOUND", { message: "Return not found" });
             }
 
-            if (!isStaff && returnData.userId !== context.session.user.id) {
+            if (
+                context.session.user.role !== "deliveryman" &&
+                !isStaff &&
+                returnData.userId !== context.session.user.id
+            ) {
                 throw new ORPCError("NOT_FOUND", { message: "Return not found" });
             }
 
@@ -169,7 +225,12 @@ export const returnsRouter = {
 
             // Get order with full details
             const orderData = await db.query.order.findFirst({
-                where: eq(order.id, input.orderId),
+                where: and(
+                    eq(order.id, input.orderId),
+                    ...(context.session.user.role === "deliveryman"
+                        ? [deliverymanOrderScope(context)]
+                        : []),
+                ),
                 with: {
                     items: true,
                     user: {
@@ -206,8 +267,12 @@ export const returnsRouter = {
 
             for (const ret of existingReturns) {
                 if (ret.items && Array.isArray(ret.items)) {
-                    for (const item of ret.items as { orderItemId: number; quantity: number }[]) {
-                        returnedQuantities[item.orderItemId] = (returnedQuantities[item.orderItemId] ?? 0) + item.quantity;
+                    for (const item of ret.items as {
+                        orderItemId: number;
+                        quantity: number;
+                    }[]) {
+                        returnedQuantities[item.orderItemId] =
+                            (returnedQuantities[item.orderItemId] ?? 0) + item.quantity;
                     }
                 }
             }
@@ -249,7 +314,12 @@ export const returnsRouter = {
 
             // Get order
             const orderData = await db.query.order.findFirst({
-                where: eq(order.id, orderId),
+                where: and(
+                    eq(order.id, orderId),
+                    ...(context.session.user.role === "deliveryman"
+                        ? [deliverymanOrderScope(context)]
+                        : []),
+                ),
                 with: { items: true, user: true },
             });
 
@@ -309,7 +379,8 @@ export const returnsRouter = {
                     refundType: refundType,
                     status: "pending",
                     notes: notes || null,
-                    attachments: attachments && attachments.length > 0 ? attachments : null,
+                    attachments:
+                        attachments && attachments.length > 0 ? attachments : null,
                 })
                 .returning();
 

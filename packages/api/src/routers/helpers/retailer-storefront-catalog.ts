@@ -1,3 +1,5 @@
+import { isSellableRetailerInventory } from "./retailer-inventory-sellability";
+
 export const retailerStorefrontSortValues = [
   "recommended",
   "newest",
@@ -29,6 +31,45 @@ export interface RetailerStorefrontFacet {
   slug: string;
   count: number;
   subcategories: Array<{ name: string; slug: string; count: number }>;
+}
+
+export interface RetailerInventoryVariantRow<
+  TVariant extends {
+    productId: number;
+    isActive: boolean | null;
+    sortOrder: number | null;
+  },
+> {
+  ownerId: string;
+  retailPrice: string | null;
+  availableQty: string;
+  variant: TVariant;
+}
+
+export function selectSellableRetailerVariants<
+  TRow extends RetailerInventoryVariantRow<{
+    productId: number;
+    isActive: boolean | null;
+    sortOrder: number | null;
+  }>,
+>(rows: TRow[], input: { shopId: string; productId: number }): TRow[] {
+  return rows
+    .filter(
+      (row) =>
+        isSellableRetailerInventory(
+          {
+            shopId: row.ownerId,
+            productId: row.variant.productId,
+            variantIsActive: row.variant.isActive,
+            retailPrice: row.retailPrice,
+          },
+          input,
+        ) && Number(row.availableQty) > 0,
+    )
+    .sort(
+      (left, right) =>
+        (left.variant.sortOrder ?? 0) - (right.variant.sortOrder ?? 0),
+    );
 }
 
 export function buildRetailerStorefrontFacets(

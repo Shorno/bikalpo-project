@@ -51,6 +51,7 @@ export interface CartItem {
   inStock: boolean;
   shopId?: string | null;
   shopName?: string | null;
+  shopSlug?: string | null;
 }
 
 export interface CartContextType {

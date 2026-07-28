@@ -12,6 +12,8 @@ import {
   Trash2,
 } from "lucide-react";
 import Image from "next/image";
+import Link from "next/link";
+import { CartRetailerLabel } from "@/components/layout/cart-retailer-label";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import {
@@ -20,6 +22,7 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import type { CartItem } from "@/hooks/use-orpc-cart";
+import { getCartItemProductHref } from "@/lib/retailer-storefront-url";
 import { cn } from "@/lib/utils";
 
 export function formatCheckoutPrice(price: number) {
@@ -57,6 +60,12 @@ function CheckoutLineItem({
   onRemoveItem: (cartItemId: number) => Promise<void>;
   onUpdateQuantity: (cartItemId: number, quantity: number) => Promise<void>;
 }) {
+  const productHref = getCartItemProductHref({
+    shopSlug: item.shopSlug,
+    productSlug: item.slug,
+    categorySlug: item.categorySlug,
+  });
+
   return (
     <div className="flex min-w-0 gap-3 py-3 first:pt-0 last:pb-0">
       <div className="relative size-14 shrink-0 overflow-hidden rounded-xl border border-slate-200 bg-slate-50">
@@ -72,10 +81,19 @@ function CheckoutLineItem({
       <div className="min-w-0 flex-1">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <p className="line-clamp-2 text-sm font-semibold leading-5 text-slate-900">
+            <Link
+              href={productHref}
+              className="line-clamp-2 text-sm font-semibold leading-5 text-slate-900 outline-none hover:text-emerald-700 focus-visible:rounded-sm focus-visible:ring-2 focus-visible:ring-emerald-600/40"
+            >
               {item.name}
-            </p>
+            </Link>
             <p className="mt-0.5 text-xs text-slate-500">{item.size}</p>
+            {item.shopName && (
+              <CartRetailerLabel
+                className="mt-1.5"
+                shopName={item.shopName}
+              />
+            )}
           </div>
           <p className="shrink-0 whitespace-nowrap text-sm font-semibold tabular-nums text-slate-900">
             {formatCheckoutPrice(item.price * item.quantity)}
