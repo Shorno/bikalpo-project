@@ -22,6 +22,7 @@ import {
   coreProductIdentity,
   customerHomeTab,
   customerHomeTabProduct,
+  deliveryGroup,
   deliveryGroupInvoice,
   estimate,
   inventory,
@@ -75,10 +76,6 @@ import {
   publicProcedure,
 } from "../index";
 import {
-  getDirectCartInventoryIssue,
-  resolveDirectCartInventorySnapshot,
-} from "../services/direct-cart-domain";
-import {
   computeOrderAreaFields,
   findAreasForPoint,
   findSellersNearPoint,
@@ -98,6 +95,7 @@ import {
   SELECTION_WINDOW_SECONDS,
 } from "../services/open-order-matching";
 import { buildStoreProductDetail } from "../services/retailer-store-product-detail";
+import { buildConsumerOrderJourney } from "./helpers/consumer-order-journey";
 import {
   convertEstimateToB2bOrder,
   estimateOrderAcceptSchema,
@@ -108,6 +106,20 @@ import {
   isOpenOrderReferenceSelectionEligible,
   sortReferenceProducts,
 } from "./helpers/reference-product-catalog";
+import {
+  type CustomerCartLineSnapshot,
+  getCustomerOrderLineDecision,
+  getRetailerCartDecision,
+  isSameCustomerCartSnapshot,
+  type RetailerCartInventorySnapshot,
+  resolveCustomerCartSource,
+} from "./helpers/retailer-cart-inventory";
+import {
+  createRetailerOrderStockWriter,
+  deductRetailerOrderStock,
+  RetailerOrderStockError,
+  restoreRetailerOrderStock,
+} from "./helpers/retailer-order-stock";
 import {
   buildRetailerStorefrontFacets,
   filterAndSortRetailerStorefrontProducts,
@@ -152,6 +164,201 @@ const shippingInfoSchema = z.object({
   lat: z.string().optional(),
   lng: z.string().optional(),
 });
+
+async function loadConsumerOrderJourney(
+  orderData: typeof order.$inferSelect,
+) {
+  const orderInvoices = await db.query.invoice.findMany({
+    where: eq(invoice.orderId, orderData.id),
+    columns: {
+      id: true,
+      invoiceNumber: true,
+      createdAt: true,
+      deliveryStatus: true,
+      fulfillmentMode: true,
+      completionOtp: true,
+      completionOtpVerifiedAt: true,
+      deliveredAt: true,
+    },
+    orderBy: [asc(invoice.createdAt)],
+  });
+
+  const invoiceIds = orderInvoices.map((entry) => entry.id);
+  const deliveryLinks = invoiceIds.length
+    ? await db
+        .select({
+          invoiceId: deliveryGroupInvoice.invoiceId,
+          groupStatus: deliveryGroup.status,
+          invoiceStatus: deliveryGroupInvoice.status,
+          assignedAt: deliveryGroup.assignedAt,
+          startedAt: deliveryGroup.startedAt,
+          deliveredAt: deliveryGroupInvoice.deliveredAt,
+          deliveryOtp: deliveryGroupInvoice.deliveryOtp,
+        })
+        .from(deliveryGroupInvoice)
+        .innerJoin(
+          deliveryGroup,
+          eq(deliveryGroupInvoice.groupId, deliveryGroup.id),
+        )
+        .where(inArray(deliveryGroupInvoice.invoiceId, invoiceIds))
+    : [];
+
+  const shopProfile = orderData.shopId
+    ? await db.query.user.findFirst({
+        where: eq(user.id, orderData.shopId),
+        columns: {
+          shopName: true,
+          name: true,
+          phoneNumber: true,
+          shopAddress: true,
+        },
+      })
+    : null;
+
+  return buildConsumerOrderJourney({
+    order: orderData,
+    invoices: orderInvoices,
+    deliveryLinks,
+    pickupLocation: shopProfile?.shopAddress
+      ? {
+          name: shopProfile.shopName || shopProfile.name,
+          address: shopProfile.shopAddress,
+          phone: shopProfile.phoneNumber,
+        }
+      : null,
+  });
+}
+
+type RetailerCartInventoryKey = {
+  shopId: string;
+  productId: number;
+  variantId: number;
+};
+
+type CustomerDbTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
+type CustomerDbClient = typeof db | CustomerDbTransaction;
+
+function getRetailerCartInventoryKey({
+  shopId,
+  productId,
+  variantId,
+}: RetailerCartInventoryKey) {
+  return `${shopId}:${productId}:${variantId}`;
+}
+
+async function getRetailerCartInventorySnapshots(
+  requestedItems: RetailerCartInventoryKey[],
+  database: CustomerDbClient = db,
+) {
+  const snapshots = new Map<string, RetailerCartInventorySnapshot>();
+  if (requestedItems.length === 0) return snapshots;
+
+  const shopIds = [...new Set(requestedItems.map((item) => item.shopId))];
+  const variantIds = [
+    ...new Set(requestedItems.map((item) => item.variantId)),
+  ];
+  const rows = await database
+    .select({
+      shopId: inventory.ownerId,
+      productId: productVariant.productId,
+      variantId: inventory.variantId,
+      variantIsActive: productVariant.isActive,
+      productStatus: product.status,
+      productVisibility: product.visibility,
+      referenceProductInStock: product.inStock,
+      availableQty: inventory.availableQty,
+      retailPrice: inventory.retailPrice,
+      orderMin: productVariant.orderMin,
+      orderMax: productVariant.orderMax,
+      orderIncrement: productVariant.orderIncrement,
+    })
+    .from(inventory)
+    .innerJoin(productVariant, eq(productVariant.id, inventory.variantId))
+    .innerJoin(product, eq(product.id, productVariant.productId))
+    .innerJoin(user, eq(user.id, inventory.ownerId))
+    .where(
+      and(
+        eq(inventory.ownerType, "shop"),
+        inArray(inventory.ownerId, shopIds),
+        inArray(inventory.variantId, variantIds),
+        eq(user.role, "shop_owner"),
+        eq(user.sellerStatus, "approved"),
+      ),
+    );
+
+  const requestedKeys = new Set(requestedItems.map(getRetailerCartInventoryKey));
+  for (const row of rows) {
+    const key = getRetailerCartInventoryKey(row);
+    if (requestedKeys.has(key)) snapshots.set(key, row);
+  }
+
+  return snapshots;
+}
+
+async function getRetailerCartInventorySnapshot(
+  requestedItem: RetailerCartInventoryKey,
+  database: CustomerDbClient = db,
+) {
+  const snapshots = await getRetailerCartInventorySnapshots(
+    [requestedItem],
+    database,
+  );
+  return snapshots.get(getRetailerCartInventoryKey(requestedItem)) ?? null;
+}
+
+async function lockCustomerCart(
+  transaction: CustomerDbTransaction,
+  userId: string,
+) {
+  await transaction.execute(
+    sql`SELECT pg_advisory_xact_lock(hashtextextended(${`customer-cart:${userId}`}, 0))`,
+  );
+}
+
+async function assertCustomerCartSnapshot(
+  transaction: CustomerDbTransaction,
+  cartId: number,
+  expected: CustomerCartLineSnapshot[],
+) {
+  const current = await transaction
+    .select({
+      id: cartItem.id,
+      productId: cartItem.productId,
+      variantId: cartItem.variantId,
+      shopId: cartItem.shopId,
+      quantity: cartItem.quantity,
+      price: cartItem.price,
+    })
+    .from(cartItem)
+    .where(eq(cartItem.cartId, cartId));
+
+  if (!isSameCustomerCartSnapshot(expected, current)) {
+    throw new ORPCError("CONFLICT", {
+      message:
+        "Your cart changed while this order was being prepared. Review the cart and try again.",
+    });
+  }
+}
+
+function requireSellableRetailerCartDecision(
+  decision: ReturnType<typeof getRetailerCartDecision>,
+) {
+  if (decision.ok) return decision;
+
+  if (decision.reason === "not_sellable") {
+    throw new ORPCError("NOT_FOUND", {
+      message: "This product option is not available from this shop",
+    });
+  }
+  if (decision.reason === "insufficient_stock") {
+    throw new ORPCError("BAD_REQUEST", {
+      message: `Only ${decision.availableQuantity} available from this shop`,
+    });
+  }
+  throw new ORPCError("BAD_REQUEST", {
+    message: "Quantity does not match this shop's order rules",
+  });
+}
 
 const addressFormSchema = z.object({
   label: z.string().min(1, "Label is required"),
@@ -1907,7 +2114,14 @@ const queries = {
         with: { items: true },
         orderBy: [desc(order.createdAt)],
       });
-      return { orders };
+      return {
+        orders: await Promise.all(
+          orders.map(async (entry) => ({
+            ...entry,
+            journey: await loadConsumerOrderJourney(entry),
+          })),
+        ),
+      };
     }),
 
   /** Get order details by order number */
@@ -1932,35 +2146,19 @@ const queries = {
       if (!found)
         throw new ORPCError("NOT_FOUND", { message: "Order not found" });
 
-      const orderInvoices = await db.query.invoice.findMany({
-        where: eq(invoice.orderId, found.id),
-        columns: { id: true },
-      });
-
-      let deliveryInfo: { status: string; otp: string | null } | null = null;
-
-      if (orderInvoices.length > 0) {
-        const invoiceIds = orderInvoices.map((inv) => inv.id);
-        const deliveryInvoice = await db.query.deliveryGroupInvoice.findFirst({
-          where: sql`${deliveryGroupInvoice.invoiceId} IN (${sql.join(
-            invoiceIds.map((id) => sql`${id}`),
-            sql`, `,
-          )})`,
-          with: { group: true },
-        });
-
-        if (deliveryInvoice) {
-          deliveryInfo = {
-            status: deliveryInvoice.group.status,
-            otp:
-              deliveryInvoice.group.status === "out_for_delivery"
-                ? deliveryInvoice.deliveryOtp
-                : null,
-          };
-        }
-      }
-
-      return { order: found, deliveryInfo };
+      const journey = await loadConsumerOrderJourney(found);
+      return {
+        order: found,
+        journey,
+        deliveryInfo: journey.delivery.status
+          ? {
+              status: journey.delivery.status,
+              otp: journey.delivery.otp,
+              mode: journey.delivery.mode,
+              pickupLocation: journey.pickupLocation,
+            }
+          : null,
+      };
     }),
 
   /** Get order status (order + payment info) */
@@ -2009,7 +2207,7 @@ const queries = {
     .handler(async ({ context }) => {
       const userId = context.session.user.id;
       const activeOrder = await db.query.order.findFirst({
-        where: sql`${order.userId} = ${userId} AND ${order.isOpenOrder} = false AND ${order.status} NOT IN ('delivered', 'cancelled')`,
+        where: sql`${order.userId} = ${userId} AND ${order.isOpenOrder} = false AND ${order.status} NOT IN ('delivered', 'cancelled', 'returned')`,
         with: { items: true },
         orderBy: [desc(order.createdAt)],
       });
@@ -2017,35 +2215,19 @@ const queries = {
         return { order: null, deliveryInfo: null };
       }
 
-      const orderInvoices = await db.query.invoice.findMany({
-        where: eq(invoice.orderId, activeOrder.id),
-        columns: { id: true },
-      });
-
-      let deliveryInfo: { status: string; otp: string | null } | null = null;
-
-      if (orderInvoices.length > 0) {
-        const invoiceIds = orderInvoices.map((inv) => inv.id);
-        const deliveryInvoice = await db.query.deliveryGroupInvoice.findFirst({
-          where: sql`${deliveryGroupInvoice.invoiceId} IN (${sql.join(
-            invoiceIds.map((id) => sql`${id}`),
-            sql`, `,
-          )})`,
-          with: { group: true },
-        });
-
-        if (deliveryInvoice) {
-          deliveryInfo = {
-            status: deliveryInvoice.group.status,
-            otp:
-              deliveryInvoice.group.status === "out_for_delivery"
-                ? deliveryInvoice.deliveryOtp
-                : null,
-          };
-        }
-      }
-
-      return { order: activeOrder, deliveryInfo };
+      const journey = await loadConsumerOrderJourney(activeOrder);
+      return {
+        order: activeOrder,
+        journey,
+        deliveryInfo: journey.delivery.status
+          ? {
+              status: journey.delivery.status,
+              otp: journey.delivery.otp,
+              mode: journey.delivery.mode,
+              pickupLocation: journey.pickupLocation,
+            }
+          : null,
+      };
     }),
 
   // ── Cart (authenticated customer) ────────────────────────────
@@ -2074,6 +2256,9 @@ const queries = {
                   size: true,
                   price: true,
                   inStock: true,
+                },
+                with: {
+                  category: { columns: { slug: true } },
                 },
               },
               variant: {
@@ -2108,73 +2293,78 @@ const queries = {
             .filter((id): id is string => !!id),
         ),
       ];
-      const shopMap = new Map<string, string>();
+      const shopMap = new Map<
+        string,
+        { name: string; shopSlug: string | null }
+      >();
       if (shopIds.length > 0) {
         const shops = await db
-          .select({ id: user.id, shopName: user.shopName, name: user.name })
+          .select({
+            id: user.id,
+            shopName: user.shopName,
+            name: user.name,
+            shopSlug: user.shopSlug,
+          })
           .from(user)
           .where(inArray(user.id, shopIds));
         for (const s of shops) {
-          shopMap.set(s.id, s.shopName || s.name);
+          shopMap.set(s.id, {
+            name: s.shopName || s.name,
+            shopSlug: s.shopSlug,
+          });
         }
       }
 
-      const directVariantIds = [
-        ...new Set(
-          userCart.items
-            .filter((item) => item.shopId && item.variantId)
-            .map((item) => item.variantId as number),
+      const retailerInventoryByKey = await getRetailerCartInventorySnapshots(
+        userCart.items.flatMap((item) =>
+          item.shopId && item.variantId
+            ? [
+                {
+                  shopId: item.shopId,
+                  productId: item.productId,
+                  variantId: item.variantId,
+                },
+              ]
+            : [],
         ),
-      ];
-      const directInventoryRows =
-        shopIds.length > 0 && directVariantIds.length > 0
-          ? await db.query.inventory.findMany({
-              where: and(
-                eq(inventory.ownerType, "shop"),
-                inArray(inventory.ownerId, shopIds),
-                inArray(inventory.variantId, directVariantIds),
-              ),
-              columns: {
-                ownerId: true,
-                variantId: true,
-                availableQty: true,
-                retailPrice: true,
-              },
-            })
-          : [];
-      const directInventoryMap = new Map(
-        directInventoryRows.map((row) => [
-          `${row.ownerId}:${row.variantId}`,
-          row,
-        ]),
       );
 
       const items = userCart.items.map((item) => {
         const variant = item.variant;
+        const retailerInventory =
+          item.shopId && item.variantId
+            ? retailerInventoryByKey.get(
+                getRetailerCartInventoryKey({
+                  shopId: item.shopId,
+                  productId: item.productId,
+                  variantId: item.variantId,
+                }),
+              )
+            : undefined;
+        const retailerDecision =
+          item.shopId && item.variantId
+            ? getRetailerCartDecision(retailerInventory, {
+                shopId: item.shopId,
+                productId: item.productId,
+                variantId: item.variantId,
+                requestedQuantity: item.quantity,
+                existingQuantity: 0,
+              })
+            : null;
         // Use variant-specific data when available
         const displayName = variant
           ? `${item.product.name} — ${variant.unitLabel}`
           : item.product.name;
         const displaySize = variant ? variant.unitLabel : item.product.size;
-        const directInventory =
-          item.shopId && item.variantId
-            ? directInventoryMap.get(`${item.shopId}:${item.variantId}`)
-            : undefined;
-        const directSnapshot =
-          item.shopId && item.variantId
-            ? resolveDirectCartInventorySnapshot({
-                availableQuantity: Number(
-                  directInventory?.availableQty ?? Number.NaN,
-                ),
-                requestedQuantity: item.quantity,
-                retailPrice: Number(directInventory?.retailPrice ?? Number.NaN),
-              })
-            : null;
-        const currentPrice = directSnapshot
-          ? directSnapshot.currentPrice
+        const currentPrice = item.shopId
+          ? Number(retailerInventory?.retailPrice ?? item.price)
           : variant
             ? Number(variant.price)
             : Number(item.product.price);
+        const effectivePrice =
+          item.shopId && retailerDecision?.ok
+            ? Number(retailerDecision.retailPrice)
+            : Number(item.price);
 
         return {
           id: item.id,
@@ -2182,17 +2372,20 @@ const queries = {
           variantId: item.variantId,
           name: displayName,
           slug: item.product.slug,
-          categorySlug: undefined as string | undefined,
+          categorySlug: item.product.category?.slug,
           image: item.product.image,
           size: displaySize,
-          price: directSnapshot ? currentPrice : Number(item.price),
+          price: effectivePrice,
           currentPrice,
           quantity: item.quantity,
-          inStock: directSnapshot
-            ? directSnapshot.inStock
+          inStock: item.shopId
+            ? retailerDecision?.ok === true
             : item.product.inStock,
           shopId: item.shopId,
-          shopName: item.shopId ? shopMap.get(item.shopId) || null : null,
+          shopName: item.shopId ? shopMap.get(item.shopId)?.name || null : null,
+          shopSlug: item.shopId
+            ? shopMap.get(item.shopId)?.shopSlug || null
+            : null,
         };
       });
 
@@ -3640,10 +3833,10 @@ const mutations = {
     })
     .input(
       z.object({
-        productId: z.number(),
-        quantity: z.number().min(1).default(1),
-        variantId: z.number().optional(),
-        shopId: z.string().optional(), // B2C: which shop to buy from
+        productId: z.number().int().positive(),
+        quantity: z.number().int().min(1).default(1),
+        variantId: z.number().int().positive().optional(),
+        shopId: z.string().min(1).optional(),
         purchaseMode: z.enum(["open_order", "direct"]).optional(),
         replaceCart: z.boolean().default(false),
       }),
@@ -3702,8 +3895,6 @@ const mutations = {
         }
       }
 
-      let directInventory: typeof inventory.$inferSelect | null | undefined =
-        null;
       if (purchaseMode === "direct") {
         if (
           productData.creatorSource !== "shop" ||
@@ -3738,147 +3929,155 @@ const mutations = {
           });
         }
 
-        directInventory = await db.query.inventory.findFirst({
-          where: and(
-            eq(inventory.ownerType, "shop"),
-            eq(inventory.ownerId, input.shopId!),
-            eq(inventory.variantId, input.variantId),
-          ),
-        });
-        const inventoryIssue = directInventory
-          ? getDirectCartInventoryIssue({
-              availableQuantity: Number(directInventory.availableQty),
-              requestedQuantity: input.quantity,
-              retailPrice: Number(directInventory.retailPrice),
-            })
-          : "The selected variant is not stocked by this retailer.";
-        if (inventoryIssue) {
-          throw new ORPCError("BAD_REQUEST", {
-            message: inventoryIssue,
-          });
-        }
       }
 
-      // Determine price: shop retail price (B2C) > variant base price > product price
       let itemPrice = productData.price;
-
-      if (purchaseMode === "direct" && directInventory?.retailPrice) {
-        itemPrice = directInventory.retailPrice;
-      } else if (input.variantId) {
+      if (purchaseMode === "open_order" && input.variantId) {
         const variantData = await db.query.productVariant.findFirst({
-          where: eq(productVariant.id, input.variantId),
+          where: and(
+            eq(productVariant.id, input.variantId),
+            eq(productVariant.productId, input.productId),
+          ),
           columns: { price: true },
         });
-        if (variantData?.price) {
-          itemPrice = variantData.price;
+        if (!variantData) {
+          throw new ORPCError("NOT_FOUND", {
+            message: "Product option not found",
+          });
         }
+        itemPrice = variantData.price;
       }
 
-      // Get or create an explicitly typed cart.
-      let userCart = await db.query.cart.findFirst({
-        where: eq(cart.userId, userId),
-        with: { items: { columns: { id: true } } },
-      });
-      if (!userCart) {
-        const [newCart] = await db
-          .insert(cart)
-          .values({
-            userId,
-            mode: purchaseMode,
-            directShopId: purchaseMode === "direct" ? input.shopId! : null,
-          })
-          .returning();
-        userCart = { ...newCart!, items: [] };
-      } else {
-        try {
-          const transition = resolveCartTransition({
-            hasItems: userCart.items.length > 0,
-            currentMode: userCart.mode,
-            currentDirectShopId: userCart.directShopId,
-            requestedMode: purchaseMode,
-            requestedDirectShopId:
-              purchaseMode === "direct" ? input.shopId! : null,
-            replaceCart: input.replaceCart,
-          });
-          if (transition.replaceExistingItems) {
-            await db.delete(cartItem).where(eq(cartItem.cartId, userCart.id));
+      return db.transaction(async (tx) => {
+        // Serialize cart-source decisions for this customer. This closes the
+        // race where simultaneous requests could add two different retailers
+        // before either request observed the other's line.
+        await lockCustomerCart(tx, userId);
+
+        let userCart = await tx.query.cart.findFirst({
+          where: eq(cart.userId, userId),
+          with: {
+            items: {
+              columns: {
+                id: true,
+                productId: true,
+                variantId: true,
+                shopId: true,
+                quantity: true,
+              },
+            },
+          },
+        });
+        let existing: typeof cartItem.$inferSelect | undefined;
+        if (userCart) {
+          let replaceExistingItems = false;
+          try {
+            replaceExistingItems = resolveCartTransition({
+              hasItems: userCart.items.length > 0,
+              currentMode: userCart.mode,
+              currentDirectShopId: userCart.directShopId,
+              requestedMode: purchaseMode,
+              requestedDirectShopId:
+                purchaseMode === "direct" ? input.shopId! : null,
+              replaceCart: input.replaceCart,
+            }).replaceExistingItems;
+          } catch (error) {
+            throw new ORPCError("CONFLICT", {
+              message:
+                error instanceof Error
+                  ? error.message
+                  : "Replace the current cart first.",
+            });
           }
-          await db
+
+          if (replaceExistingItems) {
+            await tx.delete(cartItem).where(eq(cartItem.cartId, userCart.id));
+          } else {
+            const dupConditions = [
+              eq(cartItem.cartId, userCart.id),
+              eq(cartItem.productId, input.productId),
+              input.variantId
+                ? eq(cartItem.variantId, input.variantId)
+                : isNull(cartItem.variantId),
+              input.shopId
+                ? eq(cartItem.shopId, input.shopId)
+                : isNull(cartItem.shopId),
+            ];
+            existing = await tx.query.cartItem.findFirst({
+              where: and(...dupConditions),
+            });
+          }
+
+          await tx
             .update(cart)
             .set({
               mode: purchaseMode,
               directShopId: purchaseMode === "direct" ? input.shopId! : null,
             })
             .where(eq(cart.id, userCart.id));
-        } catch (error) {
-          throw new ORPCError("CONFLICT", {
-            message:
-              error instanceof Error
-                ? error.message
-                : "Replace the current cart first.",
-          });
         }
-      }
 
-      // Check if same item + variant + shop combo exists
-      const dupConditions = [
-        eq(cartItem.cartId, userCart.id),
-        eq(cartItem.productId, input.productId),
-      ];
-      if (input.variantId) {
-        dupConditions.push(eq(cartItem.variantId, input.variantId));
-      } else {
-        dupConditions.push(isNull(cartItem.variantId));
-      }
-      if (input.shopId) {
-        dupConditions.push(eq(cartItem.shopId, input.shopId));
-      } else {
-        dupConditions.push(isNull(cartItem.shopId));
-      }
-      const existing = await db.query.cartItem.findFirst({
-        where: and(...dupConditions),
-      });
-
-      if (purchaseMode === "direct" && directInventory) {
-        const inventoryIssue = getDirectCartInventoryIssue({
-          availableQuantity: Number(directInventory.availableQty),
-          requestedQuantity: (existing?.quantity ?? 0) + input.quantity,
-          retailPrice: Number(directInventory.retailPrice),
-        });
-        if (inventoryIssue) {
-          throw new ORPCError("BAD_REQUEST", {
-            message: inventoryIssue,
-          });
+        if (purchaseMode === "direct" && input.shopId && input.variantId) {
+          const retailerSnapshot = await getRetailerCartInventorySnapshot(
+            {
+              shopId: input.shopId,
+              productId: input.productId,
+              variantId: input.variantId,
+            },
+            tx,
+          );
+          const decision = requireSellableRetailerCartDecision(
+            getRetailerCartDecision(retailerSnapshot, {
+              shopId: input.shopId,
+              productId: input.productId,
+              variantId: input.variantId,
+              requestedQuantity: input.quantity,
+              existingQuantity: existing?.quantity ?? 0,
+            }),
+          );
+          itemPrice = decision.retailPrice;
         }
-      }
 
-      if (existing) {
-        await db
-          .update(cartItem)
-          .set({
-            quantity: existing.quantity + input.quantity,
+        if (!userCart) {
+          const [newCart] = await tx
+            .insert(cart)
+            .values({
+              userId,
+              mode: purchaseMode,
+              directShopId: purchaseMode === "direct" ? input.shopId! : null,
+            })
+            .returning();
+          userCart = { ...newCart!, items: [] };
+        }
+
+        if (existing) {
+          await tx
+            .update(cartItem)
+            .set({
+              quantity: existing.quantity + input.quantity,
+              price: itemPrice,
+            })
+            .where(eq(cartItem.id, existing.id));
+        } else {
+          await tx.insert(cartItem).values({
+            cartId: userCart.id,
+            productId: input.productId,
+            variantId: input.variantId ?? null,
+            shopId: input.shopId ?? null,
+            quantity: input.quantity,
             price: itemPrice,
-          })
-          .where(eq(cartItem.id, existing.id));
-      } else {
-        await db.insert(cartItem).values({
-          cartId: userCart.id,
-          productId: input.productId,
-          variantId: input.variantId ?? null,
-          shopId: input.shopId ?? null,
-          quantity: input.quantity,
-          price: itemPrice,
-        });
-      }
+          });
+        }
 
-      return {
-        success: true,
-        message:
-          purchaseMode === "open_order"
-            ? "Added to open order"
-            : "Item added to cart",
-        mode: purchaseMode,
-      };
+        return {
+          success: true,
+          message:
+            purchaseMode === "open_order"
+              ? "Added to open order"
+              : "Item added to cart",
+          mode: purchaseMode,
+        };
+      });
     }),
 
   /** Update cart item quantity */
@@ -3889,67 +4088,78 @@ const mutations = {
       tags: ["Customer"],
       summary: "Update cart item quantity",
     })
-    .input(z.object({ cartItemId: z.number(), quantity: z.number().min(0) }))
+    .input(
+      z.object({
+        cartItemId: z.number().int().positive(),
+        quantity: z.number().int().min(0),
+      }),
+    )
     .handler(async ({ context, input }) => {
       const userId = context.session.user.id;
 
-      const item = await db.query.cartItem.findFirst({
-        where: eq(cartItem.id, input.cartItemId),
-        with: { cart: true },
-      });
-      if (!item || item.cart.userId !== userId) {
-        throw new ORPCError("NOT_FOUND", { message: "Cart item not found" });
-      }
+      return db.transaction(async (tx) => {
+        await lockCustomerCart(tx, userId);
 
-      if (input.quantity < 1) {
-        await db.delete(cartItem).where(eq(cartItem.id, input.cartItemId));
-        const remaining = await db.query.cartItem.findFirst({
-          where: eq(cartItem.cartId, item.cartId),
-          columns: { id: true },
+        const item = await tx.query.cartItem.findFirst({
+          where: eq(cartItem.id, input.cartItemId),
+          with: { cart: true },
         });
-        if (!remaining) {
-          await db
-            .update(cart)
-            .set({ mode: null, directShopId: null })
-            .where(eq(cart.id, item.cartId));
+        if (!item || item.cart.userId !== userId) {
+          throw new ORPCError("NOT_FOUND", { message: "Cart item not found" });
         }
-        return { success: true, message: "Item removed from cart" };
-      }
 
-      if (item.cart.mode === "direct") {
-        if (!item.variantId || !item.shopId) {
-          throw new ORPCError("BAD_REQUEST", {
-            message: "This direct cart item is missing its retailer variant.",
+        if (input.quantity < 1) {
+          await tx.delete(cartItem).where(eq(cartItem.id, input.cartItemId));
+          const remaining = await tx.query.cartItem.findFirst({
+            where: eq(cartItem.cartId, item.cartId),
+            columns: { id: true },
           });
+          if (!remaining) {
+            await tx
+              .update(cart)
+              .set({ mode: null, directShopId: null })
+              .where(eq(cart.id, item.cartId));
+          }
+          return { success: true, message: "Item removed from cart" };
         }
 
-        const directInventory = await db.query.inventory.findFirst({
-          where: and(
-            eq(inventory.ownerType, "shop"),
-            eq(inventory.ownerId, item.shopId),
-            eq(inventory.variantId, item.variantId),
-          ),
-        });
-        const inventoryIssue = directInventory
-          ? getDirectCartInventoryIssue({
-              availableQuantity: Number(directInventory.availableQty),
+        let retailerPrice: string | undefined;
+        if (item.shopId) {
+          if (!item.variantId) {
+            throw new ORPCError("NOT_FOUND", {
+              message: "Retailer product option not found",
+            });
+          }
+          const snapshot = await getRetailerCartInventorySnapshot(
+            {
+              shopId: item.shopId,
+              productId: item.productId,
+              variantId: item.variantId,
+            },
+            tx,
+          );
+          const decision = requireSellableRetailerCartDecision(
+            getRetailerCartDecision(snapshot, {
+              shopId: item.shopId,
+              productId: item.productId,
+              variantId: item.variantId,
               requestedQuantity: input.quantity,
-              retailPrice: Number(directInventory.retailPrice),
-            })
-          : "The selected variant is not stocked by this retailer.";
-        if (inventoryIssue) {
-          throw new ORPCError("BAD_REQUEST", {
-            message: inventoryIssue,
-          });
+              existingQuantity: 0,
+            }),
+          );
+          retailerPrice = decision.retailPrice;
         }
-      }
 
-      await db
-        .update(cartItem)
-        .set({ quantity: input.quantity })
-        .where(eq(cartItem.id, input.cartItemId));
+        await tx
+          .update(cartItem)
+          .set({
+            quantity: input.quantity,
+            ...(retailerPrice ? { price: retailerPrice } : {}),
+          })
+          .where(eq(cartItem.id, input.cartItemId));
 
-      return { success: true, message: "Cart updated" };
+        return { success: true, message: "Cart updated" };
+      });
     }),
 
   /** Remove item from cart */
@@ -3964,26 +4174,29 @@ const mutations = {
     .handler(async ({ context, input }) => {
       const userId = context.session.user.id;
 
-      const item = await db.query.cartItem.findFirst({
-        where: eq(cartItem.id, input.cartItemId),
-        with: { cart: true },
-      });
-      if (!item || item.cart.userId !== userId) {
-        throw new ORPCError("NOT_FOUND", { message: "Cart item not found" });
-      }
+      return db.transaction(async (tx) => {
+        await lockCustomerCart(tx, userId);
+        const item = await tx.query.cartItem.findFirst({
+          where: eq(cartItem.id, input.cartItemId),
+          with: { cart: true },
+        });
+        if (!item || item.cart.userId !== userId) {
+          throw new ORPCError("NOT_FOUND", { message: "Cart item not found" });
+        }
 
-      await db.delete(cartItem).where(eq(cartItem.id, input.cartItemId));
-      const remaining = await db.query.cartItem.findFirst({
-        where: eq(cartItem.cartId, item.cartId),
-        columns: { id: true },
+        await tx.delete(cartItem).where(eq(cartItem.id, input.cartItemId));
+        const remaining = await tx.query.cartItem.findFirst({
+          where: eq(cartItem.cartId, item.cartId),
+          columns: { id: true },
+        });
+        if (!remaining) {
+          await tx
+            .update(cart)
+            .set({ mode: null, directShopId: null })
+            .where(eq(cart.id, item.cartId));
+        }
+        return { success: true, message: "Item removed from cart" };
       });
-      if (!remaining) {
-        await db
-          .update(cart)
-          .set({ mode: null, directShopId: null })
-          .where(eq(cart.id, item.cartId));
-      }
-      return { success: true, message: "Item removed from cart" };
     }),
 
   /** Clear entire cart */
@@ -3996,17 +4209,20 @@ const mutations = {
     })
     .handler(async ({ context }) => {
       const userId = context.session.user.id;
-      const userCart = await db.query.cart.findFirst({
-        where: eq(cart.userId, userId),
+      return db.transaction(async (tx) => {
+        await lockCustomerCart(tx, userId);
+        const userCart = await tx.query.cart.findFirst({
+          where: eq(cart.userId, userId),
+        });
+        if (userCart) {
+          await tx.delete(cartItem).where(eq(cartItem.cartId, userCart.id));
+          await tx
+            .update(cart)
+            .set({ mode: null, directShopId: null })
+            .where(eq(cart.id, userCart.id));
+        }
+        return { success: true, message: "Cart cleared" };
       });
-      if (userCart) {
-        await db.delete(cartItem).where(eq(cartItem.cartId, userCart.id));
-        await db
-          .update(cart)
-          .set({ mode: null, directShopId: null })
-          .where(eq(cart.id, userCart.id));
-      }
-      return { success: true, message: "Cart cleared" };
     }),
 
   // ── Orders ───────────────────────────────────────────────────
@@ -4032,7 +4248,7 @@ const mutations = {
 
       // Check for active order
       const activeOrder = await db.query.order.findFirst({
-        where: sql`${order.userId} = ${userId} AND ${order.status} NOT IN ('delivered', 'cancelled')`,
+        where: sql`${order.userId} = ${userId} AND ${order.status} NOT IN ('delivered', 'cancelled', 'returned')`,
       });
       if (activeOrder) {
         throw new ORPCError("BAD_REQUEST", {
@@ -4092,6 +4308,39 @@ const mutations = {
         }
       }
 
+      const cartSource = resolveCustomerCartSource(
+        userCart.items.map((item) => item.shopId),
+      );
+      if (cartSource.kind === "mixed") {
+        throw new ORPCError("CONFLICT", {
+          message:
+            "Your cart must contain products from one retailer only, or only products without a retailer.",
+        });
+      }
+      if (
+        cartSource.kind === "retailer" &&
+        context.session.user.role !== "consumer"
+      ) {
+        throw new ORPCError("FORBIDDEN", {
+          message:
+            "Retailer storefront carts can only be placed through a consumer account.",
+        });
+      }
+
+      const retailerInventoryByKey = await getRetailerCartInventorySnapshots(
+        userCart.items.flatMap((item) =>
+          item.shopId && item.variantId
+            ? [
+                {
+                  shopId: item.shopId,
+                  productId: item.productId,
+                  variantId: item.variantId,
+                },
+              ]
+            : [],
+        ),
+      );
+
       // Validate stock & build order items
       const orderItems: Array<{
         productId: number;
@@ -4149,39 +4398,47 @@ const mutations = {
           });
         }
 
-        // Check stock: for B2C (with shopId), check shop inventory; otherwise check variant/product stock
-        let stockQty: number;
-        let unitPrice = Number(item.price);
-        if (item.shopId) {
-          // Capacity-specific products must resolve the exact selected variant.
-          const shopInv = item.variantId
-            ? await db.query.inventory.findFirst({
-                where: and(
-                  eq(inventory.ownerType, "shop"),
-                  eq(inventory.ownerId, item.shopId),
-                  eq(inventory.variantId, item.variantId),
-                ),
-              })
-            : null;
-          const directSnapshot = resolveDirectCartInventorySnapshot({
-            availableQuantity: Number(shopInv?.availableQty ?? Number.NaN),
-            requestedQuantity: item.quantity,
-            retailPrice: Number(shopInv?.retailPrice ?? Number.NaN),
-          });
-          if (directSnapshot.issue) {
+        const retailerInventory =
+          item.shopId && item.variantId
+            ? retailerInventoryByKey.get(
+                getRetailerCartInventoryKey({
+                  shopId: item.shopId,
+                  productId: item.productId,
+                  variantId: item.variantId,
+                }),
+              )
+            : undefined;
+        const stockDecision = getCustomerOrderLineDecision(
+          retailerInventory,
+          {
+            shopId: item.shopId,
+            productId: item.productId,
+            variantId: item.variantId,
+            quantity: item.quantity,
+            referenceProductInStock: item.product.inStock,
+            referenceAvailableQuantity: item.variant?.stockQuantity ?? null,
+          },
+        );
+        if (!stockDecision.ok) {
+          if (stockDecision.source === "reference") {
             throw new ORPCError("BAD_REQUEST", {
-              message: directSnapshot.issue,
+              message:
+                stockDecision.reason === "insufficient_stock"
+                  ? `Insufficient stock for ${item.product.name}. Available: ${stockDecision.availableQuantity}`
+                  : `${item.product.name} is out of stock`,
             });
           }
-          stockQty = Number(shopInv?.availableQty ?? 0);
-          unitPrice = directSnapshot.currentPrice;
-        } else {
-          stockQty = item.variant ? item.variant.stockQuantity : 999; // product-level stockQuantity removed; skip product-level check
-        }
 
-        if (stockQty < item.quantity) {
+          if (stockDecision.reason === "insufficient_stock") {
+            throw new ORPCError("BAD_REQUEST", {
+              message: `Insufficient stock for ${item.product.name}. Available: ${stockDecision.availableQuantity}`,
+            });
+          }
           throw new ORPCError("BAD_REQUEST", {
-            message: `Insufficient stock for ${item.product.name}. Available: ${stockQty}`,
+            message:
+              stockDecision.reason === "invalid_quantity"
+                ? `The quantity for ${item.product.name} does not match this retailer's order rules`
+                : `${item.product.name} is no longer available from this retailer`,
           });
         }
 
@@ -4200,7 +4457,11 @@ const mutations = {
           });
         }
 
-        const itemTotal = unitPrice * item.quantity;
+        const effectiveUnitPrice =
+          stockDecision.source === "retailer"
+            ? stockDecision.retailPrice
+            : item.price;
+        const itemTotal = Number(effectiveUnitPrice) * item.quantity;
         subtotal += itemTotal;
 
         const weightPerUnit = item.variant
@@ -4228,7 +4489,7 @@ const mutations = {
             null,
           conversionFactor: movementSemantics?.conversionFactor ?? "1",
           inventoryQty: String(item.quantity),
-          unitPrice: unitPrice.toFixed(2),
+          unitPrice: effectiveUnitPrice,
           totalPrice: itemTotal.toFixed(2),
         });
       }
@@ -4250,16 +4511,33 @@ const mutations = {
 
       // Transaction: create order, deduct stock, clear cart
       const result = await db.transaction(async (tx) => {
+        await lockCustomerCart(tx, userId);
+
+        // Re-check state under the same lock used by every cart mutation. This
+        // prevents a late addition from being omitted and then cleared, and
+        // prevents two concurrent placement requests from creating duplicates.
+        const lockedActiveOrder = await tx.query.order.findFirst({
+          where: sql`${order.userId} = ${userId} AND ${order.status} NOT IN ('delivered', 'cancelled', 'returned')`,
+          columns: { id: true },
+        });
+        if (lockedActiveOrder) {
+          throw new ORPCError("BAD_REQUEST", {
+            message:
+              "You already have an active order. Please wait until it's delivered or cancelled.",
+          });
+        }
+        await assertCustomerCartSnapshot(tx, userCart.id, userCart.items);
+
         // Auto-tag order type based on user role
         const orderType =
           context.session.user.role === "shop_owner"
             ? ("b2b" as const)
             : ("b2c" as const);
 
-        // For B2C orders: determine the shop from cart items
+        // For B2C orders: use the already validated single cart source.
         const b2cShopId =
-          orderType === "b2c"
-            ? (orderItems.find((oi) => oi.shopId)?.shopId ?? null)
+          orderType === "b2c" && cartSource.kind === "retailer"
+            ? cartSource.shopId
             : null;
 
         const [newOrder] = await tx
@@ -4318,38 +4596,30 @@ const mutations = {
           })),
         );
 
-        // Deduct stock
-        for (const oi of orderItems) {
-          if (oi.shopId && oi.variantId) {
-            const updated = await tx
-              .update(inventory)
-              .set({
-                availableQty: sql`${inventory.availableQty}::numeric - ${oi.quantity}`,
-                updatedAt: new Date(),
-              })
-              .where(
-                and(
-                  eq(inventory.ownerType, "shop"),
-                  eq(inventory.ownerId, oi.shopId),
-                  eq(inventory.variantId, oi.variantId),
-                  sql`CAST(${inventory.availableQty} AS numeric) >= ${oi.quantity}`,
-                ),
-              )
-              .returning({ id: inventory.id });
-            if (updated.length === 0) {
-              throw new ORPCError("BAD_REQUEST", {
-                message: `Insufficient stock for ${oi.productName}`,
-              });
+        // Deduct from the validated cart source. Every retailer line goes
+        // through the exact shop/product/variant writer in this transaction.
+        if (cartSource.kind === "retailer") {
+          try {
+            await deductRetailerOrderStock(
+              createRetailerOrderStockWriter(tx),
+              cartSource.shopId,
+              orderItems,
+            );
+          } catch (error) {
+            if (error instanceof RetailerOrderStockError) {
+              throw new ORPCError("BAD_REQUEST", { message: error.message });
             }
-          } else if (oi.variantId) {
+            throw error;
+          }
+        } else {
+          for (const oi of orderItems) {
+            if (!oi.variantId) continue;
             await tx
               .update(productVariant)
               .set({
                 stockQuantity: sql`${productVariant.stockQuantity} - ${oi.quantity}`,
               })
               .where(eq(productVariant.id, oi.variantId));
-          } else {
-            // product-level stockQuantity removed — stock is tracked via inventory
           }
         }
 
@@ -4369,13 +4639,13 @@ const mutations = {
       };
     }),
 
-  /** Cancel a pending order */
+  /** Cancel a consumer order before invoicing. */
   cancelOrder: protectedProcedure
     .route({
       method: "POST",
       path: "/customer/orders/{orderId}/cancel",
       tags: ["Customer"],
-      summary: "Cancel pending order",
+      summary: "Cancel an order before invoicing",
     })
     .input(z.object({ orderId: z.number() }))
     .handler(async ({ context, input }) => {
@@ -4388,9 +4658,13 @@ const mutations = {
 
       if (!orderData)
         throw new ORPCError("NOT_FOUND", { message: "Order not found" });
-      if (orderData.status !== "pending") {
+      if (
+        !["pending", "confirmed", "ready_for_dispatch"].includes(
+          orderData.status,
+        )
+      ) {
         throw new ORPCError("BAD_REQUEST", {
-          message: "Only pending orders can be cancelled",
+          message: "Only orders that have not been invoiced can be cancelled",
         });
       }
 
@@ -4398,7 +4672,12 @@ const mutations = {
         const cancelled = await tx
           .update(order)
           .set({ status: "cancelled", cancelledAt: new Date() })
-          .where(and(eq(order.id, input.orderId), eq(order.status, "pending")))
+          .where(
+            and(
+              eq(order.id, input.orderId),
+              eq(order.status, orderData.status),
+            ),
+          )
           .returning({ id: order.id });
         if (cancelled.length === 0) {
           throw new ORPCError("BAD_REQUEST", {
@@ -4406,24 +4685,23 @@ const mutations = {
           });
         }
 
-        // Restore stock
-        for (const item of orderData.items) {
-          if (item.variantId) {
-            if (orderData.shopId) {
-              await tx
-                .update(inventory)
-                .set({
-                  availableQty: sql`${inventory.availableQty}::numeric + ${item.inventoryQty ?? item.quantity}`,
-                  updatedAt: new Date(),
-                })
-                .where(
-                  and(
-                    eq(inventory.ownerType, "shop"),
-                    eq(inventory.ownerId, orderData.shopId),
-                    eq(inventory.variantId, item.variantId),
-                  ),
-                );
-            } else {
+        // Restore the same source that was persisted on the order.
+        if (orderData.shopId) {
+          try {
+            await restoreRetailerOrderStock(
+              createRetailerOrderStockWriter(tx),
+              orderData.shopId,
+              orderData.items,
+            );
+          } catch (error) {
+            if (error instanceof RetailerOrderStockError) {
+              throw new ORPCError("BAD_REQUEST", { message: error.message });
+            }
+            throw error;
+          }
+        } else {
+          for (const item of orderData.items) {
+            if (item.variantId) {
               await tx
                 .update(productVariant)
                 .set({
@@ -4431,8 +4709,6 @@ const mutations = {
                 })
                 .where(eq(productVariant.id, item.variantId));
             }
-          } else {
-            // product-level stockQuantity removed — stock is tracked via inventory
           }
         }
       });
@@ -4761,7 +5037,7 @@ const mutations = {
 
       // Check for active order
       const activeOrder = await db.query.order.findFirst({
-        where: sql`${order.userId} = ${userId} AND ${order.status} NOT IN ('delivered', 'cancelled')`,
+        where: sql`${order.userId} = ${userId} AND ${order.status} NOT IN ('delivered', 'cancelled', 'returned')`,
       });
 
       if (activeOrder) {
@@ -5162,6 +5438,9 @@ const openOrderEndpoints = {
       );
       const result = await db
         .transaction(async (tx) => {
+          await lockCustomerCart(tx, userId);
+          await assertCustomerCartSnapshot(tx, userCart.id, userCart.items);
+
           const [request] = await tx
             .insert(order)
             .values({

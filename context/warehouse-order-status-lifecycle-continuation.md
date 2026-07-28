@@ -56,7 +56,7 @@ Fulfillment mode selection and self-pickup OTP verification are handled on the D
 - Dispatch uses a unified modal (`dispatch-order-modal.tsx`) for full/partial invoice strategy, item quantities, and delivery mode (`self_pickup` | `delivery`).
 - `POST /warehouse/dispatch/orders/confirm` creates the invoice and sets `invoice.fulfillment_mode` in one transaction.
 - Legacy invoiced rows without fulfillment mode can be configured via the same modal (`mode: configure`).
-- Self pickup: OTP is generated on confirm; warehouse verifies via `POST /warehouse/dispatch/self-pickup/verify` in the modal.
+- Self pickup: OTP is generated on confirm; warehouse verifies via `POST /warehouse/dispatch/self-pickup/verify` in the modal. The shared dispatch charge calculation treats self-pickup as zero delivery charge.
 - Delivery: invoice is saved with `fulfillment_mode = delivery` and appears in Delivery Management. Rider assignment is not done from dispatch.
 
 ## Key Implementation Files

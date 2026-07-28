@@ -8,12 +8,17 @@ import type {
 } from "@bikalpo-project/db/schema";
 
 // ============================================================================
-// Customer Types
+// Delivery Recipient Types
 // ============================================================================
 
 export interface InvoiceCustomer {
   name: string;
   phoneNumber: string | null;
+}
+
+export interface DeliveryRecipient {
+  type: "consumer" | "retailer_store" | "warehouse";
+  displayName: string;
 }
 
 // ============================================================================
@@ -23,7 +28,11 @@ export interface InvoiceCustomer {
 export interface DeliveryInvoiceItem extends DeliveryGroupInvoice {
   invoice: Pick<Invoice, "invoiceNumber" | "grandTotal" | "invoiceType"> & {
     customer: InvoiceCustomer | null;
-    order: Pick<Order, "orderNumber" | "shippingAddress" | "shippingCity"> | null;
+    recipient: DeliveryRecipient;
+    order: Pick<
+      Order,
+      "orderNumber" | "shippingAddress" | "shippingCity"
+    > | null;
   };
 }
 

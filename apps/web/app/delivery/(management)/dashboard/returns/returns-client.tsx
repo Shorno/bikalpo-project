@@ -88,7 +88,7 @@ const columns: ColumnDef<ReturnData>[] = [
   },
   {
     accessorKey: "user.name",
-    header: "Customer",
+    header: "Delivery Recipient",
     cell: ({ row }) => (
       <div className="flex flex-col">
         <span className="font-medium">{row.original.user.name}</span>
@@ -185,7 +185,7 @@ export function ReturnsClient({ returns }: ReturnsClientProps) {
                         {getStatusBadge(ret.status)}
                       </div>
 
-                      {/* Customer Info */}
+                      {/* Delivery Recipient Info */}
                       <div className="text-xs text-muted-foreground mt-2">
                         <span className="font-medium text-foreground">
                           {ret.user.name}

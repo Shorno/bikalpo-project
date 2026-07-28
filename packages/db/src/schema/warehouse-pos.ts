@@ -1,5 +1,6 @@
-import { relations } from "drizzle-orm";
+import { relations, sql } from "drizzle-orm";
 import {
+    check,
     boolean,
     decimal,
     index,
@@ -10,6 +11,7 @@ import {
     serial,
     text,
     timestamp,
+    uniqueIndex,
     varchar,
 } from "drizzle-orm/pg-core";
 import { user } from "./auth-schema";
@@ -46,6 +48,11 @@ export const warehousePosCartStatusEnum = pgEnum("warehouse_pos_cart_status", [
     "cancelled",
 ]);
 
+export const warehousePosPaymentEntryTypeEnum = pgEnum(
+    "warehouse_pos_payment_entry_type",
+    ["payment", "reversal"],
+);
+
 export type WarehousePosCartItem = {
     variantId: number;
     productId: number;
@@ -62,6 +69,8 @@ export type WarehousePosCartData = {
     saleType: "retail" | "wholesale";
     items: WarehousePosCartItem[];
     note?: string | null;
+    discount?: { mode: "fixed" | "percentage"; value: number };
+    tax?: { mode: "fixed" | "percentage"; value: number };
 };
 
 export const warehousePosCustomer = pgTable(
@@ -69,13 +78,16 @@ export const warehousePosCustomer = pgTable(
     {
         id: serial("id").primaryKey(),
         warehouseId: text("warehouse_id")
-            .notNull()
             .references(() => user.id, { onDelete: "cascade" }),
+        shopId: text("shop_id").references(() => user.id, {
+            onDelete: "cascade",
+        }),
         linkedUserId: text("linked_user_id").references(() => user.id, {
             onDelete: "set null",
         }),
         name: varchar("name", { length: 150 }).notNull(),
         phone: varchar("phone", { length: 30 }),
+        normalizedPhone: varchar("normalized_phone", { length: 30 }),
         address: text("address"),
         customerType: warehousePosCustomerTypeEnum("customer_type")
             .default("walk_in")
@@ -92,8 +104,13 @@ export const warehousePosCustomer = pgTable(
     },
     (table) => [
         index("warehousePosCustomer_warehouseId_idx").on(table.warehouseId),
+        index("warehousePosCustomer_shopId_idx").on(table.shopId),
         index("warehousePosCustomer_phone_idx").on(table.phone),
         index("warehousePosCustomer_linkedUserId_idx").on(table.linkedUserId),
+        check(
+            "warehouse_pos_customer_exactly_one_owner",
+            sql`num_nonnulls(${table.warehouseId}, ${table.shopId}) = 1`,
+        ),
     ],
 );
 
@@ -102,8 +119,10 @@ export const warehousePosCart = pgTable(
     {
         id: serial("id").primaryKey(),
         warehouseId: text("warehouse_id")
-            .notNull()
             .references(() => user.id, { onDelete: "cascade" }),
+        shopId: text("shop_id").references(() => user.id, {
+            onDelete: "cascade",
+        }),
         customerId: integer("customer_id").references(() => warehousePosCustomer.id, {
             onDelete: "set null",
         }),
@@ -127,8 +146,13 @@ export const warehousePosCart = pgTable(
     },
     (table) => [
         index("warehousePosCart_warehouseId_idx").on(table.warehouseId),
+        index("warehousePosCart_shopId_idx").on(table.shopId),
         index("warehousePosCart_customerId_idx").on(table.customerId),
         index("warehousePosCart_status_idx").on(table.status),
+        check(
+            "warehouse_pos_cart_exactly_one_owner",
+            sql`num_nonnulls(${table.warehouseId}, ${table.shopId}) = 1`,
+        ),
     ],
 );
 
@@ -137,10 +161,13 @@ export const warehousePosSale = pgTable(
     {
         id: serial("id").primaryKey(),
         warehouseId: text("warehouse_id")
-            .notNull()
             .references(() => user.id, { onDelete: "cascade" }),
+        shopId: text("shop_id").references(() => user.id, {
+            onDelete: "cascade",
+        }),
         saleType: warehousePosSaleTypeEnum("sale_type").default("retail").notNull(),
         invoiceNo: varchar("invoice_no", { length: 40 }).notNull().unique(),
+        checkoutRequestId: varchar("checkout_request_id", { length: 80 }),
         customerId: integer("customer_id").references(() => warehousePosCustomer.id, {
             onDelete: "set null",
         }),
@@ -153,10 +180,18 @@ export const warehousePosSale = pgTable(
         discount: decimal("discount", { precision: 12, scale: 2 })
             .default("0")
             .notNull(),
+        discountMode: varchar("discount_mode", { length: 20 }),
+        discountValue: decimal("discount_value", { precision: 12, scale: 2 }),
         tax: decimal("tax", { precision: 12, scale: 2 }).default("0").notNull(),
+        taxMode: varchar("tax_mode", { length: 20 }),
+        taxValue: decimal("tax_value", { precision: 12, scale: 2 }),
         total: decimal("total", { precision: 12, scale: 2 }).default("0").notNull(),
         paid: decimal("paid", { precision: 12, scale: 2 }).default("0").notNull(),
         due: decimal("due", { precision: 12, scale: 2 }).default("0").notNull(),
+        tenderedAmount: decimal("tendered_amount", { precision: 12, scale: 2 }),
+        changeAmount: decimal("change_amount", { precision: 12, scale: 2 })
+            .default("0")
+            .notNull(),
         paymentMethod: warehousePosPaymentMethodEnum("payment_method").notNull(),
         status: warehousePosSaleStatusEnum("status").default("completed").notNull(),
         note: text("note"),
@@ -166,6 +201,11 @@ export const warehousePosSale = pgTable(
         soldById: text("sold_by_id").references(() => user.id, {
             onDelete: "set null",
         }),
+        voidReason: text("void_reason"),
+        voidedById: text("voided_by_id").references(() => user.id, {
+            onDelete: "set null",
+        }),
+        voidedAt: timestamp("voided_at"),
         createdAt: timestamp("created_at").defaultNow().notNull(),
         updatedAt: timestamp("updated_at")
             .defaultNow()
@@ -174,9 +214,17 @@ export const warehousePosSale = pgTable(
     },
     (table) => [
         index("warehousePosSale_warehouseId_idx").on(table.warehouseId),
+        index("warehousePosSale_shopId_idx").on(table.shopId),
         index("warehousePosSale_customerId_idx").on(table.customerId),
         index("warehousePosSale_saleType_idx").on(table.saleType),
         index("warehousePosSale_createdAt_idx").on(table.createdAt),
+        uniqueIndex("warehousePosSale_checkoutRequestId_unique")
+            .on(table.checkoutRequestId)
+            .where(sql`${table.checkoutRequestId} IS NOT NULL`),
+        check(
+            "warehouse_pos_sale_exactly_one_owner",
+            sql`num_nonnulls(${table.warehouseId}, ${table.shopId}) = 1`,
+        ),
     ],
 );
 
@@ -215,8 +263,14 @@ export const warehousePosPayment = pgTable(
         saleId: integer("sale_id")
             .notNull()
             .references(() => warehousePosSale.id, { onDelete: "cascade" }),
+        entryType: warehousePosPaymentEntryTypeEnum("entry_type")
+            .default("payment")
+            .notNull(),
+        idempotencyKey: varchar("idempotency_key", { length: 80 }),
+        reversesPaymentId: integer("reverses_payment_id"),
         paymentMethod: warehousePosPaymentMethodEnum("payment_method").notNull(),
         amount: decimal("amount", { precision: 12, scale: 2 }).notNull(),
+        tenderedAmount: decimal("tendered_amount", { precision: 12, scale: 2 }),
         transactionRef: varchar("transaction_ref", { length: 100 }),
         note: text("note"),
         paidAt: timestamp("paid_at").defaultNow().notNull(),
@@ -228,6 +282,9 @@ export const warehousePosPayment = pgTable(
     (table) => [
         index("warehousePosPayment_saleId_idx").on(table.saleId),
         index("warehousePosPayment_method_idx").on(table.paymentMethod),
+        uniqueIndex("warehousePosPayment_idempotencyKey_unique")
+            .on(table.idempotencyKey)
+            .where(sql`${table.idempotencyKey} IS NOT NULL`),
     ],
 );
 
@@ -236,6 +293,11 @@ export const warehousePosCustomerRelations = relations(warehousePosCustomer, ({ 
         fields: [warehousePosCustomer.warehouseId],
         references: [user.id],
         relationName: "warehousePosCustomerWarehouse",
+    }),
+    shop: one(user, {
+        fields: [warehousePosCustomer.shopId],
+        references: [user.id],
+        relationName: "warehousePosCustomerShop",
     }),
     linkedUser: one(user, {
         fields: [warehousePosCustomer.linkedUserId],
@@ -257,6 +319,11 @@ export const warehousePosCartRelations = relations(warehousePosCart, ({ one }) =
         references: [user.id],
         relationName: "warehousePosCartWarehouse",
     }),
+    shop: one(user, {
+        fields: [warehousePosCart.shopId],
+        references: [user.id],
+        relationName: "warehousePosCartShop",
+    }),
     customer: one(warehousePosCustomer, {
         fields: [warehousePosCart.customerId],
         references: [warehousePosCustomer.id],
@@ -274,6 +341,11 @@ export const warehousePosSaleRelations = relations(warehousePosSale, ({ one, man
         references: [user.id],
         relationName: "warehousePosSaleWarehouse",
     }),
+    shop: one(user, {
+        fields: [warehousePosSale.shopId],
+        references: [user.id],
+        relationName: "warehousePosSaleShop",
+    }),
     customer: one(warehousePosCustomer, {
         fields: [warehousePosSale.customerId],
         references: [warehousePosCustomer.id],
@@ -286,6 +358,11 @@ export const warehousePosSaleRelations = relations(warehousePosSale, ({ one, man
         fields: [warehousePosSale.soldById],
         references: [user.id],
         relationName: "warehousePosSaleSoldBy",
+    }),
+    voidedBy: one(user, {
+        fields: [warehousePosSale.voidedById],
+        references: [user.id],
+        relationName: "warehousePosSaleVoidedBy",
     }),
     items: many(warehousePosSaleItem),
     payments: many(warehousePosPayment),

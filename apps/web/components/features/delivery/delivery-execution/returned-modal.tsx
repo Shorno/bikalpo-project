@@ -30,10 +30,13 @@ interface ReturnedModalProps {
 }
 
 const RETURN_REASONS = [
-  { value: "customer_refused", label: "Customer Refused" },
+  { value: "customer_refused", label: "Delivery Recipient Refused" },
   { value: "wrong_address", label: "Wrong Address" },
   { value: "damaged_goods", label: "Damaged Goods" },
-  { value: "customer_not_available", label: "Customer Not Available" },
+  {
+    value: "customer_not_available",
+    label: "Delivery Recipient Not Available",
+  },
   { value: "payment_issue", label: "Payment Issue" },
   { value: "order_cancelled", label: "Order Cancelled" },
   { value: "other", label: "Other" },

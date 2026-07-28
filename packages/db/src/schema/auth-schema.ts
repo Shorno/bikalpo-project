@@ -50,12 +50,17 @@ export const user = pgTable("user", {
     serviceArea: text("service_area"),
     // Links salesman/deliveryman to their parent warehouse
     warehouseId: text("warehouse_id").references((): AnyPgColumn => user.id),
+    // Links retailer delivery staff to their parent shop owner
+    shopId: text("shop_id").references((): AnyPgColumn => user.id),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at")
         .defaultNow()
         .$onUpdate(() => /* @__PURE__ */ new Date())
         .notNull(),
-});
+}, (table) => [
+    index("user_warehouseId_idx").on(table.warehouseId),
+    index("user_shopId_idx").on(table.shopId),
+]);
 
 export const session = pgTable(
     "session",

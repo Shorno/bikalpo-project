@@ -7,10 +7,12 @@ import {
   Sheet,
   SheetClose,
   SheetContent,
+  SheetDescription,
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
 import { useCart } from "@/hooks/use-orpc-cart";
+import { cn } from "@/lib/utils";
 import { CartItem } from "./cart-item";
 
 interface CartDrawerProps {
@@ -28,6 +30,7 @@ export function CartDrawer({
     items,
     removeItem,
     updateQuantity,
+    totalItems,
     totalPrice,
     clearCart,
     isLoading,
@@ -44,54 +47,67 @@ export function CartDrawer({
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
         side="right"
-        className="w-full sm:max-w-md p-0 flex flex-col"
+        className="flex flex-col gap-0 bg-white p-0 data-[side=right]:w-full sm:max-w-md"
       >
-        {/* Header */}
-        <SheetHeader className="border-b px-6 py-4">
-          <div className="flex items-center justify-between">
-            <SheetTitle className="text-2xl font-serif flex items-center gap-2">
-              <ShoppingBag
-                className={`h-5 w-5 ${isEmerald ? "text-emerald-600" : ""}`}
-              />
-              Cart
-              {items.length > 0 && (
-                <span className="text-sm font-normal text-muted-foreground">
-                  ({items.length} {items.length === 1 ? "item" : "items"})
-                </span>
+        <SheetHeader className="border-b border-slate-200 px-5 py-4 pr-12">
+          <SheetTitle className="flex items-center gap-2 text-lg font-semibold text-slate-950">
+            <ShoppingBag
+              className={cn(
+                "size-4.5 text-slate-700",
+                isEmerald && "text-emerald-600",
               )}
-            </SheetTitle>
-          </div>
+              aria-hidden="true"
+            />
+            <span>Cart</span>
+            {totalItems > 0 && (
+              <span className="text-xs font-normal text-slate-500">
+                ({totalItems} {totalItems === 1 ? "item" : "items"})
+              </span>
+            )}
+          </SheetTitle>
+          <SheetDescription className="sr-only">
+            Review the products in your cart and continue to checkout.
+          </SheetDescription>
         </SheetHeader>
 
-        {/* Cart Content */}
-        <div className="flex-1 overflow-y-auto">
+        <div className="min-h-0 flex-1 overflow-y-auto">
           {!isHydrated ? (
-            <div className="flex items-center justify-center py-12">
+            <div className="flex h-full min-h-48 items-center justify-center">
               <Loader2
-                className={`h-8 w-8 animate-spin ${isEmerald ? "text-emerald-500" : "text-gray-400"}`}
+                className={cn(
+                  "size-5 animate-spin text-slate-400",
+                  isEmerald && "text-emerald-500",
+                )}
+                aria-hidden="true"
               />
+              <span className="sr-only">Loading cart</span>
             </div>
           ) : items.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-12">
-              <div
-                className={`w-24 h-24 rounded-full flex items-center justify-center mb-4 ${isEmerald ? "bg-emerald-50" : "bg-gray-100"}`}
-              >
+            <div className="flex h-full min-h-72 flex-col items-center justify-center px-6 py-12 text-center">
+              <div className="flex size-11 items-center justify-center rounded-lg border border-slate-200 bg-slate-50">
                 <ShoppingBag
-                  className={`w-12 h-12 ${isEmerald ? "text-emerald-400" : "text-gray-400"}`}
+                  className={cn(
+                    "size-5 text-slate-500",
+                    isEmerald && "text-emerald-600",
+                  )}
+                  aria-hidden="true"
                 />
               </div>
-              <h3 className="text-xl font-medium mb-6">Your cart is empty</h3>
+              <h3 className="mt-4 text-base font-semibold text-slate-950">
+                Your cart is empty
+              </h3>
+              <p className="mt-1 max-w-64 text-sm leading-5 text-slate-500">
+                Add products to your cart to review quantities and continue to
+                checkout.
+              </p>
               <SheetClose asChild>
-                <Button
-                  className={`px-8 rounded-full ${isEmerald ? "bg-emerald-600 hover:bg-emerald-700" : ""}`}
-                  asChild
-                >
-                  <Link href="/products">CONTINUE SHOPPING</Link>
+                <Button variant="outline" className="mt-5 h-10" asChild>
+                  <Link href="/products">Continue shopping</Link>
                 </Button>
               </SheetClose>
             </div>
           ) : (
-            <div className="overflow-auto">
+            <ul aria-label="Cart items">
               {items.map((item) => (
                 <CartItem
                   key={item.id}
@@ -102,49 +118,45 @@ export function CartDrawer({
                   isLoading={isLoading}
                 />
               ))}
-            </div>
+            </ul>
           )}
         </div>
 
-        {/* Footer */}
         {isHydrated && items.length > 0 && (
-          <div className="border-t px-6 py-4">
-            <div className="space-y-4">
-              <div className="flex items-center justify-between text-lg">
-                <span className="font-medium">SUBTOTAL</span>
-                <span className="font-bold">{formatPrice(totalPrice)}</span>
+          <footer className="border-t border-slate-200 bg-white px-5 py-4 pb-[calc(1rem+env(safe-area-inset-bottom))]">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <p className="text-xs font-medium text-slate-500">Subtotal</p>
+                <p className="mt-0.5 font-mono text-xl font-semibold tabular-nums text-slate-950">
+                  {formatPrice(totalPrice)}
+                </p>
               </div>
-
-              <div className="flex gap-3">
-                <Button
-                  variant="outline"
-                  className="flex-1 py-6 rounded-full text-base"
-                  onClick={clearCart}
-                  disabled={isLoading}
-                >
-                  {isLoading ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    "CLEAR CART"
-                  )}
-                </Button>
-
-                <SheetClose asChild>
-                  <Button
-                    className={`flex-1 py-6 rounded-full text-base ${isEmerald ? "bg-emerald-600 hover:bg-emerald-700" : ""}`}
-                    asChild
-                  >
-                    <Link
-                      href={"/checkout"}
-                      onClick={() => onOpenChange(false)}
-                    >
-                      CHECKOUT
-                    </Link>
-                  </Button>
-                </SheetClose>
-              </div>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="text-slate-500 hover:bg-red-50 hover:text-destructive"
+                onClick={clearCart}
+                disabled={isLoading}
+              >
+                Clear cart
+              </Button>
             </div>
-          </div>
+
+            <SheetClose asChild>
+              <Button
+                className={cn(
+                  "mt-4 h-11 w-full text-sm font-semibold",
+                  isEmerald && "bg-emerald-600 hover:bg-emerald-700",
+                )}
+                asChild
+              >
+                <Link href="/checkout" onClick={() => onOpenChange(false)}>
+                  Checkout
+                </Link>
+              </Button>
+            </SheetClose>
+          </footer>
         )}
       </SheetContent>
     </Sheet>

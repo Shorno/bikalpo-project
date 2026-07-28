@@ -30,12 +30,8 @@ export default function DashboardPage() {
         window.location.href = `${getSalesSubdomainUrl()}/dashboard`;
         return;
       case "deliveryman":
-        if ((session.user as { warehouseId?: string | null }).warehouseId) {
-          window.location.href = `${getDeliverySubdomainUrl()}/dashboard`;
-          return;
-        }
-        router.replace("/deliveryman/dashboard");
-        break;
+        window.location.href = `${getDeliverySubdomainUrl()}/dashboard`;
+        return;
       case "shop_owner": {
         // Update role cookie so proxy allows shop subdomain access
         document.cookie = `user-role=shop_owner;path=/;domain=.bikalpo.localhost;max-age=${60 * 60 * 24 * 30}`;

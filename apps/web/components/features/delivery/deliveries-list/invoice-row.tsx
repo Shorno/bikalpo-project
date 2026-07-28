@@ -23,7 +23,8 @@ export function InvoiceRow({
             </span>
           ) : null}
           <span className="text-xs text-muted-foreground">
-            {item.invoice.customer?.name} ({item.invoice.customer?.phoneNumber})
+            Delivery Recipient: {item.invoice.recipient.displayName} (
+            {item.invoice.customer?.phoneNumber})
           </span>
         </div>
       </TableCell>
