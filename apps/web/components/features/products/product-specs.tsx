@@ -2,6 +2,7 @@ import type {
   ProductFeatureGroup,
   QuantitySelectorOption,
 } from "@bikalpo-project/db/schema";
+import { cn } from "@/lib/utils";
 
 type VariantRow = {
   id: number;
@@ -25,6 +26,7 @@ type ProductSpecsProps = {
   features?: ProductFeatureGroup[] | null;
   variants?: VariantRow[] | null;
   theme?: "default" | "emerald";
+  density?: "default" | "compact";
 };
 
 function getFeatureMap(
@@ -75,6 +77,7 @@ export function ProductSpecs({
   features,
   variants,
   theme = "default",
+  density = "default",
 }: ProductSpecsProps) {
   const featureMap = getFeatureMap(features ?? []);
   const primaryVariant = variants?.length
@@ -148,6 +151,41 @@ export function ProductSpecs({
 
   if (!hasAnySpecValue && !hasPackaging && !hasUnitType) {
     return null;
+  }
+
+  if (density === "compact") {
+    const compactSpecs = [
+      ...specs,
+      ...(packagingLine ? [{ label: "Pack size", value: packagingLine }] : []),
+      ...(minOrder ? [{ label: "Minimum order", value: minOrder }] : []),
+      ...(bulkUnits ? [{ label: "Bulk units", value: bulkUnits }] : []),
+    ];
+
+    return (
+      <dl className="grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-3 lg:grid-cols-2 xl:grid-cols-3">
+        {compactSpecs.map((row) => (
+          <div key={row.label} className="min-w-0">
+            <dt className="text-[11px] font-medium text-slate-500">
+              {row.label}
+            </dt>
+            <dd
+              className={cn(
+                "mt-0.5 break-words text-sm font-medium text-slate-900",
+                [
+                  "SKU",
+                  "Weight",
+                  "Pack size",
+                  "Minimum order",
+                  "Bulk units",
+                ].includes(row.label) && "font-mono text-xs tabular-nums",
+              )}
+            >
+              {row.value}
+            </dd>
+          </div>
+        ))}
+      </dl>
+    );
   }
 
   const isEmerald = theme === "emerald";

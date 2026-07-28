@@ -353,7 +353,7 @@ export default function ShopStorePage({
                       <StorefrontProductCard
                         key={product.id}
                         product={product}
-                        storeSlug={slug}
+                        shopSlug={shop.shopSlug || slug}
                         previewMode={previewMode}
                         isAdding={quickAddingProductId === product.id}
                         onQuickAdd={handleQuickAdd}

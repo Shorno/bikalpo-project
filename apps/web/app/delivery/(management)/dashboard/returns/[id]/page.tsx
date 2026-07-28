@@ -164,17 +164,19 @@ export default async function ReturnDetailsPage({
         </CardContent>
       </Card>
 
-      {/* Customer & Order Info */}
+      {/* Delivery Recipient & Order Info */}
       <Card className="p-0">
         <CardContent className="p-3 sm:p-4">
           <p className="text-xs font-semibold text-muted-foreground mb-2 sm:mb-3 uppercase tracking-wide">
-            Customer & Order Info
+            Delivery Recipient & Order Info
           </p>
           <div className="grid sm:grid-cols-2 gap-3 sm:gap-4">
-            {/* Customer Info */}
+            {/* Delivery Recipient Info */}
             <div className="space-y-1.5 sm:space-y-2 text-xs sm:text-sm">
               <div className="flex justify-between">
-                <span className="text-muted-foreground">Customer</span>
+                <span className="text-muted-foreground">
+                  Delivery Recipient
+                </span>
                 <span className="font-medium">
                   {returnData.user?.name || "N/A"}
                 </span>

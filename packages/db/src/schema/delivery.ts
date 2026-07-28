@@ -59,6 +59,11 @@ export const deliveryGroup = pgTable(
             onDelete: "cascade",
         }),
 
+        // Which retailer store this consumer delivery group belongs to
+        shopId: text("shop_id").references(() => user.id, {
+            onDelete: "cascade",
+        }),
+
         // Optional: vehicle and expected delivery (for assignment flow)
         vehicleType: invoiceVehicleTypeEnum("vehicle_type"),
         expectedDeliveryAt: timestamp("expected_delivery_at"),
@@ -115,6 +120,8 @@ export const deliveryGroup = pgTable(
     },
     (table) => [
         index("deliveryGroup_deliverymanId_idx").on(table.deliverymanId),
+        index("deliveryGroup_warehouseId_idx").on(table.warehouseId),
+        index("deliveryGroup_shopId_idx").on(table.shopId),
         index("deliveryGroup_status_idx").on(table.status),
     ],
 );

@@ -52,7 +52,7 @@ import {
 	reserveB2bOrderItemsAtApproval,
 } from "./helpers/b2b-inventory-movement";
 import { getCartonInventoryUnits } from "./helpers/carton-units";
-import { syncOrderFromDeliveredInvoice } from "./helpers/invoice-fulfillment";
+import { completeSelfPickupInvoice } from "./helpers/self-pickup";
 import { buildCanonicalOrderFlow } from "./helpers/order-lifecycle";
 import {
 	getDeliveryAssignmentKpiBucket,
@@ -4185,63 +4185,14 @@ const orderQueries = {
 				otp: z.string().length(4),
 			}),
 		)
-		.handler(async ({ context, input }) => {
-			const userId = context.session.user.id;
-
-			const existingInvoice = await db.query.invoice.findFirst({
-				where: and(
-					eq(invoice.id, input.invoiceId),
-					sql`EXISTS (
-                        SELECT 1 FROM "order" scoped_order
-                        WHERE scoped_order."id" = ${invoice.orderId}
-                          AND scoped_order."warehouse_id" = ${userId}
-                    )`,
-				),
+	.handler(async ({ context, input }) => {
+			return completeSelfPickupInvoice({
+				owner: { kind: "warehouse", id: context.session.user.id },
+				invoiceId: input.invoiceId,
+				otp: input.otp,
+				paymentStatus: "settled",
+				markOrderPaid: false,
 			});
-
-			if (!existingInvoice) {
-				throw new ORPCError("NOT_FOUND", { message: "Invoice not found" });
-			}
-
-			if (existingInvoice.fulfillmentMode !== "self_pickup") {
-				throw new ORPCError("BAD_REQUEST", {
-					message: "This invoice is not in self pickup mode",
-				});
-			}
-
-			if (existingInvoice.completionOtpVerifiedAt) {
-				throw new ORPCError("BAD_REQUEST", {
-					message: "Self pickup has already been completed",
-				});
-			}
-
-			if (existingInvoice.completionOtp !== input.otp) {
-				throw new ORPCError("BAD_REQUEST", {
-					message: "Invalid pickup OTP",
-				});
-			}
-
-			await db.transaction(async (tx) => {
-				await tx
-					.update(invoice)
-					.set({
-						deliveryStatus: "delivered",
-						paymentStatus: "settled",
-						deliveredAt: new Date(),
-						settledAt: new Date(),
-						completionOtpVerifiedAt: new Date(),
-					})
-					.where(eq(invoice.id, input.invoiceId));
-
-				await syncOrderFromDeliveredInvoice(tx, input.invoiceId, {
-					markReceived: true,
-				});
-			});
-
-			return {
-				success: true,
-				message: "Self pickup completed successfully",
-			};
 		}),
 
 	/**
