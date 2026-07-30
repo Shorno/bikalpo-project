@@ -146,7 +146,7 @@ export function calculateOfferTotals(
 }
 
 export function getOpenOrderStage(input: OpenOrderStageInput): OpenOrderStage {
-  if (input.status === "confirmed") return "confirmed";
+  if (isOpenOrderFulfillmentStatus(input.status)) return "confirmed";
   if (input.status === "cancelled") return "cancelled";
 
   const now = input.now ?? new Date();
@@ -155,6 +155,18 @@ export function getOpenOrderStage(input: OpenOrderStageInput): OpenOrderStage {
     return input.offerCount > 0 ? "selecting_offer" : "no_offers";
   }
   return "collecting_offers";
+}
+
+export function isOpenOrderFulfillmentStatus(status: string): boolean {
+  return [
+    "confirmed",
+    "ready_for_dispatch",
+    "partially_invoiced",
+    "invoiced",
+    "processing",
+    "delivered",
+    "returned",
+  ].includes(status);
 }
 
 export function isEligibleRetailer(input: EligibleRetailerInput): boolean {

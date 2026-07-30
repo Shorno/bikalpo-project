@@ -208,6 +208,25 @@ test("open orders move from collection to selection only after prices freeze", (
   );
 });
 
+test("accepted open orders stay confirmed throughout normal fulfillment", () => {
+  const input = {
+    offerDeadline: new Date("2026-07-22T10:05:00.000Z"),
+    selectionDeadline: new Date("2026-07-22T10:10:00.000Z"),
+    offerCount: 1,
+    now: new Date("2026-07-22T11:00:00.000Z"),
+  };
+
+  for (const status of [
+    "confirmed",
+    "ready_for_dispatch",
+    "invoiced",
+    "processing",
+    "delivered",
+  ]) {
+    assert.equal(getOpenOrderStage({ ...input, status }), "confirmed");
+  }
+});
+
 test("an offerless request ends as soon as its offer window closes", () => {
   assert.equal(
     getOpenOrderStage({

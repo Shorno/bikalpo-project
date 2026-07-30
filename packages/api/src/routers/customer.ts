@@ -81,6 +81,8 @@ import {
   findSellersNearPoint,
 } from "../services/location-service";
 import {
+  getOpenOrderStage,
+  isOpenOrderFulfillmentStatus,
   resolveCartTransition,
   sortComparableOffers,
 } from "../services/open-order-domain";
@@ -5746,15 +5748,16 @@ const openOrderEndpoints = {
         .from(openOrderBid)
         .leftJoin(user, eq(user.id, openOrderBid.shopId))
         .where(eq(openOrderBid.subOrderId, request.id));
+      const isAccepted = isOpenOrderFulfillmentStatus(request.status);
       const submitted = rawOffers.filter(
         (offer) =>
           offer.status === "submitted" ||
           offer.isWinner ||
-          (request.status === "confirmed" && offer.status === "lost") ||
+          (isAccepted && offer.status === "lost") ||
           (offer.status === "expired" && !!offer.priceFrozenAt),
       );
       const canReveal =
-        request.status === "confirmed" ||
+        isAccepted ||
         (!!request.broadcastExpiresAt &&
           new Date() >= request.broadcastExpiresAt);
 
@@ -5804,25 +5807,24 @@ const openOrderEndpoints = {
       );
 
       const now = new Date();
-      let stage:
-        | "collecting_offers"
-        | "selecting_offer"
-        | "confirmed"
-        | "cancelled"
-        | "no_offers"
-        | "expired";
-      if (request.status === "confirmed") stage = "confirmed";
-      else if (request.status === "cancelled") {
+      let stage: ReturnType<typeof getOpenOrderStage>;
+      if (request.status === "cancelled") {
         if (request.openOrderOutcome === "no_offers") stage = "no_offers";
         else if (request.openOrderOutcome === "selection_expired") {
           stage = "expired";
         } else stage = "cancelled";
-      } else if (
-        request.broadcastExpiresAt &&
-        now < request.broadcastExpiresAt
-      ) {
-        stage = "collecting_offers";
-      } else stage = "selecting_offer";
+      } else {
+        stage = getOpenOrderStage({
+          status: request.status,
+          offerDeadline: request.broadcastExpiresAt ?? new Date(0),
+          selectionDeadline: request.selectionExpiresAt ?? new Date(0),
+          offerCount: submitted.length,
+          now,
+        });
+      }
+      const journey = isAccepted
+        ? await loadConsumerOrderJourney(request)
+        : null;
 
       return {
         orderId: request.id,
@@ -5846,9 +5848,10 @@ const openOrderEndpoints = {
         })),
         referenceSubtotal: Number(request.previousTotal ?? request.subtotal),
         finalRetailer:
-          request.status === "confirmed"
+          isAccepted
             ? (offers.find((offer) => offer.isWinner)?.shopName ?? null)
             : null,
+        journey,
       };
     }),
 

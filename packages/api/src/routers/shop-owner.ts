@@ -96,7 +96,11 @@ import {
 } from "./helpers/b2b-inventory-movement";
 import { configureExistingInvoiceFulfillmentForOwner } from "./helpers/order-dispatch";
 import { buildCanonicalOrderFlow } from "./helpers/order-lifecycle";
-import { getRetailerOrderTransition } from "./helpers/retailer-consumer-flow";
+import {
+    getRetailerDispatchQueryStatuses,
+    getRetailerDispatchQueueStatus,
+    getRetailerOrderTransition,
+} from "./helpers/retailer-consumer-flow";
 import {
     getRetailerHandoffOtps,
     getRetailerOrderDisplayStatus,
@@ -5464,7 +5468,10 @@ const incomingOrderQueries = {
             const conditions: SQL[] = [
                 eq(order.shopId, context.session.user.id),
                 eq(order.orderType, "b2c"),
-                eq(order.status, input.view),
+                inArray(
+                    order.status,
+                    getRetailerDispatchQueryStatuses(input.view),
+                ),
             ];
             if (input.search) {
                 conditions.push(
@@ -5502,6 +5509,7 @@ const incomingOrderQueries = {
                     : null,
                 orders: orders.map((entry) => ({
                     ...entry,
+                    status: getRetailerDispatchQueueStatus(entry.status),
                     invoice: invoiceByOrder.get(entry.id) ?? null,
                 })),
             };

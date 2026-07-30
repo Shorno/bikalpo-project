@@ -1,4 +1,9 @@
 export type RetailerOrderCommand = "confirm" | "cancel" | "create_invoice";
+export type RetailerDispatchView = "ready_for_dispatch" | "invoiced";
+export type RetailerDispatchStatus =
+  | "confirmed"
+  | "ready_for_dispatch"
+  | "invoiced";
 
 export type RetailerOrderTransition = {
   nextStatus: "ready_for_dispatch" | "invoiced" | "cancelled";
@@ -41,4 +46,18 @@ export function getRetailerOperationalStatusLabel(status: string) {
     if (status === "pending") return "Pending Approval";
     if (status === "ready_for_dispatch") return "Ready for Dispatch";
     return status.replaceAll("_", " ");
+}
+
+export function getRetailerDispatchQueryStatuses(
+  view: RetailerDispatchView,
+): RetailerDispatchStatus[] {
+  return view === "ready_for_dispatch"
+    ? ["confirmed", "ready_for_dispatch"]
+    : ["invoiced"];
+}
+
+export function getRetailerDispatchQueueStatus(
+  status: string,
+): string {
+  return status === "confirmed" ? "ready_for_dispatch" : status;
 }

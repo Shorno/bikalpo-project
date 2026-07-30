@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+    getRetailerDispatchQueryStatuses,
+    getRetailerDispatchQueueStatus,
     getRetailerOperationalStatusLabel,
     getRetailerOrderTransition,
 } from "./retailer-consumer-flow";
@@ -22,6 +24,18 @@ test("only confirmed or dispatch-ready retailer orders can be invoiced", () => {
     nextStatus: "invoiced",
   });
   assert.equal(getRetailerOrderTransition("pending", "create_invoice"), null);
+});
+
+test("accepted open orders join the retailer ready-to-dispatch queue", () => {
+  assert.deepEqual(
+    getRetailerDispatchQueryStatuses("ready_for_dispatch"),
+    ["confirmed", "ready_for_dispatch"],
+  );
+  assert.deepEqual(getRetailerDispatchQueryStatuses("invoiced"), ["invoiced"]);
+  assert.equal(
+    getRetailerDispatchQueueStatus("confirmed"),
+    "ready_for_dispatch",
+  );
 });
 
 test("retailer cancellation stops once an invoice exists", () => {

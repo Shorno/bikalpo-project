@@ -7,9 +7,11 @@ import {
   Check,
   CircleDollarSign,
   Clock3,
+  KeyRound,
   Loader2,
   MapPin,
   Radio,
+  ShieldCheck,
   ShoppingBag,
   Store,
   Trophy,
@@ -223,6 +225,14 @@ export default function OpenOrderTrackerPage() {
   const detailsOffer = data?.offers?.find(
     (offer: any) => offer.offerId === detailsOfferId,
   );
+  const pickupOtp =
+    data?.journey?.fulfillmentMode === "self_pickup"
+      ? data.journey.delivery?.otp
+      : null;
+  const pickupLocation =
+    data?.journey?.fulfillmentMode === "self_pickup"
+      ? data.journey.pickupLocation
+      : null;
   const terminal = ["confirmed", "cancelled", "no_offers", "expired"].includes(
     data?.stage,
   );
@@ -344,6 +354,59 @@ export default function OpenOrderTrackerPage() {
             </div>
           </div>
         </header>
+
+        {pickupOtp && (
+          <section
+            className="rounded-2xl border-2 border-blue-700 bg-blue-50 p-5 sm:flex sm:items-center sm:justify-between sm:gap-8 sm:p-6"
+            aria-labelledby="pickup-otp-heading"
+          >
+            <div className="flex gap-3">
+              <ShieldCheck className="mt-0.5 h-6 w-6 shrink-0 text-blue-700" />
+              <div>
+                <h2
+                  id="pickup-otp-heading"
+                  className="font-semibold text-blue-950"
+                >
+                  Show this code at pickup
+                </h2>
+                <p className="mt-1 max-w-xl text-sm leading-6 text-blue-900/80">
+                  Check the items first. Share this code with store staff only
+                  after the order is physically in your hands.
+                </p>
+              </div>
+            </div>
+            <div className="mt-5 rounded-xl border border-blue-200 bg-white px-6 py-4 text-center sm:mt-0 sm:min-w-48">
+              <p className="flex items-center justify-center gap-1.5 text-xs font-semibold uppercase tracking-[0.14em] text-blue-700">
+                <KeyRound className="h-3.5 w-3.5" /> Pickup OTP
+              </p>
+              <p className="mt-1 font-mono text-3xl font-bold tracking-[0.25em] text-blue-950">
+                {pickupOtp}
+              </p>
+            </div>
+          </section>
+        )}
+
+        {pickupLocation &&
+          data.journey?.delivery?.status !== "delivered" && (
+            <section
+              className="rounded-2xl border border-amber-200 bg-amber-50 p-5 sm:p-6"
+              aria-labelledby="pickup-location-heading"
+            >
+              <h2
+                id="pickup-location-heading"
+                className="font-semibold text-amber-950"
+              >
+                Pickup location
+              </h2>
+              <div className="mt-3 space-y-1 text-sm text-amber-900/80">
+                <p className="font-medium text-amber-950">
+                  {pickupLocation.name || "Retailer shop"}
+                </p>
+                <p>{pickupLocation.address}</p>
+                {pickupLocation.phone && <p>Call {pickupLocation.phone}</p>}
+              </div>
+            </section>
+          )}
 
         {data.stage === "collecting_offers" && (
           <Card className="border-slate-200 shadow-none">
