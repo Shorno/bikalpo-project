@@ -6,6 +6,26 @@ import { authClient } from "@/lib/auth-client";
 import { getDeliverySubdomainUrl } from "@/lib/delivery-routing";
 import { getSalesSubdomainUrl } from "@/lib/sales-routing";
 
+function getSafeConsumerRedirect() {
+  const redirect = new URLSearchParams(window.location.search).get("redirect");
+  if (!redirect || !redirect.startsWith("/") || redirect.startsWith("//")) {
+    return null;
+  }
+
+  try {
+    const target = new URL(redirect, window.location.origin);
+    if (
+      target.origin !== window.location.origin ||
+      target.pathname.startsWith("//")
+    ) {
+      return null;
+    }
+    return `${target.pathname}${target.search}${target.hash}`;
+  } catch {
+    return null;
+  }
+}
+
 export function LoginPageClient() {
   const handleComplete = async () => {
     // Read role cookie to determine redirect destination
@@ -34,6 +54,8 @@ export function LoginPageClient() {
       window.location.href = `${getDeliverySubdomainUrl()}/dashboard`;
     } else if (role === "admin" || role === "deliveryman") {
       window.location.href = "/dashboard";
+    } else if (!role || role === "consumer" || role === "customer") {
+      window.location.href = getSafeConsumerRedirect() || "/";
     } else {
       window.location.href = "/";
     }

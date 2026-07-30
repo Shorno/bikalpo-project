@@ -267,6 +267,34 @@
       "when": 1785500000000,
       "tag": "0038_canonical_inventory_guards",
       "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1785600000000,
+      "tag": "0039_tolet_property_foundation",
+      "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1785700000000,
+      "tag": "0040_tolet_unit_listing",
+      "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1785800000000,
+      "tag": "0041_tolet_booking_request",
+      "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1785900000000,
+      "tag": "0042_tolet_rental_lifecycle",
+      "breakpoints": true
     }
   ]
 }

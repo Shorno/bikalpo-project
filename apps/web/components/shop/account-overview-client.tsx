@@ -6,6 +6,7 @@
 import { formatDistanceToNow } from "date-fns";
 import {
   ArrowRight,
+  Building2,
   CheckCircle,
   Clock,
   Package,
@@ -122,6 +123,25 @@ export function AccountOverviewClient() {
           </p>
         </div>
       </div>
+
+      {/* To-Let Quick Access */}
+      <Link
+        href="/account/to-let/properties"
+        className="group flex max-w-sm items-center gap-4 rounded-lg border border-gray-200 bg-white p-4 transition-colors hover:border-emerald-200 hover:bg-emerald-50/40"
+      >
+        <span className="flex size-11 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600">
+          <Building2 className="size-5" />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block font-semibold text-gray-900">
+            My Property for To-let
+          </span>
+          <span className="mt-0.5 block text-sm text-gray-500">
+            View your property and booking space
+          </span>
+        </span>
+        <ArrowRight className="size-4 shrink-0 text-gray-400 transition-transform group-hover:translate-x-0.5 group-hover:text-emerald-600" />
+      </Link>
 
       {/* Recent Orders */}
       <div className="bg-white rounded-lg border border-gray-200">

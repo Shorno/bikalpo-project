@@ -2,6 +2,8 @@
 
 import {
   AlertTriangle,
+  Building2,
+  CalendarCheck,
   Check,
   FileQuestion,
   FileText,
@@ -60,6 +62,17 @@ const sidebarItems = [
     href: "/account/requests",
     icon: FileQuestion,
     badgeKey: "requests",
+  },
+  {
+    label: "My Bookings",
+    href: "/account/to-let",
+    icon: CalendarCheck,
+    exact: true,
+  },
+  {
+    label: "My Properties",
+    href: "/account/to-let/properties",
+    icon: Building2,
   },
   {
     label: "My Cart",

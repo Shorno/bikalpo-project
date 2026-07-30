@@ -125,6 +125,43 @@ export async function getToLetById(id: number, revalidate = 600) {
   return result ?? null;
 }
 
+export async function listPublicToLetUnitListings(revalidate = 0) {
+  const client = getPublicOrpcClient(revalidate);
+
+  try {
+    const result = await client.toLetUnitListing.listPublic();
+    return result.listings ?? [];
+  } catch {
+    return [];
+  }
+}
+
+export async function getPublicToLetUnitListingByCode(
+  listingCode: string,
+  revalidate = 0,
+) {
+  const client = getPublicOrpcClient(revalidate);
+
+  try {
+    const result = await client.toLetUnitListing.getPublicByCode({
+      listingCode,
+    });
+    return result.listing ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export async function getToLetQrProperty(qrToken: string, revalidate = 0) {
+  const client = getPublicOrpcClient(revalidate);
+
+  try {
+    return await client.toLetUnitListing.getQrProperty({ qrToken });
+  } catch {
+    return null;
+  }
+}
+
 export async function getProductBySlug(slug: string, revalidate = 30) {
   const client = getPublicOrpcClient(revalidate);
 
