@@ -357,6 +357,67 @@ async function ensureCashBankPaymentAccountForFinanceAccount(input: {
   return created.id;
 }
 
+async function ensureOwnerCashBankPaymentAccounts(input: {
+  ownerId: string;
+  ownerType: AccountingOwnerType;
+}) {
+  const cashBankCategories = await db.query.financeCategory.findMany({
+    where: (table, { and: andFn, eq: eqFn, isNull: isNullFn, or: orFn }) =>
+      andFn(
+        eqFn(table.accountType, "asset"),
+        orFn(
+          eqFn(table.code, "asset-cash-bank"),
+          sql`lower(${table.name}) = 'cash and bank'`,
+        ),
+        orFn(
+          andFn(isNullFn(table.ownerId), isNullFn(table.ownerType)),
+          andFn(
+            eqFn(table.ownerId, input.ownerId),
+            eqFn(table.ownerType, input.ownerType),
+          ),
+        ),
+      ),
+  });
+
+  if (cashBankCategories.length === 0) {
+    return;
+  }
+
+  const categoryIds = cashBankCategories.map((category) => category.id);
+  const accounts = await db
+    .select({
+      code: financeAccount.code,
+      currentBalance: financeAccount.currentBalance,
+      id: financeAccount.id,
+      name: financeAccount.name,
+      openingBalance: financeAccount.openingBalance,
+    })
+    .from(financeAccount)
+    .where(
+      and(
+        eq(financeAccount.accountType, "asset"),
+        eq(financeAccount.ownerId, input.ownerId),
+        eq(financeAccount.ownerType, input.ownerType),
+        or(
+          eq(financeAccount.balanceSheetLine, "cash_and_bank"),
+          inArray(financeAccount.categoryId, categoryIds),
+        ),
+      ),
+    );
+
+  for (const account of accounts) {
+    await ensureCashBankPaymentAccountForFinanceAccount({
+      accountCode: account.code,
+      accountId: account.id,
+      accountName: account.name,
+      currentBalance: account.currentBalance,
+      openingBalance: account.openingBalance,
+      ownerId: input.ownerId,
+      ownerType: input.ownerType,
+    });
+  }
+}
+
 async function getNextExpenseNumberPrefix(ownerId: string) {
   const prefix = `EXP-${localDateStamp()}-`;
   const [result] = await db
