@@ -24,6 +24,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 
 type DaybookBillDialogProps = {
   onOpenChange: (open: boolean) => void;
@@ -89,6 +90,9 @@ export function DaybookBillDialog({
   const [payeeFocused, setPayeeFocused] = useState(false);
   const [issueDate, setIssueDate] = useState(dateValue);
   const [dueDate, setDueDate] = useState(dateValue);
+  const [billNo, setBillNo] = useState("");
+  const [referenceNo, setReferenceNo] = useState("");
+  const [notes, setNotes] = useState("");
   const [lines] = useState<DraftBillLine[]>(() => [createDraftLine()]);
   const scopeLabel = scope === "warehouse" ? "Warehouse" : "Retailer";
   const total = useMemo(
@@ -211,7 +215,7 @@ export function DaybookBillDialog({
             </div>
           </div>
 
-          <div className="mt-6 grid gap-5 md:grid-cols-2">
+          <div className="mt-6 grid gap-5 md:grid-cols-2 xl:grid-cols-4">
             <div className="grid gap-2">
               <Label htmlFor="daybook-bill-issue-date">Bill Date</Label>
               <div className="relative">
@@ -236,6 +240,34 @@ export function DaybookBillDialog({
                 <CalendarIcon className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-slate-500" />
               </div>
             </div>
+            <div className="grid gap-2">
+              <Label htmlFor="daybook-bill-no">Bill no.</Label>
+              <Input
+                id="daybook-bill-no"
+                onChange={(event) => setBillNo(event.target.value)}
+                placeholder="BILL-2026-001"
+                value={billNo}
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="daybook-bill-reference">Ref no.</Label>
+              <Input
+                id="daybook-bill-reference"
+                onChange={(event) => setReferenceNo(event.target.value)}
+                placeholder="Reference"
+                value={referenceNo}
+              />
+            </div>
+          </div>
+
+          <div className="mt-6 grid gap-2">
+            <Label htmlFor="daybook-bill-notes">Notes</Label>
+            <Textarea
+              id="daybook-bill-notes"
+              onChange={(event) => setNotes(event.target.value)}
+              placeholder="Short note for this bill"
+              value={notes}
+            />
           </div>
 
           <div className="mt-6 flex justify-end gap-2">
