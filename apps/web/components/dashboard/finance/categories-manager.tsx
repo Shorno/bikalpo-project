@@ -20,6 +20,28 @@ import {
 import { NewCategoryDialog } from "@/components/dashboard/finance/new-category-dialog";
 import { orpc } from "@/utils/orpc";
 
+function isCashAndBankCategory(category: FinanceCategory | undefined) {
+  return (
+    category?.accountType === "ASSET" &&
+    category.name.trim().toLowerCase() === "cash and bank"
+  );
+}
+
+function upsertById<TItem extends { id: string }>(
+  items: TItem[],
+  nextItem: TItem,
+) {
+  const existingIndex = items.findIndex((item) => item.id === nextItem.id);
+
+  if (existingIndex === -1) {
+    return [nextItem, ...items];
+  }
+
+  return items.map((item, index) =>
+    index === existingIndex ? nextItem : item,
+  );
+}
+
 export function CategoriesManager() {
   const queryClient = useQueryClient();
   const [categories, setCategories] = useState<FinanceCategory[]>(
@@ -38,10 +60,18 @@ export function CategoriesManager() {
     orpc.finance.getChartOfAccounts.queryOptions({ input: {} }),
   );
 
+  const categoryById = useMemo(
+    () => new Map(categories.map((category) => [category.id, category])),
+    [categories],
+  );
+
   const createCategoryMutation = useMutation(
     orpc.finance.createCategory.mutationOptions({
       onSuccess: (result) => {
         toast.success(result.message);
+        setCategories((currentCategories) =>
+          upsertById(currentCategories, result.category),
+        );
         void queryClient.invalidateQueries({
           queryKey: orpc.finance.getChartOfAccounts.key(),
         });
@@ -58,9 +88,19 @@ export function CategoriesManager() {
     orpc.finance.createAccount.mutationOptions({
       onSuccess: (result) => {
         toast.success(result.message);
+        setAccounts((currentAccounts) =>
+          upsertById(currentAccounts, result.account),
+        );
         void queryClient.invalidateQueries({
           queryKey: orpc.finance.getChartOfAccounts.key(),
         });
+        if (
+          isCashAndBankCategory(categoryById.get(result.account.categoryId))
+        ) {
+          void queryClient.invalidateQueries({
+            queryKey: orpc.finance.getPaymentAccounts.key(),
+          });
+        }
         setAccountTypeFilter(result.account.accountType);
         setSearchTerm(result.account.name);
       },
@@ -68,11 +108,6 @@ export function CategoriesManager() {
         toast.error(error.message || "Failed to create account");
       },
     }),
-  );
-
-  const categoryById = useMemo(
-    () => new Map(categories.map((category) => [category.id, category])),
-    [categories],
   );
 
   const filteredAccounts = useMemo(() => {
