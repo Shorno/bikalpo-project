@@ -87,6 +87,14 @@ export function addDaybookLoan(loan: DaybookLoanReceivedEntry) {
   saveDaybookLoans([...loadDaybookLoans(), normalizeLoan(loan)]);
 }
 
+export function markDaybookLoanSynced(id: string) {
+  saveDaybookLoans(
+    loadDaybookLoans().map((loan) =>
+      loan.id === id ? normalizeLoan({ ...loan, isSynced: true }) : loan,
+    ),
+  );
+}
+
 export function createDaybookLoanId(prefix: string) {
   return createDaybookExpenseId(prefix);
 }

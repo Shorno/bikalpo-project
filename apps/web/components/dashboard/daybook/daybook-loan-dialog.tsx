@@ -16,6 +16,7 @@ import {
   addDaybookLoan,
   createDaybookLoanId,
   type DaybookLoanLine,
+  markDaybookLoanSynced,
 } from "@/components/dashboard/daybook/daybook-loan-ledger";
 import { Button } from "@/components/ui/button";
 import {
@@ -291,32 +292,41 @@ export function DaybookLoanDialog({
       scope,
       total: nextTotal,
     };
+    const mutationInput = {
+      lender: lender.trim() || undefined,
+      lines: loanLines.map((line) => ({
+        amount: line.amount,
+        description: line.description,
+        loanType: line.loanType,
+      })),
+      loanNo: loanNo.trim() || undefined,
+      notes: notes.trim() || undefined,
+      paymentAccountId: selectedPaymentAccount.id,
+      paymentMethod: selectedPaymentMethod,
+      receiveDate,
+      referenceNo: referenceNo.trim() || undefined,
+    };
+
+    if (closeAfterSave) {
+      addDaybookLoan({ ...localLoan, isSynced: false });
+      setMessage(null);
+      resetForm();
+      onOpenChange(false);
+
+      void createLoanMutation
+        .mutateAsync(mutationInput)
+        .then(() => {
+          markDaybookLoanSynced(localLoan.id);
+          void invalidateQueries();
+        })
+        .catch(() => undefined);
+      return;
+    }
 
     try {
-      const result = await createLoanMutation.mutateAsync({
-        lender: lender.trim() || undefined,
-        lines: loanLines.map((line) => ({
-          amount: line.amount,
-          description: line.description,
-          loanType: line.loanType,
-        })),
-        loanNo: loanNo.trim() || undefined,
-        notes: notes.trim() || undefined,
-        paymentAccountId: selectedPaymentAccount.id,
-        paymentMethod: selectedPaymentMethod,
-        receiveDate,
-        referenceNo: referenceNo.trim() || undefined,
-      });
+      const result = await createLoanMutation.mutateAsync(mutationInput);
 
       addDaybookLoan({ ...localLoan, isSynced: true });
-
-      if (closeAfterSave) {
-        setMessage(null);
-        resetForm();
-        onOpenChange(false);
-        void invalidateQueries();
-        return;
-      }
 
       await invalidateQueries();
       resetForm();
@@ -355,10 +365,11 @@ export function DaybookLoanDialog({
 
         <div className="px-5 py-6">
           <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_280px]">
-            <div className="grid gap-5 md:grid-cols-[minmax(220px,360px)_minmax(260px,1fr)]">
+            <div className="grid gap-5 md:grid-cols-2">
               <div className="grid gap-2">
                 <Label htmlFor="loan-lender">Lender</Label>
                 <Input
+                  className="h-10"
                   id="loan-lender"
                   onChange={(event) => setLender(event.target.value)}
                   placeholder="Bank / Individual / Organization"
@@ -368,13 +379,13 @@ export function DaybookLoanDialog({
 
               <div className="grid gap-2">
                 <Label htmlFor="loan-deposit-account">Deposit account</Label>
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                <div className="grid gap-1">
                   <Select
                     onValueChange={setPaymentAccountId}
                     value={paymentAccountId}
                   >
                     <SelectTrigger
-                      className="w-full border-emerald-500 bg-white"
+                      className="!h-10 min-h-10 w-full border-emerald-500 bg-white"
                       id="loan-deposit-account"
                     >
                       <SelectValue />
@@ -387,7 +398,7 @@ export function DaybookLoanDialog({
                       ))}
                     </SelectContent>
                   </Select>
-                  <span className="whitespace-nowrap font-medium text-slate-600 text-sm">
+                  <span className="font-medium text-slate-600 text-sm">
                     Balance {money(selectedPaymentAccount?.balance ?? 0)}
                   </span>
                 </div>
@@ -401,35 +412,15 @@ export function DaybookLoanDialog({
               <div className="mt-2 font-bold text-4xl text-slate-900 tabular-nums">
                 {money(total)}
               </div>
-              <p className="mt-2 text-slate-500 text-sm">
-                Received into cash/bank
-              </p>
-              <div className="mt-4 grid gap-2 border-slate-200 border-t pt-4 text-sm">
-                <div className="flex items-center justify-between gap-3">
-                  <span className="text-slate-500">Amount</span>
-                  <span className="font-semibold tabular-nums">
-                    {money(total)}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between gap-3">
-                  <span className="text-slate-500">Received</span>
-                  <span className="font-semibold tabular-nums">
-                    {money(total)}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between gap-3">
-                  <span className="text-slate-500">Outstanding</span>
-                  <span className="font-semibold tabular-nums">{money(0)}</span>
-                </div>
-              </div>
             </div>
           </div>
 
-          <div className="mt-6 grid gap-5 md:grid-cols-2 xl:grid-cols-[minmax(180px,220px)_minmax(180px,240px)_minmax(180px,240px)_minmax(180px,240px)]">
+          <div className="mt-6 grid gap-5 md:grid-cols-2 xl:grid-cols-4">
             <div className="grid gap-2">
               <Label htmlFor="loan-receive-date">Receive Date</Label>
               <div className="relative">
                 <Input
+                  className="h-10"
                   id="loan-receive-date"
                   onChange={(event) => setReceiveDate(event.target.value)}
                   type="date"
@@ -448,7 +439,7 @@ export function DaybookLoanDialog({
                 value={paymentMethod}
               >
                 <SelectTrigger
-                  className="w-full bg-white"
+                  className="!h-10 min-h-10 w-full bg-white"
                   id="loan-payment-method"
                 >
                   <SelectValue />
@@ -466,6 +457,7 @@ export function DaybookLoanDialog({
             <div className="grid gap-2">
               <Label htmlFor="loan-reference">Ref no.</Label>
               <Input
+                className="h-10"
                 id="loan-reference"
                 onChange={(event) => setReferenceNo(event.target.value)}
                 placeholder="REF-001"
@@ -476,6 +468,7 @@ export function DaybookLoanDialog({
             <div className="grid gap-2">
               <Label htmlFor="loan-no">Loan no.</Label>
               <Input
+                className="h-10"
                 id="loan-no"
                 onChange={(event) => setLoanNo(event.target.value)}
                 placeholder="LN-2026-001"
@@ -490,7 +483,7 @@ export function DaybookLoanDialog({
                 <option key={account.id} value={account.name} />
               ))}
             </datalist>
-            <div className="grid grid-cols-[56px_minmax(200px,0.9fr)_minmax(260px,1.2fr)_minmax(180px,1fr)_56px] border-slate-200 border-b bg-slate-50 px-4 py-3 font-semibold text-slate-700 text-xs uppercase">
+            <div className="grid grid-cols-[56px_repeat(3,minmax(0,1fr))_56px] border-slate-200 border-b bg-slate-50 px-4 py-3 font-semibold text-slate-700 text-xs uppercase">
               <div>#</div>
               <div>Loan Type</div>
               <div>Description</div>
@@ -500,12 +493,12 @@ export function DaybookLoanDialog({
             <div>
               {lines.map((line, index) => (
                 <div
-                  className="grid grid-cols-[56px_minmax(200px,0.9fr)_minmax(260px,1.2fr)_minmax(180px,1fr)_56px] items-center border-slate-200 border-b px-4 py-3 last:border-b-0"
+                  className="grid grid-cols-[56px_repeat(3,minmax(0,1fr))_56px] items-center gap-2 border-slate-200 border-b px-4 py-3 last:border-b-0"
                   key={line.id}
                 >
                   <div className="font-medium text-slate-500">{index + 1}</div>
                   <Input
-                    className="h-9"
+                    className="h-10 w-full"
                     list="loan-account-options"
                     onChange={(event) =>
                       updateLine(line.id, "loanType", event.target.value)
@@ -514,7 +507,7 @@ export function DaybookLoanDialog({
                     value={line.loanType}
                   />
                   <Input
-                    className="h-9"
+                    className="h-10 w-full"
                     onChange={(event) =>
                       updateLine(line.id, "description", event.target.value)
                     }
@@ -522,7 +515,7 @@ export function DaybookLoanDialog({
                     value={line.description}
                   />
                   <Input
-                    className="h-9 text-right tabular-nums"
+                    className="h-10 w-full text-right tabular-nums"
                     inputMode="decimal"
                     onChange={(event) =>
                       updateLine(line.id, "amount", event.target.value)
