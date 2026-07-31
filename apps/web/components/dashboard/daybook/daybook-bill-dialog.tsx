@@ -6,7 +6,14 @@ import {
   type DaybookBillPartyType,
   createDaybookBillId,
 } from "@/components/dashboard/daybook/daybook-bill-ledger";
+import {
+  buildDaybookBillPayeeOptions,
+  filterDaybookBillPayees,
+} from "@/components/dashboard/daybook/daybook-bill-payees";
 import type { DaybookExpenseScope } from "@/components/dashboard/daybook/daybook-expense-ledger";
+import { useDaybookBills } from "@/components/dashboard/daybook/use-daybook-bills";
+import { useDaybookProductPurchases } from "@/components/dashboard/daybook/use-daybook-product-purchases";
+import { useDaybookProductSales } from "@/components/dashboard/daybook/use-daybook-product-sales";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -72,9 +79,14 @@ export function DaybookBillDialog({
   open,
   scope,
 }: DaybookBillDialogProps) {
+  const savedBills = useDaybookBills(scope);
+  const savedProductPurchases = useDaybookProductPurchases(scope);
+  const savedProductSales = useDaybookProductSales(scope);
   const [partyType, setPartyType] =
     useState<DaybookBillPartyType>("supplier");
   const [payeeName, setPayeeName] = useState("");
+  const [selectedPayeeId, setSelectedPayeeId] = useState("");
+  const [payeeFocused, setPayeeFocused] = useState(false);
   const [issueDate, setIssueDate] = useState(dateValue);
   const [dueDate, setDueDate] = useState(dateValue);
   const [lines] = useState<DraftBillLine[]>(() => [createDraftLine()]);
@@ -82,6 +94,24 @@ export function DaybookBillDialog({
   const total = useMemo(
     () => lines.reduce((sum, line) => sum + toAmount(line.amount), 0),
     [lines],
+  );
+  const payeeOptions = useMemo(
+    () =>
+      buildDaybookBillPayeeOptions({
+        bills: savedBills,
+        partyType,
+        productPurchases: savedProductPurchases,
+        productSales: savedProductSales,
+      }),
+    [partyType, savedBills, savedProductPurchases, savedProductSales],
+  );
+  const filteredPayees = useMemo(
+    () => filterDaybookBillPayees(payeeOptions, payeeName).slice(0, 6),
+    [payeeName, payeeOptions],
+  );
+  const selectedPayee = useMemo(
+    () => payeeOptions.find((option) => option.id === selectedPayeeId),
+    [payeeOptions, selectedPayeeId],
   );
 
   return (
@@ -121,12 +151,50 @@ export function DaybookBillDialog({
               </div>
               <div className="grid gap-2">
                 <Label htmlFor="daybook-bill-payee">Payee</Label>
-                <Input
-                  id="daybook-bill-payee"
-                  onChange={(event) => setPayeeName(event.target.value)}
-                  placeholder="Type supplier or customer"
-                  value={payeeName}
-                />
+                <div className="relative">
+                  <Input
+                    autoComplete="off"
+                    id="daybook-bill-payee"
+                    onBlur={() => window.setTimeout(() => setPayeeFocused(false), 120)}
+                    onChange={(event) => {
+                      setPayeeName(event.target.value);
+                      setSelectedPayeeId("");
+                      setPayeeFocused(true);
+                    }}
+                    onFocus={() => setPayeeFocused(true)}
+                    placeholder={`Type ${partyType} name`}
+                    value={payeeName}
+                  />
+                  {payeeFocused && filteredPayees.length > 0 ? (
+                    <div className="absolute z-20 mt-1 max-h-72 w-full overflow-y-auto rounded-lg border border-slate-200 bg-white p-1 shadow-lg">
+                      {filteredPayees.map((payee) => (
+                        <button
+                          className="flex w-full items-center justify-between gap-3 rounded-md px-3 py-2 text-left text-sm hover:bg-slate-100"
+                          key={payee.id}
+                          onMouseDown={(event) => event.preventDefault()}
+                          onClick={() => {
+                            setPayeeName(payee.name);
+                            setSelectedPayeeId(payee.id);
+                            setPayeeFocused(false);
+                          }}
+                          type="button"
+                        >
+                          <span className="min-w-0">
+                            <span className="block truncate font-medium text-slate-900">
+                              {payee.name}
+                            </span>
+                            <span className="block text-slate-500 text-xs">
+                              {payee.subtitle}
+                            </span>
+                          </span>
+                          <span className="shrink-0 rounded-md bg-amber-50 px-2 py-1 font-semibold text-amber-700 text-xs">
+                            Prev {money(payee.previousBillAmount)}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
               </div>
             </div>
 
@@ -136,6 +204,9 @@ export function DaybookBillDialog({
               </div>
               <div className="mt-2 font-bold text-4xl text-slate-900 tabular-nums">
                 {money(total)}
+              </div>
+              <div className="mt-3 rounded-md bg-amber-50 px-3 py-2 font-semibold text-amber-700 text-sm">
+                Previous bill {money(selectedPayee?.previousBillAmount ?? 0)}
               </div>
             </div>
           </div>
