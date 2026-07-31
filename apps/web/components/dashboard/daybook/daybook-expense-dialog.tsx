@@ -18,6 +18,7 @@ import {
   DAYBOOK_PAYMENT_ACCOUNTS,
   type DaybookExpenseLine,
   type DaybookExpenseScope,
+  markDaybookExpenseSynced,
 } from "@/components/dashboard/daybook/daybook-expense-ledger";
 import { Button } from "@/components/ui/button";
 import {
@@ -246,34 +247,46 @@ export function DaybookExpenseDialog({
       scope,
       total: nextTotal,
     };
+    const mutationInput = {
+      lines: expenseLines.map((line) => ({
+        amount: line.amount,
+        category: line.category,
+        description: line.description,
+      })),
+      memo: memo.trim() || undefined,
+      payee: payee.trim() || undefined,
+      paymentAccountId: paymentAccount.id,
+      paymentDate,
+      paymentMethod: paymentAccount.type,
+      referenceNo: referenceNo.trim() || undefined,
+    };
+
+    if (closeAfterSave) {
+      addDaybookExpense({ ...localExpense, isSynced: false });
+      resetForm();
+      closeDialog();
+
+      void createExpenseMutation
+        .mutateAsync(mutationInput)
+        .then((result) => {
+          markDaybookExpenseSynced(
+            localExpense.id,
+            result.expenses.map((expense) => expense.id),
+          );
+          void invalidateFinanceQueries();
+        })
+        .catch(() => undefined);
+      return;
+    }
 
     try {
-      const result = await createExpenseMutation.mutateAsync({
-        lines: expenseLines.map((line) => ({
-          amount: line.amount,
-          category: line.category,
-          description: line.description,
-        })),
-        memo: memo.trim() || undefined,
-        payee: payee.trim() || undefined,
-        paymentAccountId: paymentAccount.id,
-        paymentDate,
-        paymentMethod: paymentAccount.type,
-        referenceNo: referenceNo.trim() || undefined,
-      });
+      const result = await createExpenseMutation.mutateAsync(mutationInput);
 
       addDaybookExpense({
         ...localExpense,
         isSynced: true,
         serverExpenseIds: result.expenses.map((expense) => expense.id),
       });
-
-      if (closeAfterSave) {
-        resetForm();
-        closeDialog();
-        void invalidateFinanceQueries();
-        return;
-      }
 
       await invalidateFinanceQueries();
       resetForm();
