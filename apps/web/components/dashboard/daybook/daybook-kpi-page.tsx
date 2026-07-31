@@ -251,6 +251,11 @@ const daybookConfigs: Record<DaybookVariant, DaybookConfig> = {
         label: "Expense",
       },
       {
+        icon: <FileTextIcon className="size-4" />,
+        kind: "bill",
+        label: "Bill",
+      },
+      {
         icon: <Building2Icon className="size-4" />,
         kind: "fixedAsset",
         label: "Fixed Asset",
