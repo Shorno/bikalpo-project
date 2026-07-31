@@ -579,27 +579,30 @@ export function DaybookKpiPage({ variant }: { variant: DaybookVariant }) {
       }),
     [adjustedSystemCash, config.metrics, savedProductSaleTotal],
   );
-  const closeSummary = useMemo(
-    () =>
-      config.closeSummary.map((line) => {
-        if (line.label === "Expense") {
-          return {
-            ...line,
-            value: money(moneyToNumber(line.value) + savedExpenseTotal),
-          };
-        }
+  const closeSummary = useMemo(() => {
+    const summaryLines = config.closeSummary.map((line) => {
+      if (line.label === "Expense") {
+        return {
+          ...line,
+          value: money(moneyToNumber(line.value) + savedExpenseTotal),
+        };
+      }
 
-        if (line.label === "Sales") {
-          return {
-            ...line,
-            value: money(moneyToNumber(line.value) + savedProductSaleTotal),
-          };
-        }
+      if (line.label === "Sales") {
+        return {
+          ...line,
+          value: money(moneyToNumber(line.value) + savedProductSaleTotal),
+        };
+      }
 
-        return line;
-      }),
-    [config.closeSummary, savedExpenseTotal, savedProductSaleTotal],
-  );
+      return line;
+    });
+
+    return [
+      ...summaryLines,
+      { label: "Open Bills", value: money(savedBillTotal) },
+    ];
+  }, [config.closeSummary, savedBillTotal, savedExpenseTotal, savedProductSaleTotal]);
   const snapshotTransactions = useMemo(() => {
     const expenseTransactions = savedExpenses
       .toSorted(
