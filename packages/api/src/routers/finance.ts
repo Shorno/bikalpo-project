@@ -18,7 +18,7 @@ import {
   financialLedger,
 } from "@bikalpo-project/db/schema";
 import { ORPCError } from "@orpc/server";
-import { and, eq, ilike, isNull, or, sql } from "drizzle-orm";
+import { and, eq, ilike, inArray, isNull, or, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { protectedProcedure } from "../index";
@@ -231,6 +231,36 @@ async function generateUniqueCode(
       .select({ id: table.id })
       .from(table)
       .where(and(eq(table.code, code), scopeWhere(table, ownerId, ownerType)))
+      .limit(1);
+
+    if (existing.length === 0) {
+      return code;
+    }
+
+    code = `${baseCode}-${counter}`;
+    counter += 1;
+  }
+}
+
+async function generateUniquePaymentAccountCode(
+  ownerId: string,
+  ownerType: AccountingOwnerType,
+  baseCode: string,
+) {
+  let code = baseCode;
+  let counter = 2;
+
+  while (true) {
+    const existing = await db
+      .select({ id: financePaymentAccount.id })
+      .from(financePaymentAccount)
+      .where(
+        and(
+          eq(financePaymentAccount.code, code),
+          eq(financePaymentAccount.ownerId, ownerId),
+          eq(financePaymentAccount.ownerType, ownerType),
+        ),
+      )
       .limit(1);
 
     if (existing.length === 0) {
