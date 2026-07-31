@@ -138,6 +138,22 @@ export function DaybookBillDialog({
     () => payeeOptions.find((option) => option.id === selectedPayeeId),
     [payeeOptions, selectedPayeeId],
   );
+  const matchingPayee = useMemo(
+    () =>
+      payeeOptions.find(
+        (option) =>
+          option.name.trim().toLowerCase() === payeeName.trim().toLowerCase(),
+      ),
+    [payeeName, payeeOptions],
+  );
+  const activePayee = selectedPayee ?? matchingPayee;
+  const previousBillAmount = activePayee?.previousBillAmount ?? 0;
+  const changePartyType = (nextPartyType: DaybookBillPartyType) => {
+    setPartyType(nextPartyType);
+    setPayeeName("");
+    setSelectedPayeeId("");
+    setPayeeFocused(false);
+  };
   const updateLine = (
     lineId: string,
     field: keyof Omit<DraftBillLine, "id">,
@@ -221,10 +237,10 @@ export function DaybookBillDialog({
       issueDate,
       lines: billLines,
       notes: notes.trim(),
-      partyId: selectedPayee?.id ?? `${partyType}-${partyName}`,
+      partyId: activePayee?.id ?? `${partyType}-${partyName}`,
       partyName,
       partyType,
-      previousBillAmount: selectedPayee?.previousBillAmount ?? 0,
+      previousBillAmount,
       referenceNo: referenceNo.trim(),
       scope,
       total: nextTotal,
@@ -261,14 +277,14 @@ export function DaybookBillDialog({
                 <Label>Payee type</Label>
                 <div className="grid grid-cols-2 gap-2">
                   <Button
-                    onClick={() => setPartyType("supplier")}
+                    onClick={() => changePartyType("supplier")}
                     type="button"
                     variant={partyType === "supplier" ? "default" : "outline"}
                   >
                     Supplier
                   </Button>
                   <Button
-                    onClick={() => setPartyType("customer")}
+                    onClick={() => changePartyType("customer")}
                     type="button"
                     variant={partyType === "customer" ? "default" : "outline"}
                   >
@@ -333,7 +349,10 @@ export function DaybookBillDialog({
                 {money(total)}
               </div>
               <div className="mt-3 rounded-md bg-amber-50 px-3 py-2 font-semibold text-amber-700 text-sm">
-                Previous bill {money(selectedPayee?.previousBillAmount ?? 0)}
+                Previous bill {money(previousBillAmount)}
+              </div>
+              <div className="mt-2 rounded-md bg-blue-50 px-3 py-2 font-semibold text-blue-700 text-sm">
+                After this bill {money(previousBillAmount + total)}
               </div>
             </div>
           </div>
