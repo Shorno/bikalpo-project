@@ -82,5 +82,21 @@ export function buildDaybookBillPayeeOptions(input: {
   bills: DaybookBillEntry[];
   partyType: DaybookBillPartyType;
 }) {
-  return Array.from(buildDefaultBillPayeeOptions(input.partyType).values());
+  const options = buildDefaultBillPayeeOptions(input.partyType);
+
+  for (const bill of input.bills) {
+    if (bill.partyType !== input.partyType) {
+      continue;
+    }
+
+    addPayeeOption(options, {
+      name: bill.partyName,
+      partyType: bill.partyType,
+      previousBillAmount: bill.total,
+      source: "bill",
+      subtitle: bill.partyType === "supplier" ? "Supplier" : "Customer",
+    });
+  }
+
+  return Array.from(options.values());
 }
