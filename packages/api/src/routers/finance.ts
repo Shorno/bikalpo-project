@@ -147,6 +147,17 @@ function resolveAccountReportLines(input: {
 } {
   if (
     input.accountType === "asset" &&
+    (input.categoryCode === "asset-cash-bank" ||
+      input.categoryName.toLowerCase() === "cash and bank")
+  ) {
+    return {
+      balanceSheetLine: "cash_and_bank",
+      profitAndLossLine: null,
+    };
+  }
+
+  if (
+    input.accountType === "asset" &&
     (input.categoryCode === "asset-fixed" ||
       input.categoryName.toLowerCase() === "fixed assets")
   ) {
