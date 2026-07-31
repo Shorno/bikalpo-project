@@ -26,19 +26,20 @@ import {
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { useMemo, useState } from "react";
+import { DaybookBillDialog } from "@/components/dashboard/daybook/daybook-bill-dialog";
+import { getDaybookBillTotal } from "@/components/dashboard/daybook/daybook-bill-ledger";
 import { DaybookExpenseDialog } from "@/components/dashboard/daybook/daybook-expense-dialog";
 import { DaybookFixedAssetDialog } from "@/components/dashboard/daybook/daybook-fixed-asset-dialog";
 import { DaybookLoanDialog } from "@/components/dashboard/daybook/daybook-loan-dialog";
 import { DaybookProductPurchaseDialog } from "@/components/dashboard/daybook/daybook-product-purchase-dialog";
 import { DaybookProductSaleDialog } from "@/components/dashboard/daybook/daybook-product-sale-dialog";
 import { DaybookSupplierAdvanceDialog } from "@/components/dashboard/daybook/daybook-supplier-advance-dialog";
-import { getDaybookBillTotal } from "@/components/dashboard/daybook/daybook-bill-ledger";
+import { useDaybookBills } from "@/components/dashboard/daybook/use-daybook-bills";
 import { useDaybookExpenses } from "@/components/dashboard/daybook/use-daybook-expenses";
 import { useDaybookFixedAssetPurchases } from "@/components/dashboard/daybook/use-daybook-fixed-assets";
 import { useDaybookLoans } from "@/components/dashboard/daybook/use-daybook-loans";
 import { useDaybookProductPurchases } from "@/components/dashboard/daybook/use-daybook-product-purchases";
 import { useDaybookProductSales } from "@/components/dashboard/daybook/use-daybook-product-sales";
-import { useDaybookBills } from "@/components/dashboard/daybook/use-daybook-bills";
 import { useDaybookSupplierAdvances } from "@/components/dashboard/daybook/use-daybook-supplier-advances";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -602,7 +603,12 @@ export function DaybookKpiPage({ variant }: { variant: DaybookVariant }) {
       ...summaryLines,
       { label: "Open Bills", value: money(savedBillTotal) },
     ];
-  }, [config.closeSummary, savedBillTotal, savedExpenseTotal, savedProductSaleTotal]);
+  }, [
+    config.closeSummary,
+    savedBillTotal,
+    savedExpenseTotal,
+    savedProductSaleTotal,
+  ]);
   const snapshotTransactions = useMemo(() => {
     const billTransactions = savedBills
       .toSorted(
@@ -617,7 +623,8 @@ export function DaybookKpiPage({ variant }: { variant: DaybookVariant }) {
             .filter(Boolean)
             .join(" - ") || bill.partyName,
         time: timeLabel(new Date(bill.createdAt)),
-        type: bill.partyType === "supplier" ? "Supplier Bill" : "Customer Bill",
+        type:
+          bill.partyType === "supplier" ? "Supplier Bill" : "Customer Bill",
       }));
     const expenseTransactions = savedExpenses
       .toSorted(
@@ -1217,6 +1224,22 @@ function QuickAction({
           !action.primary && "bg-slate-100 text-slate-800 hover:bg-slate-200",
         )}
         onClick={onExpenseClick}
+        type="button"
+        variant={action.primary ? "default" : "secondary"}
+      >
+        {action.icon}
+        {action.label}
+      </Button>
+    );
+  }
+  if (action.kind === "bill") {
+    return (
+      <Button
+        className={cn(
+          "h-10 justify-start rounded-lg",
+          !action.primary && "bg-slate-100 text-slate-800 hover:bg-slate-200",
+        )}
+        onClick={onBillClick}
         type="button"
         variant={action.primary ? "default" : "secondary"}
       >

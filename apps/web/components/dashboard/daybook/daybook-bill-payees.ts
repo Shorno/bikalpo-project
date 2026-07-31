@@ -62,11 +62,10 @@ function addPayeeOption(
   });
 }
 
-export function buildDefaultBillPayeeOptions(
-  partyType: DaybookBillPartyType,
-) {
+export function buildDefaultBillPayeeOptions(partyType: DaybookBillPartyType) {
   const options = new Map<string, DaybookBillPayeeOption>();
-  const names = partyType === "supplier" ? DEFAULT_SUPPLIERS : DEFAULT_CUSTOMERS;
+  const names =
+    partyType === "supplier" ? DEFAULT_SUPPLIERS : DEFAULT_CUSTOMERS;
 
   for (const name of names) {
     addPayeeOption(options, {

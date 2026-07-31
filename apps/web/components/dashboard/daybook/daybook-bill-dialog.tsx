@@ -10,9 +10,9 @@ import {
 import { useMemo, useState } from "react";
 import {
   addDaybookBill,
+  createDaybookBillId,
   type DaybookBillLine,
   type DaybookBillPartyType,
-  createDaybookBillId,
 } from "@/components/dashboard/daybook/daybook-bill-ledger";
 import {
   buildDaybookBillPayeeOptions,
@@ -98,8 +98,7 @@ export function DaybookBillDialog({
   const savedBills = useDaybookBills(scope);
   const savedProductPurchases = useDaybookProductPurchases(scope);
   const savedProductSales = useDaybookProductSales(scope);
-  const [partyType, setPartyType] =
-    useState<DaybookBillPartyType>("supplier");
+  const [partyType, setPartyType] = useState<DaybookBillPartyType>("supplier");
   const [payeeName, setPayeeName] = useState("");
   const [selectedPayeeId, setSelectedPayeeId] = useState("");
   const [payeeFocused, setPayeeFocused] = useState(false);
@@ -298,7 +297,9 @@ export function DaybookBillDialog({
                   <Input
                     autoComplete="off"
                     id="daybook-bill-payee"
-                    onBlur={() => window.setTimeout(() => setPayeeFocused(false), 120)}
+                    onBlur={() =>
+                      window.setTimeout(() => setPayeeFocused(false), 120)
+                    }
                     onChange={(event) => {
                       setPayeeName(event.target.value);
                       setSelectedPayeeId("");
