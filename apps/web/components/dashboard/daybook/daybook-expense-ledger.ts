@@ -138,6 +138,19 @@ export function addDaybookExpense(entry: DaybookExpenseEntry) {
   saveDaybookExpenses([...loadDaybookExpenses(), normalizeEntry(entry)]);
 }
 
+export function markDaybookExpenseSynced(
+  id: string,
+  serverExpenseIds: number[],
+) {
+  saveDaybookExpenses(
+    loadDaybookExpenses().map((entry) =>
+      entry.id === id
+        ? normalizeEntry({ ...entry, isSynced: true, serverExpenseIds })
+        : entry,
+    ),
+  );
+}
+
 export function createDaybookExpenseId(prefix: string) {
   return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
