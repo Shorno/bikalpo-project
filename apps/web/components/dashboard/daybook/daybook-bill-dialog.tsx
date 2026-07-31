@@ -9,6 +9,8 @@ import {
 } from "lucide-react";
 import { useMemo, useState } from "react";
 import {
+  addDaybookBill,
+  type DaybookBillLine,
   type DaybookBillPartyType,
   createDaybookBillId,
 } from "@/components/dashboard/daybook/daybook-bill-ledger";
@@ -106,6 +108,10 @@ export function DaybookBillDialog({
   const [billNo, setBillNo] = useState("");
   const [referenceNo, setReferenceNo] = useState("");
   const [notes, setNotes] = useState("");
+  const [message, setMessage] = useState<{
+    tone: "error" | "success";
+    text: string;
+  } | null>(null);
   const [lines, setLines] = useState<DraftBillLine[]>(() => [
     createDraftLine(),
   ]);
@@ -153,9 +159,90 @@ export function DaybookBillDialog({
         : currentLines.filter((line) => line.id !== lineId),
     );
   };
+  const buildBillLines = () => {
+    const billLines: DaybookBillLine[] = [];
+
+    for (const line of lines) {
+      const amount = toAmount(line.amount);
+
+      if (amount <= 0) {
+        continue;
+      }
+
+      billLines.push({
+        amount,
+        category: line.category,
+        description: line.description.trim(),
+        id: createDaybookBillId("saved-bill-line"),
+      });
+    }
+
+    return billLines;
+  };
+  const resetForm = () => {
+    setPayeeName("");
+    setSelectedPayeeId("");
+    setPayeeFocused(false);
+    setIssueDate(dateValue());
+    setDueDate(dateValue());
+    setBillNo("");
+    setReferenceNo("");
+    setNotes("");
+    setLines([createDraftLine()]);
+  };
+  const handleDialogOpenChange = (nextOpen: boolean) => {
+    if (!nextOpen) {
+      setMessage(null);
+      resetForm();
+    }
+
+    onOpenChange(nextOpen);
+  };
+  const saveBill = (closeAfterSave: boolean) => {
+    const partyName = payeeName.trim();
+    const billLines = buildBillLines();
+    const nextTotal = billLines.reduce((sum, line) => sum + line.amount, 0);
+
+    if (!partyName) {
+      setMessage({ text: "Select or enter a payee.", tone: "error" });
+      return;
+    }
+
+    if (nextTotal <= 0 || billLines.length === 0) {
+      setMessage({ text: "Enter at least one bill amount.", tone: "error" });
+      return;
+    }
+
+    addDaybookBill({
+      billNo: billNo.trim(),
+      createdAt: new Date().toISOString(),
+      dueDate,
+      id: createDaybookBillId("daybook-bill"),
+      issueDate,
+      lines: billLines,
+      notes: notes.trim(),
+      partyId: selectedPayee?.id ?? `${partyType}-${partyName}`,
+      partyName,
+      partyType,
+      previousBillAmount: selectedPayee?.previousBillAmount ?? 0,
+      referenceNo: referenceNo.trim(),
+      scope,
+      total: nextTotal,
+    });
+
+    resetForm();
+
+    if (closeAfterSave) {
+      setMessage(null);
+      onOpenChange(false);
+      return;
+    }
+
+    setMessage({ text: "Bill saved.", tone: "success" });
+  };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleDialogOpenChange}>
       <DialogContent className="max-h-[92vh] overflow-y-auto bg-slate-50 p-0 sm:max-w-5xl">
         <DialogHeader className="border-slate-200 border-b bg-white px-5 py-4">
           <DialogTitle className="flex items-center gap-2 text-2xl font-bold text-slate-900">
@@ -378,19 +465,31 @@ export function DaybookBillDialog({
             </Button>
           </div>
 
+          {message ? (
+            <div
+              className={`mt-4 rounded-lg px-4 py-3 font-medium text-sm ${
+                message.tone === "error"
+                  ? "bg-red-50 text-red-700"
+                  : "bg-emerald-50 text-emerald-700"
+              }`}
+            >
+              {message.text}
+            </div>
+          ) : null}
+
           <div className="mt-6 flex justify-end gap-2">
             <Button
-              onClick={() => onOpenChange(false)}
+              onClick={() => handleDialogOpenChange(false)}
               type="button"
               variant="outline"
             >
               Cancel
             </Button>
-            <Button type="button">
+            <Button onClick={() => saveBill(false)} type="button">
               <SaveIcon data-icon="inline-start" />
               Save
             </Button>
-            <Button type="button">
+            <Button onClick={() => saveBill(true)} type="button">
               <PlusIcon data-icon="inline-start" />
               Save and close
             </Button>
