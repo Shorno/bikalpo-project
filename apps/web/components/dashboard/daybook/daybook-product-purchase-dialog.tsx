@@ -17,6 +17,7 @@ import {
   createDaybookProductPurchaseId,
   type DaybookProductPurchaseItem,
   type DaybookProductPurchasePaymentType,
+  markDaybookProductPurchaseSynced,
 } from "@/components/dashboard/daybook/daybook-product-purchase-ledger";
 import { Button } from "@/components/ui/button";
 import {
@@ -306,35 +307,42 @@ export function DaybookProductPurchaseDialog({
       supplier: supplier.trim() || "Supplier",
       total: nextTotal,
     };
+    const mutationInput = {
+      billNo: billNo.trim() || undefined,
+      items: purchaseItems.map((item) => ({
+        amount: item.amount,
+        description: item.description,
+        productName: item.productName,
+      })),
+      notes: notes.trim() || undefined,
+      paymentAccountId: isDuePurchase ? undefined : selectedPaymentAccount?.id,
+      paymentDate,
+      paymentMethod: isDuePurchase ? undefined : selectedPaymentMethod,
+      paymentType: purchasePaymentType,
+      referenceNo: referenceNo.trim() || undefined,
+      supplier: supplier.trim() || undefined,
+    };
+
+    if (closeAfterSave) {
+      addDaybookProductPurchase({ ...localPurchase, isSynced: false });
+      setMessage(null);
+      resetForm();
+      onOpenChange(false);
+
+      void createPurchaseMutation
+        .mutateAsync(mutationInput)
+        .then(() => {
+          markDaybookProductPurchaseSynced(localPurchase.id);
+          void invalidateQueries();
+        })
+        .catch(() => undefined);
+      return;
+    }
 
     try {
-      const result = await createPurchaseMutation.mutateAsync({
-        billNo: billNo.trim() || undefined,
-        items: purchaseItems.map((item) => ({
-          amount: item.amount,
-          description: item.description,
-          productName: item.productName,
-        })),
-        notes: notes.trim() || undefined,
-        paymentAccountId: isDuePurchase
-          ? undefined
-          : selectedPaymentAccount?.id,
-        paymentDate,
-        paymentMethod: isDuePurchase ? undefined : selectedPaymentMethod,
-        paymentType: purchasePaymentType,
-        referenceNo: referenceNo.trim() || undefined,
-        supplier: supplier.trim() || undefined,
-      });
+      const result = await createPurchaseMutation.mutateAsync(mutationInput);
 
       addDaybookProductPurchase({ ...localPurchase, isSynced: true });
-
-      if (closeAfterSave) {
-        setMessage(null);
-        resetForm();
-        onOpenChange(false);
-        void invalidateQueries();
-        return;
-      }
 
       await invalidateQueries();
       resetForm();
@@ -373,10 +381,11 @@ export function DaybookProductPurchaseDialog({
 
         <div className="px-5 py-6">
           <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_280px]">
-            <div className="grid gap-5 md:grid-cols-[minmax(200px,1fr)_minmax(180px,220px)_minmax(240px,1fr)]">
+            <div className="grid gap-5 md:grid-cols-3">
               <div className="grid gap-2">
                 <Label htmlFor="product-purchase-supplier">Supplier</Label>
                 <Input
+                  className="h-10"
                   id="product-purchase-supplier"
                   onChange={(event) => setSupplier(event.target.value)}
                   placeholder="ABC Supplier"
@@ -397,7 +406,7 @@ export function DaybookProductPurchaseDialog({
                   value={purchasePaymentType}
                 >
                   <SelectTrigger
-                    className="w-full bg-white"
+                    className="!h-10 min-h-10 w-full bg-white"
                     id="product-purchase-payment-type"
                   >
                     <SelectValue />
@@ -416,10 +425,10 @@ export function DaybookProductPurchaseDialog({
                 <Label htmlFor="product-purchase-payment-account">
                   Payment account
                 </Label>
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                <div className="grid gap-1">
                   {isDuePurchase ? (
                     <Input
-                      className="border-amber-300 bg-white"
+                      className="h-10 w-full border-amber-300 bg-white"
                       disabled
                       id="product-purchase-payment-account"
                       value="Accounts Payable"
@@ -430,7 +439,7 @@ export function DaybookProductPurchaseDialog({
                       value={paymentAccountId}
                     >
                       <SelectTrigger
-                        className="w-full border-emerald-500 bg-white"
+                        className="!h-10 min-h-10 w-full border-emerald-500 bg-white"
                         id="product-purchase-payment-account"
                       >
                         <SelectValue />
@@ -444,7 +453,7 @@ export function DaybookProductPurchaseDialog({
                       </SelectContent>
                     </Select>
                   )}
-                  <span className="whitespace-nowrap font-medium text-slate-600 text-sm">
+                  <span className="font-medium text-slate-600 text-sm">
                     {isDuePurchase
                       ? "Supplier due"
                       : `Balance ${money(selectedPaymentAccount?.balance ?? 0)}`}
@@ -460,41 +469,17 @@ export function DaybookProductPurchaseDialog({
               <div className="mt-2 font-bold text-4xl text-slate-900 tabular-nums">
                 {money(total)}
               </div>
-              <p className="mt-2 text-slate-500 text-sm">
-                {isDuePurchase
-                  ? "COGS + Accounts Payable"
-                  : "Product Purchase Cost"}
-              </p>
-              <div className="mt-4 grid gap-2 border-slate-200 border-t pt-4 text-sm">
-                <div className="flex items-center justify-between gap-3">
-                  <span className="text-slate-500">Subtotal</span>
-                  <span className="font-semibold tabular-nums">
-                    {money(total)}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between gap-3">
-                  <span className="text-slate-500">Total Paid</span>
-                  <span className="font-semibold tabular-nums">
-                    {money(isDuePurchase ? 0 : total)}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between gap-3">
-                  <span className="text-slate-500">Amount Due</span>
-                  <span className="font-semibold tabular-nums">
-                    {money(isDuePurchase ? total : 0)}
-                  </span>
-                </div>
-              </div>
             </div>
           </div>
 
-          <div className="mt-6 grid gap-5 md:grid-cols-2 xl:grid-cols-[minmax(180px,220px)_minmax(180px,240px)_minmax(180px,240px)_minmax(180px,240px)]">
+          <div className="mt-6 grid gap-5 md:grid-cols-2 xl:grid-cols-4">
             <div className="grid gap-2">
               <Label htmlFor="product-purchase-payment-date">
                 Payment Date
               </Label>
               <div className="relative">
                 <Input
+                  className="h-10"
                   id="product-purchase-payment-date"
                   onChange={(event) => setPaymentDate(event.target.value)}
                   type="date"
@@ -511,6 +496,7 @@ export function DaybookProductPurchaseDialog({
               {isDuePurchase ? (
                 <Input
                   disabled
+                  className="h-10"
                   id="product-purchase-payment-method"
                   value="Due"
                 />
@@ -522,7 +508,7 @@ export function DaybookProductPurchaseDialog({
                   value={paymentMethod}
                 >
                   <SelectTrigger
-                    className="w-full bg-white"
+                    className="!h-10 min-h-10 w-full bg-white"
                     id="product-purchase-payment-method"
                   >
                     <SelectValue />
@@ -541,6 +527,7 @@ export function DaybookProductPurchaseDialog({
             <div className="grid gap-2">
               <Label htmlFor="product-purchase-reference">Ref no.</Label>
               <Input
+                className="h-10"
                 id="product-purchase-reference"
                 onChange={(event) => setReferenceNo(event.target.value)}
                 placeholder="REF-001"
@@ -551,6 +538,7 @@ export function DaybookProductPurchaseDialog({
             <div className="grid gap-2">
               <Label htmlFor="product-purchase-bill-no">Bill no.</Label>
               <Input
+                className="h-10"
                 id="product-purchase-bill-no"
                 onChange={(event) => setBillNo(event.target.value)}
                 placeholder="BILL-2026-001"
@@ -560,7 +548,7 @@ export function DaybookProductPurchaseDialog({
           </div>
 
           <div className="mt-8 overflow-hidden rounded-lg border border-slate-200 bg-white">
-            <div className="grid grid-cols-[56px_minmax(240px,1.1fr)_minmax(240px,1fr)_minmax(180px,0.8fr)_56px] border-slate-200 border-b bg-slate-50 px-4 py-3 font-semibold text-slate-700 text-xs uppercase">
+            <div className="grid grid-cols-[56px_repeat(3,minmax(0,1fr))_56px] border-slate-200 border-b bg-slate-50 px-4 py-3 font-semibold text-slate-700 text-xs uppercase">
               <div>#</div>
               <div>Product Name</div>
               <div>Description</div>
@@ -570,12 +558,12 @@ export function DaybookProductPurchaseDialog({
             <div>
               {items.map((item, index) => (
                 <div
-                  className="grid grid-cols-[56px_minmax(240px,1.1fr)_minmax(240px,1fr)_minmax(180px,0.8fr)_56px] items-center border-slate-200 border-b px-4 py-3 last:border-b-0"
+                  className="grid grid-cols-[56px_repeat(3,minmax(0,1fr))_56px] items-center gap-2 border-slate-200 border-b px-4 py-3 last:border-b-0"
                   key={item.id}
                 >
                   <div className="font-medium text-slate-500">{index + 1}</div>
                   <Input
-                    className="h-9"
+                    className="h-10 w-full"
                     onChange={(event) =>
                       updateItem(item.id, "productName", event.target.value)
                     }
@@ -583,7 +571,7 @@ export function DaybookProductPurchaseDialog({
                     value={item.productName}
                   />
                   <Input
-                    className="h-9"
+                    className="h-10 w-full"
                     onChange={(event) =>
                       updateItem(item.id, "description", event.target.value)
                     }
@@ -591,7 +579,7 @@ export function DaybookProductPurchaseDialog({
                     value={item.description}
                   />
                   <Input
-                    className="h-9 text-right tabular-nums"
+                    className="h-10 w-full text-right tabular-nums"
                     inputMode="decimal"
                     onChange={(event) =>
                       updateItem(item.id, "amount", event.target.value)

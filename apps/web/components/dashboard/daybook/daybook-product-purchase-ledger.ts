@@ -100,6 +100,16 @@ export function addDaybookProductPurchase(
   ]);
 }
 
+export function markDaybookProductPurchaseSynced(id: string) {
+  saveDaybookProductPurchases(
+    loadDaybookProductPurchases().map((purchase) =>
+      purchase.id === id
+        ? normalizePurchase({ ...purchase, isSynced: true })
+        : purchase,
+    ),
+  );
+}
+
 export function createDaybookProductPurchaseId(prefix: string) {
   return createDaybookExpenseId(prefix);
 }
