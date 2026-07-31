@@ -604,6 +604,21 @@ export function DaybookKpiPage({ variant }: { variant: DaybookVariant }) {
     ];
   }, [config.closeSummary, savedBillTotal, savedExpenseTotal, savedProductSaleTotal]);
   const snapshotTransactions = useMemo(() => {
+    const billTransactions = savedBills
+      .toSorted(
+        (first, second) =>
+          new Date(second.createdAt).getTime() -
+          new Date(first.createdAt).getTime(),
+      )
+      .map((bill) => ({
+        amount: money(bill.total),
+        reference:
+          [bill.partyName, bill.referenceNo || bill.billNo, bill.dueDate]
+            .filter(Boolean)
+            .join(" - ") || bill.partyName,
+        time: timeLabel(new Date(bill.createdAt)),
+        type: bill.partyType === "supplier" ? "Supplier Bill" : "Customer Bill",
+      }));
     const expenseTransactions = savedExpenses
       .toSorted(
         (first, second) =>
