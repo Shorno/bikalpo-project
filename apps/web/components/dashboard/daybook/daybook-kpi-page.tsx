@@ -482,6 +482,7 @@ const daybookConfigs: Record<DaybookVariant, DaybookConfig> = {
 
 export function DaybookKpiPage({ variant }: { variant: DaybookVariant }) {
   const config = daybookConfigs[variant];
+  const savedBills = useDaybookBills(variant);
   const savedExpenses = useDaybookExpenses(variant);
   const savedFixedAssetPurchases = useDaybookFixedAssetPurchases(variant);
   const savedLoans = useDaybookLoans(variant);
@@ -489,6 +490,7 @@ export function DaybookKpiPage({ variant }: { variant: DaybookVariant }) {
   const savedProductSales = useDaybookProductSales(variant);
   const savedSupplierAdvances = useDaybookSupplierAdvances(variant);
   const [lastUpdated, setLastUpdated] = useState(() => new Date());
+  const [billDialogOpen, setBillDialogOpen] = useState(false);
   const [expenseDialogOpen, setExpenseDialogOpen] = useState(false);
   const [fixedAssetDialogOpen, setFixedAssetDialogOpen] = useState(false);
   const [loanDialogOpen, setLoanDialogOpen] = useState(false);
@@ -501,6 +503,10 @@ export function DaybookKpiPage({ variant }: { variant: DaybookVariant }) {
   const savedExpenseTotal = useMemo(
     () => savedExpenses.reduce((sum, expense) => sum + expense.total, 0),
     [savedExpenses],
+  );
+  const savedBillTotal = useMemo(
+    () => getDaybookBillTotal(savedBills),
+    [savedBills],
   );
   const savedFixedAssetTotal = useMemo(
     () =>
