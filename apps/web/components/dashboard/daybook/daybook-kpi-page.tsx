@@ -28,6 +28,7 @@ import type { ReactNode } from "react";
 import { useMemo, useState } from "react";
 import { DaybookBillDialog } from "@/components/dashboard/daybook/daybook-bill-dialog";
 import { getDaybookBillTotal } from "@/components/dashboard/daybook/daybook-bill-ledger";
+import { DaybookCustomerAdvanceDialog } from "@/components/dashboard/daybook/daybook-customer-advance-dialog";
 import { DaybookExpenseDialog } from "@/components/dashboard/daybook/daybook-expense-dialog";
 import { DaybookFixedAssetDialog } from "@/components/dashboard/daybook/daybook-fixed-asset-dialog";
 import { DaybookLoanDialog } from "@/components/dashboard/daybook/daybook-loan-dialog";
@@ -35,6 +36,7 @@ import { DaybookProductPurchaseDialog } from "@/components/dashboard/daybook/day
 import { DaybookProductSaleDialog } from "@/components/dashboard/daybook/daybook-product-sale-dialog";
 import { DaybookSupplierAdvanceDialog } from "@/components/dashboard/daybook/daybook-supplier-advance-dialog";
 import { useDaybookBills } from "@/components/dashboard/daybook/use-daybook-bills";
+import { useDaybookCustomerAdvances } from "@/components/dashboard/daybook/use-daybook-customer-advances";
 import { useDaybookExpenses } from "@/components/dashboard/daybook/use-daybook-expenses";
 import { useDaybookFixedAssetPurchases } from "@/components/dashboard/daybook/use-daybook-fixed-assets";
 import { useDaybookLoans } from "@/components/dashboard/daybook/use-daybook-loans";
@@ -80,6 +82,7 @@ type ActionItem = {
     | "fixedAsset"
     | "loan"
     | "bill"
+    | "customerAdvance"
     | "productPurchase"
     | "productSale"
     | "supplierAdvance";
@@ -245,6 +248,11 @@ const daybookConfigs: Record<DaybookVariant, DaybookConfig> = {
         href: "/dashboard/finance/receivable",
         icon: <BanknoteIcon className="size-4" />,
         label: "Collect",
+      },
+      {
+        icon: <UsersIcon className="size-4" />,
+        kind: "customerAdvance",
+        label: "Customer Advance",
       },
       {
         icon: <TrendingDownIcon className="size-4" />,
@@ -416,6 +424,11 @@ const daybookConfigs: Record<DaybookVariant, DaybookConfig> = {
         label: "Collect",
       },
       {
+        icon: <UsersIcon className="size-4" />,
+        kind: "customerAdvance",
+        label: "Customer Advance",
+      },
+      {
         icon: <TrendingDownIcon className="size-4" />,
         kind: "expense",
         label: "Expense",
@@ -494,6 +507,7 @@ const daybookConfigs: Record<DaybookVariant, DaybookConfig> = {
 export function DaybookKpiPage({ variant }: { variant: DaybookVariant }) {
   const config = daybookConfigs[variant];
   const savedBills = useDaybookBills(variant);
+  const savedCustomerAdvances = useDaybookCustomerAdvances(variant);
   const savedExpenses = useDaybookExpenses(variant);
   const savedFixedAssetPurchases = useDaybookFixedAssetPurchases(variant);
   const savedLoans = useDaybookLoans(variant);
@@ -502,6 +516,8 @@ export function DaybookKpiPage({ variant }: { variant: DaybookVariant }) {
   const savedSupplierAdvances = useDaybookSupplierAdvances(variant);
   const [lastUpdated, setLastUpdated] = useState(() => new Date());
   const [billDialogOpen, setBillDialogOpen] = useState(false);
+  const [customerAdvanceDialogOpen, setCustomerAdvanceDialogOpen] =
+    useState(false);
   const [expenseDialogOpen, setExpenseDialogOpen] = useState(false);
   const [fixedAssetDialogOpen, setFixedAssetDialogOpen] = useState(false);
   const [loanDialogOpen, setLoanDialogOpen] = useState(false);
@@ -554,6 +570,11 @@ export function DaybookKpiPage({ variant }: { variant: DaybookVariant }) {
       savedSupplierAdvances.reduce((sum, advance) => sum + advance.amount, 0),
     [savedSupplierAdvances],
   );
+  const savedCustomerAdvanceTotal = useMemo(
+    () =>
+      savedCustomerAdvances.reduce((sum, advance) => sum + advance.amount, 0),
+    [savedCustomerAdvances],
+  );
   const adjustedSystemCash =
     config.systemCash -
     savedExpenseTotal -
@@ -561,6 +582,7 @@ export function DaybookKpiPage({ variant }: { variant: DaybookVariant }) {
     savedLoanTotal -
     savedProductPurchaseCashTotal -
     savedSupplierAdvanceTotal +
+    savedCustomerAdvanceTotal +
     savedProductSaleCashTotal;
   const overviewMetrics = useMemo(
     () =>
@@ -596,6 +618,13 @@ export function DaybookKpiPage({ variant }: { variant: DaybookVariant }) {
         };
       }
 
+      if (line.label === "Collection") {
+        return {
+          ...line,
+          value: money(moneyToNumber(line.value) + savedCustomerAdvanceTotal),
+        };
+      }
+
       return line;
     });
 
@@ -605,6 +634,7 @@ export function DaybookKpiPage({ variant }: { variant: DaybookVariant }) {
     ];
   }, [
     config.closeSummary,
+    savedCustomerAdvanceTotal,
     savedBillTotal,
     savedExpenseTotal,
     savedProductSaleTotal,
@@ -623,9 +653,9 @@ export function DaybookKpiPage({ variant }: { variant: DaybookVariant }) {
             .filter(Boolean)
             .join(" - ") || bill.partyName,
         time: timeLabel(new Date(bill.createdAt)),
-        type:
-          bill.partyType === "supplier" ? "Supplier Bill" : "Customer Bill",
+        type: bill.partyType === "supplier" ? "Supplier Bill" : "Customer Bill",
       }));
+
     const expenseTransactions = savedExpenses
       .toSorted(
         (first, second) =>
@@ -699,6 +729,22 @@ export function DaybookKpiPage({ variant }: { variant: DaybookVariant }) {
         type: "Supplier Advance Payment",
       }));
 
+    const customerAdvanceTransactions = savedCustomerAdvances
+      .toSorted(
+        (first, second) =>
+          new Date(second.createdAt).getTime() -
+          new Date(first.createdAt).getTime(),
+      )
+      .map((advance) => ({
+        amount: money(advance.amount),
+        reference:
+          [advance.customer, advance.referenceNo || advance.customerId]
+            .filter(Boolean)
+            .join(" - ") || advance.depositAccountName,
+        time: timeLabel(new Date(advance.createdAt)),
+        type: "Customer Advance Payment",
+      }));
+
     const productSaleTransactions = savedProductSales
       .toSorted(
         (first, second) =>
@@ -743,7 +789,9 @@ export function DaybookKpiPage({ variant }: { variant: DaybookVariant }) {
       }));
 
     return [
+      ...billTransactions,
       ...productSaleTransactions,
+      ...customerAdvanceTransactions,
       ...supplierAdvanceTransactions,
       ...loanTransactions,
       ...productPurchaseTransactions,
@@ -753,6 +801,8 @@ export function DaybookKpiPage({ variant }: { variant: DaybookVariant }) {
     ];
   }, [
     config.transactions,
+    savedBills,
+    savedCustomerAdvances,
     savedExpenses,
     savedFixedAssetPurchases,
     savedLoans,
@@ -866,6 +916,10 @@ export function DaybookKpiPage({ variant }: { variant: DaybookVariant }) {
               <QuickAction
                 action={action}
                 key={action.label}
+                onBillClick={() => setBillDialogOpen(true)}
+                onCustomerAdvanceClick={() =>
+                  setCustomerAdvanceDialogOpen(true)
+                }
                 onFixedAssetClick={() => setFixedAssetDialogOpen(true)}
                 onExpenseClick={() => setExpenseDialogOpen(true)}
                 onLoanClick={() => setLoanDialogOpen(true)}
@@ -1065,6 +1119,16 @@ export function DaybookKpiPage({ variant }: { variant: DaybookVariant }) {
         open={expenseDialogOpen}
         scope={variant}
       />
+      <DaybookBillDialog
+        onOpenChange={setBillDialogOpen}
+        open={billDialogOpen}
+        scope={variant}
+      />
+      <DaybookCustomerAdvanceDialog
+        onOpenChange={setCustomerAdvanceDialogOpen}
+        open={customerAdvanceDialogOpen}
+        scope={variant}
+      />
       <DaybookFixedAssetDialog
         onOpenChange={setFixedAssetDialogOpen}
         open={fixedAssetDialogOpen}
@@ -1184,7 +1248,9 @@ function OverviewCard({ metric }: { metric: Metric }) {
 
 function QuickAction({
   action,
+  onBillClick,
   onFixedAssetClick,
+  onCustomerAdvanceClick,
   onExpenseClick,
   onLoanClick,
   onProductPurchaseClick,
@@ -1192,7 +1258,9 @@ function QuickAction({
   onSupplierAdvanceClick,
 }: {
   action: ActionItem;
+  onBillClick: () => void;
   onFixedAssetClick: () => void;
+  onCustomerAdvanceClick: () => void;
   onExpenseClick: () => void;
   onLoanClick: () => void;
   onProductPurchaseClick: () => void;
@@ -1232,6 +1300,7 @@ function QuickAction({
       </Button>
     );
   }
+
   if (action.kind === "bill") {
     return (
       <Button
@@ -1240,6 +1309,23 @@ function QuickAction({
           !action.primary && "bg-slate-100 text-slate-800 hover:bg-slate-200",
         )}
         onClick={onBillClick}
+        type="button"
+        variant={action.primary ? "default" : "secondary"}
+      >
+        {action.icon}
+        {action.label}
+      </Button>
+    );
+  }
+
+  if (action.kind === "customerAdvance") {
+    return (
+      <Button
+        className={cn(
+          "h-10 justify-start rounded-lg",
+          !action.primary && "bg-slate-100 text-slate-800 hover:bg-slate-200",
+        )}
+        onClick={onCustomerAdvanceClick}
         type="button"
         variant={action.primary ? "default" : "secondary"}
       >
