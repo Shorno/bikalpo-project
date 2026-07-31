@@ -1335,6 +1335,7 @@ export const financeRouter = {
       const ownerType = resolveOwnerScope(context.session.user.role);
 
       await ensureDefaultFinancePaymentAccounts({ ownerId, ownerType });
+      await ensureOwnerCashBankPaymentAccounts({ ownerId, ownerType });
 
       const paymentAccounts = await db.query.financePaymentAccount.findMany({
         where: (table, { and: andFn, eq: eqFn }) =>
@@ -2627,6 +2628,18 @@ export const financeRouter = {
       });
 
       if (existing) {
+        if (isCashAndBankCategory(category)) {
+          await ensureCashBankPaymentAccountForFinanceAccount({
+            accountCode: existing.code,
+            accountId: existing.id,
+            accountName: existing.name,
+            currentBalance: existing.currentBalance,
+            openingBalance: existing.openingBalance,
+            ownerId,
+            ownerType,
+          });
+        }
+
         return {
           account: {
             accountType: input.accountType,
@@ -2656,6 +2669,7 @@ export const financeRouter = {
         categoryCode: category.code,
         categoryName: category.name,
       });
+      const shouldCreatePaymentAccount = isCashAndBankCategory(category);
 
       const [created] = await db
         .insert(financeAccount)
@@ -2667,7 +2681,7 @@ export const financeRouter = {
           currentBalance: String(openingBalance),
           description: input.description?.trim() || null,
           isActive: true,
-          isPaymentAccount: false,
+          isPaymentAccount: shouldCreatePaymentAccount,
           isSystem: false,
           name,
           normalBalance:
@@ -2688,6 +2702,18 @@ export const financeRouter = {
       if (!created) {
         throw new ORPCError("INTERNAL_SERVER_ERROR", {
           message: "Failed to create finance account",
+        });
+      }
+
+      if (shouldCreatePaymentAccount) {
+        await ensureCashBankPaymentAccountForFinanceAccount({
+          accountCode: code,
+          accountId: created.id,
+          accountName: name,
+          currentBalance: openingBalance,
+          openingBalance,
+          ownerId,
+          ownerType,
         });
       }
 
