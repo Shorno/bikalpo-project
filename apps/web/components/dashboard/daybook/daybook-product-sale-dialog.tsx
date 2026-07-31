@@ -17,6 +17,7 @@ import {
   createDaybookProductSaleId,
   type DaybookProductSaleItem,
   type DaybookProductSalePaymentType,
+  markDaybookProductSaleSynced,
 } from "@/components/dashboard/daybook/daybook-product-sale-ledger";
 import { Button } from "@/components/ui/button";
 import {
@@ -145,11 +146,6 @@ export function DaybookProductSaleDialog({
     () => items.reduce((sum, item) => sum + toAmount(item.saleAmount), 0),
     [items],
   );
-  const totalCost = useMemo(
-    () => items.reduce((sum, item) => sum + toAmount(item.productCost), 0),
-    [items],
-  );
-  const grossProfit = totalSales - totalCost;
   const isDueSale = salePaymentType === "due";
 
   useEffect(() => {
@@ -322,34 +318,43 @@ export function DaybookProductSaleDialog({
       totalCost: nextTotalCost,
       totalSales: nextTotalSales,
     };
+    const mutationInput = {
+      customer: customer.trim() || undefined,
+      items: saleItems.map((item) => ({
+        description: item.description,
+        productCost: item.productCost,
+        productName: item.productName,
+        saleAmount: item.saleAmount,
+      })),
+      notes: notes.trim() || undefined,
+      paymentAccountId: isDueSale ? undefined : selectedPaymentAccount?.id,
+      paymentMethod: isDueSale ? undefined : selectedPaymentMethod,
+      paymentType: salePaymentType,
+      referenceNo: referenceNo.trim() || undefined,
+      saleDate,
+      saleNo: saleNo.trim() || undefined,
+    };
+
+    if (closeAfterSave) {
+      addDaybookProductSale({ ...localSale, isSynced: false });
+      setMessage(null);
+      resetForm();
+      onOpenChange(false);
+
+      void createSaleMutation
+        .mutateAsync(mutationInput)
+        .then(() => {
+          markDaybookProductSaleSynced(localSale.id);
+          void invalidateQueries();
+        })
+        .catch(() => undefined);
+      return;
+    }
 
     try {
-      const result = await createSaleMutation.mutateAsync({
-        customer: customer.trim() || undefined,
-        items: saleItems.map((item) => ({
-          description: item.description,
-          productCost: item.productCost,
-          productName: item.productName,
-          saleAmount: item.saleAmount,
-        })),
-        notes: notes.trim() || undefined,
-        paymentAccountId: isDueSale ? undefined : selectedPaymentAccount?.id,
-        paymentMethod: isDueSale ? undefined : selectedPaymentMethod,
-        paymentType: salePaymentType,
-        referenceNo: referenceNo.trim() || undefined,
-        saleDate,
-        saleNo: saleNo.trim() || undefined,
-      });
+      const result = await createSaleMutation.mutateAsync(mutationInput);
 
       addDaybookProductSale({ ...localSale, isSynced: true });
-
-      if (closeAfterSave) {
-        setMessage(null);
-        resetForm();
-        onOpenChange(false);
-        void invalidateQueries();
-        return;
-      }
 
       await invalidateQueries();
       resetForm();
@@ -388,10 +393,11 @@ export function DaybookProductSaleDialog({
 
         <div className="px-5 py-6">
           <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_300px]">
-            <div className="grid gap-5 md:grid-cols-[minmax(200px,1fr)_minmax(180px,220px)_minmax(240px,1fr)]">
+            <div className="grid gap-5 md:grid-cols-3">
               <div className="grid gap-2">
                 <Label htmlFor="product-sale-customer">Customer</Label>
                 <Input
+                  className="h-10"
                   id="product-sale-customer"
                   onChange={(event) => setCustomer(event.target.value)}
                   placeholder="XYZ Customer"
@@ -408,7 +414,7 @@ export function DaybookProductSaleDialog({
                   value={salePaymentType}
                 >
                   <SelectTrigger
-                    className="w-full bg-white"
+                    className="!h-10 min-h-10 w-full bg-white"
                     id="product-sale-payment-type"
                   >
                     <SelectValue />
@@ -427,10 +433,10 @@ export function DaybookProductSaleDialog({
                 <Label htmlFor="product-sale-payment-account">
                   Payment account
                 </Label>
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                <div className="grid gap-1">
                   {isDueSale ? (
                     <Input
-                      className="border-amber-300 bg-white"
+                      className="h-10 w-full border-amber-300 bg-white"
                       disabled
                       id="product-sale-payment-account"
                       value="Accounts Receivable"
@@ -441,7 +447,7 @@ export function DaybookProductSaleDialog({
                       value={paymentAccountId}
                     >
                       <SelectTrigger
-                        className="w-full border-emerald-500 bg-white"
+                        className="!h-10 min-h-10 w-full border-emerald-500 bg-white"
                         id="product-sale-payment-account"
                       >
                         <SelectValue />
@@ -455,7 +461,7 @@ export function DaybookProductSaleDialog({
                       </SelectContent>
                     </Select>
                   )}
-                  <span className="whitespace-nowrap font-medium text-slate-600 text-sm">
+                  <span className="font-medium text-slate-600 text-sm">
                     {isDueSale
                       ? "Customer due"
                       : `Balance ${money(selectedPaymentAccount?.balance ?? 0)}`}
@@ -471,33 +477,15 @@ export function DaybookProductSaleDialog({
               <div className="mt-2 font-bold text-4xl text-slate-900 tabular-nums">
                 {money(totalSales)}
               </div>
-              <p className="mt-2 text-slate-500 text-sm">
-                {isDueSale ? "A/R + Product Sales" : "Cash + Product Sales"}
-              </p>
-              <div className="mt-4 grid gap-2 border-slate-200 border-t pt-4 text-sm">
-                <ImpactLine label="Product Sales" value={money(totalSales)} />
-                <ImpactLine label="COGS" value={money(totalCost)} />
-                <ImpactLine
-                  label="Gross Profit"
-                  value={money(grossProfit)}
-                  valueClassName={
-                    grossProfit >= 0 ? "text-emerald-700" : "text-red-700"
-                  }
-                />
-                <ImpactLine
-                  label={isDueSale ? "Accounts Receivable" : "Cash & Bank"}
-                  value={money(totalSales)}
-                />
-                <ImpactLine label="Inventory" value={`-${money(totalCost)}`} />
-              </div>
             </div>
           </div>
 
-          <div className="mt-6 grid gap-5 md:grid-cols-2 xl:grid-cols-[minmax(180px,220px)_minmax(180px,240px)_minmax(180px,240px)_minmax(180px,240px)]">
+          <div className="mt-6 grid gap-5 md:grid-cols-2 xl:grid-cols-4">
             <div className="grid gap-2">
               <Label htmlFor="product-sale-date">Sale Date</Label>
               <div className="relative">
                 <Input
+                  className="h-10"
                   id="product-sale-date"
                   onChange={(event) => setSaleDate(event.target.value)}
                   type="date"
@@ -512,7 +500,12 @@ export function DaybookProductSaleDialog({
                 Payment Method
               </Label>
               {isDueSale ? (
-                <Input disabled id="product-sale-payment-method" value="Due" />
+                <Input
+                  className="h-10"
+                  disabled
+                  id="product-sale-payment-method"
+                  value="Due"
+                />
               ) : (
                 <Select
                   onValueChange={(value) =>
@@ -521,7 +514,7 @@ export function DaybookProductSaleDialog({
                   value={paymentMethod}
                 >
                   <SelectTrigger
-                    className="w-full bg-white"
+                    className="!h-10 min-h-10 w-full bg-white"
                     id="product-sale-payment-method"
                   >
                     <SelectValue />
@@ -540,6 +533,7 @@ export function DaybookProductSaleDialog({
             <div className="grid gap-2">
               <Label htmlFor="product-sale-reference">Ref no.</Label>
               <Input
+                className="h-10"
                 id="product-sale-reference"
                 onChange={(event) => setReferenceNo(event.target.value)}
                 placeholder="REF-001"
@@ -550,6 +544,7 @@ export function DaybookProductSaleDialog({
             <div className="grid gap-2">
               <Label htmlFor="product-sale-no">Sale no.</Label>
               <Input
+                className="h-10"
                 id="product-sale-no"
                 onChange={(event) => setSaleNo(event.target.value)}
                 placeholder="SALE-2026-001"
@@ -559,7 +554,7 @@ export function DaybookProductSaleDialog({
           </div>
 
           <div className="mt-8 overflow-hidden rounded-lg border border-slate-200 bg-white">
-            <div className="grid grid-cols-[52px_minmax(190px,1fr)_minmax(180px,1fr)_minmax(150px,0.7fr)_minmax(150px,0.7fr)_52px] border-slate-200 border-b bg-slate-50 px-4 py-3 font-semibold text-slate-700 text-xs uppercase">
+            <div className="grid grid-cols-[52px_repeat(4,minmax(0,1fr))_52px] border-slate-200 border-b bg-slate-50 px-4 py-3 font-semibold text-slate-700 text-xs uppercase">
               <div>#</div>
               <div>Product Name</div>
               <div>Description</div>
@@ -570,12 +565,12 @@ export function DaybookProductSaleDialog({
             <div>
               {items.map((item, index) => (
                 <div
-                  className="grid grid-cols-[52px_minmax(190px,1fr)_minmax(180px,1fr)_minmax(150px,0.7fr)_minmax(150px,0.7fr)_52px] items-center border-slate-200 border-b px-4 py-3 last:border-b-0"
+                  className="grid grid-cols-[52px_repeat(4,minmax(0,1fr))_52px] items-center gap-2 border-slate-200 border-b px-4 py-3 last:border-b-0"
                   key={item.id}
                 >
                   <div className="font-medium text-slate-500">{index + 1}</div>
                   <Input
-                    className="h-9"
+                    className="h-10 w-full"
                     onChange={(event) =>
                       updateItem(item.id, "productName", event.target.value)
                     }
@@ -583,7 +578,7 @@ export function DaybookProductSaleDialog({
                     value={item.productName}
                   />
                   <Input
-                    className="h-9"
+                    className="h-10 w-full"
                     onChange={(event) =>
                       updateItem(item.id, "description", event.target.value)
                     }
@@ -591,7 +586,7 @@ export function DaybookProductSaleDialog({
                     value={item.description}
                   />
                   <Input
-                    className="h-9 text-right tabular-nums"
+                    className="h-10 w-full text-right tabular-nums"
                     inputMode="decimal"
                     onChange={(event) =>
                       updateItem(item.id, "saleAmount", event.target.value)
@@ -600,7 +595,7 @@ export function DaybookProductSaleDialog({
                     value={item.saleAmount}
                   />
                   <Input
-                    className="h-9 text-right tabular-nums"
+                    className="h-10 w-full text-right tabular-nums"
                     inputMode="decimal"
                     onChange={(event) =>
                       updateItem(item.id, "productCost", event.target.value)
@@ -711,24 +706,5 @@ export function DaybookProductSaleDialog({
         </div>
       </DialogContent>
     </Dialog>
-  );
-}
-
-function ImpactLine({
-  label,
-  value,
-  valueClassName,
-}: {
-  label: string;
-  value: string;
-  valueClassName?: string;
-}) {
-  return (
-    <div className="flex items-center justify-between gap-3">
-      <span className="text-slate-500">{label}</span>
-      <span className={`font-semibold tabular-nums ${valueClassName ?? ""}`}>
-        {value}
-      </span>
-    </div>
   );
 }

@@ -106,6 +106,14 @@ export function addDaybookProductSale(sale: DaybookProductSaleEntry) {
   saveDaybookProductSales([...loadDaybookProductSales(), normalizeSale(sale)]);
 }
 
+export function markDaybookProductSaleSynced(id: string) {
+  saveDaybookProductSales(
+    loadDaybookProductSales().map((sale) =>
+      sale.id === id ? normalizeSale({ ...sale, isSynced: true }) : sale,
+    ),
+  );
+}
+
 export function createDaybookProductSaleId(prefix: string) {
   return createDaybookExpenseId(prefix);
 }
