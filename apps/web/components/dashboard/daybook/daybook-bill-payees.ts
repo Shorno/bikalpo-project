@@ -136,3 +136,46 @@ export function buildDaybookBillPayeeOptions(input: {
 
   return Array.from(options.values());
 }
+
+export function filterDaybookBillPayees(
+  options: DaybookBillPayeeOption[],
+  searchTerm: string,
+) {
+  const query = normalizeName(searchTerm);
+
+  return options
+    .map((option) => {
+      const name = normalizeName(option.name);
+      const startsWithQuery = query.length === 0 || name.startsWith(query);
+      const includesQuery = query.length === 0 || name.includes(query);
+
+      if (!includesQuery) {
+        return null;
+      }
+
+      return {
+        option,
+        rank: startsWithQuery ? 0 : 1,
+      };
+    })
+    .filter(
+      (item): item is { option: DaybookBillPayeeOption; rank: number } =>
+        item !== null,
+    )
+    .toSorted((first, second) => {
+      if (first.rank !== second.rank) {
+        return first.rank - second.rank;
+      }
+
+      if (
+        first.option.previousBillAmount !== second.option.previousBillAmount
+      ) {
+        return (
+          second.option.previousBillAmount - first.option.previousBillAmount
+        );
+      }
+
+      return first.option.name.localeCompare(second.option.name);
+    })
+    .map((item) => item.option);
+}
