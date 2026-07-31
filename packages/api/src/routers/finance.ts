@@ -272,6 +272,28 @@ async function generateUniquePaymentAccountCode(
   }
 }
 
+function isCashAndBankCategory(input: {
+  accountType: AccountingAccountType;
+  code: string;
+  name: string;
+}) {
+  return (
+    input.accountType === "asset" &&
+    (input.code === "asset-cash-bank" ||
+      input.name.trim().toLowerCase() === "cash and bank")
+  );
+}
+
+function resolveCashBankPaymentAccountType(name: string) {
+  const normalizedName = name.toLowerCase();
+
+  if (normalizedName.includes("cash") || normalizedName.includes("hand")) {
+    return "cash";
+  }
+
+  return "bank";
+}
+
 async function getNextExpenseNumberPrefix(ownerId: string) {
   const prefix = `EXP-${localDateStamp()}-`;
   const [result] = await db
