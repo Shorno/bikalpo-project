@@ -87,6 +87,36 @@ export function addDaybookBill(bill: DaybookBillEntry) {
   saveDaybookBills([...loadDaybookBills(), normalizeBill(bill)]);
 }
 
+export function normalizeBillPartyName(name: string) {
+  return name.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+export function getDaybookBillPartyBalance(
+  bills: DaybookBillEntry[],
+  input: {
+    partyName: string;
+    partyType: DaybookBillPartyType;
+  },
+) {
+  const partyName = normalizeBillPartyName(input.partyName);
+
+  if (!partyName) {
+    return 0;
+  }
+
+  return bills
+    .filter(
+      (bill) =>
+        bill.partyType === input.partyType &&
+        normalizeBillPartyName(bill.partyName) === partyName,
+    )
+    .reduce((sum, bill) => sum + bill.total, 0);
+}
+
+export function getDaybookBillTotal(bills: DaybookBillEntry[]) {
+  return bills.reduce((sum, bill) => sum + bill.total, 0);
+}
+
 export function createDaybookBillId(prefix: string) {
   return createDaybookExpenseId(prefix);
 }
