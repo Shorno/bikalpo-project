@@ -333,10 +333,11 @@ export function DaybookExpenseDialog({
 
         <div className="px-5 py-6">
           <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_280px]">
-            <div className="grid gap-5 md:grid-cols-[minmax(220px,360px)_minmax(260px,1fr)]">
+            <div className="grid gap-5 md:grid-cols-2">
               <div className="grid gap-2">
                 <Label htmlFor="daybook-expense-payee">Payee</Label>
                 <Input
+                  className="h-10"
                   id="daybook-expense-payee"
                   onChange={(event) => setPayee(event.target.value)}
                   placeholder="Who did you pay?"
@@ -348,13 +349,13 @@ export function DaybookExpenseDialog({
                 <Label htmlFor="daybook-expense-payment-account">
                   Payment account
                 </Label>
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                <div className="grid gap-1">
                   <Select
                     onValueChange={setPaymentAccountId}
                     value={paymentAccountId}
                   >
                     <SelectTrigger
-                      className="w-full border-emerald-500 bg-white"
+                      className="!h-10 min-h-10 w-full border-emerald-500 bg-white"
                       id="daybook-expense-payment-account"
                     >
                       <SelectValue />
@@ -367,7 +368,7 @@ export function DaybookExpenseDialog({
                       ))}
                     </SelectContent>
                   </Select>
-                  <span className="whitespace-nowrap font-medium text-slate-600 text-sm">
+                  <span className="font-medium text-slate-600 text-sm">
                     Balance {money(selectedPaymentAccount?.balance ?? 0)}
                   </span>
                 </div>
@@ -384,11 +385,12 @@ export function DaybookExpenseDialog({
             </div>
           </div>
 
-          <div className="mt-6 grid gap-5 md:grid-cols-[minmax(180px,220px)_minmax(180px,260px)_minmax(180px,260px)]">
+          <div className="mt-6 grid gap-5 md:grid-cols-3">
             <div className="grid gap-2">
               <Label htmlFor="daybook-expense-payment-date">Payment Date</Label>
               <div className="relative">
                 <Input
+                  className="h-10"
                   id="daybook-expense-payment-date"
                   onChange={(event) => setPaymentDate(event.target.value)}
                   type="date"
@@ -404,7 +406,7 @@ export function DaybookExpenseDialog({
               </Label>
               <Select onValueChange={setPaymentMethod} value={paymentMethod}>
                 <SelectTrigger
-                  className="w-full bg-white"
+                  className="!h-10 min-h-10 w-full bg-white"
                   id="daybook-expense-payment-method"
                 >
                   <SelectValue />
@@ -422,6 +424,7 @@ export function DaybookExpenseDialog({
             <div className="grid gap-2">
               <Label htmlFor="daybook-expense-reference">Ref no.</Label>
               <Input
+                className="h-10"
                 id="daybook-expense-reference"
                 onChange={(event) => setReferenceNo(event.target.value)}
                 placeholder="Reference"
@@ -431,7 +434,7 @@ export function DaybookExpenseDialog({
           </div>
 
           <div className="mt-8 overflow-hidden rounded-lg border border-slate-200 bg-white">
-            <div className="grid grid-cols-[56px_minmax(180px,0.9fr)_minmax(260px,1.4fr)_minmax(140px,0.45fr)_56px] border-slate-200 border-b bg-slate-50 px-4 py-3 font-semibold text-slate-700 text-xs uppercase">
+            <div className="grid grid-cols-[56px_repeat(3,minmax(0,1fr))_56px] border-slate-200 border-b bg-slate-50 px-4 py-3 font-semibold text-slate-700 text-xs uppercase">
               <div>#</div>
               <div>Category</div>
               <div>Description</div>
@@ -441,7 +444,7 @@ export function DaybookExpenseDialog({
             <div>
               {lines.map((line, index) => (
                 <div
-                  className="grid grid-cols-[56px_minmax(180px,0.9fr)_minmax(260px,1.4fr)_minmax(140px,0.45fr)_56px] items-center border-slate-200 border-b px-4 py-3 last:border-b-0"
+                  className="grid grid-cols-[56px_repeat(3,minmax(0,1fr))_56px] items-center gap-2 border-slate-200 border-b px-4 py-3 last:border-b-0"
                   key={line.id}
                 >
                   <div className="font-medium text-slate-500">{index + 1}</div>
@@ -451,7 +454,7 @@ export function DaybookExpenseDialog({
                     }
                     value={line.category}
                   >
-                    <SelectTrigger className="h-9 w-full bg-white">
+                    <SelectTrigger className="!h-10 min-h-10 w-full bg-white">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -463,7 +466,7 @@ export function DaybookExpenseDialog({
                     </SelectContent>
                   </Select>
                   <Input
-                    className="h-9 rounded-none border-x-0 border-y-0 bg-transparent focus-visible:ring-0"
+                    className="h-10 w-full"
                     onChange={(event) =>
                       updateLine(line.id, "description", event.target.value)
                     }
@@ -471,7 +474,7 @@ export function DaybookExpenseDialog({
                     value={line.description}
                   />
                   <Input
-                    className="h-9 text-right tabular-nums"
+                    className="h-10 w-full text-right tabular-nums"
                     inputMode="decimal"
                     onChange={(event) =>
                       updateLine(line.id, "amount", event.target.value)
