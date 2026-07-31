@@ -96,6 +96,16 @@ export function addDaybookFixedAssetPurchase(
   ]);
 }
 
+export function markDaybookFixedAssetPurchaseSynced(id: string) {
+  saveDaybookFixedAssetPurchases(
+    loadDaybookFixedAssetPurchases().map((purchase) =>
+      purchase.id === id
+        ? normalizePurchase({ ...purchase, isSynced: true })
+        : purchase,
+    ),
+  );
+}
+
 export function createDaybookFixedAssetId(prefix: string) {
   return createDaybookExpenseId(prefix);
 }

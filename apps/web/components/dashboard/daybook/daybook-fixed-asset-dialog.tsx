@@ -16,6 +16,7 @@ import {
   addDaybookFixedAssetPurchase,
   createDaybookFixedAssetId,
   type DaybookFixedAssetLine,
+  markDaybookFixedAssetPurchaseSynced,
 } from "@/components/dashboard/daybook/daybook-fixed-asset-ledger";
 import { Button } from "@/components/ui/button";
 import {
@@ -312,33 +313,42 @@ export function DaybookFixedAssetDialog({
       supplier: supplier.trim() || "Vendor",
       total: nextTotal,
     };
+    const mutationInput = {
+      billNo: billNo.trim() || undefined,
+      lines: purchaseLines.map((line) => ({
+        accountId: line.accountId || undefined,
+        accountName: line.accountName,
+        price: line.amount,
+        productName: line.productName,
+      })),
+      notes: notes.trim() || undefined,
+      paymentAccountId: selectedPaymentAccount.id,
+      paymentDate,
+      paymentMethod: selectedPaymentMethod,
+      referenceNo: referenceNo.trim() || undefined,
+      supplier: supplier.trim() || undefined,
+    };
+
+    if (closeAfterSave) {
+      addDaybookFixedAssetPurchase({ ...localPurchase, isSynced: false });
+      setMessage(null);
+      resetForm();
+      onOpenChange(false);
+
+      void createPurchaseMutation
+        .mutateAsync(mutationInput)
+        .then(() => {
+          markDaybookFixedAssetPurchaseSynced(localPurchase.id);
+          void invalidateQueries();
+        })
+        .catch(() => undefined);
+      return;
+    }
 
     try {
-      const result = await createPurchaseMutation.mutateAsync({
-        billNo: billNo.trim() || undefined,
-        lines: purchaseLines.map((line) => ({
-          accountId: line.accountId || undefined,
-          accountName: line.accountName,
-          price: line.amount,
-          productName: line.productName,
-        })),
-        notes: notes.trim() || undefined,
-        paymentAccountId: selectedPaymentAccount.id,
-        paymentDate,
-        paymentMethod: selectedPaymentMethod,
-        referenceNo: referenceNo.trim() || undefined,
-        supplier: supplier.trim() || undefined,
-      });
+      const result = await createPurchaseMutation.mutateAsync(mutationInput);
 
       addDaybookFixedAssetPurchase({ ...localPurchase, isSynced: true });
-
-      if (closeAfterSave) {
-        setMessage(null);
-        resetForm();
-        onOpenChange(false);
-        void invalidateQueries();
-        return;
-      }
 
       await invalidateQueries();
       resetForm();
@@ -377,10 +387,11 @@ export function DaybookFixedAssetDialog({
 
         <div className="px-5 py-6">
           <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_280px]">
-            <div className="grid gap-5 md:grid-cols-[minmax(220px,360px)_minmax(260px,1fr)]">
+            <div className="grid gap-5 md:grid-cols-2">
               <div className="grid gap-2">
                 <Label htmlFor="fixed-asset-supplier">Supplier</Label>
                 <Input
+                  className="h-10"
                   id="fixed-asset-supplier"
                   onChange={(event) => setSupplier(event.target.value)}
                   placeholder="ABC Furniture"
@@ -392,13 +403,13 @@ export function DaybookFixedAssetDialog({
                 <Label htmlFor="fixed-asset-payment-account">
                   Payment account
                 </Label>
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                <div className="grid gap-1">
                   <Select
                     onValueChange={setPaymentAccountId}
                     value={paymentAccountId}
                   >
                     <SelectTrigger
-                      className="w-full border-emerald-500 bg-white"
+                      className="!h-10 min-h-10 w-full border-emerald-500 bg-white"
                       id="fixed-asset-payment-account"
                     >
                       <SelectValue />
@@ -411,7 +422,7 @@ export function DaybookFixedAssetDialog({
                       ))}
                     </SelectContent>
                   </Select>
-                  <span className="whitespace-nowrap font-medium text-slate-600 text-sm">
+                  <span className="font-medium text-slate-600 text-sm">
                     Balance {money(selectedPaymentAccount?.balance ?? 0)}
                   </span>
                 </div>
@@ -425,33 +436,15 @@ export function DaybookFixedAssetDialog({
               <div className="mt-2 font-bold text-4xl text-slate-900 tabular-nums">
                 {money(total)}
               </div>
-              <p className="mt-2 text-slate-500 text-sm">Paid from cash/bank</p>
-              <div className="mt-4 grid gap-2 border-slate-200 border-t pt-4 text-sm">
-                <div className="flex items-center justify-between gap-3">
-                  <span className="text-slate-500">Subtotal</span>
-                  <span className="font-semibold tabular-nums">
-                    {money(total)}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between gap-3">
-                  <span className="text-slate-500">Total Paid</span>
-                  <span className="font-semibold tabular-nums">
-                    {money(total)}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between gap-3">
-                  <span className="text-slate-500">Amount Due</span>
-                  <span className="font-semibold tabular-nums">{money(0)}</span>
-                </div>
-              </div>
             </div>
           </div>
 
-          <div className="mt-6 grid gap-5 md:grid-cols-2 xl:grid-cols-[minmax(180px,220px)_minmax(180px,240px)_minmax(180px,240px)_minmax(180px,240px)]">
+          <div className="mt-6 grid gap-5 md:grid-cols-2 xl:grid-cols-4">
             <div className="grid gap-2">
               <Label htmlFor="fixed-asset-payment-date">Payment Date</Label>
               <div className="relative">
                 <Input
+                  className="h-10"
                   id="fixed-asset-payment-date"
                   onChange={(event) => setPaymentDate(event.target.value)}
                   type="date"
@@ -470,7 +463,7 @@ export function DaybookFixedAssetDialog({
                 value={paymentMethod}
               >
                 <SelectTrigger
-                  className="w-full bg-white"
+                  className="!h-10 min-h-10 w-full bg-white"
                   id="fixed-asset-payment-method"
                 >
                   <SelectValue />
@@ -488,6 +481,7 @@ export function DaybookFixedAssetDialog({
             <div className="grid gap-2">
               <Label htmlFor="fixed-asset-reference">Ref no.</Label>
               <Input
+                className="h-10"
                 id="fixed-asset-reference"
                 onChange={(event) => setReferenceNo(event.target.value)}
                 placeholder="REF-001"
@@ -498,6 +492,7 @@ export function DaybookFixedAssetDialog({
             <div className="grid gap-2">
               <Label htmlFor="fixed-asset-bill-no">Bill no.</Label>
               <Input
+                className="h-10"
                 id="fixed-asset-bill-no"
                 onChange={(event) => setBillNo(event.target.value)}
                 placeholder="INV-2026-001"
@@ -512,7 +507,7 @@ export function DaybookFixedAssetDialog({
                 <option key={account.id} value={account.name} />
               ))}
             </datalist>
-            <div className="grid grid-cols-[56px_minmax(180px,0.9fr)_minmax(240px,1.2fr)_minmax(180px,1fr)_56px] border-slate-200 border-b bg-slate-50 px-4 py-3 font-semibold text-slate-700 text-xs uppercase">
+            <div className="grid grid-cols-[56px_repeat(3,minmax(0,1fr))_56px] border-slate-200 border-b bg-slate-50 px-4 py-3 font-semibold text-slate-700 text-xs uppercase">
               <div>#</div>
               <div>Account Name</div>
               <div>Product Name</div>
@@ -522,12 +517,12 @@ export function DaybookFixedAssetDialog({
             <div>
               {lines.map((line, index) => (
                 <div
-                  className="grid grid-cols-[56px_minmax(180px,0.9fr)_minmax(240px,1.2fr)_minmax(180px,1fr)_56px] items-center border-slate-200 border-b px-4 py-3 last:border-b-0"
+                  className="grid grid-cols-[56px_repeat(3,minmax(0,1fr))_56px] items-center gap-2 border-slate-200 border-b px-4 py-3 last:border-b-0"
                   key={line.id}
                 >
                   <div className="font-medium text-slate-500">{index + 1}</div>
                   <Input
-                    className="h-9"
+                    className="h-10 w-full"
                     onChange={(event) =>
                       updateAccountName(line.id, event.target.value)
                     }
@@ -536,7 +531,7 @@ export function DaybookFixedAssetDialog({
                     value={line.accountName}
                   />
                   <Input
-                    className="h-9"
+                    className="h-10 w-full"
                     onChange={(event) =>
                       updateLine(line.id, "productName", event.target.value)
                     }
@@ -544,7 +539,7 @@ export function DaybookFixedAssetDialog({
                     value={line.productName}
                   />
                   <Input
-                    className="h-9 text-right tabular-nums"
+                    className="h-10 w-full text-right tabular-nums"
                     inputMode="decimal"
                     onChange={(event) =>
                       updateLine(line.id, "amount", event.target.value)
