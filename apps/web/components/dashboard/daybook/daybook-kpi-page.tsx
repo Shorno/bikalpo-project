@@ -32,11 +32,13 @@ import { DaybookLoanDialog } from "@/components/dashboard/daybook/daybook-loan-d
 import { DaybookProductPurchaseDialog } from "@/components/dashboard/daybook/daybook-product-purchase-dialog";
 import { DaybookProductSaleDialog } from "@/components/dashboard/daybook/daybook-product-sale-dialog";
 import { DaybookSupplierAdvanceDialog } from "@/components/dashboard/daybook/daybook-supplier-advance-dialog";
+import { getDaybookBillTotal } from "@/components/dashboard/daybook/daybook-bill-ledger";
 import { useDaybookExpenses } from "@/components/dashboard/daybook/use-daybook-expenses";
 import { useDaybookFixedAssetPurchases } from "@/components/dashboard/daybook/use-daybook-fixed-assets";
 import { useDaybookLoans } from "@/components/dashboard/daybook/use-daybook-loans";
 import { useDaybookProductPurchases } from "@/components/dashboard/daybook/use-daybook-product-purchases";
 import { useDaybookProductSales } from "@/components/dashboard/daybook/use-daybook-product-sales";
+import { useDaybookBills } from "@/components/dashboard/daybook/use-daybook-bills";
 import { useDaybookSupplierAdvances } from "@/components/dashboard/daybook/use-daybook-supplier-advances";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -76,6 +78,7 @@ type ActionItem = {
     | "expense"
     | "fixedAsset"
     | "loan"
+    | "bill"
     | "productPurchase"
     | "productSale"
     | "supplierAdvance";
