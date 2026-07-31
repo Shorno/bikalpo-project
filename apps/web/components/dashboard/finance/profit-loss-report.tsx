@@ -12,7 +12,6 @@ import {
 import { useMemo, useState } from "react";
 import {
   getDaybookExpensesInRange,
-  getDaybookExpenseTotal,
   summarizeDaybookExpensesByCategory,
 } from "@/components/dashboard/daybook/daybook-expense-reports";
 import {
@@ -134,6 +133,45 @@ function normalizeRows(
   return rows;
 }
 
+function normalizeBreakdownKey(row: BreakdownRow) {
+  const source = row.slug?.trim() || row.category;
+
+  return source
+    .toLowerCase()
+    .replace(/^daybook-/, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function mergeBreakdownRows(rows: BreakdownRow[], fallback: BreakdownRow) {
+  const mergedRows = new Map<string, BreakdownRow>();
+
+  for (const row of rows) {
+    const key = normalizeBreakdownKey(row);
+
+    if (!key) {
+      continue;
+    }
+
+    const existing = mergedRows.get(key);
+
+    if (!existing) {
+      mergedRows.set(key, { ...row, slug: row.slug ?? key });
+      continue;
+    }
+
+    mergedRows.set(key, {
+      ...existing,
+      amount: String(toNumber(existing.amount) + toNumber(row.amount)),
+      muted: Boolean(existing.muted && row.muted),
+    });
+  }
+
+  const normalizedRows = Array.from(mergedRows.values());
+
+  return normalizedRows.length > 0 ? normalizedRows : [fallback];
+}
+
 function addToBreakdownRow(
   rows: BreakdownRow[],
   slug: string,
@@ -207,7 +245,6 @@ export function ProfitLossReport() {
       category: row.category,
       slug: `daybook-${row.category.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
     }));
-    const daybookExpenseTotal = getDaybookExpenseTotal(daybookExpensesInRange);
     const unsyncedProductSales = getUnsyncedDaybookProductSalesInRange(
       daybookProductSales,
       {
@@ -257,7 +294,7 @@ export function ProfitLossReport() {
       "Product Purchase",
       productSaleTotals.totalCost,
     );
-    const operatingExpenseRows = normalizeRows(
+    const operatingExpenseRows = mergeBreakdownRows(
       [...(pnl?.expenses?.breakdown ?? []), ...daybookExpenseRows],
       {
         amount: "0",
@@ -266,8 +303,10 @@ export function ProfitLossReport() {
         slug: "no-operating-expenses",
       },
     );
-    const operatingExpenses =
-      toNumber(pnl?.expenses?.total) + daybookExpenseTotal;
+    const operatingExpenses = operatingExpenseRows.reduce(
+      (sum, row) => sum + toNumber(row.amount),
+      0,
+    );
     const income =
       toNumber(pnl?.income?.total ?? pnl?.revenue) +
       productSaleTotals.totalSales;
