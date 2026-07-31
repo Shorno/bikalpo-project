@@ -2,6 +2,8 @@ import type {
   DaybookBillEntry,
   DaybookBillPartyType,
 } from "@/components/dashboard/daybook/daybook-bill-ledger";
+import type { DaybookProductPurchaseEntry } from "@/components/dashboard/daybook/daybook-product-purchase-ledger";
+import type { DaybookProductSaleEntry } from "@/components/dashboard/daybook/daybook-product-sale-ledger";
 
 export type DaybookBillPayeeOption = {
   id: string;
@@ -81,6 +83,8 @@ export function buildDefaultBillPayeeOptions(
 export function buildDaybookBillPayeeOptions(input: {
   bills: DaybookBillEntry[];
   partyType: DaybookBillPartyType;
+  productPurchases?: DaybookProductPurchaseEntry[];
+  productSales?: DaybookProductSaleEntry[];
 }) {
   const options = buildDefaultBillPayeeOptions(input.partyType);
 
@@ -96,6 +100,38 @@ export function buildDaybookBillPayeeOptions(input: {
       source: "bill",
       subtitle: bill.partyType === "supplier" ? "Supplier" : "Customer",
     });
+  }
+
+  if (input.partyType === "supplier") {
+    for (const purchase of input.productPurchases ?? []) {
+      if (purchase.paymentType !== "due") {
+        continue;
+      }
+
+      addPayeeOption(options, {
+        name: purchase.supplier,
+        partyType: "supplier",
+        previousBillAmount: purchase.total,
+        source: "purchase",
+        subtitle: "Supplier due",
+      });
+    }
+  }
+
+  if (input.partyType === "customer") {
+    for (const sale of input.productSales ?? []) {
+      if (sale.paymentType !== "due") {
+        continue;
+      }
+
+      addPayeeOption(options, {
+        name: sale.customer,
+        partyType: "customer",
+        previousBillAmount: sale.totalSales,
+        source: "sale",
+        subtitle: "Customer due",
+      });
+    }
   }
 
   return Array.from(options.values());
