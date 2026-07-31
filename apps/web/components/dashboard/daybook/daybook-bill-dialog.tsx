@@ -1,6 +1,12 @@
 "use client";
 
-import { CalendarIcon, FileTextIcon, PlusIcon, SaveIcon } from "lucide-react";
+import {
+  CalendarIcon,
+  FileTextIcon,
+  PlusIcon,
+  SaveIcon,
+  Trash2Icon,
+} from "lucide-react";
 import { useMemo, useState } from "react";
 import {
   type DaybookBillPartyType,
@@ -24,6 +30,13 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 
 type DaybookBillDialogProps = {
@@ -93,7 +106,9 @@ export function DaybookBillDialog({
   const [billNo, setBillNo] = useState("");
   const [referenceNo, setReferenceNo] = useState("");
   const [notes, setNotes] = useState("");
-  const [lines] = useState<DraftBillLine[]>(() => [createDraftLine()]);
+  const [lines, setLines] = useState<DraftBillLine[]>(() => [
+    createDraftLine(),
+  ]);
   const scopeLabel = scope === "warehouse" ? "Warehouse" : "Retailer";
   const total = useMemo(
     () => lines.reduce((sum, line) => sum + toAmount(line.amount), 0),
@@ -117,6 +132,27 @@ export function DaybookBillDialog({
     () => payeeOptions.find((option) => option.id === selectedPayeeId),
     [payeeOptions, selectedPayeeId],
   );
+  const updateLine = (
+    lineId: string,
+    field: keyof Omit<DraftBillLine, "id">,
+    value: string,
+  ) => {
+    setLines((currentLines) =>
+      currentLines.map((line) =>
+        line.id === lineId ? { ...line, [field]: value } : line,
+      ),
+    );
+  };
+  const addLine = () =>
+    setLines((currentLines) => [...currentLines, createDraftLine()]);
+  const clearLines = () => setLines([createDraftLine()]);
+  const removeLine = (lineId: string) => {
+    setLines((currentLines) =>
+      currentLines.length === 1
+        ? [createDraftLine()]
+        : currentLines.filter((line) => line.id !== lineId),
+    );
+  };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -268,6 +304,78 @@ export function DaybookBillDialog({
               placeholder="Short note for this bill"
               value={notes}
             />
+          </div>
+
+          <div className="mt-8 overflow-hidden rounded-lg border border-slate-200 bg-white">
+            <div className="grid grid-cols-[52px_minmax(180px,0.9fr)_minmax(220px,1fr)_minmax(150px,0.7fr)_52px] border-slate-200 border-b bg-slate-50 px-4 py-3 font-semibold text-slate-700 text-xs uppercase">
+              <div>#</div>
+              <div>Category</div>
+              <div>Description</div>
+              <div className="text-right">Amount</div>
+              <div />
+            </div>
+            {lines.map((line, index) => (
+              <div
+                className="grid grid-cols-[52px_minmax(180px,0.9fr)_minmax(220px,1fr)_minmax(150px,0.7fr)_52px] items-center border-slate-200 border-b px-4 py-3 last:border-b-0"
+                key={line.id}
+              >
+                <div className="font-medium text-slate-500">{index + 1}</div>
+                <Select
+                  onValueChange={(value) =>
+                    updateLine(line.id, "category", value)
+                  }
+                  value={line.category}
+                >
+                  <SelectTrigger className="h-9 w-full bg-white">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {BILL_CATEGORIES.map((category) => (
+                      <SelectItem key={category} value={category}>
+                        {category}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Input
+                  className="h-9"
+                  onChange={(event) =>
+                    updateLine(line.id, "description", event.target.value)
+                  }
+                  placeholder="Description"
+                  value={line.description}
+                />
+                <Input
+                  className="h-9 text-right tabular-nums"
+                  inputMode="decimal"
+                  onChange={(event) =>
+                    updateLine(line.id, "amount", event.target.value)
+                  }
+                  placeholder="0.00"
+                  value={line.amount}
+                />
+                <Button
+                  aria-label={`Remove bill line ${index + 1}`}
+                  className="ml-2 text-slate-400 hover:text-red-600"
+                  onClick={() => removeLine(line.id)}
+                  size="icon-sm"
+                  type="button"
+                  variant="ghost"
+                >
+                  <Trash2Icon className="size-4" />
+                </Button>
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Button onClick={addLine} type="button" variant="outline">
+              <PlusIcon data-icon="inline-start" />
+              Add lines
+            </Button>
+            <Button onClick={clearLines} type="button" variant="outline">
+              Clear all lines
+            </Button>
           </div>
 
           <div className="mt-6 flex justify-end gap-2">
