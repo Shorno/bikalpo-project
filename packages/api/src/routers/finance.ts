@@ -294,6 +294,69 @@ function resolveCashBankPaymentAccountType(name: string) {
   return "bank";
 }
 
+async function ensureCashBankPaymentAccountForFinanceAccount(input: {
+  accountCode: string;
+  accountId: number;
+  accountName: string;
+  currentBalance: number | string;
+  openingBalance: number | string;
+  ownerId: string;
+  ownerType: AccountingOwnerType;
+}) {
+  const existing = await db.query.financePaymentAccount.findFirst({
+    where: (table, { and: andFn, eq: eqFn }) =>
+      andFn(
+        eqFn(table.financeAccountId, input.accountId),
+        eqFn(table.ownerId, input.ownerId),
+        eqFn(table.ownerType, input.ownerType),
+      ),
+  });
+
+  if (existing) {
+    return existing.id;
+  }
+
+  const code = await generateUniquePaymentAccountCode(
+    input.ownerId,
+    input.ownerType,
+    input.accountCode || `payment-${slugify(input.accountName) || "account"}`,
+  );
+  const openingBalance = toMoney(parseMoney(input.openingBalance));
+  const currentBalance = toMoney(parseMoney(input.currentBalance));
+  const [created] = await db
+    .insert(financePaymentAccount)
+    .values({
+      code,
+      currentBalance,
+      financeAccountId: input.accountId,
+      isActive: true,
+      isDefault: false,
+      name: input.accountName,
+      openingBalance,
+      ownerId: input.ownerId,
+      ownerType: input.ownerType,
+      type: resolveCashBankPaymentAccountType(input.accountName),
+    })
+    .returning({ id: financePaymentAccount.id });
+
+  if (!created) {
+    throw new ORPCError("INTERNAL_SERVER_ERROR", {
+      message: "Failed to create payment account",
+    });
+  }
+
+  await db
+    .update(financeAccount)
+    .set({
+      balanceSheetLine: "cash_and_bank",
+      isPaymentAccount: true,
+      updatedAt: new Date(),
+    })
+    .where(eq(financeAccount.id, input.accountId));
+
+  return created.id;
+}
+
 async function getNextExpenseNumberPrefix(ownerId: string) {
   const prefix = `EXP-${localDateStamp()}-`;
   const [result] = await db
