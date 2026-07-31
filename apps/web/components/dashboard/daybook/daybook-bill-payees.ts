@@ -95,7 +95,7 @@ export function buildDaybookBillPayeeOptions(input: {
     addPayeeOption(options, {
       name: bill.partyName,
       partyType: bill.partyType,
-      previousBillAmount: bill.total,
+      previousBillAmount: bill.amountDue,
       source: "bill",
       subtitle: bill.partyType === "supplier" ? "Supplier" : "Customer",
     });

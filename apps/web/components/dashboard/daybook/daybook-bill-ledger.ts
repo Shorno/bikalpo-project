@@ -3,6 +3,7 @@
 import {
   createDaybookExpenseId,
   type DaybookExpenseScope,
+  type DaybookPaymentAccountType,
 } from "@/components/dashboard/daybook/daybook-expense-ledger";
 
 export const DAYBOOK_BILL_STORAGE_KEY = "bikalpo.daybook.bills.v1";
@@ -13,12 +14,17 @@ export type DaybookBillPartyType = "customer" | "supplier";
 
 export type DaybookBillLine = {
   amount: number;
+  accountId?: string;
+  accountName: string;
   category: string;
   description: string;
   id: string;
+  price: number;
+  productName: string;
 };
 
 export type DaybookBillEntry = {
+  amountDue: number;
   billNo: string;
   createdAt: string;
   dueDate: string;
@@ -29,25 +35,72 @@ export type DaybookBillEntry = {
   partyId: string;
   partyName: string;
   partyType: DaybookBillPartyType;
+  paymentAccountId: string;
+  paymentAccountName: string;
+  paymentAccountType: DaybookPaymentAccountType;
+  paymentDate: string;
+  paymentMethod: DaybookPaymentAccountType;
   previousBillAmount: number;
   referenceNo: string;
   scope: DaybookExpenseScope;
+  subtotal: number;
   total: number;
+  totalPaid: number;
 };
 
 const isBrowser = () => typeof window !== "undefined";
 
-const normalizeBill = (bill: DaybookBillEntry): DaybookBillEntry => ({
-  ...bill,
-  lines: bill.lines.map((line) => ({
+const normalizeBillLine = (line: DaybookBillLine): DaybookBillLine => {
+  const price = Number.isFinite(line.price)
+    ? line.price
+    : Number.isFinite(line.amount)
+      ? line.amount
+      : 0;
+  const accountName = line.accountName || line.category || "Furniture";
+  const productName =
+    line.productName || line.description || "Furniture Purchased";
+
+  return {
     ...line,
-    amount: Number.isFinite(line.amount) ? line.amount : 0,
-  })),
-  previousBillAmount: Number.isFinite(bill.previousBillAmount)
-    ? bill.previousBillAmount
-    : 0,
-  total: Number.isFinite(bill.total) ? bill.total : 0,
-});
+    accountName,
+    amount: price,
+    category: accountName,
+    description: productName,
+    price,
+    productName,
+  };
+};
+
+const normalizeBill = (bill: DaybookBillEntry): DaybookBillEntry => {
+  const lines = bill.lines.map(normalizeBillLine);
+  const subtotal = Number.isFinite(bill.subtotal)
+    ? bill.subtotal
+    : lines.reduce((sum, line) => sum + line.price, 0);
+  const total = Number.isFinite(bill.total) ? bill.total : subtotal;
+  const totalPaid = Number.isFinite(bill.totalPaid) ? bill.totalPaid : 0;
+  const amountDue = Number.isFinite(bill.amountDue)
+    ? bill.amountDue
+    : Math.max(total - totalPaid, 0);
+
+  return {
+    ...bill,
+    amountDue,
+    dueDate: bill.dueDate || bill.paymentDate || bill.issueDate,
+    issueDate: bill.issueDate || bill.paymentDate || bill.dueDate,
+    lines,
+    paymentAccountId: bill.paymentAccountId || "cash-on-hand",
+    paymentAccountName: bill.paymentAccountName || "Cash on Hand",
+    paymentAccountType: bill.paymentAccountType || "cash",
+    paymentDate: bill.paymentDate || bill.issueDate || bill.dueDate,
+    paymentMethod: bill.paymentMethod || "cash",
+    previousBillAmount: Number.isFinite(bill.previousBillAmount)
+      ? bill.previousBillAmount
+      : 0,
+    subtotal,
+    total,
+    totalPaid,
+  };
+};
 
 export function loadDaybookBills(scope?: DaybookExpenseScope) {
   if (!isBrowser()) {
@@ -110,11 +163,11 @@ export function getDaybookBillPartyBalance(
         bill.partyType === input.partyType &&
         normalizeBillPartyName(bill.partyName) === partyName,
     )
-    .reduce((sum, bill) => sum + bill.total, 0);
+    .reduce((sum, bill) => sum + bill.amountDue, 0);
 }
 
 export function getDaybookBillTotal(bills: DaybookBillEntry[]) {
-  return bills.reduce((sum, bill) => sum + bill.total, 0);
+  return bills.reduce((sum, bill) => sum + bill.amountDue, 0);
 }
 
 export function createDaybookBillId(prefix: string) {
