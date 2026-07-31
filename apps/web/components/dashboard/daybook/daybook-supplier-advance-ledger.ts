@@ -84,6 +84,16 @@ export function addDaybookSupplierAdvance(
   ]);
 }
 
+export function markDaybookSupplierAdvanceSynced(id: string) {
+  saveDaybookSupplierAdvances(
+    loadDaybookSupplierAdvances().map((advance) =>
+      advance.id === id
+        ? normalizeSupplierAdvance({ ...advance, isSynced: true })
+        : advance,
+    ),
+  );
+}
+
 export function createDaybookSupplierAdvanceId(prefix: string) {
   return createDaybookExpenseId(prefix);
 }

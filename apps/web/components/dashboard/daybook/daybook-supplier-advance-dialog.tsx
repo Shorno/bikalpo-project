@@ -13,6 +13,7 @@ import type { DaybookExpenseScope } from "@/components/dashboard/daybook/daybook
 import {
   addDaybookSupplierAdvance,
   createDaybookSupplierAdvanceId,
+  markDaybookSupplierAdvanceSynced,
 } from "@/components/dashboard/daybook/daybook-supplier-advance-ledger";
 import { Button } from "@/components/ui/button";
 import {
@@ -109,7 +110,6 @@ export function DaybookSupplierAdvanceDialog({
     [paymentAccountId, paymentAccounts],
   );
   const total = useMemo(() => toAmount(amount), [amount]);
-  const cashOutLabel = total > 0 ? `-${money(total)}` : money(0);
 
   useEffect(() => {
     if (
@@ -208,28 +208,37 @@ export function DaybookSupplierAdvanceDialog({
       scope,
       supplier: supplier.trim() || "ABC Supplier",
     };
+    const mutationInput = {
+      advanceNo: advanceNo.trim() || undefined,
+      amount: total,
+      notes: notes.trim() || undefined,
+      paymentAccountId: selectedPaymentAccount.id,
+      paymentDate,
+      paymentMethod: selectedPaymentMethod,
+      referenceNo: referenceNo.trim() || undefined,
+      supplier: supplier.trim() || undefined,
+    };
+
+    if (closeAfterSave) {
+      addDaybookSupplierAdvance({ ...localAdvance, isSynced: false });
+      setMessage(null);
+      resetForm();
+      onOpenChange(false);
+
+      void createAdvanceMutation
+        .mutateAsync(mutationInput)
+        .then(() => {
+          markDaybookSupplierAdvanceSynced(localAdvance.id);
+          void invalidateQueries();
+        })
+        .catch(() => undefined);
+      return;
+    }
 
     try {
-      const result = await createAdvanceMutation.mutateAsync({
-        advanceNo: advanceNo.trim() || undefined,
-        amount: total,
-        notes: notes.trim() || undefined,
-        paymentAccountId: selectedPaymentAccount.id,
-        paymentDate,
-        paymentMethod: selectedPaymentMethod,
-        referenceNo: referenceNo.trim() || undefined,
-        supplier: supplier.trim() || undefined,
-      });
+      const result = await createAdvanceMutation.mutateAsync(mutationInput);
 
       addDaybookSupplierAdvance({ ...localAdvance, isSynced: true });
-
-      if (closeAfterSave) {
-        setMessage(null);
-        resetForm();
-        onOpenChange(false);
-        void invalidateQueries();
-        return;
-      }
 
       await invalidateQueries();
       resetForm();
@@ -272,6 +281,7 @@ export function DaybookSupplierAdvanceDialog({
               <div className="grid gap-2">
                 <Label htmlFor="supplier-advance-supplier">Supplier</Label>
                 <Input
+                  className="h-10"
                   id="supplier-advance-supplier"
                   onChange={(event) => setSupplier(event.target.value)}
                   placeholder="ABC Supplier"
@@ -283,13 +293,13 @@ export function DaybookSupplierAdvanceDialog({
                 <Label htmlFor="supplier-advance-payment-account">
                   Payment account
                 </Label>
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                <div className="grid gap-1">
                   <Select
                     onValueChange={setPaymentAccountId}
                     value={paymentAccountId}
                   >
                     <SelectTrigger
-                      className="w-full border-emerald-500 bg-white"
+                      className="!h-10 min-h-10 w-full border-emerald-500 bg-white"
                       id="supplier-advance-payment-account"
                     >
                       <SelectValue />
@@ -302,42 +312,9 @@ export function DaybookSupplierAdvanceDialog({
                       ))}
                     </SelectContent>
                   </Select>
-                  <span className="whitespace-nowrap font-medium text-slate-600 text-sm">
+                  <span className="font-medium text-slate-600 text-sm">
                     Balance {money(selectedPaymentAccount?.balance ?? 0)}
                   </span>
-                </div>
-              </div>
-
-              <div className="grid gap-2">
-                <Label htmlFor="supplier-advance-amount">Advance Amount</Label>
-                <Input
-                  id="supplier-advance-amount"
-                  inputMode="decimal"
-                  onChange={(event) => setAmount(event.target.value)}
-                  placeholder="50,000.00"
-                  value={amount}
-                />
-              </div>
-
-              <div className="grid content-end gap-2">
-                <div className="rounded-lg border border-slate-200 bg-white px-4 py-3">
-                  <div className="font-semibold text-slate-500 text-xs uppercase">
-                    Accounting
-                  </div>
-                  <div className="mt-2 grid gap-1 text-sm">
-                    <div className="flex items-center justify-between gap-3">
-                      <span className="text-slate-500">Cash & Bank</span>
-                      <span className="font-semibold text-red-600 tabular-nums">
-                        {cashOutLabel}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between gap-3">
-                      <span className="text-slate-500">Supplier Advance</span>
-                      <span className="font-semibold text-emerald-700 tabular-nums">
-                        {money(total)}
-                      </span>
-                    </div>
-                  </div>
                 </div>
               </div>
             </div>
@@ -349,27 +326,17 @@ export function DaybookSupplierAdvanceDialog({
               <div className="mt-2 font-bold text-4xl text-slate-900 tabular-nums">
                 {money(total)}
               </div>
-              <p className="mt-2 text-slate-500 text-sm">Balance Sheet Only</p>
-              <div className="mt-4 grid gap-2 border-slate-200 border-t pt-4 text-sm">
-                <div className="flex items-center justify-between gap-3">
-                  <span className="text-slate-500">P&L Effect</span>
-                  <span className="font-semibold tabular-nums">{money(0)}</span>
-                </div>
-                <div className="flex items-center justify-between gap-3">
-                  <span className="text-slate-500">Outstanding</span>
-                  <span className="font-semibold tabular-nums">{money(0)}</span>
-                </div>
-              </div>
             </div>
           </div>
 
-          <div className="mt-6 grid gap-5 md:grid-cols-2 xl:grid-cols-[minmax(180px,220px)_minmax(180px,240px)_minmax(180px,240px)_minmax(180px,240px)]">
+          <div className="mt-6 grid gap-5 md:grid-cols-2 xl:grid-cols-4">
             <div className="grid gap-2">
               <Label htmlFor="supplier-advance-payment-date">
                 Payment Date
               </Label>
               <div className="relative">
                 <Input
+                  className="h-10"
                   id="supplier-advance-payment-date"
                   onChange={(event) => setPaymentDate(event.target.value)}
                   type="date"
@@ -390,7 +357,7 @@ export function DaybookSupplierAdvanceDialog({
                 value={paymentMethod}
               >
                 <SelectTrigger
-                  className="w-full bg-white"
+                  className="!h-10 min-h-10 w-full bg-white"
                   id="supplier-advance-payment-method"
                 >
                   <SelectValue />
@@ -408,6 +375,7 @@ export function DaybookSupplierAdvanceDialog({
             <div className="grid gap-2">
               <Label htmlFor="supplier-advance-reference">Ref no.</Label>
               <Input
+                className="h-10"
                 id="supplier-advance-reference"
                 onChange={(event) => setReferenceNo(event.target.value)}
                 placeholder="REF-001"
@@ -418,10 +386,37 @@ export function DaybookSupplierAdvanceDialog({
             <div className="grid gap-2">
               <Label htmlFor="supplier-advance-number">Advance no.</Label>
               <Input
+                className="h-10"
                 id="supplier-advance-number"
                 onChange={(event) => setAdvanceNo(event.target.value)}
                 placeholder="ADV-2026-001"
                 value={advanceNo}
+              />
+            </div>
+          </div>
+
+          <div className="mt-8 overflow-hidden rounded-lg border border-slate-200 bg-white">
+            <div className="grid grid-cols-[56px_repeat(3,minmax(0,1fr))] border-slate-200 border-b bg-slate-50 px-4 py-3 font-semibold text-slate-700 text-xs uppercase">
+              <div>#</div>
+              <div>Advance Type</div>
+              <div>Description</div>
+              <div className="text-right">Amount</div>
+            </div>
+            <div className="grid grid-cols-[56px_repeat(3,minmax(0,1fr))] items-center gap-2 border-slate-200 border-b px-4 py-3 last:border-b-0">
+              <div className="font-medium text-slate-500">1</div>
+              <div className="font-medium text-slate-900">Supplier Advance</div>
+              <Input
+                className="h-10 w-full"
+                readOnly
+                value="Advance paid before bill is applied"
+              />
+              <Input
+                className="h-10 w-full text-right tabular-nums"
+                id="supplier-advance-amount"
+                inputMode="decimal"
+                onChange={(event) => setAmount(event.target.value)}
+                placeholder="50,000.00"
+                value={amount}
               />
             </div>
           </div>
