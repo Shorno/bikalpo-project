@@ -51,6 +51,15 @@ function getStockStatus(qty: number, reorderLevel = 10): {
 
 const WEIGHT_UNITS = new Set(["KG", "KGS", "KILOGRAM", "KILOGRAMS"]);
 const PIECE_UNITS = new Set(["PC", "PCS", "PIECE", "PIECES"]);
+const DIRECT_COUNT_UNITS = new Set(["CYLINDER", "UNIT", "PAIR"]);
+
+function isLpgTypeContext(typeName?: string | null) {
+    return (
+        String(typeName || "")
+            .trim()
+            .toLowerCase() === "lpg"
+    );
+}
 
 function normalizeMeasureUnit(unit?: string | null) {
     return String(unit || "")
@@ -92,17 +101,28 @@ function parseLabelMeasure(label?: string | null) {
     return null;
 }
 
+function toBreakdownType(packType?: string | null, quantityUnit?: string | null) {
+    const normalizedQuantityUnit = normalizeMeasureUnit(quantityUnit);
+    if (DIRECT_COUNT_UNITS.has(normalizedQuantityUnit)) {
+        return normalizedQuantityUnit.toLowerCase();
+    }
+
+    return packType || "other";
+}
+
 function getVariantMeasureInfo(input: {
     packType?: string | null;
     unitLabel?: string | null;
     orderUnit?: string | null;
     weightKg?: string | null;
     piecesPerUnit?: number | null;
+    typeName?: string | null;
 }) {
     const packType = input.packType || "other";
     const normalizedUnit = normalizeMeasureUnit(input.orderUnit);
     const weightKg = parseFloat(input.weightKg || "0");
     const piecesPerUnit = Number(input.piecesPerUnit || 0);
+    const isLpgContext = isLpgTypeContext(input.typeName);
 
     // LPG capacity is reference content, not an inventory multiplier. A 12 KG
     // cylinder remains one inventory unit throughout summaries and movements.
@@ -132,6 +152,10 @@ function getVariantMeasureInfo(input: {
         return { quantityPerPack: 1, quantityUnit: normalizedUnit || "KG", isLoose: true };
     }
 
+    if (isLpgContext) {
+        return { quantityPerPack: 1, quantityUnit: "CYLINDER", isLoose: false };
+    }
+
     if (WEIGHT_UNITS.has(normalizedUnit) && weightKg > 0) {
         return { quantityPerPack: weightKg, quantityUnit: "KG", isLoose: false };
     }
@@ -140,6 +164,14 @@ function getVariantMeasureInfo(input: {
         return {
             quantityPerPack: piecesPerUnit,
             quantityUnit: PIECE_UNITS.has(normalizedUnit) ? "PCS" : normalizedUnit || "UNIT",
+            isLoose: false,
+        };
+    }
+
+    if (DIRECT_COUNT_UNITS.has(normalizedUnit)) {
+        return {
+            quantityPerPack: 1,
+            quantityUnit: normalizedUnit,
             isLoose: false,
         };
     }
@@ -748,9 +780,12 @@ export const stockOverviewRouter = {
                     brandId: brand.id,
                     brandName: brand.name,
                     brandLogo: brand.logo,
+                    typeName: productType.name,
                 })
                 .from(productVariant)
                 .innerJoin(product, eq(productVariant.productId, product.id))
+                .leftJoin(category, eq(product.categoryId, category.id))
+                .leftJoin(productType, eq(category.typeId, productType.id))
                 .leftJoin(inventory, and(
                     eq(inventory.variantId, productVariant.id),
                     eq(inventory.ownerType, input.ownerType),
@@ -812,6 +847,7 @@ export const stockOverviewRouter = {
                     orderUnit: row.orderUnit,
                     weightKg: row.weightKg,
                     piecesPerUnit: row.piecesPerUnit,
+                    typeName: row.typeName,
                 });
                 const isLoose = measure.isLoose;
 
@@ -870,6 +906,7 @@ export const stockOverviewRouter = {
                     orderUnit: r.orderUnit,
                     weightKg: r.weightKg,
                     piecesPerUnit: r.piecesPerUnit,
+                    typeName: r.typeName,
                 });
                 const qty = parseFloat(r.availableQty || "0");
                 return sum + qty * measure.quantityPerPack;
@@ -1104,8 +1141,10 @@ export const stockOverviewRouter = {
                     orderUnit: row.orderUnit,
                     weightKg: row.weightKg,
                     piecesPerUnit: row.piecesPerUnit,
+                    typeName: row.typeName,
                 });
                 const isLoose = measure.isLoose;
+                const breakdownType = toBreakdownType(packType, measure.quantityUnit);
                 const isFashionRow =
                     String(row.typeName || "")
                         .trim()
@@ -1169,21 +1208,31 @@ export const stockOverviewRouter = {
                             }
                             g.breakdownMap.get("loose")!.qty += remainderMeasureQty;
                         } else {
-                            if (!g.breakdownMap.has(packType)) {
-                                const label = packType.charAt(0).toUpperCase() + packType.slice(1);
-                                g.breakdownMap.set(packType, { qty: 0, unit: label, type: packType });
+                            if (!g.breakdownMap.has(breakdownType)) {
+                                const label =
+                                    breakdownType.charAt(0).toUpperCase() + breakdownType.slice(1);
+                                g.breakdownMap.set(breakdownType, {
+                                    qty: 0,
+                                    unit: label,
+                                    type: breakdownType,
+                                });
                             }
-                            g.breakdownMap.get(packType)!.qty += remainderPacks;
+                            g.breakdownMap.get(breakdownType)!.qty += remainderPacks;
                         }
                     }
                 } else {
                     // No carton config → count as packs, total in base unit
                     g.totalQty += qty * measure.quantityPerPack;
-                    const label = packType.charAt(0).toUpperCase() + packType.slice(1);
-                    if (!g.breakdownMap.has(packType)) {
-                        g.breakdownMap.set(packType, { qty: 0, unit: label, type: packType });
+                    const label =
+                        breakdownType.charAt(0).toUpperCase() + breakdownType.slice(1);
+                    if (!g.breakdownMap.has(breakdownType)) {
+                        g.breakdownMap.set(breakdownType, {
+                            qty: 0,
+                            unit: label,
+                            type: breakdownType,
+                        });
                     }
-                    g.breakdownMap.get(packType)!.qty += qty;
+                    g.breakdownMap.get(breakdownType)!.qty += qty;
                 }
             }
 

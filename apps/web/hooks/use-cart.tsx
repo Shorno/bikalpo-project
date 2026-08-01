@@ -29,6 +29,9 @@ export interface CartItem {
   inStock: boolean;
   shopId?: string | null;
   shopName?: string | null;
+  purchaseMode?: "standard" | "exchange" | "new";
+  purchaseModeLabel?: string | null;
+  depositAmount?: number;
 }
 
 interface CartContextType {
@@ -38,6 +41,7 @@ interface CartContextType {
     quantity?: number,
     variantId?: number,
     shopId?: string,
+    purchaseMode?: "standard" | "exchange" | "new",
   ) => Promise<void>;
   removeItem: (cartItemId: number) => Promise<void>;
   updateQuantity: (cartItemId: number, quantity: number) => Promise<void>;
@@ -100,6 +104,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
     quantity: number = 1,
     variantId?: number,
     shopId?: string,
+    purchaseMode?: "standard" | "exchange" | "new",
   ) => {
     setIsLoading(true);
     try {
@@ -108,6 +113,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
         quantity,
         variantId,
         shopId,
+        purchaseMode,
       });
       await refreshCart();
       toast.success(result.message || "Item added to cart");
