@@ -16,7 +16,6 @@ import {
   addDaybookFixedAssetPurchase,
   createDaybookFixedAssetId,
   type DaybookFixedAssetLine,
-  markDaybookFixedAssetPurchaseSynced,
 } from "@/components/dashboard/daybook/daybook-fixed-asset-ledger";
 import { Button } from "@/components/ui/button";
 import {
@@ -294,6 +293,16 @@ export function DaybookFixedAssetDialog({
     }
 
     const nextTotal = purchaseLines.reduce((sum, line) => sum + line.amount, 0);
+    if (selectedPaymentAccount.balance < nextTotal) {
+      setMessage({
+        text: `Insufficient ${selectedPaymentAccount.name} balance. Available ${money(
+          selectedPaymentAccount.balance,
+        )}.`,
+        tone: "error",
+      });
+      return;
+    }
+
     const selectedPaymentMethod =
       selectedPaymentAccount.type ?? methodToPaymentType(paymentMethod);
 
@@ -330,18 +339,24 @@ export function DaybookFixedAssetDialog({
     };
 
     if (closeAfterSave) {
-      addDaybookFixedAssetPurchase({ ...localPurchase, isSynced: false });
-      setMessage(null);
-      resetForm();
-      onOpenChange(false);
+      try {
+        await createPurchaseMutation.mutateAsync(mutationInput);
 
-      void createPurchaseMutation
-        .mutateAsync(mutationInput)
-        .then(() => {
-          markDaybookFixedAssetPurchaseSynced(localPurchase.id);
-          void invalidateQueries();
-        })
-        .catch(() => undefined);
+        addDaybookFixedAssetPurchase({ ...localPurchase, isSynced: true });
+
+        void invalidateQueries();
+        resetForm();
+        onOpenChange(false);
+        setMessage(null);
+      } catch (error) {
+        setMessage({
+          text:
+            error instanceof Error
+              ? error.message
+              : "Fixed asset purchase could not be saved.",
+          tone: "error",
+        });
+      }
       return;
     }
 
@@ -354,20 +369,11 @@ export function DaybookFixedAssetDialog({
       resetForm();
       setMessage({ text: result.message, tone: "success" });
     } catch (error) {
-      addDaybookFixedAssetPurchase({ ...localPurchase, isSynced: false });
-      resetForm();
-
-      if (closeAfterSave) {
-        setMessage(null);
-        onOpenChange(false);
-        return;
-      }
-
       setMessage({
         text:
           error instanceof Error
-            ? `Saved locally. Sync failed: ${error.message}`
-            : "Saved locally. Sync failed.",
+            ? error.message
+            : "Fixed asset purchase could not be saved.",
         tone: "error",
       });
     }

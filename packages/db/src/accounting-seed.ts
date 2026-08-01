@@ -45,6 +45,13 @@ export type SeedFinancePaymentAccountInput = {
   ownerType: AccountingOwnerType;
 };
 
+let defaultFinanceAccountsPromise: Promise<SeededFinanceAccountResult> | null =
+  null;
+const defaultFinancePaymentAccountsPromises = new Map<
+  string,
+  Promise<SeededFinancePaymentAccountResult>
+>();
+
 async function findSystemFinanceCategory(
   database: AccountingSeedDatabase,
   code: string,
@@ -239,6 +246,39 @@ export async function ensureDefaultFinancePaymentAccounts({
   ownerId,
   ownerType,
 }: SeedFinancePaymentAccountInput): Promise<SeededFinancePaymentAccountResult> {
+  if (database === db) {
+    const cacheKey = `${ownerType}:${ownerId}`;
+    const cached = defaultFinancePaymentAccountsPromises.get(cacheKey);
+
+    if (cached) {
+      return cached;
+    }
+
+    const promise = ensureDefaultFinancePaymentAccountsUncached({
+      database,
+      ownerId,
+      ownerType,
+    }).catch((error: unknown) => {
+      defaultFinancePaymentAccountsPromises.delete(cacheKey);
+      throw error;
+    });
+
+    defaultFinancePaymentAccountsPromises.set(cacheKey, promise);
+    return promise;
+  }
+
+  return ensureDefaultFinancePaymentAccountsUncached({
+    database,
+    ownerId,
+    ownerType,
+  });
+}
+
+async function ensureDefaultFinancePaymentAccountsUncached({
+  database = db,
+  ownerId,
+  ownerType,
+}: SeedFinancePaymentAccountInput): Promise<SeededFinancePaymentAccountResult> {
   const accounts = await ensureDefaultFinanceAccounts(database);
   const idsByCode = new Map<string, number>();
   let created = 0;
@@ -300,6 +340,27 @@ export async function ensureDefaultFinancePaymentAccounts({
 }
 
 export async function ensureDefaultFinanceAccounts(
+  database: AccountingSeedDatabase = db,
+): Promise<SeededFinanceAccountResult> {
+  if (database === db) {
+    if (defaultFinanceAccountsPromise) {
+      return defaultFinanceAccountsPromise;
+    }
+
+    defaultFinanceAccountsPromise = ensureDefaultFinanceAccountsUncached(
+      database,
+    ).catch((error: unknown) => {
+      defaultFinanceAccountsPromise = null;
+      throw error;
+    });
+
+    return defaultFinanceAccountsPromise;
+  }
+
+  return ensureDefaultFinanceAccountsUncached(database);
+}
+
+async function ensureDefaultFinanceAccountsUncached(
   database: AccountingSeedDatabase = db,
 ): Promise<SeededFinanceAccountResult> {
   const categories = await ensureDefaultFinanceCategories(database);

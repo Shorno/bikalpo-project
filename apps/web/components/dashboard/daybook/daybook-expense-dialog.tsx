@@ -18,7 +18,6 @@ import {
   DAYBOOK_PAYMENT_ACCOUNTS,
   type DaybookExpenseLine,
   type DaybookExpenseScope,
-  markDaybookExpenseSynced,
 } from "@/components/dashboard/daybook/daybook-expense-ledger";
 import { Button } from "@/components/ui/button";
 import {
@@ -232,6 +231,16 @@ export function DaybookExpenseDialog({
       return;
     }
 
+    if (paymentAccount.balance < nextTotal) {
+      setMessage({
+        text: `Insufficient ${paymentAccount.name} balance. Available ${money(
+          paymentAccount.balance,
+        )}.`,
+        tone: "error",
+      });
+      return;
+    }
+
     const localExpense = {
       createdAt: new Date().toISOString(),
       id: createDaybookExpenseId("daybook-expense"),
@@ -262,20 +271,27 @@ export function DaybookExpenseDialog({
     };
 
     if (closeAfterSave) {
-      addDaybookExpense({ ...localExpense, isSynced: false });
-      resetForm();
-      closeDialog();
+      try {
+        const result = await createExpenseMutation.mutateAsync(mutationInput);
 
-      void createExpenseMutation
-        .mutateAsync(mutationInput)
-        .then((result) => {
-          markDaybookExpenseSynced(
-            localExpense.id,
-            result.expenses.map((expense) => expense.id),
-          );
-          void invalidateFinanceQueries();
-        })
-        .catch(() => undefined);
+        addDaybookExpense({
+          ...localExpense,
+          isSynced: true,
+          serverExpenseIds: result.expenses.map((expense) => expense.id),
+        });
+
+        void invalidateFinanceQueries();
+        resetForm();
+        closeDialog();
+      } catch (error) {
+        setMessage({
+          text:
+            error instanceof Error
+              ? error.message
+              : "Expense could not be saved.",
+          tone: "error",
+        });
+      }
       return;
     }
 
@@ -292,19 +308,11 @@ export function DaybookExpenseDialog({
       resetForm();
       setMessage({ text: result.message, tone: "success" });
     } catch (error) {
-      addDaybookExpense({ ...localExpense, isSynced: false });
-      resetForm();
-
-      if (closeAfterSave) {
-        closeDialog();
-        return;
-      }
-
       setMessage({
         text:
           error instanceof Error
-            ? `Expense saved locally. Sync failed: ${error.message}`
-            : "Expense saved locally. Sync failed.",
+            ? error.message
+            : "Expense could not be saved.",
         tone: "error",
       });
     }

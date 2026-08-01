@@ -17,7 +17,6 @@ import {
   createDaybookProductPurchaseId,
   type DaybookProductPurchaseItem,
   type DaybookProductPurchasePaymentType,
-  markDaybookProductPurchaseSynced,
 } from "@/components/dashboard/daybook/daybook-product-purchase-ledger";
 import { Button } from "@/components/ui/button";
 import {
@@ -280,6 +279,20 @@ export function DaybookProductPurchaseDialog({
     }
 
     const nextTotal = purchaseItems.reduce((sum, item) => sum + item.amount, 0);
+    if (
+      !isDuePurchase &&
+      selectedPaymentAccount &&
+      selectedPaymentAccount.balance < nextTotal
+    ) {
+      setMessage({
+        text: `Insufficient ${selectedPaymentAccount.name} balance. Available ${money(
+          selectedPaymentAccount.balance,
+        )}.`,
+        tone: "error",
+      });
+      return;
+    }
+
     const selectedPaymentMethod = selectedPaymentAccount
       ? (selectedPaymentAccount.type ?? methodToPaymentType(paymentMethod))
       : methodToPaymentType(paymentMethod);
@@ -324,18 +337,24 @@ export function DaybookProductPurchaseDialog({
     };
 
     if (closeAfterSave) {
-      addDaybookProductPurchase({ ...localPurchase, isSynced: false });
-      setMessage(null);
-      resetForm();
-      onOpenChange(false);
+      try {
+        await createPurchaseMutation.mutateAsync(mutationInput);
 
-      void createPurchaseMutation
-        .mutateAsync(mutationInput)
-        .then(() => {
-          markDaybookProductPurchaseSynced(localPurchase.id);
-          void invalidateQueries();
-        })
-        .catch(() => undefined);
+        addDaybookProductPurchase({ ...localPurchase, isSynced: true });
+
+        void invalidateQueries();
+        resetForm();
+        onOpenChange(false);
+        setMessage(null);
+      } catch (error) {
+        setMessage({
+          text:
+            error instanceof Error
+              ? error.message
+              : "Product purchase could not be saved.",
+          tone: "error",
+        });
+      }
       return;
     }
 
@@ -348,20 +367,11 @@ export function DaybookProductPurchaseDialog({
       resetForm();
       setMessage({ text: result.message, tone: "success" });
     } catch (error) {
-      addDaybookProductPurchase({ ...localPurchase, isSynced: false });
-      resetForm();
-
-      if (closeAfterSave) {
-        setMessage(null);
-        onOpenChange(false);
-        return;
-      }
-
       setMessage({
         text:
           error instanceof Error
-            ? `Saved locally. Sync failed: ${error.message}`
-            : "Saved locally. Sync failed.",
+            ? error.message
+            : "Product purchase could not be saved.",
         tone: "error",
       });
     }

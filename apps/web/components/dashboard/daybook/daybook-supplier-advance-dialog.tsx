@@ -9,12 +9,17 @@ import {
   SaveIcon,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import {
+  buildDaybookBillPayeeOptions,
+  filterDaybookBillPayees,
+} from "@/components/dashboard/daybook/daybook-bill-payees";
 import type { DaybookExpenseScope } from "@/components/dashboard/daybook/daybook-expense-ledger";
 import {
   addDaybookSupplierAdvance,
   createDaybookSupplierAdvanceId,
-  markDaybookSupplierAdvanceSynced,
 } from "@/components/dashboard/daybook/daybook-supplier-advance-ledger";
+import { useDaybookBills } from "@/components/dashboard/daybook/use-daybook-bills";
+import { useDaybookProductPurchases } from "@/components/dashboard/daybook/use-daybook-product-purchases";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -84,11 +89,14 @@ export function DaybookSupplierAdvanceDialog({
   const createAdvanceMutation = useMutation(
     orpc.finance.createSupplierAdvancePayment.mutationOptions(),
   );
+  const savedBills = useDaybookBills(scope);
+  const savedProductPurchases = useDaybookProductPurchases(scope);
   const paymentAccounts = useMemo(
     () => paymentAccountsData?.paymentAccounts ?? [],
     [paymentAccountsData?.paymentAccounts],
   );
   const [supplier, setSupplier] = useState("");
+  const [supplierFocused, setSupplierFocused] = useState(false);
   const [advanceNo, setAdvanceNo] = useState("");
   const [referenceNo, setReferenceNo] = useState("");
   const [paymentAccountId, setPaymentAccountId] = useState(
@@ -108,6 +116,19 @@ export function DaybookSupplierAdvanceDialog({
   const selectedPaymentAccount = useMemo(
     () => paymentAccounts.find((account) => account.id === paymentAccountId),
     [paymentAccountId, paymentAccounts],
+  );
+  const supplierOptions = useMemo(
+    () =>
+      buildDaybookBillPayeeOptions({
+        bills: savedBills,
+        partyType: "supplier",
+        productPurchases: savedProductPurchases,
+      }),
+    [savedBills, savedProductPurchases],
+  );
+  const filteredSuppliers = useMemo(
+    () => filterDaybookBillPayees(supplierOptions, supplier).slice(0, 6),
+    [supplier, supplierOptions],
   );
   const total = useMemo(() => toAmount(amount), [amount]);
 
@@ -159,6 +180,7 @@ export function DaybookSupplierAdvanceDialog({
 
   const resetForm = () => {
     setSupplier("");
+    setSupplierFocused(false);
     setAdvanceNo("");
     setReferenceNo("");
     setPaymentAccountId(paymentAccounts[0]?.id ?? "");
@@ -186,6 +208,16 @@ export function DaybookSupplierAdvanceDialog({
     if (total <= 0) {
       setMessage({
         text: "Enter a supplier advance amount.",
+        tone: "error",
+      });
+      return;
+    }
+
+    if (selectedPaymentAccount.balance < total) {
+      setMessage({
+        text: `Insufficient ${selectedPaymentAccount.name} balance. Available ${money(
+          selectedPaymentAccount.balance,
+        )}.`,
         tone: "error",
       });
       return;
@@ -220,18 +252,24 @@ export function DaybookSupplierAdvanceDialog({
     };
 
     if (closeAfterSave) {
-      addDaybookSupplierAdvance({ ...localAdvance, isSynced: false });
-      setMessage(null);
-      resetForm();
-      onOpenChange(false);
+      try {
+        await createAdvanceMutation.mutateAsync(mutationInput);
 
-      void createAdvanceMutation
-        .mutateAsync(mutationInput)
-        .then(() => {
-          markDaybookSupplierAdvanceSynced(localAdvance.id);
-          void invalidateQueries();
-        })
-        .catch(() => undefined);
+        addDaybookSupplierAdvance({ ...localAdvance, isSynced: true });
+
+        void invalidateQueries();
+        resetForm();
+        onOpenChange(false);
+        setMessage(null);
+      } catch (error) {
+        setMessage({
+          text:
+            error instanceof Error
+              ? error.message
+              : "Supplier advance could not be saved.",
+          tone: "error",
+        });
+      }
       return;
     }
 
@@ -244,20 +282,11 @@ export function DaybookSupplierAdvanceDialog({
       resetForm();
       setMessage({ text: result.message, tone: "success" });
     } catch (error) {
-      addDaybookSupplierAdvance({ ...localAdvance, isSynced: false });
-      resetForm();
-
-      if (closeAfterSave) {
-        setMessage(null);
-        onOpenChange(false);
-        return;
-      }
-
       setMessage({
         text:
           error instanceof Error
-            ? `Saved locally. Sync failed: ${error.message}`
-            : "Saved locally. Sync failed.",
+            ? error.message
+            : "Supplier advance could not be saved.",
         tone: "error",
       });
     }
@@ -280,13 +309,51 @@ export function DaybookSupplierAdvanceDialog({
             <div className="grid gap-5 md:grid-cols-2">
               <div className="grid gap-2">
                 <Label htmlFor="supplier-advance-supplier">Supplier</Label>
-                <Input
-                  className="h-10"
-                  id="supplier-advance-supplier"
-                  onChange={(event) => setSupplier(event.target.value)}
-                  placeholder="ABC Supplier"
-                  value={supplier}
-                />
+                <div className="grid gap-1">
+                  <div className="relative">
+                    <Input
+                      autoComplete="off"
+                      className="h-10"
+                      id="supplier-advance-supplier"
+                      onBlur={() =>
+                        window.setTimeout(() => setSupplierFocused(false), 120)
+                      }
+                      onChange={(event) => {
+                        setSupplier(event.target.value);
+                        setSupplierFocused(true);
+                      }}
+                      onFocus={() => setSupplierFocused(true)}
+                      placeholder="Select supplier"
+                      value={supplier}
+                    />
+                    {supplierFocused && filteredSuppliers.length > 0 ? (
+                      <div className="absolute z-20 mt-1 max-h-72 w-full overflow-y-auto rounded-lg border border-slate-200 bg-white p-1 shadow-lg">
+                        {filteredSuppliers.map((supplierOption) => (
+                          <button
+                            className="flex w-full flex-col rounded-md px-3 py-2 text-left text-sm hover:bg-slate-100"
+                            key={supplierOption.id}
+                            onClick={() => {
+                              setSupplier(supplierOption.name);
+                              setSupplierFocused(false);
+                            }}
+                            onMouseDown={(event) => event.preventDefault()}
+                            type="button"
+                          >
+                            <span className="truncate font-medium text-slate-900">
+                              {supplierOption.name}
+                            </span>
+                            <span className="text-slate-500 text-xs">
+                              {supplierOption.subtitle}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                  <span aria-hidden="true" className="h-5 text-sm">
+                    &nbsp;
+                  </span>
+                </div>
               </div>
 
               <div className="grid gap-2">

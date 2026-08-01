@@ -32,6 +32,7 @@ type AccountSection = {
 
 type BalanceSheetSummary = {
   cashAndBank: string;
+  customerAdvance: string;
   inventory: string;
   netAssets: string;
   payable: string;

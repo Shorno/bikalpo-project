@@ -103,6 +103,9 @@ export function DaybookLoanDialog({
   const { data: loanAccountsData } = useQuery(
     orpc.finance.getLoanAccounts.queryOptions({ input: {} }),
   );
+  const { data: chartAccountsData } = useQuery(
+    orpc.finance.getChartOfAccounts.queryOptions({ input: {} }),
+  );
   const createLoanMutation = useMutation(
     orpc.finance.createLoanReceived.mutationOptions(),
   );
@@ -110,10 +113,49 @@ export function DaybookLoanDialog({
     () => paymentAccountsData?.paymentAccounts ?? [],
     [paymentAccountsData?.paymentAccounts],
   );
-  const loanAccounts = useMemo(
-    () => loanAccountsData?.accounts ?? [],
-    [loanAccountsData?.accounts],
-  );
+  const loanAccounts = useMemo(() => {
+    const accounts = new Map<
+      string,
+      { balance: number; id: string; isDefault?: boolean; name: string }
+    >();
+
+    for (const account of loanAccountsData?.accounts ?? []) {
+      accounts.set(account.name.trim().toLowerCase(), account);
+    }
+
+    const loanCategoryIds = new Set(
+      (chartAccountsData?.categories ?? [])
+        .filter(
+          (category) =>
+            category.accountType === "LIABILITY" &&
+            category.name.trim().toLowerCase() === "loan payable",
+        )
+        .map((category) => category.id),
+    );
+
+    for (const account of chartAccountsData?.accounts ?? []) {
+      if (
+        account.accountType !== "LIABILITY" ||
+        !loanCategoryIds.has(account.categoryId)
+      ) {
+        continue;
+      }
+
+      accounts.set(account.name.trim().toLowerCase(), {
+        balance: account.amount,
+        id: account.id,
+        name: account.name,
+      });
+    }
+
+    return Array.from(accounts.values()).toSorted((first, second) =>
+      first.name.localeCompare(second.name),
+    );
+  }, [
+    chartAccountsData?.accounts,
+    chartAccountsData?.categories,
+    loanAccountsData?.accounts,
+  ]);
   const [lender, setLender] = useState("");
   const [loanNo, setLoanNo] = useState("");
   const [referenceNo, setReferenceNo] = useState("");
@@ -478,14 +520,9 @@ export function DaybookLoanDialog({
           </div>
 
           <div className="mt-8 overflow-hidden rounded-lg border border-slate-200 bg-white">
-            <datalist id="loan-account-options">
-              {loanAccounts.map((account) => (
-                <option key={account.id} value={account.name} />
-              ))}
-            </datalist>
             <div className="grid grid-cols-[56px_repeat(3,minmax(0,1fr))_56px] border-slate-200 border-b bg-slate-50 px-4 py-3 font-semibold text-slate-700 text-xs uppercase">
               <div>#</div>
-              <div>Loan Type</div>
+              <div>Account Name*</div>
               <div>Description</div>
               <div className="text-right">Amount</div>
               <div />
@@ -497,15 +534,26 @@ export function DaybookLoanDialog({
                   key={line.id}
                 >
                   <div className="font-medium text-slate-500">{index + 1}</div>
-                  <Input
-                    className="h-10 w-full"
-                    list="loan-account-options"
-                    onChange={(event) =>
-                      updateLine(line.id, "loanType", event.target.value)
+                  <Select
+                    onValueChange={(value) =>
+                      updateLine(line.id, "loanType", value)
                     }
-                    placeholder="Business Loan"
                     value={line.loanType}
-                  />
+                  >
+                    <SelectTrigger
+                      aria-label={`Loan account name ${index + 1}`}
+                      className="!h-10 min-h-10 w-full bg-white"
+                    >
+                      <SelectValue placeholder="Select loan payable account" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {loanAccounts.map((account) => (
+                        <SelectItem key={account.id} value={account.name}>
+                          {account.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                   <Input
                     className="h-10 w-full"
                     onChange={(event) =>

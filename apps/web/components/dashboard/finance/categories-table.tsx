@@ -18,11 +18,13 @@ import {
 type CategoriesTableProps = {
   accounts: ChartAccount[];
   categories: FinanceCategory[];
+  onEditAccount: (account: ChartAccount) => void;
 };
 
 export function CategoriesTable({
   accounts,
   categories,
+  onEditAccount,
 }: CategoriesTableProps) {
   const categoryById = new Map(
     categories.map((category) => [category.id, category]),
@@ -66,7 +68,10 @@ export function CategoriesTable({
                 <TableCell>{account.accountType}</TableCell>
                 <TableCell>{category?.name ?? "Uncategorized"}</TableCell>
                 <TableCell className="text-right">
-                  <CategoriesAccountActions account={account} />
+                  <CategoriesAccountActions
+                    account={account}
+                    onEdit={onEditAccount}
+                  />
                 </TableCell>
               </TableRow>
             );

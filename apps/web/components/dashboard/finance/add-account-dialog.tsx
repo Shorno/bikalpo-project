@@ -32,17 +32,21 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 
 type AddAccountDialogProps = {
+  account?: ChartAccount | null;
   categories: FinanceCategory[];
   open: boolean;
   onCreate: (account: Omit<ChartAccount, "id">) => void;
   onOpenChange: (open: boolean) => void;
+  onUpdate?: (account: ChartAccount) => void;
 };
 
 export function AddAccountDialog({
+  account,
   categories,
   open,
   onCreate,
   onOpenChange,
+  onUpdate,
 }: AddAccountDialogProps) {
   const [name, setName] = useState("");
   const [accountType, setAccountType] = useState<AccountType>("ASSET");
@@ -55,10 +59,22 @@ export function AddAccountDialog({
     [accountType, categories],
   );
   const [categoryId, setCategoryId] = useState("");
+  const isEditing = Boolean(account);
 
   useEffect(() => {
+    if (!open) {
+      return;
+    }
+
+    if (
+      categoryId &&
+      availableCategories.some((category) => category.id === categoryId)
+    ) {
+      return;
+    }
+
     setCategoryId(availableCategories[0]?.id ?? "");
-  }, [availableCategories]);
+  }, [availableCategories, categoryId, open]);
 
   useEffect(() => {
     if (isSubaccount && !parentAccountId) {
@@ -78,8 +94,29 @@ export function AddAccountDialog({
       setDescription("");
       setIsSubaccount(false);
       setParentAccountId("");
+      setCategoryId("");
+      return;
     }
-  }, [open]);
+
+    if (account) {
+      setName(account.name);
+      setAccountType(account.accountType);
+      setAmount(String(account.amount));
+      setDescription(account.description);
+      setIsSubaccount(account.isSubaccount);
+      setParentAccountId(account.parentAccountId);
+      setCategoryId(account.categoryId);
+      return;
+    }
+
+    setName("");
+    setAccountType("ASSET");
+    setAmount("");
+    setDescription("");
+    setIsSubaccount(false);
+    setParentAccountId("");
+    setCategoryId("");
+  }, [account, open]);
 
   const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -90,7 +127,7 @@ export function AddAccountDialog({
 
     const parsedAmount = Number(amount.replace(/,/g, ""));
 
-    onCreate({
+    const nextAccount = {
       name: name.trim(),
       accountType,
       categoryId,
@@ -98,7 +135,14 @@ export function AddAccountDialog({
       description: description.trim(),
       isSubaccount,
       parentAccountId: isSubaccount ? parentAccountId : "",
-    });
+    };
+
+    if (account && onUpdate) {
+      onUpdate({ ...nextAccount, id: account.id });
+    } else {
+      onCreate(nextAccount);
+    }
+
     onOpenChange(false);
   };
 
@@ -106,9 +150,13 @@ export function AddAccountDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
         <DialogHeader>
-          <DialogTitle>New Account</DialogTitle>
+          <DialogTitle>
+            {isEditing ? "Edit Account" : "New Account"}
+          </DialogTitle>
           <DialogDescription>
-            Add a chart account and connect it to a finance category.
+            {isEditing
+              ? "Update this chart account and finance category."
+              : "Add a chart account and connect it to a finance category."}
           </DialogDescription>
         </DialogHeader>
 
@@ -228,7 +276,7 @@ export function AddAccountDialog({
                 (isSubaccount && !parentAccountId)
               }
             >
-              Submit
+              {isEditing ? "Save changes" : "Submit"}
             </Button>
           </DialogFooter>
         </form>

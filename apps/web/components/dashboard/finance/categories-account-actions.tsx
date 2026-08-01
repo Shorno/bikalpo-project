@@ -13,10 +13,12 @@ import {
 
 type CategoriesAccountActionsProps = {
   account: ChartAccount;
+  onEdit: (account: ChartAccount) => void;
 };
 
 export function CategoriesAccountActions({
   account,
+  onEdit,
 }: CategoriesAccountActionsProps) {
   return (
     <DropdownMenu>
@@ -28,7 +30,9 @@ export function CategoriesAccountActions({
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-48">
         <DropdownMenuItem>View history</DropdownMenuItem>
-        <DropdownMenuItem>Edit account</DropdownMenuItem>
+        <DropdownMenuItem onSelect={() => onEdit(account)}>
+          Edit account
+        </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem className="text-muted-foreground">
           {account.accountType} account

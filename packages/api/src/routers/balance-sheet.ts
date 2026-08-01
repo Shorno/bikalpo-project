@@ -1,8 +1,10 @@
 import { db } from "@bikalpo-project/db";
+import { ensureDefaultFinancePaymentAccounts } from "@bikalpo-project/db/accounting-seed";
 import {
   deliveryGroupInvoice,
   expense,
   financeAccount,
+  financePaymentAccount,
   financialLedger,
   invoice,
   order,
@@ -11,7 +13,15 @@ import {
   warehousePosSale,
 } from "@bikalpo-project/db/schema";
 import { ORPCError } from "@orpc/server";
-import { and, asc, eq, gte, inArray, isNotNull, lte } from "drizzle-orm";
+import {
+  and,
+  asc,
+  eq,
+  gte,
+  inArray,
+  isNotNull,
+  lte,
+} from "drizzle-orm";
 import { z } from "zod";
 
 import { protectedProcedure } from "../index";
@@ -35,6 +45,10 @@ function toNumber(value: number | string | null | undefined) {
 
 function toMoney(value: number) {
   return value.toFixed(2);
+}
+
+function getCashAndBankRows(rows: Array<{ amount: number; label: string }>) {
+  return rows.length > 0 ? rows : [{ amount: 0, label: "Cash on Hand" }];
 }
 
 function isOrderPaid(
@@ -128,6 +142,30 @@ export const balanceSheetRouter = {
       const manualPurchaseEntryTypes = isCashBasis
         ? (["purchase_cash"] as const)
         : (["purchase_cash", "purchase_credit"] as const);
+
+      await ensureDefaultFinancePaymentAccounts({ ownerId, ownerType });
+      const cashBankRows = await db
+        .select({
+          amount: financePaymentAccount.currentBalance,
+          label: financePaymentAccount.name,
+        })
+        .from(financePaymentAccount)
+        .where(
+          and(
+            eq(financePaymentAccount.ownerId, ownerId),
+            eq(financePaymentAccount.ownerType, ownerType),
+            eq(financePaymentAccount.isActive, true),
+            inArray(financePaymentAccount.type, ["cash", "bank"]),
+          ),
+        )
+        .orderBy(
+          asc(financePaymentAccount.type),
+          asc(financePaymentAccount.name),
+        );
+      const currentCashBankRows = cashBankRows.map((row) => ({
+        amount: toNumber(row.amount),
+        label: row.label,
+      }));
 
       const fixedAssetRows = await db
         .select({
@@ -229,6 +267,32 @@ export const balanceSheetRouter = {
         }))
         .filter((row) => row.amount !== 0);
       const loanPayable = currentLoanRows.reduce(
+        (sum, row) => sum + row.amount,
+        0,
+      );
+
+      const customerAdvanceRows = await db
+        .select({
+          amount: financeAccount.currentBalance,
+          label: financeAccount.name,
+        })
+        .from(financeAccount)
+        .where(
+          and(
+            eq(financeAccount.ownerId, ownerId),
+            eq(financeAccount.ownerType, ownerType),
+            eq(financeAccount.accountType, "liability"),
+            eq(financeAccount.balanceSheetLine, "customer_advance"),
+          ),
+        )
+        .orderBy(asc(financeAccount.sortOrder), asc(financeAccount.name));
+      const currentCustomerAdvanceRows = customerAdvanceRows
+        .map((row) => ({
+          amount: toNumber(row.amount),
+          label: row.label,
+        }))
+        .filter((row) => row.amount !== 0);
+      const customerAdvance = currentCustomerAdvanceRows.reduce(
         (sum, row) => sum + row.amount,
         0,
       );
@@ -658,26 +722,17 @@ export const balanceSheetRouter = {
       expenseTotal += manualProductSaleCost;
 
       const retainedEarnings = revenue - expenseTotal;
-      const cashAndBank =
-        retainedEarnings +
-        payable +
-        loanPayable -
-        receivable -
-        supplierAdvance -
-        inventory -
-        fixedAssets;
+      const displayedCashBankRows = getCashAndBankRows(currentCashBankRows);
+      const cashAndBank = displayedCashBankRows.reduce(
+        (sum, row) => sum + row.amount,
+        0,
+      );
       const totalAssets =
         cashAndBank + receivable + supplierAdvance + inventory + fixedAssets;
-      const totalLiabilities = payable + loanPayable;
+      const totalLiabilities = payable + customerAdvance + loanPayable;
       const totalEquity = totalAssets - totalLiabilities;
-      const netAssets =
-        cashAndBank +
-        receivable +
-        supplierAdvance +
-        inventory +
-        fixedAssets -
-        payable -
-        loanPayable;
+      const ownerCapital = totalEquity - retainedEarnings;
+      const netAssets = totalEquity;
       const asOfLabel = formatReportDate(endDate);
       const startLabel = formatReportDate(startDate);
 
@@ -697,6 +752,7 @@ export const balanceSheetRouter = {
           inventory: toMoney(inventory),
           receivable: toMoney(receivable),
           supplierAdvance: toMoney(supplierAdvance),
+          customerAdvance: toMoney(customerAdvance),
           payable: toMoney(payable),
           netAssets: toMoney(netAssets),
           retainedEarnings: toMoney(retainedEarnings),
@@ -710,7 +766,11 @@ export const balanceSheetRouter = {
             groups: [
               {
                 title: "Cash and Bank",
-                rows: [{ label: "Cash on Hand", amount: toMoney(cashAndBank) }],
+                rows: displayedCashBankRows.map((row) => ({
+                  label: row.label,
+                  amount: toMoney(row.amount),
+                  muted: row.amount === 0,
+                })),
                 total: toMoney(cashAndBank),
                 totalLabel: "Total Cash and Bank",
               },
@@ -790,12 +850,16 @@ export const balanceSheetRouter = {
                 title: "Current Liabilities",
                 rows: [
                   { label: "Accounts Payable", amount: toMoney(payable) },
+                  ...currentCustomerAdvanceRows.map((row) => ({
+                    label: row.label,
+                    amount: toMoney(row.amount),
+                  })),
                   ...currentLoanRows.map((row) => ({
                     label: row.label,
                     amount: toMoney(row.amount),
                   })),
                 ],
-                total: toMoney(payable + loanPayable),
+                total: toMoney(payable + customerAdvance + loanPayable),
                 totalLabel: "Total Current Liabilities",
               },
               {
@@ -817,6 +881,26 @@ export const balanceSheetRouter = {
           {
             title: "Equity",
             groups: [
+              {
+                title: "Owner Equity",
+                rows:
+                  Math.abs(ownerCapital) >= 0.005
+                    ? [
+                        {
+                          label: "Opening Balance Equity",
+                          amount: toMoney(ownerCapital),
+                        },
+                      ]
+                    : [
+                        {
+                          label: "Opening Balance Equity",
+                          amount: toMoney(0),
+                          muted: true,
+                        },
+                      ],
+                total: toMoney(ownerCapital),
+                totalLabel: "Total Owner Equity",
+              },
               {
                 title: "Retained Earnings",
                 rows: [

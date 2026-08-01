@@ -52,6 +52,9 @@ export function CategoriesManager() {
   );
   const [addAccountOpen, setAddAccountOpen] = useState(false);
   const [addCategoryOpen, setAddCategoryOpen] = useState(false);
+  const [editingAccount, setEditingAccount] = useState<ChartAccount | null>(
+    null,
+  );
   const [searchTerm, setSearchTerm] = useState("");
   const [accountTypeFilter, setAccountTypeFilter] =
     useState<AccountTypeFilter>("ALL");
@@ -94,6 +97,9 @@ export function CategoriesManager() {
         void queryClient.invalidateQueries({
           queryKey: orpc.finance.getChartOfAccounts.key(),
         });
+        void queryClient.invalidateQueries({
+          queryKey: orpc.balanceSheet.getBalanceSheet.key(),
+        });
         if (
           isCashAndBankCategory(categoryById.get(result.account.categoryId))
         ) {
@@ -106,6 +112,36 @@ export function CategoriesManager() {
       },
       onError: (error) => {
         toast.error(error.message || "Failed to create account");
+      },
+    }),
+  );
+
+  const updateAccountMutation = useMutation(
+    orpc.finance.updateAccount.mutationOptions({
+      onSuccess: (result) => {
+        toast.success(result.message);
+        setAccounts((currentAccounts) =>
+          upsertById(currentAccounts, result.account),
+        );
+        void queryClient.invalidateQueries({
+          queryKey: orpc.finance.getChartOfAccounts.key(),
+        });
+        void queryClient.invalidateQueries({
+          queryKey: orpc.balanceSheet.getBalanceSheet.key(),
+        });
+        if (
+          isCashAndBankCategory(categoryById.get(result.account.categoryId))
+        ) {
+          void queryClient.invalidateQueries({
+            queryKey: orpc.finance.getPaymentAccounts.key(),
+          });
+        }
+        setEditingAccount(null);
+        setAccountTypeFilter(result.account.accountType);
+        setSearchTerm(result.account.name);
+      },
+      onError: (error) => {
+        toast.error(error.message || "Failed to update account");
       },
     }),
   );
@@ -156,6 +192,27 @@ export function CategoriesManager() {
     });
   };
 
+  const handleUpdateAccount = (account: ChartAccount) => {
+    updateAccountMutation.mutate({
+      accountType: account.accountType,
+      amount: account.amount,
+      categoryId: account.categoryId,
+      description: account.description,
+      id: account.id,
+      isSubaccount: account.isSubaccount,
+      name: account.name,
+      parentAccountId: account.parentAccountId || null,
+    });
+  };
+
+  const handleAccountDialogOpenChange = (open: boolean) => {
+    setAddAccountOpen(open);
+
+    if (!open) {
+      setEditingAccount(null);
+    }
+  };
+
   return (
     <main className="min-h-screen bg-background px-4 py-6 sm:px-6 lg:px-8">
       <div className="mx-auto flex w-full max-w-6xl flex-col gap-6">
@@ -190,6 +247,10 @@ export function CategoriesManager() {
           <CategoriesTable
             accounts={filteredAccounts}
             categories={categories}
+            onEditAccount={(account) => {
+              setEditingAccount(account);
+              setAddAccountOpen(true);
+            }}
           />
         </section>
 
@@ -199,10 +260,12 @@ export function CategoriesManager() {
           onOpenChange={setAddCategoryOpen}
         />
         <AddAccountDialog
+          account={editingAccount}
           categories={categories}
           open={addAccountOpen}
           onCreate={handleCreateAccount}
-          onOpenChange={setAddAccountOpen}
+          onOpenChange={handleAccountDialogOpenChange}
+          onUpdate={handleUpdateAccount}
         />
       </div>
     </main>

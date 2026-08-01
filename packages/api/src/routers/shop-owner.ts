@@ -30,6 +30,7 @@ import {
     deliveryGroup,
     deliveryGroupInvoice,
     deliverySchedule,
+    financialLedger,
     inventory,
     invoice,
     openOrderBid,
@@ -50,6 +51,7 @@ import {
     stockAdjustment,
     stockAdjustmentItem,
     subCategory,
+    supplier,
     user,
     variantOption,
     warehouseApplication,
@@ -4963,9 +4965,391 @@ const orderQueries = {
 };
 
 // ────────────────────────────────────────────────────────────────
-// Incoming B2C Orders (consumers buying from this shop)
+// Retailer Supplier Management
 // ────────────────────────────────────────────────────────────────
 
+const supplierFormSchema = z.object({
+    name: z.string().min(1),
+    company: z.string().optional(),
+    contactPerson: z.string().optional(),
+    phone: z.string().optional(),
+    email: z.string().email().optional().or(z.literal("")),
+    address: z.string().optional(),
+    notes: z.string().optional(),
+    creditLimit: z.string().optional(),
+    returnPackAgreement: z.boolean().optional(),
+    categoryId: z.number().int().optional().nullable(),
+});
+
+const retailerSupplierQueries = {
+    getSuppliers: shopOwnerProcedure
+        .route({
+            method: "POST",
+            path: "/shop-owner/suppliers",
+            tags: ["Shop Owner"],
+            summary: "List retailer external suppliers",
+        })
+        .input(
+            z.object({
+                search: z.string().optional(),
+                status: z.enum(["all", "active", "suspended"]).default("all"),
+                categoryId: z.number().int().optional(),
+            }),
+        )
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+            const conditions: SQL[] = [eq(supplier.addedBy, userId)];
+
+            if (input.search) {
+                conditions.push(
+                    sql`(${supplier.name} ILIKE ${`%${input.search}%`} OR ${supplier.company} ILIKE ${`%${input.search}%`} OR ${supplier.phone} ILIKE ${`%${input.search}%`})`,
+                );
+            }
+
+            if (input.status !== "all") {
+                conditions.push(eq(supplier.status, input.status));
+            }
+
+            if (input.categoryId) {
+                conditions.push(eq(supplier.categoryId, input.categoryId));
+            }
+
+            const suppliers = await db.query.supplier.findMany({
+                where: and(...conditions),
+                with: {
+                    category: { columns: { id: true, name: true, slug: true } },
+                },
+                orderBy: [desc(supplier.createdAt)],
+            });
+
+            const supplierIds = suppliers.map((item) => item.id);
+            const purchaseTotals: Record<number, number> = {};
+
+            if (supplierIds.length > 0) {
+                const totals = await db
+                    .select({
+                        supplierId: purchase.supplierId,
+                        totalPurchase: sql<string>`COALESCE(SUM(${purchase.total}::numeric), 0)`,
+                    })
+                    .from(purchase)
+                    .where(
+                        and(
+                            eq(purchase.warehouseId, userId),
+                            inArray(purchase.supplierId, supplierIds),
+                        ),
+                    )
+                    .groupBy(purchase.supplierId);
+
+                for (const total of totals) {
+                    purchaseTotals[total.supplierId] =
+                        parseFloat(total.totalPurchase) || 0;
+                }
+            }
+
+            return {
+                suppliers: suppliers.map((item) => ({
+                    ...item,
+                    categoryName: item.category?.name ?? null,
+                    totalPurchase: purchaseTotals[item.id] ?? 0,
+                })),
+            };
+        }),
+
+    getSupplierStats: shopOwnerProcedure
+        .route({
+            method: "POST",
+            path: "/shop-owner/suppliers/stats",
+            tags: ["Shop Owner"],
+            summary: "Get retailer external supplier stats",
+        })
+        .handler(async ({ context }) => {
+            const userId = context.session.user.id;
+
+            const allSuppliers = await db.query.supplier.findMany({
+                where: eq(supplier.addedBy, userId),
+                columns: { id: true, currentPayable: true, status: true, isActive: true },
+            });
+
+            const activeCount = allSuppliers.filter(
+                (item) => item.status === "active",
+            ).length;
+            const totalPayable = allSuppliers.reduce(
+                (sum, item) => sum + parseFloat(item.currentPayable),
+                0,
+            );
+
+            const [purchaseStats] = await db
+                .select({
+                    totalPurchase: sql<string>`COALESCE(SUM(${purchase.total}::numeric), 0)`,
+                })
+                .from(purchase)
+                .where(eq(purchase.warehouseId, userId));
+
+            const totalPurchase = parseFloat(purchaseStats?.totalPurchase ?? "0");
+            const totalPaid = totalPurchase - totalPayable;
+
+            return {
+                totalPurchase,
+                totalPaid: Math.max(0, totalPaid),
+                totalPayable,
+                activeCount,
+                totalCount: allSuppliers.length,
+            };
+        }),
+
+    getExternalSupplierDetail: shopOwnerProcedure
+        .route({
+            method: "POST",
+            path: "/shop-owner/suppliers/detail",
+            tags: ["Shop Owner"],
+            summary: "Get retailer external supplier detail",
+        })
+        .input(z.object({ id: z.number().int() }))
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+
+            const sup = await db.query.supplier.findFirst({
+                where: and(eq(supplier.id, input.id), eq(supplier.addedBy, userId)),
+                with: {
+                    category: { columns: { id: true, name: true, slug: true } },
+                },
+            });
+
+            if (!sup) {
+                throw new ORPCError("NOT_FOUND", { message: "Supplier not found" });
+            }
+
+            const purchases = await db.query.purchase.findMany({
+                where: and(
+                    eq(purchase.warehouseId, userId),
+                    eq(purchase.supplierId, input.id),
+                ),
+                with: {
+                    items: {
+                        columns: {
+                            productName: true,
+                            quantity: true,
+                            totalCost: true,
+                        },
+                    },
+                },
+                orderBy: [desc(purchase.createdAt)],
+            });
+
+            const totalPurchaseValue = purchases.reduce(
+                (sum, item) => sum + parseFloat(item.total ?? "0"),
+                0,
+            );
+
+            const payments = await db
+                .select({
+                    id: financialLedger.id,
+                    amount: financialLedger.amount,
+                    description: financialLedger.description,
+                    createdAt: financialLedger.createdAt,
+                })
+                .from(financialLedger)
+                .where(
+                    and(
+                        eq(financialLedger.ownerId, userId),
+                        eq(financialLedger.ownerType, "shop"),
+                        eq(financialLedger.referenceType, "supplier_payment"),
+                        eq(financialLedger.referenceId, input.id),
+                    ),
+                )
+                .orderBy(desc(financialLedger.createdAt));
+
+            const totalPaid = payments.reduce(
+                (sum, item) => sum + parseFloat(item.amount ?? "0"),
+                0,
+            );
+
+            const cashPurchaseTotal = purchases
+                .filter((item) => item.paymentType === "cash")
+                .reduce((sum, item) => sum + parseFloat(item.total ?? "0"), 0);
+
+            const productMap = new Map<
+                string,
+                { totalQty: number; totalValue: number }
+            >();
+            for (const purchaseRow of purchases) {
+                for (const item of purchaseRow.items) {
+                    const existing = productMap.get(item.productName) ?? {
+                        totalQty: 0,
+                        totalValue: 0,
+                    };
+                    existing.totalQty += parseFloat(item.quantity ?? "0");
+                    existing.totalValue += parseFloat(item.totalCost ?? "0");
+                    productMap.set(item.productName, existing);
+                }
+            }
+
+            const productBreakdown = Array.from(productMap.entries())
+                .map(([productName, data]) => ({
+                    productName,
+                    totalQty: data.totalQty,
+                    totalValue: data.totalValue,
+                }))
+                .sort((a, b) => b.totalValue - a.totalValue)
+                .slice(0, 30);
+
+            const currentPayable = parseFloat(sup.currentPayable ?? "0");
+            const purchaseHistory = purchases.map((purchaseRow) => {
+                const total = parseFloat(purchaseRow.total ?? "0");
+                const isCash = purchaseRow.paymentType === "cash";
+
+                return {
+                    id: purchaseRow.id,
+                    purchaseNumber: purchaseRow.purchaseNumber,
+                    purchaseDate: purchaseRow.purchaseDate,
+                    itemCount: purchaseRow.items.length,
+                    total,
+                    paid: isCash ? total : 0,
+                    due: isCash ? 0 : total,
+                    status: purchaseRow.status,
+                    paymentType: purchaseRow.paymentType,
+                    discount: purchaseRow.discount,
+                    transportCost: purchaseRow.transportCost,
+                    note: purchaseRow.note,
+                    createdAt: purchaseRow.createdAt,
+                    items: purchaseRow.items.map((item) => ({
+                        productName: item.productName,
+                        quantity: item.quantity,
+                        totalCost: item.totalCost,
+                    })),
+                };
+            });
+
+            return {
+                supplier: {
+                    ...sup,
+                    categoryName: sup.category?.name ?? null,
+                },
+                purchaseHistory,
+                productBreakdown,
+                payments,
+                totalPurchaseValue,
+                totalPaid: totalPaid + cashPurchaseTotal,
+                currentPayable,
+            };
+        }),
+
+    getSupplierCategories: shopOwnerProcedure
+        .route({
+            method: "POST",
+            path: "/shop-owner/suppliers/categories",
+            tags: ["Shop Owner"],
+            summary: "Get retailer supplier categories",
+        })
+        .handler(async () => {
+            const categories = await db
+                .select({ id: category.id, name: category.name, slug: category.slug })
+                .from(category)
+                .where(eq(category.isActive, true))
+                .orderBy(category.name);
+
+            return { categories };
+        }),
+
+    createSupplier: shopOwnerProcedure
+        .route({
+            method: "POST",
+            path: "/shop-owner/suppliers/create",
+            tags: ["Shop Owner"],
+            summary: "Create retailer external supplier",
+        })
+        .input(supplierFormSchema)
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+
+            const [created] = await db
+                .insert(supplier)
+                .values({
+                    name: input.name,
+                    company: input.company || null,
+                    contactPerson: input.contactPerson || null,
+                    phone: input.phone || null,
+                    email: input.email || null,
+                    address: input.address || null,
+                    notes: input.notes || null,
+                    creditLimit: input.creditLimit || "0",
+                    returnPackAgreement: input.returnPackAgreement ?? false,
+                    categoryId: input.categoryId ?? null,
+                    addedBy: userId,
+                })
+                .returning();
+
+            return { supplier: created };
+        }),
+
+    updateSupplier: shopOwnerProcedure
+        .route({
+            method: "POST",
+            path: "/shop-owner/suppliers/update",
+            tags: ["Shop Owner"],
+            summary: "Update retailer external supplier",
+        })
+        .input(
+            supplierFormSchema.extend({
+                id: z.number().int(),
+                isActive: z.boolean().optional(),
+                status: z.enum(["active", "suspended"]).optional(),
+            }),
+        )
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+            const updateData: Record<string, any> = { name: input.name };
+
+            if (input.company !== undefined)
+                updateData.company = input.company || null;
+            if (input.contactPerson !== undefined)
+                updateData.contactPerson = input.contactPerson || null;
+            if (input.phone !== undefined) updateData.phone = input.phone || null;
+            if (input.email !== undefined) updateData.email = input.email || null;
+            if (input.address !== undefined)
+                updateData.address = input.address || null;
+            if (input.notes !== undefined) updateData.notes = input.notes || null;
+            if (input.creditLimit !== undefined)
+                updateData.creditLimit = input.creditLimit;
+            if (input.returnPackAgreement !== undefined)
+                updateData.returnPackAgreement = input.returnPackAgreement;
+            if (input.categoryId !== undefined) updateData.categoryId = input.categoryId;
+            if (input.isActive !== undefined) updateData.isActive = input.isActive;
+            if (input.status !== undefined) updateData.status = input.status;
+
+            const [updated] = await db
+                .update(supplier)
+                .set(updateData)
+                .where(and(eq(supplier.id, input.id), eq(supplier.addedBy, userId)))
+                .returning();
+
+            if (!updated) {
+                throw new ORPCError("NOT_FOUND", { message: "Supplier not found" });
+            }
+
+            return { supplier: updated };
+        }),
+
+    deleteSupplier: shopOwnerProcedure
+        .route({
+            method: "POST",
+            path: "/shop-owner/suppliers/delete",
+            tags: ["Shop Owner"],
+            summary: "Delete retailer external supplier",
+        })
+        .input(z.object({ id: z.number().int() }))
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+
+            await db
+                .delete(supplier)
+                .where(and(eq(supplier.id, input.id), eq(supplier.addedBy, userId)));
+
+            return { success: true };
+        }),
+};
+
+// Incoming B2C Orders (consumers buying from this shop)
 const incomingOrderQueries = {
     /** List B2C consumer orders placed to this shop */
     getIncomingOrders: shopOwnerProcedure
@@ -8839,6 +9223,7 @@ export const shopOwnerRouter = {
     ...managementQueries,
     ...mutations,
     ...orderQueries,
+    ...retailerSupplierQueries,
     ...incomingOrderQueries,
     ...warehouseOrderQueries,
     ...openOrderEndpoints,

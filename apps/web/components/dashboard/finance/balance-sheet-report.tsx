@@ -63,6 +63,7 @@ type BalanceSheetData = {
   sections: AccountSection[];
   summary: {
     cashAndBank: string;
+    customerAdvance: string;
     inventory: string;
     netAssets: string;
     payable: string;
@@ -134,6 +135,12 @@ export function BalanceSheetReport() {
   } = useQuery(
     orpc.balanceSheet.getBalanceSheet.queryOptions({
       input: { endDate, reportType, startDate, year },
+      refetchOnMount: "always",
+      refetchOnReconnect: "always",
+      refetchOnWindowFocus: "always",
+      refetchInterval: 5000,
+      refetchIntervalInBackground: false,
+      staleTime: 0,
     }),
   );
   const adjustedReport = useMemo(
