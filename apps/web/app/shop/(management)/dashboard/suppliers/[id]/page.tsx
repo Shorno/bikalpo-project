@@ -1,27 +1,47 @@
 "use client";
 
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertCircle,
+  AlertTriangle,
   ArrowLeft,
-  ArrowRight,
-  Building2,
+  Ban,
+  CalendarDays,
+  CreditCard,
+  Eye,
   Mail,
   MapPin,
+  Pencil,
   Phone,
-  ShoppingCart,
+  Plus,
+  Receipt,
+  ShieldCheck,
+  TrendingUp,
+  User,
   Wallet,
 } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
+import { type FormEvent, useState } from "react";
+import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
@@ -31,258 +51,179 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { useSupplierDetail } from "@/hooks/use-shop-owner-api";
+import { orpc } from "@/utils/orpc";
 
-type SupplierDetailData = {
-  identity: {
-    warehouseId: string;
-    name: string;
-    phone: string | null;
-    email: string | null;
-    address: string | null;
-    connectionStatus: string | null;
-    connectedAt: string | Date | null;
-    lastOrderedAt: string | Date | null;
-  };
-  business: {
-    name: string;
-    phone: string | null;
-    email: string | null;
-    location: string | null;
-    yourShopName: string | null;
-    yourAddress: string | null;
-  };
-  orderStats: {
-    total: number;
-    pending: number;
-    confirmed: number;
-    processing: number;
-    delivered: number;
-    cancelled: number;
-  };
-  salesman: {
-    name: string;
-    phone: string | null;
-    status: "active" | "inactive";
-  } | null;
-  delivery: {
-    scope: "matched_area" | "warehouse" | "none";
-    matchSource: string | null;
-    yourAddress: string | null;
-    areaHint: string | null;
-    matchedArea: {
-      id: number;
-      name: string;
-      description: string | null;
-    } | null;
-    availableAreas: string[];
-    weeklyDays: Array<{
-      dayOfWeek: number;
-      dayName: string;
-      areaNames: string[];
-      riderName: string | null;
-      riderPhone: string | null;
-    }>;
-    hasDeliveryToday: boolean;
-    todayDayName: string;
-    nextDelivery: {
-      dayOfWeek: number;
-      dayName: string;
-      date: string;
-      offsetDays: number;
-    } | null;
-    cutoffTime: string | null;
-  };
-  accountSummary: {
-    totalPurchase: number;
-    paid: number;
-    payable: number;
-    payableOrders: number;
-  };
-  purchaseHistory: Array<{
-    id: number;
-    orderNumber: string;
-    date: string | Date;
-    productSummary: string;
-    amount: number;
-    orderStatus: string;
-    paymentStatus: "paid" | "due" | "pending";
-    dueAmount: number;
-  }>;
-  quickInfo: {
-    lastOrderNumber: string | null;
-    lastOrderStatus: string | null;
-    pendingOrders: number;
-    activeOrders: number;
-    payableOrders: number;
-    lastDeliveredAt: string | Date | null;
-  };
-  pendingOrders: Array<{
-    id: number;
-    orderNumber: string;
-    status: string;
-    createdAt: string | Date;
-    total: string | number;
-    items: Array<{
-      id: number;
-      productName: string;
-      quantity: number;
-      modifiedQty: number | null;
-    }>;
-  }>;
+type SupplierForm = {
+  name: string;
+  company: string;
+  contactPerson: string;
+  phone: string;
+  email: string;
+  address: string;
+  notes: string;
+  creditLimit: string;
+  returnPackAgreement: boolean;
+  categoryId: number | null;
 };
 
-const WEEKDAY_LABELS = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"];
-
-const orderStatusStyles: Record<string, string> = {
-  pending: "border-amber-200 bg-amber-50 text-amber-700",
-  confirmed: "border-sky-200 bg-sky-50 text-sky-700",
-  processing: "border-indigo-200 bg-indigo-50 text-indigo-700",
-  delivered: "border-emerald-200 bg-emerald-50 text-emerald-700",
-  cancelled: "border-rose-200 bg-rose-50 text-rose-700",
-  returned: "border-slate-200 bg-slate-100 text-slate-700",
-};
-
-const paymentStatusStyles: Record<string, string> = {
-  paid: "border-emerald-200 bg-emerald-50 text-emerald-700",
-  due: "border-rose-200 bg-rose-50 text-rose-700",
-  pending: "border-amber-200 bg-amber-50 text-amber-700",
-};
-
-function formatCurrency(value: number) {
-  return `Tk ${value.toLocaleString("en-BD")}`;
+function formatMoney(value: number | string | null | undefined) {
+  return `Tk ${Number(value || 0).toLocaleString("en-BD", {
+    maximumFractionDigits: 2,
+  })}`;
 }
 
-function formatDate(value: string | Date | null) {
+function formatDate(value: string | Date | null | undefined) {
   if (!value) return "Not available";
 
-  return new Date(value).toLocaleDateString("en-BD", {
-    day: "numeric",
+  return new Date(value).toLocaleDateString("en-GB", {
+    day: "2-digit",
     month: "short",
-    year: "numeric",
+    year: "2-digit",
   });
 }
 
-function formatShortDate(value: string | Date | null) {
-  if (!value) return "Not available";
-
-  return new Date(value).toLocaleDateString("en-BD", {
-    day: "numeric",
-    month: "short",
-  });
+function parsePaymentMethod(description: string | null) {
+  if (!description) return "Cash";
+  const value = description.toLowerCase();
+  if (value.includes("bank")) return "Bank";
+  if (value.includes("mobile") || value.includes("bkash")) return "Mobile";
+  return "Cash";
 }
 
-function formatLabel(value: string | null | undefined) {
-  if (!value) return "Not available";
-
-  return value
-    .replace(/_/g, " ")
-    .replace(/\b\w/g, (char) => char.toUpperCase());
-}
-
-function describeNextDelivery(
-  nextDelivery: SupplierDetailData["delivery"]["nextDelivery"],
-) {
-  if (!nextDelivery) return "No delivery scheduled";
-
-  if (nextDelivery.offsetDays === 1) {
-    return `${nextDelivery.dayName} (Tomorrow)`;
+function purchaseStatusBadge(status: string, paymentType: string) {
+  if (paymentType === "cash") {
+    return (
+      <Badge
+        className="border-emerald-200 bg-emerald-50 text-[10px] text-emerald-700"
+        variant="outline"
+      >
+        Paid
+      </Badge>
+    );
   }
 
-  return `${nextDelivery.dayName} - ${formatDate(nextDelivery.date)}`;
-}
-
-function buildMonthCalendar(scheduleDays: number[]) {
-  const today = new Date();
-  const year = today.getFullYear();
-  const month = today.getMonth();
-  const firstDay = new Date(year, month, 1);
-  const lastDay = new Date(year, month + 1, 0);
-  const offset = (firstDay.getDay() + 6) % 7;
-  const cells: Array<{
-    day: number | null;
-    scheduled: boolean;
-    today: boolean;
-  }> = [];
-
-  for (let i = 0; i < offset; i += 1) {
-    cells.push({ day: null, scheduled: false, today: false });
-  }
-
-  for (let day = 1; day <= lastDay.getDate(); day += 1) {
-    const current = new Date(year, month, day);
-    cells.push({
-      day,
-      scheduled: scheduleDays.includes(current.getDay()),
-      today: day === today.getDate(),
-    });
-  }
-
-  return {
-    label: firstDay.toLocaleDateString("en-BD", {
-      month: "long",
-      year: "numeric",
-    }),
-    cells,
+  const map: Record<string, { className: string; label: string }> = {
+    received: {
+      label: "Credit",
+      className: "border-orange-200 bg-orange-50 text-orange-700",
+    },
+    draft: {
+      label: "Draft",
+      className: "border-gray-200 bg-gray-50 text-gray-600",
+    },
+    partial: {
+      label: "Partial",
+      className: "border-amber-200 bg-amber-50 text-amber-700",
+    },
+    cancelled: {
+      label: "Cancelled",
+      className: "border-red-200 bg-red-50 text-red-700",
+    },
   };
-}
-
-function StatCard({
-  label,
-  value,
-  hint,
-  tone = "default",
-}: {
-  label: string;
-  value: string | number;
-  hint?: string;
-  tone?: "default" | "success" | "danger";
-}) {
-  const valueClass =
-    tone === "danger"
-      ? "text-rose-600"
-      : tone === "success"
-        ? "text-emerald-600"
-        : "text-foreground";
+  const config = map[status] || map.draft;
 
   return (
-    <Card className="border-border/70">
-      <CardContent className="space-y-1 p-5">
-        <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
-          {label}
-        </p>
-        <p className={`text-2xl font-semibold tracking-tight ${valueClass}`}>
-          {value}
-        </p>
-        {hint ? <p className="text-sm text-muted-foreground">{hint}</p> : null}
-      </CardContent>
-    </Card>
-  );
-}
-
-function DetailRow({
-  label,
-  value,
-}: {
-  label: string;
-  value: string | number | null | undefined;
-}) {
-  return (
-    <div className="flex items-start justify-between gap-4 rounded-2xl border border-border/60 px-4 py-3">
-      <p className="text-sm text-muted-foreground">{label}</p>
-      <p className="text-right font-medium">{value || "Not available"}</p>
-    </div>
+    <Badge className={`text-[10px] ${config.className}`} variant="outline">
+      {config.label}
+    </Badge>
   );
 }
 
 export default function SupplierDetailPage() {
   const params = useParams();
-  const warehouseId = params.id as string;
-  const { data, isLoading, isError } = useSupplierDetail(warehouseId);
+  const queryClient = useQueryClient();
+  const supplierId = Number(params.id);
+  const isValidSupplierId = Number.isFinite(supplierId) && supplierId > 0;
+
+  const [editOpen, setEditOpen] = useState(false);
+  const [selectedPurchase, setSelectedPurchase] = useState<any>(null);
+  const [form, setForm] = useState<SupplierForm>({
+    name: "",
+    company: "",
+    contactPerson: "",
+    phone: "",
+    email: "",
+    address: "",
+    notes: "",
+    creditLimit: "0",
+    returnPackAgreement: false,
+    categoryId: null,
+  });
+
+  const { data, isLoading, isError } = useQuery({
+    queryKey: ["shopOwner", "supplierDetail", supplierId],
+    queryFn: () =>
+      orpc.shopOwner.getExternalSupplierDetail.call({ id: supplierId }),
+    enabled: isValidSupplierId,
+  });
+
+  const { data: categoriesData } = useQuery({
+    queryKey: ["shopOwner", "supplierCategories"],
+    queryFn: () => orpc.shopOwner.getSupplierCategories.call({}),
+  });
+
+  const categories = categoriesData?.categories ?? [];
+
+  const invalidateDetail = () => {
+    queryClient.invalidateQueries({
+      queryKey: ["shopOwner", "supplierDetail", supplierId],
+    });
+    queryClient.invalidateQueries({ queryKey: ["shopOwner", "suppliers"] });
+    queryClient.invalidateQueries({ queryKey: ["shopOwner", "supplierStats"] });
+  };
+
+  const updateMutation = useMutation({
+    mutationFn: (input: SupplierForm & { id: number }) =>
+      orpc.shopOwner.updateSupplier.call(input),
+    onSuccess: () => {
+      invalidateDetail();
+      setEditOpen(false);
+      toast.success("Supplier updated");
+    },
+    onError: (error: any) => toast.error(error.message || "Update failed"),
+  });
+
+  const toggleStatusMutation = useMutation({
+    mutationFn: (status: "active" | "suspended") =>
+      orpc.shopOwner.updateSupplier.call({
+        id: supplierId,
+        name: data!.supplier.name,
+        status,
+      }),
+    onSuccess: () => {
+      invalidateDetail();
+      toast.success("Status updated");
+    },
+    onError: (error: any) =>
+      toast.error(error.message || "Failed to update status"),
+  });
+
+  const openEditDialog = () => {
+    if (!data) return;
+    const supplier = data.supplier;
+    setForm({
+      name: supplier.name,
+      company: supplier.company || "",
+      contactPerson: supplier.contactPerson || "",
+      phone: supplier.phone || "",
+      email: supplier.email || "",
+      address: supplier.address || "",
+      notes: supplier.notes || "",
+      creditLimit: supplier.creditLimit || "0",
+      returnPackAgreement: supplier.returnPackAgreement ?? false,
+      categoryId: supplier.categoryId ?? null,
+    });
+    setEditOpen(true);
+  };
+
+  const handleSubmit = (event: FormEvent) => {
+    event.preventDefault();
+    updateMutation.mutate({ ...form, id: supplierId });
+  };
 
   if (isLoading) return <DetailSkeleton />;
 
-  if (isError || !data) {
+  if (isError || !data || !isValidSupplierId) {
     return (
       <div className="space-y-4">
         <Button asChild size="sm" variant="ghost">
@@ -291,12 +232,11 @@ export default function SupplierDetailPage() {
             Back
           </Link>
         </Button>
-
         <Card>
-          <CardContent className="p-12 text-center">
-            <AlertCircle className="mx-auto mb-3 h-12 w-12 text-rose-300" />
+          <CardContent className="py-12 text-center">
+            <AlertCircle className="mx-auto mb-3 h-12 w-12 text-red-300" />
             <p className="font-medium text-muted-foreground">
-              Supplier details could not be loaded.
+              Supplier not found
             </p>
           </CardContent>
         </Card>
@@ -304,24 +244,15 @@ export default function SupplierDetailPage() {
     );
   }
 
-  const detail = data as SupplierDetailData;
   const {
-    identity,
-    business,
-    orderStats,
-    salesman,
-    delivery,
-    accountSummary,
+    supplier,
     purchaseHistory,
-    quickInfo,
-    pendingOrders,
-  } = detail;
-
-  const calendar = buildMonthCalendar(
-    delivery.weeklyDays.map((day) => day.dayOfWeek),
-  );
-  const connectionLabel = formatLabel(identity.connectionStatus || "active");
-  const hasPaymentFlow = false;
+    productBreakdown,
+    payments,
+    totalPurchaseValue,
+    totalPaid,
+    currentPayable,
+  } = data;
 
   return (
     <div className="space-y-6">
@@ -332,547 +263,686 @@ export default function SupplierDetailPage() {
         </Link>
       </Button>
 
-      <Card className="border-border/70">
-        <CardContent className="space-y-5 p-6">
-          <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
-            <div className="space-y-3">
-              <div className="flex flex-wrap items-center gap-3">
-                <h1 className="text-2xl font-bold tracking-tight">
-                  {identity.name}
-                </h1>
-                <Badge className="border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-50">
-                  {connectionLabel}
-                </Badge>
-                {accountSummary.payable > 0 ? (
-                  <Badge className="border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-50">
-                    {formatCurrency(accountSummary.payable)} due
-                  </Badge>
-                ) : null}
-              </div>
-
-              <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
-                {identity.phone ? (
-                  <span className="flex items-center gap-1.5">
-                    <Phone className="h-4 w-4" />
-                    {identity.phone}
-                  </span>
-                ) : null}
-                {identity.email ? (
-                  <span className="flex items-center gap-1.5">
-                    <Mail className="h-4 w-4" />
-                    {identity.email}
-                  </span>
-                ) : null}
-                {identity.address ? (
-                  <span className="flex items-center gap-1.5">
-                    <MapPin className="h-4 w-4" />
-                    {identity.address}
-                  </span>
-                ) : null}
+      <Card>
+        <CardContent className="pt-6">
+          <div className="mb-5 flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
+            <div className="min-w-0">
+              <div className="mb-1 flex items-center gap-3">
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 text-lg font-bold text-white">
+                  {supplier.name.charAt(0).toUpperCase()}
+                </div>
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2.5">
+                    <h1 className="truncate text-xl font-bold tracking-tight">
+                      {supplier.name}
+                    </h1>
+                    {supplier.status === "active" ? (
+                      <Badge
+                        className="border-emerald-200 bg-emerald-50 text-xs text-emerald-600"
+                        variant="outline"
+                      >
+                        Active
+                      </Badge>
+                    ) : (
+                      <Badge
+                        className="border-red-200 bg-red-50 text-xs text-red-600"
+                        variant="outline"
+                      >
+                        Suspended
+                      </Badge>
+                    )}
+                  </div>
+                  <p className="mt-0.5 text-sm text-muted-foreground">
+                    {[supplier.company, supplier.categoryName]
+                      .filter(Boolean)
+                      .join(" - ") || "No category assigned"}
+                  </p>
+                </div>
               </div>
             </div>
 
-            <div className="flex flex-wrap gap-2">
+            <div className="flex shrink-0 flex-wrap gap-2">
               <Button asChild size="sm">
-                <Link href="/dashboard/order-from-warehouse">
-                  <ShoppingCart className="mr-1.5 h-3.5 w-3.5" />
-                  Place Order
+                <Link href="/dashboard/stock/add">
+                  <Plus className="mr-1.5 h-3.5 w-3.5" />
+                  Add Stock
                 </Link>
               </Button>
-              {identity.phone ? (
-                <Button asChild size="sm" variant="outline">
-                  <a href={`tel:${identity.phone}`}>
-                    <Phone className="mr-1.5 h-3.5 w-3.5" />
-                    Contact Supplier
-                  </a>
+              <Button onClick={openEditDialog} size="sm" variant="outline">
+                <Pencil className="mr-1.5 h-3.5 w-3.5" />
+                Edit
+              </Button>
+              {supplier.status === "active" ? (
+                <Button
+                  className="border-red-200 text-red-600 hover:bg-red-50"
+                  disabled={toggleStatusMutation.isPending}
+                  onClick={() => toggleStatusMutation.mutate("suspended")}
+                  size="sm"
+                  variant="outline"
+                >
+                  <Ban className="mr-1.5 h-3.5 w-3.5" />
+                  Deactivate
                 </Button>
-              ) : null}
-              {identity.email ? (
-                <Button asChild size="sm" variant="outline">
-                  <a href={`mailto:${identity.email}`}>
-                    <Mail className="mr-1.5 h-3.5 w-3.5" />
-                    Email
-                  </a>
+              ) : (
+                <Button
+                  className="border-emerald-200 text-emerald-600 hover:bg-emerald-50"
+                  disabled={toggleStatusMutation.isPending}
+                  onClick={() => toggleStatusMutation.mutate("active")}
+                  size="sm"
+                  variant="outline"
+                >
+                  <ShieldCheck className="mr-1.5 h-3.5 w-3.5" />
+                  Activate
                 </Button>
-              ) : null}
+              )}
             </div>
           </div>
 
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-            <StatCard
-              label="Total Purchase"
-              value={formatCurrency(accountSummary.totalPurchase)}
-              hint={`${orderStats.total} total orders`}
-            />
-            <StatCard
-              label="Paid"
-              value={formatCurrency(accountSummary.paid)}
-              tone="success"
-              hint={`${orderStats.delivered} delivered orders`}
-            />
-            <StatCard
-              label="Payable"
-              value={formatCurrency(accountSummary.payable)}
-              tone={accountSummary.payable > 0 ? "danger" : "success"}
-              hint={`${accountSummary.payableOrders} payable orders`}
-            />
-            <StatCard
-              label="Active Orders"
-              value={quickInfo.activeOrders}
-              hint={`${quickInfo.pendingOrders} pending or processing`}
-            />
+          <div className="border-t pt-4">
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
+              {supplier.phone && (
+                <DetailField
+                  icon={<Phone className="h-3.5 w-3.5" />}
+                  label="Phone"
+                  value={supplier.phone}
+                />
+              )}
+              {supplier.email && (
+                <DetailField
+                  icon={<Mail className="h-3.5 w-3.5" />}
+                  label="Email"
+                  value={supplier.email}
+                />
+              )}
+              {supplier.contactPerson && (
+                <DetailField
+                  icon={<User className="h-3.5 w-3.5" />}
+                  label="Contact Person"
+                  value={supplier.contactPerson}
+                />
+              )}
+              {supplier.address && (
+                <DetailField
+                  icon={<MapPin className="h-3.5 w-3.5" />}
+                  label="Address"
+                  value={supplier.address}
+                />
+              )}
+              <DetailField
+                icon={<CalendarDays className="h-3.5 w-3.5" />}
+                label="Joined"
+                value={formatDate(supplier.createdAt)}
+              />
+              <DetailField
+                icon={<CreditCard className="h-3.5 w-3.5" />}
+                label="Credit Limit"
+                value={formatMoney(supplier.creditLimit)}
+              />
+              <DetailField
+                highlight={currentPayable > 0}
+                icon={<Wallet className="h-3.5 w-3.5" />}
+                label="Current Payable"
+                value={formatMoney(currentPayable)}
+              />
+            </div>
           </div>
         </CardContent>
       </Card>
 
-      <div className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
-        <div className="space-y-6">
-          <Card className="border-border/70">
-            <CardHeader>
-              <CardTitle>Business Info</CardTitle>
-              <CardDescription>
-                Primary supplier profile from the retailer side.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <DetailRow label="Supplier Name" value={business.name} />
-              <DetailRow label="Phone" value={business.phone} />
-              <DetailRow label="Email" value={business.email} />
-              <DetailRow label="Location" value={business.location} />
-              <DetailRow
-                label="Connected Since"
-                value={formatDate(identity.connectedAt)}
-              />
-            </CardContent>
-          </Card>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <SummaryCard
+          icon={<TrendingUp className="h-5 w-5 text-blue-600" />}
+          label="Total Purchase"
+          value={formatMoney(totalPurchaseValue)}
+        />
+        <SummaryCard
+          icon={<Wallet className="h-5 w-5 text-emerald-600" />}
+          label="Total Paid"
+          value={formatMoney(totalPaid)}
+        />
+        <SummaryCard
+          icon={<CreditCard className="h-5 w-5 text-orange-500" />}
+          label="Payable"
+          value={formatMoney(currentPayable)}
+        />
+      </div>
 
-          <Card className="border-border/70">
-            <CardHeader>
-              <CardTitle>Purchase History</CardTitle>
-              <CardDescription>
-                Latest retailer purchases and payment condition.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {purchaseHistory.length === 0 ? (
-                <p className="py-6 text-center text-sm text-muted-foreground">
-                  No purchase history available yet.
+      {currentPayable > 0 && (
+        <Card className="border-orange-200 bg-orange-50/50">
+          <CardHeader className="pb-2">
+            <CardTitle className="flex items-center gap-2 text-sm font-semibold text-orange-700">
+              <AlertTriangle className="h-4 w-4" />
+              Due Alert
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="flex flex-wrap items-center gap-6">
+              <div>
+                <p className="text-xs text-orange-600/80">Total Due</p>
+                <p className="text-xl font-bold tabular-nums text-orange-700">
+                  {formatMoney(currentPayable)}
                 </p>
-              ) : (
-                <>
-                  <div className="hidden overflow-hidden rounded-2xl border border-border/70 md:block">
-                    <Table>
-                      <TableHeader>
-                        <TableRow className="hover:bg-transparent">
-                          <TableHead className="px-4">Date</TableHead>
-                          <TableHead>Products</TableHead>
-                          <TableHead>Amount</TableHead>
-                          <TableHead>Status</TableHead>
-                          <TableHead className="px-4">Payment</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {purchaseHistory.map((purchase) => (
-                          <TableRow key={purchase.id}>
-                            <TableCell className="px-4">
-                              {formatShortDate(purchase.date)}
+              </div>
+              <div>
+                <p className="text-xs text-orange-600/80">Total Purchase</p>
+                <p className="text-sm font-semibold tabular-nums">
+                  {formatMoney(totalPurchaseValue)}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-orange-600/80">Total Paid</p>
+                <p className="text-sm font-semibold tabular-nums text-emerald-700">
+                  {formatMoney(totalPaid)}
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 text-sm font-semibold">
+            Purchase History
+            {purchaseHistory.length > 0 && (
+              <Badge className="ml-1 text-[10px]" variant="secondary">
+                {purchaseHistory.length} orders
+              </Badge>
+            )}
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="p-0">
+          {purchaseHistory.length === 0 ? (
+            <div className="py-10 text-center text-sm text-muted-foreground">
+              No purchase history yet
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Invoice No</TableHead>
+                  <TableHead>Date</TableHead>
+                  <TableHead className="text-center">Items</TableHead>
+                  <TableHead className="text-right">Amount</TableHead>
+                  <TableHead className="text-right">Paid</TableHead>
+                  <TableHead className="text-right">Due</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="text-center">Action</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {purchaseHistory.map((purchase: any) => (
+                  <TableRow key={purchase.id}>
+                    <TableCell className="font-mono text-sm font-medium">
+                      {purchase.purchaseNumber}
+                    </TableCell>
+                    <TableCell className="text-sm">
+                      {formatDate(purchase.purchaseDate || purchase.createdAt)}
+                    </TableCell>
+                    <TableCell className="text-center tabular-nums">
+                      {purchase.itemCount}
+                    </TableCell>
+                    <TableCell className="text-right font-medium tabular-nums">
+                      {formatMoney(purchase.total)}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums text-emerald-600">
+                      {formatMoney(purchase.paid)}
+                    </TableCell>
+                    <TableCell
+                      className={`text-right tabular-nums ${
+                        purchase.due > 0
+                          ? "font-medium text-orange-600"
+                          : "text-muted-foreground"
+                      }`}
+                    >
+                      {formatMoney(purchase.due)}
+                    </TableCell>
+                    <TableCell>
+                      {purchaseStatusBadge(
+                        purchase.status,
+                        purchase.paymentType,
+                      )}
+                    </TableCell>
+                    <TableCell className="text-center">
+                      <Button
+                        className="h-7 text-xs"
+                        onClick={() => setSelectedPurchase(purchase)}
+                        size="sm"
+                        variant="ghost"
+                      >
+                        <Eye className="mr-1 h-3 w-3" />
+                        View
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
+
+      <Dialog
+        onOpenChange={(open) => !open && setSelectedPurchase(null)}
+        open={!!selectedPurchase}
+      >
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Receipt className="h-4 w-4" />
+              {selectedPurchase?.purchaseNumber}
+            </DialogTitle>
+          </DialogHeader>
+          {selectedPurchase && (
+            <div className="mt-1 space-y-4">
+              <div className="grid grid-cols-3 gap-3">
+                <div className="rounded-lg bg-muted/50 p-3 text-center">
+                  <p className="mb-0.5 text-[11px] text-muted-foreground">
+                    Date
+                  </p>
+                  <p className="text-sm font-semibold">
+                    {formatDate(
+                      selectedPurchase.purchaseDate ||
+                        selectedPurchase.createdAt,
+                    )}
+                  </p>
+                </div>
+                <div className="rounded-lg bg-muted/50 p-3 text-center">
+                  <p className="mb-0.5 text-[11px] text-muted-foreground">
+                    Payment
+                  </p>
+                  <p className="text-sm font-semibold capitalize">
+                    {selectedPurchase.paymentType}
+                  </p>
+                </div>
+                <div className="rounded-lg bg-muted/50 p-3 text-center">
+                  <p className="mb-0.5 text-[11px] text-muted-foreground">
+                    Total
+                  </p>
+                  <p className="text-sm font-bold text-blue-600">
+                    {formatMoney(selectedPurchase.total)}
+                  </p>
+                </div>
+              </div>
+
+              <div>
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Items ({selectedPurchase.items?.length || 0})
+                </p>
+                {selectedPurchase.items?.length > 0 ? (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="text-xs">Product</TableHead>
+                        <TableHead className="text-right text-xs">
+                          Qty
+                        </TableHead>
+                        <TableHead className="text-right text-xs">
+                          Total
+                        </TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {selectedPurchase.items.map(
+                        (item: any, index: number) => (
+                          <TableRow key={`${item.productName}-${index}`}>
+                            <TableCell className="text-sm">
+                              {item.productName}
                             </TableCell>
-                            <TableCell className="max-w-[18rem] whitespace-normal">
-                              <div className="space-y-1">
-                                <p className="font-medium">
-                                  {purchase.productSummary}
-                                </p>
-                                <p className="font-mono text-xs text-muted-foreground">
-                                  {purchase.orderNumber}
-                                </p>
-                              </div>
+                            <TableCell className="text-right text-sm tabular-nums">
+                              {Number(item.quantity || 0).toLocaleString(
+                                "en-BD",
+                                { maximumFractionDigits: 2 },
+                              )}
                             </TableCell>
-                            <TableCell>
-                              {formatCurrency(purchase.amount)}
-                            </TableCell>
-                            <TableCell>
-                              <Badge
-                                className={`${orderStatusStyles[purchase.orderStatus] || "border-border bg-muted text-foreground"} hover:bg-current/5`}
-                              >
-                                {formatLabel(purchase.orderStatus)}
-                              </Badge>
-                            </TableCell>
-                            <TableCell className="px-4">
-                              <div className="space-y-1">
-                                <Badge
-                                  className={`${paymentStatusStyles[purchase.paymentStatus]} hover:bg-current/5`}
-                                >
-                                  {formatLabel(purchase.paymentStatus)}
-                                </Badge>
-                                {purchase.dueAmount > 0 ? (
-                                  <p className="text-xs text-rose-600">
-                                    Due {formatCurrency(purchase.dueAmount)}
-                                  </p>
-                                ) : null}
-                              </div>
+                            <TableCell className="text-right text-sm font-medium tabular-nums">
+                              {formatMoney(item.totalCost)}
                             </TableCell>
                           </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </div>
+                        ),
+                      )}
+                    </TableBody>
+                  </Table>
+                ) : (
+                  <p className="py-4 text-center text-sm italic text-muted-foreground">
+                    No item details available
+                  </p>
+                )}
+              </div>
 
-                  <div className="grid gap-3 md:hidden">
-                    {purchaseHistory.map((purchase) => (
-                      <div
-                        key={purchase.id}
-                        className="rounded-2xl border border-border/70 px-4 py-3"
-                      >
-                        <div className="flex items-start justify-between gap-3">
-                          <div>
-                            <p className="font-medium">
-                              {purchase.productSummary}
-                            </p>
-                            <p className="font-mono text-xs text-muted-foreground">
-                              {purchase.orderNumber}
-                            </p>
-                          </div>
-                          <p className="font-semibold">
-                            {formatCurrency(purchase.amount)}
-                          </p>
-                        </div>
-                        <div className="mt-3 flex flex-wrap items-center gap-2">
-                          <Badge
-                            className={`${orderStatusStyles[purchase.orderStatus] || "border-border bg-muted text-foreground"} hover:bg-current/5`}
-                          >
-                            {formatLabel(purchase.orderStatus)}
-                          </Badge>
-                          <Badge
-                            className={`${paymentStatusStyles[purchase.paymentStatus]} hover:bg-current/5`}
-                          >
-                            {formatLabel(purchase.paymentStatus)}
-                          </Badge>
-                          <span className="text-xs text-muted-foreground">
-                            {formatShortDate(purchase.date)}
-                          </span>
-                        </div>
-                      </div>
+              <div className="space-y-1.5 border-t pt-3">
+                {Number(selectedPurchase.discount || 0) > 0 && (
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">Discount</span>
+                    <span className="tabular-nums">
+                      - {formatMoney(selectedPurchase.discount)}
+                    </span>
+                  </div>
+                )}
+                {Number(selectedPurchase.transportCost || 0) > 0 && (
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">
+                      Transport / Tax
+                    </span>
+                    <span className="tabular-nums">
+                      + {formatMoney(selectedPurchase.transportCost)}
+                    </span>
+                  </div>
+                )}
+                <div className="flex justify-between border-t pt-1 text-sm font-bold">
+                  <span>Grand Total</span>
+                  <span className="tabular-nums">
+                    {formatMoney(selectedPurchase.total)}
+                  </span>
+                </div>
+              </div>
+
+              {selectedPurchase.note && (
+                <div className="rounded-lg bg-muted/40 p-3">
+                  <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    Note
+                  </p>
+                  <p className="whitespace-pre-line text-sm">
+                    {selectedPurchase.note}
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 text-sm font-semibold">
+            Product Supply Breakdown
+            {productBreakdown.length > 0 && (
+              <Badge className="ml-1 text-[10px]" variant="secondary">
+                {productBreakdown.length} products
+              </Badge>
+            )}
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="p-0">
+          {productBreakdown.length === 0 ? (
+            <div className="py-10 text-center text-sm text-muted-foreground">
+              No products purchased yet
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Product Name</TableHead>
+                  <TableHead className="text-right">Total Qty</TableHead>
+                  <TableHead className="text-right">Total Value</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {productBreakdown.map((product: any) => (
+                  <TableRow key={product.productName}>
+                    <TableCell className="text-sm font-medium">
+                      {product.productName}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {product.totalQty.toLocaleString("en-BD", {
+                        maximumFractionDigits: 2,
+                      })}
+                    </TableCell>
+                    <TableCell className="text-right font-medium tabular-nums">
+                      {formatMoney(product.totalValue)}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 text-sm font-semibold">
+            Payment History
+            {payments.length > 0 && (
+              <Badge className="ml-1 text-[10px]" variant="secondary">
+                {payments.length} payments
+              </Badge>
+            )}
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="p-0">
+          {payments.length === 0 ? (
+            <div className="py-10 text-center text-sm text-muted-foreground">
+              No payment history yet
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Date</TableHead>
+                  <TableHead>Method</TableHead>
+                  <TableHead className="text-right">Amount</TableHead>
+                  <TableHead>Reference</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {payments.map((payment: any) => (
+                  <TableRow key={payment.id}>
+                    <TableCell className="text-sm">
+                      {formatDate(payment.createdAt)}
+                    </TableCell>
+                    <TableCell>
+                      <Badge className="text-[10px]" variant="outline">
+                        {parsePaymentMethod(payment.description)}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-right font-medium tabular-nums text-emerald-600">
+                      {formatMoney(payment.amount)}
+                    </TableCell>
+                    <TableCell className="max-w-[200px] truncate text-sm text-muted-foreground">
+                      {payment.description || "No reference"}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
+
+      <Dialog onOpenChange={setEditOpen} open={editOpen}>
+        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Edit Supplier</DialogTitle>
+          </DialogHeader>
+          <form className="mt-2 space-y-4" onSubmit={handleSubmit}>
+            <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <Label>Supplier Name *</Label>
+                <Input
+                  onChange={(event) =>
+                    setForm({ ...form, name: event.target.value })
+                  }
+                  required
+                  value={form.name}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Category</Label>
+                <Select
+                  onValueChange={(value) =>
+                    setForm({
+                      ...form,
+                      categoryId: value === "none" ? null : Number(value),
+                    })
+                  }
+                  value={form.categoryId ? String(form.categoryId) : "none"}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select category" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">No category</SelectItem>
+                    {categories.map((category: any) => (
+                      <SelectItem key={category.id} value={String(category.id)}>
+                        {category.name}
+                      </SelectItem>
                     ))}
-                  </div>
-                </>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card className="border-border/70">
-            <CardHeader>
-              <CardTitle>Pending Orders</CardTitle>
-              <CardDescription>
-                Active purchase orders waiting for completion.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {pendingOrders.length === 0 ? (
-                <p className="py-6 text-center text-sm text-muted-foreground">
-                  No active supplier orders right now.
-                </p>
-              ) : (
-                pendingOrders.map((pendingOrder) => (
-                  <div
-                    key={pendingOrder.id}
-                    className="rounded-2xl border border-border/70 px-4 py-3"
-                  >
-                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                      <div className="space-y-1">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <p className="font-mono text-sm font-semibold">
-                            {pendingOrder.orderNumber}
-                          </p>
-                          <Badge
-                            className={`${orderStatusStyles[pendingOrder.status] || "border-border bg-muted text-foreground"} hover:bg-current/5`}
-                          >
-                            {formatLabel(pendingOrder.status)}
-                          </Badge>
-                        </div>
-                        <p className="text-sm text-muted-foreground">
-                          {pendingOrder.items
-                            .map(
-                              (item) =>
-                                `${item.productName} x ${item.modifiedQty ?? item.quantity}`,
-                            )
-                            .join(", ")}
-                        </p>
-                      </div>
-                      <div className="text-sm">
-                        <p className="font-semibold">
-                          {formatCurrency(Number(pendingOrder.total))}
-                        </p>
-                        <p className="text-muted-foreground">
-                          {formatShortDate(pendingOrder.createdAt)}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                ))
-              )}
-            </CardContent>
-          </Card>
-        </div>
-
-        <div className="space-y-6">
-          <Card className="border-border/70">
-            <CardHeader>
-              <CardTitle>Assigned Salesman</CardTitle>
-              <CardDescription>
-                Retailer-facing contact if the warehouse has assigned one.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {salesman ? (
-                <>
-                  <DetailRow label="Name" value={salesman.name} />
-                  <DetailRow label="Phone" value={salesman.phone} />
-                  <DetailRow
-                    label="Status"
-                    value={salesman.status === "active" ? "Active" : "Inactive"}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Phone</Label>
+                <Input
+                  onChange={(event) =>
+                    setForm({ ...form, phone: event.target.value })
+                  }
+                  value={form.phone}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Company</Label>
+                <Input
+                  onChange={(event) =>
+                    setForm({ ...form, company: event.target.value })
+                  }
+                  value={form.company}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Contact Person</Label>
+                <Input
+                  onChange={(event) =>
+                    setForm({ ...form, contactPerson: event.target.value })
+                  }
+                  value={form.contactPerson}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Email</Label>
+                <Input
+                  onChange={(event) =>
+                    setForm({ ...form, email: event.target.value })
+                  }
+                  type="email"
+                  value={form.email}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Credit Limit (Tk)</Label>
+                <Input
+                  min="0"
+                  onChange={(event) =>
+                    setForm({ ...form, creditLimit: event.target.value })
+                  }
+                  step="0.01"
+                  type="number"
+                  value={form.creditLimit}
+                />
+              </div>
+              <div className="space-y-1.5 sm:col-span-2">
+                <Label>Address</Label>
+                <Input
+                  onChange={(event) =>
+                    setForm({ ...form, address: event.target.value })
+                  }
+                  value={form.address}
+                />
+              </div>
+              <div className="space-y-1.5 sm:col-span-2">
+                <Label>Notes</Label>
+                <Input
+                  onChange={(event) =>
+                    setForm({ ...form, notes: event.target.value })
+                  }
+                  value={form.notes}
+                />
+              </div>
+              <div className="sm:col-span-2">
+                <label className="flex cursor-pointer items-center gap-2">
+                  <input
+                    checked={form.returnPackAgreement}
+                    className="rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
+                    onChange={(event) =>
+                      setForm({
+                        ...form,
+                        returnPackAgreement: event.target.checked,
+                      })
+                    }
+                    type="checkbox"
                   />
-                </>
-              ) : (
-                <div className="rounded-2xl border border-dashed border-border px-4 py-5 text-sm text-muted-foreground">
-                  No salesman is assigned to this retailer for the selected
-                  supplier yet.
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card className="border-border/70">
-            <CardHeader>
-              <CardTitle>Delivery Area Matching</CardTitle>
-              <CardDescription>
-                How the retailer address maps to the warehouse delivery setup.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <DetailRow
-                label="Your Address"
-                value={delivery.yourAddress || business.yourAddress}
-              />
-              <DetailRow label="Area Hint" value={delivery.areaHint} />
-              <DetailRow
-                label="Matched Delivery Zone"
-                value={
-                  delivery.matchedArea?.name || "No direct zone matched yet"
-                }
-              />
-              {delivery.scope === "warehouse" ? (
-                <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-                  A warehouse-wide schedule exists, but no delivery zone matches
-                  this retailer address yet.
-                </div>
-              ) : null}
-              {!delivery.matchedArea && delivery.availableAreas.length > 0 ? (
-                <div className="rounded-2xl border border-border/60 px-4 py-3">
-                  <p className="text-sm font-medium">
-                    Available delivery zones
-                  </p>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    {delivery.availableAreas.join(", ")}
-                  </p>
-                </div>
-              ) : null}
-            </CardContent>
-          </Card>
-
-          <Card className="border-border/70">
-            <CardHeader>
-              <CardTitle>Delivery Schedule</CardTitle>
-              <CardDescription>
-                {delivery.scope === "matched_area"
-                  ? "Weekly schedule for the matched delivery zone."
-                  : delivery.scope === "warehouse"
-                    ? "General warehouse delivery schedule."
-                    : "No delivery schedule has been configured yet."}
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="rounded-2xl border border-border/70 bg-muted/20 p-4">
-                <div className="mb-3 flex items-center justify-between">
-                  <p className="font-medium">{calendar.label}</p>
-                  <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">
-                    Scheduled days highlighted
-                  </p>
-                </div>
-                <div className="grid grid-cols-7 gap-2 text-center text-xs text-muted-foreground">
-                  {WEEKDAY_LABELS.map((label) => (
-                    <div key={label} className="pb-1 font-medium">
-                      {label}
-                    </div>
-                  ))}
-                  {calendar.cells.map((cell, index) => (
-                    <div
-                      key={`${cell.day || "empty"}-${index}`}
-                      className={`flex h-10 items-center justify-center rounded-xl border text-sm ${
-                        cell.day === null
-                          ? "border-transparent bg-transparent"
-                          : cell.scheduled
-                            ? "border-emerald-200 bg-emerald-50 font-semibold text-emerald-700"
-                            : "border-border/70 bg-background text-muted-foreground"
-                      } ${cell.today ? "ring-2 ring-primary/30" : ""}`}
-                    >
-                      {cell.day || ""}
-                    </div>
-                  ))}
-                </div>
+                  <span className="text-sm">Return Pack Agreement</span>
+                </label>
               </div>
-
-              {delivery.weeklyDays.length > 0 ? (
-                <div className="flex flex-wrap gap-2">
-                  {delivery.weeklyDays.map((day) => (
-                    <Badge
-                      key={`${day.dayOfWeek}-${day.dayName}`}
-                      className="border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-50"
-                    >
-                      {day.dayName}
-                    </Badge>
-                  ))}
-                </div>
-              ) : (
-                <div className="rounded-2xl border border-dashed border-border px-4 py-5 text-sm text-muted-foreground">
-                  No weekly delivery days are available for this supplier yet.
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card className="border-border/70">
-            <CardHeader>
-              <CardTitle>Delivery Status</CardTitle>
-              <CardDescription>
-                Today’s delivery signal and the next expected schedule.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <DetailRow
-                label={`Today (${delivery.todayDayName})`}
-                value={
-                  delivery.hasDeliveryToday
-                    ? "Delivery scheduled"
-                    : "No delivery"
-                }
-              />
-              <DetailRow
-                label="Next Delivery"
-                value={describeNextDelivery(delivery.nextDelivery)}
-              />
-              <DetailRow
-                label="Cut-off Time"
-                value={delivery.cutoffTime || "Not configured"}
-              />
-            </CardContent>
-          </Card>
-
-          <Card className="border-border/70">
-            <CardHeader>
-              <CardTitle>Account Summary</CardTitle>
-              <CardDescription>
-                Retailer-side purchase and payable breakdown.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <DetailRow
-                label="Total Purchase"
-                value={formatCurrency(accountSummary.totalPurchase)}
-              />
-              <DetailRow
-                label="Paid"
-                value={formatCurrency(accountSummary.paid)}
-              />
-              <DetailRow
-                label="Payable"
-                value={formatCurrency(accountSummary.payable)}
-              />
-              <DetailRow
-                label="Payable Orders"
-                value={accountSummary.payableOrders}
-              />
-            </CardContent>
-          </Card>
-
-          <Card className="border-border/70">
-            <CardHeader>
-              <CardTitle>Order Quick Info</CardTitle>
-              <CardDescription>
-                Useful retailer-side snapshot before reordering or following up.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <DetailRow
-                label="Last Order"
-                value={
-                  quickInfo.lastOrderNumber
-                    ? `${quickInfo.lastOrderNumber} • ${formatLabel(quickInfo.lastOrderStatus)}`
-                    : "No orders yet"
-                }
-              />
-              <DetailRow
-                label="Pending Orders"
-                value={quickInfo.pendingOrders}
-              />
-              <DetailRow
-                label="Last Delivered"
-                value={formatDate(quickInfo.lastDeliveredAt)}
-              />
-            </CardContent>
-          </Card>
-
-          <Card className="border-border/70">
-            <CardHeader>
-              <CardTitle>Actions</CardTitle>
-              <CardDescription>
-                Shortcuts for the retailer team.
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <Button asChild className="w-full justify-between">
-                <Link href="/dashboard/order-from-warehouse">
-                  <span className="flex items-center gap-2">
-                    <ShoppingCart className="h-4 w-4" />
-                    Place Order
-                  </span>
-                  <ArrowRight className="h-4 w-4" />
-                </Link>
-              </Button>
-
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
               <Button
-                className="w-full justify-between"
-                disabled={!hasPaymentFlow || accountSummary.payable <= 0}
+                onClick={() => setEditOpen(false)}
+                type="button"
                 variant="outline"
               >
-                <span className="flex items-center gap-2">
-                  <Wallet className="h-4 w-4" />
-                  Make Payment
-                </span>
-                <ArrowRight className="h-4 w-4" />
+                Cancel
               </Button>
-
-              <Button
-                asChild
-                className="w-full justify-between"
-                variant="outline"
-              >
-                <Link href="/dashboard/orders/history">
-                  <span className="flex items-center gap-2">
-                    <Building2 className="h-4 w-4" />
-                    View Purchase Details
-                  </span>
-                  <ArrowRight className="h-4 w-4" />
-                </Link>
+              <Button disabled={updateMutation.isPending} type="submit">
+                Update Supplier
               </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
 
-              <div className="rounded-2xl border border-border/60 bg-muted/20 px-4 py-3 text-sm text-muted-foreground">
-                Warehouse supplier payment posting is not configured in this
-                panel yet, so the payment action is visible but disabled for
-                now.
-              </div>
-            </CardContent>
-          </Card>
+function SummaryCard({
+  icon,
+  label,
+  value,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+}) {
+  return (
+    <Card>
+      <CardContent className="flex items-center gap-3 p-4">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-muted">
+          {icon}
         </div>
+        <div>
+          <p className="text-xs text-muted-foreground">{label}</p>
+          <p className="text-lg font-bold tabular-nums">{value}</p>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function DetailField({
+  icon,
+  label,
+  value,
+  highlight,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: React.ReactNode;
+  highlight?: boolean;
+}) {
+  return (
+    <div className="flex items-start gap-2">
+      <span className="mt-0.5 shrink-0 text-muted-foreground">{icon}</span>
+      <div className="min-w-0">
+        <p className="mb-1 text-[11px] leading-none text-muted-foreground">
+          {label}
+        </p>
+        <p
+          className={`truncate text-sm font-medium ${
+            highlight ? "text-orange-600" : ""
+          }`}
+        >
+          {value}
+        </p>
       </div>
     </div>
   );
@@ -881,38 +951,29 @@ export default function SupplierDetailPage() {
 function DetailSkeleton() {
   return (
     <div className="space-y-6">
-      <Skeleton className="h-8 w-36" />
+      <Skeleton className="h-8 w-32" />
       <Card>
-        <CardContent className="space-y-4 p-6">
-          <Skeleton className="h-8 w-56" />
-          <Skeleton className="h-4 w-72" />
-          <div className="grid gap-4 md:grid-cols-4">
-            {Array.from({ length: 4 }).map((_, index) => (
-              <Skeleton key={index} className="h-24 w-full" />
+        <CardContent className="p-6">
+          <div className="grid grid-cols-2 gap-4">
+            {Array.from({ length: 8 }).map((_, index) => (
+              <div className="space-y-1" key={index}>
+                <Skeleton className="h-3 w-20" />
+                <Skeleton className="h-5 w-40" />
+              </div>
             ))}
           </div>
         </CardContent>
       </Card>
-      <div className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
-        <div className="space-y-6">
-          {Array.from({ length: 3 }).map((_, index) => (
-            <Card key={index}>
-              <CardContent className="p-5">
-                <Skeleton className="h-40 w-full" />
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-        <div className="space-y-6">
-          {Array.from({ length: 5 }).map((_, index) => (
-            <Card key={index}>
-              <CardContent className="p-5">
-                <Skeleton className="h-28 w-full" />
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      </div>
+      <Card>
+        <CardContent className="p-4">
+          <Skeleton className="h-40 w-full" />
+        </CardContent>
+      </Card>
+      <Card>
+        <CardContent className="p-4">
+          <Skeleton className="h-32 w-full" />
+        </CardContent>
+      </Card>
     </div>
   );
 }

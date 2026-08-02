@@ -1,0 +1,476 @@
+import {
+  ACCOUNTING_POSTING_RULES,
+  type AccountingAccountType,
+  type AccountingNormalBalance,
+  type BalanceSheetLine,
+  type ProfitAndLossLine,
+} from "./accounting";
+
+export type DefaultFinanceCategorySeed = {
+  accountType: AccountingAccountType;
+  code: string;
+  description: string;
+  name: string;
+  sortOrder: number;
+};
+
+export type DefaultFinanceAccountSeed = {
+  accountType: AccountingAccountType;
+  balanceSheetLine?: BalanceSheetLine;
+  categoryCode: string;
+  code: string;
+  description: string;
+  isPaymentAccount: boolean;
+  name: string;
+  normalBalance: AccountingNormalBalance;
+  openingBalance: string;
+  profitAndLossLine?: ProfitAndLossLine;
+  sortOrder: number;
+};
+
+const expenseCategories = [
+  "Staff Bonus & Incentives",
+  "Staff Salary",
+  "Staff Training",
+  "Transport & Delivery",
+  "Utility Bills",
+  "Warehouse Rent",
+  "Accounting & Software Expenses",
+  "Advertising & Promotion",
+  "Bank Interest & Charges",
+  "Cleaning & Hygiene Supplies",
+  "Depreciation",
+  "Equipment & Maintenance",
+  "Health Insurance",
+  "Insurance Premium",
+  "Internet & Mobile Bill",
+  "License & Govt. Fees",
+  "Miscellaneous Expenses",
+  "Office Stationery & Supplies",
+  "Packaging & Shopping Bags",
+  "Refreshments & Hospitality",
+  "Security Service",
+  "Shop Renovation & Repairs",
+  "Shop Rent",
+] as const;
+
+export const DEFAULT_FINANCE_CATEGORY_SEEDS: DefaultFinanceCategorySeed[] = [
+  {
+    accountType: "asset",
+    code: "asset-cash-bank",
+    description: "Cash, bank, and immediately available balance accounts.",
+    name: "Cash and Bank",
+    sortOrder: 10,
+  },
+  {
+    accountType: "asset",
+    code: "asset-accounts-receivable",
+    description: "Customer balances expected to be collected.",
+    name: "Accounts Receivable",
+    sortOrder: 20,
+  },
+  {
+    accountType: "asset",
+    code: "asset-inventory",
+    description: "Product stock value held for sale.",
+    name: "Inventory",
+    sortOrder: 30,
+  },
+  {
+    accountType: "asset",
+    code: "asset-current",
+    description: "Other short-term assets.",
+    name: "Current Assets",
+    sortOrder: 40,
+  },
+  {
+    accountType: "asset",
+    code: "asset-fixed",
+    description: "Long-term business assets such as furniture and equipment.",
+    name: "Fixed Assets",
+    sortOrder: 50,
+  },
+  {
+    accountType: "asset",
+    code: "asset-supplier-advance",
+    description: "Advance payments made to suppliers before bills are applied.",
+    name: "Supplier Advance",
+    sortOrder: 60,
+  },
+  {
+    accountType: "liability",
+    code: "liability-accounts-payable",
+    description: "Supplier balances to be paid.",
+    name: "Accounts Payable",
+    sortOrder: 100,
+  },
+  {
+    accountType: "liability",
+    code: "liability-current",
+    description: "Other short-term liabilities.",
+    name: "Current Liabilities",
+    sortOrder: 110,
+  },
+  {
+    accountType: "liability",
+    code: "liability-customer-advance",
+    description: "Customer advance payments before sales are recognized.",
+    name: "Customer Advance",
+    sortOrder: 120,
+  },
+  {
+    accountType: "liability",
+    code: "liability-loan-payable",
+    description: "Outstanding business loans.",
+    name: "Loan Payable",
+    sortOrder: 130,
+  },
+  {
+    accountType: "equity",
+    code: "equity-owner",
+    description: "Owner capital and retained equity.",
+    name: "Owner's Equity",
+    sortOrder: 200,
+  },
+  {
+    accountType: "income",
+    code: "income-product",
+    description: "Revenue from product sales.",
+    name: "Product Income",
+    sortOrder: 300,
+  },
+  {
+    accountType: "income",
+    code: "income-service",
+    description: "Revenue from services.",
+    name: "Service Income",
+    sortOrder: 310,
+  },
+  {
+    accountType: "income",
+    code: "income-other",
+    description: "Income that is not regular product or service revenue.",
+    name: "Other Income",
+    sortOrder: 320,
+  },
+  {
+    accountType: "cogs",
+    code: "cogs-product",
+    description: "Product purchase cost / cost of goods sold.",
+    name: "Cost of Goods Sold",
+    sortOrder: 400,
+  },
+  {
+    accountType: "expense",
+    code: "expense-operating",
+    description: "General operating expense.",
+    name: "Operating Expenses",
+    sortOrder: 500,
+  },
+  ...expenseCategories.map((name, index) => ({
+    accountType: "expense" as const,
+    code: `expense-${name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
+    description: `${name} expense category.`,
+    name,
+    sortOrder: 510 + index,
+  })),
+];
+
+export const DEFAULT_FINANCE_ACCOUNT_SEEDS: DefaultFinanceAccountSeed[] = [
+  {
+    accountType: "asset",
+    balanceSheetLine: "cash_and_bank",
+    categoryCode: "asset-cash-bank",
+    code: "1001-cash-on-hand",
+    description: "Default cash payment account.",
+    isPaymentAccount: true,
+    name: "Cash on Hand",
+    normalBalance: "debit",
+    openingBalance: "0.00",
+    sortOrder: 10,
+  },
+  {
+    accountType: "asset",
+    balanceSheetLine: "cash_and_bank",
+    categoryCode: "asset-cash-bank",
+    code: "1002-bank-account",
+    description: "Default bank payment account.",
+    isPaymentAccount: true,
+    name: "Bank Account",
+    normalBalance: "debit",
+    openingBalance: "0.00",
+    sortOrder: 20,
+  },
+  {
+    accountType: "asset",
+    balanceSheetLine: "inventory",
+    categoryCode: "asset-inventory",
+    code: "1003-inventory",
+    description: "Product inventory value.",
+    isPaymentAccount: false,
+    name: "Inventory",
+    normalBalance: "debit",
+    openingBalance: "0.00",
+    sortOrder: 30,
+  },
+  {
+    accountType: "asset",
+    balanceSheetLine: "accounts_receivable",
+    categoryCode: "asset-accounts-receivable",
+    code: "1101-accounts-receivable",
+    description: "Customer due balances.",
+    isPaymentAccount: false,
+    name: "Accounts Receivable",
+    normalBalance: "debit",
+    openingBalance: "0.00",
+    sortOrder: 40,
+  },
+  {
+    accountType: "asset",
+    balanceSheetLine: "other_current_assets",
+    categoryCode: "asset-current",
+    code: "1102-other-current-assets",
+    description: "Other short-term assets.",
+    isPaymentAccount: false,
+    name: "Other Current Assets",
+    normalBalance: "debit",
+    openingBalance: "0.00",
+    sortOrder: 50,
+  },
+  {
+    accountType: "asset",
+    balanceSheetLine: "supplier_advance",
+    categoryCode: "asset-supplier-advance",
+    code: "1103-supplier-advance",
+    description: "Supplier advances paid before bills are applied.",
+    isPaymentAccount: false,
+    name: "Supplier Advance",
+    normalBalance: "debit",
+    openingBalance: "0.00",
+    sortOrder: 60,
+  },
+  {
+    accountType: "asset",
+    balanceSheetLine: "fixed_assets",
+    categoryCode: "asset-fixed",
+    code: "1501-fixed-assets",
+    description: "Furniture, equipment, and other fixed assets.",
+    isPaymentAccount: false,
+    name: "Fixed Assets",
+    normalBalance: "debit",
+    openingBalance: "0.00",
+    sortOrder: 70,
+  },
+  {
+    accountType: "liability",
+    balanceSheetLine: "accounts_payable",
+    categoryCode: "liability-accounts-payable",
+    code: "2001-accounts-payable",
+    description: "Supplier payable balances.",
+    isPaymentAccount: false,
+    name: "Accounts Payable",
+    normalBalance: "credit",
+    openingBalance: "0.00",
+    sortOrder: 100,
+  },
+  {
+    accountType: "liability",
+    balanceSheetLine: "customer_advance",
+    categoryCode: "liability-customer-advance",
+    code: "2101-customer-advance",
+    description: "Customer advances received before revenue is earned.",
+    isPaymentAccount: false,
+    name: "Customer Advance",
+    normalBalance: "credit",
+    openingBalance: "0.00",
+    sortOrder: 110,
+  },
+  {
+    accountType: "liability",
+    balanceSheetLine: "loan_payable",
+    categoryCode: "liability-loan-payable",
+    code: "2501-loan-payable",
+    description: "Outstanding loan balances.",
+    isPaymentAccount: false,
+    name: "Loan Payable",
+    normalBalance: "credit",
+    openingBalance: "0.00",
+    sortOrder: 120,
+  },
+  {
+    accountType: "equity",
+    balanceSheetLine: "owner_capital",
+    categoryCode: "equity-owner",
+    code: "3001-owner-capital",
+    description: "Owner capital contributions.",
+    isPaymentAccount: false,
+    name: "Owner Capital",
+    normalBalance: "credit",
+    openingBalance: "0.00",
+    sortOrder: 200,
+  },
+  {
+    accountType: "equity",
+    balanceSheetLine: "current_year_profit",
+    categoryCode: "equity-owner",
+    code: "3002-current-year-profit",
+    description: "Current year profit or loss rollup.",
+    isPaymentAccount: false,
+    name: "Current Year Profit",
+    normalBalance: "credit",
+    openingBalance: "0.00",
+    sortOrder: 210,
+  },
+  {
+    accountType: "equity",
+    balanceSheetLine: "owner_drawings",
+    categoryCode: "equity-owner",
+    code: "3003-owner-drawings",
+    description: "Owner withdrawals from the business.",
+    isPaymentAccount: false,
+    name: "Owner Drawings",
+    normalBalance: "debit",
+    openingBalance: "0.00",
+    sortOrder: 220,
+  },
+  {
+    accountType: "income",
+    categoryCode: "income-product",
+    code: "4001-product-sales",
+    description: "Revenue from product sales.",
+    isPaymentAccount: false,
+    name: "Product Sales",
+    normalBalance: "credit",
+    openingBalance: "0.00",
+    profitAndLossLine: "product_sales",
+    sortOrder: 300,
+  },
+  {
+    accountType: "income",
+    categoryCode: "income-service",
+    code: "4002-service-income",
+    description: "Revenue from services.",
+    isPaymentAccount: false,
+    name: "Service Income",
+    normalBalance: "credit",
+    openingBalance: "0.00",
+    profitAndLossLine: "service_income",
+    sortOrder: 310,
+  },
+  {
+    accountType: "income",
+    categoryCode: "income-other",
+    code: "4003-other-income",
+    description: "Other business income.",
+    isPaymentAccount: false,
+    name: "Other Income",
+    normalBalance: "credit",
+    openingBalance: "0.00",
+    profitAndLossLine: "other_income",
+    sortOrder: 320,
+  },
+  {
+    accountType: "cogs",
+    categoryCode: "cogs-product",
+    code: "5001-product-purchase-cost",
+    description: "Product purchase cost / COGS.",
+    isPaymentAccount: false,
+    name: "Product Purchase Cost",
+    normalBalance: "debit",
+    openingBalance: "0.00",
+    profitAndLossLine: "product_purchase_cost",
+    sortOrder: 400,
+  },
+  {
+    accountType: "expense",
+    categoryCode: "expense-operating",
+    code: "6001-operating-expenses",
+    description: "General operating expenses.",
+    isPaymentAccount: false,
+    name: "Operating Expenses",
+    normalBalance: "debit",
+    openingBalance: "0.00",
+    profitAndLossLine: "operating_expenses",
+    sortOrder: 500,
+  },
+  ...expenseCategories.map((name, index) => ({
+    accountType: "expense" as const,
+    categoryCode: `expense-${name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
+    code: `61${String(index + 1).padStart(2, "0")}-${name
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")}`,
+    description: `${name} expense account.`,
+    isPaymentAccount: false,
+    name,
+    normalBalance: "debit" as const,
+    openingBalance: "0.00",
+    profitAndLossLine: "operating_expenses" as const,
+    sortOrder: 510 + index,
+  })),
+];
+
+function findDuplicateValues(values: string[]) {
+  const seen = new Set<string>();
+  const duplicates = new Set<string>();
+
+  for (const value of values) {
+    if (seen.has(value)) {
+      duplicates.add(value);
+      continue;
+    }
+
+    seen.add(value);
+  }
+
+  return Array.from(duplicates);
+}
+
+export function validateDefaultFinanceSeeds() {
+  const errors: string[] = [];
+  const categoryCodes = DEFAULT_FINANCE_CATEGORY_SEEDS.map(
+    (category) => category.code,
+  );
+  const accountCodes = DEFAULT_FINANCE_ACCOUNT_SEEDS.map(
+    (account) => account.code,
+  );
+  const duplicateCategoryCodes = findDuplicateValues(categoryCodes);
+  const duplicateAccountCodes = findDuplicateValues(accountCodes);
+  const categoryCodeSet = new Set(categoryCodes);
+  const accountCodeSet = new Set(accountCodes);
+
+  for (const duplicate of duplicateCategoryCodes) {
+    errors.push(`Duplicate finance category seed code: ${duplicate}`);
+  }
+
+  for (const duplicate of duplicateAccountCodes) {
+    errors.push(`Duplicate finance account seed code: ${duplicate}`);
+  }
+
+  for (const account of DEFAULT_FINANCE_ACCOUNT_SEEDS) {
+    if (!categoryCodeSet.has(account.categoryCode)) {
+      errors.push(
+        `Finance account seed ${account.code} references missing category ${account.categoryCode}`,
+      );
+    }
+  }
+
+  for (const rule of Object.values(ACCOUNTING_POSTING_RULES)) {
+    for (const line of rule.lines) {
+      if (!accountCodeSet.has(line.accountCode)) {
+        errors.push(
+          `Posting rule ${rule.transactionType} references missing account ${line.accountCode}`,
+        );
+      }
+    }
+  }
+
+  return errors;
+}
+
+export function assertDefaultFinanceSeeds() {
+  const errors = validateDefaultFinanceSeeds();
+
+  if (errors.length > 0) {
+    throw new Error(errors.join("\n"));
+  }
+}

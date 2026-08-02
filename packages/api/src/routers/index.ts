@@ -32,6 +32,7 @@ import { adminUserManagementRouter } from "./admin-user-management";
 import { adminVariantOptionRouter } from "./admin-variant-option";
 import { adminWarehouseAssignmentRouter } from "./admin-warehouse-assignment";
 import { auditRouter } from "./audit";
+import { balanceSheetRouter } from "./balance-sheet";
 import { barikoiRouter } from "./barikoi";
 import { brandRouter } from "./brand";
 import {
@@ -47,6 +48,7 @@ import { deliverymanRouter } from "./deliveryman";
 import { devOtpRouter } from "./dev-otp";
 import { employeeRouter } from "./employee";
 import { expenseRouter } from "./expense";
+import { financeRouter } from "./finance";
 import { inventoryRouter } from "./inventory";
 import { landingRouter } from "./landing";
 import { marketingRouter } from "./marketing";
@@ -137,7 +139,9 @@ export const appRouter = {
   devOtp: devOtpRouter,
   payee: payeeRouter,
   expense: expenseRouter,
+  finance: financeRouter,
   supplierPayment: supplierPaymentRouter,
+  balanceSheet: balanceSheetRouter,
   profitLoss: profitLossRouter,
   purchase: purchaseRouter,
   stockOverview: stockOverviewRouter,

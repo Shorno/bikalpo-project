@@ -56,16 +56,6 @@ export function useSearchProducts(query: string) {
   );
 }
 
-/** Product detail by slug */
-export function useProductDetails(slug: string) {
-  return useQuery(
-    orpc.customer.getProductDetails.queryOptions({
-      input: slug ? { slug } : skipToken,
-      staleTime: 1000 * 60 * 5,
-    }),
-  );
-}
-
 /** Product reviews */
 export function useProductReviews(productId: number | undefined) {
   return useQuery(
