@@ -159,6 +159,25 @@ test("partial invoices allocate discount proportionally and shipping once", () =
 	assert.equal(first.grandTotal + final.grandTotal, 950);
 });
 
+test("self pickup never carries a delivery charge", () => {
+	const result = calculateDispatchInvoiceCharges({
+		subtotal: 1000,
+		approvedSubtotal: 1000,
+		approvedDiscount: 100,
+		allocatedDiscount: 0,
+		shippingCost: 80,
+		hasExistingInvoices: false,
+		fullyInvoiced: true,
+		fulfillmentMode: "self_pickup",
+	});
+
+	assert.deepEqual(result, {
+		discountAmount: 100,
+		deliveryCharge: 0,
+		grandTotal: 900,
+	});
+});
+
 test("legacy confirmed orders without invoices normalize to ready for dispatch", () => {
 	const progress = summarizeInvoiceProgress(
 		buildInvoiceProgress([item({ id: 1, variantId: 9, quantity: 1 })], []),

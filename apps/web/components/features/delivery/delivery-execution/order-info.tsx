@@ -8,6 +8,7 @@ interface OrderInfoProps {
 export function OrderInfo({ item }: OrderInfoProps) {
   const order = item.invoice.order;
   const customer = item.invoice.customer;
+  const recipient = item.invoice.recipient;
 
   return (
     <div className="space-y-2 sm:space-y-3 mb-3 sm:mb-4">
@@ -15,13 +16,11 @@ export function OrderInfo({ item }: OrderInfoProps) {
       <div className="flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm">
         <User className="h-3.5 w-3.5 sm:h-4 sm:w-4 shrink-0 text-muted-foreground" />
         <span className="font-medium truncate">
-          {order?.shippingName || customer?.name}
-          {customer?.shopName && (
-            <span className="text-muted-foreground font-normal">
-              {" "}
-              • {customer.shopName}
-            </span>
-          )}
+          {recipient.displayName}
+          <span className="text-muted-foreground font-normal">
+            {" "}
+            · {recipient.type.replaceAll("_", " ")}
+          </span>
         </span>
       </div>
 

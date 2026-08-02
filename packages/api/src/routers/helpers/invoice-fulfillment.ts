@@ -116,7 +116,11 @@ export async function syncOrderFromDeliveredInvoice(
             .where(eq(order.id, deliveredInvoice.orderId));
     }
 
-    if (fullyDelivered && options.markReceived) {
+    if (
+        fullyDelivered &&
+        options.markReceived &&
+        deliveredInvoice.order.orderType === "b2b"
+    ) {
         await convertB2bOrderToRetailInventory(tx, deliveredInvoice.orderId);
     }
 

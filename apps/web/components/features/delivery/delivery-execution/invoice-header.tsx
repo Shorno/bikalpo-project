@@ -39,7 +39,7 @@ export function InvoiceHeader({ item }: InvoiceHeaderProps) {
             </div>
           ) : null}
           <div className="text-[10px] sm:text-xs text-muted-foreground truncate">
-            {item.invoice.customer?.shopName || item.invoice.customer?.name}
+            Delivery Recipient: {item.invoice.recipient.displayName}
           </div>
         </div>
       </div>

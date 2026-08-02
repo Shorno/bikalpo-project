@@ -21,10 +21,11 @@ import {
   OPEN_ORDER_RADIUS_KM,
   type OfferDiscountType,
 } from "./open-order-domain";
+import { isOpenOrderDeadlineAfter } from "./open-order-deadline";
 
 export const OFFER_WINDOW_SECONDS = positiveSeconds(
   process.env.OPEN_ORDER_OFFER_WINDOW_SECONDS,
-  300,
+  2 * 60,
 );
 export const SELECTION_WINDOW_SECONDS = positiveSeconds(
   process.env.OPEN_ORDER_SELECTION_WINDOW_SECONDS,
@@ -567,7 +568,7 @@ export async function recalculateOffersForInventory(
           eq(openOrderBid.status, "submitted"),
           isNull(openOrderBid.priceFrozenAt),
           eq(openOrderBidItem.inventoryId, inventoryId),
-          sql`${order.broadcastExpiresAt} > ${now}`,
+          isOpenOrderDeadlineAfter(order.broadcastExpiresAt, now),
         ),
       )
       .orderBy(asc(openOrderBid.subOrderId), asc(openOrderBid.id));
@@ -805,7 +806,7 @@ export async function acceptOpenOrderOffer(input: {
           inArray(order.status, ["matching_shop", "negotiating"]),
           isNull(order.shopId),
           lte(order.broadcastExpiresAt, now),
-          sql`${order.selectionExpiresAt} > ${now}`,
+          isOpenOrderDeadlineAfter(order.selectionExpiresAt, now),
         ),
       )
       .returning();

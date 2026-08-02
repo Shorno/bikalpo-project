@@ -6,8 +6,8 @@ import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { createAuthMiddleware } from "better-auth/api";
 import { admin as adminPlugin, bearer, openAPI, phoneNumber } from "better-auth/plugins";
-import { ac, admin as adminRole, consumer, shop_owner, deliveryman, salesman, warehouse } from "./permissions";
 import { storeOtp } from "./otp-store";
+import { ac, admin as adminRole, consumer, deliveryman, salesman, shop_owner, warehouse } from "./permissions";
 
 const isProduction = env.NODE_ENV === "production";
 
@@ -103,6 +103,10 @@ export const auth = betterAuth({
         required: false,
       },
       warehouseId: {
+        type: "string",
+        required: false,
+      },
+      shopId: {
         type: "string",
         required: false,
       },
@@ -228,4 +232,4 @@ export async function setCredentialPassword(
 }
 
 // Re-export permissions for client usage
-export { ac, admin as adminRole, consumer, shop_owner, deliveryman, salesman, warehouse } from "./permissions";
+export { ac, admin as adminRole, consumer, deliveryman, salesman, shop_owner, warehouse } from "./permissions";

@@ -43,13 +43,13 @@ export function DeliveredModal({
           </div>
           <DialogTitle>Confirm Delivery</DialogTitle>
           <DialogDescription>
-            Ask the customer for their OTP to complete the delivery.
+            Ask the Delivery Recipient for their OTP to complete the delivery.
           </DialogDescription>
         </DialogHeader>
 
         <div className="py-4">
           <Label className="text-center block mb-3 text-muted-foreground">
-            Enter the 4-digit code from customer
+            Enter the 4-digit code from the Delivery Recipient
           </Label>
           <Input
             placeholder="0000"

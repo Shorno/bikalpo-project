@@ -8,7 +8,7 @@ interface InvoiceInfoProps {
 export function InvoiceInfo({ item }: InvoiceInfoProps) {
   const { invoice } = item;
   const order = invoice.order;
-  const customer = invoice.customer;
+  const recipient = invoice.recipient;
 
   return (
     <div className="space-y-2 sm:space-y-3 mb-3 sm:mb-4">
@@ -16,13 +16,11 @@ export function InvoiceInfo({ item }: InvoiceInfoProps) {
       <div className="flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm">
         <User className="h-3.5 w-3.5 sm:h-4 sm:w-4 shrink-0 text-muted-foreground" />
         <span className="font-medium truncate">
-          {order?.shippingName || customer?.name}
-          {customer?.shopName && (
-            <span className="text-muted-foreground font-normal">
-              {" "}
-              • {customer.shopName}
-            </span>
-          )}
+          {recipient.displayName}
+          <span className="text-muted-foreground font-normal">
+            {" "}
+            · {recipient.type.replaceAll("_", " ")}
+          </span>
         </span>
       </div>
 

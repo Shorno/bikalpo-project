@@ -71,7 +71,7 @@ export function DeliveryGroupCard({ group }: DeliveryGroupCardProps) {
               </div>
               <div className="flex items-center gap-1 text-xs text-muted-foreground">
                 <span className="truncate font-medium text-foreground">
-                  {item.invoice.customer?.name}
+                  {item.invoice.recipient.displayName}
                 </span>
                 <span>•</span>
                 <span>{item.invoice.customer?.phoneNumber}</span>

@@ -6,29 +6,47 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { OrderCard } from "./order-card";
 
 interface OrderTabsProps {
-  orders: OrderWithItems[];
+  orders: ConsumerOrder[];
 }
 
-function filterOrders(orders: OrderWithItems[], status: string) {
+export type ConsumerOrder = OrderWithItems & {
+  journey: {
+    phase: string;
+    fulfillmentMode: "internal_delivery" | "self_pickup" | null;
+    pickupLocation: {
+      name: string | null;
+      address: string;
+      phone: string | null;
+    } | null;
+  };
+};
+
+function filterOrders(orders: ConsumerOrder[], status: string) {
   switch (status) {
     case "pending":
-      return orders.filter((order) => order.status === "pending");
+      return orders.filter((order) => order.journey.phase === "placed");
     case "active":
-      // Active orders: confirmed or processing (in progress, not yet delivered)
       return orders.filter((order) =>
-        ["confirmed", "processing"].includes(order.status),
+        [
+          "confirmed",
+          "preparing",
+          "out_for_delivery",
+          "delivery_issue",
+        ].includes(order.journey.phase),
       );
     case "delivered":
-      return orders.filter((order) => order.status === "delivered");
+      return orders.filter((order) => order.journey.phase === "delivered");
     case "cancelled":
-      return orders.filter((order) => order.status === "cancelled");
+      return orders.filter((order) =>
+        ["cancelled", "returned"].includes(order.journey.phase),
+      );
     case "all":
     default:
       return orders;
   }
 }
 
-function OrdersList({ orders }: { orders: OrderWithItems[] }) {
+function OrdersList({ orders }: { orders: ConsumerOrder[] }) {
   if (orders.length === 0) {
     return (
       <div className="bg-white rounded-lg border border-gray-200 p-8 text-center">
@@ -103,7 +121,7 @@ export function OrderTabs({ orders }: OrderTabsProps) {
           className="flex items-center gap-1.5 py-2.5 data-[state=active]:shadow-sm text-red-600 dark:text-red-400"
         >
           <XCircle className="size-4" />
-          <span className="hidden sm:inline">Cancelled</span>
+          <span className="hidden sm:inline">Closed</span>
           <span className="text-xs px-1.5 py-0.5 rounded-full bg-muted-foreground/20">
             {counts.cancelled}
           </span>

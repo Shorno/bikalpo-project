@@ -17,7 +17,7 @@ export function OrderHeader({ item }: OrderHeaderProps) {
             {item.invoice.invoiceNumber}
           </div>
           <div className="text-[10px] sm:text-xs text-muted-foreground truncate">
-            {item.invoice.customer?.name}
+            Delivery Recipient: {item.invoice.recipient.displayName}
           </div>
         </div>
       </div>
