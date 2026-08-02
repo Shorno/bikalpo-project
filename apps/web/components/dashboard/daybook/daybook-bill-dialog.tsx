@@ -1,6 +1,6 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   CalendarIcon,
   FileTextIcon,
@@ -27,6 +27,7 @@ import {
 } from "@/components/dashboard/daybook/daybook-expense-ledger";
 import { useDaybookBills } from "@/components/dashboard/daybook/use-daybook-bills";
 import { useDaybookProductPurchases } from "@/components/dashboard/daybook/use-daybook-product-purchases";
+import { useRetailerSuppliers } from "@/components/dashboard/daybook/use-retailer-suppliers";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -139,6 +140,7 @@ export function DaybookBillDialog({
   open,
   scope,
 }: DaybookBillDialogProps) {
+  const queryClient = useQueryClient();
   const { data: paymentAccountsData } = useQuery(
     orpc.finance.getPaymentAccounts.queryOptions({ input: {} }),
   );
@@ -147,6 +149,15 @@ export function DaybookBillDialog({
   );
   const savedBills = useDaybookBills(scope);
   const savedProductPurchases = useDaybookProductPurchases(scope);
+  const retailerSuppliers = useRetailerSuppliers(scope);
+  const recordSupplierBillMutation = useMutation({
+    mutationFn: (input: {
+      amount: number;
+      billNo?: string;
+      referenceNo?: string;
+      supplierId: number;
+    }) => orpc.shopOwner.recordSupplierBill.call(input),
+  });
   const paymentAccounts = useMemo(
     () =>
       paymentAccountsData?.paymentAccounts?.length
@@ -199,10 +210,11 @@ export function DaybookBillDialog({
     () =>
       buildDaybookBillPayeeOptions({
         bills: savedBills,
+        externalPayees: retailerSuppliers,
         partyType: "supplier",
         productPurchases: savedProductPurchases,
       }),
-    [savedBills, savedProductPurchases],
+    [retailerSuppliers, savedBills, savedProductPurchases],
   );
   const filteredSuppliers = useMemo(
     () => filterDaybookBillPayees(supplierOptions, supplierName).slice(0, 6),
@@ -223,6 +235,15 @@ export function DaybookBillDialog({
   );
   const activeSupplier = selectedSupplier ?? matchingSupplier;
   const previousBillAmount = activeSupplier?.previousBillAmount ?? 0;
+  const activeRetailerSupplier = useMemo(
+    () =>
+      retailerSuppliers.find(
+        (supplier) =>
+          supplier.name.trim().toLowerCase() ===
+          supplierName.trim().toLowerCase(),
+      ),
+    [retailerSuppliers, supplierName],
+  );
   const selectedPaymentAccount = useMemo(
     () =>
       paymentAccounts.find((account) => account.id === paymentAccountId) ??
@@ -373,7 +394,7 @@ export function DaybookBillDialog({
     onOpenChange(nextOpen);
   };
 
-  const saveBill = (closeAfterSave: boolean) => {
+  const saveBill = async (closeAfterSave: boolean) => {
     const supplier = supplierName.trim();
     const paymentAccount = selectedPaymentAccount;
     const billLines = buildBillLines();
@@ -425,6 +446,27 @@ export function DaybookBillDialog({
     };
 
     addDaybookBill(savedBill);
+    if (activeRetailerSupplier) {
+      void recordSupplierBillMutation
+        .mutateAsync({
+          amount: nextAmountDue,
+          billNo: savedBill.billNo,
+          referenceNo: savedBill.referenceNo || undefined,
+          supplierId: activeRetailerSupplier.id,
+        })
+        .then(() => {
+          void queryClient.invalidateQueries({
+            queryKey: ["shopOwner", "suppliers"],
+          });
+          void queryClient.invalidateQueries({
+            queryKey: ["shopOwner", "supplierStats"],
+          });
+          void queryClient.invalidateQueries({
+            queryKey: ["shopOwner", "suppliers", "daybook-selector"],
+          });
+        })
+        .catch(() => undefined);
+    }
     resetForm([...savedBills, savedBill]);
 
     if (closeAfterSave) {
@@ -475,7 +517,7 @@ export function DaybookBillDialog({
                     <div className="absolute z-20 mt-1 max-h-72 w-full overflow-y-auto rounded-lg border border-slate-200 bg-white p-1 shadow-lg">
                       {filteredSuppliers.map((supplier) => (
                         <button
-                          className="flex w-full items-center justify-between gap-3 rounded-md px-3 py-2 text-left text-sm hover:bg-slate-100"
+                          className="flex w-full flex-col rounded-md px-3 py-2 text-left text-sm hover:bg-slate-100"
                           key={supplier.id}
                           onClick={() => {
                             setSupplierName(supplier.name);
@@ -485,16 +527,11 @@ export function DaybookBillDialog({
                           onMouseDown={(event) => event.preventDefault()}
                           type="button"
                         >
-                          <span className="min-w-0">
-                            <span className="block truncate font-medium text-slate-900">
-                              {supplier.name}
-                            </span>
-                            <span className="block text-slate-500 text-xs">
-                              {supplier.subtitle}
-                            </span>
+                          <span className="block truncate font-medium text-slate-900">
+                            {supplier.name}
                           </span>
-                          <span className="shrink-0 rounded-md bg-amber-50 px-2 py-1 font-semibold text-amber-700 text-xs">
-                            Prev {money(supplier.previousBillAmount)}
+                          <span className="block text-slate-500 text-xs">
+                            {supplier.subtitle}
                           </span>
                         </button>
                       ))}

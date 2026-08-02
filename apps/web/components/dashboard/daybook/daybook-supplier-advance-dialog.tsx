@@ -20,6 +20,7 @@ import {
 } from "@/components/dashboard/daybook/daybook-supplier-advance-ledger";
 import { useDaybookBills } from "@/components/dashboard/daybook/use-daybook-bills";
 import { useDaybookProductPurchases } from "@/components/dashboard/daybook/use-daybook-product-purchases";
+import { useRetailerSuppliers } from "@/components/dashboard/daybook/use-retailer-suppliers";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -91,6 +92,7 @@ export function DaybookSupplierAdvanceDialog({
   );
   const savedBills = useDaybookBills(scope);
   const savedProductPurchases = useDaybookProductPurchases(scope);
+  const retailerSuppliers = useRetailerSuppliers(scope);
   const paymentAccounts = useMemo(
     () => paymentAccountsData?.paymentAccounts ?? [],
     [paymentAccountsData?.paymentAccounts],
@@ -121,10 +123,11 @@ export function DaybookSupplierAdvanceDialog({
     () =>
       buildDaybookBillPayeeOptions({
         bills: savedBills,
+        externalPayees: retailerSuppliers,
         partyType: "supplier",
         productPurchases: savedProductPurchases,
       }),
-    [savedBills, savedProductPurchases],
+    [retailerSuppliers, savedBills, savedProductPurchases],
   );
   const filteredSuppliers = useMemo(
     () => filterDaybookBillPayees(supplierOptions, supplier).slice(0, 6),

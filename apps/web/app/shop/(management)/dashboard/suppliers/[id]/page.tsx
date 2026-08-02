@@ -22,8 +22,11 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { type FormEvent, useState } from "react";
+import { type FormEvent, useMemo, useState } from "react";
 import { toast } from "sonner";
+import { useDaybookBills } from "@/components/dashboard/daybook/use-daybook-bills";
+import { useDaybookExpenses } from "@/components/dashboard/daybook/use-daybook-expenses";
+import { useDaybookSupplierAdvances } from "@/components/dashboard/daybook/use-daybook-supplier-advances";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -88,6 +91,10 @@ function parsePaymentMethod(description: string | null) {
   if (value.includes("bank")) return "Bank";
   if (value.includes("mobile") || value.includes("bkash")) return "Mobile";
   return "Cash";
+}
+
+function normalizeName(value: string) {
+  return value.trim().toLowerCase().replace(/\s+/g, " ");
 }
 
 function purchaseStatusBadge(status: string, paymentType: string) {
@@ -163,6 +170,39 @@ export default function SupplierDetailPage() {
   });
 
   const categories = categoriesData?.categories ?? [];
+  const daybookBills = useDaybookBills("retailer");
+  const daybookExpenses = useDaybookExpenses("retailer");
+  const daybookSupplierAdvances = useDaybookSupplierAdvances("retailer");
+  const supplierNameKey = normalizeName(data?.supplier?.name ?? "");
+  const supplierBills = useMemo(
+    () =>
+      supplierNameKey
+        ? daybookBills.filter(
+            (bill) =>
+              bill.partyType === "supplier" &&
+              normalizeName(bill.partyName) === supplierNameKey,
+          )
+        : [],
+    [daybookBills, supplierNameKey],
+  );
+  const supplierExpenses = useMemo(
+    () =>
+      supplierNameKey
+        ? daybookExpenses.filter(
+            (expense) => normalizeName(expense.payee) === supplierNameKey,
+          )
+        : [],
+    [daybookExpenses, supplierNameKey],
+  );
+  const localSupplierAdvances = useMemo(
+    () =>
+      supplierNameKey
+        ? daybookSupplierAdvances.filter(
+            (advance) => normalizeName(advance.supplier) === supplierNameKey,
+          )
+        : [],
+    [daybookSupplierAdvances, supplierNameKey],
+  );
 
   const invalidateDetail = () => {
     queryClient.invalidateQueries({
@@ -246,13 +286,33 @@ export default function SupplierDetailPage() {
 
   const {
     supplier,
+    billHistory = [],
     purchaseHistory,
     productBreakdown,
     payments,
+    supplierAdvances = [],
+    totalBillValue = 0,
     totalPurchaseValue,
     totalPaid,
+    totalSupplierAdvance = 0,
     currentPayable,
   } = data;
+  const localBillTotal = supplierBills.reduce(
+    (sum, bill) => sum + bill.total,
+    0,
+  );
+  const localBillDue = supplierBills.reduce(
+    (sum, bill) => sum + bill.amountDue,
+    0,
+  );
+  const localExpenseTotal = supplierExpenses.reduce(
+    (sum, expense) => sum + expense.total,
+    0,
+  );
+  const localAdvanceTotal = localSupplierAdvances.reduce(
+    (sum, advance) => sum + advance.amount,
+    0,
+  );
 
   return (
     <div className="space-y-6">
@@ -389,21 +449,33 @@ export default function SupplierDetailPage() {
         </CardContent>
       </Card>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
         <SummaryCard
           icon={<TrendingUp className="h-5 w-5 text-blue-600" />}
-          label="Total Purchase"
-          value={formatMoney(totalPurchaseValue)}
+          label="Total Bill"
+          value={formatMoney(Math.max(Number(totalBillValue), localBillTotal))}
         />
         <SummaryCard
           icon={<Wallet className="h-5 w-5 text-emerald-600" />}
-          label="Total Paid"
-          value={formatMoney(totalPaid)}
+          label="Expense Paid"
+          value={formatMoney(Math.max(Number(totalPaid), localExpenseTotal))}
         />
         <SummaryCard
           icon={<CreditCard className="h-5 w-5 text-orange-500" />}
           label="Payable"
-          value={formatMoney(currentPayable)}
+          value={formatMoney(Math.max(Number(currentPayable), localBillDue))}
+        />
+        <SummaryCard
+          icon={<Receipt className="h-5 w-5 text-indigo-600" />}
+          label="Purchases"
+          value={formatMoney(totalPurchaseValue)}
+        />
+        <SummaryCard
+          icon={<ShieldCheck className="h-5 w-5 text-cyan-600" />}
+          label="Supplier Advance"
+          value={formatMoney(
+            Math.max(Number(totalSupplierAdvance), localAdvanceTotal),
+          )}
         />
       </div>
 
@@ -439,6 +511,195 @@ export default function SupplierDetailPage() {
           </CardContent>
         </Card>
       )}
+
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 text-sm font-semibold">
+            Bill History
+            {(supplierBills.length > 0 || billHistory.length > 0) && (
+              <Badge className="ml-1 text-[10px]" variant="secondary">
+                {supplierBills.length + billHistory.length} bills
+              </Badge>
+            )}
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="p-0">
+          {supplierBills.length === 0 && billHistory.length === 0 ? (
+            <div className="py-10 text-center text-sm text-muted-foreground">
+              No supplier bills yet
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Bill No</TableHead>
+                  <TableHead>Date</TableHead>
+                  <TableHead className="text-right">Total</TableHead>
+                  <TableHead className="text-right">Paid</TableHead>
+                  <TableHead className="text-right">Due</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {supplierBills.map((bill) => (
+                  <TableRow key={bill.id}>
+                    <TableCell className="font-mono text-sm">
+                      {bill.billNo}
+                    </TableCell>
+                    <TableCell className="text-sm">
+                      {formatDate(bill.paymentDate)}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {formatMoney(bill.total)}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums text-emerald-600">
+                      {formatMoney(bill.totalPaid)}
+                    </TableCell>
+                    <TableCell className="text-right font-medium tabular-nums text-orange-600">
+                      {formatMoney(bill.amountDue)}
+                    </TableCell>
+                  </TableRow>
+                ))}
+                {billHistory.map((bill: any) => (
+                  <TableRow key={`server-${bill.id}`}>
+                    <TableCell className="font-mono text-sm">
+                      {bill.description || "Supplier bill"}
+                    </TableCell>
+                    <TableCell className="text-sm">
+                      {formatDate(bill.createdAt)}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {formatMoney(bill.amount)}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums text-muted-foreground">
+                      -
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums text-muted-foreground">
+                      -
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 text-sm font-semibold">
+            Expense History
+            {supplierExpenses.length > 0 && (
+              <Badge className="ml-1 text-[10px]" variant="secondary">
+                {supplierExpenses.length} expenses
+              </Badge>
+            )}
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="p-0">
+          {supplierExpenses.length === 0 ? (
+            <div className="py-10 text-center text-sm text-muted-foreground">
+              No daybook expenses paid to this supplier yet
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Date</TableHead>
+                  <TableHead>Account</TableHead>
+                  <TableHead className="text-right">Amount</TableHead>
+                  <TableHead>Reference</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {supplierExpenses.map((expense) => (
+                  <TableRow key={expense.id}>
+                    <TableCell className="text-sm">
+                      {formatDate(expense.paymentDate)}
+                    </TableCell>
+                    <TableCell className="text-sm">
+                      {expense.paymentAccountName}
+                    </TableCell>
+                    <TableCell className="text-right font-medium tabular-nums text-emerald-600">
+                      {formatMoney(expense.total)}
+                    </TableCell>
+                    <TableCell className="max-w-[220px] truncate text-sm text-muted-foreground">
+                      {expense.referenceNo || expense.memo || "No reference"}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2 text-sm font-semibold">
+            Supplier Advance
+            {(localSupplierAdvances.length > 0 ||
+              supplierAdvances.length > 0) && (
+              <Badge className="ml-1 text-[10px]" variant="secondary">
+                {localSupplierAdvances.length + supplierAdvances.length}{" "}
+                advances
+              </Badge>
+            )}
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="p-0">
+          {localSupplierAdvances.length === 0 &&
+          supplierAdvances.length === 0 ? (
+            <div className="py-10 text-center text-sm text-muted-foreground">
+              No supplier advance payments yet
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Advance No</TableHead>
+                  <TableHead>Date</TableHead>
+                  <TableHead>Account</TableHead>
+                  <TableHead className="text-right">Amount</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {localSupplierAdvances.map((advance) => (
+                  <TableRow key={advance.id}>
+                    <TableCell className="font-mono text-sm">
+                      {advance.advanceNo || "Advance"}
+                    </TableCell>
+                    <TableCell className="text-sm">
+                      {formatDate(advance.paymentDate)}
+                    </TableCell>
+                    <TableCell className="text-sm">
+                      {advance.paymentAccountName}
+                    </TableCell>
+                    <TableCell className="text-right font-medium tabular-nums">
+                      {formatMoney(advance.amount)}
+                    </TableCell>
+                  </TableRow>
+                ))}
+                {supplierAdvances.map((advance: any) => (
+                  <TableRow key={`server-advance-${advance.id}`}>
+                    <TableCell className="font-mono text-sm">
+                      {advance.description || "Supplier advance"}
+                    </TableCell>
+                    <TableCell className="text-sm">
+                      {formatDate(advance.createdAt)}
+                    </TableCell>
+                    <TableCell className="text-sm text-muted-foreground">
+                      Server ledger
+                    </TableCell>
+                    <TableCell className="text-right font-medium tabular-nums">
+                      {formatMoney(advance.amount)}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader className="pb-3">

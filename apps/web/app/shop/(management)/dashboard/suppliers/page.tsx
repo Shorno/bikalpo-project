@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Building2,
   CreditCard,
+  Eye,
   Filter,
   Pencil,
   Phone,
@@ -16,6 +17,7 @@ import {
   Wallet,
 } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { type FormEvent, useCallback, useState } from "react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
@@ -82,6 +84,7 @@ function formatMoney(value: number | string | null | undefined) {
 
 export default function SuppliersPage() {
   const queryClient = useQueryClient();
+  const router = useRouter();
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<
@@ -381,7 +384,7 @@ export default function SuppliersPage() {
                   <TableHead>Contact</TableHead>
                   <TableHead className="text-right">Total Purchase</TableHead>
                   <TableHead>Status</TableHead>
-                  <TableHead className="w-[80px]">Actions</TableHead>
+                  <TableHead className="w-[116px]">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -389,11 +392,23 @@ export default function SuppliersPage() {
                   <TableRow
                     className="cursor-pointer transition-colors hover:bg-muted/50"
                     key={supplier.id}
+                    onClick={() =>
+                      router.push(`/dashboard/suppliers/${supplier.id}`)
+                    }
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        router.push(`/dashboard/suppliers/${supplier.id}`);
+                      }
+                    }}
+                    role="link"
+                    tabIndex={0}
                   >
                     <TableCell>
                       <Link
-                        className="block"
+                        className="block hover:text-blue-700"
                         href={`/dashboard/suppliers/${supplier.id}`}
+                        onClick={(event) => event.stopPropagation()}
                       >
                         <div className="font-medium">{supplier.name}</div>
                         {supplier.company && (
@@ -454,6 +469,20 @@ export default function SuppliersPage() {
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-1">
+                        <Button
+                          asChild
+                          className="h-7 w-7"
+                          size="icon"
+                          title="View details"
+                          variant="ghost"
+                        >
+                          <Link
+                            href={`/dashboard/suppliers/${supplier.id}`}
+                            onClick={(event) => event.stopPropagation()}
+                          >
+                            <Eye className="h-3.5 w-3.5" />
+                          </Link>
+                        </Button>
                         <Button
                           className="h-7 w-7"
                           onClick={(event) => {

@@ -170,6 +170,45 @@ export function getDaybookBillTotal(bills: DaybookBillEntry[]) {
   return bills.reduce((sum, bill) => sum + bill.amountDue, 0);
 }
 
+export function applyDaybookSupplierBillPayment(input: {
+  amount: number;
+  scope: DaybookExpenseScope;
+  supplierName: string;
+}) {
+  if (!isBrowser() || input.amount <= 0) {
+    return;
+  }
+
+  const supplierName = normalizeBillPartyName(input.supplierName);
+  if (!supplierName) {
+    return;
+  }
+
+  let remaining = input.amount;
+  const updatedBills = loadDaybookBills().map((bill) => {
+    if (
+      remaining <= 0 ||
+      bill.scope !== input.scope ||
+      bill.partyType !== "supplier" ||
+      normalizeBillPartyName(bill.partyName) !== supplierName ||
+      bill.amountDue <= 0
+    ) {
+      return bill;
+    }
+
+    const applied = Math.min(bill.amountDue, remaining);
+    remaining -= applied;
+
+    return normalizeBill({
+      ...bill,
+      amountDue: Math.max(0, bill.amountDue - applied),
+      totalPaid: bill.totalPaid + applied,
+    });
+  });
+
+  saveDaybookBills(updatedBills);
+}
+
 export function createDaybookBillId(prefix: string) {
   return createDaybookExpenseId(prefix);
 }

@@ -16,9 +16,10 @@ import {
   financeCategory,
   financePaymentAccount,
   financialLedger,
+  supplier,
 } from "@bikalpo-project/db/schema";
 import { ORPCError } from "@orpc/server";
-import { and, eq, ilike, inArray, isNull, ne, or, sql } from "drizzle-orm";
+import { and, asc, eq, ilike, inArray, isNull, ne, or, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { protectedProcedure } from "../index";
@@ -164,6 +165,163 @@ function assertSufficientPaymentBalance(input: {
       minimumFractionDigits: 2,
     })}.`,
   });
+}
+
+async function ensurePaymentAccountsReady(input: {
+  ownerId: string;
+  ownerType: AccountingOwnerType;
+}) {
+  await ensureDefaultFinancePaymentAccounts(input);
+  await ensureOwnerCashBankPaymentAccounts(input);
+}
+
+function normalizePaymentAccountLookup(value: string | number) {
+  return String(value)
+    .trim()
+    .toLowerCase()
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ");
+}
+
+async function resolvePaymentAccountId(input: {
+  ownerId: string;
+  ownerType: AccountingOwnerType;
+  paymentAccountId: string | number;
+}) {
+  const numericId = Number(input.paymentAccountId);
+
+  if (Number.isFinite(numericId) && numericId > 0) {
+    return numericId;
+  }
+
+  const lookup = normalizePaymentAccountLookup(input.paymentAccountId);
+  const accounts = await db.query.financePaymentAccount.findMany({
+    where: (table, { and: andFn, eq: eqFn }) =>
+      andFn(
+        eqFn(table.ownerId, input.ownerId),
+        eqFn(table.ownerType, input.ownerType),
+      ),
+  });
+
+  const matchingAccount = accounts.find((account) => {
+    const accountName = normalizePaymentAccountLookup(account.name);
+
+    return (
+      accountName === lookup ||
+      (lookup === "cash on hand" && account.type === "cash") ||
+      (lookup === "cash" && account.type === "cash") ||
+      (lookup === "bank account" && account.type === "bank") ||
+      (lookup === "bank" && account.type === "bank")
+    );
+  });
+
+  if (!matchingAccount) {
+    throw new ORPCError("BAD_REQUEST", {
+      message: "Select a valid payment account",
+    });
+  }
+
+  return matchingAccount.id;
+}
+
+async function resolveLedgerBalanceTargets(input: {
+  description?: string | null;
+  ownerId: string;
+  ownerType: AccountingOwnerType;
+  referenceId: number;
+  referenceType: string;
+}) {
+  const [paymentAccounts, referencedAccount] = await Promise.all([
+    db.query.financePaymentAccount.findMany({
+      where: (table, { and: andFn, eq: eqFn }) =>
+        andFn(
+          eqFn(table.ownerId, input.ownerId),
+          eqFn(table.ownerType, input.ownerType),
+        ),
+    }),
+    input.referenceType === "adjustment"
+      ? db.query.financeAccount.findFirst({
+          where: (table, { and: andFn, eq: eqFn }) =>
+            andFn(
+              eqFn(table.id, input.referenceId),
+              eqFn(table.ownerId, input.ownerId),
+              eqFn(table.ownerType, input.ownerType),
+            ),
+        })
+      : Promise.resolve(null),
+  ]);
+  const paymentTargets = new Map<number, (typeof paymentAccounts)[number]>();
+  const referencedPayment = paymentAccounts.find(
+    (account) => account.id === input.referenceId,
+  );
+
+  if (referencedPayment) {
+    paymentTargets.set(referencedPayment.id, referencedPayment);
+  }
+
+  const namedPaymentAccount = extractLedgerAccountName(input.description);
+  if (namedPaymentAccount) {
+    const normalizedName = normalizePaymentAccountLookup(namedPaymentAccount);
+    const matchingPayment = paymentAccounts.find(
+      (account) =>
+        normalizePaymentAccountLookup(account.name) === normalizedName,
+    );
+
+    if (matchingPayment) {
+      paymentTargets.set(matchingPayment.id, matchingPayment);
+    }
+  }
+
+  return {
+    financeTargets:
+      referencedAccount && !referencedAccount.isPaymentAccount
+        ? [referencedAccount]
+        : [],
+    paymentTargets: Array.from(paymentTargets.values()),
+  };
+}
+
+function signedLedgerAmount(input: {
+  accountType?: AccountingAccountType;
+  amount: number;
+  direction: "credit" | "debit";
+  isPaymentAccount?: boolean;
+}) {
+  if (input.isPaymentAccount) {
+    return input.direction === "credit" ? input.amount : -input.amount;
+  }
+
+  const normalBalance =
+    input.accountType === "liability" ||
+    input.accountType === "equity" ||
+    input.accountType === "income"
+      ? "credit"
+      : "debit";
+
+  return input.direction === normalBalance ? input.amount : -input.amount;
+}
+
+function extractLedgerAccountName(description: string | null | undefined) {
+  const match = description?.match(
+    /(?:Payment account|Deposit account):\s*([^|]+)/i,
+  );
+
+  return match?.[1]?.trim() ?? null;
+}
+
+function formatLedgerEntryType(value: string) {
+  return value
+    .split("_")
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function ledgerDateValue(value: Date) {
+  return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(
+    2,
+    "0",
+  )}-${String(value.getDate()).padStart(2, "0")}`;
 }
 
 function resolveAccountReportLines(input: {
@@ -1554,10 +1712,7 @@ export const financeRouter = {
       const ownerId = context.session.user.id;
       const ownerType = resolveOwnerScope(context.session.user.role);
 
-      await ensureDefaultFinancePaymentAccounts({ ownerId, ownerType });
-      await ensureOwnerCashBankPaymentAccounts({ ownerId, ownerType });
-
-      const paymentAccounts = await db.query.financePaymentAccount.findMany({
+      let paymentAccounts = await db.query.financePaymentAccount.findMany({
         where: (table, { and: andFn, eq: eqFn }) =>
           andFn(eqFn(table.ownerId, ownerId), eqFn(table.ownerType, ownerType)),
         orderBy: (table, { desc: descFn, asc: ascFn }) => [
@@ -1566,6 +1721,27 @@ export const financeRouter = {
           ascFn(table.name),
         ],
       });
+
+      if (
+        !paymentAccounts.some(
+          (account) => account.type === "cash" || account.type === "bank",
+        )
+      ) {
+        await ensurePaymentAccountsReady({ ownerId, ownerType });
+
+        paymentAccounts = await db.query.financePaymentAccount.findMany({
+          where: (table, { and: andFn, eq: eqFn }) =>
+            andFn(
+              eqFn(table.ownerId, ownerId),
+              eqFn(table.ownerType, ownerType),
+            ),
+          orderBy: (table, { desc: descFn, asc: ascFn }) => [
+            descFn(table.isDefault),
+            ascFn(table.type),
+            ascFn(table.name),
+          ],
+        });
+      }
 
       return {
         paymentAccounts: paymentAccounts
@@ -1580,6 +1756,420 @@ export const financeRouter = {
             type: account.type as "cash" | "bank",
           })),
       };
+    }),
+
+  getGeneralLedger: protectedProcedure
+    .route({
+      method: "POST",
+      path: "/finance/general-ledger",
+      tags: ["Finance"],
+      summary: "General ledger",
+    })
+    .input(
+      z.object({
+        accountId: z.union([z.string(), z.number()]).optional().nullable(),
+        endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+      }),
+    )
+    .handler(async ({ context, input }) => {
+      const ownerId = context.session.user.id;
+      const ownerType = resolveOwnerScope(context.session.user.role);
+      const startDateTime = new Date(`${input.startDate}T00:00:00.000`);
+      const endDateTime = new Date(`${input.endDate}T23:59:59.999`);
+      const selectedAccountId =
+        input.accountId && input.accountId !== "all"
+          ? Number(input.accountId)
+          : null;
+
+      const [accountRows, paymentRows, ledgerRows] = await Promise.all([
+        db
+          .select({
+            accountType: financeAccount.accountType,
+            categoryName: financeCategory.name,
+            currentBalance: financeAccount.currentBalance,
+            id: financeAccount.id,
+            isPaymentAccount: financeAccount.isPaymentAccount,
+            name: financeAccount.name,
+            openingBalance: financeAccount.openingBalance,
+            sortOrder: financeAccount.sortOrder,
+          })
+          .from(financeAccount)
+          .innerJoin(
+            financeCategory,
+            eq(financeAccount.categoryId, financeCategory.id),
+          )
+          .where(
+            and(
+              eq(financeAccount.ownerId, ownerId),
+              eq(financeAccount.ownerType, ownerType),
+              eq(financeAccount.isActive, true),
+            ),
+          )
+          .orderBy(
+            asc(financeAccount.accountType),
+            asc(financeAccount.sortOrder),
+            asc(financeAccount.name),
+          ),
+        db.query.financePaymentAccount.findMany({
+          where: (table, { and: andFn, eq: eqFn }) =>
+            andFn(
+              eqFn(table.ownerId, ownerId),
+              eqFn(table.ownerType, ownerType),
+              eqFn(table.isActive, true),
+            ),
+        }),
+        db.query.financialLedger.findMany({
+          where: (table, { and: andFn, eq: eqFn, gte: gteFn, lte: lteFn }) =>
+            andFn(
+              eqFn(table.ownerId, ownerId),
+              eqFn(table.ownerType, ownerType),
+              gteFn(table.createdAt, startDateTime),
+              lteFn(table.createdAt, endDateTime),
+            ),
+          orderBy: (table, { asc: ascFn }) => [
+            ascFn(table.createdAt),
+            ascFn(table.id),
+          ],
+        }),
+      ]);
+
+      const paymentById = new Map(paymentRows.map((row) => [row.id, row]));
+      const paymentByName = new Map(
+        paymentRows.map((row) => [
+          normalizePaymentAccountLookup(row.name),
+          row,
+        ]),
+      );
+      const paymentByFinanceAccountId = new Map(
+        paymentRows.map((row) => [row.financeAccountId, row]),
+      );
+      const accountsById = new Map(
+        accountRows.map((account) => [account.id, account]),
+      );
+      const ledgerByAccount = new Map<
+        number,
+        Array<{
+          amount: string;
+          balance: string;
+          createdAt: Date;
+          date: string;
+          description: string;
+          direction: "credit" | "debit";
+          id: number;
+          referenceId: number;
+          referenceType: string;
+          signedAmount: string;
+          transactionType: string;
+        }>
+      >();
+
+      for (const row of ledgerRows) {
+        const accountIds = new Set<number>();
+        const referencedPayment = paymentById.get(row.referenceId);
+
+        if (referencedPayment?.financeAccountId) {
+          accountIds.add(referencedPayment.financeAccountId);
+        }
+
+        if (accountsById.has(row.referenceId)) {
+          accountIds.add(row.referenceId);
+        }
+
+        const namedPaymentAccount = extractLedgerAccountName(row.description);
+        if (namedPaymentAccount) {
+          const paymentAccount = paymentByName.get(
+            normalizePaymentAccountLookup(namedPaymentAccount),
+          );
+          if (paymentAccount?.financeAccountId) {
+            accountIds.add(paymentAccount.financeAccountId);
+          }
+        }
+
+        for (const accountId of accountIds) {
+          const account = accountsById.get(accountId);
+          if (!account) {
+            continue;
+          }
+
+          const amount = parseMoney(row.amount);
+          const signedAmount = signedLedgerAmount({
+            accountType: account.accountType,
+            amount,
+            direction: row.direction,
+            isPaymentAccount: account.isPaymentAccount,
+          });
+          const currentRows = ledgerByAccount.get(accountId) ?? [];
+
+          currentRows.push({
+            amount: toMoney(amount),
+            balance: "0.00",
+            createdAt: row.createdAt,
+            date: ledgerDateValue(row.createdAt),
+            description: row.description ?? "",
+            direction: row.direction,
+            id: row.id,
+            referenceId: row.referenceId,
+            referenceType: row.referenceType,
+            signedAmount: toMoney(signedAmount),
+            transactionType: formatLedgerEntryType(row.entryType),
+          });
+          ledgerByAccount.set(accountId, currentRows);
+        }
+      }
+
+      const accounts = accountRows
+        .map((account) => {
+          const rows = ledgerByAccount.get(account.id) ?? [];
+          const paymentAccount = account.isPaymentAccount
+            ? paymentByFinanceAccountId.get(account.id)
+            : null;
+          const currentBalance = parseMoney(
+            paymentAccount?.currentBalance ?? account.currentBalance,
+          );
+          const periodMovement = rows.reduce(
+            (sum, row) => sum + parseMoney(row.signedAmount),
+            0,
+          );
+          const openingBalance = currentBalance - periodMovement;
+          let runningBalance = openingBalance;
+          const transactions = rows.map((row) => {
+            runningBalance += parseMoney(row.signedAmount);
+
+            return {
+              ...row,
+              balance: toMoney(runningBalance),
+            };
+          });
+
+          return {
+            accountType: toUiAccountType(account.accountType),
+            balance: toMoney(currentBalance),
+            category: account.categoryName,
+            id: String(account.id),
+            name: account.name,
+            openingBalance: toMoney(openingBalance),
+            transactions,
+          };
+        })
+        .filter((account) => {
+          if (selectedAccountId) {
+            return Number(account.id) === selectedAccountId;
+          }
+
+          return parseMoney(account.balance) !== 0;
+        });
+
+      return {
+        accounts,
+        period: {
+          endDate: input.endDate,
+          startDate: input.startDate,
+        },
+      };
+    }),
+
+  updateLedgerTransaction: protectedProcedure
+    .route({
+      method: "POST",
+      path: "/finance/general-ledger/transactions/update",
+      tags: ["Finance"],
+      summary: "Update ledger transaction amount",
+    })
+    .input(
+      z.object({
+        amount: z.union([z.string(), z.number()]),
+        id: z.number().int().positive(),
+      }),
+    )
+    .handler(async ({ context, input }) => {
+      const ownerId = context.session.user.id;
+      const ownerType = resolveOwnerScope(context.session.user.role);
+      const nextAmount = parseMoney(input.amount);
+
+      if (nextAmount <= 0) {
+        throw new ORPCError("BAD_REQUEST", {
+          message: "Enter a transaction amount greater than 0",
+        });
+      }
+
+      const row = await db.query.financialLedger.findFirst({
+        where: (table, { and: andFn, eq: eqFn }) =>
+          andFn(
+            eqFn(table.id, input.id),
+            eqFn(table.ownerId, ownerId),
+            eqFn(table.ownerType, ownerType),
+          ),
+      });
+
+      if (!row) {
+        throw new ORPCError("NOT_FOUND", {
+          message: "Ledger transaction not found",
+        });
+      }
+
+      const previousAmount = parseMoney(row.amount);
+      const delta = nextAmount - previousAmount;
+      const targets = await resolveLedgerBalanceTargets({
+        description: row.description,
+        ownerId,
+        ownerType,
+        referenceId: row.referenceId,
+        referenceType: row.referenceType,
+      });
+
+      await db.transaction(async (tx) => {
+        for (const account of targets.paymentTargets) {
+          const signedDelta = signedLedgerAmount({
+            amount: delta,
+            direction: row.direction,
+            isPaymentAccount: true,
+          });
+
+          await tx
+            .update(financePaymentAccount)
+            .set({
+              currentBalance: toMoney(
+                parseMoney(account.currentBalance) + signedDelta,
+              ),
+              updatedAt: new Date(),
+            })
+            .where(eq(financePaymentAccount.id, account.id));
+        }
+
+        for (const account of targets.financeTargets) {
+          const signedDelta = signedLedgerAmount({
+            accountType: account.accountType,
+            amount: delta,
+            direction: row.direction,
+            isPaymentAccount: false,
+          });
+
+          await tx
+            .update(financeAccount)
+            .set({
+              currentBalance: toMoney(
+                parseMoney(account.currentBalance) + signedDelta,
+              ),
+              updatedAt: new Date(),
+            })
+            .where(eq(financeAccount.id, account.id));
+        }
+
+        await tx
+          .update(financialLedger)
+          .set({
+            amount: toMoney(nextAmount),
+            balanceAfter:
+              row.balanceAfter === null
+                ? null
+                : toMoney(
+                    parseMoney(row.balanceAfter) +
+                      signedLedgerAmount({
+                        amount: delta,
+                        direction: row.direction,
+                        isPaymentAccount: true,
+                      }),
+                  ),
+          })
+          .where(eq(financialLedger.id, row.id));
+
+        if (row.referenceType === "expense") {
+          await tx
+            .update(expense)
+            .set({
+              amount: toMoney(nextAmount),
+              updatedAt: new Date(),
+            })
+            .where(eq(expense.id, row.referenceId));
+        }
+      });
+
+      return {
+        amount: toMoney(nextAmount),
+        message: "Ledger transaction updated",
+      };
+    }),
+
+  deleteLedgerTransaction: protectedProcedure
+    .route({
+      method: "POST",
+      path: "/finance/general-ledger/transactions/delete",
+      tags: ["Finance"],
+      summary: "Delete ledger transaction",
+    })
+    .input(z.object({ id: z.number().int().positive() }))
+    .handler(async ({ context, input }) => {
+      const ownerId = context.session.user.id;
+      const ownerType = resolveOwnerScope(context.session.user.role);
+      const row = await db.query.financialLedger.findFirst({
+        where: (table, { and: andFn, eq: eqFn }) =>
+          andFn(
+            eqFn(table.id, input.id),
+            eqFn(table.ownerId, ownerId),
+            eqFn(table.ownerType, ownerType),
+          ),
+      });
+
+      if (!row) {
+        throw new ORPCError("NOT_FOUND", {
+          message: "Ledger transaction not found",
+        });
+      }
+      const targets = await resolveLedgerBalanceTargets({
+        description: row.description,
+        ownerId,
+        ownerType,
+        referenceId: row.referenceId,
+        referenceType: row.referenceType,
+      });
+
+      await db.transaction(async (tx) => {
+        for (const account of targets.paymentTargets) {
+          const signedAmount = signedLedgerAmount({
+            amount: parseMoney(row.amount),
+            direction: row.direction,
+            isPaymentAccount: true,
+          });
+
+          await tx
+            .update(financePaymentAccount)
+            .set({
+              currentBalance: toMoney(
+                parseMoney(account.currentBalance) - signedAmount,
+              ),
+              updatedAt: new Date(),
+            })
+            .where(eq(financePaymentAccount.id, account.id));
+        }
+
+        for (const account of targets.financeTargets) {
+          const signedAmount = signedLedgerAmount({
+            accountType: account.accountType,
+            amount: parseMoney(row.amount),
+            direction: row.direction,
+            isPaymentAccount: false,
+          });
+
+          await tx
+            .update(financeAccount)
+            .set({
+              currentBalance: toMoney(
+                parseMoney(account.currentBalance) - signedAmount,
+              ),
+              updatedAt: new Date(),
+            })
+            .where(eq(financeAccount.id, account.id));
+        }
+
+        if (row.referenceType === "expense") {
+          await tx.delete(expense).where(eq(expense.id, row.referenceId));
+        }
+
+        await tx.delete(financialLedger).where(eq(financialLedger.id, row.id));
+      });
+
+      return { message: "Ledger transaction deleted" };
     }),
 
   getFixedAssetAccounts: protectedProcedure
@@ -1703,20 +2293,25 @@ export const financeRouter = {
         paymentDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
         paymentMethod: z.enum(PAYMENT_METHODS),
         referenceNo: z.string().max(100).optional().nullable(),
+        supplierId: z.number().int().optional().nullable(),
       }),
     )
     .handler(async ({ context, input }) => {
       const ownerId = context.session.user.id;
       const ownerType = resolveOwnerScope(context.session.user.role);
-      const paymentAccountId = Number(input.paymentAccountId);
+      const directPaymentAccountId = Number(input.paymentAccountId);
+      const paymentAccountId =
+        Number.isFinite(directPaymentAccountId) && directPaymentAccountId > 0
+          ? directPaymentAccountId
+          : await (async () => {
+              await ensurePaymentAccountsReady({ ownerId, ownerType });
 
-      if (!Number.isFinite(paymentAccountId)) {
-        throw new ORPCError("BAD_REQUEST", {
-          message: "Select a valid payment account",
-        });
-      }
-
-      await ensureDefaultFinancePaymentAccounts({ ownerId, ownerType });
+              return resolvePaymentAccountId({
+                ownerId,
+                ownerType,
+                paymentAccountId: input.paymentAccountId,
+              });
+            })();
 
       const paymentAccount = await db.query.financePaymentAccount.findFirst({
         where: (table, { and: andFn, eq: eqFn }) =>
@@ -1764,6 +2359,21 @@ export const financeRouter = {
         balanceBefore,
         total,
       });
+      const payeeName = input.payee?.trim();
+      const expenseSupplier =
+        ownerType === "shop" && (input.supplierId || payeeName)
+          ? await db.query.supplier.findFirst({
+              where: input.supplierId
+                ? and(
+                    eq(supplier.addedBy, ownerId),
+                    eq(supplier.id, input.supplierId),
+                  )
+                : and(
+                    eq(supplier.addedBy, ownerId),
+                    ilike(supplier.name, payeeName ?? ""),
+                  ),
+            })
+          : null;
       const { nextSequence, prefix } =
         await getNextExpenseNumberPrefix(ownerId);
       let runningBalance = balanceBefore;
@@ -1839,6 +2449,39 @@ export const financeRouter = {
           updatedAt: new Date(),
         })
         .where(eq(financePaymentAccount.id, paymentAccount.id));
+
+      if (expenseSupplier) {
+        const currentPayable = parseMoney(expenseSupplier.currentPayable);
+        const nextPayable = Math.max(0, currentPayable - total);
+
+        await db
+          .update(supplier)
+          .set({
+            currentPayable: toMoney(nextPayable),
+            updatedAt: new Date(),
+          })
+          .where(eq(supplier.id, expenseSupplier.id));
+
+        await db.insert(financialLedger).values({
+          amount: toMoney(total),
+          description: [
+            "Supplier expense payment",
+            `Supplier: ${expenseSupplier.name}`,
+            input.referenceNo?.trim()
+              ? `Reference: ${input.referenceNo.trim()}`
+              : null,
+            `Payment account: ${paymentAccount.name}`,
+          ]
+            .filter(Boolean)
+            .join(" | "),
+          direction: "debit",
+          entryType: "supplier_payment",
+          ownerId,
+          ownerType,
+          referenceId: expenseSupplier.id,
+          referenceType: "supplier_payment",
+        });
+      }
 
       return {
         balanceAfter: toMoney(balanceAfter),

@@ -5175,7 +5175,54 @@ const retailerSupplierQueries = {
                 )
                 .orderBy(desc(financialLedger.createdAt));
 
+            const billHistory = await db
+                .select({
+                    id: financialLedger.id,
+                    amount: financialLedger.amount,
+                    description: financialLedger.description,
+                    createdAt: financialLedger.createdAt,
+                })
+                .from(financialLedger)
+                .where(
+                    and(
+                        eq(financialLedger.ownerId, userId),
+                        eq(financialLedger.ownerType, "shop"),
+                        eq(financialLedger.entryType, "adjustment"),
+                        eq(financialLedger.referenceType, "adjustment"),
+                        eq(financialLedger.referenceId, input.id),
+                        ilike(financialLedger.description, "Supplier bill%"),
+                    ),
+                )
+                .orderBy(desc(financialLedger.createdAt));
+
+            const supplierAdvances = await db
+                .select({
+                    id: financialLedger.id,
+                    amount: financialLedger.amount,
+                    description: financialLedger.description,
+                    createdAt: financialLedger.createdAt,
+                })
+                .from(financialLedger)
+                .where(
+                    and(
+                        eq(financialLedger.ownerId, userId),
+                        eq(financialLedger.ownerType, "shop"),
+                        eq(financialLedger.entryType, "adjustment"),
+                        ilike(financialLedger.description, "%Supplier advance payment%"),
+                        ilike(financialLedger.description, `%Supplier: ${sup.name}%`),
+                    ),
+                )
+                .orderBy(desc(financialLedger.createdAt));
+
             const totalPaid = payments.reduce(
+                (sum, item) => sum + parseFloat(item.amount ?? "0"),
+                0,
+            );
+            const totalBillValue = billHistory.reduce(
+                (sum, item) => sum + parseFloat(item.amount ?? "0"),
+                0,
+            );
+            const totalSupplierAdvance = supplierAdvances.reduce(
                 (sum, item) => sum + parseFloat(item.amount ?? "0"),
                 0,
             );
@@ -5243,9 +5290,13 @@ const retailerSupplierQueries = {
                 },
                 purchaseHistory,
                 productBreakdown,
+                billHistory,
                 payments,
+                supplierAdvances,
                 totalPurchaseValue,
+                totalBillValue,
                 totalPaid: totalPaid + cashPurchaseTotal,
+                totalSupplierAdvance,
                 currentPayable,
             };
         }),
@@ -5296,6 +5347,70 @@ const retailerSupplierQueries = {
                 .returning();
 
             return { supplier: created };
+        }),
+
+    recordSupplierBill: shopOwnerProcedure
+        .route({
+            method: "POST",
+            path: "/shop-owner/suppliers/record-bill",
+            tags: ["Shop Owner"],
+            summary: "Record retailer supplier bill payable",
+        })
+        .input(
+            z.object({
+                amount: z.number().positive(),
+                billNo: z.string().max(120).optional().nullable(),
+                referenceNo: z.string().max(120).optional().nullable(),
+                supplierId: z.number().int(),
+            }),
+        )
+        .handler(async ({ context, input }) => {
+            const userId = context.session.user.id;
+
+            const sup = await db.query.supplier.findFirst({
+                where: and(eq(supplier.id, input.supplierId), eq(supplier.addedBy, userId)),
+            });
+
+            if (!sup) {
+                throw new ORPCError("NOT_FOUND", { message: "Supplier not found" });
+            }
+
+            const nextPayable = parseFloat(sup.currentPayable ?? "0") + input.amount;
+
+            await db.transaction(async (tx) => {
+                await tx
+                    .update(supplier)
+                    .set({
+                        currentPayable: nextPayable.toFixed(2),
+                        updatedAt: new Date(),
+                    })
+                    .where(eq(supplier.id, input.supplierId));
+
+                await tx.insert(financialLedger).values({
+                    amount: input.amount.toFixed(2),
+                    description: [
+                        "Supplier bill",
+                        `Supplier: ${sup.name}`,
+                        input.billNo?.trim() ? `Bill: ${input.billNo.trim()}` : null,
+                        input.referenceNo?.trim()
+                            ? `Reference: ${input.referenceNo.trim()}`
+                            : null,
+                    ]
+                        .filter(Boolean)
+                        .join(" | "),
+                    direction: "credit",
+                    entryType: "adjustment",
+                    ownerId: userId,
+                    ownerType: "shop",
+                    referenceId: input.supplierId,
+                    referenceType: "adjustment",
+                });
+            });
+
+            return {
+                message: "Supplier bill recorded",
+                payable: nextPayable.toFixed(2),
+            };
         }),
 
     updateSupplier: shopOwnerProcedure

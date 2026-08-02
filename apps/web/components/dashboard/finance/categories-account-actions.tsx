@@ -1,6 +1,7 @@
 "use client";
 
 import { ChevronDownIcon } from "lucide-react";
+import Link from "next/link";
 import type { ChartAccount } from "@/components/dashboard/finance/chart-of-accounts-data";
 import { Button } from "@/components/ui/button";
 import {
@@ -29,7 +30,11 @@ export function CategoriesAccountActions({
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-48">
-        <DropdownMenuItem>View history</DropdownMenuItem>
+        <DropdownMenuItem asChild>
+          <Link href={`/dashboard/finance/ledger?accountId=${account.id}`}>
+            View history
+          </Link>
+        </DropdownMenuItem>
         <DropdownMenuItem onSelect={() => onEdit(account)}>
           Edit account
         </DropdownMenuItem>
