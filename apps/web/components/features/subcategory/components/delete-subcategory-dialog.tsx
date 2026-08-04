@@ -10,12 +10,14 @@ interface DeleteSubcategoryDialogProps {
   subcategory: SubCategory;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  onDeleted?: () => void;
 }
 
 export default function DeleteSubcategoryDialog({
   subcategory,
   open,
   onOpenChange,
+  onDeleted,
 }: DeleteSubcategoryDialogProps) {
   const queryClient = useQueryClient();
 
@@ -30,6 +32,7 @@ export default function DeleteSubcategoryDialog({
       queryClient.invalidateQueries({ queryKey: ["adminSubcategory"] });
       toast.success("Subcategory deleted successfully");
       onOpenChange(false);
+      onDeleted?.();
     },
     onError: (error) => {
       toast.error(error.message || "Failed to delete subcategory.");
@@ -42,7 +45,7 @@ export default function DeleteSubcategoryDialog({
 
   return (
     <SetupDeleteDialog
-      description="This action permanently deletes the Sub Category. Core Identities and products referencing it are protected by the server."
+      description="This permanently deletes the Sub Category. Existing dependencies are never cascaded."
       isDeleting={mutation.isPending}
       onConfirm={handleDelete}
       onOpenChange={onOpenChange}

@@ -51,11 +51,7 @@ export default function SubcategoryTable({
   const filteredData = useMemo(() => {
     const query = search.trim().toLowerCase();
     return data.filter((item) => {
-      const matchesSearch =
-        !query ||
-        item.name.toLowerCase().includes(query) ||
-        item.slug.toLowerCase().includes(query) ||
-        item.skuCode?.toLowerCase().includes(query);
+      const matchesSearch = !query || item.name.toLowerCase().includes(query);
       const matchesType =
         type === "all" || item.category.typeId === Number(type);
       const matchesCategory =
@@ -123,32 +119,41 @@ export default function SubcategoryTable({
           void setStatus("all");
         }}
         onSearchChange={(value) => void setSearch(value)}
-        searchPlaceholder="Search sub category name or SKU"
+        searchPlaceholder="Search Sub Category Name"
         searchValue={search}
       />
       <SetupEntityTable
         columns={columns}
         data={filteredData}
         emptyAction={
-          data.length === 0 ? (
+          data.length === 0 &&
+          !search &&
+          type === "all" &&
+          category === "all" &&
+          status === "all" ? (
             <NewSubcategoryDialog
               categories={categories}
+              triggerLabel="Create First Sub Category"
               variant="standalone"
             />
           ) : undefined
         }
-        emptyDescription="Create a sub category below an existing category to continue the setup hierarchy."
-        emptyTitle="No sub categories found"
+        emptyDescription={
+          search || type !== "all" || category !== "all" || status !== "all"
+            ? "No Sub Categories match the current search and filters."
+            : "Create the first Sub Category below an existing Category."
+        }
+        emptyTitle={
+          search || type !== "all" || category !== "all" || status !== "all"
+            ? "No matching Sub Categories"
+            : "No Sub Category found"
+        }
         getRowId={(row) => String(row.id)}
         mobile={{
           href: (row) => `/dashboard/admin/subcategories/${row.id}`,
           title: (row) => row.name,
-          description: (row) => row.skuCode ?? row.slug,
-          meta: (row) => [
-            [row.category.type?.name, row.category.name]
-              .filter(Boolean)
-              .join(" / "),
-          ],
+          description: (row) => row.skuCode ?? "—",
+          meta: (row) => [row.category.name],
           status: (row) => <ActiveStatusBadge isActive={row.isActive} />,
         }}
       />

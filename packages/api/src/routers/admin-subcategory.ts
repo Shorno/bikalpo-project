@@ -25,9 +25,59 @@ const createSubcategoryInput = z.object({
   categoryId: z.number().int(),
 });
 
-const updateSubcategoryInput = createSubcategoryInput.extend({
+const updateSubcategoryInput = z.object({
   id: z.number().int(),
+  name: z.string().min(2).max(100).trim(),
+  slug: z
+    .string()
+    .min(2)
+    .max(100)
+    .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)
+    .trim()
+    .optional(),
+  image: z.string().max(255).optional(),
+  isActive: z.boolean().optional(),
+  displayOrder: z.number().int().min(0).optional(),
+  categoryId: z.number().int(),
 });
+
+async function assertSubcategoryNameIsUnique(
+  name: string,
+  categoryId: number,
+  excludeId?: number,
+) {
+  const normalizedName = name.trim().toLowerCase();
+  const nameMatches = sql`lower(trim(${subCategory.name})) = ${normalizedName}`;
+  const duplicate = await db.query.subCategory.findFirst({
+    where: and(
+      eq(subCategory.categoryId, categoryId),
+      nameMatches,
+      excludeId === undefined ? undefined : ne(subCategory.id, excludeId),
+    ),
+    columns: { id: true },
+  });
+
+  if (duplicate) {
+    throw new ORPCError("CONFLICT", {
+      message: `A Sub Category named "${name.trim()}" already exists under this Category.`,
+    });
+  }
+}
+
+async function assertCategoryIsActive(categoryId: number) {
+  const activeCategory = await db.query.category.findFirst({
+    where: and(eq(category.id, categoryId), eq(category.isActive, true)),
+    columns: { id: true },
+    with: { type: { columns: { isActive: true } } },
+  });
+
+  if (!activeCategory?.type?.isActive) {
+    throw new ORPCError("BAD_REQUEST", {
+      message:
+        "Select a Category with an active Type before saving the Sub Category.",
+    });
+  }
+}
 
 export const adminSubcategoryRouter = {
   /**
@@ -99,17 +149,29 @@ export const adminSubcategoryRouter = {
         },
         orderBy: [asc(coreProductIdentity.name)],
       });
-      const [sellerUsage] = await db
-        .select({ value: countDistinct(product.createdById) })
-        .from(product)
-        .where(
-          and(
-            eq(product.subCategoryId, input.id),
-            eq(product.status, "active"),
-            ne(product.creatorSource, "admin"),
-            isNotNull(product.createdById),
+      const [sellerUsageRows, activeSellerUsageRows] = await Promise.all([
+        db
+          .select({ value: countDistinct(product.createdById) })
+          .from(product)
+          .where(
+            and(
+              eq(product.subCategoryId, input.id),
+              ne(product.creatorSource, "admin"),
+              isNotNull(product.createdById),
+            ),
           ),
-        );
+        db
+          .select({ value: countDistinct(product.createdById) })
+          .from(product)
+          .where(
+            and(
+              eq(product.subCategoryId, input.id),
+              eq(product.status, "active"),
+              ne(product.creatorSource, "admin"),
+              isNotNull(product.createdById),
+            ),
+          ),
+      ]);
 
       // Extract unique brands
       const brandsMap = new Map<number, string>();
@@ -150,7 +212,8 @@ export const adminSubcategoryRouter = {
         brands,
         variants,
         coreProducts,
-        activeSellerCount: sellerUsage?.value ?? 0,
+        sellerCount: sellerUsageRows[0]?.value ?? 0,
+        activeSellerCount: activeSellerUsageRows[0]?.value ?? 0,
       };
     }),
 
@@ -179,20 +242,10 @@ export const adminSubcategoryRouter = {
     })
     .input(createSubcategoryInput)
     .handler(async ({ input }) => {
-      const activeCategory = await db.query.category.findFirst({
-        where: and(
-          eq(category.id, input.categoryId),
-          eq(category.isActive, true),
-        ),
-        columns: { id: true },
-        with: { type: { columns: { isActive: true } } },
-      });
-      if (!activeCategory || activeCategory.type?.isActive === false) {
-        throw new ORPCError("BAD_REQUEST", {
-          message:
-            "Select a category with an active Product Type before creating a Sub Category.",
-        });
-      }
+      await Promise.all([
+        assertCategoryIsActive(input.categoryId),
+        assertSubcategoryNameIsUnique(input.name, input.categoryId),
+      ]);
       // Auto-generate next 3-digit skuCode scoped to categoryId
       const filterCondition = sql`${subCategory.categoryId} = ${input.categoryId}`;
       const skuCode = await nextSkuCode(
@@ -219,26 +272,31 @@ export const adminSubcategoryRouter = {
     })
     .input(updateSubcategoryInput)
     .handler(async ({ input }) => {
-      const existing = await db
-        .select()
-        .from(subCategory)
-        .where(eq(subCategory.id, input.id))
-        .limit(1);
+      const existing = await db.query.subCategory.findFirst({
+        where: eq(subCategory.id, input.id),
+      });
 
-      if (existing.length === 0) throw new Error("Subcategory not found");
+      if (!existing) {
+        throw new ORPCError("NOT_FOUND", {
+          message: "Sub Category not found",
+        });
+      }
+
+      await assertSubcategoryNameIsUnique(
+        input.name,
+        input.categoryId,
+        input.id,
+      );
+      if (input.categoryId !== existing.categoryId) {
+        await assertCategoryIsActive(input.categoryId);
+      }
+
+      const { id, ...data } = input;
 
       await db
         .update(subCategory)
-        .set({
-          name: input.name,
-          slug: input.slug,
-          image: input.image,
-          isActive: input.isActive,
-          displayOrder: input.displayOrder,
-          categoryId: input.categoryId,
-          updatedAt: new Date(),
-        })
-        .where(eq(subCategory.id, input.id));
+        .set({ ...data, updatedAt: new Date() })
+        .where(eq(subCategory.id, id));
 
       return { message: "Subcategory updated successfully" };
     }),
