@@ -1,14 +1,19 @@
 "use client";
 
 import type { SubCategory } from "@bikalpo-project/db/schema";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { LoaderCircle, Power, Trash2 } from "lucide-react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { toast } from "sonner";
 import type { CategoryWithSubcategories } from "@/components/features/category/components/category-columns";
+import DeleteCategoryDialog from "@/components/features/category/components/delete-category-dialog";
 import EditCategoryDialog from "@/components/features/category/components/edit-category-dialog";
 import {
   ActiveStatusBadge,
   SetupDetailHeader,
   SetupEmptySection,
-  SetupMetricStrip,
   SetupRelatedTable,
   SetupSection,
 } from "@/components/features/product-setup";
@@ -21,19 +26,10 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { ADMIN_BASE } from "@/lib/routes";
-
-interface CategoryProduct {
-  id: number;
-  name: string;
-  slug: string;
-  size: string;
-  status: string;
-  subCategory?: { id: number; name: string } | null;
-}
+import { orpc } from "@/utils/orpc";
 
 interface CategoryDetail extends CategoryWithSubcategories {
-  products: CategoryProduct[];
-  activeSellerCount: number;
+  sellerCount: number;
 }
 
 export default function CategoryDetailClient({
@@ -41,70 +37,102 @@ export default function CategoryDetailClient({
 }: {
   category: CategoryDetail;
 }) {
+  const router = useRouter();
+  const queryClient = useQueryClient();
   const [showEdit, setShowEdit] = useState(false);
-  const activeProducts = category.products.filter(
-    (product) => product.status === "active",
-  ).length;
+  const [showDelete, setShowDelete] = useState(false);
+  const subCategories = [...category.subCategory].sort(
+    (left, right) =>
+      left.displayOrder - right.displayOrder ||
+      left.name.localeCompare(right.name) ||
+      left.id - right.id,
+  );
+  const toggleMutation = useMutation({
+    mutationFn: () => orpc.category.toggleActive.call({ id: category.id }),
+    onSuccess: (result) => {
+      void queryClient.invalidateQueries({
+        queryKey: orpc.category.getAll.key(),
+      });
+      toast.success(result.message);
+      router.refresh();
+    },
+    onError: (error) =>
+      toast.error(error.message || "Failed to update Category status."),
+  });
 
   return (
     <div className="space-y-5">
       <SetupDetailHeader
         actions={
-          <Button onClick={() => setShowEdit(true)}>Edit Category</Button>
+          <>
+            <Button onClick={() => setShowEdit(true)} variant="outline">
+              Edit
+            </Button>
+            <Button
+              disabled={toggleMutation.isPending}
+              onClick={() => toggleMutation.mutate()}
+              variant="outline"
+            >
+              {toggleMutation.isPending ? (
+                <LoaderCircle
+                  aria-hidden="true"
+                  className="size-4 animate-spin"
+                />
+              ) : (
+                <Power aria-hidden="true" className="size-4" />
+              )}
+              {category.isActive ? "Disable" : "Enable"}
+            </Button>
+            <Button onClick={() => setShowDelete(true)} variant="destructive">
+              <Trash2 aria-hidden="true" className="size-4" />
+              Delete
+            </Button>
+          </>
         }
         backHref={`${ADMIN_BASE}/categories`}
         backLabel="Back to categories"
-        code={category.skuCode ?? category.slug}
-        hierarchy={category.type?.name ?? "Legacy unassigned Type"}
+        hierarchy={
+          <span>Type: {category.type?.name ?? "Legacy unassigned"}</span>
+        }
         name={category.name}
         status={<ActiveStatusBadge isActive={category.isActive} />}
       />
+
       <EditCategoryDialog
         category={category}
         onOpenChange={setShowEdit}
         open={showEdit}
       />
-
-      <SetupMetricStrip
-        metrics={[
-          { label: "Sub Categories", value: category.subCategory.length },
-          { label: "Active sellers", value: category.activeSellerCount },
-          { label: "Products", value: category.products.length },
-          { label: "Active products", value: activeProducts },
-        ]}
+      <DeleteCategoryDialog
+        category={category}
+        onDeleted={() => router.push(`${ADMIN_BASE}/categories`)}
+        onOpenChange={setShowDelete}
+        open={showDelete}
       />
 
-      <SetupSection
-        description="The next level of the taxonomy under this category."
-        title="Sub Category structure"
-      >
-        {category.subCategory.length === 0 ? (
+      <SetupSection title="Sub Category structure">
+        {subCategories.length === 0 ? (
           <SetupEmptySection
-            description="Create a Sub Category to continue this taxonomy path."
+            description="Sub Categories will appear here when they are assigned to this Category."
             title="No Sub Categories"
           />
         ) : (
           <SetupRelatedTable>
             <TableHeader className="bg-muted/40">
               <TableRow>
-                <TableHead>SKU</TableHead>
-                <TableHead>Sub Category</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Display order</TableHead>
+                <TableHead>Sub Category Name</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {category.subCategory.map((sub: SubCategory) => (
-                <TableRow key={sub.id}>
-                  <TableCell className="font-mono text-xs">
-                    {sub.skuCode ?? "—"}
-                  </TableCell>
-                  <TableCell className="font-medium">{sub.name}</TableCell>
+              {subCategories.map((subCategory: SubCategory) => (
+                <TableRow key={subCategory.id}>
                   <TableCell>
-                    <ActiveStatusBadge isActive={sub.isActive} />
-                  </TableCell>
-                  <TableCell className="font-mono text-xs tabular-nums">
-                    {sub.displayOrder}
+                    <Link
+                      className="font-medium hover:text-primary hover:underline"
+                      href={`${ADMIN_BASE}/subcategories/${subCategory.id}`}
+                    >
+                      {subCategory.name}
+                    </Link>
                   </TableCell>
                 </TableRow>
               ))}
@@ -113,39 +141,15 @@ export default function CategoryDetailClient({
         )}
       </SetupSection>
 
-      <SetupSection
-        description={`Products currently assigned to ${category.name}.`}
-        title="Product usage"
-      >
-        {category.products.length === 0 ? (
-          <SetupEmptySection
-            description="Products will appear here when they reference this category."
-            title="No product usage"
-          />
-        ) : (
-          <SetupRelatedTable>
-            <TableHeader className="bg-muted/40">
-              <TableRow>
-                <TableHead>Product</TableHead>
-                <TableHead>Sub Category</TableHead>
-                <TableHead>Size</TableHead>
-                <TableHead>Status</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {category.products.map((product) => (
-                <TableRow key={product.id}>
-                  <TableCell className="font-medium">{product.name}</TableCell>
-                  <TableCell>{product.subCategory?.name ?? "—"}</TableCell>
-                  <TableCell className="font-mono text-xs">
-                    {product.size}
-                  </TableCell>
-                  <TableCell className="capitalize">{product.status}</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </SetupRelatedTable>
-        )}
+      <SetupSection title="Used by sellers">
+        <dl className="px-4 py-4">
+          <div className="flex min-h-11 items-center justify-between gap-4">
+            <dt className="text-sm text-muted-foreground">Total Sellers</dt>
+            <dd className="font-mono text-sm font-semibold tabular-nums">
+              {category.sellerCount.toLocaleString()}
+            </dd>
+          </div>
+        </dl>
       </SetupSection>
     </div>
   );

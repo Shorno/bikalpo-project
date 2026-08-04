@@ -7,13 +7,9 @@ import { toast } from "sonner";
 
 import { SetupFormDialog } from "@/components/features/product-setup";
 import { Button } from "@/components/ui/button";
-import {
-  Field,
-  FieldDescription,
-  FieldError,
-  FieldLabel,
-} from "@/components/ui/field";
+import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import {
   Select,
   SelectContent,
@@ -21,11 +17,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { createNewCategorySchema } from "@/schema/category.scheam";
+import { categorySetupFormSchema } from "@/schema/category.scheam";
 import { generateSlug } from "@/utils/generate-slug";
 import { orpc } from "@/utils/orpc";
 
-export default function NewCategoryDialog() {
+export default function NewCategoryDialog({
+  triggerLabel = "Create Category",
+}: {
+  triggerLabel?: string;
+}) {
   const [open, setOpen] = React.useState(false);
   const queryClient = useQueryClient();
 
@@ -37,7 +37,9 @@ export default function NewCategoryDialog() {
   const mutation = useMutation(
     orpc.category.create.mutationOptions({
       onSuccess: (result) => {
-        queryClient.invalidateQueries({ queryKey: orpc.category.getAll.key() });
+        void queryClient.invalidateQueries({
+          queryKey: orpc.category.getAll.key(),
+        });
         toast.success(result.message);
         form.reset();
         setOpen(false);
@@ -54,39 +56,45 @@ export default function NewCategoryDialog() {
   const form = useForm({
     defaultValues: {
       name: "",
-      slug: "",
       typeId: undefined as number | undefined,
+      isActive: true,
     },
 
     validators: {
-      onSubmit: createNewCategorySchema as any,
+      onSubmit: categorySetupFormSchema as never,
     },
     onSubmit: async ({ value }) => {
       if (!value.typeId) {
-        toast.error("Product Type is required");
+        toast.error("Type is required");
         return;
       }
-      mutation.mutate({ ...value, typeId: value.typeId });
+      const name = value.name.trim();
+      mutation.mutate({
+        name,
+        slug: generateSlug(name),
+        typeId: value.typeId,
+        isActive: value.isActive,
+      });
     },
   });
 
-  const autoGenerateSlugFromName = (value: string) => {
-    const generatedSlug = generateSlug(value);
-    form.setFieldValue("slug", generatedSlug);
+  const handleOpenChange = (nextOpen: boolean) => {
+    if (!nextOpen) form.reset();
+    setOpen(nextOpen);
   };
 
   return (
     <SetupFormDialog
-      description="Add a category under an active Product Type."
+      description="Add a Category under an active Type."
       formId="new-category-form"
       hasUnsavedChanges={() => form.state.isDirty}
       isSubmitting={mutation.isPending}
-      onOpenChange={setOpen}
+      onOpenChange={handleOpenChange}
       onSubmit={() => form.handleSubmit()}
       open={open}
       submitLabel="Create Category"
       title="Create Category"
-      trigger={<Button>Create Category</Button>}
+      trigger={<Button>{triggerLabel}</Button>}
     >
       <form
         id="new-category-form"
@@ -95,88 +103,90 @@ export default function NewCategoryDialog() {
           e.stopPropagation();
           form.handleSubmit();
         }}
-        className="space-y-4"
+        className="space-y-5"
       >
-        {/* Name & Slug — side by side */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <form.Field name="name">
-            {(field) => {
-              const isInvalid =
-                field.state.meta.isTouched && !field.state.meta.isValid;
-              return (
-                <Field data-invalid={isInvalid}>
-                  <FieldLabel htmlFor={field.name}>Category Name *</FieldLabel>
-                  <Input
-                    id={field.name}
-                    name={field.name}
-                    value={field.state.value}
-                    onBlur={field.handleBlur}
-                    onChange={(e) => {
-                      field.handleChange(e.target.value);
-                      autoGenerateSlugFromName(e.target.value);
-                    }}
-                    aria-invalid={isInvalid}
-                    placeholder="Electronics"
-                    autoComplete="off"
-                  />
-                  {isInvalid && <FieldError errors={field.state.meta.errors} />}
-                </Field>
-              );
-            }}
-          </form.Field>
-
-          <form.Field name="slug">
-            {(field) => {
-              const isInvalid =
-                field.state.meta.isTouched && !field.state.meta.isValid;
-              return (
-                <Field data-invalid={isInvalid}>
-                  <FieldLabel htmlFor={field.name}>Slug *</FieldLabel>
-                  <Input
-                    id={field.name}
-                    name={field.name}
-                    value={field.state.value}
-                    onBlur={field.handleBlur}
-                    onChange={(e) => field.handleChange(e.target.value)}
-                    aria-invalid={isInvalid}
-                    placeholder="electronics"
-                    autoComplete="off"
-                  />
-                  <FieldDescription>Auto-generated from name</FieldDescription>
-                  {isInvalid && <FieldError errors={field.state.meta.errors} />}
-                </Field>
-              );
-            }}
-          </form.Field>
-        </div>
-
-        {/* Type */}
-        <div className="grid grid-cols-1 gap-4">
-          <form.Field name="typeId">
-            {(field) => (
-              <Field>
-                <FieldLabel htmlFor={field.name}>Product Type *</FieldLabel>
+        <form.Field name="typeId">
+          {(field) => {
+            const isInvalid =
+              field.state.meta.isTouched && !field.state.meta.isValid;
+            return (
+              <Field data-invalid={isInvalid}>
+                <FieldLabel htmlFor={field.name}>Type</FieldLabel>
                 <Select
+                  onValueChange={(value) => field.handleChange(Number(value))}
                   value={
                     field.state.value ? String(field.state.value) : undefined
                   }
-                  onValueChange={(v) => field.handleChange(Number(v))}
                 >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select type" />
+                  <SelectTrigger aria-invalid={isInvalid} id={field.name}>
+                    <SelectValue placeholder="Select Type" />
                   </SelectTrigger>
                   <SelectContent>
-                    {productTypes.map((t: any) => (
-                      <SelectItem key={t.id} value={String(t.id)}>
-                        {t.name}
+                    {productTypes.map((type) => (
+                      <SelectItem key={type.id} value={String(type.id)}>
+                        {type.name}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
+                {isInvalid && <FieldError errors={field.state.meta.errors} />}
               </Field>
-            )}
-          </form.Field>
-        </div>
+            );
+          }}
+        </form.Field>
+
+        <form.Field name="name">
+          {(field) => {
+            const isInvalid =
+              field.state.meta.isTouched && !field.state.meta.isValid;
+            return (
+              <Field data-invalid={isInvalid}>
+                <FieldLabel htmlFor={field.name}>Category Name</FieldLabel>
+                <Input
+                  aria-invalid={isInvalid}
+                  autoComplete="off"
+                  id={field.name}
+                  name={field.name}
+                  onBlur={field.handleBlur}
+                  onChange={(event) => field.handleChange(event.target.value)}
+                  placeholder="Grocery"
+                  value={field.state.value}
+                />
+                {isInvalid && <FieldError errors={field.state.meta.errors} />}
+              </Field>
+            );
+          }}
+        </form.Field>
+
+        <form.Field name="isActive">
+          {(field) => (
+            <Field>
+              <FieldLabel>Status</FieldLabel>
+              <RadioGroup
+                className="grid gap-2 sm:grid-cols-2"
+                onValueChange={(value) =>
+                  field.handleChange(value === "active")
+                }
+                value={field.state.value ? "active" : "inactive"}
+              >
+                <label
+                  className="flex min-h-11 cursor-pointer items-center gap-3 rounded-lg border px-4 py-3 hover:bg-muted/30"
+                  htmlFor="new-category-active"
+                >
+                  <RadioGroupItem id="new-category-active" value="active" />
+                  <span className="text-sm font-medium">Active</span>
+                </label>
+                <label
+                  className="flex min-h-11 cursor-pointer items-center gap-3 rounded-lg border px-4 py-3 hover:bg-muted/30"
+                  htmlFor="new-category-inactive"
+                >
+                  <RadioGroupItem id="new-category-inactive" value="inactive" />
+                  <span className="text-sm font-medium">Inactive</span>
+                </label>
+              </RadioGroup>
+            </Field>
+          )}
+        </form.Field>
       </form>
     </SetupFormDialog>
   );

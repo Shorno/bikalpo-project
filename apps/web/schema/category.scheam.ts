@@ -1,11 +1,13 @@
 import * as z from "zod";
 
+const categoryNameSchema = z
+  .string()
+  .min(2, "Category name must be at least 2 characters.")
+  .max(100, "Category name must be at most 100 characters.")
+  .trim();
+
 export const createCategorySchema = z.object({
-  name: z
-    .string()
-    .min(2, "Category name must be at least 2 characters.")
-    .max(100, "Category name must be at most 100 characters.")
-    .trim(),
+  name: categoryNameSchema,
   slug: z
     .string()
     .min(2, "Slug must be at least 2 characters.")
@@ -37,11 +39,20 @@ export const createSubcategorySchema = createCategorySchema.extend({
 });
 
 export const createNewCategorySchema = createCategorySchema.extend({
-  typeId: z.number({ error: "Product Type is required." }).int().nonoptional(),
+  typeId: z.number({ error: "Type is required." }).int().nonoptional(),
 });
 
-export const updateCategorySchema = createCategorySchema.extend({
+export const categorySetupFormSchema = z.object({
+  name: categoryNameSchema,
+  isActive: z.boolean(),
+  typeId: z.number({ error: "Type is required." }).int().nonoptional(),
+});
+
+export const updateCategorySchema = z.object({
   id: z.number({ error: "Category ID is required." }).int().nonoptional(),
+  name: categoryNameSchema,
+  isActive: z.boolean(),
+  typeId: z.number().int().nullable(),
 });
 export const updateSubcategorySchema = createSubcategorySchema.extend({
   id: z.number({ error: "Subcategory ID is required." }).int().nonoptional(),

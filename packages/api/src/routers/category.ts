@@ -14,24 +14,63 @@ import { adminProcedure, publicProcedure } from "../index";
 import { nextSkuCode } from "./helpers/generate-sku";
 
 // Validation schemas
+const categoryNameSchema = z.string().min(2).max(100).trim();
+const categorySlugSchema = z
+  .string()
+  .min(2)
+  .max(100)
+  .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)
+  .trim();
+
 const createCategorySchema = z.object({
-  name: z.string().min(2).max(100).trim(),
-  slug: z
-    .string()
-    .min(2)
-    .max(100)
-    .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)
-    .trim(),
+  name: categoryNameSchema,
+  slug: categorySlugSchema,
   image: z.string().max(255).optional(),
   isActive: z.boolean().default(true),
   displayOrder: z.number().int().min(0).default(0),
   typeId: z.number().int(),
 });
 
-const updateCategorySchema = createCategorySchema.extend({
+const updateCategorySchema = z.object({
   id: z.number().int(),
+  name: categoryNameSchema,
+  slug: categorySlugSchema.optional(),
+  image: z.string().max(255).optional(),
+  isActive: z.boolean().optional(),
+  displayOrder: z.number().int().min(0).optional(),
   typeId: z.number().int().nullable().optional(),
 });
+
+async function assertCategoryNameIsUnique(name: string, excludeId?: number) {
+  const normalizedName = name.trim().toLowerCase();
+  const nameMatches = sql`lower(trim(${category.name})) = ${normalizedName}`;
+  const duplicate = await db.query.category.findFirst({
+    where:
+      excludeId === undefined
+        ? nameMatches
+        : and(nameMatches, ne(category.id, excludeId)),
+    columns: { id: true },
+  });
+
+  if (duplicate) {
+    throw new ORPCError("CONFLICT", {
+      message: `A Category named "${name.trim()}" already exists.`,
+    });
+  }
+}
+
+async function assertProductTypeIsActive(typeId: number) {
+  const activeType = await db.query.productType.findFirst({
+    where: and(eq(productType.id, typeId), eq(productType.isActive, true)),
+    columns: { id: true },
+  });
+
+  if (!activeType) {
+    throw new ORPCError("BAD_REQUEST", {
+      message: "Select an active Type before saving the Category.",
+    });
+  }
+}
 
 export const categoryRouter = {
   /**
@@ -121,22 +160,37 @@ export const categoryRouter = {
         orderBy: (p, { asc }) => [asc(p.name)],
       });
 
-      const [sellerUsage] = await db
-        .select({ value: countDistinct(product.createdById) })
-        .from(product)
-        .where(
-          and(
-            eq(product.categoryId, input.id),
-            eq(product.status, "active"),
-            ne(product.creatorSource, "admin"),
-            isNotNull(product.createdById),
+      const [sellerUsageRows, activeSellerUsageRows] = await Promise.all([
+        db
+          .select({ value: countDistinct(product.createdById) })
+          .from(product)
+          .where(
+            and(
+              eq(product.categoryId, input.id),
+              ne(product.creatorSource, "admin"),
+              isNotNull(product.createdById),
+            ),
           ),
-        );
+        db
+          .select({ value: countDistinct(product.createdById) })
+          .from(product)
+          .where(
+            and(
+              eq(product.categoryId, input.id),
+              eq(product.status, "active"),
+              ne(product.creatorSource, "admin"),
+              isNotNull(product.createdById),
+            ),
+          ),
+      ]);
+      const sellerUsage = sellerUsageRows[0];
+      const activeSellerUsage = activeSellerUsageRows[0];
 
       return {
         ...result,
         products,
-        activeSellerCount: sellerUsage?.value ?? 0,
+        sellerCount: sellerUsage?.value ?? 0,
+        activeSellerCount: activeSellerUsage?.value ?? 0,
       };
     }),
 
@@ -154,18 +208,10 @@ export const categoryRouter = {
     })
     .input(createCategorySchema)
     .handler(async ({ input }) => {
-      const activeType = await db.query.productType.findFirst({
-        where: and(
-          eq(productType.id, input.typeId),
-          eq(productType.isActive, true),
-        ),
-        columns: { id: true },
-      });
-      if (!activeType) {
-        throw new ORPCError("BAD_REQUEST", {
-          message: "Select an active Product Type before creating a category.",
-        });
-      }
+      await Promise.all([
+        assertCategoryNameIsUnique(input.name),
+        assertProductTypeIsActive(input.typeId),
+      ]);
       // Auto-generate next 3-digit skuCode scoped to typeId
       const filterCondition = input.typeId
         ? sql`${category.typeId} = ${input.typeId}`
@@ -209,6 +255,17 @@ export const categoryRouter = {
 
       if (!existing) {
         throw new ORPCError("NOT_FOUND", { message: "Category not found" });
+      }
+
+      await assertCategoryNameIsUnique(data.name, id);
+      if (data.typeId !== undefined && data.typeId !== existing.typeId) {
+        if (data.typeId === null) {
+          throw new ORPCError("BAD_REQUEST", {
+            message:
+              "An assigned Category cannot be returned to an unassigned Type.",
+          });
+        }
+        await assertProductTypeIsActive(data.typeId);
       }
 
       await db

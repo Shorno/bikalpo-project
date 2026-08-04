@@ -10,12 +10,14 @@ interface DeleteCategoryDialogProps {
   category: Category & { subCategory?: SubCategory[] };
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  onDeleted?: () => void;
 }
 
 export default function DeleteCategoryDialog({
   category,
   open,
   onOpenChange,
+  onDeleted,
 }: DeleteCategoryDialogProps) {
   const queryClient = useQueryClient();
   const hasSubcategories =
@@ -25,9 +27,12 @@ export default function DeleteCategoryDialog({
   const mutation = useMutation(
     orpc.category.delete.mutationOptions({
       onSuccess: (result) => {
-        queryClient.invalidateQueries({ queryKey: orpc.category.getAll.key() });
+        void queryClient.invalidateQueries({
+          queryKey: orpc.category.getAll.key(),
+        });
         toast.success(result.message);
         onOpenChange(false);
+        onDeleted?.();
       },
       onError: (error) => {
         toast.error(
@@ -49,7 +54,7 @@ export default function DeleteCategoryDialog({
           ? `This category has ${subcategoryCount} Sub Categories. Remove or reassign them before deleting it.`
           : undefined
       }
-      description="This action cannot be undone. Products referencing this category are also protected by the server."
+      description="This action cannot be undone. Existing dependencies are never cascaded."
       isDeleting={mutation.isPending}
       onConfirm={handleDelete}
       onOpenChange={onOpenChange}

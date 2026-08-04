@@ -38,11 +38,7 @@ export default function CategoryTable({
   const filteredData = useMemo(() => {
     const query = search.trim().toLowerCase();
     return data.filter((item) => {
-      const matchesSearch =
-        !query ||
-        item.name.toLowerCase().includes(query) ||
-        item.slug.toLowerCase().includes(query) ||
-        item.skuCode?.toLowerCase().includes(query);
+      const matchesSearch = !query || item.name.toLowerCase().includes(query);
       const matchesType = type === "all" || item.typeId === Number(type);
       const matchesStatus =
         status === "all" ||
@@ -88,24 +84,33 @@ export default function CategoryTable({
           void setStatus("all");
         }}
         onSearchChange={(value) => void setSearch(value)}
-        searchPlaceholder="Search category name or SKU"
+        searchPlaceholder="Search Category Name"
         searchValue={search}
       />
       <SetupEntityTable
         columns={columns}
         data={filteredData}
-        emptyAction={data.length === 0 ? <NewCategoryDialog /> : undefined}
-        emptyDescription="Create a category under a product type to continue building the taxonomy."
-        emptyTitle="No categories found"
+        emptyAction={
+          data.length === 0 && !search && type === "all" && status === "all" ? (
+            <NewCategoryDialog triggerLabel="Create First Category" />
+          ) : undefined
+        }
+        emptyDescription={
+          search || type !== "all" || status !== "all"
+            ? "No Categories match the current search and filters."
+            : "Create the first Category to begin building the product taxonomy."
+        }
+        emptyTitle={
+          search || type !== "all" || status !== "all"
+            ? "No matching Categories"
+            : "No Category found"
+        }
         getRowId={(row) => String(row.id)}
         mobile={{
           href: (row) => `/dashboard/admin/categories/${row.id}`,
           title: (row) => row.name,
-          description: (row) => row.skuCode ?? row.slug,
-          meta: (row) => [
-            row.type?.name ?? "Legacy unassigned",
-            `${row.subCategory.length} subcategories`,
-          ],
+          description: (row) => row.skuCode ?? "—",
+          meta: (row) => [row.type?.name ?? "Legacy unassigned"],
           status: (row) => <ActiveStatusBadge isActive={row.isActive} />,
         }}
       />

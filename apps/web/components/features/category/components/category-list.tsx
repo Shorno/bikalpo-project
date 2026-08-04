@@ -29,7 +29,7 @@ export default function CategoryList() {
       <SetupPageHeader
         action={<NewCategoryDialog />}
         count={categories.length}
-        description="Organize product families into categories. New categories require a Type; legacy unassigned records remain visible."
+        description="Organize global product categories under their Types."
         title="Categories"
       />
       {categoriesQuery.isLoading || typesQuery.isLoading ? (
