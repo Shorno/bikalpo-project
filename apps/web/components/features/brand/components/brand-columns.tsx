@@ -1,17 +1,11 @@
 "use client";
 
 import type { Brand } from "@bikalpo-project/db/schema";
-import { useQueryClient } from "@tanstack/react-query";
 import type { ColumnDef } from "@tanstack/react-table";
 import Link from "next/link";
-import DeleteBrandDialog from "@/components/features/brand/components/delete-brand-dialog";
-import EditBrandDialog from "@/components/features/brand/components/edit-brand-dialog";
-import {
-  ActiveStatusBadge,
-  SetupRowActions,
-  SetupToggleAction,
-} from "@/components/features/product-setup";
-import { orpc } from "@/utils/orpc";
+import { ActiveStatusBadge } from "@/components/features/product-setup";
+import { Button } from "@/components/ui/button";
+import { ADMIN_BASE } from "@/lib/routes";
 
 export interface BrandSetupRow extends Brand {
   categories: { id: number; name: string }[];
@@ -21,7 +15,6 @@ export interface BrandSetupRow extends Brand {
 }
 
 export function useBrandColumns(): ColumnDef<BrandSetupRow, unknown>[] {
-  const queryClient = useQueryClient();
   return [
     {
       id: "skuCode",
@@ -34,11 +27,11 @@ export function useBrandColumns(): ColumnDef<BrandSetupRow, unknown>[] {
     },
     {
       accessorKey: "name",
-      header: "Brand name",
+      header: "Brand Name",
       cell: ({ row }) => (
         <Link
           className="font-medium hover:text-primary hover:underline"
-          href={`/dashboard/admin/brands/${row.original.id}`}
+          href={`${ADMIN_BASE}/brands/${row.original.id}`}
         >
           {row.original.name}
         </Link>
@@ -46,7 +39,7 @@ export function useBrandColumns(): ColumnDef<BrandSetupRow, unknown>[] {
     },
     {
       id: "categories",
-      header: "Categories",
+      header: "Category",
       cell: ({ row }) => (
         <span className="text-sm text-muted-foreground">
           {row.original.categories.length > 0
@@ -62,12 +55,12 @@ export function useBrandColumns(): ColumnDef<BrandSetupRow, unknown>[] {
     },
     {
       id: "usedIn",
-      header: "Used in",
+      header: "Used In",
       cell: ({ row }) => (
-        <div className="font-mono text-xs tabular-nums">
-          {row.original.productCount} products ·{" "}
-          {row.original.coreIdentityCount} cores
-        </div>
+        <span className="font-mono text-xs tabular-nums">
+          {row.original.productCount.toLocaleString()} Product
+          {row.original.productCount === 1 ? "" : "s"}
+        </span>
       ),
     },
     {
@@ -75,24 +68,11 @@ export function useBrandColumns(): ColumnDef<BrandSetupRow, unknown>[] {
       header: () => <div className="text-right">Action</div>,
       enableSorting: false,
       cell: ({ row }) => (
-        <SetupRowActions
-          deleteAction={<DeleteBrandDialog brand={row.original} />}
-          editAction={<EditBrandDialog brand={row.original} />}
-          toggleAction={
-            <SetupToggleAction
-              isActive={row.original.isActive}
-              mutationFn={() =>
-                orpc.brand.toggleActive.call({ id: row.original.id })
-              }
-              onSuccess={() =>
-                queryClient.invalidateQueries({
-                  queryKey: orpc.brand.getAdminAll.key(),
-                })
-              }
-            />
-          }
-          viewHref={`/dashboard/admin/brands/${row.original.id}`}
-        />
+        <div className="flex justify-end">
+          <Button asChild className="h-9" size="sm" variant="ghost">
+            <Link href={`${ADMIN_BASE}/brands/${row.original.id}`}>View</Link>
+          </Button>
+        </div>
       ),
     },
   ];

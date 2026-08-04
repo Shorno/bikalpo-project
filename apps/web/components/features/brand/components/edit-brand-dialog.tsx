@@ -3,12 +3,10 @@
 import type { Brand } from "@bikalpo-project/db/schema";
 import { useForm } from "@tanstack/react-form";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Pencil } from "lucide-react";
 import * as React from "react";
 import { toast } from "sonner";
 import { SetupFormDialog } from "@/components/features/product-setup";
 import ImageUploader from "@/components/ImageUploader";
-import { Button } from "@/components/ui/button";
 import {
   Field,
   FieldDescription,
@@ -24,11 +22,27 @@ import { orpc } from "@/utils/orpc";
 
 interface EditBrandDialogProps {
   brand: Brand;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  trigger?: React.ReactNode;
 }
 
-export default function EditBrandDialog({ brand }: EditBrandDialogProps) {
-  const [open, setOpen] = React.useState(false);
+export default function EditBrandDialog({
+  brand,
+  open,
+  onOpenChange,
+  trigger,
+}: EditBrandDialogProps) {
+  const [internalOpen, setInternalOpen] = React.useState(false);
+  const dialogOpen = open ?? internalOpen;
   const queryClient = useQueryClient();
+  const setDialogOpen = React.useCallback(
+    (nextOpen: boolean) => {
+      setInternalOpen(nextOpen);
+      onOpenChange?.(nextOpen);
+    },
+    [onOpenChange],
+  );
 
   const mutation = useMutation(
     orpc.brand.update.mutationOptions({
@@ -37,8 +51,11 @@ export default function EditBrandDialog({ brand }: EditBrandDialogProps) {
         queryClient.invalidateQueries({
           queryKey: orpc.brand.getAdminAll.key(),
         });
+        queryClient.invalidateQueries({
+          queryKey: orpc.brand.getAdminById.key(),
+        });
         toast.success(result.message);
-        setOpen(false);
+        setDialogOpen(false);
       },
       onError: (error) => {
         toast.error(
@@ -67,6 +84,27 @@ export default function EditBrandDialog({ brand }: EditBrandDialogProps) {
     },
   });
 
+  React.useEffect(() => {
+    if (!dialogOpen) return;
+    form.reset({
+      id: brand.id,
+      name: brand.name,
+      slug: brand.slug,
+      logo: brand.logo ?? "",
+      isActive: brand.isActive,
+      displayOrder: brand.displayOrder,
+    });
+  }, [
+    brand.displayOrder,
+    brand.id,
+    brand.isActive,
+    brand.logo,
+    brand.name,
+    brand.slug,
+    dialogOpen,
+    form,
+  ]);
+
   const autoGenerateSlugFromName = (value: string) => {
     const generatedSlug = generateSlug(value);
     form.setFieldValue("slug", generatedSlug);
@@ -78,17 +116,12 @@ export default function EditBrandDialog({ brand }: EditBrandDialogProps) {
       formId="edit-brand-form"
       hasUnsavedChanges={() => form.state.isDirty}
       isSubmitting={mutation.isPending}
-      onOpenChange={setOpen}
+      onOpenChange={setDialogOpen}
       onSubmit={() => form.handleSubmit()}
-      open={open}
+      open={dialogOpen}
       submitLabel="Save Changes"
       title="Edit Brand"
-      trigger={
-        <Button className="w-full justify-start" size="sm" variant="ghost">
-          <Pencil className="h-4 w-4 mr-2" />
-          Edit
-        </Button>
-      }
+      trigger={trigger}
     >
       <form
         id="edit-brand-form"

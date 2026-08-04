@@ -208,7 +208,24 @@ export const brandRouter = {
             },
             with: {
               category: { columns: { id: true, name: true } },
-              coreProduct: { columns: { id: true, name: true, sku: true } },
+              coreProduct: {
+                columns: {
+                  id: true,
+                  name: true,
+                  sku: true,
+                  categoryId: true,
+                  subCategoryId: true,
+                },
+                with: {
+                  category: {
+                    columns: { id: true, name: true, typeId: true },
+                    with: {
+                      type: { columns: { id: true, name: true } },
+                    },
+                  },
+                  subCategory: { columns: { id: true, name: true } },
+                },
+              },
               variantPrices: {
                 columns: { id: true, brandId: true, isActive: true },
                 with: {
@@ -238,7 +255,18 @@ export const brandRouter = {
             .filter((item) => item.coreProduct)
             .map((item) => [item.coreProduct!.id, item.coreProduct!]),
         ).values(),
-      ];
+      ].sort((a, b) => {
+        const typeOrder = (a.category.type?.name ?? "").localeCompare(
+          b.category.type?.name ?? "",
+        );
+        if (typeOrder !== 0) return typeOrder;
+        const categoryOrder = a.category.name.localeCompare(b.category.name);
+        if (categoryOrder !== 0) return categoryOrder;
+        const subCategoryOrder = (a.subCategory?.name ?? "").localeCompare(
+          b.subCategory?.name ?? "",
+        );
+        return subCategoryOrder || a.name.localeCompare(b.name);
+      });
       const variants = [
         ...new Map(
           configuredProducts.flatMap((item) =>

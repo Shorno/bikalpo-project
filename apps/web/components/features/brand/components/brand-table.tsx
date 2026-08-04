@@ -41,11 +41,7 @@ export default function BrandTable({ columns, data }: BrandTableProps) {
   const filteredData = useMemo(() => {
     const query = search.trim().toLowerCase();
     return data.filter((item) => {
-      const matchesSearch =
-        !query ||
-        item.name.toLowerCase().includes(query) ||
-        item.slug.toLowerCase().includes(query) ||
-        item.skuCode?.toLowerCase().includes(query);
+      const matchesSearch = !query || item.name.toLowerCase().includes(query);
       const matchesCategory =
         category === "all" ||
         item.categories.some((value) => value.id === Number(category));
@@ -95,7 +91,7 @@ export default function BrandTable({ columns, data }: BrandTableProps) {
           void setStatus("all");
         }}
         onSearchChange={(value) => void setSearch(value)}
-        searchPlaceholder="Search brand name or SKU"
+        searchPlaceholder="Search Brand Name"
         searchValue={search}
       />
       <SetupEntityTable
@@ -110,8 +106,10 @@ export default function BrandTable({ columns, data }: BrandTableProps) {
           title: (row) => row.name,
           description: (row) => row.skuCode ?? row.slug,
           meta: (row) => [
-            `${row.categories.length} categories`,
-            `${row.productCount} products`,
+            row.categories.length > 0
+              ? row.categories.map((item) => item.name).join(", ")
+              : "No category usage",
+            `${row.productCount.toLocaleString()} Product${row.productCount === 1 ? "" : "s"}`,
           ],
           status: (row) => <ActiveStatusBadge isActive={row.isActive} />,
         }}
