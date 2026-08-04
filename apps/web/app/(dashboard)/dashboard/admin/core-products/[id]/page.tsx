@@ -1,8 +1,11 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
-import { useParams } from "next/navigation";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { LoaderCircle, Power, Trash2 } from "lucide-react";
+import { useParams, useRouter } from "next/navigation";
 import { useState } from "react";
+import { toast } from "sonner";
+import DeleteCoreProductDialog from "@/components/features/core-product/components/delete-core-product-dialog";
 import EditCoreProductDialog from "@/components/features/core-product/components/edit-core-product-dialog";
 import {
   ActiveStatusBadge,
@@ -28,11 +31,26 @@ import { orpc } from "@/utils/orpc";
 
 export default function CoreProductDetailPage() {
   const params = useParams<{ id: string }>();
+  const router = useRouter();
+  const queryClient = useQueryClient();
   const id = Number(params.id);
   const [showEdit, setShowEdit] = useState(false);
+  const [showDelete, setShowDelete] = useState(false);
   const { data, isError, isLoading, refetch } = useQuery(
     orpc.adminCoreProduct.getById.queryOptions({ input: { id } }),
   );
+  const toggleMutation = useMutation({
+    mutationFn: () => orpc.adminCoreProduct.toggleActive.call({ id }),
+    onSuccess: (result) => {
+      void queryClient.invalidateQueries({
+        queryKey: orpc.adminCoreProduct.getAll.key(),
+      });
+      toast.success(result.message);
+      void refetch();
+    },
+    onError: (error) =>
+      toast.error(error.message || "Failed to update Core Identity status."),
+  });
 
   if (isLoading) {
     return (
@@ -51,7 +69,30 @@ export default function CoreProductDetailPage() {
     <div className="space-y-5">
       <SetupDetailHeader
         actions={
-          <Button onClick={() => setShowEdit(true)}>Edit Core Identity</Button>
+          <>
+            <Button onClick={() => setShowEdit(true)} variant="outline">
+              Edit
+            </Button>
+            <Button
+              disabled={toggleMutation.isPending}
+              onClick={() => toggleMutation.mutate()}
+              variant="outline"
+            >
+              {toggleMutation.isPending ? (
+                <LoaderCircle
+                  aria-hidden="true"
+                  className="size-4 animate-spin"
+                />
+              ) : (
+                <Power aria-hidden="true" className="size-4" />
+              )}
+              {identity.isActive ? "Disable" : "Enable"}
+            </Button>
+            <Button onClick={() => setShowDelete(true)} variant="destructive">
+              <Trash2 aria-hidden="true" className="size-4" />
+              Delete
+            </Button>
+          </>
         }
         backHref={`${ADMIN_BASE}/core-products`}
         backLabel="Back to Core Identities"
@@ -66,6 +107,12 @@ export default function CoreProductDetailPage() {
         coreProduct={identity}
         onOpenChange={setShowEdit}
         open={showEdit}
+      />
+      <DeleteCoreProductDialog
+        coreProduct={identity}
+        onDeleted={() => router.push(`${ADMIN_BASE}/core-products`)}
+        onOpenChange={setShowDelete}
+        open={showDelete}
       />
 
       <SetupMetricStrip

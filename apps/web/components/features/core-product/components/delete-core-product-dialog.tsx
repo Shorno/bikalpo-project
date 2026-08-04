@@ -10,12 +10,14 @@ interface DeleteCoreProductDialogProps {
   coreProduct: CoreProductWithRelations;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  onDeleted?: () => void;
 }
 
 export default function DeleteCoreProductDialog({
   coreProduct,
   open,
   onOpenChange,
+  onDeleted,
 }: DeleteCoreProductDialogProps) {
   const queryClient = useQueryClient();
   const deletionBlocked = coreProduct.hasConfiguration === true;
@@ -28,6 +30,7 @@ export default function DeleteCoreProductDialog({
         });
         toast.success(result.message || "Core product deleted successfully");
         onOpenChange(false);
+        onDeleted?.();
       },
       onError: (error: any) => {
         toast.error(error.message || "Failed to delete core product");

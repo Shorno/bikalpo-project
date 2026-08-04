@@ -1,20 +1,11 @@
 "use client";
 
-import { useQueryClient } from "@tanstack/react-query";
 import type { ColumnDef } from "@tanstack/react-table";
-import { Pencil, Trash2 } from "lucide-react";
 import Link from "next/link";
-import { useMemo, useState } from "react";
-import {
-  ActiveStatusBadge,
-  SetupRowActions,
-  SetupToggleAction,
-} from "@/components/features/product-setup";
-import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
+import { useMemo } from "react";
+import { ActiveStatusBadge } from "@/components/features/product-setup";
+import { Button } from "@/components/ui/button";
 import { ADMIN_BASE } from "@/lib/routes";
-import { orpc } from "@/utils/orpc";
-import DeleteCoreProductDialog from "./delete-core-product-dialog";
-import EditCoreProductDialog from "./edit-core-product-dialog";
 
 export interface CoreProductWithRelations {
   id: number;
@@ -86,65 +77,17 @@ export function useCoreProductColumns() {
         id: "actions",
         header: () => <div className="text-right">Action</div>,
         enableSorting: false,
-        cell: ({ row }) => <CoreProductActions coreProduct={row.original} />,
+        cell: ({ row }) => (
+          <div className="flex justify-end">
+            <Button asChild className="h-9" size="sm" variant="ghost">
+              <Link href={`${ADMIN_BASE}/core-products/${row.original.id}`}>
+                View
+              </Link>
+            </Button>
+          </div>
+        ),
       },
     ],
     [],
-  );
-}
-
-function CoreProductActions({
-  coreProduct,
-}: {
-  coreProduct: CoreProductWithRelations;
-}) {
-  const queryClient = useQueryClient();
-  const [showEdit, setShowEdit] = useState(false);
-  const [showDelete, setShowDelete] = useState(false);
-
-  return (
-    <>
-      <SetupRowActions
-        deleteAction={
-          <DropdownMenuItem
-            className="text-destructive focus:text-destructive"
-            onSelect={() => setShowDelete(true)}
-          >
-            <Trash2 aria-hidden="true" className="size-4" />
-            Delete
-          </DropdownMenuItem>
-        }
-        editAction={
-          <DropdownMenuItem onSelect={() => setShowEdit(true)}>
-            <Pencil aria-hidden="true" className="size-4" />
-            Edit
-          </DropdownMenuItem>
-        }
-        toggleAction={
-          <SetupToggleAction
-            isActive={coreProduct.isActive}
-            mutationFn={() =>
-              orpc.adminCoreProduct.toggleActive.call({ id: coreProduct.id })
-            }
-            onSuccess={() =>
-              queryClient.invalidateQueries({
-                queryKey: orpc.adminCoreProduct.getAll.key(),
-              })
-            }
-          />
-        }
-        viewHref={`${ADMIN_BASE}/core-products/${coreProduct.id}`}
-      />
-      <EditCoreProductDialog
-        coreProduct={coreProduct}
-        onOpenChange={setShowEdit}
-        open={showEdit}
-      />
-      <DeleteCoreProductDialog
-        coreProduct={coreProduct}
-        onOpenChange={setShowDelete}
-        open={showDelete}
-      />
-    </>
   );
 }
