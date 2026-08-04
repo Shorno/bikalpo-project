@@ -31,6 +31,7 @@ import {
     deliveryGroup,
     deliveryGroupInvoice,
     deliverySchedule,
+    emptyPack,
     financialLedger,
     inventory,
     invoice,
@@ -1279,6 +1280,7 @@ const managementQueries = {
         // empty_pack is delivery-scoped, so we need to find packs
         // from deliveries belonging to this shop owner
         const allPacks = await db.query.emptyPack.findMany({
+            where: eq(emptyPack.shopId, userId),
             with: {
                 variant: {
                     with: {
@@ -5811,6 +5813,17 @@ const incomingOrderQueries = {
             z.object({
                 invoiceId: z.number(),
                 otp: z.string().length(4),
+                acceptedReturns: z
+                    .array(
+                        z.object({
+                            orderItemId: z.number().int().positive(),
+                            quantity: z.number().int().min(0),
+                        }),
+                    )
+                    .default([]),
+                handoffBalancePaid: z.boolean().default(false),
+                handoffPaymentMethod: z.string().trim().max(30).optional(),
+                handoffPaymentReference: z.string().trim().max(150).optional(),
             }),
         )
         .handler(async ({ context, input }) =>
@@ -5820,6 +5833,10 @@ const incomingOrderQueries = {
                 otp: input.otp,
                 paymentStatus: "collected",
                 markOrderPaid: true,
+                acceptedReturns: input.acceptedReturns,
+                handoffBalancePaid: input.handoffBalancePaid,
+                handoffPaymentMethod: input.handoffPaymentMethod,
+                handoffPaymentReference: input.handoffPaymentReference,
             }),
         ),
 
@@ -9040,10 +9057,21 @@ const shopProductEndpoints = {
                         columns: { id: true, name: true, sku: true, image: true },
                     },
                     images: true,
+                    variants: {
+                        columns: {
+                            id: true,
+                            exchangeEnabled: true,
+                            exchangeCreditAmount: true,
+                        },
+                    },
                 },
             });
 
             if (!prod) throw new ORPCError("NOT_FOUND", { message: "Product not found" });
+
+            const cylinderSaleByVariant = new Map(
+                prod.variants.map((variant) => [variant.id, variant]),
+            );
 
             return {
                 product: {
@@ -9077,6 +9105,13 @@ const shopProductEndpoints = {
                 variants: productGroup.variants.map(({ warehouseSellingPrice, ...variant }) => ({
                     ...variant,
                     retailPrice: warehouseSellingPrice,
+                    exchangeEnabled:
+                        cylinderSaleByVariant.get(variant.variantId)
+                            ?.exchangeEnabled ?? false,
+                    exchangeCreditAmount: Number(
+                        cylinderSaleByVariant.get(variant.variantId)
+                            ?.exchangeCreditAmount ?? 0,
+                    ),
                 })),
             };
         }),

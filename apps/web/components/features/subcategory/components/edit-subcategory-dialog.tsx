@@ -3,23 +3,12 @@
 import type { SubCategory } from "@bikalpo-project/db/schema";
 import { useForm } from "@tanstack/react-form";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Loader, Pencil } from "lucide-react";
 import * as React from "react";
 import { toast } from "sonner";
 
-import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
+import { SetupFormDialog } from "@/components/features/product-setup";
 import {
   Field,
-
   FieldDescription,
   FieldError,
   FieldLabel,
@@ -81,7 +70,7 @@ export default function EditSubcategoryDialog({
     if (initialTypeId && !selectedTypeId) {
       setSelectedTypeId(initialTypeId);
     }
-  }, [initialTypeId]);
+  }, [initialTypeId, selectedTypeId]);
 
   const filteredCategories = React.useMemo(() => {
     if (!selectedTypeId) return allCategories;
@@ -127,165 +116,137 @@ export default function EditSubcategoryDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>Edit Subcategory</DialogTitle>
-          <DialogDescription>
-            Update the details of {subcategory.name} subcategory.
-          </DialogDescription>
-        </DialogHeader>
-        <form
-          id="edit-subcategory-form"
-          onSubmit={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            form.handleSubmit();
-          }}
-          className="space-y-4"
-        >
-          {/* Type → Category (side by side) */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <Field>
-              <FieldLabel>Product Type</FieldLabel>
-              <Select
-                value={selectedTypeId}
-                onValueChange={(v) => {
-                  setSelectedTypeId(v);
-                  form.setFieldValue("categoryId", 0);
-                }}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select a type" />
-                </SelectTrigger>
-                <SelectContent>
-                  {productTypes.map((t) => (
-                    <SelectItem key={t.id} value={String(t.id)}>
-                      {t.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <FieldDescription>
-                Filter categories by type
-              </FieldDescription>
-            </Field>
-
-            <form.Field name="categoryId">
-              {(field) => {
-                const isInvalid =
-                  field.state.meta.isTouched && !field.state.meta.isValid;
-                return (
-                  <Field data-invalid={isInvalid}>
-                    <FieldLabel>Category *</FieldLabel>
-                    <Select
-                      value={
-                        field.state.value ? String(field.state.value) : ""
-                      }
-                      onValueChange={(v) => field.handleChange(Number(v))}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select a category" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {filteredCategories.map((c) => (
-                          <SelectItem key={c.id} value={String(c.id)}>
-                            {c.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    {isInvalid && (
-                      <FieldError errors={field.state.meta.errors} />
-                    )}
-                  </Field>
-                );
+    <SetupFormDialog
+      description={`Update the setup details for ${subcategory.name}.`}
+      formId="edit-subcategory-form"
+      hasUnsavedChanges={() => form.state.isDirty}
+      isSubmitting={mutation.isPending}
+      onOpenChange={onOpenChange}
+      onSubmit={() => form.handleSubmit()}
+      open={open}
+      submitLabel="Update Sub Category"
+      title="Edit Sub Category"
+    >
+      <form
+        id="edit-subcategory-form"
+        onSubmit={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          form.handleSubmit();
+        }}
+        className="space-y-4"
+      >
+        {/* Type → Category (side by side) */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <Field>
+            <FieldLabel>Product Type</FieldLabel>
+            <Select
+              value={selectedTypeId}
+              onValueChange={(v) => {
+                setSelectedTypeId(v);
+                form.setFieldValue("categoryId", 0);
               }}
-            </form.Field>
-          </div>
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select a type" />
+              </SelectTrigger>
+              <SelectContent>
+                {productTypes.map((t) => (
+                  <SelectItem key={t.id} value={String(t.id)}>
+                    {t.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <FieldDescription>Filter categories by type</FieldDescription>
+          </Field>
 
+          <form.Field name="categoryId">
+            {(field) => {
+              const isInvalid =
+                field.state.meta.isTouched && !field.state.meta.isValid;
+              return (
+                <Field data-invalid={isInvalid}>
+                  <FieldLabel>Category *</FieldLabel>
+                  <Select
+                    value={field.state.value ? String(field.state.value) : ""}
+                    onValueChange={(v) => field.handleChange(Number(v))}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select a category" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {filteredCategories.map((c) => (
+                        <SelectItem key={c.id} value={String(c.id)}>
+                          {c.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {isInvalid && <FieldError errors={field.state.meta.errors} />}
+                </Field>
+              );
+            }}
+          </form.Field>
+        </div>
 
+        {/* Name & Slug — side by side */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <form.Field name="name">
+            {(field) => {
+              const isInvalid =
+                field.state.meta.isTouched && !field.state.meta.isValid;
+              return (
+                <Field data-invalid={isInvalid}>
+                  <FieldLabel htmlFor={field.name}>
+                    Subcategory Name *
+                  </FieldLabel>
+                  <Input
+                    id={field.name}
+                    name={field.name}
+                    value={field.state.value}
+                    onBlur={field.handleBlur}
+                    onChange={(e) => {
+                      field.handleChange(e.target.value);
+                      autoGenerateSlugFromName(e.target.value);
+                    }}
+                    aria-invalid={isInvalid}
+                    placeholder="Smartphones"
+                    autoComplete="off"
+                  />
+                  {isInvalid && <FieldError errors={field.state.meta.errors} />}
+                </Field>
+              );
+            }}
+          </form.Field>
 
-          {/* Name & Slug — side by side */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <form.Field name="name">
-              {(field) => {
-                const isInvalid =
-                  field.state.meta.isTouched && !field.state.meta.isValid;
-                return (
-                  <Field data-invalid={isInvalid}>
-                    <FieldLabel htmlFor={field.name}>
-                      Subcategory Name *
-                    </FieldLabel>
-                    <Input
-                      id={field.name}
-                      name={field.name}
-                      value={field.state.value}
-                      onBlur={field.handleBlur}
-                      onChange={(e) => {
-                        field.handleChange(e.target.value);
-                        autoGenerateSlugFromName(e.target.value);
-                      }}
-                      aria-invalid={isInvalid}
-                      placeholder="Smartphones"
-                      autoComplete="off"
-                    />
-                    {isInvalid && <FieldError errors={field.state.meta.errors} />}
-                  </Field>
-                );
-              }}
-            </form.Field>
-
-            <form.Field name="slug">
-              {(field) => {
-                const isInvalid =
-                  field.state.meta.isTouched && !field.state.meta.isValid;
-                return (
-                  <Field data-invalid={isInvalid}>
-                    <FieldLabel htmlFor={field.name}>Slug *</FieldLabel>
-                    <Input
-                      id={field.name}
-                      name={field.name}
-                      value={field.state.value}
-                      onBlur={field.handleBlur}
-                      onChange={(e) => field.handleChange(e.target.value)}
-                      aria-invalid={isInvalid}
-                      placeholder="smartphones"
-                      autoComplete="off"
-                    />
-                    <FieldDescription>
-                      URL-friendly version of the name
-                    </FieldDescription>
-                    {isInvalid && <FieldError errors={field.state.meta.errors} />}
-                  </Field>
-                );
-              }}
-            </form.Field>
-          </div>
-
-
-        </form>
-        <DialogFooter>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => onOpenChange(false)}
-            disabled={mutation.isPending}
-          >
-            Cancel
-          </Button>
-          <Button
-            type="submit"
-            form="edit-subcategory-form"
-            disabled={mutation.isPending}
-          >
-            {mutation.isPending && (
-              <Loader className="mr-2 h-4 w-4 animate-spin" />
-            )}
-            Update Subcategory
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+          <form.Field name="slug">
+            {(field) => {
+              const isInvalid =
+                field.state.meta.isTouched && !field.state.meta.isValid;
+              return (
+                <Field data-invalid={isInvalid}>
+                  <FieldLabel htmlFor={field.name}>Slug *</FieldLabel>
+                  <Input
+                    id={field.name}
+                    name={field.name}
+                    value={field.state.value}
+                    onBlur={field.handleBlur}
+                    onChange={(e) => field.handleChange(e.target.value)}
+                    aria-invalid={isInvalid}
+                    placeholder="smartphones"
+                    autoComplete="off"
+                  />
+                  <FieldDescription>
+                    URL-friendly version of the name
+                  </FieldDescription>
+                  {isInvalid && <FieldError errors={field.state.meta.errors} />}
+                </Field>
+              );
+            }}
+          </form.Field>
+        </div>
+      </form>
+    </SetupFormDialog>
   );
 }

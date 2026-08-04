@@ -1,324 +1,114 @@
 "use client";
 
+import type { ColumnDef } from "@tanstack/react-table";
+import { parseAsString, useQueryState } from "nuqs";
+import { useMemo } from "react";
 import {
-  type ColumnDef,
-  type ColumnFiltersState,
-  flexRender,
-  getCoreRowModel,
-  getFilteredRowModel,
-  getPaginationRowModel,
-  getSortedRowModel,
-  type SortingState,
-  useReactTable,
-  type VisibilityState,
-} from "@tanstack/react-table";
-import { Pencil, Trash2 } from "lucide-react";
-import Image from "next/image";
-import * as React from "react";
-import DeleteCategoryDialog from "@/components/features/category/components/delete-category-dialog";
-import EditCategoryDialog from "@/components/features/category/components/edit-category-dialog";
-import NewCategoryDialog from "@/components/features/category/components/new-category-dialog";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { cn } from "@/lib/utils";
-import { type CategoryWithSubcategories } from "./category-columns";
+  ActiveStatusBadge,
+  SetupEntityTable,
+  SetupToolbar,
+} from "@/components/features/product-setup";
+import type { CategoryWithSubcategories } from "./category-columns";
+import NewCategoryDialog from "./new-category-dialog";
 
-interface DataTableProps {
+interface CategoryTableProps {
   columns: ColumnDef<CategoryWithSubcategories, unknown>[];
   data: CategoryWithSubcategories[];
   types?: { id: number; name: string }[];
 }
 
-// Mobile Category Card Component
-function MobileCategoryCard({
-  category,
-}: {
-  category: CategoryWithSubcategories;
-}) {
-  const [showEdit, setShowEdit] = React.useState(false);
-  const [showDelete, setShowDelete] = React.useState(false);
+export default function CategoryTable({
+  columns,
+  data,
+  types = [],
+}: CategoryTableProps) {
+  const [search, setSearch] = useQueryState(
+    "q",
+    parseAsString.withDefault("").withOptions({ clearOnDefault: true }),
+  );
+  const [type, setType] = useQueryState(
+    "type",
+    parseAsString.withDefault("all").withOptions({ clearOnDefault: true }),
+  );
+  const [status, setStatus] = useQueryState(
+    "status",
+    parseAsString.withDefault("all").withOptions({ clearOnDefault: true }),
+  );
+
+  const filteredData = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    return data.filter((item) => {
+      const matchesSearch =
+        !query ||
+        item.name.toLowerCase().includes(query) ||
+        item.slug.toLowerCase().includes(query) ||
+        item.skuCode?.toLowerCase().includes(query);
+      const matchesType = type === "all" || item.typeId === Number(type);
+      const matchesStatus =
+        status === "all" ||
+        (status === "active" ? item.isActive : !item.isActive);
+      return matchesSearch && matchesType && matchesStatus;
+    });
+  }, [data, search, status, type]);
 
   return (
-    <Card className="overflow-hidden p-0">
-      <CardContent className="p-0">
-        <div className="flex items-center gap-3 p-4">
-          {/* Image */}
-          <div className="w-12 h-12 relative rounded-lg overflow-hidden border shadow-sm shrink-0">
-            <Image
-              src={category.image || "/placeholder-image.svg"}
-              alt={category.name}
-              fill
-              className="object-cover"
-            />
-          </div>
-
-          {/* Info */}
-          <div className="flex-1 min-w-0">
-            <h3 className="font-medium truncate">{category.name}</h3>
-            <p className="text-xs text-muted-foreground font-mono truncate">
-              {category.slug}
-            </p>
-          </div>
-
-          {/* Right Side */}
-          <div className="flex items-center gap-2 shrink-0">
-            <Badge
-              variant={category.isActive ? "default" : "secondary"}
-              className={cn("text-xs", category.isActive && "bg-green-600")}
-            >
-              {category.isActive ? "Active" : "Inactive"}
-            </Badge>
-
-            {/* Action Buttons */}
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8"
-              onClick={() => setShowEdit(true)}
-            >
-              <Pencil className="h-4 w-4" />
-              <span className="sr-only">Edit</span>
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8 text-destructive hover:text-destructive"
-              onClick={() => setShowDelete(true)}
-            >
-              <Trash2 className="h-4 w-4" />
-              <span className="sr-only">Delete</span>
-            </Button>
-          </div>
-        </div>
-
-        {/* Info Bar */}
-        <div className="flex items-center justify-between px-4 py-2 bg-muted/30 border-t text-sm text-muted-foreground">
-          <span>{category.subCategory.length} subcategories</span>
-          <Badge variant="outline" className="font-mono text-xs">
-            Order: {category.displayOrder}
-          </Badge>
-        </div>
-      </CardContent>
-
-      <EditCategoryDialog
-        category={category}
-        open={showEdit}
-        onOpenChange={setShowEdit}
+    <div className="space-y-4">
+      <SetupToolbar
+        filterDefinitions={[
+          {
+            key: "type",
+            label: "Type",
+            value: type,
+            onChange: (value) => void setType(value),
+            options: [
+              { value: "all", label: "All types" },
+              ...types.map((option) => ({
+                value: String(option.id),
+                label: option.name,
+              })),
+            ],
+            widthClassName: "md:w-44",
+          },
+          {
+            key: "status",
+            label: "Status",
+            value: status,
+            onChange: (value) => void setStatus(value),
+            options: [
+              { value: "all", label: "All statuses" },
+              { value: "active", label: "Active" },
+              { value: "inactive", label: "Inactive" },
+            ],
+          },
+        ]}
+        hasActiveFilters={Boolean(search || type !== "all" || status !== "all")}
+        onClear={() => {
+          void setSearch("");
+          void setType("all");
+          void setStatus("all");
+        }}
+        onSearchChange={(value) => void setSearch(value)}
+        searchPlaceholder="Search category name or SKU"
+        searchValue={search}
       />
-      <DeleteCategoryDialog
-        category={category}
-        open={showDelete}
-        onOpenChange={setShowDelete}
+      <SetupEntityTable
+        columns={columns}
+        data={filteredData}
+        emptyAction={data.length === 0 ? <NewCategoryDialog /> : undefined}
+        emptyDescription="Create a category under a product type to continue building the taxonomy."
+        emptyTitle="No categories found"
+        getRowId={(row) => String(row.id)}
+        mobile={{
+          href: (row) => `/dashboard/admin/categories/${row.id}`,
+          title: (row) => row.name,
+          description: (row) => row.skuCode ?? row.slug,
+          meta: (row) => [
+            row.type?.name ?? "Legacy unassigned",
+            `${row.subCategory.length} subcategories`,
+          ],
+          status: (row) => <ActiveStatusBadge isActive={row.isActive} />,
+        }}
       />
-    </Card>
-  );
-}
-
-export default function CategoryTable({ columns, data, types = [] }: DataTableProps) {
-  const [sorting, setSorting] = React.useState<SortingState>([]);
-  const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>(
-    [],
-  );
-  const [columnVisibility, setColumnVisibility] =
-    React.useState<VisibilityState>({});
-  const [rowSelection, setRowSelection] = React.useState({});
-  const [filterValue, setFilterValue] = React.useState("");
-  const [typeFilter, setTypeFilter] = React.useState<string>("all");
-  const [statusFilter, setStatusFilter] = React.useState<string>("all");
-
-  // Client-side filtered data
-  const filteredTableData = React.useMemo(() => {
-    let result = data;
-    if (typeFilter !== "all") {
-      result = result.filter((cat) => cat.typeId === Number(typeFilter));
-    }
-    if (statusFilter !== "all") {
-      result = result.filter((cat) =>
-        statusFilter === "active" ? cat.isActive : !cat.isActive,
-      );
-    }
-    return result;
-  }, [data, typeFilter, statusFilter]);
-
-  const table = useReactTable({
-    data: filteredTableData,
-    columns,
-    onSortingChange: setSorting,
-    onColumnFiltersChange: setColumnFilters,
-    getCoreRowModel: getCoreRowModel(),
-    getPaginationRowModel: getPaginationRowModel(),
-    getSortedRowModel: getSortedRowModel(),
-    getFilteredRowModel: getFilteredRowModel(),
-    onColumnVisibilityChange: setColumnVisibility,
-    onRowSelectionChange: setRowSelection,
-    state: {
-      sorting,
-      columnFilters,
-      columnVisibility,
-      rowSelection,
-    },
-  });
-
-  // Filter categories for mobile view
-  const filteredData = React.useMemo(() => {
-    let result = filteredTableData;
-    if (filterValue) {
-      result = result.filter((cat) =>
-        cat.name.toLowerCase().includes(filterValue.toLowerCase()),
-      );
-    }
-    return result;
-  }, [filteredTableData, filterValue]);
-
-  return (
-    <div className="w-full">
-      {/* Header with filter and add button */}
-      <div className="flex flex-wrap items-center justify-between py-4 gap-2">
-        <div className="flex items-center gap-2 flex-wrap">
-          <Input
-            placeholder="Filter by name..."
-            value={filterValue}
-            onChange={(event) => {
-              setFilterValue(event.target.value);
-              table.getColumn("name")?.setFilterValue(event.target.value);
-            }}
-            className="w-[200px]"
-          />
-          {types.length > 0 && (
-            <Select value={typeFilter} onValueChange={setTypeFilter}>
-              <SelectTrigger className="w-[160px]">
-                <SelectValue placeholder="Type" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Types</SelectItem>
-                {types.map((t) => (
-                  <SelectItem key={t.id} value={String(t.id)}>
-                    {t.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          )}
-          <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger className="w-[130px]">
-              <SelectValue placeholder="Status" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Status</SelectItem>
-              <SelectItem value="active">Active</SelectItem>
-              <SelectItem value="inactive">Inactive</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-        <NewCategoryDialog />
-      </div>
-
-      {/* Desktop Table View */}
-      <div className="hidden md:block rounded-lg border shadow-sm overflow-hidden">
-        <Table>
-          <TableHeader>
-            {table.getHeaderGroups().map((headerGroup) => (
-              <TableRow key={headerGroup.id} className="bg-muted/50">
-                {headerGroup.headers.map((header) => {
-                  return (
-                    <TableHead key={header.id} className="font-semibold">
-                      {header.isPlaceholder
-                        ? null
-                        : flexRender(
-                            header.column.columnDef.header,
-                            header.getContext(),
-                          )}
-                    </TableHead>
-                  );
-                })}
-              </TableRow>
-            ))}
-          </TableHeader>
-          <TableBody>
-            {table.getRowModel().rows?.length ? (
-              table.getRowModel().rows.map((row) => (
-                <TableRow
-                  key={row.id}
-                  data-state={row.getIsSelected() && "selected"}
-                  className="hover:bg-muted/50 transition-colors"
-                >
-                  {row.getVisibleCells().map((cell) => (
-                    <TableCell key={cell.id} className="py-3">
-                      {flexRender(
-                        cell.column.columnDef.cell,
-                        cell.getContext(),
-                      )}
-                    </TableCell>
-                  ))}
-                </TableRow>
-              ))
-            ) : (
-              <TableRow>
-                <TableCell
-                  colSpan={columns.length}
-                  className="h-24 text-center"
-                >
-                  No results.
-                </TableCell>
-              </TableRow>
-            )}
-          </TableBody>
-        </Table>
-      </div>
-
-      {/* Mobile Card View */}
-      <div className="md:hidden space-y-3">
-        {filteredData.length > 0 ? (
-          filteredData.map((category) => (
-            <MobileCategoryCard key={category.id} category={category} />
-          ))
-        ) : (
-          <Card>
-            <CardContent className="py-8 text-center text-muted-foreground">
-              No categories found.
-            </CardContent>
-          </Card>
-        )}
-      </div>
-
-      {/* Pagination */}
-      <div className="hidden md:flex items-center justify-end space-x-2 py-4">
-        <div className="space-x-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => table.previousPage()}
-            disabled={!table.getCanPreviousPage()}
-          >
-            Previous
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => table.nextPage()}
-            disabled={!table.getCanNextPage()}
-          >
-            Next
-          </Button>
-        </div>
-      </div>
     </div>
   );
 }

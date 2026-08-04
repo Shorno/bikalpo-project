@@ -1,5 +1,6 @@
 import { relations } from "drizzle-orm";
 import {
+  boolean,
   integer,
   jsonb,
   pgEnum,
@@ -69,6 +70,9 @@ export const coreProductIdentity = pgTable("core_product_identity", {
   creatorSource: catalogCreatorSourceEnum("creator_source")
     .default("admin")
     .notNull(),
+
+  /** Disabled identities remain attached to existing products but cannot be newly configured. */
+  isActive: boolean("is_active").default(true).notNull(),
 
   ...timestamps,
 });

@@ -188,6 +188,15 @@ export const productVariant = pgTable("product_variant", {
         scale: 2,
     }).default("0"),
 
+    /** Retailer-to-consumer cylinder exchange configuration. */
+    exchangeEnabled: boolean("exchange_enabled").default(false).notNull(),
+
+    /** Per-cylinder credit deducted from the listed New price for Exchange. */
+    exchangeCreditAmount: decimal("exchange_credit_amount", {
+        precision: 10,
+        scale: 2,
+    }).default("0").notNull(),
+
     /** Minimum margin percent — shop price must be >= base_price + margin */
     minMarginPercent: decimal("min_margin_percent", {
         precision: 5,

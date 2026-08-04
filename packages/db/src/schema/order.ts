@@ -14,6 +14,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { user } from "./auth-schema";
 import { catalogVariant } from "./catalog-variant";
+import { cylinderSaleModeEnum } from "./cart";
 import { product } from "./product";
 import { productVariant } from "./product-variant";
 
@@ -225,6 +226,25 @@ export const orderItem = pgTable(
         quantity: integer("quantity").notNull(),
         unitPrice: decimal("unit_price", { precision: 10, scale: 2 }).notNull(),
         totalPrice: decimal("total_price", { precision: 10, scale: 2 }).notNull(),
+
+        // === Retailer LPG cylinder sale snapshot ===
+        /** Exchange/New choice locked at order placement. */
+        cylinderSaleMode: cylinderSaleModeEnum("cylinder_sale_mode")
+            .default("new")
+            .notNull(),
+        /** Listed New price before any exchange credit. */
+        newUnitPrice: decimal("new_unit_price", { precision: 10, scale: 2 }),
+        /** Immutable per-unit Exchange Credit used at checkout and handoff. */
+        exchangeCreditAmount: decimal("exchange_credit_amount", {
+            precision: 10,
+            scale: 2,
+        }).default("0").notNull(),
+        /** Empty cylinders the customer is expected to bring. */
+        expectedEmptyPackQty: integer("expected_empty_pack_qty").default(0).notNull(),
+        /** Exact-match empties accepted during the completed handoff. */
+        collectedEmptyPackQty: integer("collected_empty_pack_qty").default(0).notNull(),
+        /** Missing expected empties explicitly converted from Exchange to New. */
+        convertedToNewQty: integer("converted_to_new_qty").default(0).notNull(),
 
         // === Supplier Modification Fields ===
         /** Modified quantity set by warehouse (null = no change) */

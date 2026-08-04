@@ -38,7 +38,14 @@ export interface DeliveryInvoiceItem
     | "quantity"
     | "unitPrice"
     | "lineTotal"
-  > {}
+    | "orderItemId"
+  > {
+  orderItem?: {
+    id: number;
+    expectedEmptyPackQty: number;
+    exchangeCreditAmount: string;
+  } | null;
+}
 
 // ============================================================================
 // Delivery Invoice Types

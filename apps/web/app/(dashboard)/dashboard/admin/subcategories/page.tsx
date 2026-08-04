@@ -1,25 +1,29 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { FolderTree, Loader } from "lucide-react";
-import { Skeleton } from "@/components/ui/skeleton";
 import {
-  useSubcategoryColumns,
+  SetupErrorState,
+  SetupPageHeader,
+} from "@/components/features/product-setup";
+import NewSubcategoryDialog from "@/components/features/subcategory/components/new-subcategory-dialog";
+import {
   type SubcategoryWithCategory,
+  useSubcategoryColumns,
 } from "@/components/features/subcategory/components/subcategory-columns";
 import SubcategoryTable from "@/components/features/subcategory/components/subcategory-table";
+import { Skeleton } from "@/components/ui/skeleton";
 import { orpc } from "@/utils/orpc";
 
 export default function SubcategoryListPage() {
   // Fetch all subcategories globally
-  const { data: subcategories, isLoading } = useQuery(
+  const subcategoriesQuery = useQuery(
     orpc.adminSubcategory.getAllGlobal.queryOptions({ input: undefined }),
   );
 
   // Fetch categories for filter dropdown
-  const { data: categoriesData } = useQuery(
-    orpc.category.getAll.queryOptions(),
-  );
+  const categoriesQuery = useQuery(orpc.category.getAll.queryOptions());
+  const subcategories = subcategoriesQuery.data;
+  const categoriesData = categoriesQuery.data;
 
   const columns = useSubcategoryColumns();
 
@@ -30,6 +34,7 @@ export default function SubcategoryListPage() {
 
   if (categoriesData) {
     for (const cat of categoriesData) {
+      if (!cat.isActive) continue;
       categoriesList.push({
         id: cat.id,
         name: cat.name,
@@ -46,7 +51,7 @@ export default function SubcategoryListPage() {
     name,
   }));
 
-  if (isLoading) {
+  if (subcategoriesQuery.isLoading || categoriesQuery.isLoading) {
     return (
       <div className="space-y-6">
         <div className="flex items-center justify-between">
@@ -58,17 +63,30 @@ export default function SubcategoryListPage() {
     );
   }
 
+  if (subcategoriesQuery.isError || categoriesQuery.isError) {
+    return (
+      <SetupErrorState
+        onRetry={() => {
+          void subcategoriesQuery.refetch();
+          void categoriesQuery.refetch();
+        }}
+      />
+    );
+  }
+
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold flex items-center gap-2">
-          <FolderTree className="h-6 w-6" />
-          Sub Category Setup
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          Manage all sub categories across product types and categories.
-        </p>
-      </div>
+    <div className="space-y-5">
+      <SetupPageHeader
+        action={
+          <NewSubcategoryDialog
+            variant="standalone"
+            categories={categoriesList}
+          />
+        }
+        count={subcategories?.length ?? 0}
+        description="Manage the third level of the product taxonomy and its Type and Category path."
+        title="Sub Categories"
+      />
 
       <SubcategoryTable
         columns={columns}

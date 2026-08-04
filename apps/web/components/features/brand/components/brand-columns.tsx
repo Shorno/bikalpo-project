@@ -1,78 +1,99 @@
 "use client";
 
 import type { Brand } from "@bikalpo-project/db/schema";
+import { useQueryClient } from "@tanstack/react-query";
 import type { ColumnDef } from "@tanstack/react-table";
-import { MoreHorizontal } from "lucide-react";
+import Link from "next/link";
 import DeleteBrandDialog from "@/components/features/brand/components/delete-brand-dialog";
 import EditBrandDialog from "@/components/features/brand/components/edit-brand-dialog";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+  ActiveStatusBadge,
+  SetupRowActions,
+  SetupToggleAction,
+} from "@/components/features/product-setup";
+import { orpc } from "@/utils/orpc";
 
-export function useBrandColumns() {
-  const columns: ColumnDef<Brand>[] = [
+export interface BrandSetupRow extends Brand {
+  categories: { id: number; name: string }[];
+  productCount: number;
+  coreIdentityCount: number;
+  variantCount: number;
+}
 
+export function useBrandColumns(): ColumnDef<BrandSetupRow, unknown>[] {
+  const queryClient = useQueryClient();
+  return [
     {
       id: "skuCode",
-      header: () => <div className="text-center">SKU</div>,
+      header: "SKU",
       cell: ({ row }) => (
-        <div className="text-center">
-          <Badge variant="outline" className="font-mono text-xs bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-900/20 dark:text-indigo-400 dark:border-indigo-800">
-            {row.original.skuCode || "—"}
-          </Badge>
-        </div>
+        <span className="font-mono text-xs tabular-nums">
+          {row.original.skuCode || "—"}
+        </span>
       ),
-      size: 70,
     },
     {
       accessorKey: "name",
-      header: () => <div className="text-center">Name</div>,
+      header: "Brand name",
       cell: ({ row }) => (
-        <div className="text-center font-medium">{row.getValue("name")}</div>
+        <Link
+          className="font-medium hover:text-primary hover:underline"
+          href={`/dashboard/admin/brands/${row.original.id}`}
+        >
+          {row.original.name}
+        </Link>
       ),
     },
     {
-      accessorKey: "slug",
-      header: () => <div className="text-center">Slug</div>,
+      id: "categories",
+      header: "Categories",
       cell: ({ row }) => (
-        <div className="text-center text-muted-foreground">
-          {row.getValue("slug")}
+        <span className="text-sm text-muted-foreground">
+          {row.original.categories.length > 0
+            ? row.original.categories.map((item) => item.name).join(", ")
+            : "—"}
+        </span>
+      ),
+    },
+    {
+      accessorKey: "isActive",
+      header: "Status",
+      cell: ({ row }) => <ActiveStatusBadge isActive={row.original.isActive} />,
+    },
+    {
+      id: "usedIn",
+      header: "Used in",
+      cell: ({ row }) => (
+        <div className="font-mono text-xs tabular-nums">
+          {row.original.productCount} products ·{" "}
+          {row.original.coreIdentityCount} cores
         </div>
       ),
     },
-
     {
       id: "actions",
-      header: () => <div className="text-center">Actions</div>,
-      enableHiding: false,
-      cell: ({ row }) => {
-        const brand = row.original;
-
-        return (
-          <div className="flex justify-center">
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" className="h-8 w-8 p-0">
-                  <span className="sr-only">Open menu</span>
-                  <MoreHorizontal className="h-4 w-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <EditBrandDialog brand={brand} />
-                <DropdownMenuSeparator />
-                <DeleteBrandDialog brand={brand} />
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-        );
-      },
+      header: () => <div className="text-right">Action</div>,
+      enableSorting: false,
+      cell: ({ row }) => (
+        <SetupRowActions
+          deleteAction={<DeleteBrandDialog brand={row.original} />}
+          editAction={<EditBrandDialog brand={row.original} />}
+          toggleAction={
+            <SetupToggleAction
+              isActive={row.original.isActive}
+              mutationFn={() =>
+                orpc.brand.toggleActive.call({ id: row.original.id })
+              }
+              onSuccess={() =>
+                queryClient.invalidateQueries({
+                  queryKey: orpc.brand.getAdminAll.key(),
+                })
+              }
+            />
+          }
+          viewHref={`/dashboard/admin/brands/${row.original.id}`}
+        />
+      ),
     },
   ];
-
-  return columns;
 }

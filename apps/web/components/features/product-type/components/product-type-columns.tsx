@@ -1,26 +1,14 @@
 "use client";
 
-import {
+import type {
   INVENTORY_BEHAVIOUR_LABELS,
   PRODUCT_TYPE_FAMILY_LABELS,
-  type ProductTypeFulfillmentProfile,
+  ProductTypeFulfillmentProfile,
 } from "@bikalpo-project/db/fulfillment";
 import type { ColumnDef } from "@tanstack/react-table";
-import { ArrowUpDown, Eye, MoreHorizontal } from "lucide-react";
 import Link from "next/link";
-import DeleteTypeDialog from "@/components/features/product-type/components/delete-type-dialog";
-import EditTypeDialog from "@/components/features/product-type/components/edit-type-dialog";
-import { resolveProductTypeProfile } from "@/components/features/product-type/components/product-type-row";
-import ToggleTypeDialog from "@/components/features/product-type/components/toggle-type-dialog";
-import { Badge } from "@/components/ui/badge";
+import { ActiveStatusBadge } from "@/components/features/product-setup";
 import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 
 export type ProductTypeRow = {
   id: number;
@@ -37,103 +25,51 @@ export type ProductTypeRow = {
   fulfillmentProfile?: ProductTypeFulfillmentProfile;
 };
 
-export function useProductTypeColumns() {
-  const columns: ColumnDef<ProductTypeRow>[] = [
+export function useProductTypeColumns(): ColumnDef<ProductTypeRow, unknown>[] {
+  return [
     {
       id: "skuCode",
-      header: () => <div className="text-center">SKU</div>,
+      header: "SKU",
       cell: ({ row }) => (
-        <div className="text-center">
-          <Badge
-            variant="outline"
-            className="font-mono text-xs bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-900/20 dark:text-indigo-400 dark:border-indigo-800"
-          >
-            {row.original.skuCode || "—"}
-          </Badge>
-        </div>
+        <span className="font-mono text-xs tabular-nums">
+          {row.original.skuCode || "—"}
+        </span>
       ),
-      size: 70,
+      enableSorting: false,
+      size: 96,
     },
     {
       accessorKey: "name",
-      header: ({ column }) => (
-        <Button
-          variant="ghost"
-          onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
-        >
-          Name
-          <ArrowUpDown className="ml-2 h-4 w-4" />
-        </Button>
-      ),
+      header: "Type name",
       cell: ({ row }) => (
-        <div>
-          <span className="font-medium">{row.getValue("name")}</span>
-          <span className="ml-2 text-xs text-muted-foreground font-mono">
-            {row.original.slug}
-          </span>
-        </div>
+        <Link
+          className="font-medium hover:text-primary hover:underline"
+          href={`/dashboard/admin/types/${row.original.id}`}
+        >
+          {row.original.name}
+        </Link>
       ),
+      enableSorting: false,
     },
     {
-      id: "fulfillment",
-      header: "Flow",
-      cell: ({ row }) => {
-        const profile = resolveProductTypeProfile(row.original);
-
-        return (
-          <div className="space-y-1">
-            <div className="text-sm font-medium">
-              {PRODUCT_TYPE_FAMILY_LABELS[profile.family]}
-            </div>
-            <div className="text-xs text-muted-foreground">
-              {INVENTORY_BEHAVIOUR_LABELS[row.original.inventoryBehaviour]}
-            </div>
-            <div className="text-xs text-muted-foreground">
-              {profile.supportedModes.join(", ")}
-            </div>
-          </div>
-        );
-      },
+      accessorKey: "isActive",
+      header: "Status",
+      cell: ({ row }) => <ActiveStatusBadge isActive={row.original.isActive} />,
+      enableSorting: false,
+      size: 120,
     },
-
     {
       id: "actions",
-      header: () => <div className="text-center">Actions</div>,
-      enableHiding: false,
-      cell: ({ row }) => {
-        const type = row.original;
-
-        return (
-          <div className="flex justify-center">
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" className="h-8 w-8 p-0">
-                  <span className="sr-only">Open menu</span>
-                  <MoreHorizontal className="h-4 w-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem asChild>
-                  <Link
-                    href={`/dashboard/admin/types/${type.id}`}
-                    className="flex items-center gap-2"
-                  >
-                    <Eye className="h-4 w-4" />
-                    View Details
-                  </Link>
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <EditTypeDialog type={type} />
-                <ToggleTypeDialog type={type} />
-                <DropdownMenuSeparator />
-                <DeleteTypeDialog type={type} />
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-        );
-      },
+      header: () => <div className="text-right">Action</div>,
+      enableSorting: false,
+      cell: ({ row }) => (
+        <div className="flex justify-end">
+          <Button asChild className="h-9" size="sm" variant="ghost">
+            <Link href={`/dashboard/admin/types/${row.original.id}`}>View</Link>
+          </Button>
+        </div>
+      ),
+      size: 80,
     },
   ];
-
-  return columns;
 }

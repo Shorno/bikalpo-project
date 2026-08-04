@@ -68,6 +68,18 @@ _Avoid_: Confirmation window, bidding window
 Inventory reserved for one submitted Offer until that Offer wins, loses, is withdrawn, or expires.
 _Avoid_: Allocation, soft reservation
 
+**Empty Pack Return**:
+A retailer-enabled rule available to Product Types that support returnable packaging. For LPG products, it gives consumers Exchange and New sale modes for eligible cylinders.
+_Avoid_: Product return, refund
+
+**Exchange**:
+An Empty Pack Return sale mode where one empty pack is required for each filled pack sold.
+_Avoid_: Replacement, product swap
+
+**New**:
+An Empty Pack Return sale mode where a filled pack is sold without receiving an empty pack and no Empty Pack Stock is created.
+_Avoid_: Standard when the distinction is Exchange versus New
+
 ## Retail Fulfillment
 
 **Retailer Order**:

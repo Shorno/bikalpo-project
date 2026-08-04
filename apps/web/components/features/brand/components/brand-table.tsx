@@ -1,147 +1,121 @@
 "use client";
 
-import type { Brand } from "@bikalpo-project/db/schema";
+import type { ColumnDef } from "@tanstack/react-table";
+import { parseAsString, useQueryState } from "nuqs";
+import { useMemo } from "react";
 import {
-  type ColumnDef,
-  type ColumnFiltersState,
-  flexRender,
-  getCoreRowModel,
-  getFilteredRowModel,
-  getPaginationRowModel,
-  getSortedRowModel,
-  type SortingState,
-  useReactTable,
-  type VisibilityState,
-} from "@tanstack/react-table";
-import * as React from "react";
-import NewBrandDialog from "@/components/features/brand/components/new-brand-dialog";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+  ActiveStatusBadge,
+  SetupEntityTable,
+  SetupToolbar,
+} from "@/components/features/product-setup";
+import type { BrandSetupRow } from "./brand-columns";
+import NewBrandDialog from "./new-brand-dialog";
 
-interface DataTableProps {
-  columns: ColumnDef<Brand, unknown>[];
-  data: Brand[];
+interface BrandTableProps {
+  columns: ColumnDef<BrandSetupRow, unknown>[];
+  data: BrandSetupRow[];
 }
 
-export default function BrandTable({ columns, data }: DataTableProps) {
-  const [sorting, setSorting] = React.useState<SortingState>([]);
-  const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>(
-    [],
+export default function BrandTable({ columns, data }: BrandTableProps) {
+  const [search, setSearch] = useQueryState(
+    "q",
+    parseAsString.withDefault("").withOptions({ clearOnDefault: true }),
   );
-  const [columnVisibility, setColumnVisibility] =
-    React.useState<VisibilityState>({});
-  const [rowSelection, setRowSelection] = React.useState({});
-
-  const table = useReactTable({
-    data,
-    columns,
-    onSortingChange: setSorting,
-    onColumnFiltersChange: setColumnFilters,
-    getCoreRowModel: getCoreRowModel(),
-    getPaginationRowModel: getPaginationRowModel(),
-    getSortedRowModel: getSortedRowModel(),
-    getFilteredRowModel: getFilteredRowModel(),
-    onColumnVisibilityChange: setColumnVisibility,
-    onRowSelectionChange: setRowSelection,
-    state: {
-      sorting,
-      columnFilters,
-      columnVisibility,
-      rowSelection,
-    },
-  });
+  const [category, setCategory] = useQueryState(
+    "category",
+    parseAsString.withDefault("all").withOptions({ clearOnDefault: true }),
+  );
+  const [status, setStatus] = useQueryState(
+    "status",
+    parseAsString.withDefault("all").withOptions({ clearOnDefault: true }),
+  );
+  const categories = useMemo(() => {
+    const values = new Map<number, string>();
+    for (const item of data) {
+      for (const itemCategory of item.categories) {
+        values.set(itemCategory.id, itemCategory.name);
+      }
+    }
+    return [...values.entries()].map(([id, name]) => ({ id, name }));
+  }, [data]);
+  const filteredData = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    return data.filter((item) => {
+      const matchesSearch =
+        !query ||
+        item.name.toLowerCase().includes(query) ||
+        item.slug.toLowerCase().includes(query) ||
+        item.skuCode?.toLowerCase().includes(query);
+      const matchesCategory =
+        category === "all" ||
+        item.categories.some((value) => value.id === Number(category));
+      const matchesStatus =
+        status === "all" ||
+        (status === "active" ? item.isActive : !item.isActive);
+      return matchesSearch && matchesCategory && matchesStatus;
+    });
+  }, [category, data, search, status]);
 
   return (
-    <div className="w-full">
-      <div className="flex items-center justify-between py-4 gap-2">
-        <Input
-          placeholder="Filter by name..."
-          value={(table.getColumn("name")?.getFilterValue() as string) ?? ""}
-          onChange={(event) =>
-            table.getColumn("name")?.setFilterValue(event.target.value)
-          }
-          className="max-w-sm"
-        />
-        <NewBrandDialog />
-      </div>
-      <div className="rounded-md border">
-        <Table>
-          <TableHeader>
-            {table.getHeaderGroups().map((headerGroup) => (
-              <TableRow key={headerGroup.id}>
-                {headerGroup.headers.map((header) => {
-                  return (
-                    <TableHead key={header.id}>
-                      {header.isPlaceholder
-                        ? null
-                        : flexRender(
-                            header.column.columnDef.header,
-                            header.getContext(),
-                          )}
-                    </TableHead>
-                  );
-                })}
-              </TableRow>
-            ))}
-          </TableHeader>
-          <TableBody>
-            {table.getRowModel().rows?.length ? (
-              table.getRowModel().rows.map((row) => (
-                <TableRow
-                  key={row.id}
-                  data-state={row.getIsSelected() && "selected"}
-                >
-                  {row.getVisibleCells().map((cell) => (
-                    <TableCell key={cell.id}>
-                      {flexRender(
-                        cell.column.columnDef.cell,
-                        cell.getContext(),
-                      )}
-                    </TableCell>
-                  ))}
-                </TableRow>
-              ))
-            ) : (
-              <TableRow>
-                <TableCell
-                  colSpan={columns.length}
-                  className="h-24 text-center"
-                >
-                  No brands found.
-                </TableCell>
-              </TableRow>
-            )}
-          </TableBody>
-        </Table>
-      </div>
-      <div className="flex items-center justify-end space-x-2 py-4">
-        <div className="space-x-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => table.previousPage()}
-            disabled={!table.getCanPreviousPage()}
-          >
-            Previous
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => table.nextPage()}
-            disabled={!table.getCanNextPage()}
-          >
-            Next
-          </Button>
-        </div>
-      </div>
+    <div className="space-y-4">
+      <SetupToolbar
+        filterDefinitions={[
+          {
+            key: "category",
+            label: "Category",
+            value: category,
+            onChange: (value) => void setCategory(value),
+            options: [
+              { value: "all", label: "All categories" },
+              ...categories.map((option) => ({
+                value: String(option.id),
+                label: option.name,
+              })),
+            ],
+            widthClassName: "md:w-48",
+          },
+          {
+            key: "status",
+            label: "Status",
+            value: status,
+            onChange: (value) => void setStatus(value),
+            options: [
+              { value: "all", label: "All statuses" },
+              { value: "active", label: "Active" },
+              { value: "inactive", label: "Inactive" },
+            ],
+          },
+        ]}
+        hasActiveFilters={Boolean(
+          search || category !== "all" || status !== "all",
+        )}
+        onClear={() => {
+          void setSearch("");
+          void setCategory("all");
+          void setStatus("all");
+        }}
+        onSearchChange={(value) => void setSearch(value)}
+        searchPlaceholder="Search brand name or SKU"
+        searchValue={search}
+      />
+      <SetupEntityTable
+        columns={columns}
+        data={filteredData}
+        emptyAction={data.length === 0 ? <NewBrandDialog /> : undefined}
+        emptyDescription="Create a brand to associate it with configured Core Identities and products."
+        emptyTitle="No brands found"
+        getRowId={(row) => String(row.id)}
+        mobile={{
+          href: (row) => `/dashboard/admin/brands/${row.id}`,
+          title: (row) => row.name,
+          description: (row) => row.skuCode ?? row.slug,
+          meta: (row) => [
+            `${row.categories.length} categories`,
+            `${row.productCount} products`,
+          ],
+          status: (row) => <ActiveStatusBadge isActive={row.isActive} />,
+        }}
+      />
     </div>
   );
 }

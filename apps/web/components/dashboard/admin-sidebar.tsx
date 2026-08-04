@@ -16,6 +16,7 @@ import {
   MegaphoneIcon,
   PackageIcon,
   ReceiptIcon,
+  Settings2,
   ShoppingCartIcon,
   StoreIcon,
   TruckIcon,
@@ -43,261 +44,265 @@ import { orpc } from "@/utils/orpc";
 
 function getAdminNavGroups(pendingApplications = 0): NavGroup[] {
   return [
-  {
-    label: "Overview",
-    items: [
-      {
-        title: "Dashboard",
-        url: ADMIN_BASE,
-        icon: LayoutDashboardIcon,
-      },
-    ],
-  },
-  {
-    label: "Catalog",
-    items: [
-      {
-        title: "Product Catalog",
-        url: `${ADMIN_BASE}/products`,
-        icon: PackageIcon,
-        items: [
-          { title: "All Products", url: `${ADMIN_BASE}/products` },
-          {
-            title: "Product Price",
-            url: `${ADMIN_BASE}/product-price`,
-          },
-          { title: "Web View", url: `${ADMIN_BASE}/web-view` },
-        ],
-      },
-      {
-        title: "Product Management",
-        url: `${ADMIN_BASE}/types`,
-        icon: Boxes,
-        items: [
-          { title: "Types", url: `${ADMIN_BASE}/types` },
-          { title: "Categories", url: `${ADMIN_BASE}/categories` },
-          { title: "Sub Categories", url: `${ADMIN_BASE}/subcategories` },
-          { title: "Setup Requests", url: `${ADMIN_BASE}/setup-requests` },
-          { title: "Core Products", url: `${ADMIN_BASE}/core-products` },
-          { title: "Variants", url: `${ADMIN_BASE}/variant-options` },
-          { title: "Brands", url: `${ADMIN_BASE}/brands` },
-          { title: "Rule Settings", url: `${ADMIN_BASE}/product-rule-settings` },
-        ],
-      },
-      {
-        title: "Customer Home Tabs",
-        url: `${ADMIN_BASE}/customer-home-tabs`,
-        icon: ListIcon,
-      },
-    ],
-  },
-  {
-    label: "Sales",
-    items: [
-      {
-        title: "Orders",
-        url: `${ADMIN_BASE}/orders`,
-        icon: ShoppingCartIcon,
-      },
-      {
-        title: "Invoices",
-        url: `${ADMIN_BASE}/invoices`,
-        icon: ReceiptIcon,
-        items: [
-          { title: "All Invoices", url: `${ADMIN_BASE}/invoices` },
-          { title: "Estimates", url: `${ADMIN_BASE}/estimates` },
-        ],
-      },
-      {
-        title: "Customers",
-        url: `${ADMIN_BASE}/customers`,
-        icon: ContactIcon,
-      },
-    ],
-  },
-  {
-    label: "Operations",
-    items: [
-      {
-        title: "Areas",
-        url: `${ADMIN_BASE}/areas`,
-        icon: MapPinIcon,
-        items: [
-          { title: "All Areas", url: `${ADMIN_BASE}/areas` },
-          { title: "Area Analytics", url: `${ADMIN_BASE}/area-analytics` },
-        ],
-      },
-      {
-        title: "Delivery",
-        url: `${ADMIN_BASE}/delivery`,
-        icon: TruckIcon,
-        items: [
-          { title: "Deliveries", url: `${ADMIN_BASE}/delivery` },
-          { title: "Delivery Rules", url: `${ADMIN_BASE}/delivery-rules` },
-        ],
-      },
-      {
-        title: "Returns",
-        url: `${ADMIN_BASE}/returns`,
-        icon: Undo2Icon,
-      },
-    ],
-  },
-  {
-    label: "Customer Service",
-    items: [
-      {
-        title: "Item Requests",
-        url: `${ADMIN_BASE}/item-requests`,
-        icon: ClipboardListIcon,
-      },
-      {
-        title: "Support & Complaints",
-        url: `${ADMIN_BASE}/tickets`,
-        icon: HeadphonesIcon,
-        items: [
-          { title: "Support Tickets", url: `${ADMIN_BASE}/tickets` },
-          { title: "Complaints", url: `${ADMIN_BASE}/complaints` },
-        ],
-      },
-      {
-        title: "Announcements",
-        url: `${ADMIN_BASE}/announcements`,
-        icon: MegaphoneIcon,
-        items: [
-          { title: "Announcements", url: `${ADMIN_BASE}/announcements` },
-          { title: "Brand Updates", url: `${ADMIN_BASE}/brand-updates` },
-        ],
-      },
-      {
-        title: "To-Let Listings",
-        url: `${ADMIN_BASE}/to-let`,
-        icon: StoreIcon,
-      },
-      {
-        title: "Offers",
-        url: `${ADMIN_BASE}/offers`,
-        icon: GiftIcon,
-      },
-    ],
-  },
-  {
-    label: "People Management",
-    items: [
-      {
-        title: "Users",
-        url: `${ADMIN_BASE}/users/wholesalers`,
-        icon: Users2Icon,
-        items: [
-          { title: "Wholesalers", url: `${ADMIN_BASE}/users/wholesalers` },
-          { title: "Retailers", url: `${ADMIN_BASE}/users/retailers` },
-        ],
-      },
-      {
-        title: "Applications",
-        url: `${ADMIN_BASE}/applications`,
-        icon: StoreIcon,
-        badge: pendingApplications,
-        activePrefixes: [
-          `${ADMIN_BASE}/applications`,
-          `${ADMIN_BASE}/seller-applications`,
-          `${ADMIN_BASE}/warehouse-applications`,
-        ],
-      },
-      {
-        title: "Assignments",
-        url: `${ADMIN_BASE}/warehouse-assignments`,
-        icon: WarehouseIcon,
-        items: [
-          {
-            title: "Warehouse Assignments",
-            url: `${ADMIN_BASE}/warehouse-assignments`,
-          },
-          {
-            title: "Shop Category Assignments",
-            url: `${ADMIN_BASE}/shop-category-assignments`,
-          },
-        ],
-      },
-      {
-        title: "Salesmen",
-        url: `${ADMIN_BASE}/salesmen`,
-        icon: Users2Icon,
-      },
-      {
-        title: "Deliverymen",
-        url: `${ADMIN_BASE}/deliverymen`,
-        icon: TruckIcon,
-      },
-    ],
-  },
-  {
-    label: "Marketing",
-    items: [
-      {
-        title: "Marketing",
-        url: `${ADMIN_BASE}/marketing`,
-        icon: ImageIcon,
-        items: [
-          { title: "Material Requests", url: `${ADMIN_BASE}/marketing` },
-          {
-            title: "Materials & Designs",
-            url: `${ADMIN_BASE}/marketing/materials`,
-          },
-        ],
-      },
-    ],
-  },
-  {
-    label: "Reports & Analytics",
-    items: [
-      {
-        title: "Sales Reports",
-        url: `${ADMIN_BASE}/sales-reports`,
-        icon: DollarSignIcon,
-      },
-      {
-        title: "Employee Performance",
-        url: `${ADMIN_BASE}/employee-performance`,
-        icon: Users2Icon,
-      },
-    ],
-  },
-  {
-    label: "Audit Management",
-    items: [
-      {
-        title: "System Activity",
-        url: `${ADMIN_BASE}/audit`,
-        icon: ActivityIcon,
-      },
-    ],
-  },
-  {
-    label: "Landing Page",
-    items: [
-      {
-        title: "Packages",
-        url: `${ADMIN_BASE}/packages`,
-        icon: PackageIcon,
-      },
-    ],
-  },
-  {
-    label: "Referral & Rewards",
-    items: [
-      {
-        title: "Referral & Rewards",
-        url: `${ADMIN_BASE}/invite-tracking`,
-        icon: GiftIcon,
-        items: [
-          { title: "Invite Tracking", url: `${ADMIN_BASE}/invite-tracking` },
-          { title: "Admin Invites", url: `${ADMIN_BASE}/admin-invites` },
-          { title: "Rewards", url: `${ADMIN_BASE}/rewards` },
-        ],
-      },
-    ],
-  },
+    {
+      label: "Overview",
+      items: [
+        {
+          title: "Dashboard",
+          url: ADMIN_BASE,
+          icon: LayoutDashboardIcon,
+        },
+      ],
+    },
+    {
+      label: "Product System",
+      items: [
+        {
+          title: "Product Catalog",
+          url: `${ADMIN_BASE}/products`,
+          icon: PackageIcon,
+          items: [
+            { title: "All Products", url: `${ADMIN_BASE}/products` },
+            {
+              title: "Product Price",
+              url: `${ADMIN_BASE}/product-price`,
+            },
+            { title: "Web View", url: `${ADMIN_BASE}/web-view` },
+          ],
+        },
+        {
+          title: "Setup",
+          url: `${ADMIN_BASE}/types`,
+          icon: Boxes,
+          items: [
+            { title: "Types", url: `${ADMIN_BASE}/types` },
+            { title: "Categories", url: `${ADMIN_BASE}/categories` },
+            { title: "Sub Categories", url: `${ADMIN_BASE}/subcategories` },
+            { title: "Core Identities", url: `${ADMIN_BASE}/core-products` },
+            { title: "Brands", url: `${ADMIN_BASE}/brands` },
+            { title: "Variants", url: `${ADMIN_BASE}/variant-options` },
+            { title: "Setup Requests", url: `${ADMIN_BASE}/setup-requests` },
+          ],
+        },
+        {
+          title: "Advanced Product Rules",
+          url: `${ADMIN_BASE}/product-rule-settings`,
+          icon: Settings2,
+        },
+        {
+          title: "Customer Home Tabs",
+          url: `${ADMIN_BASE}/customer-home-tabs`,
+          icon: ListIcon,
+        },
+      ],
+    },
+    {
+      label: "Sales",
+      items: [
+        {
+          title: "Orders",
+          url: `${ADMIN_BASE}/orders`,
+          icon: ShoppingCartIcon,
+        },
+        {
+          title: "Invoices",
+          url: `${ADMIN_BASE}/invoices`,
+          icon: ReceiptIcon,
+          items: [
+            { title: "All Invoices", url: `${ADMIN_BASE}/invoices` },
+            { title: "Estimates", url: `${ADMIN_BASE}/estimates` },
+          ],
+        },
+        {
+          title: "Customers",
+          url: `${ADMIN_BASE}/customers`,
+          icon: ContactIcon,
+        },
+      ],
+    },
+    {
+      label: "Operations",
+      items: [
+        {
+          title: "Areas",
+          url: `${ADMIN_BASE}/areas`,
+          icon: MapPinIcon,
+          items: [
+            { title: "All Areas", url: `${ADMIN_BASE}/areas` },
+            { title: "Area Analytics", url: `${ADMIN_BASE}/area-analytics` },
+          ],
+        },
+        {
+          title: "Delivery",
+          url: `${ADMIN_BASE}/delivery`,
+          icon: TruckIcon,
+          items: [
+            { title: "Deliveries", url: `${ADMIN_BASE}/delivery` },
+            { title: "Delivery Rules", url: `${ADMIN_BASE}/delivery-rules` },
+          ],
+        },
+        {
+          title: "Returns",
+          url: `${ADMIN_BASE}/returns`,
+          icon: Undo2Icon,
+        },
+      ],
+    },
+    {
+      label: "Customer Service",
+      items: [
+        {
+          title: "Item Requests",
+          url: `${ADMIN_BASE}/item-requests`,
+          icon: ClipboardListIcon,
+        },
+        {
+          title: "Support & Complaints",
+          url: `${ADMIN_BASE}/tickets`,
+          icon: HeadphonesIcon,
+          items: [
+            { title: "Support Tickets", url: `${ADMIN_BASE}/tickets` },
+            { title: "Complaints", url: `${ADMIN_BASE}/complaints` },
+          ],
+        },
+        {
+          title: "Announcements",
+          url: `${ADMIN_BASE}/announcements`,
+          icon: MegaphoneIcon,
+          items: [
+            { title: "Announcements", url: `${ADMIN_BASE}/announcements` },
+            { title: "Brand Updates", url: `${ADMIN_BASE}/brand-updates` },
+          ],
+        },
+        {
+          title: "To-Let Listings",
+          url: `${ADMIN_BASE}/to-let`,
+          icon: StoreIcon,
+        },
+        {
+          title: "Offers",
+          url: `${ADMIN_BASE}/offers`,
+          icon: GiftIcon,
+        },
+      ],
+    },
+    {
+      label: "People Management",
+      items: [
+        {
+          title: "Users",
+          url: `${ADMIN_BASE}/users/wholesalers`,
+          icon: Users2Icon,
+          items: [
+            { title: "Wholesalers", url: `${ADMIN_BASE}/users/wholesalers` },
+            { title: "Retailers", url: `${ADMIN_BASE}/users/retailers` },
+          ],
+        },
+        {
+          title: "Applications",
+          url: `${ADMIN_BASE}/applications`,
+          icon: StoreIcon,
+          badge: pendingApplications,
+          activePrefixes: [
+            `${ADMIN_BASE}/applications`,
+            `${ADMIN_BASE}/seller-applications`,
+            `${ADMIN_BASE}/warehouse-applications`,
+          ],
+        },
+        {
+          title: "Assignments",
+          url: `${ADMIN_BASE}/warehouse-assignments`,
+          icon: WarehouseIcon,
+          items: [
+            {
+              title: "Warehouse Assignments",
+              url: `${ADMIN_BASE}/warehouse-assignments`,
+            },
+            {
+              title: "Shop Category Assignments",
+              url: `${ADMIN_BASE}/shop-category-assignments`,
+            },
+          ],
+        },
+        {
+          title: "Salesmen",
+          url: `${ADMIN_BASE}/salesmen`,
+          icon: Users2Icon,
+        },
+        {
+          title: "Deliverymen",
+          url: `${ADMIN_BASE}/deliverymen`,
+          icon: TruckIcon,
+        },
+      ],
+    },
+    {
+      label: "Marketing",
+      items: [
+        {
+          title: "Marketing",
+          url: `${ADMIN_BASE}/marketing`,
+          icon: ImageIcon,
+          items: [
+            { title: "Material Requests", url: `${ADMIN_BASE}/marketing` },
+            {
+              title: "Materials & Designs",
+              url: `${ADMIN_BASE}/marketing/materials`,
+            },
+          ],
+        },
+      ],
+    },
+    {
+      label: "Reports & Analytics",
+      items: [
+        {
+          title: "Sales Reports",
+          url: `${ADMIN_BASE}/sales-reports`,
+          icon: DollarSignIcon,
+        },
+        {
+          title: "Employee Performance",
+          url: `${ADMIN_BASE}/employee-performance`,
+          icon: Users2Icon,
+        },
+      ],
+    },
+    {
+      label: "Audit Management",
+      items: [
+        {
+          title: "System Activity",
+          url: `${ADMIN_BASE}/audit`,
+          icon: ActivityIcon,
+        },
+      ],
+    },
+    {
+      label: "Landing Page",
+      items: [
+        {
+          title: "Packages",
+          url: `${ADMIN_BASE}/packages`,
+          icon: PackageIcon,
+        },
+      ],
+    },
+    {
+      label: "Referral & Rewards",
+      items: [
+        {
+          title: "Referral & Rewards",
+          url: `${ADMIN_BASE}/invite-tracking`,
+          icon: GiftIcon,
+          items: [
+            { title: "Invite Tracking", url: `${ADMIN_BASE}/invite-tracking` },
+            { title: "Admin Invites", url: `${ADMIN_BASE}/admin-invites` },
+            { title: "Rewards", url: `${ADMIN_BASE}/rewards` },
+          ],
+        },
+      ],
+    },
   ];
 }
 

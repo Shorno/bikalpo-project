@@ -112,6 +112,14 @@ export const invoice = pgTable(
             .notNull(),
         grandTotal: decimal("grand_total", { precision: 10, scale: 2 }).notNull(),
 
+        /** Additional amount due when an Exchange unit becomes New at handoff. */
+        handoffBalance: decimal("handoff_balance", { precision: 10, scale: 2 })
+            .default("0")
+            .notNull(),
+        handoffPaymentMethod: varchar("handoff_payment_method", { length: 30 }),
+        handoffPaymentReference: varchar("handoff_payment_reference", { length: 150 }),
+        handoffAdjustedAt: timestamp("handoff_adjusted_at"),
+
         // Notes
         customerNotes: text("customer_notes"),
         adminNotes: text("admin_notes"),

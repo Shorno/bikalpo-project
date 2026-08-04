@@ -2,21 +2,8 @@
 
 import type { Category, SubCategory } from "@bikalpo-project/db/schema";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, Loader, Trash2 } from "lucide-react";
-import * as React from "react";
 import { toast } from "sonner";
-import { Button } from "@/components/ui/button";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
+import { SetupDeleteDialog } from "@/components/features/product-setup";
 import { orpc } from "@/utils/orpc";
 
 interface DeleteCategoryDialogProps {
@@ -56,52 +43,18 @@ export default function DeleteCategoryDialog({
   };
 
   return (
-    <AlertDialog open={open} onOpenChange={onOpenChange}>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle className="flex items-center gap-2">
-            <Trash2 className="h-5 w-5 text-destructive" />
-            Delete {category.name}?
-          </AlertDialogTitle>
-          <AlertDialogDescription>
-            This action cannot be undone. This will permanently delete the
-            category
-            {hasSubcategories && ` and ${subcategoryCount} subcategory(ies)`}.
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-
-        {hasSubcategories && (
-          <div className="flex items-start gap-3 rounded-lg border border-destructive/50 bg-destructive/10 p-4">
-            <AlertTriangle className="h-5 w-5 text-destructive mt-0.5 flex-shrink-0" />
-            <div className="text-sm">
-              <p className="font-semibold text-destructive mb-1">Cannot Delete</p>
-              <p className="text-muted-foreground">
-                This category has {subcategoryCount} subcategory(ies). Remove
-                all subcategories before deleting this category.
-              </p>
-            </div>
-          </div>
-        )}
-
-        <AlertDialogFooter>
-          <AlertDialogCancel disabled={mutation.isPending}>
-            Cancel
-          </AlertDialogCancel>
-          <AlertDialogAction
-            onClick={(e) => {
-              e.preventDefault();
-              handleDelete();
-            }}
-            disabled={mutation.isPending || hasSubcategories}
-            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-          >
-            {mutation.isPending && (
-              <Loader className="mr-2 h-4 w-4 animate-spin" />
-            )}
-            Delete Category
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+    <SetupDeleteDialog
+      dependencyMessage={
+        hasSubcategories
+          ? `This category has ${subcategoryCount} Sub Categories. Remove or reassign them before deleting it.`
+          : undefined
+      }
+      description="This action cannot be undone. Products referencing this category are also protected by the server."
+      isDeleting={mutation.isPending}
+      onConfirm={handleDelete}
+      onOpenChange={onOpenChange}
+      open={open}
+      title={`Delete ${category.name}?`}
+    />
   );
 }

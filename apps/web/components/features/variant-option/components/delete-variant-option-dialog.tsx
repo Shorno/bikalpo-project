@@ -1,21 +1,10 @@
 "use client";
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Loader, Trash2 } from "lucide-react";
-import * as React from "react";
 import { toast } from "sonner";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
+import { SetupDeleteDialog } from "@/components/features/product-setup";
 import { client, orpc } from "@/utils/orpc";
-import { type VariantOptionRow } from "./variant-option-columns";
+import type { VariantOptionRow } from "./variant-option-columns";
 
 interface DeleteVariantOptionDialogProps {
   variantOption: VariantOptionRow;
@@ -31,8 +20,7 @@ export default function DeleteVariantOptionDialog({
   const queryClient = useQueryClient();
 
   const mutation = useMutation({
-    mutationFn: (id: number) =>
-      client.adminVariantOption.delete({ id }),
+    mutationFn: (id: number) => client.adminVariantOption.delete({ id }),
     onSuccess: () => {
       queryClient.invalidateQueries({
         queryKey: orpc.adminVariantOption.getAll.key(),
@@ -48,40 +36,21 @@ export default function DeleteVariantOptionDialog({
   const handleDelete = () => {
     mutation.mutate(vo.id);
   };
+  const usageCount = vo.productUsageCount + vo.coreIdentityUsageCount;
 
   return (
-    <AlertDialog open={open} onOpenChange={onOpenChange}>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle className="flex items-center gap-2">
-            <Trash2 className="h-5 w-5 text-destructive" />
-            Delete &quot;{vo.name}&quot;?
-          </AlertDialogTitle>
-          <AlertDialogDescription>
-            This action cannot be undone. This will permanently delete the
-            variant option.
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-
-        <AlertDialogFooter>
-          <AlertDialogCancel disabled={mutation.isPending}>
-            Cancel
-          </AlertDialogCancel>
-          <AlertDialogAction
-            onClick={(e) => {
-              e.preventDefault();
-              handleDelete();
-            }}
-            disabled={mutation.isPending}
-            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-          >
-            {mutation.isPending && (
-              <Loader className="h-4 w-4 mr-2 animate-spin" />
-            )}
-            Delete Variant
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+    <SetupDeleteDialog
+      dependencyMessage={
+        usageCount > 0
+          ? `This Variant is used by ${vo.productUsageCount} products and ${vo.coreIdentityUsageCount} Core Identities. Disable it instead.`
+          : undefined
+      }
+      description="This action permanently deletes the canonical Variant definition."
+      isDeleting={mutation.isPending}
+      onConfirm={handleDelete}
+      onOpenChange={onOpenChange}
+      open={open}
+      title={`Delete ${vo.name}?`}
+    />
   );
 }

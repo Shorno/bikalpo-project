@@ -11,7 +11,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { useEffect, useState } from "react";
 import { ConsumerProductCard } from "@/components/features/products/consumer-product-card";
-import { ProductDetailClient as VariantDetailClient } from "@/components/features/products/product-detail-client";
+import { ProductDetailClient as VariantDetailClient } from "@/components/features/products/trade-product-detail-client";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useProductReviews } from "@/hooks/use-customer-api";
 import {

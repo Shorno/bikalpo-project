@@ -36,6 +36,10 @@ export const createSubcategorySchema = createCategorySchema.extend({
     .nonoptional(),
 });
 
+export const createNewCategorySchema = createCategorySchema.extend({
+  typeId: z.number({ error: "Product Type is required." }).int().nonoptional(),
+});
+
 export const updateCategorySchema = createCategorySchema.extend({
   id: z.number({ error: "Category ID is required." }).int().nonoptional(),
 });

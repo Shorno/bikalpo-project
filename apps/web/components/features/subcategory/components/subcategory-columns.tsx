@@ -1,15 +1,21 @@
 "use client";
 
 import type { SubCategory } from "@bikalpo-project/db/schema";
+import { useQueryClient } from "@tanstack/react-query";
 import type { ColumnDef } from "@tanstack/react-table";
-import { Eye, Pencil, Trash2 } from "lucide-react";
+import { Pencil, Trash2 } from "lucide-react";
 import Link from "next/link";
-import * as React from "react";
-import { ADMIN_BASE } from "@/lib/routes";
+import { useMemo, useState } from "react";
+import {
+  ActiveStatusBadge,
+  SetupRowActions,
+  SetupToggleAction,
+} from "@/components/features/product-setup";
 import DeleteSubcategoryDialog from "@/components/features/subcategory/components/delete-subcategory-dialog";
 import EditSubcategoryDialog from "@/components/features/subcategory/components/edit-subcategory-dialog";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
+import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
+import { ADMIN_BASE } from "@/lib/routes";
+import { orpc } from "@/utils/orpc";
 
 export interface SubcategoryWithCategory extends SubCategory {
   category: {
@@ -21,66 +27,54 @@ export interface SubcategoryWithCategory extends SubCategory {
 }
 
 export function useSubcategoryColumns() {
-  return React.useMemo<ColumnDef<SubcategoryWithCategory>[]>(
+  return useMemo<ColumnDef<SubcategoryWithCategory, unknown>[]>(
     () => [
       {
         id: "skuCode",
-        header: () => <div className="text-center">SKU</div>,
+        header: "SKU",
         cell: ({ row }) => (
-          <div className="text-center">
-            <Badge variant="outline" className="font-mono text-xs bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-900/20 dark:text-indigo-400 dark:border-indigo-800">
-              {row.original.skuCode || "—"}
-            </Badge>
-          </div>
+          <span className="font-mono text-xs tabular-nums">
+            {row.original.skuCode || "—"}
+          </span>
         ),
-        size: 70,
       },
       {
         accessorKey: "name",
-        header: () => <div className="text-center">Name</div>,
+        header: "Sub Category name",
         cell: ({ row }) => (
-          <div className="text-center font-medium">{row.getValue("name")}</div>
+          <Link
+            className="font-medium hover:text-primary hover:underline"
+            href={`${ADMIN_BASE}/subcategories/${row.original.id}`}
+          >
+            {row.original.name}
+          </Link>
         ),
       },
       {
         id: "category",
-        header: () => <div className="text-center">Category</div>,
+        header: "Category",
         cell: ({ row }) => (
-          <div className="text-center">
-            <Badge variant="outline">{row.original.category.name}</Badge>
-          </div>
-        ),
-        size: 140,
-      },
-      {
-        id: "type",
-        header: () => <div className="text-center">Type</div>,
-        cell: ({ row }) => (
-          <div className="text-center">
-            {row.original.category.type ? (
-              <Badge variant="secondary" className="text-xs">
+          <div>
+            <div className="text-sm">{row.original.category.name}</div>
+            {row.original.category.type && (
+              <div className="text-xs text-muted-foreground">
                 {row.original.category.type.name}
-              </Badge>
-            ) : (
-              <span className="text-muted-foreground text-sm">—</span>
+              </div>
             )}
           </div>
         ),
-        size: 120,
       },
       {
-        accessorKey: "slug",
-        header: () => <div className="text-center">Slug</div>,
+        accessorKey: "isActive",
+        header: "Status",
         cell: ({ row }) => (
-          <div className="text-center text-muted-foreground font-mono text-sm">
-            {row.getValue("slug")}
-          </div>
+          <ActiveStatusBadge isActive={row.original.isActive} />
         ),
       },
       {
         id: "actions",
-        header: () => <div className="text-center">Actions</div>,
-        enableHiding: false,
+        header: () => <div className="text-right">Action</div>,
+        enableSorting: false,
         cell: ({ row }) => <SubcategoryActions subcategory={row.original} />,
       },
     ],
@@ -88,49 +82,58 @@ export function useSubcategoryColumns() {
   );
 }
 
-function SubcategoryActions({ subcategory }: { subcategory: SubcategoryWithCategory }) {
-  const [showEdit, setShowEdit] = React.useState(false);
-  const [showDelete, setShowDelete] = React.useState(false);
+function SubcategoryActions({
+  subcategory,
+}: {
+  subcategory: SubcategoryWithCategory;
+}) {
+  const queryClient = useQueryClient();
+  const [showEdit, setShowEdit] = useState(false);
+  const [showDelete, setShowDelete] = useState(false);
 
   return (
-    <div className="flex items-center justify-center gap-1">
-      <Button variant="ghost" size="icon" className="h-8 w-8" asChild>
-        <Link href={`${ADMIN_BASE}/subcategories/${subcategory.id}`}>
-          <Eye className="h-4 w-4" />
-          <span className="sr-only">View</span>
-        </Link>
-      </Button>
-
-      <Button
-        variant="ghost"
-        size="icon"
-        className="h-8 w-8"
-        onClick={() => setShowEdit(true)}
-      >
-        <Pencil className="h-4 w-4" />
-        <span className="sr-only">Edit</span>
-      </Button>
-
-      <Button
-        variant="ghost"
-        size="icon"
-        className="h-8 w-8 text-destructive hover:text-destructive"
-        onClick={() => setShowDelete(true)}
-      >
-        <Trash2 className="h-4 w-4" />
-        <span className="sr-only">Delete</span>
-      </Button>
-
+    <>
+      <SetupRowActions
+        deleteAction={
+          <DropdownMenuItem
+            className="text-destructive focus:text-destructive"
+            onSelect={() => setShowDelete(true)}
+          >
+            <Trash2 aria-hidden="true" className="size-4" />
+            Delete
+          </DropdownMenuItem>
+        }
+        editAction={
+          <DropdownMenuItem onSelect={() => setShowEdit(true)}>
+            <Pencil aria-hidden="true" className="size-4" />
+            Edit
+          </DropdownMenuItem>
+        }
+        toggleAction={
+          <SetupToggleAction
+            isActive={subcategory.isActive}
+            mutationFn={() =>
+              orpc.adminSubcategory.toggleActive.call({ id: subcategory.id })
+            }
+            onSuccess={() =>
+              queryClient.invalidateQueries({
+                queryKey: orpc.adminSubcategory.getAllGlobal.key(),
+              })
+            }
+          />
+        }
+        viewHref={`${ADMIN_BASE}/subcategories/${subcategory.id}`}
+      />
       <EditSubcategoryDialog
-        subcategory={subcategory}
-        open={showEdit}
         onOpenChange={setShowEdit}
+        open={showEdit}
+        subcategory={subcategory}
       />
       <DeleteSubcategoryDialog
-        subcategory={subcategory}
-        open={showDelete}
         onOpenChange={setShowDelete}
+        open={showDelete}
+        subcategory={subcategory}
       />
-    </div>
+    </>
   );
 }

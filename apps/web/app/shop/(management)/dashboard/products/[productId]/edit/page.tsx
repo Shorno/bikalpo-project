@@ -39,7 +39,22 @@ export default function RetailerProductEditPage() {
     );
   }
 
-  const retailerProduct = data.product as any;
+  const rawRetailerProduct = data.product as any;
+  const retailerProduct = {
+    ...rawRetailerProduct,
+    variantPrices: (rawRetailerProduct.variantPrices ?? []).map(
+      (price: any) => {
+        const variant = (rawRetailerProduct.variants ?? []).find(
+          (row: any) => row.sourceVariantOptionId === price.variantOptionId,
+        );
+        return {
+          ...price,
+          exchangeEnabled: variant?.exchangeEnabled ?? false,
+          exchangeCreditAmount: variant?.exchangeCreditAmount ?? "0",
+        };
+      },
+    ),
+  };
   const coreProduct = {
     ...retailerProduct.coreProduct,
     categoryId: retailerProduct.categoryId,
@@ -59,6 +74,8 @@ export default function RetailerProductEditPage() {
         onUpdate: async (payload: any) => {
           const variants = (payload.variantPrices ?? []).map((row: any) => ({
             variantOptionId: row.variantOptionId,
+            exchangeEnabled: row.exchangeEnabled ?? false,
+            exchangeCreditAmount: String(row.exchangeCreditAmount || "0"),
           }));
           return (orpc.shopOwner as any).updateShopOwnedProduct.call({
             productId,

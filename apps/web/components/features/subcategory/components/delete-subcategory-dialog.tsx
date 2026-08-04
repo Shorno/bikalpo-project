@@ -2,21 +2,8 @@
 
 import type { SubCategory } from "@bikalpo-project/db/schema";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Loader, Trash2 } from "lucide-react";
-import * as React from "react";
-import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
+import { SetupDeleteDialog } from "@/components/features/product-setup";
 import { client } from "@/utils/orpc";
 
 interface DeleteSubcategoryDialogProps {
@@ -54,38 +41,13 @@ export default function DeleteSubcategoryDialog({
   };
 
   return (
-    <AlertDialog open={open} onOpenChange={onOpenChange}>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle className="flex items-center gap-2">
-            <Trash2 className="h-5 w-5 text-destructive" />
-            Delete {subcategory.name}?
-          </AlertDialogTitle>
-          <AlertDialogDescription>
-            This action cannot be undone. This will permanently delete the
-            subcategory and all associated products.
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-
-        <AlertDialogFooter>
-          <AlertDialogCancel disabled={mutation.isPending}>
-            Cancel
-          </AlertDialogCancel>
-          <AlertDialogAction
-            onClick={(e) => {
-              e.preventDefault();
-              handleDelete();
-            }}
-            disabled={mutation.isPending}
-            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-          >
-            {mutation.isPending && (
-              <Loader className="h-4 w-4 mr-2 animate-spin" />
-            )}
-            Delete Subcategory
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+    <SetupDeleteDialog
+      description="This action permanently deletes the Sub Category. Core Identities and products referencing it are protected by the server."
+      isDeleting={mutation.isPending}
+      onConfirm={handleDelete}
+      onOpenChange={onOpenChange}
+      open={open}
+      title={`Delete ${subcategory.name}?`}
+    />
   );
 }

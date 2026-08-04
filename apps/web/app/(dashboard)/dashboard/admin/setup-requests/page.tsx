@@ -1,6 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import type { ColumnDef } from "@tanstack/react-table";
 import {
   ArrowRight,
   CheckCircle2,
@@ -9,21 +10,29 @@ import {
   Download,
   FileText,
   ImageIcon,
-  Layers3,
+  type Layers3,
   Link2,
   Loader2,
   Mail,
   Pencil,
   Phone,
   RefreshCw,
-  Search,
   Store,
-  Tags,
   User,
   XCircle,
 } from "lucide-react";
+import Image from "next/image";
+import { parseAsString, useQueryState } from "nuqs";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
+import {
+  SetupEntityTable,
+  SetupErrorState,
+  SetupMetricStrip,
+  SetupPageHeader,
+  SetupStatusBadge,
+  SetupToolbar,
+} from "@/components/features/product-setup";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -42,15 +51,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { generateSlug } from "@/utils/generate-slug";
 import { orpc } from "@/utils/orpc";
@@ -171,7 +171,7 @@ function formatDate(value: string | Date | null | undefined) {
   });
 }
 
-function formatDateTime(value: string | Date | null | undefined) {
+function _formatDateTime(value: string | Date | null | undefined) {
   if (!value) return "--";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "--";
@@ -377,10 +377,27 @@ function exportRequests(
 
 export default function AdminSetupRequestsPage() {
   const queryClient = useQueryClient();
-  const [search, setSearch] = useState("");
-  const [requestType, setRequestType] = useState<RequestTypeFilter>("all");
-  const [status, setStatus] = useState<StatusFilter>("pending");
-  const [dateRange, setDateRange] = useState<DateRange>("last_7_days");
+  const [search, setSearch] = useQueryState(
+    "q",
+    parseAsString.withDefault("").withOptions({ clearOnDefault: true }),
+  );
+  const [requestTypeValue, setRequestType] = useQueryState(
+    "type",
+    parseAsString.withDefault("all").withOptions({ clearOnDefault: true }),
+  );
+  const [statusValue, setStatus] = useQueryState(
+    "status",
+    parseAsString.withDefault("pending").withOptions({ clearOnDefault: true }),
+  );
+  const [dateRangeValue, setDateRange] = useQueryState(
+    "date",
+    parseAsString
+      .withDefault("last_7_days")
+      .withOptions({ clearOnDefault: true }),
+  );
+  const requestType = requestTypeValue as RequestTypeFilter;
+  const status = statusValue as StatusFilter;
+  const dateRange = dateRangeValue as DateRange;
   const [selectedRequest, setSelectedRequest] =
     useState<CatalogApprovalRequest | null>(null);
 
@@ -475,253 +492,209 @@ export default function AdminSetupRequestsPage() {
     ]);
   };
 
-  return (
-    <div className="space-y-6">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <div>
-          <h1 className="flex items-center gap-3 text-2xl font-bold">
-            <span className="rounded-lg border bg-white p-2 text-slate-700">
-              <Layers3 className="h-5 w-5" />
-            </span>
-            Setup Requests
-          </h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Review warehouse catalog setup requests for brands, variants, and
-            core products.
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={refresh}
-            disabled={isRefreshing}
-          >
-            {isRefreshing ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <RefreshCw className="h-4 w-4" />
-            )}
-            Refresh
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => exportRequests(requests, options)}
-            disabled={requests.length === 0}
-          >
-            <Download className="h-4 w-4" />
-            Export
-          </Button>
-        </div>
-      </div>
-
-      <div className="grid gap-3 md:grid-cols-4">
-        <StatsCard
-          label="Total"
-          value={stats.total}
-          icon={Layers3}
-          tone="slate"
-        />
-        <StatsCard
-          label="Pending"
-          value={stats.pending}
-          icon={Clock3}
-          tone="amber"
-        />
-        <StatsCard
-          label="Approved"
-          value={stats.approved}
-          icon={CheckCircle2}
-          tone="emerald"
-        />
-        <StatsCard
-          label="Rejected"
-          value={stats.rejected}
-          icon={XCircle}
-          tone="red"
-        />
-      </div>
-
-      <section className="rounded-lg border bg-white shadow-sm">
-        <div className="grid gap-3 border-b p-4 xl:grid-cols-[1fr_auto_auto_auto] xl:items-end">
-          <div className="space-y-2">
-            <Label htmlFor="setup-request-search">Search</Label>
-            <div className="relative">
-              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-              <Input
-                id="setup-request-search"
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                placeholder="Item name / store"
-                className="pl-8"
-              />
-            </div>
+  const columns = useMemo<ColumnDef<CatalogApprovalRequest, unknown>[]>(
+    () => [
+      {
+        id: "index",
+        header: "#",
+        cell: ({ row }) => (
+          <span className="font-mono text-xs tabular-nums text-muted-foreground">
+            {row.index + 1}
+          </span>
+        ),
+      },
+      {
+        accessorKey: "requestType",
+        header: "Request type",
+        cell: ({ row }) => (
+          <Badge variant="outline">
+            {requestTypeLabels[row.original.requestType]}
+          </Badge>
+        ),
+      },
+      {
+        id: "item",
+        header: "Requested item",
+        cell: ({ row }) => (
+          <div>
+            <p className="font-medium">{itemName(row.original)}</p>
+            <p className="font-mono text-xs text-muted-foreground">
+              {formatDate(row.original.createdAt)}
+            </p>
           </div>
+        ),
+      },
+      {
+        id: "mapping",
+        header: "Parent mapping",
+        cell: ({ row }) => (
+          <span className="text-sm text-muted-foreground">
+            {parentMapping(row.original, options)}
+          </span>
+        ),
+      },
+      {
+        id: "requester",
+        header: "Requested by",
+        cell: ({ row }) => (
+          <div>
+            <p className="font-medium">{requesterName(row.original)}</p>
+            <p className="text-xs text-muted-foreground">
+              {formatRole(row.original.requester?.role)}
+            </p>
+          </div>
+        ),
+      },
+      {
+        accessorKey: "status",
+        header: "Status",
+        cell: ({ row }) => <SetupStatusBadge status={row.original.status} />,
+      },
+      {
+        id: "actions",
+        header: () => <div className="text-right">Action</div>,
+        cell: ({ row }) => (
+          <div className="text-right">
+            <Button
+              onClick={() => setSelectedRequest(row.original)}
+              size="sm"
+              variant="outline"
+            >
+              Review
+            </Button>
+          </div>
+        ),
+      },
+    ],
+    [options],
+  );
 
-          <Select
-            value={requestType}
-            onValueChange={(value) =>
-              setRequestType(value as RequestTypeFilter)
-            }
-          >
-            <div className="space-y-2">
-              <Label>Request Type</Label>
-              <SelectTrigger className="w-full xl:w-48">
-                <SelectValue />
-              </SelectTrigger>
-            </div>
-            <SelectContent>
-              <SelectItem value="all">All</SelectItem>
-              <SelectItem value="brand">Brand</SelectItem>
-              <SelectItem value="variant_option">Variant</SelectItem>
-              <SelectItem value="core_product">Core Product</SelectItem>
-            </SelectContent>
-          </Select>
+  return (
+    <div className="space-y-5">
+      <SetupPageHeader
+        count={stats.total}
+        description="Review and resolve centralized Brand, Variant, and Core Identity setup requests."
+        secondaryActions={
+          <>
+            <Button variant="outline" onClick={refresh} disabled={isRefreshing}>
+              {isRefreshing ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <RefreshCw className="h-4 w-4" />
+              )}
+              Refresh
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => exportRequests(requests, options)}
+              disabled={requests.length === 0}
+            >
+              <Download className="h-4 w-4" />
+              Export
+            </Button>
+          </>
+        }
+        title="Setup Requests"
+      />
 
-          <Select
-            value={dateRange}
-            onValueChange={(value) => setDateRange(value as DateRange)}
-          >
-            <div className="space-y-2">
-              <Label>Date</Label>
-              <SelectTrigger className="w-full xl:w-44">
-                <SelectValue />
-              </SelectTrigger>
-            </div>
-            <SelectContent>
-              <SelectItem value="last_7_days">Last 7 Days</SelectItem>
-              <SelectItem value="last_30_days">Last 30 Days</SelectItem>
-              <SelectItem value="today">Today</SelectItem>
-              <SelectItem value="this_month">This Month</SelectItem>
-              <SelectItem value="all">All Time</SelectItem>
-            </SelectContent>
-          </Select>
+      <SetupMetricStrip
+        metrics={[
+          { label: "Total", value: stats.total },
+          { label: "Pending", value: stats.pending },
+          { label: "Approved", value: stats.approved },
+          { label: "Rejected", value: stats.rejected },
+        ]}
+      />
 
-          <Tabs
-            value={status}
-            onValueChange={(value) => setStatus(value as StatusFilter)}
-          >
-            <TabsList className="grid h-auto grid-cols-4">
-              <TabsTrigger value="all" className="text-xs">
-                All ({stats.total})
-              </TabsTrigger>
-              <TabsTrigger value="pending" className="text-xs">
-                Pending ({stats.pending})
-              </TabsTrigger>
-              <TabsTrigger value="approved" className="text-xs">
-                Approved ({stats.approved})
-              </TabsTrigger>
-              <TabsTrigger value="rejected" className="text-xs">
-                Rejected ({stats.rejected})
-              </TabsTrigger>
-            </TabsList>
-          </Tabs>
+      <SetupToolbar
+        filterDefinitions={[
+          {
+            key: "requestType",
+            label: "Request type",
+            value: requestType,
+            onChange: (value) => void setRequestType(value),
+            options: [
+              { value: "all", label: "All types" },
+              { value: "brand", label: "Brand" },
+              { value: "variant_option", label: "Variant" },
+              { value: "core_product", label: "Core Identity" },
+            ],
+            widthClassName: "md:w-44",
+          },
+          {
+            key: "status",
+            label: "Status",
+            value: status,
+            onChange: (value) => void setStatus(value),
+            options: [
+              { value: "all", label: "All statuses" },
+              { value: "pending", label: "Pending" },
+              { value: "approved", label: "Approved" },
+              { value: "rejected", label: "Rejected" },
+            ],
+          },
+          {
+            key: "dateRange",
+            label: "Date",
+            value: dateRange,
+            onChange: (value) => void setDateRange(value),
+            options: [
+              { value: "last_7_days", label: "Last 7 days" },
+              { value: "last_30_days", label: "Last 30 days" },
+              { value: "today", label: "Today" },
+              { value: "this_month", label: "This month" },
+              { value: "all", label: "All time" },
+            ],
+            widthClassName: "md:w-44",
+          },
+        ]}
+        hasActiveFilters={Boolean(
+          search ||
+            requestType !== "all" ||
+            status !== "pending" ||
+            dateRange !== "last_7_days",
+        )}
+        onClear={() => {
+          void setSearch("");
+          void setRequestType("all");
+          void setStatus("pending");
+          void setDateRange("last_7_days");
+        }}
+        onSearchChange={(value) => void setSearch(value)}
+        searchPlaceholder="Search item or requester"
+        searchValue={search}
+      />
+
+      {requestsQuery.isLoading ||
+      statsQuery.isLoading ||
+      optionsQuery.isLoading ? (
+        <div className="flex min-h-64 items-center justify-center rounded-lg border text-sm text-muted-foreground">
+          <Loader2 className="mr-2 size-4 animate-spin" /> Loading setup
+          requests…
         </div>
-
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead className="w-12">#</TableHead>
-              <TableHead>Request Type</TableHead>
-              <TableHead>Requested Item</TableHead>
-              <TableHead className="min-w-64">Parent Mapping</TableHead>
-              <TableHead>Requested By</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead className="text-right">Action</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {requestsQuery.isLoading ? (
-              <TableRow>
-                <TableCell colSpan={7} className="h-36 text-center">
-                  <div className="flex items-center justify-center gap-2 text-muted-foreground">
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    Loading setup requests...
-                  </div>
-                </TableCell>
-              </TableRow>
-            ) : requests.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={7} className="h-36 text-center">
-                  <div className="space-y-1">
-                    <p className="font-medium">No pending requests</p>
-                    <p className="text-sm text-muted-foreground">
-                      All setup systems are up to date.
-                    </p>
-                  </div>
-                </TableCell>
-              </TableRow>
-            ) : (
-              requests.map((request, index) => (
-                <TableRow key={request.id}>
-                  <TableCell className="text-muted-foreground">
-                    {index + 1}
-                  </TableCell>
-                  <TableCell>
-                    <Badge
-                      variant="outline"
-                      className={typeClasses[request.requestType]}
-                    >
-                      {request.requestType === "brand" && (
-                        <Tags className="h-3.5 w-3.5" />
-                      )}
-                      {request.requestType === "variant_option" && (
-                        <Layers3 className="h-3.5 w-3.5" />
-                      )}
-                      {request.requestType === "core_product" && (
-                        <FileText className="h-3.5 w-3.5" />
-                      )}
-                      {requestTypeLabels[request.requestType]}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    <div className="font-medium">{itemName(request)}</div>
-                    <div className="text-xs text-muted-foreground">
-                      {formatDate(request.createdAt)}
-                    </div>
-                  </TableCell>
-                  <TableCell className="max-w-sm whitespace-normal text-sm text-muted-foreground">
-                    {parentMapping(request, options)}
-                  </TableCell>
-                  <TableCell>
-                    <div className="font-medium">{requesterName(request)}</div>
-                    <div className="text-xs text-muted-foreground">
-                      {formatRole(request.requester?.role)}
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <Badge
-                      variant="outline"
-                      className={statusClasses[request.status]}
-                    >
-                      {request.status === "pending" && (
-                        <Clock3 className="h-3.5 w-3.5" />
-                      )}
-                      {request.status === "approved" && (
-                        <CheckCircle2 className="h-3.5 w-3.5" />
-                      )}
-                      {request.status === "rejected" && (
-                        <XCircle className="h-3.5 w-3.5" />
-                      )}
-                      {statusLabels[request.status]}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => setSelectedRequest(request)}
-                    >
-                      View
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
-      </section>
+      ) : requestsQuery.isError ||
+        statsQuery.isError ||
+        optionsQuery.isError ? (
+        <SetupErrorState onRetry={() => void refresh()} />
+      ) : (
+        <SetupEntityTable
+          columns={columns}
+          data={requests}
+          emptyDescription="No requests match the current filters."
+          emptyTitle="No Setup Requests"
+          getRowId={(request) => String(request.id)}
+          mobile={{
+            onSelect: setSelectedRequest,
+            title: itemName,
+            description: (request) => requestTypeLabels[request.requestType],
+            meta: (request) => [
+              requesterName(request),
+              formatDate(request.createdAt),
+            ],
+            status: (request) => <SetupStatusBadge status={request.status} />,
+          }}
+        />
+      )}
 
       {currentSelection && (
         <RequestDetailDialog
@@ -749,39 +722,6 @@ export default function AdminSetupRequestsPage() {
         />
       )}
     </div>
-  );
-}
-
-function StatsCard({
-  label,
-  value,
-  icon: Icon,
-  tone,
-}: {
-  label: string;
-  value: number;
-  icon: typeof Layers3;
-  tone: "slate" | "amber" | "emerald" | "red";
-}) {
-  const toneClass = {
-    slate: "bg-slate-50 text-slate-700 border-slate-200",
-    amber: "bg-amber-50 text-amber-700 border-amber-200",
-    emerald: "bg-emerald-50 text-emerald-700 border-emerald-200",
-    red: "bg-red-50 text-red-700 border-red-200",
-  }[tone];
-
-  return (
-    <section className="rounded-lg border bg-white p-4 shadow-sm">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <p className="text-sm text-muted-foreground">{label}</p>
-          <p className="mt-1 text-2xl font-semibold tabular-nums">{value}</p>
-        </div>
-        <span className={`rounded-lg border p-2 ${toneClass}`}>
-          <Icon className="h-5 w-5" />
-        </span>
-      </div>
-    </section>
   );
 }
 
@@ -1171,12 +1111,14 @@ function ImagePreview({
   return (
     <div className="overflow-hidden rounded border bg-white">
       <div className="flex h-16 items-center justify-center bg-slate-50/50 p-1">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={src}
+        <Image
           alt={alt}
           className="max-h-full max-w-full rounded object-contain"
+          height={64}
           onError={() => setHasError(true)}
+          src={src}
+          unoptimized
+          width={160}
         />
       </div>
       <div className="flex items-center justify-between border-t px-2 py-1">
@@ -1248,7 +1190,7 @@ function HistoryTimelineItem({
   );
 }
 
-function SectionTitle({ title }: { title: string }) {
+function _SectionTitle({ title }: { title: string }) {
   return (
     <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-700">
       {title}
@@ -1256,7 +1198,7 @@ function SectionTitle({ title }: { title: string }) {
   );
 }
 
-function InfoField({ label, value }: { label: string; value: unknown }) {
+function _InfoField({ label, value }: { label: string; value: unknown }) {
   return (
     <div className="rounded-md bg-slate-50 p-3">
       <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
