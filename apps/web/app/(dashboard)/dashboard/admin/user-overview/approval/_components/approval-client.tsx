@@ -8,23 +8,15 @@ import {
 } from "@tanstack/react-table";
 import {
   AlertCircle,
-  CheckCircle2,
   ChevronLeft,
   ChevronRight,
   ChevronsLeft,
   ChevronsRight,
   Inbox,
-  Inbox as InboxIcon,
   Search,
-  XCircle,
 } from "lucide-react";
 import { parseAsInteger, parseAsString, useQueryState } from "nuqs";
 import { useMemo } from "react";
-import {
-  DashboardKpiCard,
-  DashboardKpiGrid,
-  type DashboardKpiTone,
-} from "@/components/dashboard/dashboard-kpi-card";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -42,6 +34,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { BUSINESS_NATURES } from "@/constants/seller-registration";
+import { cn } from "@/lib/utils";
 import { orpc } from "@/utils/orpc";
 import { type ApplicationRow, applicationColumns } from "./application-columns";
 
@@ -58,37 +51,22 @@ const PAGE_SIZE = 20;
 const KPI_BLOCKS: {
   key: StatusFilter;
   label: string;
-  overviewKey: "total" | "pending" | "approved" | "rejected";
-  tone: DashboardKpiTone;
-  icon: React.ReactNode;
 }[] = [
   {
     key: "all",
     label: "Total Requests",
-    overviewKey: "total",
-    tone: "slate",
-    icon: <InboxIcon />,
   },
   {
     key: "pending",
     label: "Pending",
-    overviewKey: "pending",
-    tone: "amber",
-    icon: <AlertCircle />,
   },
   {
     key: "approved",
     label: "Approved",
-    overviewKey: "approved",
-    tone: "emerald",
-    icon: <CheckCircle2 />,
   },
   {
     key: "rejected",
     label: "Rejected",
-    overviewKey: "rejected",
-    tone: "red",
-    icon: <XCircle />,
   },
 ];
 
@@ -233,27 +211,48 @@ export function ApprovalClient() {
         </div>
       </div>
 
-      <DashboardKpiGrid>
-        {KPI_BLOCKS.map((block) => (
-          <DashboardKpiCard
-            key={block.key}
-            label={block.label}
-            value={counts[block.key].toLocaleString()}
-            icon={block.icon}
-            tone={block.tone}
-            active={status === block.key}
-            onClick={() => selectStatus(block.key)}
-            footer={
-              block.key === "pending" && overview
-                ? {
-                    label: "Shop Owner / Warehouse Owner",
-                    value: `${overview.pendingShopOwner} / ${overview.pendingWarehouseOwner}`,
-                  }
-                : undefined
-            }
-          />
-        ))}
-      </DashboardKpiGrid>
+      <section className="overflow-hidden rounded-xl border bg-background shadow-sm">
+        <header className="border-b bg-muted/30 px-4 py-3">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-foreground">
+            Application Performance
+          </h2>
+        </header>
+        <div className="grid grid-cols-2 gap-px bg-border sm:grid-cols-4">
+          {KPI_BLOCKS.map((block) => {
+            const isActive = status === block.key;
+
+            return (
+              <button
+                key={block.key}
+                type="button"
+                onClick={() => selectStatus(block.key)}
+                className={cn(
+                  "flex min-h-[76px] flex-col items-start justify-center bg-background px-4 py-3 text-left transition-colors hover:bg-muted/50 focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
+                  isActive && "bg-primary/5 hover:bg-primary/5",
+                )}
+              >
+                <span className="text-xs text-muted-foreground">
+                  {block.label}
+                </span>
+                <span
+                  className={cn(
+                    "mt-0.5 font-mono text-xl font-semibold tabular-nums text-foreground",
+                    isActive && "text-primary",
+                  )}
+                >
+                  {counts[block.key].toLocaleString()}
+                </span>
+                {block.key === "pending" && overview && (
+                  <span className="mt-0.5 text-[11px] text-muted-foreground">
+                    Shop Owner {overview.pendingShopOwner} · Warehouse Owner{" "}
+                    {overview.pendingWarehouseOwner}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      </section>
 
       <div className="overflow-hidden rounded-xl border bg-background shadow-sm">
         <div className="flex flex-wrap items-center gap-2 border-b bg-muted/30 px-4 py-3">
