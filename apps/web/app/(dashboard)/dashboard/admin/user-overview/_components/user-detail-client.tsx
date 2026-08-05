@@ -176,7 +176,7 @@ export function UserDetailClient({ userId }: UserDetailClientProps) {
       (userData.role === "shop_owner" || userData.role === "warehouse"));
 
   const backUrl = `${ADMIN_BASE}/user-overview/${isWarehouse ? "wholesalers" : "retailers"}`;
-  const backLabel = isWarehouse ? "All Wholesalers" : "All Retailers";
+  const backLabel = isWarehouse ? "All Warehouse Owners" : "All Shop Owners";
   const businessName = isWarehouse
     ? userData.warehouseName || userData.name
     : userData.shopName || userData.name;
@@ -254,7 +254,9 @@ export function UserDetailClient({ userId }: UserDetailClientProps) {
         <UserProfileHero
           data={detail}
           pageTitle={businessName}
-          profileLabel={isWarehouse ? "Wholesaler Profile" : "Seller Profile"}
+          profileLabel={
+            isWarehouse ? "Warehouse Owner Profile" : "Shop Owner Profile"
+          }
           businessName={businessName}
           territory={territory}
           displayId={accountMeta.displayId}

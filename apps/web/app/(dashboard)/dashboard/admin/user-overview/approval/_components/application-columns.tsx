@@ -27,7 +27,7 @@ export type ApplicationRow = {
 
   businessNature: string | null;
 
-  businessType: string | null;
+  productTypeName: string | null;
 
   status: "pending" | "approved" | "rejected";
 
@@ -45,7 +45,7 @@ const STATUS_STYLES = {
 } as const;
 
 function formatNature(nature: string | null) {
-  if (!nature) return "—";
+  if (!nature) return "Unspecified (legacy)";
 
   return (
     BUSINESS_NATURES.find((n) => n.id === nature)?.label ||
@@ -132,12 +132,12 @@ export const applicationColumns: ColumnDef<ApplicationRow>[] = [
   },
 
   {
-    accessorKey: "businessType",
+    accessorKey: "productTypeName",
 
-    header: "Business Type",
+    header: "Product Type",
 
     cell: ({ row }) => (
-      <span className="text-sm">{row.original.businessType || "—"}</span>
+      <span className="text-sm">{row.original.productTypeName || "—"}</span>
     ),
   },
 
@@ -148,7 +148,7 @@ export const applicationColumns: ColumnDef<ApplicationRow>[] = [
 
     cell: ({ row }) => (
       <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-        {row.original.type === "warehouse" ? "Warehouse" : "Seller"}
+        {row.original.type === "warehouse" ? "Warehouse Owner" : "Shop Owner"}
       </span>
     ),
   },

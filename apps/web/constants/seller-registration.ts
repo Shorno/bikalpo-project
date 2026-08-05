@@ -1,22 +1,36 @@
-/** Business nature options for seller registration (Step 2) */
-export const BUSINESS_NATURES = [
-  { id: "retail_shop", label: "Retail Shop" },
-  { id: "wholesaler", label: "Wholesaler" },
-  { id: "distributor", label: "Distributor" },
-  { id: "manufacturer", label: "Manufacturer" },
-  { id: "importer", label: "Importer" },
-] as const;
+import {
+  BUSINESS_NATURES as BUSINESS_NATURE_IDS,
+  type BusinessNature,
+  resolveBusinessRegistration,
+  WAREHOUSE_OWNER_BUSINESS_NATURES,
+} from "@bikalpo-project/api/business-registration";
 
-export type BusinessNatureId = (typeof BUSINESS_NATURES)[number]["id"];
+const BUSINESS_NATURE_LABELS: Record<BusinessNature, string> = {
+  retail_shop: "Retail Shop",
+  wholesaler: "Wholesaler",
+  distributor: "Distributor",
+  manufacturer: "Manufacturer",
+  importer: "Importer",
+};
 
-/** Route to warehouse application API when nature is wholesaler or distributor */
-export const WAREHOUSE_NATURES: BusinessNatureId[] = [
-  "wholesaler",
-  "distributor",
-];
+/** Business nature options for business registration (Step 2). */
+export const BUSINESS_NATURES = BUSINESS_NATURE_IDS.map((id) => ({
+  id,
+  label: BUSINESS_NATURE_LABELS[id],
+}));
+
+export type BusinessNatureId = BusinessNature;
+
+/** Business natures that enter the Warehouse Owner application path. */
+export const WAREHOUSE_NATURES: readonly BusinessNatureId[] =
+  WAREHOUSE_OWNER_BUSINESS_NATURES;
 
 export function isWarehouseNature(nature: string): boolean {
-  return WAREHOUSE_NATURES.includes(nature as BusinessNatureId);
+  if (!BUSINESS_NATURE_IDS.includes(nature as BusinessNature)) return false;
+  return (
+    resolveBusinessRegistration(nature as BusinessNature).applicationPath ===
+    "warehouse"
+  );
 }
 
 export const YEARS_IN_BUSINESS = [

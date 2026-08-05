@@ -33,6 +33,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { BUSINESS_NATURES } from "@/constants/seller-registration";
+import { ADMIN_BASE } from "@/lib/routes";
 import { orpc } from "@/utils/orpc";
 import type { UserRow } from "./user-columns";
 import { retailerColumns, wholesalerColumns } from "./user-columns";
@@ -43,6 +45,10 @@ import {
 
 type StatusFilter = "all" | "active" | "pending" | "suspended";
 type KycFilter = "all" | "verified" | "unverified" | "pending" | "failed";
+type BusinessNatureFilter =
+  | "all"
+  | "unspecified"
+  | (typeof BUSINESS_NATURES)[number]["id"];
 
 const PAGE_SIZE = 20;
 const TREND_DAYS = 30;
@@ -62,16 +68,22 @@ function generatePageNumbers(
   return pages;
 }
 
-function deriveActiveKpi(status: StatusFilter, kyc: KycFilter): UsersKpiKey {
-  if (kyc === "verified") return "verifiedKyc";
-  if (status === "active") return "active";
-  if (status === "pending") return "pending";
-  if (status === "suspended") return "suspended";
-  return "total";
+function deriveActiveKpis(status: StatusFilter, kyc: KycFilter): UsersKpiKey[] {
+  const active: UsersKpiKey[] = [];
+  if (status === "all") active.push("total");
+  if (status === "active") active.push("active");
+  if (status === "suspended") active.push("suspended");
+  if (kyc === "verified") active.push("verifiedKyc");
+  return active;
+}
+
+function formatBusinessNature(value: string) {
+  if (value === "unspecified") return "Unspecified (legacy)";
+  return BUSINESS_NATURES.find((nature) => nature.id === value)?.label ?? value;
 }
 
 interface UsersListClientProps {
-  role: "warehouse" | "shop_owner";
+  portalRole: "warehouse" | "shop_owner";
   title: string;
   description: string;
   columns: ColumnDef<UserRow>[];
@@ -79,14 +91,17 @@ interface UsersListClientProps {
 }
 
 export function UsersListClient({
-  role,
+  portalRole,
   title,
   description,
   columns,
   emptyLabel,
 }: UsersListClientProps) {
+  const role = portalRole;
   const [status, setStatus] = useState<StatusFilter>("all");
   const [kyc, setKyc] = useState<KycFilter>("all");
+  const [businessNature, setBusinessNature] =
+    useState<BusinessNatureFilter>("all");
   const [district, setDistrict] = useState("all");
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
@@ -103,15 +118,38 @@ export function UsersListClient({
     };
   }, [search]);
 
+  const overviewFilters = useMemo(
+    () => ({
+      role,
+      status,
+      kyc,
+      businessNature,
+      district: district !== "all" ? district : undefined,
+      search: debouncedSearch || undefined,
+    }),
+    [role, status, kyc, businessNature, district, debouncedSearch],
+  );
+
   const { data: statsData } = useQuery({
     ...orpc.adminUserManagement.getStats.queryOptions({
-      input: { role },
+      input: overviewFilters,
     }),
   });
 
   const { data: trendData, isLoading: isTrendLoading } = useQuery({
     ...orpc.adminUserManagement.getGrowthTrend.queryOptions({
-      input: { role, days: TREND_DAYS },
+      input: { ...overviewFilters, days: TREND_DAYS },
+    }),
+  });
+
+  const applicationType = role === "shop_owner" ? "seller" : "warehouse";
+  const { data: applicationOverview } = useQuery({
+    ...orpc.adminApplication.getOverview.queryOptions({
+      input: {
+        type: applicationType,
+        businessNature: "all",
+        referral: "all",
+      },
     }),
   });
 
@@ -123,15 +161,11 @@ export function UsersListClient({
 
   const listInput = useMemo(
     () => ({
-      role,
-      status,
-      kyc,
-      district: district !== "all" ? district : undefined,
-      search: debouncedSearch || undefined,
+      ...overviewFilters,
       page,
       pageSize: PAGE_SIZE,
     }),
-    [role, status, kyc, district, debouncedSearch, page],
+    [overviewFilters, page],
   );
 
   const {
@@ -157,30 +191,24 @@ export function UsersListClient({
   });
 
   const stats = statsData?.stats;
-  const activeKpi = deriveActiveKpi(status, kyc);
+  const activeKpis = deriveActiveKpis(status, kyc);
+  const pendingApplications = applicationOverview?.pending ?? 0;
+  const pendingApplicationsHref = `${ADMIN_BASE}/user-overview/approval?status=pending&type=${applicationType}`;
 
   const selectKpi = (key: UsersKpiKey) => {
     setPage(1);
     switch (key) {
       case "active":
         setStatus("active");
-        setKyc("all");
-        break;
-      case "pending":
-        setStatus("pending");
-        setKyc("all");
         break;
       case "suspended":
         setStatus("suspended");
-        setKyc("all");
         break;
       case "verifiedKyc":
-        setStatus("all");
         setKyc("verified");
         break;
       default:
         setStatus("all");
-        setKyc("all");
     }
   };
 
@@ -189,10 +217,10 @@ export function UsersListClient({
       <div>
         <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
           <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
-          {(stats?.pending ?? 0) > 0 && (
+          {pendingApplications > 0 && (
             <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
               <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
-              {stats?.pending} pending review
+              {pendingApplications} pending review
             </span>
           )}
         </div>
@@ -203,7 +231,9 @@ export function UsersListClient({
         stats={stats}
         trend={trendData}
         isTrendLoading={isTrendLoading}
-        activeKpi={activeKpi}
+        activeKpis={activeKpis}
+        pendingApplications={pendingApplications}
+        pendingApplicationsHref={pendingApplicationsHref}
         onSelectKpi={selectKpi}
       />
 
@@ -233,6 +263,25 @@ export function UsersListClient({
               <SelectItem value="active">Active</SelectItem>
               <SelectItem value="pending">Pending</SelectItem>
               <SelectItem value="suspended">Suspended</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select
+            value={businessNature}
+            onValueChange={(v) => {
+              setBusinessNature(v as BusinessNatureFilter);
+              setPage(1);
+            }}
+          >
+            <SelectTrigger className="h-9 w-[180px]">
+              <SelectValue placeholder="Business Nature" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Business Natures</SelectItem>
+              {(filterOptions?.businessNatures ?? []).map((nature) => (
+                <SelectItem key={nature} value={nature}>
+                  {formatBusinessNature(nature)}
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
           <Select

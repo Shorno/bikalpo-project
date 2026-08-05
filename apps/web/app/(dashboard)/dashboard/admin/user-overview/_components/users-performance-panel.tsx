@@ -1,6 +1,7 @@
 "use client";
 
 import { Minus, TrendingDown, TrendingUp } from "lucide-react";
+import Link from "next/link";
 import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts";
 import {
   type ChartConfig,
@@ -10,26 +11,21 @@ import {
 } from "@/components/ui/chart";
 import { cn } from "@/lib/utils";
 
-export type UsersKpiKey =
-  | "total"
-  | "active"
-  | "pending"
-  | "suspended"
-  | "verifiedKyc";
+export type UsersKpiKey = "total" | "active" | "suspended" | "verifiedKyc";
 
 export type UsersPerformanceStats = {
   total: number;
   active: number;
-  pending: number;
+  pendingRoleUsers: number;
   suspended: number;
   verifiedKyc: number;
-  newThisMonth: number;
 };
 
 export type UsersGrowthTrend = {
   points: { label: string; value: number }[];
   growthPercent: number;
-  newUsers: number;
+  newApprovals: number;
+  previousApprovals: number;
 };
 
 const chartConfig = {
@@ -43,6 +39,7 @@ type StatCell = {
   key: UsersKpiKey | null;
   label: string;
   value: number;
+  href?: string;
 };
 
 function GrowthIndicator({ percent }: { percent: number }) {
@@ -70,14 +67,18 @@ export function UsersPerformancePanel({
   stats,
   trend,
   isTrendLoading,
-  activeKpi,
+  activeKpis,
+  pendingApplications,
+  pendingApplicationsHref,
   onSelectKpi,
 }: {
   title?: string;
   stats?: UsersPerformanceStats;
   trend?: UsersGrowthTrend;
   isTrendLoading?: boolean;
-  activeKpi: UsersKpiKey;
+  activeKpis: UsersKpiKey[];
+  pendingApplications: number;
+  pendingApplicationsHref: string;
   onSelectKpi: (key: UsersKpiKey) => void;
 }) {
   const points = trend?.points ?? [];
@@ -85,11 +86,16 @@ export function UsersPerformancePanel({
   const cells: StatCell[] = [
     {
       key: null,
-      label: "New Users",
-      value: trend?.newUsers ?? stats?.newThisMonth ?? 0,
+      label: "New Approvals",
+      value: trend?.newApprovals ?? 0,
     },
     { key: "active", label: "Active Users", value: stats?.active ?? 0 },
-    { key: "pending", label: "Applying", value: stats?.pending ?? 0 },
+    {
+      key: null,
+      label: "Pending Applications",
+      value: pendingApplications,
+      href: pendingApplicationsHref,
+    },
     { key: "suspended", label: "Suspended", value: stats?.suspended ?? 0 },
     { key: "verifiedKyc", label: "Verified", value: stats?.verifiedKyc ?? 0 },
   ];
@@ -108,7 +114,7 @@ export function UsersPerformancePanel({
           onClick={() => onSelectKpi("total")}
           className={cn(
             "flex flex-col items-start rounded-lg border px-4 py-3 text-left transition-colors",
-            activeKpi === "total"
+            activeKpis.includes("total")
               ? "border-primary/40 bg-primary/5"
               : "border-transparent hover:bg-muted/50",
           )}
@@ -123,20 +129,20 @@ export function UsersPerformancePanel({
 
         <div className="flex flex-col items-start rounded-lg px-4 py-3">
           <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            User Growth
+            Approval Growth
           </span>
           <div className="mt-1">
             <GrowthIndicator percent={trend?.growthPercent ?? 0} />
           </div>
           <span className="mt-0.5 text-xs text-muted-foreground">
-            vs previous period
+            vs previous 30 days
           </span>
         </div>
       </div>
 
       <div className="grid grid-cols-2 gap-px border-y bg-border sm:grid-cols-3 lg:grid-cols-5">
         {cells.map((cell) => {
-          const isActive = cell.key !== null && activeKpi === cell.key;
+          const isActive = cell.key !== null && activeKpis.includes(cell.key);
           const content = (
             <>
               <span className="text-xs text-muted-foreground">
@@ -152,6 +158,18 @@ export function UsersPerformancePanel({
               </span>
             </>
           );
+
+          if (cell.href) {
+            return (
+              <Link
+                key={cell.label}
+                href={cell.href}
+                className="flex flex-col gap-0.5 bg-background px-4 py-3 transition-colors hover:bg-muted/50"
+              >
+                {content}
+              </Link>
+            );
+          }
 
           if (cell.key === null) {
             return (
@@ -183,7 +201,7 @@ export function UsersPerformancePanel({
       <div className="px-4 py-4">
         <div className="mb-3 flex items-center justify-between">
           <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            User Growth (Active)
+            Approved User Growth
           </h3>
           {points.length > 0 && (
             <span className="text-xs text-muted-foreground">

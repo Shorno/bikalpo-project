@@ -4,19 +4,19 @@ import {
 } from "../_components/users-list-client";
 
 export const metadata = {
-  title: "Retailer Users | Admin",
-  description: "All registered retailer accounts",
+  title: "Shop Owners | Admin",
+  description: "All registered Shop Owner accounts",
 };
 
 export default function RetailersPage() {
   return (
     <div className="p-4 sm:p-6">
       <UsersListClient
-        role="shop_owner"
-        title="Retailer Users"
-        description="Manage retailer accounts and shop owners"
+        portalRole="shop_owner"
+        title="Shop Owners"
+        description="Manage accounts authorized for the Shop Owner portal"
         columns={retailerColumns}
-        emptyLabel="Retailers matching your current filters will appear here."
+        emptyLabel="Shop Owners matching your current filters will appear here."
       />
     </div>
   );

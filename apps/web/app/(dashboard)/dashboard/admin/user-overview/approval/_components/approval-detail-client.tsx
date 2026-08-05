@@ -100,8 +100,8 @@ export function ApprovalDetailClient({
     onSuccess: () => {
       toast.success(
         isWarehouse
-          ? "Application approved — user upgraded to warehouse operator"
-          : "Application approved — user upgraded to shop owner",
+          ? "Application approved — user upgraded to Warehouse Owner"
+          : "Application approved — user upgraded to Shop Owner",
       );
       queryClient.invalidateQueries();
       setActionType(null);
@@ -451,7 +451,7 @@ export function ApprovalDetailClient({
             <DialogDescription>
               {actionType === "approve"
                 ? `Approving will upgrade "${businessName}" to a ${
-                    isWarehouse ? "warehouse operator" : "shop owner"
+                    isWarehouse ? "Warehouse Owner" : "Shop Owner"
                   } account.`
                 : `Rejecting will deny "${businessName}'s" application.`}
               {actionType === "approve" &&

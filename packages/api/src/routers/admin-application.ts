@@ -5,21 +5,30 @@ import {
     sellerApplication,
     warehouseApplication,
 } from "@bikalpo-project/db/schema";
+import { BUSINESS_NATURES } from "../business-registration";
 import { adminProcedure } from "../index";
 
 const applicationStatusSchema = z.enum(["pending", "approved", "rejected"]);
 const listStatusSchema = z.enum(["pending", "approved", "rejected", "all"]);
 const applicationTypeSchema = z.enum(["seller", "warehouse", "all"]);
 const referralFilterSchema = z.enum(["direct", "invited", "all"]);
+const businessNatureFilterSchema = z.enum(["all", "unspecified", ...BUSINESS_NATURES]);
 
 const listInputSchema = z.object({
     search: z.string().optional(),
     status: listStatusSchema.default("all"),
     type: applicationTypeSchema.default("all"),
+    businessNature: businessNatureFilterSchema.default("all"),
     district: z.string().optional(),
     referral: referralFilterSchema.default("all"),
     page: z.number().default(1),
     limit: z.number().default(20),
+});
+
+const overviewInputSchema = listInputSchema.omit({
+    status: true,
+    page: true,
+    limit: true,
 });
 
 type ApplicationStatus = z.infer<typeof applicationStatusSchema>;
@@ -33,7 +42,7 @@ export type UnifiedApplicationRow = {
     phoneNumber: string;
     location: string | null;
     businessNature: string | null;
-    businessType: string | null;
+    productTypeName: string | null;
     status: ApplicationStatus;
     createdAt: Date;
     detailHref: string;
@@ -64,6 +73,11 @@ function buildSellerConditions(input: z.infer<typeof listInputSchema>) {
     if (input.district && input.district !== "all") {
         conditions.push(eq(sellerApplication.district, input.district));
     }
+    if (input.businessNature === "unspecified") {
+        conditions.push(isNull(sellerApplication.businessNature));
+    } else if (input.businessNature !== "all") {
+        conditions.push(eq(sellerApplication.businessNature, input.businessNature));
+    }
     if (input.referral === "direct") {
         conditions.push(isNull(sellerApplication.referralId));
     } else if (input.referral === "invited") {
@@ -92,6 +106,11 @@ function buildWarehouseConditions(input: z.infer<typeof listInputSchema>) {
     }
     if (input.district && input.district !== "all") {
         conditions.push(eq(warehouseApplication.district, input.district));
+    }
+    if (input.businessNature === "unspecified") {
+        conditions.push(isNull(warehouseApplication.businessNature));
+    } else if (input.businessNature !== "all") {
+        conditions.push(eq(warehouseApplication.businessNature, input.businessNature));
     }
     if (input.referral === "direct") {
         conditions.push(isNull(warehouseApplication.referralId));
@@ -153,7 +172,7 @@ function mapSellerRow(app: SellerApplicationListRow): UnifiedApplicationRow {
         phoneNumber: app.phoneNumber,
         location: app.district || app.area || null,
         businessNature: app.businessNature,
-        businessType: app.productType?.name ?? app.businessCategory,
+        productTypeName: app.productType?.name ?? app.businessCategory,
         status: app.status as ApplicationStatus,
         createdAt: app.createdAt,
         detailHref: `/dashboard/admin/user-overview/approval/seller/${app.id}`,
@@ -170,38 +189,84 @@ function mapWarehouseRow(app: WarehouseApplicationListRow): UnifiedApplicationRo
         phoneNumber: app.phoneNumber,
         location: app.district || app.area || null,
         businessNature: app.businessNature,
-        businessType: app.productType?.name ?? app.businessCategory,
+        productTypeName: app.productType?.name ?? app.businessCategory,
         status: app.status as ApplicationStatus,
         createdAt: app.createdAt,
         detailHref: `/dashboard/admin/user-overview/approval/warehouse/${app.id}`,
     };
 }
 
-async function countByStatus(
-    table: typeof sellerApplication | typeof warehouseApplication,
-) {
-    const [pending, approved, rejected, total] = await Promise.all([
-        db
-            .select({ count: count() })
-            .from(table)
-            .where(eq(table.status, "pending")),
-        db
-            .select({ count: count() })
-            .from(table)
-            .where(eq(table.status, "approved")),
-        db
-            .select({ count: count() })
-            .from(table)
-            .where(eq(table.status, "rejected")),
-        db.select({ count: count() }).from(table),
+async function loadApplications(input: z.infer<typeof listInputSchema>) {
+    const includeSeller = input.type === "all" || input.type === "seller";
+    const includeWarehouse = input.type === "all" || input.type === "warehouse";
+    const productTypeColumns = {
+        columns: { id: true, name: true },
+    } as const;
+
+    const [sellerRows, warehouseRows] = await Promise.all([
+        includeSeller
+            ? db.query.sellerApplication.findMany({
+                  where: buildSellerConditions(input),
+                  with: { productType: productTypeColumns },
+                  orderBy: [desc(sellerApplication.createdAt)],
+              })
+            : Promise.resolve([]),
+        includeWarehouse
+            ? db.query.warehouseApplication.findMany({
+                  where: buildWarehouseConditions(input),
+                  with: { productType: productTypeColumns },
+                  orderBy: [desc(warehouseApplication.createdAt)],
+              })
+            : Promise.resolve([]),
     ]);
 
-    return {
-        pending: Number(pending[0]?.count ?? 0),
-        approved: Number(approved[0]?.count ?? 0),
-        rejected: Number(rejected[0]?.count ?? 0),
-        total: Number(total[0]?.count ?? 0),
+    return [
+        ...sellerRows.map((row) => mapSellerRow(row as SellerApplicationListRow)),
+        ...warehouseRows.map((row) =>
+            mapWarehouseRow(row as WarehouseApplicationListRow),
+        ),
+    ].sort(
+        (a, b) =>
+            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+    );
+}
+
+async function loadApplicationCounts(input: z.infer<typeof listInputSchema>) {
+    const includeSeller = input.type === "all" || input.type === "seller";
+    const includeWarehouse = input.type === "all" || input.type === "warehouse";
+    const [sellerRows, warehouseRows] = await Promise.all([
+        includeSeller
+            ? db
+                  .select({ status: sellerApplication.status, count: count() })
+                  .from(sellerApplication)
+                  .where(buildSellerConditions(input))
+                  .groupBy(sellerApplication.status)
+            : Promise.resolve([]),
+        includeWarehouse
+            ? db
+                  .select({ status: warehouseApplication.status, count: count() })
+                  .from(warehouseApplication)
+                  .where(buildWarehouseConditions(input))
+                  .groupBy(warehouseApplication.status)
+            : Promise.resolve([]),
+    ]);
+
+    const countStatus = (
+        rows: Array<{ status: string; count: number }>,
+        status: ApplicationStatus,
+    ) => Number(rows.find((row) => row.status === status)?.count ?? 0);
+    const seller = {
+        pending: countStatus(sellerRows, "pending"),
+        approved: countStatus(sellerRows, "approved"),
+        rejected: countStatus(sellerRows, "rejected"),
     };
+    const warehouse = {
+        pending: countStatus(warehouseRows, "pending"),
+        approved: countStatus(warehouseRows, "approved"),
+        rejected: countStatus(warehouseRows, "rejected"),
+    };
+
+    return { seller, warehouse };
 }
 
 export const adminApplicationRouter = {
@@ -210,21 +275,29 @@ export const adminApplicationRouter = {
             method: "GET",
             path: "/admin/applications/overview",
             tags: ["Admin Application"],
-            summary: "Get unified application KPI counts",
+            summary: "Get Shop Owner and Warehouse Owner application KPI counts",
         })
-        .handler(async () => {
-            const [seller, warehouse] = await Promise.all([
-                countByStatus(sellerApplication),
-                countByStatus(warehouseApplication),
-            ]);
+        .input(overviewInputSchema)
+        .handler(async ({ input }) => {
+            const counts = await loadApplicationCounts({
+                ...input,
+                status: "all",
+                page: 1,
+                limit: 1,
+            });
+            const pendingShopOwner = counts.seller.pending;
+            const pendingWarehouseOwner = counts.warehouse.pending;
+            const pending = pendingShopOwner + pendingWarehouseOwner;
+            const approved = counts.seller.approved + counts.warehouse.approved;
+            const rejected = counts.seller.rejected + counts.warehouse.rejected;
 
             return {
-                total: seller.total + warehouse.total,
-                pending: seller.pending + warehouse.pending,
-                approved: seller.approved + warehouse.approved,
-                rejected: seller.rejected + warehouse.rejected,
-                pendingSeller: seller.pending,
-                pendingWarehouse: warehouse.pending,
+                total: pending + approved + rejected,
+                pending,
+                approved,
+                rejected,
+                pendingShopOwner,
+                pendingWarehouseOwner,
             };
         }),
 
@@ -236,7 +309,12 @@ export const adminApplicationRouter = {
             summary: "Get filter dropdown options for applications list",
         })
         .handler(async () => {
-            const [sellerDistricts, warehouseDistricts] = await Promise.all([
+            const [
+                sellerDistricts,
+                warehouseDistricts,
+                sellerBusinessNatures,
+                warehouseBusinessNatures,
+            ] = await Promise.all([
                 db
                     .selectDistinct({ district: sellerApplication.district })
                     .from(sellerApplication)
@@ -249,6 +327,14 @@ export const adminApplicationRouter = {
                     .where(
                         sql`${warehouseApplication.district} IS NOT NULL AND ${warehouseApplication.district} != ''`,
                     ),
+                db
+                    .selectDistinct({ businessNature: sellerApplication.businessNature })
+                    .from(sellerApplication),
+                db
+                    .selectDistinct({
+                        businessNature: warehouseApplication.businessNature,
+                    })
+                    .from(warehouseApplication),
             ]);
 
             const districts = [
@@ -260,7 +346,20 @@ export const adminApplicationRouter = {
                 ),
             ].sort((a, b) => a.localeCompare(b));
 
-            return { districts };
+            const rawBusinessNatures = [
+                ...sellerBusinessNatures.map((row) => row.businessNature),
+                ...warehouseBusinessNatures.map((row) => row.businessNature),
+            ];
+            const businessNatures = [
+                ...(rawBusinessNatures.some((nature) => !nature)
+                    ? (["unspecified"] as const)
+                    : []),
+                ...BUSINESS_NATURES.filter((nature) =>
+                    rawBusinessNatures.includes(nature),
+                ),
+            ];
+
+            return { districts, businessNatures };
         }),
 
     list: adminProcedure
@@ -268,45 +367,11 @@ export const adminApplicationRouter = {
             method: "GET",
             path: "/admin/applications",
             tags: ["Admin Application"],
-            summary: "List unified seller and warehouse applications",
+            summary: "List Shop Owner and Warehouse Owner applications",
         })
         .input(listInputSchema)
         .handler(async ({ input }) => {
-            const includeSeller = input.type === "all" || input.type === "seller";
-            const includeWarehouse =
-                input.type === "all" || input.type === "warehouse";
-
-            const productTypeColumns = {
-                columns: { id: true, name: true },
-            } as const;
-
-            const [sellerRows, warehouseRows] = await Promise.all([
-                includeSeller
-                    ? db.query.sellerApplication.findMany({
-                          where: buildSellerConditions(input),
-                          with: { productType: productTypeColumns },
-                          orderBy: [desc(sellerApplication.createdAt)],
-                      })
-                    : Promise.resolve([]),
-                includeWarehouse
-                    ? db.query.warehouseApplication.findMany({
-                          where: buildWarehouseConditions(input),
-                          with: { productType: productTypeColumns },
-                          orderBy: [desc(warehouseApplication.createdAt)],
-                      })
-                    : Promise.resolve([]),
-            ]);
-
-            const merged = [
-                ...sellerRows.map((row) => mapSellerRow(row as SellerApplicationListRow)),
-                ...warehouseRows.map((row) =>
-                    mapWarehouseRow(row as WarehouseApplicationListRow),
-                ),
-            ].sort(
-                (a, b) =>
-                    new Date(b.createdAt).getTime() -
-                    new Date(a.createdAt).getTime(),
-            );
+            const merged = await loadApplications(input);
 
             const total = merged.length;
             const offset = (input.page - 1) * input.limit;

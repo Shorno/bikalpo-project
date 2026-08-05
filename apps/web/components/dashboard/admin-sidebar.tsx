@@ -190,13 +190,13 @@ function getAdminNavGroups(pendingApplications = 0): NavGroup[] {
       label: "User Overviews",
       items: [
         {
-          title: "Retailers",
+          title: "Shop Owners",
           url: `${ADMIN_BASE}/user-overview/retailers`,
           icon: StoreIcon,
           activePrefixes: [`${ADMIN_BASE}/user-overview/retailers`],
         },
         {
-          title: "Wholesalers",
+          title: "Warehouse Owners",
           url: `${ADMIN_BASE}/user-overview/wholesalers`,
           icon: WarehouseIcon,
           activePrefixes: [`${ADMIN_BASE}/user-overview/wholesalers`],

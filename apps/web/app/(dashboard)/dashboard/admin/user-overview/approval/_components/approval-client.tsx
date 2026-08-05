@@ -18,7 +18,8 @@ import {
   Search,
   XCircle,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { parseAsInteger, parseAsString, useQueryState } from "nuqs";
+import { useMemo } from "react";
 import {
   DashboardKpiCard,
   DashboardKpiGrid,
@@ -40,12 +41,17 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { BUSINESS_NATURES } from "@/constants/seller-registration";
 import { orpc } from "@/utils/orpc";
 import { type ApplicationRow, applicationColumns } from "./application-columns";
 
 type StatusFilter = "all" | "pending" | "approved" | "rejected";
 type TypeFilter = "all" | "seller" | "warehouse";
 type ReferralFilter = "all" | "direct" | "invited";
+type BusinessNatureFilter =
+  | "all"
+  | "unspecified"
+  | (typeof BUSINESS_NATURES)[number]["id"];
 
 const PAGE_SIZE = 20;
 
@@ -101,28 +107,60 @@ function generatePageNumbers(
   return pages;
 }
 
-export function ApprovalClient() {
-  const [status, setStatus] = useState<StatusFilter>("pending");
-  const [type, setType] = useState<TypeFilter>("all");
-  const [referral, setReferral] = useState<ReferralFilter>("all");
-  const [district, setDistrict] = useState("all");
-  const [page, setPage] = useState(1);
-  const [search, setSearch] = useState("");
-  const [debouncedSearch, setDebouncedSearch] = useState("");
+function formatBusinessNature(value: string) {
+  if (value === "unspecified") return "Unspecified (legacy)";
+  return BUSINESS_NATURES.find((nature) => nature.id === value)?.label ?? value;
+}
 
-  const timerRef = useRef<ReturnType<typeof setTimeout>>(null);
-  useEffect(() => {
-    timerRef.current = setTimeout(() => {
-      setDebouncedSearch(search);
-      setPage(1);
-    }, 350);
-    return () => {
-      if (timerRef.current) clearTimeout(timerRef.current);
-    };
-  }, [search]);
+export function ApprovalClient() {
+  const [statusValue, setStatus] = useQueryState(
+    "status",
+    parseAsString.withDefault("pending").withOptions({ clearOnDefault: true }),
+  );
+  const [typeValue, setType] = useQueryState(
+    "type",
+    parseAsString.withDefault("all").withOptions({ clearOnDefault: true }),
+  );
+  const [businessNatureValue, setBusinessNature] = useQueryState(
+    "nature",
+    parseAsString.withDefault("all").withOptions({ clearOnDefault: true }),
+  );
+  const [district, setDistrict] = useQueryState(
+    "district",
+    parseAsString.withDefault("all").withOptions({ clearOnDefault: true }),
+  );
+  const [referralValue, setReferral] = useQueryState(
+    "referral",
+    parseAsString.withDefault("all").withOptions({ clearOnDefault: true }),
+  );
+  const [search, setSearch] = useQueryState(
+    "q",
+    parseAsString.withDefault("").withOptions({ clearOnDefault: true }),
+  );
+  const [page, setPage] = useQueryState(
+    "page",
+    parseAsInteger.withDefault(1).withOptions({ clearOnDefault: true }),
+  );
+  const status = statusValue as StatusFilter;
+  const type = typeValue as TypeFilter;
+  const businessNature = businessNatureValue as BusinessNatureFilter;
+  const referral = referralValue as ReferralFilter;
+
+  const overviewInput = useMemo(
+    () => ({
+      search: search.trim() || undefined,
+      type,
+      businessNature,
+      referral,
+      district: district !== "all" ? district : undefined,
+    }),
+    [search, type, businessNature, referral, district],
+  );
 
   const { data: overview } = useQuery({
-    ...orpc.adminApplication.getOverview.queryOptions(),
+    ...orpc.adminApplication.getOverview.queryOptions({
+      input: overviewInput,
+    }),
   });
 
   const { data: filterOptions } = useQuery({
@@ -131,15 +169,12 @@ export function ApprovalClient() {
 
   const listInput = useMemo(
     () => ({
-      search: debouncedSearch || undefined,
+      ...overviewInput,
       status,
-      type,
-      referral,
-      district: district !== "all" ? district : undefined,
       page,
       limit: PAGE_SIZE,
     }),
-    [debouncedSearch, status, type, referral, district, page],
+    [overviewInput, status, page],
   );
 
   const {
@@ -165,8 +200,8 @@ export function ApprovalClient() {
   });
 
   const selectStatus = (next: StatusFilter) => {
-    setStatus(next);
-    setPage(1);
+    void setStatus(next);
+    void setPage(1);
   };
 
   const counts: Record<StatusFilter, number> = {
@@ -192,8 +227,8 @@ export function ApprovalClient() {
             )}
           </div>
           <p className="mt-0.5 text-sm text-muted-foreground">
-            Onboarding and verification workflow for retailer and wholesaler
-            requests
+            Onboarding and verification workflow for Shop Owner and Warehouse
+            Owner requests
           </p>
         </div>
       </div>
@@ -211,8 +246,8 @@ export function ApprovalClient() {
             footer={
               block.key === "pending" && overview
                 ? {
-                    label: "Seller / Warehouse",
-                    value: `${overview.pendingSeller} / ${overview.pendingWarehouse}`,
+                    label: "Shop Owner / Warehouse Owner",
+                    value: `${overview.pendingShopOwner} / ${overview.pendingWarehouseOwner}`,
                   }
                 : undefined
             }
@@ -226,7 +261,10 @@ export function ApprovalClient() {
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <input
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={(e) => {
+                void setSearch(e.target.value);
+                void setPage(1);
+              }}
               placeholder="Name / Phone / Request ID..."
               className="h-9 w-full rounded-md border bg-background pl-9 pr-3 text-sm outline-none transition-colors placeholder:text-muted-foreground focus:border-ring focus:ring-2 focus:ring-ring/20"
             />
@@ -248,8 +286,8 @@ export function ApprovalClient() {
           <Select
             value={type}
             onValueChange={(v) => {
-              setType(v as TypeFilter);
-              setPage(1);
+              void setType(v);
+              void setPage(1);
             }}
           >
             <SelectTrigger className="h-9 w-[130px]">
@@ -257,15 +295,34 @@ export function ApprovalClient() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All Types</SelectItem>
-              <SelectItem value="seller">Seller</SelectItem>
-              <SelectItem value="warehouse">Warehouse</SelectItem>
+              <SelectItem value="seller">Shop Owner</SelectItem>
+              <SelectItem value="warehouse">Warehouse Owner</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select
+            value={businessNature}
+            onValueChange={(v) => {
+              void setBusinessNature(v);
+              void setPage(1);
+            }}
+          >
+            <SelectTrigger className="h-9 w-[180px]">
+              <SelectValue placeholder="Business Nature" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Business Natures</SelectItem>
+              {(filterOptions?.businessNatures ?? []).map((nature) => (
+                <SelectItem key={nature} value={nature}>
+                  {formatBusinessNature(nature)}
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
           <Select
             value={district}
             onValueChange={(v) => {
-              setDistrict(v);
-              setPage(1);
+              void setDistrict(v);
+              void setPage(1);
             }}
           >
             <SelectTrigger className="h-9 w-[140px]">
@@ -283,8 +340,8 @@ export function ApprovalClient() {
           <Select
             value={referral}
             onValueChange={(v) => {
-              setReferral(v as ReferralFilter);
-              setPage(1);
+              void setReferral(v);
+              void setPage(1);
             }}
           >
             <SelectTrigger className="h-9 w-[130px]">
@@ -385,7 +442,7 @@ export function ApprovalClient() {
                 size="icon"
                 className="h-8 w-8"
                 disabled={page <= 1}
-                onClick={() => setPage(1)}
+                onClick={() => void setPage(1)}
               >
                 <ChevronsLeft className="h-4 w-4" />
               </Button>
@@ -394,7 +451,7 @@ export function ApprovalClient() {
                 size="icon"
                 className="h-8 w-8"
                 disabled={page <= 1}
-                onClick={() => setPage((p) => p - 1)}
+                onClick={() => void setPage(page - 1)}
               >
                 <ChevronLeft className="h-4 w-4" />
               </Button>
@@ -412,7 +469,7 @@ export function ApprovalClient() {
                     variant={p === page ? "default" : "outline"}
                     size="icon"
                     className="h-8 w-8 text-xs"
-                    onClick={() => setPage(p as number)}
+                    onClick={() => void setPage(p as number)}
                   >
                     {p}
                   </Button>
@@ -423,7 +480,7 @@ export function ApprovalClient() {
                 size="icon"
                 className="h-8 w-8"
                 disabled={page >= totalPages}
-                onClick={() => setPage((p) => p + 1)}
+                onClick={() => void setPage(page + 1)}
               >
                 <ChevronRight className="h-4 w-4" />
               </Button>
@@ -432,7 +489,7 @@ export function ApprovalClient() {
                 size="icon"
                 className="h-8 w-8"
                 disabled={page >= totalPages}
-                onClick={() => setPage(totalPages)}
+                onClick={() => void setPage(totalPages)}
               >
                 <ChevronsRight className="h-4 w-4" />
               </Button>

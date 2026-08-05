@@ -12,6 +12,8 @@ import { warehouseApplication } from "@bikalpo-project/db/schema";
 import { eq, desc } from "drizzle-orm";
 import { z } from "zod";
 
+import { assertBusinessNatureMatchesApplicationPath } from "../business-registration";
+
 import { protectedProcedure, adminProcedure } from "../index";
 import {
     buildSharedApplicationValues,
@@ -26,10 +28,22 @@ import { createPendingKycForUser, deriveKycStatus, ensurePendingKycForUser, getL
 // SCHEMAS
 // ════════════════════════════════════════════════════════════════
 
-const submitApplicationSchema = sharedApplicationFieldsSchema.extend({
-    warehouseName: z.string().min(2).max(100),
-    warehouseAddress: z.string().min(5).max(500),
-});
+export const warehouseApplicationInputSchema = sharedApplicationFieldsSchema
+    .extend({
+        warehouseName: z.string().min(2).max(100),
+        warehouseAddress: z.string().min(5).max(500),
+    })
+    .superRefine((input, context) => {
+        try {
+            assertBusinessNatureMatchesApplicationPath(input.businessNature, "warehouse");
+        } catch (error) {
+            context.addIssue({
+                code: "custom",
+                path: ["businessNature"],
+                message: error instanceof Error ? error.message : "Invalid business nature for a warehouse owner application",
+            });
+        }
+    });
 
 const reviewApplicationSchema = z.object({
     applicationId: z.string(),
@@ -50,7 +64,7 @@ export const warehouseApplicationRouter = {
             tags: ["Warehouse Application"],
             summary: "Submit a new warehouse application",
         })
-        .input(submitApplicationSchema)
+        .input(warehouseApplicationInputSchema)
         .handler(async ({ input, context }) => {
             const userId = context.session.user.id;
 
@@ -285,7 +299,7 @@ export const warehouseApplicationRouter = {
             tags: ["Warehouse Application"],
             summary: "Update own pending/rejected warehouse application",
         })
-        .input(submitApplicationSchema)
+        .input(warehouseApplicationInputSchema)
         .handler(async ({ input, context }) => {
             const userId = context.session.user.id;
 

@@ -4,13 +4,9 @@ import { productType, sellerApplication, warehouseApplication } from "@bikalpo-p
 import { and, eq, like, sql } from "drizzle-orm";
 import { z } from "zod";
 
-export const BUSINESS_NATURES = [
-    "retail_shop",
-    "wholesaler",
-    "distributor",
-    "manufacturer",
-    "importer",
-] as const;
+import { BUSINESS_NATURES } from "../../business-registration";
+
+export { BUSINESS_NATURES };
 
 export const documentUrlsSchema = z.object({
     tradeLicense: z.string().optional(),
@@ -80,7 +76,7 @@ export async function resolveActiveProductType(productTypeId: number) {
 
     if (!type) {
         throw new ORPCError("BAD_REQUEST", {
-            message: "Selected business type is invalid or inactive",
+            message: "Selected product type is invalid or inactive",
         });
     }
 

@@ -3,8 +3,8 @@ import { Suspense } from "react";
 import { UserDetailClient } from "../../_components/user-detail-client";
 
 export const metadata = {
-  title: "Wholesaler Details | Admin",
-  description: "View and manage wholesaler account details",
+  title: "Warehouse Owner Details | Admin",
+  description: "View and manage Warehouse Owner account details",
 };
 
 export default async function WholesalerDetailPage({

@@ -6,7 +6,7 @@ import {
 
 export const metadata = {
   title: "Application Details | Admin",
-  description: "Review a retailer or wholesaler onboarding request",
+  description: "Review a Shop Owner or Warehouse Owner onboarding request",
 };
 
 const VALID_TYPES: ApprovalType[] = ["seller", "warehouse"];

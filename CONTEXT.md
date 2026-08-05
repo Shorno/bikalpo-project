@@ -2,6 +2,24 @@
 
 Bikalpo coordinates marketplace orders across consumer, retailer, warehouse, and delivery contexts. Products keep a shared identity while each owner controls its own configuration, pricing, and inventory. Operational fulfillment language stays distinct from the simplified journey presented to consumers.
 
+## Business Onboarding
+
+**Business Nature**:
+An applicant's declared operating model: Retail Shop, Wholesaler, Distributor, Manufacturer, or Importer. It selects an application path but is not an authorization role or a Product Type.
+_Avoid_: User role, business type, product type
+
+**Shop Owner**:
+An approved business account authorized to use the Shop portal. Retail Shop, Manufacturer, and Importer applications enter this role.
+_Avoid_: Retailer when referring to portal authorization, seller role
+
+**Warehouse Owner**:
+An approved business account authorized to use the Warehouse portal. Wholesaler and Distributor applications enter this role.
+_Avoid_: Wholesaler when referring to every Warehouse portal account
+
+**Seller Capability**:
+The independent ability of a Shop Owner to sell products to consumers; Shop Owner membership alone does not imply this capability.
+_Avoid_: Shop Owner role, retailer role
+
 ## Marketplace Catalog and Ordering
 
 This context describes how products keep a shared identity while each owner controls its own configuration, pricing, and inventory. It also describes how consumers buy known catalog items either from one chosen retailer or by requesting comparable offers from nearby retailers.

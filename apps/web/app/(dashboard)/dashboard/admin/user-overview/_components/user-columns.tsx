@@ -18,7 +18,9 @@ export type UserRow = {
   location: string | null;
   kycStatus: UserKycStatus;
   accountStatus: "active" | "pending" | "suspended";
-  typeLabel: string | null;
+  businessNature: string | null;
+  businessNatureLabel: string;
+  productTypeName: string | null;
   createdAt: Date | string;
 };
 
@@ -48,7 +50,6 @@ function DotLabel({ config }: { config: { label: string; dot: string } }) {
 }
 
 function buildBaseColumns(
-  typeColumnHeader: string,
   listSegment: "retailers" | "wholesalers",
 ): ColumnDef<UserRow>[] {
   return [
@@ -101,11 +102,20 @@ function buildBaseColumns(
       ),
     },
     {
-      accessorKey: "typeLabel",
-      header: typeColumnHeader,
+      accessorKey: "businessNatureLabel",
+      header: "Business Nature",
       cell: ({ row }) => (
         <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-          {row.original.typeLabel || "—"}
+          {row.original.businessNatureLabel}
+        </span>
+      ),
+    },
+    {
+      accessorKey: "productTypeName",
+      header: "Product Type",
+      cell: ({ row }) => (
+        <span className="text-sm text-muted-foreground">
+          {row.original.productTypeName || "—"}
         </span>
       ),
     },
@@ -131,8 +141,5 @@ function buildBaseColumns(
   ];
 }
 
-export const retailerColumns = buildBaseColumns("Type", "retailers");
-export const wholesalerColumns = buildBaseColumns(
-  "Business Nature",
-  "wholesalers",
-);
+export const retailerColumns = buildBaseColumns("retailers");
+export const wholesalerColumns = buildBaseColumns("wholesalers");
