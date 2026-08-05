@@ -4,7 +4,10 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import * as React from "react";
 import { toast } from "sonner";
 import { orpc } from "@/utils/orpc";
-import { DeliveredModal } from "./delivered-modal";
+import {
+  type DeliveredCylinderHandoff,
+  DeliveredModal,
+} from "./delivered-modal";
 import { FailedModal } from "./failed-modal";
 import { InvoicesList } from "./invoices-list";
 import { ReturnedModal } from "./returned-modal";
@@ -104,13 +107,36 @@ export function DeliveryExecution({ group }: DeliveryExecutionProps) {
   );
 
   // Handle delivered confirm
-  const handleDeliveredConfirm = React.useCallback(() => {
-    if (!deliveredInvoiceId) return;
-    deliveredMutation.mutate({
-      deliveryInvoiceId: deliveredInvoiceId,
-      deliveryOtp: otp,
+  const deliveredExchangeLines = React.useMemo(() => {
+    const selected = group.invoices.find(
+      (invoice) => invoice.id === deliveredInvoiceId,
+    );
+    return (selected?.invoice.items ?? []).flatMap((item) => {
+      const source = item.orderItem;
+      return source && source.expectedEmptyPackQty > 0
+        ? [
+            {
+              orderItemId: source.id,
+              productName: item.productName,
+              expectedEmptyPackQty: source.expectedEmptyPackQty,
+              exchangeCreditAmount: Number(source.exchangeCreditAmount),
+            },
+          ]
+        : [];
     });
-  }, [deliveredInvoiceId, otp, deliveredMutation]);
+  }, [deliveredInvoiceId, group.invoices]);
+
+  const handleDeliveredConfirm = React.useCallback(
+    (handoff: DeliveredCylinderHandoff) => {
+      if (!deliveredInvoiceId) return;
+      deliveredMutation.mutate({
+        deliveryInvoiceId: deliveredInvoiceId,
+        deliveryOtp: otp,
+        ...handoff,
+      });
+    },
+    [deliveredInvoiceId, otp, deliveredMutation],
+  );
 
   // Handle failed confirm
   const handleFailedConfirm = React.useCallback(() => {
@@ -156,6 +182,7 @@ export function DeliveryExecution({ group }: DeliveryExecutionProps) {
         onOtpChange={setOtp}
         onClose={closeDeliveredModal}
         onConfirm={handleDeliveredConfirm}
+        exchangeLines={deliveredExchangeLines}
       />
 
       <FailedModal

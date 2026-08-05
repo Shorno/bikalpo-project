@@ -1,208 +1,197 @@
 "use client";
 
+import type { ColumnDef } from "@tanstack/react-table";
+import { parseAsString, useQueryState } from "nuqs";
+import { useMemo } from "react";
 import {
-  type ColumnDef,
-  type ColumnFiltersState,
-  flexRender,
-  getCoreRowModel,
-  getFilteredRowModel,
-  getPaginationRowModel,
-  getSortedRowModel,
-  type SortingState,
-  useReactTable,
-} from "@tanstack/react-table";
-import * as React from "react";
-import NewCoreProductDialog from "./new-core-product-dialog";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+  ActiveStatusBadge,
+  SetupEntityTable,
+  SetupToolbar,
+} from "@/components/features/product-setup";
 import type { CoreProductWithRelations } from "./core-product-columns";
+import NewCoreProductDialog from "./new-core-product-dialog";
 
 interface CoreProductTableProps {
-  columns: ColumnDef<CoreProductWithRelations>[];
+  columns: ColumnDef<CoreProductWithRelations, unknown>[];
   data: CoreProductWithRelations[];
-  categories?: { id: number; name: string }[];
 }
 
 export default function CoreProductTable({
   columns,
   data,
-  categories = [],
 }: CoreProductTableProps) {
-  const [sorting, setSorting] = React.useState<SortingState>([]);
-  const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>(
-    [],
+  const [search, setSearch] = useQueryState(
+    "q",
+    parseAsString.withDefault("").withOptions({ clearOnDefault: true }),
   );
-  const [globalFilter, setGlobalFilter] = React.useState("");
-  const [categoryFilter, setCategoryFilter] = React.useState("all");
+  const [type, setType] = useQueryState(
+    "type",
+    parseAsString.withDefault("all").withOptions({ clearOnDefault: true }),
+  );
+  const [category, setCategory] = useQueryState(
+    "category",
+    parseAsString.withDefault("all").withOptions({ clearOnDefault: true }),
+  );
+  const [subcategory, setSubcategory] = useQueryState(
+    "subcategory",
+    parseAsString.withDefault("all").withOptions({ clearOnDefault: true }),
+  );
+  const [status, setStatus] = useQueryState(
+    "status",
+    parseAsString.withDefault("all").withOptions({ clearOnDefault: true }),
+  );
 
-  // Filter data by status and category
-  const filteredData = React.useMemo(() => {
-    let result = data;
-
-    if (categoryFilter !== "all") {
-      const catId = parseInt(categoryFilter, 10);
-      result = result.filter((item) => item.categoryId === catId);
+  const types = useMemo(() => {
+    const values = new Map<number, string>();
+    for (const item of data) {
+      if (item.category.type)
+        values.set(item.category.type.id, item.category.type.name);
     }
-
-    if (globalFilter.trim()) {
-      const search = globalFilter.toLowerCase();
-      result = result.filter(
-        (item) =>
-          item.name.toLowerCase().includes(search) ||
-          item.sku.toLowerCase().includes(search) ||
-          item.category.name.toLowerCase().includes(search) ||
-          (item.subCategory?.name ?? "").toLowerCase().includes(search),
+    return [...values.entries()].map(([id, name]) => ({ id, name }));
+  }, [data]);
+  const categories = useMemo(() => {
+    const values = new Map<number, string>();
+    for (const item of data) {
+      if (type === "all" || item.category.typeId === Number(type)) {
+        values.set(item.category.id, item.category.name);
+      }
+    }
+    return [...values.entries()].map(([id, name]) => ({ id, name }));
+  }, [data, type]);
+  const subcategories = useMemo(() => {
+    const values = new Map<number, string>();
+    for (const item of data) {
+      if (
+        item.subCategory &&
+        (category === "all" || item.categoryId === Number(category))
+      ) {
+        values.set(item.subCategory.id, item.subCategory.name);
+      }
+    }
+    return [...values.entries()].map(([id, name]) => ({ id, name }));
+  }, [category, data]);
+  const filteredData = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    return data.filter((item) => {
+      const matchesSearch =
+        !query ||
+        item.name.toLowerCase().includes(query) ||
+        item.sku.toLowerCase().includes(query) ||
+        item.composedSku?.toLowerCase().includes(query);
+      const matchesType =
+        type === "all" || item.category.typeId === Number(type);
+      const matchesCategory =
+        category === "all" || item.categoryId === Number(category);
+      const matchesSubcategory =
+        subcategory === "all" || item.subCategoryId === Number(subcategory);
+      const matchesStatus =
+        status === "all" ||
+        (status === "active" ? item.isActive : !item.isActive);
+      return (
+        matchesSearch &&
+        matchesType &&
+        matchesCategory &&
+        matchesSubcategory &&
+        matchesStatus
       );
-    }
-
-    return result;
-  }, [data, categoryFilter, globalFilter]);
-
-  const table = useReactTable({
-    data: filteredData,
-    columns,
-    getCoreRowModel: getCoreRowModel(),
-    getPaginationRowModel: getPaginationRowModel(),
-    getSortedRowModel: getSortedRowModel(),
-    getFilteredRowModel: getFilteredRowModel(),
-    onSortingChange: setSorting,
-    onColumnFiltersChange: setColumnFilters,
-    state: {
-      sorting,
-      columnFilters,
-    },
-    initialState: {
-      pagination: { pageSize: 20 },
-    },
-  });
-
-  // Unique categories from data for filter
-  const uniqueCategories = React.useMemo(() => {
-    if (categories.length > 0) return categories;
-    const map = new Map<number, string>();
-    data.forEach((item) => map.set(item.categoryId, item.category.name));
-    return Array.from(map.entries()).map(([id, name]) => ({ id, name }));
-  }, [data, categories]);
+    });
+  }, [category, data, search, status, subcategory, type]);
 
   return (
     <div className="space-y-4">
-      {/* Toolbar */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex flex-1 gap-2 flex-wrap">
-          <Input
-            placeholder="Search by name, SKU..."
-            value={globalFilter}
-            onChange={(e) => setGlobalFilter(e.target.value)}
-            className="max-w-xs"
-          />
-          <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-            <SelectTrigger className="w-[180px]">
-              <SelectValue placeholder="Category" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Categories</SelectItem>
-              {uniqueCategories.map((c) => (
-                <SelectItem key={c.id} value={String(c.id)}>
-                  {c.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
-        </div>
-        <NewCoreProductDialog />
-      </div>
-
-      {/* Table */}
-      <div className="rounded-md border">
-        <Table>
-          <TableHeader>
-            {table.getHeaderGroups().map((headerGroup) => (
-              <TableRow key={headerGroup.id}>
-                {headerGroup.headers.map((header) => (
-                  <TableHead key={header.id}>
-                    {header.isPlaceholder
-                      ? null
-                      : flexRender(
-                          header.column.columnDef.header,
-                          header.getContext(),
-                        )}
-                  </TableHead>
-                ))}
-              </TableRow>
-            ))}
-          </TableHeader>
-          <TableBody>
-            {table.getRowModel().rows?.length ? (
-              table.getRowModel().rows.map((row) => (
-                <TableRow key={row.id}>
-                  {row.getVisibleCells().map((cell) => (
-                    <TableCell key={cell.id}>
-                      {flexRender(
-                        cell.column.columnDef.cell,
-                        cell.getContext(),
-                      )}
-                    </TableCell>
-                  ))}
-                </TableRow>
-              ))
-            ) : (
-              <TableRow>
-                <TableCell
-                  colSpan={columns.length}
-                  className="h-24 text-center text-muted-foreground"
-                >
-                  No core products found.
-                </TableCell>
-              </TableRow>
-            )}
-          </TableBody>
-        </Table>
-      </div>
-
-      {/* Pagination */}
-      <div className="flex items-center justify-between">
-        <p className="text-sm text-muted-foreground">
-          {filteredData.length} of {data.length} core products
-        </p>
-        <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => table.previousPage()}
-            disabled={!table.getCanPreviousPage()}
-          >
-            Previous
-          </Button>
-          <span className="text-sm text-muted-foreground">
-            Page {table.getState().pagination.pageIndex + 1} of{" "}
-            {table.getPageCount()}
-          </span>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => table.nextPage()}
-            disabled={!table.getCanNextPage()}
-          >
-            Next
-          </Button>
-        </div>
-      </div>
+      <SetupToolbar
+        filterDefinitions={[
+          {
+            key: "type",
+            label: "Type",
+            value: type,
+            onChange: (value) => {
+              void setType(value);
+              void setCategory("all");
+              void setSubcategory("all");
+            },
+            options: toFilterOptions("types", types),
+          },
+          {
+            key: "category",
+            label: "Category",
+            value: category,
+            onChange: (value) => {
+              void setCategory(value);
+              void setSubcategory("all");
+            },
+            options: toFilterOptions("categories", categories),
+          },
+          {
+            key: "subcategory",
+            label: "Sub Category",
+            value: subcategory,
+            onChange: (value) => void setSubcategory(value),
+            options: toFilterOptions("Sub Categories", subcategories),
+          },
+          {
+            key: "status",
+            label: "Status",
+            value: status,
+            onChange: (value) => void setStatus(value),
+            options: [
+              { value: "all", label: "All statuses" },
+              { value: "active", label: "Active" },
+              { value: "inactive", label: "Inactive" },
+            ],
+          },
+        ]}
+        hasActiveFilters={Boolean(
+          search ||
+            type !== "all" ||
+            category !== "all" ||
+            subcategory !== "all" ||
+            status !== "all",
+        )}
+        onClear={() => {
+          void setSearch("");
+          void setType("all");
+          void setCategory("all");
+          void setSubcategory("all");
+          void setStatus("all");
+        }}
+        onSearchChange={(value) => void setSearch(value)}
+        searchPlaceholder="Search Core Identity name or SKU"
+        searchValue={search}
+      />
+      <SetupEntityTable
+        columns={columns}
+        data={filteredData}
+        emptyAction={data.length === 0 ? <NewCoreProductDialog /> : undefined}
+        emptyDescription="Create a Core Identity within a Sub Category to define reusable brand and variant structure."
+        emptyTitle="No Core Identities found"
+        getRowId={(row) => String(row.id)}
+        mobile={{
+          href: (row) => `/dashboard/admin/core-products/${row.id}`,
+          title: (row) => row.name,
+          description: (row) => row.composedSku ?? row.sku,
+          meta: (row) => [
+            [row.category.type?.name, row.category.name, row.subCategory?.name]
+              .filter(Boolean)
+              .join(" / "),
+            `${row.configuredBrandCount ?? 0} brands`,
+          ],
+          status: (row) => <ActiveStatusBadge isActive={row.isActive} />,
+        }}
+      />
     </div>
   );
+}
+
+function toFilterOptions(
+  allLabel: string,
+  options: { id: number; name: string }[],
+) {
+  return [
+    { value: "all", label: `All ${allLabel}` },
+    ...options.map((option) => ({
+      value: String(option.id),
+      label: option.name,
+    })),
+  ];
 }

@@ -26,6 +26,7 @@ import {
     getFulfillmentOwner,
 } from "./helpers/fulfillment-owner";
 import { syncOrderFromDeliveredInvoice } from "./helpers/invoice-fulfillment";
+import { settleRetailerCylinderHandoff } from "./helpers/retailer-cylinder-handoff";
 import { DELIVERY_START_ORDER_STATUSES } from "./helpers/retailer-delivery-handoff";
 import {
     createRetailerOrderStockWriter,
@@ -446,7 +447,17 @@ export const deliverymanRouter = {
                                             warehouseName: true,
                                         },
                                     },
-                                    items: true,
+                                    items: {
+                                        with: {
+                                            orderItem: {
+                                                columns: {
+                                                    id: true,
+                                                    expectedEmptyPackQty: true,
+                                                    exchangeCreditAmount: true,
+                                                },
+                                            },
+                                        },
+                                    },
                                     order: {
                                         columns: {
                                             id: true,
@@ -616,6 +627,13 @@ export const deliverymanRouter = {
             paymentMethod: z.enum(["cash", "bkash", "nagad", "bank_transfer", "other"]).optional(),
             amountCollected: z.number().optional(),
             transactionId: z.string().optional(),
+            acceptedReturns: z.array(z.object({
+                orderItemId: z.number().int().positive(),
+                quantity: z.number().int().min(0),
+            })).default([]),
+            handoffBalancePaid: z.boolean().default(false),
+            handoffPaymentMethod: z.string().trim().max(30).optional(),
+            handoffPaymentReference: z.string().trim().max(150).optional(),
         }))
         .handler(async ({ input, context }) => {
             const warehouseId = getSessionWarehouseId(context);
@@ -636,7 +654,23 @@ export const deliverymanRouter = {
             if (deliveryInv.status !== "pending") throw new ORPCError("BAD_REQUEST", { message: "Already processed" });
             if (deliveryInv.deliveryOtp !== input.deliveryOtp) throw new ORPCError("BAD_REQUEST", { message: "Invalid OTP" });
 
-            await db.transaction(async (tx) => {
+            const cylinderSettlement = await db.transaction(async (tx) => {
+                const settlement =
+                    deliveryInv.invoice?.order?.orderType === "b2c" &&
+                    deliveryInv.group.shopId
+                        ? await settleRetailerCylinderHandoff(tx, {
+                              shopId: deliveryInv.group.shopId,
+                              invoiceId: deliveryInv.invoiceId,
+                              actorId: context.session.user.id,
+                              deliveryGroupInvoiceId: deliveryInv.id,
+                              acceptedReturns: input.acceptedReturns,
+                              handoffBalancePaid: input.handoffBalancePaid,
+                              handoffPaymentMethod: input.handoffPaymentMethod,
+                              handoffPaymentReference:
+                                  input.handoffPaymentReference,
+                          })
+                        : null;
+
                 // Update delivery group invoice with all data
                 const [completedLink] = await tx
                     .update(deliveryGroupInvoice)
@@ -681,8 +715,17 @@ export const deliverymanRouter = {
                 }
 
                 // Update delivery group counters + running payment total
-                const cashAdd = input.paymentMethod === "cash" ? (input.amountCollected || 0) : 0;
-                const digitalAdd = input.paymentMethod && input.paymentMethod !== "cash" ? (input.amountCollected || 0) : 0;
+                const handoffCollected = Number(settlement?.handoffBalance ?? 0);
+                const cashAdd =
+                    (input.paymentMethod === "cash" ? input.amountCollected || 0 : 0) +
+                    (input.handoffPaymentMethod === "cash" ? handoffCollected : 0);
+                const digitalAdd =
+                    (input.paymentMethod && input.paymentMethod !== "cash"
+                        ? input.amountCollected || 0
+                        : 0) +
+                    (input.handoffPaymentMethod && input.handoffPaymentMethod !== "cash"
+                        ? handoffCollected
+                        : 0);
 
                 await tx.update(deliveryGroup).set({
                     completedInvoices: sql`${deliveryGroup.completedInvoices} + 1`,
@@ -716,9 +759,10 @@ export const deliverymanRouter = {
                         completedAt: new Date(),
                     }).where(eq(deliveryGroup.id, deliveryInv.groupId));
                 }
+                return settlement;
             });
 
-            return { success: true };
+            return { success: true, cylinderSettlement };
         }),
 
     /**

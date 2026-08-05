@@ -1,10 +1,18 @@
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import type { NextConfig } from "next";
+
+const appRoot = path.dirname(fileURLToPath(import.meta.url));
+const workspaceRoot = path.resolve(appRoot, "../..");
 
 const nextConfig: NextConfig = {
   /* config options here */
 
   reactCompiler: true,
   output: "standalone",
+  turbopack: {
+    root: workspaceRoot,
+  },
   allowedDevOrigins: [
     "warehouse.bikalpo.localhost",
     "bikalpo.localhost",

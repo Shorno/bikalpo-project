@@ -3,28 +3,18 @@
 import type { Brand } from "@bikalpo-project/db/schema";
 import { useForm } from "@tanstack/react-form";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Loader, Pencil } from "lucide-react";
 import * as React from "react";
 import { toast } from "sonner";
-
-import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
+import { SetupFormDialog } from "@/components/features/product-setup";
+import ImageUploader from "@/components/ImageUploader";
 import {
   Field,
-  FieldContent,
   FieldDescription,
   FieldError,
   FieldLabel,
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
 
 import { updateBrandSchema } from "@/schema/brand.schema";
 import { generateSlug } from "@/utils/generate-slug";
@@ -32,18 +22,40 @@ import { orpc } from "@/utils/orpc";
 
 interface EditBrandDialogProps {
   brand: Brand;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  trigger?: React.ReactNode;
 }
 
-export default function EditBrandDialog({ brand }: EditBrandDialogProps) {
-  const [open, setOpen] = React.useState(false);
+export default function EditBrandDialog({
+  brand,
+  open,
+  onOpenChange,
+  trigger,
+}: EditBrandDialogProps) {
+  const [internalOpen, setInternalOpen] = React.useState(false);
+  const dialogOpen = open ?? internalOpen;
   const queryClient = useQueryClient();
+  const setDialogOpen = React.useCallback(
+    (nextOpen: boolean) => {
+      setInternalOpen(nextOpen);
+      onOpenChange?.(nextOpen);
+    },
+    [onOpenChange],
+  );
 
   const mutation = useMutation(
     orpc.brand.update.mutationOptions({
       onSuccess: (result) => {
         queryClient.invalidateQueries({ queryKey: orpc.brand.getAll.key() });
+        queryClient.invalidateQueries({
+          queryKey: orpc.brand.getAdminAll.key(),
+        });
+        queryClient.invalidateQueries({
+          queryKey: orpc.brand.getAdminById.key(),
+        });
         toast.success(result.message);
-        setOpen(false);
+        setDialogOpen(false);
       },
       onError: (error) => {
         toast.error(
@@ -59,15 +71,39 @@ export default function EditBrandDialog({ brand }: EditBrandDialogProps) {
       id: brand.id,
       name: brand.name,
       slug: brand.slug,
+      logo: brand.logo ?? "",
+      isActive: brand.isActive,
+      displayOrder: brand.displayOrder,
     },
 
     validators: {
-      onSubmit: updateBrandSchema,
+      onSubmit: updateBrandSchema as any,
     },
     onSubmit: async ({ value }) => {
       mutation.mutate(value);
     },
   });
+
+  React.useEffect(() => {
+    if (!dialogOpen) return;
+    form.reset({
+      id: brand.id,
+      name: brand.name,
+      slug: brand.slug,
+      logo: brand.logo ?? "",
+      isActive: brand.isActive,
+      displayOrder: brand.displayOrder,
+    });
+  }, [
+    brand.displayOrder,
+    brand.id,
+    brand.isActive,
+    brand.logo,
+    brand.name,
+    brand.slug,
+    dialogOpen,
+    form,
+  ]);
 
   const autoGenerateSlugFromName = (value: string) => {
     const generatedSlug = generateSlug(value);
@@ -75,108 +111,130 @@ export default function EditBrandDialog({ brand }: EditBrandDialogProps) {
   };
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button variant="ghost" size="sm" className="w-full justify-start">
-          <Pencil className="h-4 w-4 mr-2" />
-          Edit
-        </Button>
-      </DialogTrigger>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>Edit Brand</DialogTitle>
-          <DialogDescription>
-            Update the details of {brand.name} brand.
-          </DialogDescription>
-        </DialogHeader>
-        <form
-          id="edit-brand-form"
-          onSubmit={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            form.handleSubmit();
+    <SetupFormDialog
+      description={`Update the reusable setup details for ${brand.name}.`}
+      formId="edit-brand-form"
+      hasUnsavedChanges={() => form.state.isDirty}
+      isSubmitting={mutation.isPending}
+      onOpenChange={setDialogOpen}
+      onSubmit={() => form.handleSubmit()}
+      open={dialogOpen}
+      submitLabel="Save Changes"
+      title="Edit Brand"
+      trigger={trigger}
+    >
+      <form
+        id="edit-brand-form"
+        onSubmit={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          form.handleSubmit();
+        }}
+        className="space-y-4"
+      >
+        {/* Brand Name */}
+        <form.Field name="name">
+          {(field) => {
+            const isInvalid =
+              field.state.meta.isTouched && !field.state.meta.isValid;
+            return (
+              <Field data-invalid={isInvalid}>
+                <FieldLabel htmlFor={field.name}>Brand Name *</FieldLabel>
+                <Input
+                  id={field.name}
+                  name={field.name}
+                  value={field.state.value}
+                  onBlur={field.handleBlur}
+                  onChange={(e) => {
+                    field.handleChange(e.target.value);
+                    autoGenerateSlugFromName(e.target.value);
+                  }}
+                  aria-invalid={isInvalid}
+                  placeholder="Unilever"
+                  autoComplete="off"
+                />
+                {isInvalid && <FieldError errors={field.state.meta.errors} />}
+              </Field>
+            );
           }}
-          className="space-y-4"
-        >
+        </form.Field>
 
+        {/* Slug */}
+        <form.Field name="slug">
+          {(field) => {
+            const isInvalid =
+              field.state.meta.isTouched && !field.state.meta.isValid;
+            return (
+              <Field data-invalid={isInvalid}>
+                <FieldLabel htmlFor={field.name}>Slug *</FieldLabel>
+                <Input
+                  id={field.name}
+                  name={field.name}
+                  value={field.state.value}
+                  onBlur={field.handleBlur}
+                  onChange={(e) => field.handleChange(e.target.value)}
+                  aria-invalid={isInvalid}
+                  placeholder="unilever"
+                  autoComplete="off"
+                />
+                <FieldDescription>
+                  URL-friendly version of the name.
+                </FieldDescription>
+                {isInvalid && <FieldError errors={field.state.meta.errors} />}
+              </Field>
+            );
+          }}
+        </form.Field>
 
-          {/* Brand Name */}
-          <form.Field name="name">
-            {(field) => {
-              const isInvalid =
-                field.state.meta.isTouched && !field.state.meta.isValid;
-              return (
-                <Field data-invalid={isInvalid}>
-                  <FieldLabel htmlFor={field.name}>Brand Name *</FieldLabel>
-                  <Input
-                    id={field.name}
-                    name={field.name}
-                    value={field.state.value}
-                    onBlur={field.handleBlur}
-                    onChange={(e) => {
-                      field.handleChange(e.target.value);
-                      autoGenerateSlugFromName(e.target.value);
-                    }}
-                    aria-invalid={isInvalid}
-                    placeholder="Unilever"
-                    autoComplete="off"
-                  />
-                  {isInvalid && <FieldError errors={field.state.meta.errors} />}
-                </Field>
-              );
-            }}
-          </form.Field>
+        <form.Field name="logo">
+          {(field) => (
+            <Field>
+              <FieldLabel>Brand logo</FieldLabel>
+              <ImageUploader
+                folder="brands"
+                maxSizeMB={3}
+                onChange={field.handleChange}
+                value={field.state.value ?? ""}
+              />
+            </Field>
+          )}
+        </form.Field>
 
-          {/* Slug */}
-          <form.Field name="slug">
-            {(field) => {
-              const isInvalid =
-                field.state.meta.isTouched && !field.state.meta.isValid;
-              return (
-                <Field data-invalid={isInvalid}>
-                  <FieldLabel htmlFor={field.name}>Slug *</FieldLabel>
-                  <Input
-                    id={field.name}
-                    name={field.name}
-                    value={field.state.value}
-                    onBlur={field.handleBlur}
-                    onChange={(e) => field.handleChange(e.target.value)}
-                    aria-invalid={isInvalid}
-                    placeholder="unilever"
-                    autoComplete="off"
-                  />
-                  <FieldDescription>
-                    URL-friendly version of the name.
-                  </FieldDescription>
-                  {isInvalid && <FieldError errors={field.state.meta.errors} />}
-                </Field>
-              );
-            }}
-          </form.Field>
-
-
-        </form>
-        <DialogFooter>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => setOpen(false)}
-            disabled={mutation.isPending}
-          >
-            Cancel
-          </Button>
-          <Button
-            type="submit"
-            form="edit-brand-form"
-            disabled={mutation.isPending}
-          >
-            {mutation.isPending && (
-              <Loader className="mr-2 h-4 w-4 animate-spin" />
+        <div className="grid gap-4 sm:grid-cols-2">
+          <form.Field name="displayOrder">
+            {(field) => (
+              <Field>
+                <FieldLabel htmlFor={field.name}>Display order</FieldLabel>
+                <Input
+                  id={field.name}
+                  min={0}
+                  onChange={(event) =>
+                    field.handleChange(Number(event.target.value))
+                  }
+                  type="number"
+                  value={field.state.value}
+                />
+              </Field>
             )}
-            Update Brand
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+          </form.Field>
+          <form.Field name="isActive">
+            {(field) => (
+              <Field className="flex min-h-16 flex-row items-center justify-between rounded-lg border px-4 py-3">
+                <div>
+                  <FieldLabel>Status</FieldLabel>
+                  <FieldDescription>
+                    Available for new associations
+                  </FieldDescription>
+                </div>
+                <Switch
+                  checked={field.state.value}
+                  onCheckedChange={field.handleChange}
+                />
+              </Field>
+            )}
+          </form.Field>
+        </div>
+      </form>
+    </SetupFormDialog>
   );
 }

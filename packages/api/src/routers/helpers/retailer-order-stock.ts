@@ -26,19 +26,22 @@ export type RetailerOrderStockMutation = {
 };
 
 export interface RetailerOrderStockWriter {
-  deduct(input: RetailerOrderStockMutation): Promise<boolean>;
-  restore(input: RetailerOrderStockMutation): Promise<boolean>;
+  reserve(input: RetailerOrderStockMutation): Promise<boolean>;
+  release(input: RetailerOrderStockMutation): Promise<boolean>;
+  consume(input: RetailerOrderStockMutation): Promise<boolean>;
 }
 
 export class RetailerOrderStockError extends Error {
   constructor(
-    readonly operation: "deduct" | "restore",
+    readonly operation: "reserve" | "release" | "consume",
     readonly line: RetailerOrderStockLine,
   ) {
     super(
-      operation === "deduct"
+      operation === "reserve"
         ? `Insufficient retailer stock for ${line.productName}`
-        : `Retailer inventory could not be restored for ${line.productName}`,
+        : operation === "release"
+          ? `Retailer inventory reservation could not be released for ${line.productName}`
+          : `Retailer inventory reservation could not be completed for ${line.productName}`,
     );
     this.name = "RetailerOrderStockError";
   }
@@ -85,11 +88,12 @@ export function createRetailerOrderStockWriter(
     );
 
   return {
-    async deduct(input) {
+    async reserve(input) {
       const updated = await database
         .update(inventory)
         .set({
           availableQty: sql`${inventory.availableQty}::numeric - ${input.quantity}`,
+          reservedQty: sql`${inventory.reservedQty}::numeric + ${input.quantity}`,
           updatedAt: new Date(),
         })
         .where(
@@ -102,45 +106,86 @@ export function createRetailerOrderStockWriter(
       return updated.length === 1;
     },
 
-    async restore(input) {
+    async release(input) {
       const updated = await database
         .update(inventory)
         .set({
           availableQty: sql`${inventory.availableQty}::numeric + ${input.quantity}`,
+          reservedQty: sql`${inventory.reservedQty}::numeric - ${input.quantity}`,
           updatedAt: new Date(),
         })
-        .where(exactInventoryRow(input))
+        .where(
+          and(
+            exactInventoryRow(input),
+            sql`${inventory.reservedQty}::numeric >= ${input.quantity}`,
+          ),
+        )
+        .returning({ id: inventory.id });
+      return updated.length === 1;
+    },
+
+    async consume(input) {
+      const updated = await database
+        .update(inventory)
+        .set({
+          reservedQty: sql`${inventory.reservedQty}::numeric - ${input.quantity}`,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            exactInventoryRow(input),
+            sql`${inventory.reservedQty}::numeric >= ${input.quantity}`,
+          ),
+        )
         .returning({ id: inventory.id });
       return updated.length === 1;
     },
   };
 }
 
-export async function deductRetailerOrderStock(
+export async function reserveRetailerOrderStock(
   writer: RetailerOrderStockWriter,
   shopId: string,
   lines: RetailerOrderStockLine[],
 ) {
   for (const line of lines) {
     const mutation = toMutation(shopId, line);
-    if (!mutation || !(await writer.deduct(mutation))) {
-      throw new RetailerOrderStockError("deduct", line);
+    if (!mutation || !(await writer.reserve(mutation))) {
+      throw new RetailerOrderStockError("reserve", line);
     }
   }
 }
 
-export async function restoreRetailerOrderStock(
+export async function releaseRetailerOrderStock(
   writer: RetailerOrderStockWriter,
   shopId: string,
   lines: RetailerOrderStockLine[],
 ) {
   for (const line of lines) {
     const mutation = toMutation(shopId, line);
-    if (!mutation || !(await writer.restore(mutation))) {
-      throw new RetailerOrderStockError("restore", line);
+    if (!mutation || !(await writer.release(mutation))) {
+      throw new RetailerOrderStockError("release", line);
     }
   }
 }
+
+export async function consumeRetailerOrderStock(
+  writer: RetailerOrderStockWriter,
+  shopId: string,
+  lines: RetailerOrderStockLine[],
+) {
+  for (const line of lines) {
+    const mutation = toMutation(shopId, line);
+    if (!mutation || !(await writer.consume(mutation))) {
+      throw new RetailerOrderStockError("consume", line);
+    }
+  }
+}
+
+/** @deprecated Use reserveRetailerOrderStock. */
+export const deductRetailerOrderStock = reserveRetailerOrderStock;
+/** @deprecated Use releaseRetailerOrderStock. */
+export const restoreRetailerOrderStock = releaseRetailerOrderStock;
 
 function toMutation(
   shopId: string,

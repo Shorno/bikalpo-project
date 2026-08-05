@@ -120,7 +120,7 @@ export function AdminDashboardClient() {
   const attentionItems = [
     { label: "Open Tickets", count: s?.openTickets || 0, href: `${ADMIN_BASE}/tickets`, color: "text-orange-600 dark:text-orange-400", bg: "bg-orange-100 dark:bg-orange-900/30" },
     { label: "Item Requests", count: s?.pendingItemRequests || 0, href: `${ADMIN_BASE}/item-requests`, color: "text-blue-600 dark:text-blue-400", bg: "bg-blue-100 dark:bg-blue-900/30" },
-    { label: "Applications", count: s?.pendingApplications || 0, href: `${ADMIN_BASE}/applications`, color: "text-violet-600 dark:text-violet-400", bg: "bg-violet-100 dark:bg-violet-900/30" },
+    { label: "Applications", count: s?.pendingApplications || 0, href: `${ADMIN_BASE}/user-overview/approval`, color: "text-violet-600 dark:text-violet-400", bg: "bg-violet-100 dark:bg-violet-900/30" },
     { label: "Low Stock", count: s?.lowStockProducts || 0, href: `${ADMIN_BASE}/stock`, color: "text-yellow-600 dark:text-yellow-400", bg: "bg-yellow-100 dark:bg-yellow-900/30" },
     { label: "Out of Stock", count: s?.outOfStockProducts || 0, href: `${ADMIN_BASE}/stock`, color: "text-red-600 dark:text-red-400", bg: "bg-red-100 dark:bg-red-900/30" },
   ].filter((item) => isLoading || item.count > 0);

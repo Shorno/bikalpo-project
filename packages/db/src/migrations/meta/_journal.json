@@ -288,6 +288,20 @@
       "when": 1786000000000,
       "tag": "0041_retailer_pos_ownership",
       "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1786100000000,
+      "tag": "0042_retailer_cylinder_exchange",
+      "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1786200000000,
+      "tag": "0043_product_setup_status",
+      "breakpoints": true
     }
   ]
 }

@@ -52,6 +52,16 @@ export interface CartItem {
   shopId?: string | null;
   shopName?: string | null;
   shopSlug?: string | null;
+  cylinderSale?: {
+    exchangeEnabled: boolean;
+    mode: "new" | "exchange";
+    defaultMode: "new" | "exchange";
+    exchangeCreditAmount: number;
+    newUnitPrice: number;
+    effectiveUnitPrice: number;
+    expectedReturnQty: number;
+    selectionValid: boolean;
+  } | null;
 }
 
 export interface CartContextType {
@@ -67,6 +77,10 @@ export interface CartContextType {
   ) => Promise<void>;
   removeItem: (cartItemId: number) => Promise<void>;
   updateQuantity: (cartItemId: number, quantity: number) => Promise<void>;
+  updateCylinderSaleMode: (
+    cartItemId: number,
+    mode: "new" | "exchange",
+  ) => Promise<void>;
   clearCart: () => Promise<void>;
   refreshCart: () => Promise<void>;
   totalItems: number;
@@ -165,6 +179,19 @@ export function OrpcCartProvider({ children }: { children: ReactNode }) {
     await updateMutation.mutateAsync({ cartItemId, quantity });
   };
 
+  const updateCylinderSaleMode = async (
+    cartItemId: number,
+    cylinderSaleMode: "new" | "exchange",
+  ) => {
+    const item = items.find((row) => row.id === cartItemId);
+    if (!item) return;
+    await updateMutation.mutateAsync({
+      cartItemId,
+      quantity: item.quantity,
+      cylinderSaleMode,
+    });
+  };
+
   const clearCartFn = async () => {
     await clearMutation.mutateAsync({});
   };
@@ -188,6 +215,7 @@ export function OrpcCartProvider({ children }: { children: ReactNode }) {
         addItem,
         removeItem,
         updateQuantity,
+        updateCylinderSaleMode,
         clearCart: clearCartFn,
         refreshCart,
         totalItems,

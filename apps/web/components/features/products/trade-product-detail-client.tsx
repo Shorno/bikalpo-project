@@ -33,6 +33,11 @@ export interface DetailVariant {
   variantType: string | null;
   packType: string | null;
   isActive: boolean | null;
+  cylinderSale?: {
+    exchangeEnabled: boolean;
+    exchangeCreditAmount: number;
+    defaultMode: "new" | "exchange";
+  } | null;
 }
 
 interface ProductDetailClientProps {
@@ -219,6 +224,18 @@ export function ProductDetailClient({
           Add exact variants to one request. Nearby retailers with the complete
           stock can offer their store price, discount, and delivery charge. You
           choose only after all prices freeze.
+        </div>
+      )}
+
+      {purchaseMode === "direct" && selected?.cylinderSale?.exchangeEnabled && (
+        <div className="mb-6 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-950">
+          <p className="font-semibold">Exchange or buy New at checkout</p>
+          <p className="mt-1 leading-5 text-emerald-800">
+            Exchange is selected by default. Return one exact-match empty
+            cylinder per unit and save ৳
+            {selected.cylinderSale.exchangeCreditAmount.toLocaleString("en-BD")}{" "}
+            each.
+          </p>
         </div>
       )}
 

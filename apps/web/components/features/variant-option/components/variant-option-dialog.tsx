@@ -8,18 +8,10 @@ import {
   type VariantDefinition,
 } from "@bikalpo-project/db/variant-definition";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Loader } from "lucide-react";
 import * as React from "react";
 import { toast } from "sonner";
+import { SetupFormDialog } from "@/components/features/product-setup";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import {
@@ -446,72 +438,77 @@ export default function VariantOptionDialog({
       : variantOption?.needsReview
         ? "Complete this one-time definition review. The existing variant ID and every product reference will be preserved."
         : "Canonical structure is locked after the option is used. Display aliases remain editable.";
+  const initialDraft =
+    mode === "edit" && variantOption
+      ? variantOptionToDraft(variantOption)
+      : emptyVariantDraft;
+  const hasUnsavedChanges = () =>
+    internalMode !== mode ||
+    active !== (mode === "edit" ? (variantOption?.isActive ?? true) : true) ||
+    JSON.stringify(draft) !== JSON.stringify(initialDraft);
+  const submitLabel = isCreate
+    ? "Create Variant"
+    : isClone
+      ? "Save New Variant"
+      : "Update Variant";
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
-        <DialogHeader>
-          <DialogTitle>{title}</DialogTitle>
-          <DialogDescription>{description}</DialogDescription>
-        </DialogHeader>
-        {variantOption?.needsReview && internalMode === "edit" && (
-          <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-100">
-            This legacy variant remains linked to its current products. Confirm
-            its concrete structure once; its ID, prices, stock, and history will
-            not change.
-          </div>
+    <SetupFormDialog
+      description={description}
+      footerActions={
+        locked ? (
+          <Button
+            disabled={pending}
+            onClick={() => setInternalMode("clone")}
+            type="button"
+            variant="secondary"
+          >
+            Clone as new
+          </Button>
+        ) : undefined
+      }
+      hasUnsavedChanges={hasUnsavedChanges}
+      isSubmitting={pending}
+      onOpenChange={onOpenChange}
+      onSubmit={() =>
+        internalMode === "edit"
+          ? updateMutation.mutate()
+          : createMutation.mutate()
+      }
+      open={open}
+      size="large"
+      submitDisabled={!definitionComplete}
+      submitLabel={submitLabel}
+      title={title}
+    >
+      {variantOption?.needsReview && internalMode === "edit" && (
+        <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-100">
+          This legacy variant remains linked to its current products. Confirm
+          its concrete structure once; its ID, prices, stock, and history will
+          not change.
+        </div>
+      )}
+      <VariantDefinitionFields
+        value={draft}
+        onChange={setDraft}
+        types={(typesData?.types ?? []).filter(
+          (type) => internalMode === "edit" || type.isActive,
         )}
-        <VariantDefinitionFields
-          value={draft}
-          onChange={setDraft}
-          types={typesData?.types ?? []}
-          categories={(categoriesData ?? []).map((category) => ({
+        categories={(categoriesData ?? [])
+          .filter((category) => internalMode === "edit" || category.isActive)
+          .map((category) => ({
             id: category.id,
             name: category.name,
             typeId: category.typeId,
           }))}
-          locked={locked}
-        />
-        {internalMode === "edit" && (
-          <div className="flex items-center justify-between rounded-md border p-3">
-            <span className="text-sm font-medium">Active</span>
-            <Switch checked={active} onCheckedChange={setActive} />
-          </div>
-        )}
-        <DialogFooter>
-          <Button
-            variant="outline"
-            onClick={() => onOpenChange(false)}
-            disabled={pending}
-          >
-            Cancel
-          </Button>
-          {locked && (
-            <Button
-              variant="secondary"
-              onClick={() => setInternalMode("clone")}
-              disabled={pending}
-            >
-              Clone as new
-            </Button>
-          )}
-          <Button
-            onClick={() =>
-              internalMode === "edit"
-                ? updateMutation.mutate()
-                : createMutation.mutate()
-            }
-            disabled={pending || !definitionComplete}
-          >
-            {pending && <Loader className="mr-2 h-4 w-4 animate-spin" />}
-            {isCreate
-              ? "Create Variant"
-              : isClone
-                ? "Save new variant"
-                : "Update Variant"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        locked={locked}
+      />
+      {internalMode === "edit" && (
+        <div className="flex items-center justify-between rounded-md border p-3">
+          <span className="text-sm font-medium">Active</span>
+          <Switch checked={active} onCheckedChange={setActive} />
+        </div>
+      )}
+    </SetupFormDialog>
   );
 }

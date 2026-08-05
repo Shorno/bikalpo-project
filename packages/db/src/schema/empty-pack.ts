@@ -1,4 +1,4 @@
-import { relations } from "drizzle-orm";
+import { relations, sql } from "drizzle-orm";
 import {
     decimal,
     index,
@@ -8,10 +8,13 @@ import {
     serial,
     text,
     timestamp,
+    uniqueIndex,
 } from "drizzle-orm/pg-core";
 import { user } from "./auth-schema";
 import { brand } from "./brand";
 import { deliveryGroupInvoice } from "./delivery";
+import { invoice } from "./invoice";
+import { orderItem } from "./order";
 import { productVariant } from "./product-variant";
 
 // Empty pack status enum
@@ -33,8 +36,22 @@ export const emptyPack = pgTable(
 
         /** Which delivery stop this pack was collected from */
         deliveryGroupInvoiceId: integer("delivery_group_invoice_id")
-            .notNull()
             .references(() => deliveryGroupInvoice.id, { onDelete: "cascade" }),
+
+        /** Retailer that owns this empty-pack stock. */
+        shopId: text("shop_id").references(() => user.id, {
+            onDelete: "cascade",
+        }),
+
+        /** Retailer invoice completed by delivery or self-pickup. */
+        invoiceId: integer("invoice_id").references(() => invoice.id, {
+            onDelete: "cascade",
+        }),
+
+        /** Source cylinder order line; one settlement record per line. */
+        orderItemId: integer("order_item_id").references(() => orderItem.id, {
+            onDelete: "set null",
+        }),
 
         /** Product variant the pack belongs to (e.g., IFAD 5L Jar) */
         variantId: integer("variant_id").references(
@@ -87,6 +104,12 @@ export const emptyPack = pgTable(
     },
     (table) => [
         index("emptyPack_dgiId_idx").on(table.deliveryGroupInvoiceId),
+        index("emptyPack_shopId_idx").on(table.shopId),
+        index("emptyPack_invoiceId_idx").on(table.invoiceId),
+        index("emptyPack_orderItemId_idx").on(table.orderItemId),
+        uniqueIndex("emptyPack_invoiceOrderItem_unique")
+            .on(table.invoiceId, table.orderItemId)
+            .where(sql`${table.orderItemId} IS NOT NULL`),
         index("emptyPack_status_idx").on(table.status),
     ],
 );
@@ -96,6 +119,18 @@ export const emptyPackRelations = relations(emptyPack, ({ one }) => ({
     deliveryGroupInvoice: one(deliveryGroupInvoice, {
         fields: [emptyPack.deliveryGroupInvoiceId],
         references: [deliveryGroupInvoice.id],
+    }),
+    shop: one(user, {
+        fields: [emptyPack.shopId],
+        references: [user.id],
+    }),
+    invoice: one(invoice, {
+        fields: [emptyPack.invoiceId],
+        references: [invoice.id],
+    }),
+    orderItem: one(orderItem, {
+        fields: [emptyPack.orderItemId],
+        references: [orderItem.id],
     }),
     variant: one(productVariant, {
         fields: [emptyPack.variantId],

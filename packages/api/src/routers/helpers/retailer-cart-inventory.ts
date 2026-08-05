@@ -13,6 +13,8 @@ export interface RetailerCartInventorySnapshot {
   orderMin: string | null;
   orderMax: string | null;
   orderIncrement: string | null;
+  exchangeEnabled: boolean;
+  exchangeCreditAmount: string;
 }
 
 export type RetailerCartDecision =
@@ -41,6 +43,7 @@ export type CustomerCartLineSnapshot = {
   shopId: string | null;
   quantity: number;
   price: string;
+  cylinderSaleMode?: "new" | "exchange";
 };
 
 export function isSameCustomerCartSnapshot(
@@ -57,7 +60,8 @@ export function isSameCustomerCartSnapshot(
       match.variantId === line.variantId &&
       match.shopId === line.shopId &&
       match.quantity === line.quantity &&
-      Number(match.price) === Number(line.price)
+      Number(match.price) === Number(line.price) &&
+      (match.cylinderSaleMode ?? "new") === (line.cylinderSaleMode ?? "new")
     );
   });
 }

@@ -1,247 +1,136 @@
 "use client";
 
-import {
-  buildProductTypeFulfillmentProfile,
-  INVENTORY_BEHAVIOUR_LABELS,
-  INVENTORY_BEHAVIOURS,
-  PRODUCT_TYPE_FAMILIES,
-  PRODUCT_TYPE_FAMILY_LABELS,
-  type ProductTypeFamily,
-} from "@bikalpo-project/db/fulfillment";
 import { useForm } from "@tanstack/react-form";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Loader } from "lucide-react";
 import * as React from "react";
 import { toast } from "sonner";
-import FulfillmentProfilePreview from "@/components/features/product-type/components/fulfillment-profile-preview";
+import { z } from "zod";
+import { SetupFormDialog } from "@/components/features/product-setup";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
-import { Field, FieldLabel } from "@/components/ui/field";
+import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { generateSlug } from "@/utils/generate-slug";
 import { orpc } from "@/utils/orpc";
+
+const typeBasicsSchema = z.object({
+  name: z.string().trim().min(1, "Type Name is required"),
+  isActive: z.boolean(),
+});
 
 export default function NewTypeDialog() {
   const [open, setOpen] = React.useState(false);
   const queryClient = useQueryClient();
-
   const mutation = useMutation({
-    mutationFn: (data: {
-      name: string;
-      slug: string;
-      description?: string;
-      inventoryBehaviour: (typeof INVENTORY_BEHAVIOURS)[number];
-      family: ProductTypeFamily;
-      displayOrder: number;
-    }) => orpc.adminProductType.create.call(data),
+    mutationFn: (data: { name: string; slug: string; isActive: boolean }) =>
+      orpc.adminProductType.create.call(data),
     onSuccess: (result) => {
-      queryClient.invalidateQueries({ queryKey: ["adminProductType"] });
+      void queryClient.invalidateQueries({ queryKey: ["adminProductType"] });
       toast.success(result.message);
       form.reset();
       setOpen(false);
     },
     onError: (error) => {
-      toast.error(
-        error.message || "An error occurred while creating the type.",
-      );
+      toast.error(error.message || "Failed to create the Type.");
     },
   });
-
   const form = useForm({
     defaultValues: {
       name: "",
-      slug: "",
-      description: "",
-      inventoryBehaviour: "fixed_pack" as (typeof INVENTORY_BEHAVIOURS)[number],
-      family: "generic" as ProductTypeFamily,
-      displayOrder: 0,
+      isActive: true,
+    },
+    validators: {
+      onSubmit: typeBasicsSchema as never,
     },
     onSubmit: async ({ value }) => {
+      const name = value.name.trim();
       mutation.mutate({
-        ...value,
-        slug: value.slug || generateSlug(value.name),
+        name,
+        slug: generateSlug(name),
+        isActive: value.isActive,
       });
     },
   });
+  const handleOpenChange = (nextOpen: boolean) => {
+    if (!nextOpen) form.reset();
+    setOpen(nextOpen);
+  };
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button>New Type</Button>
-      </DialogTrigger>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>Create Product Type</DialogTitle>
-          <DialogDescription>
-            Define a new product type with attribute rules.
-          </DialogDescription>
-        </DialogHeader>
-        <form
-          id="new-type-form"
-          onSubmit={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            form.handleSubmit();
-          }}
-          className="space-y-4"
-        >
-          {/* Row 1: Name + Slug */}
-          <div className="grid grid-cols-2 gap-4">
-            <form.Field name="name">
-              {(field) => (
-                <Field>
-                  <FieldLabel htmlFor={field.name}>Type Name *</FieldLabel>
-                  <Input
-                    id={field.name}
-                    value={field.state.value}
-                    onChange={(e) => {
-                      field.handleChange(e.target.value);
-                      form.setFieldValue("slug", generateSlug(e.target.value));
-                    }}
-                    placeholder="e.g. Grocery"
-                    autoComplete="off"
-                  />
-                </Field>
-              )}
-            </form.Field>
-
-            <form.Field name="slug">
-              {(field) => (
-                <Field>
-                  <FieldLabel htmlFor={field.name}>Slug</FieldLabel>
-                  <Input
-                    id={field.name}
-                    value={field.state.value}
-                    onChange={(e) => field.handleChange(e.target.value)}
-                    placeholder="auto-generated"
-                    autoComplete="off"
-                  />
-                </Field>
-              )}
-            </form.Field>
-          </div>
-
-          {/* Row 2: Description (full width) */}
-          <form.Field name="description">
-            {(field) => (
-              <Field>
-                <FieldLabel htmlFor={field.name}>Description</FieldLabel>
+    <SetupFormDialog
+      description="Create a global top-level product classification."
+      formId="new-type-form"
+      hasUnsavedChanges={() => form.state.isDirty}
+      isSubmitting={mutation.isPending}
+      onOpenChange={handleOpenChange}
+      onSubmit={() => form.handleSubmit()}
+      open={open}
+      submitLabel="Create Type"
+      title="Create Type"
+      trigger={<Button>Create Type</Button>}
+    >
+      <form
+        className="space-y-5"
+        id="new-type-form"
+        onSubmit={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          form.handleSubmit();
+        }}
+      >
+        <form.Field name="name">
+          {(field) => {
+            const isInvalid =
+              field.state.meta.isTouched && !field.state.meta.isValid;
+            return (
+              <Field data-invalid={isInvalid}>
+                <FieldLabel htmlFor={field.name}>Type Name</FieldLabel>
                 <Input
-                  id={field.name}
-                  value={field.state.value}
-                  onChange={(e) => field.handleChange(e.target.value)}
-                  placeholder="Brief description of this product type"
+                  aria-invalid={isInvalid}
                   autoComplete="off"
+                  id={field.name}
+                  name={field.name}
+                  onBlur={field.handleBlur}
+                  onChange={(event) => field.handleChange(event.target.value)}
+                  placeholder="Grocery"
+                  value={field.state.value}
                 />
+                {isInvalid && <FieldError errors={field.state.meta.errors} />}
               </Field>
-            )}
-          </form.Field>
+            );
+          }}
+        </form.Field>
 
-          <div className="grid gap-4 sm:grid-cols-2">
-            <form.Field name="family">
-              {(field) => (
-                <Field>
-                  <FieldLabel htmlFor={field.name}>Product Family</FieldLabel>
-                  <Select
-                    value={field.state.value}
-                    onValueChange={(value) =>
-                      field.handleChange(value as ProductTypeFamily)
-                    }
-                  >
-                    <SelectTrigger id={field.name}>
-                      <SelectValue placeholder="Select product family" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {PRODUCT_TYPE_FAMILIES.map((family) => (
-                        <SelectItem key={family} value={family}>
-                          {PRODUCT_TYPE_FAMILY_LABELS[family]}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </Field>
-              )}
-            </form.Field>
-            <form.Field name="inventoryBehaviour">
-              {(field) => (
-                <Field>
-                  <FieldLabel htmlFor={field.name}>
-                    Inventory Behaviour
-                  </FieldLabel>
-                  <Select
-                    value={field.state.value}
-                    onValueChange={(value) =>
-                      field.handleChange(
-                        value as (typeof INVENTORY_BEHAVIOURS)[number],
-                      )
-                    }
-                  >
-                    <SelectTrigger id={field.name}>
-                      <SelectValue placeholder="Select inventory behaviour" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {INVENTORY_BEHAVIOURS.map((behaviour) => (
-                        <SelectItem key={behaviour} value={behaviour}>
-                          {INVENTORY_BEHAVIOUR_LABELS[behaviour]}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </Field>
-              )}
-            </form.Field>
-          </div>
-
-          <form.Subscribe selector={(state) => state.values}>
-            {(values) => {
-              const profile = buildProductTypeFulfillmentProfile({
-                name: values.name,
-                slug: values.slug || generateSlug(values.name),
-                inventoryBehaviour: values.inventoryBehaviour,
-                family: values.family,
-              });
-
-              return <FulfillmentProfilePreview profile={profile} compact />;
-            }}
-          </form.Subscribe>
-        </form>
-        <DialogFooter>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => setOpen(false)}
-            disabled={mutation.isPending}
-          >
-            Cancel
-          </Button>
-          <Button
-            type="submit"
-            form="new-type-form"
-            disabled={mutation.isPending}
-          >
-            {mutation.isPending && (
-              <Loader className="mr-2 h-4 w-4 animate-spin" />
-            )}
-            Create Type
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        <form.Field name="isActive">
+          {(field) => (
+            <Field>
+              <FieldLabel>Status</FieldLabel>
+              <RadioGroup
+                className="grid gap-2 sm:grid-cols-2"
+                onValueChange={(value) =>
+                  field.handleChange(value === "active")
+                }
+                value={field.state.value ? "active" : "inactive"}
+              >
+                <label
+                  className="flex min-h-11 cursor-pointer items-center gap-3 rounded-lg border px-4 py-3 hover:bg-muted/30"
+                  htmlFor="new-type-active"
+                >
+                  <RadioGroupItem id="new-type-active" value="active" />
+                  <span className="text-sm font-medium">Active</span>
+                </label>
+                <label
+                  className="flex min-h-11 cursor-pointer items-center gap-3 rounded-lg border px-4 py-3 hover:bg-muted/30"
+                  htmlFor="new-type-inactive"
+                >
+                  <RadioGroupItem id="new-type-inactive" value="inactive" />
+                  <span className="text-sm font-medium">Inactive</span>
+                </label>
+              </RadioGroup>
+            </Field>
+          )}
+        </form.Field>
+      </form>
+    </SetupFormDialog>
   );
 }

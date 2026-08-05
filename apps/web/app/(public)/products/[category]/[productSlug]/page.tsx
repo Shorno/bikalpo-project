@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
-import type { DetailVariant } from "@/components/features/products/product-detail-client";
 import { ProductDetailsView } from "@/components/features/products/product-details-view";
 import { RelatedProducts } from "@/components/features/products/related-products";
+import type { DetailVariant } from "@/components/features/products/trade-product-detail-client";
 import {
   isCustomerStorefrontPreview,
   withCustomerStorefrontPreview,

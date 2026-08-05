@@ -217,6 +217,7 @@ export default function CustomerCheckoutPage() {
     totalPrice,
     clearCart,
     updateQuantity,
+    updateCylinderSaleMode,
     removeItem,
     isLoading: cartLoading,
   } = useCart();
@@ -346,6 +347,10 @@ export default function CustomerCheckoutPage() {
 
     if (items.length === 0) {
       toast.error("Your cart is empty");
+      return;
+    }
+    if (items.some((item) => item.cylinderSale?.selectionValid === false)) {
+      toast.error("Review the Exchange or New choice for your cylinder items");
       return;
     }
 
@@ -536,6 +541,7 @@ export default function CustomerCheckoutPage() {
               cartLoading={cartLoading}
               modeValid={mode != null}
               onUpdateQuantity={updateQuantity}
+              onUpdateCylinderSaleMode={updateCylinderSaleMode}
               onRemoveItem={removeItem}
             />
           </div>
@@ -933,6 +939,7 @@ export default function CustomerCheckoutPage() {
                 cartLoading={cartLoading}
                 modeValid={mode != null}
                 onUpdateQuantity={updateQuantity}
+                onUpdateCylinderSaleMode={updateCylinderSaleMode}
                 onRemoveItem={removeItem}
               />
             </aside>

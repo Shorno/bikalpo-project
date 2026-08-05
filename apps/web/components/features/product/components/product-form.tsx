@@ -78,6 +78,8 @@ export type VariantPriceSettings = {
   variantOptionId: number;
   brandId?: number | null;
   consumerPrice: string;
+  exchangeEnabled: boolean;
+  exchangeCreditAmount: string;
 };
 
 /** A saved brand configuration with its selected variant options */
@@ -331,6 +333,8 @@ export default function ProductForm({
           variantOptionId: vp.variantOptionId,
           brandId: pb.brandId,
           consumerPrice: vp.consumerPrice || "",
+          exchangeEnabled: vp.exchangeEnabled ?? false,
+          exchangeCreditAmount: String(vp.exchangeCreditAmount ?? "0"),
         };
       }
 
@@ -371,7 +375,7 @@ export default function ProductForm({
   });
   const productTypes = editAdapter?.productType
     ? [editAdapter.productType]
-    : typesData?.types ?? [];
+    : (typesData?.types ?? []);
 
   const { data: categoriesData } = useQuery({
     ...orpc.category.getAll.queryOptions(),
@@ -438,7 +442,9 @@ export default function ProductForm({
       ? []
       : getAvailableVariantsForCoreProduct(
           activeCoreProduct,
-          editAdapter?.variantOptions ?? catalogOptionsData?.variantOptions ?? [],
+          editAdapter?.variantOptions ??
+            catalogOptionsData?.variantOptions ??
+            [],
         );
   const isLoadingLockedCoreProduct =
     isCoreIdentityLocked &&
@@ -452,6 +458,9 @@ export default function ProductForm({
   const activeFulfillmentProfile = activeProductType?.fulfillmentProfile as
     | ProductTypeFulfillmentProfile
     | undefined;
+  const isLpgRules =
+    activeFulfillmentProfile?.family === "lpg" ||
+    activeProductType?.family === "lpg";
   const activeRuleSettings = useMemo(
     () =>
       normalizeRuleSettings(
@@ -607,6 +616,23 @@ export default function ProductForm({
         toast.error("Select at least one variant for every brand");
         return;
       }
+      if (
+        isLpgRules &&
+        brandConfigs.some((config) =>
+          config.selectedVariantIds.some((variantOptionId) => {
+            const settings = config.variantSettings[variantOptionId];
+            return (
+              settings?.exchangeEnabled &&
+              Number(settings.exchangeCreditAmount) <= 0
+            );
+          }),
+        )
+      ) {
+        toast.error(
+          "Enter an Exchange Credit greater than zero for every enabled variant",
+        );
+        return;
+      }
 
       // Build variant prices array from brand configs
       const vpArray: any[] = [];
@@ -618,6 +644,10 @@ export default function ProductForm({
             variantOptionId: settings.variantOptionId,
             brandId: bc.brandId,
             consumerPrice: settings.consumerPrice || "0",
+            exchangeEnabled: settings.exchangeEnabled,
+            exchangeCreditAmount: settings.exchangeEnabled
+              ? settings.exchangeCreditAmount || "0"
+              : "0",
           });
         }
       }
@@ -826,7 +856,49 @@ export default function ProductForm({
     );
   };
 
-  const isLpgRules = activeFulfillmentProfile?.family === "lpg";
+  const handleVariantExchangeChange = (
+    brandId: number,
+    variantOptionId: number,
+    changes: Partial<
+      Pick<VariantPriceSettings, "exchangeEnabled" | "exchangeCreditAmount">
+    >,
+  ) => {
+    setBrandConfigs((previous) =>
+      previous.map((config) => {
+        if (config.brandId !== brandId) return config;
+        const current =
+          config.variantSettings[variantOptionId] ??
+          makeDefaultSettings(variantOptionId, brandId);
+        return {
+          ...config,
+          variantSettings: {
+            ...config.variantSettings,
+            [variantOptionId]: { ...current, ...changes },
+          },
+        };
+      }),
+    );
+  };
+
+  const handleEnableExchangeForAll = (brandId: number, enabled: boolean) => {
+    setBrandConfigs((previous) =>
+      previous.map((config) => {
+        if (config.brandId !== brandId) return config;
+        const variantSettings = { ...config.variantSettings };
+        for (const variantOptionId of config.selectedVariantIds) {
+          const current =
+            variantSettings[variantOptionId] ??
+            makeDefaultSettings(variantOptionId, brandId);
+          variantSettings[variantOptionId] = {
+            ...current,
+            exchangeEnabled: enabled,
+          };
+        }
+        return { ...config, variantSettings };
+      }),
+    );
+  };
+
   const supportsLooseInventory = activeRuleSettings.inventoryLooseUnitAvailable;
   const inventoryUnitOptions = activeRuleSettings.inventoryUnitOptions.map(
     (code) => ({
@@ -1210,6 +1282,13 @@ export default function ProductForm({
                         onSetVariants={(voIds) =>
                           handleSetVariants(bc.brandId, voIds)
                         }
+                        showCylinderExchange={isLpgRules}
+                        onExchangeChange={(voId, changes) =>
+                          handleVariantExchangeChange(bc.brandId, voId, changes)
+                        }
+                        onEnableExchangeForAll={(enabled) =>
+                          handleEnableExchangeForAll(bc.brandId, enabled)
+                        }
                         canRemove={false}
                       />
                     ))}
@@ -1233,6 +1312,17 @@ export default function ProductForm({
                           }
                           onSetVariants={(voIds) =>
                             handleSetVariants(bc.brandId, voIds)
+                          }
+                          showCylinderExchange={isLpgRules}
+                          onExchangeChange={(voId, changes) =>
+                            handleVariantExchangeChange(
+                              bc.brandId,
+                              voId,
+                              changes,
+                            )
+                          }
+                          onEnableExchangeForAll={(enabled) =>
+                            handleEnableExchangeForAll(bc.brandId, enabled)
                           }
                         />
                       ))}
@@ -1602,42 +1692,43 @@ export default function ProductForm({
                     </form.Field>
                   )}
 
-                  {activeRuleSettings.returnablePackAvailable && (
-                    <form.Field name="isReturnablePack">
-                      {(returnableField) => (
-                        <RuleControlRow
-                          description={returnableRuleDescription}
-                          label={returnableRuleLabel}
-                        >
-                          <div className="flex w-full items-center justify-end gap-3">
-                            <Switch
-                              aria-label={returnableRuleLabel}
-                              checked={returnableField.state.value}
-                              onCheckedChange={returnableField.handleChange}
-                            />
-                            <form.Field name="defaultPackDepositAmount">
-                              {(depositField) => (
-                                <Input
-                                  aria-label={depositLabel}
-                                  className="h-9 flex-1 text-right"
-                                  disabled={!returnableField.state.value}
-                                  min="0"
-                                  onChange={(event) =>
-                                    depositField.handleChange(
-                                      event.target.value,
-                                    )
-                                  }
-                                  step="0.01"
-                                  type="number"
-                                  value={depositField.state.value}
-                                />
-                              )}
-                            </form.Field>
-                          </div>
-                        </RuleControlRow>
-                      )}
-                    </form.Field>
-                  )}
+                  {activeRuleSettings.returnablePackAvailable &&
+                    !isLpgRules && (
+                      <form.Field name="isReturnablePack">
+                        {(returnableField) => (
+                          <RuleControlRow
+                            description={returnableRuleDescription}
+                            label={returnableRuleLabel}
+                          >
+                            <div className="flex w-full items-center justify-end gap-3">
+                              <Switch
+                                aria-label={returnableRuleLabel}
+                                checked={returnableField.state.value}
+                                onCheckedChange={returnableField.handleChange}
+                              />
+                              <form.Field name="defaultPackDepositAmount">
+                                {(depositField) => (
+                                  <Input
+                                    aria-label={depositLabel}
+                                    className="h-9 flex-1 text-right"
+                                    disabled={!returnableField.state.value}
+                                    min="0"
+                                    onChange={(event) =>
+                                      depositField.handleChange(
+                                        event.target.value,
+                                      )
+                                    }
+                                    step="0.01"
+                                    type="number"
+                                    value={depositField.state.value}
+                                  />
+                                )}
+                              </form.Field>
+                            </div>
+                          </RuleControlRow>
+                        )}
+                      </form.Field>
+                    )}
                 </div>
               </FormSection>
 
@@ -1813,6 +1904,8 @@ function makeDefaultSettings(
     variantOptionId,
     brandId,
     consumerPrice: "0",
+    exchangeEnabled: false,
+    exchangeCreditAmount: "0",
   };
 }
 
@@ -1906,6 +1999,9 @@ function BrandConfigCard({
   onRemove,
   onToggleVariant,
   onSetVariants,
+  showCylinderExchange = false,
+  onExchangeChange,
+  onEnableExchangeForAll,
   canRemove = true,
 }: {
   config: BrandConfig;
@@ -1915,11 +2011,25 @@ function BrandConfigCard({
   onRemove: () => void;
   onToggleVariant: (variantOptionId: number) => void;
   onSetVariants: (variantOptionIds: number[]) => void;
+  showCylinderExchange?: boolean;
+  onExchangeChange?: (
+    variantOptionId: number,
+    changes: Partial<
+      Pick<VariantPriceSettings, "exchangeEnabled" | "exchangeCreditAmount">
+    >,
+  ) => void;
+  onEnableExchangeForAll?: (enabled: boolean) => void;
   canRemove?: boolean;
 }) {
   const selectedCount = config.selectedVariantIds.length;
   const totalCount = variantOptions.length;
   const allSelected = totalCount > 0 && selectedCount === totalCount;
+  const allExchangeEnabled =
+    selectedCount > 0 &&
+    config.selectedVariantIds.every(
+      (variantOptionId) =>
+        config.variantSettings[variantOptionId]?.exchangeEnabled,
+    );
 
   return (
     <div className="rounded-lg border bg-card">
@@ -2017,6 +2127,79 @@ function BrandConfigCard({
                     );
                   })}
                 </div>
+                {showCylinderExchange && selectedCount > 0 && (
+                  <div className="overflow-hidden rounded-md border">
+                    <div className="flex items-center justify-between gap-4 border-b bg-muted/40 px-3 py-2">
+                      <div>
+                        <p className="text-xs font-medium">
+                          Empty cylinder exchange
+                        </p>
+                        <p className="text-[11px] text-muted-foreground">
+                          Configure Exchange per exact brand and capacity.
+                        </p>
+                      </div>
+                      <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                        Enable for all variants
+                        <Switch
+                          aria-label="Enable exchange for all variants"
+                          checked={allExchangeEnabled}
+                          onCheckedChange={(checked) =>
+                            onEnableExchangeForAll?.(checked)
+                          }
+                        />
+                      </label>
+                    </div>
+                    <div className="divide-y">
+                      {config.selectedVariantIds.map((variantOptionId) => {
+                        const option = variantOptions.find(
+                          (row: any) => row.id === variantOptionId,
+                        );
+                        const settings =
+                          config.variantSettings[variantOptionId] ??
+                          makeDefaultSettings(variantOptionId, config.brandId);
+                        return (
+                          <div
+                            className="grid grid-cols-[minmax(0,1fr)_auto_minmax(120px,180px)] items-center gap-3 px-3 py-2.5"
+                            key={variantOptionId}
+                          >
+                            <span className="truncate text-sm font-medium">
+                              {option?.name ?? `Variant #${variantOptionId}`}
+                            </span>
+                            <Switch
+                              aria-label={`Enable exchange for ${option?.name ?? variantOptionId}`}
+                              checked={settings.exchangeEnabled}
+                              onCheckedChange={(checked) =>
+                                onExchangeChange?.(variantOptionId, {
+                                  exchangeEnabled: checked,
+                                })
+                              }
+                            />
+                            <div className="relative">
+                              <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
+                                ৳
+                              </span>
+                              <Input
+                                aria-label={`Exchange Credit for ${option?.name ?? variantOptionId}`}
+                                className="h-8 pl-7 text-right"
+                                disabled={!settings.exchangeEnabled}
+                                min="0"
+                                onChange={(event) =>
+                                  onExchangeChange?.(variantOptionId, {
+                                    exchangeCreditAmount: event.target.value,
+                                  })
+                                }
+                                placeholder="Credit"
+                                step="0.01"
+                                type="number"
+                                value={settings.exchangeCreditAmount}
+                              />
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
               </>
             )}
           </div>

@@ -2,77 +2,78 @@
 
 import type { Brand } from "@bikalpo-project/db/schema";
 import type { ColumnDef } from "@tanstack/react-table";
-import { MoreHorizontal } from "lucide-react";
-import DeleteBrandDialog from "@/components/features/brand/components/delete-brand-dialog";
-import EditBrandDialog from "@/components/features/brand/components/edit-brand-dialog";
-import { Badge } from "@/components/ui/badge";
+import Link from "next/link";
+import { ActiveStatusBadge } from "@/components/features/product-setup";
 import { Button } from "@/components/ui/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { ADMIN_BASE } from "@/lib/routes";
 
-export function useBrandColumns() {
-  const columns: ColumnDef<Brand>[] = [
+export interface BrandSetupRow extends Brand {
+  categories: { id: number; name: string }[];
+  productCount: number;
+  coreIdentityCount: number;
+  variantCount: number;
+}
 
+export function useBrandColumns(): ColumnDef<BrandSetupRow, unknown>[] {
+  return [
     {
       id: "skuCode",
-      header: () => <div className="text-center">SKU</div>,
+      header: "SKU",
       cell: ({ row }) => (
-        <div className="text-center">
-          <Badge variant="outline" className="font-mono text-xs bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-900/20 dark:text-indigo-400 dark:border-indigo-800">
-            {row.original.skuCode || "—"}
-          </Badge>
-        </div>
+        <span className="font-mono text-xs tabular-nums">
+          {row.original.skuCode || "—"}
+        </span>
       ),
-      size: 70,
     },
     {
       accessorKey: "name",
-      header: () => <div className="text-center">Name</div>,
+      header: "Brand Name",
       cell: ({ row }) => (
-        <div className="text-center font-medium">{row.getValue("name")}</div>
+        <Link
+          className="font-medium hover:text-primary hover:underline"
+          href={`${ADMIN_BASE}/brands/${row.original.id}`}
+        >
+          {row.original.name}
+        </Link>
       ),
     },
     {
-      accessorKey: "slug",
-      header: () => <div className="text-center">Slug</div>,
+      id: "categories",
+      header: "Category",
       cell: ({ row }) => (
-        <div className="text-center text-muted-foreground">
-          {row.getValue("slug")}
+        <span className="text-sm text-muted-foreground">
+          {row.original.categories.length > 0
+            ? row.original.categories.map((item) => item.name).join(", ")
+            : "—"}
+        </span>
+      ),
+    },
+    {
+      accessorKey: "isActive",
+      header: "Status",
+      cell: ({ row }) => <ActiveStatusBadge isActive={row.original.isActive} />,
+    },
+    {
+      id: "usedIn",
+      header: "Used In",
+      cell: ({ row }) => (
+        <span className="font-mono text-xs tabular-nums">
+          {row.original.productCount.toLocaleString()} Product
+          {row.original.productCount === 1 ? "" : "s"}
+        </span>
+      ),
+    },
+    {
+      id: "actions",
+      header: () => <div className="text-right">Action</div>,
+      enableSorting: false,
+      cell: ({ row }) => (
+        <div className="flex justify-end">
+          <Button asChild className="h-9" size="sm" variant="ghost">
+            <Link href={`${ADMIN_BASE}/brands/${row.original.id}`}>View</Link>
+          </Button>
         </div>
       ),
     },
-
-    {
-      id: "actions",
-      header: () => <div className="text-center">Actions</div>,
-      enableHiding: false,
-      cell: ({ row }) => {
-        const brand = row.original;
-
-        return (
-          <div className="flex justify-center">
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" className="h-8 w-8 p-0">
-                  <span className="sr-only">Open menu</span>
-                  <MoreHorizontal className="h-4 w-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <EditBrandDialog brand={brand} />
-                <DropdownMenuSeparator />
-                <DeleteBrandDialog brand={brand} />
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
-        );
-      },
-    },
   ];
-
-  return columns;
 }

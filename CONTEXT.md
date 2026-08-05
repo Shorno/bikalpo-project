@@ -2,6 +2,24 @@
 
 Bikalpo coordinates marketplace orders across consumer, retailer, warehouse, and delivery contexts. Products keep a shared identity while each owner controls its own configuration, pricing, and inventory. Operational fulfillment language stays distinct from the simplified journey presented to consumers.
 
+## Business Onboarding
+
+**Business Nature**:
+An applicant's declared operating model: Retail Shop, Wholesaler, Distributor, Manufacturer, or Importer. It selects an application path but is not an authorization role or a Product Type.
+_Avoid_: User role, business type, product type
+
+**Shop Owner**:
+An approved business account authorized to use the Shop portal. Retail Shop, Manufacturer, and Importer applications enter this role.
+_Avoid_: Retailer when referring to portal authorization, seller role
+
+**Warehouse Owner**:
+An approved business account authorized to use the Warehouse portal. Wholesaler and Distributor applications enter this role.
+_Avoid_: Wholesaler when referring to every Warehouse portal account
+
+**Seller Capability**:
+The independent ability of a Shop Owner to sell products to consumers; Shop Owner membership alone does not imply this capability.
+_Avoid_: Shop Owner role, retailer role
+
 ## Marketplace Catalog and Ordering
 
 This context describes how products keep a shared identity while each owner controls its own configuration, pricing, and inventory. It also describes how consumers buy known catalog items either from one chosen retailer or by requesting comparable offers from nearby retailers.
@@ -67,6 +85,18 @@ _Avoid_: Confirmation window, bidding window
 **Stock Hold**:
 Inventory reserved for one submitted Offer until that Offer wins, loses, is withdrawn, or expires.
 _Avoid_: Allocation, soft reservation
+
+**Empty Pack Return**:
+A retailer-enabled rule available to Product Types that support returnable packaging. For LPG products, it gives consumers Exchange and New sale modes for eligible cylinders.
+_Avoid_: Product return, refund
+
+**Exchange**:
+An Empty Pack Return sale mode where one empty pack is required for each filled pack sold.
+_Avoid_: Replacement, product swap
+
+**New**:
+An Empty Pack Return sale mode where a filled pack is sold without receiving an empty pack and no Empty Pack Stock is created.
+_Avoid_: Standard when the distinction is Exchange versus New
 
 ## Retail Fulfillment
 

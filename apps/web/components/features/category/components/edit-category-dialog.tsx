@@ -3,28 +3,12 @@
 import type { Category } from "@bikalpo-project/db/schema";
 import { useForm } from "@tanstack/react-form";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Loader, Pencil } from "lucide-react";
-import * as React from "react";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-
-import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
-import {
-  Field,
-  FieldContent,
-  FieldDescription,
-  FieldError,
-  FieldLabel,
-} from "@/components/ui/field";
+import { SetupFormDialog } from "@/components/features/product-setup";
+import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import {
   Select,
   SelectContent,
@@ -32,9 +16,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Switch } from "@/components/ui/switch";
 import { updateCategorySchema } from "@/schema/category.scheam";
-import { generateSlug } from "@/utils/generate-slug";
 import { orpc } from "@/utils/orpc";
 
 interface EditCategoryDialogProps {
@@ -49,25 +31,29 @@ export default function EditCategoryDialog({
   onOpenChange,
 }: EditCategoryDialogProps) {
   const queryClient = useQueryClient();
-
-  // Fetch product types for dropdown — only when dialog is open
+  const router = useRouter();
   const { data: typesData } = useQuery({
     ...orpc.adminProductType.getAll.queryOptions({ input: {} }),
     enabled: open,
   });
-  const productTypes = typesData?.types ?? [];
+  const productTypes = (typesData?.types ?? []).filter(
+    (type) => type.isActive || type.id === category.typeId,
+  );
 
   const mutation = useMutation(
     orpc.category.update.mutationOptions({
       onSuccess: (result) => {
-        queryClient.invalidateQueries({ queryKey: orpc.category.getAll.key() });
+        void queryClient.invalidateQueries({
+          queryKey: orpc.category.getAll.key(),
+        });
         toast.success(result.message);
         onOpenChange(false);
+        router.refresh();
       },
       onError: (error) => {
         toast.error(
           error.message ||
-            "An unexpected error occurred while updating the category.",
+            "An unexpected error occurred while updating the Category.",
         );
       },
     }),
@@ -77,146 +63,148 @@ export default function EditCategoryDialog({
     defaultValues: {
       id: category.id,
       name: category.name,
-      slug: category.slug,
       typeId: category.typeId ?? null,
+      isActive: category.isActive,
     },
-
     validators: {
-      onSubmit: updateCategorySchema as any,
+      onSubmit: updateCategorySchema as never,
     },
     onSubmit: async ({ value }) => {
-      mutation.mutate(value);
+      mutation.mutate({
+        ...value,
+        name: value.name.trim(),
+        slug: category.slug,
+        image: category.image ?? undefined,
+        displayOrder: category.displayOrder,
+      });
     },
   });
 
-  const autoGenerateSlugFromName = (value: string) => {
-    const generatedSlug = generateSlug(value);
-    form.setFieldValue("slug", generatedSlug);
+  const handleOpenChange = (nextOpen: boolean) => {
+    form.reset({
+      id: category.id,
+      name: category.name,
+      typeId: category.typeId ?? null,
+      isActive: category.isActive,
+    });
+    onOpenChange(nextOpen);
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>Edit Category</DialogTitle>
-          <DialogDescription>
-            Update the details of {category.name} category.
-          </DialogDescription>
-        </DialogHeader>
-        <form
-          id="edit-category-form"
-          onSubmit={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            form.handleSubmit();
+    <SetupFormDialog
+      description={`Update ${category.name}.`}
+      formId="edit-category-form"
+      hasUnsavedChanges={() => form.state.isDirty}
+      isSubmitting={mutation.isPending}
+      onOpenChange={handleOpenChange}
+      onSubmit={() => form.handleSubmit()}
+      open={open}
+      submitLabel="Save Changes"
+      title="Edit Category"
+    >
+      <form
+        className="space-y-5"
+        id="edit-category-form"
+        onSubmit={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          form.handleSubmit();
+        }}
+      >
+        <form.Field name="typeId">
+          {(field) => (
+            <Field>
+              <FieldLabel htmlFor="edit-category-type">Type</FieldLabel>
+              <Select
+                onValueChange={(value) => field.handleChange(Number(value))}
+                value={
+                  field.state.value === null
+                    ? "legacy-unassigned"
+                    : String(field.state.value)
+                }
+              >
+                <SelectTrigger id="edit-category-type">
+                  <SelectValue placeholder="Select Type" />
+                </SelectTrigger>
+                <SelectContent>
+                  {category.typeId === null && (
+                    <SelectItem disabled value="legacy-unassigned">
+                      Legacy unassigned
+                    </SelectItem>
+                  )}
+                  {productTypes.map((type) => (
+                    <SelectItem key={type.id} value={String(type.id)}>
+                      {type.name}
+                      {!type.isActive && type.id === category.typeId
+                        ? " (Inactive, current)"
+                        : ""}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
+          )}
+        </form.Field>
+
+        <form.Field name="name">
+          {(field) => {
+            const isInvalid =
+              field.state.meta.isTouched && !field.state.meta.isValid;
+            return (
+              <Field data-invalid={isInvalid}>
+                <FieldLabel htmlFor={field.name}>Category Name</FieldLabel>
+                <Input
+                  aria-invalid={isInvalid}
+                  autoComplete="off"
+                  id={field.name}
+                  name={field.name}
+                  onBlur={field.handleBlur}
+                  onChange={(event) => field.handleChange(event.target.value)}
+                  placeholder="Grocery"
+                  value={field.state.value}
+                />
+                {isInvalid && <FieldError errors={field.state.meta.errors} />}
+              </Field>
+            );
           }}
-          className="space-y-4"
-        >
+        </form.Field>
 
-
-          {/* Name & Slug — side by side */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <form.Field name="name">
-              {(field) => {
-                const isInvalid =
-                  field.state.meta.isTouched && !field.state.meta.isValid;
-                return (
-                  <Field data-invalid={isInvalid}>
-                    <FieldLabel htmlFor={field.name}>Category Name *</FieldLabel>
-                    <Input
-                      id={field.name}
-                      name={field.name}
-                      value={field.state.value}
-                      onBlur={field.handleBlur}
-                      onChange={(e) => {
-                        field.handleChange(e.target.value);
-                        autoGenerateSlugFromName(e.target.value);
-                      }}
-                      aria-invalid={isInvalid}
-                      placeholder="Electronics"
-                      autoComplete="off"
-                    />
-                    {isInvalid && <FieldError errors={field.state.meta.errors} />}
-                  </Field>
-                );
-              }}
-            </form.Field>
-
-            <form.Field name="slug">
-              {(field) => {
-                const isInvalid =
-                  field.state.meta.isTouched && !field.state.meta.isValid;
-                return (
-                  <Field data-invalid={isInvalid}>
-                    <FieldLabel htmlFor={field.name}>Slug *</FieldLabel>
-                    <Input
-                      id={field.name}
-                      name={field.name}
-                      value={field.state.value}
-                      onBlur={field.handleBlur}
-                      onChange={(e) => field.handleChange(e.target.value)}
-                      aria-invalid={isInvalid}
-                      placeholder="electronics"
-                      autoComplete="off"
-                    />
-                    <FieldDescription>Auto-generated from name</FieldDescription>
-                    {isInvalid && <FieldError errors={field.state.meta.errors} />}
-                  </Field>
-                );
-              }}
-            </form.Field>
-          </div>
-
-          {/* Type */}
-          <div className="grid grid-cols-1 gap-4">
-            <form.Field name="typeId">
-              {(field) => (
-                <Field>
-                  <FieldLabel htmlFor="typeId">Product Type</FieldLabel>
-                  <Select
-                    value={field.state.value ? String(field.state.value) : "none"}
-                    onValueChange={(v) =>
-                      field.handleChange(v === "none" ? null : Number(v))
-                    }
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select type" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">No Type</SelectItem>
-                      {productTypes.map((t: any) => (
-                        <SelectItem key={t.id} value={String(t.id)}>
-                          {t.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </Field>
-              )}
-            </form.Field>
-          </div>
-        </form>
-        <DialogFooter>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => onOpenChange(false)}
-            disabled={mutation.isPending}
-          >
-            Cancel
-          </Button>
-          <Button
-            type="submit"
-            form="edit-category-form"
-            disabled={mutation.isPending}
-          >
-            {mutation.isPending && (
-              <Loader className="mr-2 h-4 w-4 animate-spin" />
-            )}
-            Update Category
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        <form.Field name="isActive">
+          {(field) => (
+            <Field>
+              <FieldLabel>Status</FieldLabel>
+              <RadioGroup
+                className="grid gap-2 sm:grid-cols-2"
+                onValueChange={(value) =>
+                  field.handleChange(value === "active")
+                }
+                value={field.state.value ? "active" : "inactive"}
+              >
+                <label
+                  className="flex min-h-11 cursor-pointer items-center gap-3 rounded-lg border px-4 py-3 hover:bg-muted/30"
+                  htmlFor={`edit-category-${category.id}-active`}
+                >
+                  <RadioGroupItem
+                    id={`edit-category-${category.id}-active`}
+                    value="active"
+                  />
+                  <span className="text-sm font-medium">Active</span>
+                </label>
+                <label
+                  className="flex min-h-11 cursor-pointer items-center gap-3 rounded-lg border px-4 py-3 hover:bg-muted/30"
+                  htmlFor={`edit-category-${category.id}-inactive`}
+                >
+                  <RadioGroupItem
+                    id={`edit-category-${category.id}-inactive`}
+                    value="inactive"
+                  />
+                  <span className="text-sm font-medium">Inactive</span>
+                </label>
+              </RadioGroup>
+            </Field>
+          )}
+        </form.Field>
+      </form>
+    </SetupFormDialog>
   );
 }
