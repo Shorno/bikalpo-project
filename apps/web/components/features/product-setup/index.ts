@@ -3,6 +3,7 @@ export * from "./setup-detail";
 export * from "./setup-entity-table";
 export * from "./setup-form-dialog";
 export * from "./setup-page-header";
+export * from "./setup-page-shell";
 export * from "./setup-row-actions";
 export * from "./setup-status-badge";
 export * from "./setup-toggle-action";

@@ -30,6 +30,7 @@ import {
   SetupErrorState,
   SetupMetricStrip,
   SetupPageHeader,
+  SetupPageShell,
   SetupStatusBadge,
   SetupToolbar,
 } from "@/components/features/product-setup";
@@ -570,7 +571,7 @@ export default function AdminSetupRequestsPage() {
   );
 
   return (
-    <div className="space-y-5">
+    <SetupPageShell>
       <SetupPageHeader
         count={stats.total}
         description="Review and resolve centralized Brand, Variant, and Core Identity setup requests."
@@ -721,7 +722,7 @@ export default function AdminSetupRequestsPage() {
           }
         />
       )}
-    </div>
+    </SetupPageShell>
   );
 }
 

@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import {
   SetupErrorState,
   SetupPageHeader,
+  SetupPageShell,
 } from "@/components/features/product-setup";
 import NewSubcategoryDialog from "@/components/features/subcategory/components/new-subcategory-dialog";
 import {
@@ -53,29 +54,31 @@ export default function SubcategoryListPage() {
 
   if (subcategoriesQuery.isLoading || categoriesQuery.isLoading) {
     return (
-      <div className="space-y-6">
+      <SetupPageShell className="space-y-6">
         <div className="flex items-center justify-between">
           <Skeleton className="h-8 w-64" />
           <Skeleton className="h-9 w-40" />
         </div>
         <Skeleton className="h-[400px] w-full" />
-      </div>
+      </SetupPageShell>
     );
   }
 
   if (subcategoriesQuery.isError || categoriesQuery.isError) {
     return (
-      <SetupErrorState
-        onRetry={() => {
-          void subcategoriesQuery.refetch();
-          void categoriesQuery.refetch();
-        }}
-      />
+      <SetupPageShell>
+        <SetupErrorState
+          onRetry={() => {
+            void subcategoriesQuery.refetch();
+            void categoriesQuery.refetch();
+          }}
+        />
+      </SetupPageShell>
     );
   }
 
   return (
-    <div className="space-y-5">
+    <SetupPageShell>
       <SetupPageHeader
         action={
           <NewSubcategoryDialog
@@ -94,6 +97,6 @@ export default function SubcategoryListPage() {
         types={types}
         categories={categoriesList}
       />
-    </div>
+    </SetupPageShell>
   );
 }

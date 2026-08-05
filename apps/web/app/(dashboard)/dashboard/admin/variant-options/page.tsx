@@ -6,6 +6,7 @@ import { useState } from "react";
 import {
   SetupErrorState,
   SetupPageHeader,
+  SetupPageShell,
 } from "@/components/features/product-setup";
 import VariantBulkActions from "@/components/features/variant-option/components/variant-bulk-actions";
 import {
@@ -57,30 +58,32 @@ export default function VariantOptionsPage() {
     categoriesQuery.isLoading
   ) {
     return (
-      <div className="space-y-6">
+      <SetupPageShell className="space-y-6">
         <div className="flex items-center justify-between">
           <Skeleton className="h-8 w-64" />
           <Skeleton className="h-9 w-40" />
         </div>
         <Skeleton className="h-[400px] w-full" />
-      </div>
+      </SetupPageShell>
     );
   }
 
   if (variantsQuery.isError || typesQuery.isError || categoriesQuery.isError) {
     return (
-      <SetupErrorState
-        onRetry={() => {
-          void variantsQuery.refetch();
-          void typesQuery.refetch();
-          void categoriesQuery.refetch();
-        }}
-      />
+      <SetupPageShell>
+        <SetupErrorState
+          onRetry={() => {
+            void variantsQuery.refetch();
+            void typesQuery.refetch();
+            void categoriesQuery.refetch();
+          }}
+        />
+      </SetupPageShell>
     );
   }
 
   return (
-    <div className="space-y-5">
+    <SetupPageShell>
       <SetupPageHeader
         action={
           <Button onClick={() => setShowCreate(true)}>
@@ -108,6 +111,6 @@ export default function VariantOptionsPage() {
         types={types}
         categories={categories}
       />
-    </div>
+    </SetupPageShell>
   );
 }

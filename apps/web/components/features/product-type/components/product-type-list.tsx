@@ -5,6 +5,7 @@ import { parseAsInteger, parseAsString, useQueryState } from "nuqs";
 import {
   SetupErrorState,
   SetupPageHeader,
+  SetupPageShell,
 } from "@/components/features/product-setup";
 import NewTypeDialog from "@/components/features/product-type/components/new-type-dialog";
 import { useProductTypeColumns } from "@/components/features/product-type/components/product-type-columns";
@@ -66,7 +67,7 @@ export default function ProductTypeList() {
   const resetPage = () => void setPage(1);
 
   return (
-    <div className="space-y-5">
+    <SetupPageShell>
       <SetupPageHeader
         action={<NewTypeDialog />}
         count={total}
@@ -101,6 +102,6 @@ export default function ProductTypeList() {
           total={total}
         />
       )}
-    </div>
+    </SetupPageShell>
   );
 }
