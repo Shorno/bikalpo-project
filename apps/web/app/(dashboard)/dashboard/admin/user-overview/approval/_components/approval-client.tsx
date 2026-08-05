@@ -5,18 +5,25 @@ import {
   flexRender,
   getCoreRowModel,
   useReactTable,
-  type ColumnDef,
 } from "@tanstack/react-table";
 import {
   AlertCircle,
+  CheckCircle2,
   ChevronLeft,
   ChevronRight,
   ChevronsLeft,
   ChevronsRight,
   Inbox,
+  Inbox as InboxIcon,
   Search,
+  XCircle,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  DashboardKpiCard,
+  DashboardKpiGrid,
+  type DashboardKpiTone,
+} from "@/components/dashboard/dashboard-kpi-card";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -33,28 +40,50 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { cn } from "@/lib/utils";
 import { orpc } from "@/utils/orpc";
-import { retailerColumns } from "./retailer-columns";
-import { wholesalerColumns } from "./wholesaler-columns";
-import type { UserRow } from "./user-columns";
+import { type ApplicationRow, applicationColumns } from "./application-columns";
 
-type StatusFilter = "all" | "active" | "pending" | "suspended";
-type KycFilter = "all" | "verified" | "unverified" | "pending" | "failed";
-type KpiKey = "total" | "active" | "pending" | "suspended" | "verifiedKyc";
+type StatusFilter = "all" | "pending" | "approved" | "rejected";
+type TypeFilter = "all" | "seller" | "warehouse";
+type ReferralFilter = "all" | "direct" | "invited";
 
 const PAGE_SIZE = 20;
 
-const kpiFilters: {
-  key: KpiKey;
+const KPI_BLOCKS: {
+  key: StatusFilter;
   label: string;
-  statsKey: KpiKey;
+  overviewKey: "total" | "pending" | "approved" | "rejected";
+  tone: DashboardKpiTone;
+  icon: React.ReactNode;
 }[] = [
-  { key: "total", label: "Total", statsKey: "total" },
-  { key: "active", label: "Active", statsKey: "active" },
-  { key: "pending", label: "Pending", statsKey: "pending" },
-  { key: "suspended", label: "Suspended", statsKey: "suspended" },
-  { key: "verifiedKyc", label: "Verified", statsKey: "verifiedKyc" },
+  {
+    key: "all",
+    label: "Total Requests",
+    overviewKey: "total",
+    tone: "slate",
+    icon: <InboxIcon />,
+  },
+  {
+    key: "pending",
+    label: "Pending",
+    overviewKey: "pending",
+    tone: "amber",
+    icon: <AlertCircle />,
+  },
+  {
+    key: "approved",
+    label: "Approved",
+    overviewKey: "approved",
+    tone: "emerald",
+    icon: <CheckCircle2 />,
+  },
+  {
+    key: "rejected",
+    label: "Rejected",
+    overviewKey: "rejected",
+    tone: "red",
+    icon: <XCircle />,
+  },
 ];
 
 function generatePageNumbers(
@@ -72,34 +101,10 @@ function generatePageNumbers(
   return pages;
 }
 
-function deriveActiveKpi(
-  status: StatusFilter,
-  kyc: KycFilter,
-): KpiKey {
-  if (kyc === "verified") return "verifiedKyc";
-  if (status === "active") return "active";
-  if (status === "pending") return "pending";
-  if (status === "suspended") return "suspended";
-  return "total";
-}
-
-interface UsersListClientProps {
-  role: "warehouse" | "shop_owner";
-  title: string;
-  description: string;
-  columns: ColumnDef<UserRow>[];
-  emptyLabel: string;
-}
-
-export function UsersListClient({
-  role,
-  title,
-  description,
-  columns,
-  emptyLabel,
-}: UsersListClientProps) {
-  const [status, setStatus] = useState<StatusFilter>("all");
-  const [kyc, setKyc] = useState<KycFilter>("all");
+export function ApprovalClient() {
+  const [status, setStatus] = useState<StatusFilter>("pending");
+  const [type, setType] = useState<TypeFilter>("all");
+  const [referral, setReferral] = useState<ReferralFilter>("all");
   const [district, setDistrict] = useState("all");
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
@@ -116,128 +121,104 @@ export function UsersListClient({
     };
   }, [search]);
 
-  const { data: statsData } = useQuery({
-    ...orpc.adminUserManagement.getStats.queryOptions({
-      input: { role },
-    }),
+  const { data: overview } = useQuery({
+    ...orpc.adminApplication.getOverview.queryOptions(),
   });
 
   const { data: filterOptions } = useQuery({
-    ...orpc.adminUserManagement.getFilterOptions.queryOptions({
-      input: { role },
-    }),
+    ...orpc.adminApplication.getFilterOptions.queryOptions(),
   });
 
   const listInput = useMemo(
     () => ({
-      role,
-      status,
-      kyc,
-      district: district !== "all" ? district : undefined,
       search: debouncedSearch || undefined,
+      status,
+      type,
+      referral,
+      district: district !== "all" ? district : undefined,
       page,
-      pageSize: PAGE_SIZE,
+      limit: PAGE_SIZE,
     }),
-    [role, status, kyc, district, debouncedSearch, page],
+    [debouncedSearch, status, type, referral, district, page],
   );
 
-  const { data: listData, isLoading, isError } = useQuery({
-    ...orpc.adminUserManagement.list.queryOptions({ input: listInput }),
+  const {
+    data: listData,
+    isLoading,
+    isError,
+  } = useQuery({
+    ...orpc.adminApplication.list.queryOptions({ input: listInput }),
   });
 
-  const items = (listData?.users ?? []) as UserRow[];
-  const totalCount = listData?.pagination?.totalCount ?? 0;
-  const totalPages = Math.max(1, listData?.pagination?.totalPages ?? 1);
+  const items = (listData?.items ?? []) as ApplicationRow[];
+  const totalCount = listData?.total ?? 0;
+  const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
   const showFrom = totalCount > 0 ? (page - 1) * PAGE_SIZE + 1 : 0;
   const showTo = Math.min(page * PAGE_SIZE, totalCount);
 
   const table = useReactTable({
     data: items,
-    columns,
+    columns: applicationColumns,
     getCoreRowModel: getCoreRowModel(),
     manualPagination: true,
     pageCount: totalPages,
   });
 
-  const stats = statsData?.stats;
-  const activeKpi = deriveActiveKpi(status, kyc);
-
-  const counts: Record<KpiKey, number> = {
-    total: stats?.total ?? 0,
-    active: stats?.active ?? 0,
-    pending: stats?.pending ?? 0,
-    suspended: stats?.suspended ?? 0,
-    verifiedKyc: stats?.verifiedKyc ?? 0,
+  const selectStatus = (next: StatusFilter) => {
+    setStatus(next);
+    setPage(1);
   };
 
-  const selectKpi = (key: KpiKey) => {
-    setPage(1);
-    switch (key) {
-      case "active":
-        setStatus("active");
-        setKyc("all");
-        break;
-      case "pending":
-        setStatus("pending");
-        setKyc("all");
-        break;
-      case "suspended":
-        setStatus("suspended");
-        setKyc("all");
-        break;
-      case "verifiedKyc":
-        setStatus("all");
-        setKyc("verified");
-        break;
-      default:
-        setStatus("all");
-        setKyc("all");
-    }
+  const counts: Record<StatusFilter, number> = {
+    all: overview?.total ?? 0,
+    pending: overview?.pending ?? 0,
+    approved: overview?.approved ?? 0,
+    rejected: overview?.rejected ?? 0,
   };
 
   return (
     <div className="space-y-5">
-      <div>
-        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-          <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
-          {(stats?.pending ?? 0) > 0 && (
-            <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
-              <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
-              {stats?.pending} pending review
-            </span>
-          )}
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+            <h1 className="text-2xl font-semibold tracking-tight">
+              Approval &amp; Verification
+            </h1>
+            {(overview?.pending ?? 0) > 0 && (
+              <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+                <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+                {overview?.pending} awaiting review
+              </span>
+            )}
+          </div>
+          <p className="mt-0.5 text-sm text-muted-foreground">
+            Onboarding and verification workflow for retailer and wholesaler
+            requests
+          </p>
         </div>
-        <p className="mt-0.5 text-sm text-muted-foreground">{description}</p>
       </div>
 
-      <div className="inline-flex w-full max-w-3xl flex-wrap gap-1 rounded-lg border bg-muted/20 p-1">
-        {kpiFilters.map((tab) => {
-          const isActive = activeKpi === tab.key;
-          return (
-            <button
-              key={tab.key}
-              type="button"
-              onClick={() => selectKpi(tab.key)}
-              className={cn(
-                "inline-flex min-w-[5rem] flex-1 items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-sm transition-colors",
-                isActive
-                  ? "bg-background font-medium text-foreground shadow-sm"
-                  : "text-muted-foreground hover:bg-background/60 hover:text-foreground",
-              )}
-            >
-              <span>{tab.label}</span>
-              <span
-                className={cn(
-                  "tabular-nums",
-                  isActive ? "text-foreground" : "text-muted-foreground",
-                )}
-              >
-                {counts[tab.statsKey].toLocaleString()}
-              </span>
-            </button>
-          );
-        })}
-      </div>
+      <DashboardKpiGrid>
+        {KPI_BLOCKS.map((block) => (
+          <DashboardKpiCard
+            key={block.key}
+            label={block.label}
+            value={counts[block.key].toLocaleString()}
+            icon={block.icon}
+            tone={block.tone}
+            active={status === block.key}
+            onClick={() => selectStatus(block.key)}
+            footer={
+              block.key === "pending" && overview
+                ? {
+                    label: "Seller / Warehouse",
+                    value: `${overview.pendingSeller} / ${overview.pendingWarehouse}`,
+                  }
+                : undefined
+            }
+          />
+        ))}
+      </DashboardKpiGrid>
 
       <div className="overflow-hidden rounded-xl border bg-background shadow-sm">
         <div className="flex flex-wrap items-center gap-2 border-b bg-muted/30 px-4 py-3">
@@ -246,25 +227,38 @@ export function UsersListClient({
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Name / ID / Phone..."
+              placeholder="Name / Phone / Request ID..."
               className="h-9 w-full rounded-md border bg-background pl-9 pr-3 text-sm outline-none transition-colors placeholder:text-muted-foreground focus:border-ring focus:ring-2 focus:ring-ring/20"
             />
           </div>
           <Select
             value={status}
-            onValueChange={(v) => {
-              setStatus(v as StatusFilter);
-              setPage(1);
-            }}
+            onValueChange={(v) => selectStatus(v as StatusFilter)}
           >
             <SelectTrigger className="h-9 w-[130px]">
               <SelectValue placeholder="Status" />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All Status</SelectItem>
-              <SelectItem value="active">Active</SelectItem>
               <SelectItem value="pending">Pending</SelectItem>
-              <SelectItem value="suspended">Suspended</SelectItem>
+              <SelectItem value="approved">Approved</SelectItem>
+              <SelectItem value="rejected">Rejected</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select
+            value={type}
+            onValueChange={(v) => {
+              setType(v as TypeFilter);
+              setPage(1);
+            }}
+          >
+            <SelectTrigger className="h-9 w-[130px]">
+              <SelectValue placeholder="Type" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Types</SelectItem>
+              <SelectItem value="seller">Seller</SelectItem>
+              <SelectItem value="warehouse">Warehouse</SelectItem>
             </SelectContent>
           </Select>
           <Select
@@ -287,21 +281,19 @@ export function UsersListClient({
             </SelectContent>
           </Select>
           <Select
-            value={kyc}
+            value={referral}
             onValueChange={(v) => {
-              setKyc(v as KycFilter);
+              setReferral(v as ReferralFilter);
               setPage(1);
             }}
           >
             <SelectTrigger className="h-9 w-[130px]">
-              <SelectValue placeholder="KYC" />
+              <SelectValue placeholder="Referral" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All KYC</SelectItem>
-              <SelectItem value="verified">Verified</SelectItem>
-              <SelectItem value="unverified">Unverified</SelectItem>
-              <SelectItem value="pending">Pending</SelectItem>
-              <SelectItem value="failed">Failed</SelectItem>
+              <SelectItem value="all">All Referral</SelectItem>
+              <SelectItem value="direct">Direct</SelectItem>
+              <SelectItem value="invited">Invited</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -323,7 +315,7 @@ export function UsersListClient({
               <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-red-50">
                 <AlertCircle className="h-6 w-6 text-red-500" />
               </div>
-              <h2 className="mt-3 font-semibold">Failed to load users</h2>
+              <h2 className="mt-3 font-semibold">Failed to load requests</h2>
               <p className="mt-1 text-sm text-muted-foreground">
                 Try refreshing or adjusting your filters.
               </p>
@@ -335,9 +327,9 @@ export function UsersListClient({
               <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-muted">
                 <Inbox className="h-6 w-6 text-muted-foreground" />
               </div>
-              <h2 className="mt-3 font-semibold">No users found</h2>
+              <h2 className="mt-3 font-semibold">No requests found</h2>
               <p className="mt-1 max-w-sm text-sm text-muted-foreground">
-                {emptyLabel}
+                Requests matching your current filters will appear here.
               </p>
             </div>
           </div>
@@ -385,7 +377,7 @@ export function UsersListClient({
         {!isLoading && !isError && totalCount > 0 && (
           <div className="flex flex-col gap-3 border-t px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
             <span className="text-sm text-muted-foreground">
-              Showing {showFrom}–{showTo} of {totalCount} users
+              Showing {showFrom}–{showTo} of {totalCount} requests
             </span>
             <div className="flex items-center gap-1.5">
               <Button
@@ -451,5 +443,3 @@ export function UsersListClient({
     </div>
   );
 }
-
-export { retailerColumns, wholesalerColumns };

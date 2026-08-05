@@ -16,6 +16,7 @@ import {
   gte,
   ilike,
   isNull,
+  lt,
   or,
   sql,
 } from "drizzle-orm";
@@ -83,6 +84,35 @@ function deriveAccountStatus(
 function formatBusinessNature(nature: string | null | undefined): string | null {
   if (!nature) return null;
   return BUSINESS_NATURE_LABELS[nature] ?? nature.replace(/_/g, " ");
+}
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+const MONTH_LABELS = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+];
+
+// Day keys and labels are derived in UTC on both sides (SQL and JS) so the
+// gap-filling loop below always lines up with the grouped rows.
+function utcDayKey(date: Date): string {
+  return date.toISOString().slice(0, 10);
+}
+
+function utcDayLabel(date: Date): string {
+  return `${MONTH_LABELS[date.getUTCMonth()]}-${String(
+    date.getUTCDate(),
+  ).padStart(2, "0")}`;
 }
 
 function computeProfileCompletion(
@@ -409,6 +439,95 @@ export const adminUserManagementRouter = {
           verifiedKyc: verifiedKycCount,
           newThisMonth: newThisMonthResult[0]?.count ?? 0,
         },
+      };
+    }),
+
+  getGrowthTrend: adminProcedure
+    .route({
+      method: "GET",
+      path: "/admin/users/growth-trend",
+      tags: ["User Management"],
+      summary: "Get user growth trend series",
+    })
+    .input(
+      z.object({
+        role: z.enum(["warehouse", "shop_owner"]),
+        days: z.number().int().min(7).max(365).default(30),
+      }),
+    )
+    .handler(async ({ input }) => {
+      const { role, days } = input;
+      const roleFilter = eq(user.role, role);
+
+      const now = new Date();
+      const todayUtc = Date.UTC(
+        now.getUTCFullYear(),
+        now.getUTCMonth(),
+        now.getUTCDate(),
+      );
+      const windowStart = new Date(todayUtc - (days - 1) * DAY_MS);
+      const previousStart = new Date(windowStart.getTime() - days * DAY_MS);
+
+      const signupRows = await db
+        .select({
+          day: sql<string>`TO_CHAR(${user.createdAt} AT TIME ZONE 'UTC', 'YYYY-MM-DD')`,
+          signups: count(),
+        })
+        .from(user)
+        .where(and(roleFilter, gte(user.createdAt, windowStart)))
+        .groupBy(sql`TO_CHAR(${user.createdAt} AT TIME ZONE 'UTC', 'YYYY-MM-DD')`);
+
+      const signupsByDay = new Map(
+        signupRows.map((row) => [row.day, Number(row.signups)]),
+      );
+
+      // Users that already existed when the window opened — the cumulative
+      // series starts from this baseline rather than from zero.
+      const baselineResult = await db
+        .select({ count: count() })
+        .from(user)
+        .where(and(roleFilter, lt(user.createdAt, windowStart)));
+      const baseline = baselineResult[0]?.count ?? 0;
+
+      const previousResult = await db
+        .select({ count: count() })
+        .from(user)
+        .where(
+          and(
+            roleFilter,
+            gte(user.createdAt, previousStart),
+            lt(user.createdAt, windowStart),
+          ),
+        );
+      const previousNewUsers = previousResult[0]?.count ?? 0;
+
+      const points: { label: string; value: number }[] = [];
+      let runningTotal = baseline;
+      let newUsers = 0;
+
+      for (let i = 0; i < days; i++) {
+        const day = new Date(windowStart.getTime() + i * DAY_MS);
+        const signups = signupsByDay.get(utcDayKey(day)) ?? 0;
+        runningTotal += signups;
+        newUsers += signups;
+        points.push({ label: utcDayLabel(day), value: runningTotal });
+      }
+
+      let growthPercent: number;
+      if (previousNewUsers > 0) {
+        growthPercent =
+          Math.round(((newUsers - previousNewUsers) / previousNewUsers) * 1000) /
+          10;
+      } else {
+        growthPercent = newUsers > 0 ? 100 : 0;
+      }
+
+      return {
+        points,
+        growthPercent,
+        newUsers,
+        previousNewUsers,
+        totalUsers: runningTotal,
       };
     }),
 

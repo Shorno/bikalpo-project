@@ -1,5 +1,12 @@
-import { retailerColumns } from "../_components/retailer-columns";
-import { UsersListClient } from "../_components/users-list-client";
+import {
+  retailerColumns,
+  UsersListClient,
+} from "../_components/users-list-client";
+
+export const metadata = {
+  title: "Retailer Users | Admin",
+  description: "All registered retailer accounts",
+};
 
 export default function RetailersPage() {
   return (

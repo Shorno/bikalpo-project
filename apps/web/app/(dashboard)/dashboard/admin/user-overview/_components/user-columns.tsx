@@ -4,8 +4,10 @@ import type { ColumnDef } from "@tanstack/react-table";
 import { ArrowRight } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
 import { ADMIN_BASE } from "@/lib/routes";
+import { cn } from "@/lib/utils";
+
+export type UserKycStatus = "verified" | "pending" | "failed" | "unverified";
 
 export type UserRow = {
   id: string;
@@ -14,6 +16,7 @@ export type UserRow = {
   ownerName: string;
   phoneNumber: string | null;
   location: string | null;
+  kycStatus: UserKycStatus;
   accountStatus: "active" | "pending" | "suspended";
   typeLabel: string | null;
   createdAt: Date | string;
@@ -25,11 +28,14 @@ const ACCOUNT_STYLES = {
   suspended: { label: "Suspended", dot: "bg-red-500" },
 } as const;
 
-function DotLabel({
-  config,
-}: {
-  config: { label: string; dot: string };
-}) {
+const KYC_STYLES = {
+  verified: { label: "Verified", dot: "bg-emerald-600" },
+  pending: { label: "Pending", dot: "bg-amber-500" },
+  failed: { label: "Failed", dot: "bg-red-500" },
+  unverified: { label: "Unverified", dot: "bg-muted-foreground/40" },
+} as const;
+
+function DotLabel({ config }: { config: { label: string; dot: string } }) {
   return (
     <span className="inline-flex items-center gap-1.5 text-xs font-medium text-foreground">
       <span
@@ -43,6 +49,7 @@ function DotLabel({
 
 function buildBaseColumns(
   typeColumnHeader: string,
+  listSegment: "retailers" | "wholesalers",
 ): ColumnDef<UserRow>[] {
   return [
     {
@@ -78,6 +85,15 @@ function buildBaseColumns(
       ),
     },
     {
+      accessorKey: "kycStatus",
+      header: "KYC",
+      cell: ({ row }) => (
+        <DotLabel
+          config={KYC_STYLES[row.original.kycStatus] ?? KYC_STYLES.unverified}
+        />
+      ),
+    },
+    {
       accessorKey: "accountStatus",
       header: "Status",
       cell: ({ row }) => (
@@ -97,8 +113,15 @@ function buildBaseColumns(
       id: "actions",
       header: "Action",
       cell: ({ row }) => (
-        <Button variant="ghost" size="sm" className="h-8 gap-1 px-2 text-xs" asChild>
-          <Link href={`${ADMIN_BASE}/users/${row.original.id}`}>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-8 gap-1 px-2 text-xs"
+          asChild
+        >
+          <Link
+            href={`${ADMIN_BASE}/user-overview/${listSegment}/${row.original.id}`}
+          >
             View
             <ArrowRight className="h-3 w-3" />
           </Link>
@@ -108,5 +131,8 @@ function buildBaseColumns(
   ];
 }
 
-export const retailerColumns = buildBaseColumns("Type");
-export const wholesalerColumns = buildBaseColumns("Business Nature");
+export const retailerColumns = buildBaseColumns("Type", "retailers");
+export const wholesalerColumns = buildBaseColumns(
+  "Business Nature",
+  "wholesalers",
+);

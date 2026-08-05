@@ -156,7 +156,7 @@ function mapSellerRow(app: SellerApplicationListRow): UnifiedApplicationRow {
         businessType: app.productType?.name ?? app.businessCategory,
         status: app.status as ApplicationStatus,
         createdAt: app.createdAt,
-        detailHref: `/dashboard/admin/seller-applications/${app.id}`,
+        detailHref: `/dashboard/admin/user-overview/approval/seller/${app.id}`,
     };
 }
 
@@ -173,7 +173,7 @@ function mapWarehouseRow(app: WarehouseApplicationListRow): UnifiedApplicationRo
         businessType: app.productType?.name ?? app.businessCategory,
         status: app.status as ApplicationStatus,
         createdAt: app.createdAt,
-        detailHref: `/dashboard/admin/warehouse-applications/${app.id}`,
+        detailHref: `/dashboard/admin/user-overview/approval/warehouse/${app.id}`,
     };
 }
 

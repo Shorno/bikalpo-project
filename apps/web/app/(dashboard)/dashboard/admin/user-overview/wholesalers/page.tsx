@@ -1,5 +1,12 @@
-import { wholesalerColumns } from "../_components/wholesaler-columns";
-import { UsersListClient } from "../_components/users-list-client";
+import {
+  UsersListClient,
+  wholesalerColumns,
+} from "../_components/users-list-client";
+
+export const metadata = {
+  title: "Wholesaler Users | Admin",
+  description: "All registered wholesaler accounts",
+};
 
 export default function WholesalersPage() {
   return (

@@ -1,10 +1,10 @@
 "use client";
 
 import { format, formatDistanceToNow } from "date-fns";
-import Image from "next/image";
 import { Loader2 } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import Image from "next/image";
 import type { ApplicationDetailData } from "@/components/features/admin/application-detail-sections";
+import { Button } from "@/components/ui/button";
 
 const ACCOUNT_STATUS_CONFIG = {
   active: {
@@ -135,18 +135,16 @@ export function UserProfileHero({
           <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-gray-400">
             {profileLabel}
           </p>
-          <h1 className="mb-3 text-base font-semibold text-gray-900">{pageTitle}</h1>
+          <h1 className="mb-3 text-base font-semibold text-gray-900">
+            {pageTitle}
+          </h1>
           <div className="space-y-1">
             <HeroFieldRow label="Business" value={businessName} />
             <HeroFieldRow label="Owner" value={data.ownerName} />
             <HeroFieldRow label="Mobile" value={data.phoneNumber} />
             <HeroFieldRow label="Email" value={data.email} />
-            {locationHint && (
-              <HeroFieldRow label="Area" value={locationHint} />
-            )}
-            {territory && (
-              <HeroFieldRow label="Territory" value={territory} />
-            )}
+            {locationHint && <HeroFieldRow label="Area" value={locationHint} />}
+            {territory && <HeroFieldRow label="Territory" value={territory} />}
           </div>
         </div>
 
@@ -167,10 +165,7 @@ export function UserProfileHero({
                 {statusConfig.label}
               </span>
             </HeroFieldRow>
-            <HeroFieldRow
-              label="Verification"
-              value={KYC_LABELS[kycStatus]}
-            />
+            <HeroFieldRow label="Verification" value={KYC_LABELS[kycStatus]} />
             <HeroFieldRow
               label="Profile"
               value={`${profileCompletion}% Complete`}

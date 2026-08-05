@@ -187,28 +187,32 @@ function getAdminNavGroups(pendingApplications = 0): NavGroup[] {
       ],
     },
     {
-      label: "People Management",
+      label: "User Overviews",
       items: [
         {
-          title: "Users",
-          url: `${ADMIN_BASE}/users/wholesalers`,
-          icon: Users2Icon,
-          items: [
-            { title: "Wholesalers", url: `${ADMIN_BASE}/users/wholesalers` },
-            { title: "Retailers", url: `${ADMIN_BASE}/users/retailers` },
-          ],
+          title: "Retailers",
+          url: `${ADMIN_BASE}/user-overview/retailers`,
+          icon: StoreIcon,
+          activePrefixes: [`${ADMIN_BASE}/user-overview/retailers`],
         },
         {
-          title: "Applications",
-          url: `${ADMIN_BASE}/applications`,
-          icon: StoreIcon,
-          badge: pendingApplications,
-          activePrefixes: [
-            `${ADMIN_BASE}/applications`,
-            `${ADMIN_BASE}/seller-applications`,
-            `${ADMIN_BASE}/warehouse-applications`,
-          ],
+          title: "Wholesalers",
+          url: `${ADMIN_BASE}/user-overview/wholesalers`,
+          icon: WarehouseIcon,
+          activePrefixes: [`${ADMIN_BASE}/user-overview/wholesalers`],
         },
+        {
+          title: "Approval",
+          url: `${ADMIN_BASE}/user-overview/approval`,
+          icon: ClipboardListIcon,
+          badge: pendingApplications,
+          activePrefixes: [`${ADMIN_BASE}/user-overview/approval`],
+        },
+      ],
+    },
+    {
+      label: "People Management",
+      items: [
         {
           title: "Assignments",
           url: `${ADMIN_BASE}/warehouse-assignments`,

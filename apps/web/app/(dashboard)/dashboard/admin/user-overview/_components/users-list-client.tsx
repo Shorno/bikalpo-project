@@ -2,6 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import {
+  type ColumnDef,
   flexRender,
   getCoreRowModel,
   useReactTable,
@@ -32,29 +33,19 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { cn } from "@/lib/utils";
 import { orpc } from "@/utils/orpc";
+import type { UserRow } from "./user-columns";
+import { retailerColumns, wholesalerColumns } from "./user-columns";
 import {
-  applicationColumns,
-  type ApplicationRow,
-} from "./application-columns";
+  type UsersKpiKey,
+  UsersPerformancePanel,
+} from "./users-performance-panel";
 
-type StatusFilter = "all" | "pending" | "approved" | "rejected";
-type TypeFilter = "all" | "seller" | "warehouse";
-type ReferralFilter = "all" | "direct" | "invited";
+type StatusFilter = "all" | "active" | "pending" | "suspended";
+type KycFilter = "all" | "verified" | "unverified" | "pending" | "failed";
 
 const PAGE_SIZE = 20;
-
-const statusFilters: {
-  key: StatusFilter;
-  label: string;
-  overviewKey: "total" | "pending" | "approved" | "rejected";
-}[] = [
-  { key: "all", label: "All", overviewKey: "total" },
-  { key: "pending", label: "Pending", overviewKey: "pending" },
-  { key: "approved", label: "Approved", overviewKey: "approved" },
-  { key: "rejected", label: "Rejected", overviewKey: "rejected" },
-];
+const TREND_DAYS = 30;
 
 function generatePageNumbers(
   current: number,
@@ -71,10 +62,31 @@ function generatePageNumbers(
   return pages;
 }
 
-export function ApplicationsClient() {
+function deriveActiveKpi(status: StatusFilter, kyc: KycFilter): UsersKpiKey {
+  if (kyc === "verified") return "verifiedKyc";
+  if (status === "active") return "active";
+  if (status === "pending") return "pending";
+  if (status === "suspended") return "suspended";
+  return "total";
+}
+
+interface UsersListClientProps {
+  role: "warehouse" | "shop_owner";
+  title: string;
+  description: string;
+  columns: ColumnDef<UserRow>[];
+  emptyLabel: string;
+}
+
+export function UsersListClient({
+  role,
+  title,
+  description,
+  columns,
+  emptyLabel,
+}: UsersListClientProps) {
   const [status, setStatus] = useState<StatusFilter>("all");
-  const [type, setType] = useState<TypeFilter>("all");
-  const [referral, setReferral] = useState<ReferralFilter>("all");
+  const [kyc, setKyc] = useState<KycFilter>("all");
   const [district, setDistrict] = useState("all");
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
@@ -91,114 +103,109 @@ export function ApplicationsClient() {
     };
   }, [search]);
 
-  const { data: overview } = useQuery({
-    ...orpc.adminApplication.getOverview.queryOptions(),
+  const { data: statsData } = useQuery({
+    ...orpc.adminUserManagement.getStats.queryOptions({
+      input: { role },
+    }),
+  });
+
+  const { data: trendData, isLoading: isTrendLoading } = useQuery({
+    ...orpc.adminUserManagement.getGrowthTrend.queryOptions({
+      input: { role, days: TREND_DAYS },
+    }),
   });
 
   const { data: filterOptions } = useQuery({
-    ...orpc.adminApplication.getFilterOptions.queryOptions(),
+    ...orpc.adminUserManagement.getFilterOptions.queryOptions({
+      input: { role },
+    }),
   });
 
   const listInput = useMemo(
     () => ({
-      search: debouncedSearch || undefined,
+      role,
       status,
-      type,
-      referral,
+      kyc,
       district: district !== "all" ? district : undefined,
+      search: debouncedSearch || undefined,
       page,
-      limit: PAGE_SIZE,
+      pageSize: PAGE_SIZE,
     }),
-    [debouncedSearch, status, type, referral, district, page],
+    [role, status, kyc, district, debouncedSearch, page],
   );
 
-  const { data: listData, isLoading, isError } = useQuery({
-    ...orpc.adminApplication.list.queryOptions({ input: listInput }),
+  const {
+    data: listData,
+    isLoading,
+    isError,
+  } = useQuery({
+    ...orpc.adminUserManagement.list.queryOptions({ input: listInput }),
   });
 
-  const items = (listData?.items ?? []) as ApplicationRow[];
-  const totalCount = listData?.total ?? 0;
-  const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
+  const items = (listData?.users ?? []) as UserRow[];
+  const totalCount = listData?.pagination?.totalCount ?? 0;
+  const totalPages = Math.max(1, listData?.pagination?.totalPages ?? 1);
   const showFrom = totalCount > 0 ? (page - 1) * PAGE_SIZE + 1 : 0;
   const showTo = Math.min(page * PAGE_SIZE, totalCount);
 
   const table = useReactTable({
     data: items,
-    columns: applicationColumns,
+    columns,
     getCoreRowModel: getCoreRowModel(),
     manualPagination: true,
     pageCount: totalPages,
   });
 
-  const selectStatus = (next: StatusFilter) => {
-    setStatus(next);
-    setPage(1);
-  };
+  const stats = statsData?.stats;
+  const activeKpi = deriveActiveKpi(status, kyc);
 
-  const counts: Record<StatusFilter, number> = {
-    all: overview?.total ?? 0,
-    pending: overview?.pending ?? 0,
-    approved: overview?.approved ?? 0,
-    rejected: overview?.rejected ?? 0,
+  const selectKpi = (key: UsersKpiKey) => {
+    setPage(1);
+    switch (key) {
+      case "active":
+        setStatus("active");
+        setKyc("all");
+        break;
+      case "pending":
+        setStatus("pending");
+        setKyc("all");
+        break;
+      case "suspended":
+        setStatus("suspended");
+        setKyc("all");
+        break;
+      case "verifiedKyc":
+        setStatus("all");
+        setKyc("verified");
+        break;
+      default:
+        setStatus("all");
+        setKyc("all");
+    }
   };
 
   return (
     <div className="space-y-5">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-            <h1 className="text-2xl font-semibold tracking-tight">
-              Applications
-            </h1>
-            {(overview?.pending ?? 0) > 0 && (
-              <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
-                <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
-                {overview?.pending} awaiting review
-              </span>
-            )}
-          </div>
-          <p className="mt-0.5 text-sm text-muted-foreground">
-            Review seller and warehouse registration requests in one place
-          </p>
+      <div>
+        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+          <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
+          {(stats?.pending ?? 0) > 0 && (
+            <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+              <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+              {stats?.pending} pending review
+            </span>
+          )}
         </div>
+        <p className="mt-0.5 text-sm text-muted-foreground">{description}</p>
       </div>
 
-      <div className="flex flex-col gap-1.5">
-        <div className="inline-flex w-full max-w-2xl flex-wrap gap-1 rounded-lg border bg-muted/20 p-1">
-          {statusFilters.map((tab) => {
-            const isActive = status === tab.key;
-            return (
-              <button
-                key={tab.key}
-                type="button"
-                onClick={() => selectStatus(tab.key)}
-                className={cn(
-                  "inline-flex min-w-[5.5rem] flex-1 items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-sm transition-colors",
-                  isActive
-                    ? "bg-background font-medium text-foreground shadow-sm"
-                    : "text-muted-foreground hover:bg-background/60 hover:text-foreground",
-                )}
-              >
-                <span>{tab.label}</span>
-                <span
-                  className={cn(
-                    "tabular-nums",
-                    isActive ? "text-foreground" : "text-muted-foreground",
-                  )}
-                >
-                  {counts[tab.key].toLocaleString()}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-        {overview && overview.pending > 0 && (
-          <p className="text-xs text-muted-foreground">
-            Pending: {overview.pendingSeller} seller, {overview.pendingWarehouse}{" "}
-            warehouse
-          </p>
-        )}
-      </div>
+      <UsersPerformancePanel
+        stats={stats}
+        trend={trendData}
+        isTrendLoading={isTrendLoading}
+        activeKpi={activeKpi}
+        onSelectKpi={selectKpi}
+      />
 
       <div className="overflow-hidden rounded-xl border bg-background shadow-sm">
         <div className="flex flex-wrap items-center gap-2 border-b bg-muted/30 px-4 py-3">
@@ -207,24 +214,25 @@ export function ApplicationsClient() {
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Name / Phone / Request ID..."
+              placeholder="Name / ID / Phone..."
               className="h-9 w-full rounded-md border bg-background pl-9 pr-3 text-sm outline-none transition-colors placeholder:text-muted-foreground focus:border-ring focus:ring-2 focus:ring-ring/20"
             />
           </div>
           <Select
-            value={type}
+            value={status}
             onValueChange={(v) => {
-              setType(v as TypeFilter);
+              setStatus(v as StatusFilter);
               setPage(1);
             }}
           >
             <SelectTrigger className="h-9 w-[130px]">
-              <SelectValue placeholder="Type" />
+              <SelectValue placeholder="Status" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All Types</SelectItem>
-              <SelectItem value="seller">Seller</SelectItem>
-              <SelectItem value="warehouse">Warehouse</SelectItem>
+              <SelectItem value="all">All Status</SelectItem>
+              <SelectItem value="active">Active</SelectItem>
+              <SelectItem value="pending">Pending</SelectItem>
+              <SelectItem value="suspended">Suspended</SelectItem>
             </SelectContent>
           </Select>
           <Select
@@ -247,19 +255,21 @@ export function ApplicationsClient() {
             </SelectContent>
           </Select>
           <Select
-            value={referral}
+            value={kyc}
             onValueChange={(v) => {
-              setReferral(v as ReferralFilter);
+              setKyc(v as KycFilter);
               setPage(1);
             }}
           >
             <SelectTrigger className="h-9 w-[130px]">
-              <SelectValue placeholder="Referral" />
+              <SelectValue placeholder="KYC" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All Referral</SelectItem>
-              <SelectItem value="direct">Direct</SelectItem>
-              <SelectItem value="invited">Invited</SelectItem>
+              <SelectItem value="all">All KYC</SelectItem>
+              <SelectItem value="verified">Verified</SelectItem>
+              <SelectItem value="unverified">Unverified</SelectItem>
+              <SelectItem value="pending">Pending</SelectItem>
+              <SelectItem value="failed">Failed</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -281,7 +291,7 @@ export function ApplicationsClient() {
               <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-red-50">
                 <AlertCircle className="h-6 w-6 text-red-500" />
               </div>
-              <h2 className="mt-3 font-semibold">Failed to load applications</h2>
+              <h2 className="mt-3 font-semibold">Failed to load users</h2>
               <p className="mt-1 text-sm text-muted-foreground">
                 Try refreshing or adjusting your filters.
               </p>
@@ -293,9 +303,9 @@ export function ApplicationsClient() {
               <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-muted">
                 <Inbox className="h-6 w-6 text-muted-foreground" />
               </div>
-              <h2 className="mt-3 font-semibold">No applications found</h2>
+              <h2 className="mt-3 font-semibold">No users found</h2>
               <p className="mt-1 max-w-sm text-sm text-muted-foreground">
-                Applications matching your current filters will appear here.
+                {emptyLabel}
               </p>
             </div>
           </div>
@@ -343,7 +353,7 @@ export function ApplicationsClient() {
         {!isLoading && !isError && totalCount > 0 && (
           <div className="flex flex-col gap-3 border-t px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
             <span className="text-sm text-muted-foreground">
-              Showing {showFrom}–{showTo} of {totalCount} applications
+              Showing {showFrom}–{showTo} of {totalCount} users
             </span>
             <div className="flex items-center gap-1.5">
               <Button
@@ -366,7 +376,10 @@ export function ApplicationsClient() {
               </Button>
               {generatePageNumbers(page, totalPages).map((p, i) =>
                 p === "..." ? (
-                  <span key={`dot-${i}`} className="px-1 text-xs text-muted-foreground">
+                  <span
+                    key={`dot-${i}`}
+                    className="px-1 text-xs text-muted-foreground"
+                  >
                     …
                   </span>
                 ) : (
@@ -406,3 +419,5 @@ export function ApplicationsClient() {
     </div>
   );
 }
+
+export { retailerColumns, wholesalerColumns };

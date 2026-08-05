@@ -4,13 +4,13 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { Loader2 } from "lucide-react";
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
 import {
   AdminReviewSection,
-  ApplicationReviewHero,
   APPLICATION_STATUS_CONFIG,
+  ApplicationReviewHero,
   BankAndTaxSection,
   BusinessInformationSection,
   BusinessLocationSection,
@@ -20,6 +20,8 @@ import {
   SocialProfilesSection,
   toApplicationDetail,
 } from "@/components/features/admin/application-detail-sections";
+import { KycVerifyDialog } from "@/components/features/admin/kyc-verify-dialog";
+import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -28,10 +30,18 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { KycVerifyDialog } from "@/components/features/admin/kyc-verify-dialog";
-import { Button } from "@/components/ui/button";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
+import { ADMIN_BASE } from "@/lib/routes";
 import { client, orpc } from "@/utils/orpc";
+
+export type ApprovalType = "seller" | "warehouse";
+
+const BUSINESS_TYPE_LABELS: Record<string, string> = {
+  retail: "Retail Shop",
+  restaurant: "Restaurant",
+  warehouse: "Warehouse",
+};
 
 const PLAN_LABELS: Record<string, string> = {
   free_trial: "Free Trial (14 days)",
@@ -39,54 +49,79 @@ const PLAN_LABELS: Record<string, string> = {
   growth: "Growth — ৳2,499/mo",
 };
 
-export default function WarehouseApplicationDetailPage() {
-  const params = useParams();
+const APPROVAL_LIST_URL = `${ADMIN_BASE}/user-overview/approval`;
+
+export function ApprovalDetailClient({
+  type,
+  applicationId,
+}: {
+  type: ApprovalType;
+  applicationId: string;
+}) {
   const router = useRouter();
   const queryClient = useQueryClient();
-  const applicationId = params.id as string;
+  const isWarehouse = type === "warehouse";
 
-  const [actionType, setActionType] = useState<"approve" | "reject" | null>(null);
+  const [actionType, setActionType] = useState<"approve" | "reject" | null>(
+    null,
+  );
   const [adminNotes, setAdminNotes] = useState("");
   const [verifyKycOpen, setVerifyKycOpen] = useState(false);
   const [verifyKycNotes, setVerifyKycNotes] = useState("");
+
+  // Both queries are declared unconditionally to keep hook order stable; only
+  // the one matching the route's type is enabled.
+  const sellerQuery = useQuery({
+    ...orpc.sellerApplication.getById.queryOptions({
+      input: { applicationId },
+    }),
+    enabled: !isWarehouse,
+  });
+
+  const warehouseQuery = useQuery({
+    ...orpc.warehouseApplication.getById.queryOptions({
+      input: { applicationId },
+    }),
+    enabled: isWarehouse,
+  });
 
   const {
     data: application,
     isLoading,
     isError,
     error,
-  } = useQuery({
-    ...orpc.warehouseApplication.getById.queryOptions({
-      input: { applicationId },
-    }),
-  });
+  } = isWarehouse ? warehouseQuery : sellerQuery;
 
   const approveMutation = useMutation({
     mutationFn: (params: { applicationId: string; adminNotes?: string }) =>
-      client.warehouseApplication.approve(params),
+      isWarehouse
+        ? client.warehouseApplication.approve(params)
+        : client.sellerApplication.approve(params),
     onSuccess: () => {
-      toast.success("Application approved — user upgraded to warehouse operator");
+      toast.success(
+        isWarehouse
+          ? "Application approved — user upgraded to warehouse operator"
+          : "Application approved — user upgraded to shop owner",
+      );
       queryClient.invalidateQueries();
       setActionType(null);
       setAdminNotes("");
     },
-    onError: (error) => {
-      toast.error(error.message || "Failed to approve");
-    },
+    onError: (err) => toast.error(err.message || "Failed to approve"),
   });
 
   const rejectMutation = useMutation({
     mutationFn: (params: { applicationId: string; adminNotes?: string }) =>
-      client.warehouseApplication.reject(params),
+      isWarehouse
+        ? client.warehouseApplication.reject(params)
+        : client.sellerApplication.reject(params),
     onSuccess: () => {
       toast.success("Application rejected");
       queryClient.invalidateQueries();
       setActionType(null);
       setAdminNotes("");
     },
-    onError: (error) => {
-      toast.error(error.message || "Failed to reject");
-    },
+    onError: (err) => toast.error(err.message || "Failed to reject"),
   });
 
   const verifyKycMutation = useMutation({
@@ -98,9 +133,7 @@ export default function WarehouseApplicationDetailPage() {
       setVerifyKycOpen(false);
       setVerifyKycNotes("");
     },
-    onError: (error) => {
-      toast.error(error.message || "Failed to verify KYC");
-    },
+    onError: (err) => toast.error(err.message || "Failed to verify KYC"),
   });
 
   const handleConfirmAction = () => {
@@ -140,31 +173,59 @@ export default function WarehouseApplicationDetailPage() {
             : "Application not found"}
         </p>
         <Link
-          href="/dashboard/admin/applications"
+          href={APPROVAL_LIST_URL}
           className="flex items-center gap-2 text-sm font-semibold text-[#003178] hover:underline"
         >
           <span className="material-symbols-outlined text-lg">arrow_back</span>
-          Back to Applications
+          Back to Approval
         </Link>
       </div>
     );
   }
 
+  // Seller and warehouse applications share every field used below except the
+  // business name/address, which are named per table.
+  const record = application as unknown as Record<string, unknown>;
+  const businessName = (
+    isWarehouse ? record.warehouseName : record.shopName
+  ) as string;
+  const businessAddress = (
+    isWarehouse ? record.warehouseAddress : record.shopAddress
+  ) as string;
+  const businessType = record.businessType as string | undefined;
+  const selectedPlan = record.selectedPlan as string | undefined;
+  const reviewedAt = record.reviewedAt as string | Date | null;
+  const existingNotes = record.adminNotes as string | null;
+
   const status = application.status as keyof typeof APPLICATION_STATUS_CONFIG;
   const config = APPLICATION_STATUS_CONFIG[status];
   const isPending = application.status === "pending";
   const kycStatus =
-    (application.kycStatus as
+    (record.kycStatus as
       | "verified"
       | "pending"
       | "failed"
       | "unverified"
       | undefined) ?? "unverified";
   const canVerifyKyc = kycStatus !== "verified";
-  const detail = toApplicationDetail(
-    application as Record<string, unknown>,
-    application.warehouseAddress,
-  );
+  const detail = toApplicationDetail(record, businessAddress);
+
+  const sellingModeBadge =
+    !isWarehouse && businessType === "retail" ? (
+      <div className="flex justify-between text-sm">
+        <span className="text-gray-500">Selling Mode</span>
+        <span className="inline-flex rounded-full border border-green-100 bg-green-50 px-2 py-0.5 text-xs font-semibold text-green-700">
+          B2C Enabled
+        </span>
+      </div>
+    ) : !isWarehouse && businessType === "restaurant" ? (
+      <div className="flex justify-between text-sm">
+        <span className="text-gray-500">Selling Mode</span>
+        <span className="inline-flex rounded-full border border-blue-100 bg-blue-50 px-2 py-0.5 text-xs font-semibold text-blue-700">
+          Buyer Only
+        </span>
+      </div>
+    ) : null;
 
   return (
     <section className="px-4 py-6 sm:px-6 sm:py-8">
@@ -179,19 +240,22 @@ export default function WarehouseApplicationDetailPage() {
         rel="stylesheet"
       />
 
-      <div className="mx-auto max-w-6xl" style={{ fontFamily: "'Inter', sans-serif" }}>
+      <div
+        className="mx-auto max-w-6xl"
+        style={{ fontFamily: "'Inter', sans-serif" }}
+      >
         <Button
           variant="ghost"
-          onClick={() => router.push("/dashboard/admin/applications")}
+          onClick={() => router.push(APPROVAL_LIST_URL)}
           className="mb-5 flex items-center gap-1.5 px-0 text-sm text-gray-500 hover:bg-transparent hover:text-[#003178]"
         >
           <span className="material-symbols-outlined text-lg">arrow_back</span>
-          All Applications
+          All Requests
         </Button>
 
         <ApplicationReviewHero
           data={detail}
-          pageTitle={application.warehouseName}
+          pageTitle={businessName}
           createdAt={application.createdAt}
           status={status}
           isPending={isPending}
@@ -204,22 +268,76 @@ export default function WarehouseApplicationDetailPage() {
         />
 
         <div className="grid gap-6 lg:grid-cols-3">
-          <div className="space-y-5 lg:col-span-2">
-            <BusinessInformationSection
-              data={detail}
-              businessName={application.warehouseName}
-              businessNameLabel="Warehouse Name"
-            />
-            <PersonalLocationSection data={detail} />
-            <BusinessLocationSection data={detail} />
-            <LabeledDocumentsSection data={detail} />
-            <BankAndTaxSection data={detail} />
-            <SocialProfilesSection data={detail} />
-            <ReferralSection data={detail} />
+          <div className="lg:col-span-2">
+            <Tabs defaultValue="basic">
+              <TabsList className="mb-4">
+                <TabsTrigger value="basic">Basic Information</TabsTrigger>
+                <TabsTrigger value="documents">Documents</TabsTrigger>
+                <TabsTrigger value="social">Social</TabsTrigger>
+                <TabsTrigger value="review">Review</TabsTrigger>
+              </TabsList>
+
+              <TabsContent value="basic" className="space-y-5">
+                <BusinessInformationSection
+                  data={detail}
+                  businessName={businessName}
+                  businessNameLabel={
+                    isWarehouse ? "Warehouse Name" : "Shop Name"
+                  }
+                  businessType={
+                    !isWarehouse && businessType
+                      ? BUSINESS_TYPE_LABELS[businessType] || businessType
+                      : undefined
+                  }
+                  businessTypeLabel={!isWarehouse ? "Platform Type" : undefined}
+                  sellingModeBadge={sellingModeBadge}
+                />
+                <PersonalLocationSection data={detail} />
+                <BusinessLocationSection data={detail} />
+                <BankAndTaxSection data={detail} />
+                <ReferralSection data={detail} />
+              </TabsContent>
+
+              <TabsContent value="documents" className="space-y-5">
+                <LabeledDocumentsSection data={detail} />
+              </TabsContent>
+
+              <TabsContent value="social" className="space-y-5">
+                <SocialProfilesSection data={detail} />
+              </TabsContent>
+
+              <TabsContent value="review" className="space-y-5">
+                <AdminReviewSection
+                  isPending={isPending}
+                  adminNotes={adminNotes}
+                  onAdminNotesChange={setAdminNotes}
+                  existingNotes={existingNotes}
+                />
+                {isPending && (
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      onClick={() => setActionType("approve")}
+                      disabled={isActionPending}
+                      className="bg-green-600 hover:bg-green-700"
+                    >
+                      Approve Application
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => setActionType("reject")}
+                      disabled={isActionPending}
+                      className="border-red-200 text-red-600 hover:bg-red-50"
+                    >
+                      Reject Application
+                    </Button>
+                  </div>
+                )}
+              </TabsContent>
+            </Tabs>
           </div>
 
           <div className="space-y-5 self-start lg:sticky lg:top-6">
-            {application.selectedPlan && (
+            {selectedPlan && (
               <div className="rounded-xl border border-gray-100 bg-white p-5">
                 <div className="mb-3 flex items-center gap-2">
                   <span
@@ -228,11 +346,13 @@ export default function WarehouseApplicationDetailPage() {
                   >
                     workspace_premium
                   </span>
-                  <h3 className="text-sm font-bold text-gray-900">Selected Plan</h3>
+                  <h3 className="text-sm font-bold text-gray-900">
+                    Selected Plan
+                  </h3>
                 </div>
                 <div className="rounded-lg bg-[#003178]/5 px-4 py-3 text-center">
                   <p className="text-sm font-bold text-[#003178]">
-                    {PLAN_LABELS[application.selectedPlan] || application.selectedPlan}
+                    {PLAN_LABELS[selectedPlan] || selectedPlan}
                   </p>
                 </div>
               </div>
@@ -259,19 +379,21 @@ export default function WarehouseApplicationDetailPage() {
                         check
                       </span>
                     </div>
-                    {(application.reviewedAt || isPending) && (
+                    {(reviewedAt || isPending) && (
                       <div className="mt-1 h-4 w-0.5 bg-gray-200" />
                     )}
                   </div>
                   <div className="-mt-0.5">
-                    <p className="text-xs font-semibold text-gray-900">Submitted</p>
+                    <p className="text-xs font-semibold text-gray-900">
+                      Submitted
+                    </p>
                     <p className="text-[10px] text-gray-400">
                       {format(new Date(application.createdAt), "MMM d, h:mm a")}
                     </p>
                   </div>
                 </div>
 
-                {application.reviewedAt ? (
+                {reviewedAt ? (
                   <div className="flex items-start gap-3">
                     <div
                       className={`flex h-6 w-6 items-center justify-center rounded-full ${
@@ -290,7 +412,7 @@ export default function WarehouseApplicationDetailPage() {
                         {application.status}
                       </p>
                       <p className="text-[10px] text-gray-400">
-                        {format(new Date(application.reviewedAt), "MMM d, h:mm a")}
+                        {format(new Date(reviewedAt), "MMM d, h:mm a")}
                       </p>
                     </div>
                   </div>
@@ -300,20 +422,17 @@ export default function WarehouseApplicationDetailPage() {
                       <span className="h-2 w-2 animate-pulse rounded-full bg-amber-500" />
                     </div>
                     <div className="-mt-0.5">
-                      <p className="text-xs font-semibold text-gray-900">Awaiting Review</p>
-                      <p className="text-[10px] text-gray-400">Pending decision</p>
+                      <p className="text-xs font-semibold text-gray-900">
+                        Awaiting Review
+                      </p>
+                      <p className="text-[10px] text-gray-400">
+                        Pending decision
+                      </p>
                     </div>
                   </div>
                 )}
               </div>
             </div>
-
-            <AdminReviewSection
-              isPending={isPending}
-              adminNotes={adminNotes}
-              onAdminNotesChange={setAdminNotes}
-              existingNotes={application.adminNotes}
-            />
           </div>
         </div>
       </div>
@@ -331,8 +450,24 @@ export default function WarehouseApplicationDetailPage() {
             </DialogTitle>
             <DialogDescription>
               {actionType === "approve"
-                ? `Approving will upgrade "${application.warehouseName}" to a warehouse operator account.`
-                : `Rejecting will deny "${application.warehouseName}'s" warehouse application.`}
+                ? `Approving will upgrade "${businessName}" to a ${
+                    isWarehouse ? "warehouse operator" : "shop owner"
+                  } account.`
+                : `Rejecting will deny "${businessName}'s" application.`}
+              {actionType === "approve" &&
+                !isWarehouse &&
+                businessType === "retail" && (
+                  <span className="mt-1 block text-green-600">
+                    Retail type — will be seller-enabled (can sell B2C)
+                  </span>
+                )}
+              {actionType === "approve" &&
+                !isWarehouse &&
+                businessType === "restaurant" && (
+                  <span className="mt-1 block text-blue-600">
+                    Restaurant type — buyer-only (wholesale purchasing)
+                  </span>
+                )}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2">
@@ -367,7 +502,9 @@ export default function WarehouseApplicationDetailPage() {
                   : "bg-red-600 hover:bg-red-700"
               }
             >
-              {isActionPending && <Loader2 className="mr-2 size-4 animate-spin" />}
+              {isActionPending && (
+                <Loader2 className="mr-2 size-4 animate-spin" />
+              )}
               {actionType === "approve" ? "Approve" : "Reject"}
             </Button>
           </DialogFooter>
@@ -377,7 +514,7 @@ export default function WarehouseApplicationDetailPage() {
       <KycVerifyDialog
         open={verifyKycOpen}
         onOpenChange={setVerifyKycOpen}
-        subjectName={application.warehouseName}
+        subjectName={businessName}
         notes={verifyKycNotes}
         onNotesChange={setVerifyKycNotes}
         isPending={verifyKycMutation.isPending}

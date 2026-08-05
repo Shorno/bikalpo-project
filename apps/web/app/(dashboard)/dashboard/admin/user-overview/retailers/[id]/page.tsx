@@ -1,13 +1,13 @@
 import { Loader2 } from "lucide-react";
 import { Suspense } from "react";
-import { UserDetailClient } from "./user-detail-client";
+import { UserDetailClient } from "../../_components/user-detail-client";
 
 export const metadata = {
-  title: "User Details | Admin",
-  description: "View and manage user account details",
+  title: "Retailer Details | Admin",
+  description: "View and manage retailer account details",
 };
 
-export default async function UserDetailPage({
+export default async function RetailerDetailPage({
   params,
 }: {
   params: Promise<{ id: string }>;

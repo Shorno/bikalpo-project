@@ -30,10 +30,11 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { ADMIN_BASE } from "@/lib/routes";
 import { client, orpc } from "@/utils/orpc";
-import { UserProfileHero } from "../_components/user-profile-hero";
+import { UserProfileHero } from "./user-profile-hero";
 
 const BUSINESS_TYPE_LABELS: Record<string, string> = {
   retail: "Retail Shop",
@@ -147,7 +148,7 @@ export function UserDetailClient({ userId }: UserDetailClientProps) {
             : "User not found"}
         </p>
         <Link
-          href={`${ADMIN_BASE}/users/wholesalers`}
+          href={`${ADMIN_BASE}/user-overview/wholesalers`}
           className="flex items-center gap-2 text-sm font-semibold text-[#003178] hover:underline"
         >
           <span className="material-symbols-outlined text-lg">arrow_back</span>
@@ -157,8 +158,14 @@ export function UserDetailClient({ userId }: UserDetailClientProps) {
     );
   }
 
-  const { user: userData, loginActivity, application, applicationId, applicationStatus, accountMeta } =
-    data;
+  const {
+    user: userData,
+    loginActivity,
+    application,
+    applicationId,
+    applicationStatus,
+    accountMeta,
+  } = data;
   const isWarehouse = userData.role === "warehouse";
   const isSuspended = userData.banned === true;
   const isActionPending =
@@ -168,7 +175,7 @@ export function UserDetailClient({ userId }: UserDetailClientProps) {
     (accountMeta.kycStatus !== "verified" &&
       (userData.role === "shop_owner" || userData.role === "warehouse"));
 
-  const backUrl = `${ADMIN_BASE}/users/${isWarehouse ? "wholesalers" : "retailers"}`;
+  const backUrl = `${ADMIN_BASE}/user-overview/${isWarehouse ? "wholesalers" : "retailers"}`;
   const backLabel = isWarehouse ? "All Wholesalers" : "All Retailers";
   const businessName = isWarehouse
     ? userData.warehouseName || userData.name
@@ -193,9 +200,7 @@ export function UserDetailClient({ userId }: UserDetailClientProps) {
   const adminNotes = (appRecord?.adminNotes as string | null) ?? "";
   const selectedPlan = appRecord?.selectedPlan as string | undefined;
   const applicationHref = applicationId
-    ? isWarehouse
-      ? `${ADMIN_BASE}/warehouse-applications/${applicationId}`
-      : `${ADMIN_BASE}/seller-applications/${applicationId}`
+    ? `${ADMIN_BASE}/user-overview/approval/${isWarehouse ? "warehouse" : "seller"}/${applicationId}`
     : null;
 
   const sellingModeBadge =
@@ -233,7 +238,10 @@ export function UserDetailClient({ userId }: UserDetailClientProps) {
         rel="stylesheet"
       />
 
-      <div className="mx-auto max-w-6xl" style={{ fontFamily: "'Inter', sans-serif" }}>
+      <div
+        className="mx-auto max-w-6xl"
+        style={{ fontFamily: "'Inter', sans-serif" }}
+      >
         <Button
           variant="ghost"
           onClick={() => router.push(backUrl)}
@@ -266,37 +274,63 @@ export function UserDetailClient({ userId }: UserDetailClientProps) {
         />
 
         <div className="grid gap-6 lg:grid-cols-3">
-          <div className="space-y-5 lg:col-span-2">
-            {application && (
-              <>
-                <BusinessInformationSection
-                  data={detail}
-                  businessName={businessName}
-                  businessNameLabel={isWarehouse ? "Warehouse Name" : "Shop Name"}
-                  businessType={
-                    !isWarehouse
-                      ? BUSINESS_TYPE_LABELS[userData.businessType || ""] ||
-                        userData.businessType
-                      : undefined
-                  }
-                  businessTypeLabel={!isWarehouse ? "Platform Type" : undefined}
-                  sellingModeBadge={sellingModeBadge}
-                  applicantStatusLabel={applicationStatusLabel}
-                />
-                <PersonalLocationSection data={detail} />
-                <BusinessLocationSection data={detail} />
-                <LabeledDocumentsSection data={detail} />
-                <BankAndTaxSection data={detail} />
-                <SocialProfilesSection data={detail} />
-                <ReferralSection data={detail} />
-              </>
-            )}
+          <div className="lg:col-span-2">
+            {application ? (
+              <Tabs defaultValue="basic">
+                <TabsList className="mb-4">
+                  <TabsTrigger value="basic">Basic Information</TabsTrigger>
+                  <TabsTrigger value="documents">Documents</TabsTrigger>
+                  <TabsTrigger value="social">Social</TabsTrigger>
+                  <TabsTrigger value="notes">Admin Notes</TabsTrigger>
+                </TabsList>
 
-            {!application && (
+                <TabsContent value="basic" className="space-y-5">
+                  <BusinessInformationSection
+                    data={detail}
+                    businessName={businessName}
+                    businessNameLabel={
+                      isWarehouse ? "Warehouse Name" : "Shop Name"
+                    }
+                    businessType={
+                      !isWarehouse
+                        ? BUSINESS_TYPE_LABELS[userData.businessType || ""] ||
+                          userData.businessType
+                        : undefined
+                    }
+                    businessTypeLabel={
+                      !isWarehouse ? "Platform Type" : undefined
+                    }
+                    sellingModeBadge={sellingModeBadge}
+                    applicantStatusLabel={applicationStatusLabel}
+                  />
+                  <PersonalLocationSection data={detail} />
+                  <BusinessLocationSection data={detail} />
+                  <BankAndTaxSection data={detail} />
+                  <ReferralSection data={detail} />
+                </TabsContent>
+
+                <TabsContent value="documents" className="space-y-5">
+                  <LabeledDocumentsSection data={detail} />
+                </TabsContent>
+
+                <TabsContent value="social" className="space-y-5">
+                  <SocialProfilesSection data={detail} />
+                </TabsContent>
+
+                <TabsContent value="notes" className="space-y-5">
+                  <AdminReviewSection
+                    isPending={false}
+                    adminNotes=""
+                    onAdminNotesChange={() => {}}
+                    existingNotes={adminNotes}
+                  />
+                </TabsContent>
+              </Tabs>
+            ) : (
               <div className="rounded-xl border border-gray-200 bg-white p-5">
                 <p className="text-sm text-gray-500">
-                  No linked application record. Basic account data is shown in the
-                  profile header above.
+                  No linked application record. Basic account data is shown in
+                  the profile header above.
                 </p>
               </div>
             )}
@@ -311,16 +345,21 @@ export function UserDetailClient({ userId }: UserDetailClientProps) {
                 >
                   login
                 </span>
-                <h3 className="text-sm font-bold text-gray-900">Login Activity</h3>
+                <h3 className="text-sm font-bold text-gray-900">
+                  Login Activity
+                </h3>
               </div>
               {loginActivity ? (
                 <div className="space-y-2 text-sm">
                   <div className="flex justify-between gap-4">
                     <span className="text-gray-500">Last Active</span>
                     <span className="text-right font-medium text-gray-900">
-                      {formatDistanceToNow(new Date(loginActivity.lastLoginAt), {
-                        addSuffix: true,
-                      })}
+                      {formatDistanceToNow(
+                        new Date(loginActivity.lastLoginAt),
+                        {
+                          addSuffix: true,
+                        },
+                      )}
                     </span>
                   </div>
                   <div className="flex justify-between gap-4">
@@ -337,18 +376,11 @@ export function UserDetailClient({ userId }: UserDetailClientProps) {
                   </div>
                 </div>
               ) : (
-                <p className="text-sm text-gray-400">No login activity recorded</p>
+                <p className="text-sm text-gray-400">
+                  No login activity recorded
+                </p>
               )}
             </div>
-
-            {application && adminNotes && (
-              <AdminReviewSection
-                isPending={false}
-                adminNotes=""
-                onAdminNotesChange={() => {}}
-                existingNotes={adminNotes}
-              />
-            )}
 
             {applicationHref && (
               <Button variant="outline" className="w-full text-sm" asChild>
@@ -365,9 +397,13 @@ export function UserDetailClient({ userId }: UserDetailClientProps) {
                   >
                     workspace_premium
                   </span>
-                  <h3 className="text-sm font-bold text-gray-900">Selected Plan</h3>
+                  <h3 className="text-sm font-bold text-gray-900">
+                    Selected Plan
+                  </h3>
                 </div>
-                <p className="text-sm font-medium text-[#003178]">{selectedPlan}</p>
+                <p className="text-sm font-medium text-[#003178]">
+                  {selectedPlan}
+                </p>
               </div>
             )}
 
@@ -391,7 +427,9 @@ export function UserDetailClient({ userId }: UserDetailClientProps) {
                 {applicationStatus?.status === "approved" &&
                   applicationStatus.reviewedAt && (
                     <div className="flex justify-between gap-4">
-                      <span className="text-gray-500">Application Approved</span>
+                      <span className="text-gray-500">
+                        Application Approved
+                      </span>
                       <span className="text-right text-gray-900">
                         {format(
                           new Date(applicationStatus.reviewedAt),
@@ -633,10 +671,7 @@ function EditUserDialog({
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          <Button
-            onClick={() => onSave(formData)}
-            disabled={isPending}
-          >
+          <Button onClick={() => onSave(formData)} disabled={isPending}>
             {isPending && <Loader2 className="mr-2 size-4 animate-spin" />}
             Save Changes
           </Button>
