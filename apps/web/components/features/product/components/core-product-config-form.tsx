@@ -954,34 +954,35 @@ export default function CoreProductConfigForm({
                       </div>
                     </div>
 
-                    {existingBrands.length > 0 && (
-                      <div className="rounded-xl border bg-card">
-                        <div className="border-b px-4 py-3">
-                          <h2 className="text-sm font-semibold">
-                            Generated products
-                          </h2>
+                    {existingBrands.length > 0 &&
+                      (!isSingleMode || selectedBrands.length === 0) && (
+                        <div className="rounded-xl border bg-card">
+                          <div className="border-b px-4 py-3">
+                            <h2 className="text-sm font-semibold">
+                              Generated products
+                            </h2>
+                          </div>
+                          <div className="space-y-1 p-2">
+                            {existingBrands.map((brand) => (
+                              <Link
+                                key={brand.productId}
+                                href={productEditHref(brand.productId)}
+                                className="group flex items-center justify-between gap-3 rounded-lg px-2 py-2 transition-colors hover:bg-muted/60"
+                              >
+                                <div className="min-w-0">
+                                  <p className="truncate text-sm font-medium">
+                                    {brand.productName}
+                                  </p>
+                                  <p className="text-xs capitalize text-muted-foreground">
+                                    {brand.status}
+                                  </p>
+                                </div>
+                                <ArrowUpRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+                              </Link>
+                            ))}
+                          </div>
                         </div>
-                        <div className="space-y-1 p-2">
-                          {existingBrands.map((brand) => (
-                            <Link
-                              key={brand.productId}
-                              href={productEditHref(brand.productId)}
-                              className="group flex items-center justify-between gap-3 rounded-lg px-2 py-2 transition-colors hover:bg-muted/60"
-                            >
-                              <div className="min-w-0">
-                                <p className="truncate text-sm font-medium">
-                                  {brand.productName}
-                                </p>
-                                <p className="text-xs capitalize text-muted-foreground">
-                                  {brand.status}
-                                </p>
-                              </div>
-                              <ArrowUpRight className="h-4 w-4 shrink-0 text-muted-foreground" />
-                            </Link>
-                          ))}
-                        </div>
-                      </div>
-                    )}
+                      )}
 
                     {saved && (
                       <div className="flex items-start gap-3 rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4 text-emerald-700 dark:text-emerald-400">
