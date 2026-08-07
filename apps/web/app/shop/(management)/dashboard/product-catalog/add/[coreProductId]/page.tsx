@@ -127,7 +127,10 @@ export default function RetailerCoreProductConfigPage() {
           normalizedCurrent.length > 0 ? normalizedCurrent : normalizedPreset,
         onSaved: async () => {
           await queryClient.invalidateQueries({ queryKey: ["shopOwner"] });
-          router.push(PRODUCTS_URL);
+          await configurationQuery.refetch();
+          if (data?.core?.brandCreationMode !== "single") {
+            router.push(PRODUCTS_URL);
+          }
         },
       }}
     />

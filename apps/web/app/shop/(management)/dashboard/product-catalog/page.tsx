@@ -1,5 +1,6 @@
 "use client";
 
+import { resolveBrandCreationAction } from "@bikalpo-project/db/brand-creation";
 import {
   AlertCircle,
   BookOpen,
@@ -202,8 +203,11 @@ export default function ProductCatalogPage() {
                 </TableHeader>
                 <TableBody>
                   {typeItems.map((item, idx) => {
-                    const configured =
-                      item.hasShopTemplate || item.shopBrandCount > 0;
+                    const action = resolveBrandCreationAction({
+                      mode: item.brandCreationMode,
+                      configuredBrandCount: item.shopBrandCount,
+                    });
+                    const configured = item.shopBrandCount > 0;
                     return (
                       <TableRow
                         key={item.id}
@@ -274,7 +278,7 @@ export default function ProductCatalogPage() {
                                 ) : (
                                   <Plus className="h-3.5 w-3.5 mr-1" />
                                 )}
-                                {configured ? "Edit" : "Add"}
+                                {action.label}
                               </Button>
                             </Link>
                           </div>

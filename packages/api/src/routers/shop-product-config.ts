@@ -1,5 +1,9 @@
 import { db } from "@bikalpo-project/db";
 import {
+  shouldDeactivateOmittedBrands,
+  validateBrandCreationSubmission,
+} from "@bikalpo-project/db/brand-creation";
+import {
   adminProductGenerationTemplate,
   brand,
   coreProductIdentity,
@@ -546,6 +550,13 @@ export const shopProductConfigEndpoints = {
             message: "Admin core product identity not found",
           });
         }
+        const submission = validateBrandCreationSubmission(
+          core.brandCreationMode,
+          input.brands.length,
+        );
+        if (!submission.valid) {
+          throw new ORPCError("BAD_REQUEST", { message: submission.message });
+        }
         const requestedExchangeVariants = input.brands.flatMap((row) =>
           row.variants.filter((variant) => variant.exchangeEnabled),
         );
@@ -744,28 +755,30 @@ export const shopProductConfigEndpoints = {
           });
         }
 
-        const selectedBrands = new Set(brandIds);
-        for (const row of existingProducts) {
-          if (row.brandId === null || selectedBrands.has(row.brandId)) continue;
-          await assertNoShopStock(
-            tx,
-            shopId,
-            row.variants.map((variant) => variant.id),
-            row.name,
-          );
-          await tx
-            .update(product)
-            .set({ status: "inactive" })
-            .where(eq(product.id, row.id));
-          await tx
-            .update(productVariant)
-            .set({ isActive: false })
-            .where(eq(productVariant.productId, row.id));
-          await tx
-            .update(productVariantPrice)
-            .set({ isActive: false, updatedAt: new Date() })
-            .where(eq(productVariantPrice.productId, row.id));
-          deactivated.push(row.id);
+        if (shouldDeactivateOmittedBrands(core.brandCreationMode)) {
+          const selectedBrands = new Set(brandIds);
+          for (const row of existingProducts) {
+            if (row.brandId === null || selectedBrands.has(row.brandId)) continue;
+            await assertNoShopStock(
+              tx,
+              shopId,
+              row.variants.map((variant) => variant.id),
+              row.name,
+            );
+            await tx
+              .update(product)
+              .set({ status: "inactive" })
+              .where(eq(product.id, row.id));
+            await tx
+              .update(productVariant)
+              .set({ isActive: false })
+              .where(eq(productVariant.productId, row.id));
+            await tx
+              .update(productVariantPrice)
+              .set({ isActive: false, updatedAt: new Date() })
+              .where(eq(productVariantPrice.productId, row.id));
+            deactivated.push(row.id);
+          }
         }
 
         await tx

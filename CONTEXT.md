@@ -38,6 +38,10 @@ _Avoid_: Required subset, master configuration
 A warehouse or retailer's independently maintained selection of approved brands and compatible Variant Options for a Core Product Identity.
 _Avoid_: Admin configuration copy, inherited configuration
 
+**Brand Creation Mode**:
+A Core Product Identity setting that controls whether an owner saves one Brand Product at a time (`single`) or synchronizes the full desired brand set (`batch`). It does not limit the total brands that may exist and does not control conversion, loose units, pricing, or inventory.
+_Avoid_: Product type rule, unit policy, brand limit
+
 **Brand Product**:
 One owner-specific product for one Core Product Identity and one brand, containing one or more Owner Variants.
 _Avoid_: Catalog Variant, brand configuration

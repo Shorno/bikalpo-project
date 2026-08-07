@@ -48,7 +48,6 @@ import {
     purchase,
     sellerAreaMapping,
     shopCategoryAssignment,
-    shopProductGenerationTemplate,
     shopWarehouseConnection,
     stockAdjustment,
     stockAdjustmentItem,
@@ -8484,29 +8483,17 @@ const publicCatalogEndpoints = {
             ]);
 
             const coreProductIds = coreProducts.map((cp) => cp.id);
-            const [shopProducts, shopTemplates] =
+            const shopProducts =
                 coreProductIds.length > 0
-                    ? await Promise.all([
-                          db.query.product.findMany({
-                              where: and(
-                                  eq(product.creatorSource, "shop"),
-                                  eq(product.createdById, shopId),
-                                  inArray(product.coreProductId, coreProductIds),
-                              ),
-                              columns: { coreProductId: true, brandId: true },
-                          }),
-                          db.query.shopProductGenerationTemplate.findMany({
-                              where: and(
-                                  eq(shopProductGenerationTemplate.shopId, shopId),
-                                  inArray(
-                                      shopProductGenerationTemplate.coreProductId,
-                                      coreProductIds,
-                                  ),
-                              ),
-                              columns: { coreProductId: true },
-                          }),
-                      ])
-                    : [[], []];
+                    ? await db.query.product.findMany({
+                          where: and(
+                              eq(product.creatorSource, "shop"),
+                              eq(product.createdById, shopId),
+                              inArray(product.coreProductId, coreProductIds),
+                          ),
+                          columns: { coreProductId: true, brandId: true },
+                      })
+                    : [];
             const shopBrandsByCore = new Map<number, Set<number>>();
             for (const row of shopProducts) {
                 if (row.coreProductId == null || row.brandId == null) continue;
@@ -8514,7 +8501,6 @@ const publicCatalogEndpoints = {
                 brands.add(row.brandId);
                 shopBrandsByCore.set(row.coreProductId, brands);
             }
-            const templatedCoreIds = new Set(shopTemplates.map((row) => row.coreProductId));
 
             // 4. Compose hierarchical SKU and retailer configuration state
             const items = coreProducts.map((cp) => {
@@ -8531,6 +8517,7 @@ const publicCatalogEndpoints = {
                     sku: composedSku,
                     image: cp.image,
                     description: cp.description,
+                    brandCreationMode: cp.brandCreationMode,
                     type: cp.category?.type
                         ? {
                               id: cp.category.type.id,
@@ -8553,7 +8540,6 @@ const publicCatalogEndpoints = {
                           }
                         : null,
                     shopBrandCount: shopBrandsByCore.get(cp.id)?.size ?? 0,
-                    hasShopTemplate: templatedCoreIds.has(cp.id),
                 };
             });
 

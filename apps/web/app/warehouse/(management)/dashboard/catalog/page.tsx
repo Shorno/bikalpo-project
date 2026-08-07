@@ -1,5 +1,6 @@
 "use client";
 
+import { resolveBrandCreationAction } from "@bikalpo-project/db/brand-creation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   type ColumnDef,
@@ -77,6 +78,7 @@ type CoreProduct = {
   products: CatalogProduct[];
   adminBrandCount: number;
   warehouseBrandCount: number;
+  brandCreationMode: "single" | "batch";
 };
 
 type SubCategoryData = {
@@ -338,6 +340,10 @@ export default function WarehouseCatalogPage() {
         header: () => <div className="text-right">Action</div>,
         cell: ({ row }) => {
           const cpId = row.original.coreProduct.id;
+          const action = resolveBrandCreationAction({
+            mode: row.original.coreProduct.brandCreationMode,
+            configuredBrandCount: row.original.coreProduct.warehouseBrandCount,
+          });
           const configured = row.original.coreProduct.warehouseBrandCount > 0;
           return (
             <div className="flex justify-end gap-1.5">
@@ -353,7 +359,7 @@ export default function WarehouseCatalogPage() {
                 }
               >
                 {configured ? <Settings size={12} /> : <Plus size={12} />}
-                {configured ? "Manage" : "Configure"}
+                {action.label}
               </Button>
             </div>
           );

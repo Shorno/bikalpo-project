@@ -9,6 +9,10 @@
 
 import { buildProductTypeFulfillmentProfile, db } from "@bikalpo-project/db";
 import {
+	shouldDeactivateOmittedBrands,
+	validateBrandCreationSubmission,
+} from "@bikalpo-project/db/brand-creation";
+import {
 	resolveVariantMovementSemantics,
 	resolveVariantStockSemantics,
 } from "@bikalpo-project/db/variant-definition";
@@ -6446,6 +6450,7 @@ const catalogBrowse = {
 					name: cp.name,
 					slug: cp.slug,
 					image: cp.image,
+					brandCreationMode: cp.brandCreationMode,
 					products: cpProducts.map((p: any) => ({
 						...p,
 						variants: p.variants.map((v: any) => ({
@@ -7375,6 +7380,13 @@ const warehouseProductCreation = {
 						message: "Admin core product identity not found",
 					});
 				}
+				const submission = validateBrandCreationSubmission(
+					core.brandCreationMode,
+					input.brands.length,
+				);
+				if (!submission.valid) {
+					throw new ORPCError("BAD_REQUEST", { message: submission.message });
+				}
 
 				const existingTemplate =
 					await tx.query.warehouseProductGenerationTemplate.findFirst({
@@ -7430,6 +7442,9 @@ const warehouseProductCreation = {
 				await tx.delete(warehouseVariantAlias).where(and(
 					eq(warehouseVariantAlias.warehouseId, warehouseId),
 					eq(warehouseVariantAlias.coreProductId, core.id),
+					shouldDeactivateOmittedBrands(core.brandCreationMode)
+						? undefined
+						: inArray(warehouseVariantAlias.variantOptionId, optionIds),
 				));
 				if (input.variantAliases.length > 0) {
 					await tx.insert(warehouseVariantAlias).values(input.variantAliases.map((entry) => ({
@@ -7742,27 +7757,29 @@ const warehouseProductCreation = {
 					}
 				}
 
-				const selectedBrands = new Set(brandIds);
-				for (const product of existingProducts) {
-					if (product.brandId === null || selectedBrands.has(product.brandId)) {
-						continue;
+				if (shouldDeactivateOmittedBrands(core.brandCreationMode)) {
+					const selectedBrands = new Set(brandIds);
+					for (const product of existingProducts) {
+						if (product.brandId === null || selectedBrands.has(product.brandId)) {
+							continue;
+						}
+						await assertNoLiveStock(
+							product.variants.map((variant) => variant.id),
+							product.name,
+						);
+						await tx
+							.update(productTable)
+							.set({ status: "inactive" })
+							.where(eq(productTable.id, product.id));
+						await tx
+							.update(productVariant)
+							.set({ isActive: false })
+							.where(eq(productVariant.productId, product.id));
+						await tx.update(productVariantPrice)
+							.set({ isActive: false })
+							.where(eq(productVariantPrice.productId, product.id));
+						deactivated.push(product.id);
 					}
-					await assertNoLiveStock(
-						product.variants.map((variant) => variant.id),
-						product.name,
-					);
-					await tx
-						.update(productTable)
-						.set({ status: "inactive" })
-						.where(eq(productTable.id, product.id));
-					await tx
-						.update(productVariant)
-						.set({ isActive: false })
-						.where(eq(productVariant.productId, product.id));
-					await tx.update(productVariantPrice)
-						.set({ isActive: false })
-						.where(eq(productVariantPrice.productId, product.id));
-					deactivated.push(product.id);
 				}
 
 				const adminTemplate =

@@ -1,5 +1,9 @@
 import { db } from "@bikalpo-project/db";
 import {
+  shouldDeactivateOmittedBrands,
+  validateBrandCreationSubmission,
+} from "@bikalpo-project/db/brand-creation";
+import {
   adminProductGenerationTemplate,
   brand as brandTable,
   coreProductIdentity,
@@ -300,6 +304,14 @@ export const adminProductConfigRouter = {
         });
       }
 
+      const submission = validateBrandCreationSubmission(
+        core.brandCreationMode,
+        brands.length,
+      );
+      if (!submission.valid) {
+        throw new ORPCError("BAD_REQUEST", { message: submission.message });
+      }
+
       const brandRows = await db.query.brand.findMany({
         where: inArray(brandTable.id, brandIds),
       });
@@ -560,24 +572,26 @@ export const adminProductConfigRouter = {
         // Brands removed from the configuration → deactivate their
         // products (order/cart FKs and customizations survive;
         // re-adding the brand reactivates the same row).
-        const selectedBrandIds = new Set(brandIds);
-        for (const [existingBrandId, existing] of existingByBrand) {
-          if (
-            !selectedBrandIds.has(existingBrandId) &&
-            existing.status !== "inactive"
-          ) {
-            await tx
-              .update(product)
-              .set({ status: "inactive" })
-              .where(eq(product.id, existing.id));
-            await tx
-              .update(productVariant)
-              .set({ isActive: false })
-              .where(eq(productVariant.productId, existing.id));
-            deactivated.push({
-              brandId: existingBrandId,
-              productId: existing.id,
-            });
+        if (shouldDeactivateOmittedBrands(core.brandCreationMode)) {
+          const selectedBrandIds = new Set(brandIds);
+          for (const [existingBrandId, existing] of existingByBrand) {
+            if (
+              !selectedBrandIds.has(existingBrandId) &&
+              existing.status !== "inactive"
+            ) {
+              await tx
+                .update(product)
+                .set({ status: "inactive" })
+                .where(eq(product.id, existing.id));
+              await tx
+                .update(productVariant)
+                .set({ isActive: false })
+                .where(eq(productVariant.productId, existing.id));
+              deactivated.push({
+                brandId: existingBrandId,
+                productId: existing.id,
+              });
+            }
           }
         }
 

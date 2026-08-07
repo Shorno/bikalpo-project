@@ -1,5 +1,6 @@
 "use client";
 
+import { validateBrandCreationSubmission } from "@bikalpo-project/db/brand-creation";
 import {
   FULFILLMENT_UNITS,
   type FulfillmentUnitCode,
@@ -149,6 +150,7 @@ export default function CoreProductConfigForm({
     () => new Set(),
   );
   const [saved, setSaved] = useState(false);
+  const [singleSaveVersion, setSingleSaveVersion] = useState(0);
 
   const configQuery = useQuery({
     ...orpc.adminProductConfig.get.queryOptions({ input: { coreProductId } }),
@@ -168,6 +170,7 @@ export default function CoreProductConfigForm({
     | CoreProductConfiguration
     | undefined;
   const core = configuration?.core;
+  const isSingleMode = core?.brandCreationMode === "single";
   const existingBrands: ExistingBrandProduct[] = configuration?.brands ?? [];
   const allBrands =
     adapter?.brands ??
@@ -193,26 +196,28 @@ export default function CoreProductConfigForm({
         configuration?.template?.details,
         core,
       ),
-      brands:
-        adapter?.initialBrands ??
-        configuration?.brands
-          .filter((brand) => brand.status !== "inactive")
-          .map((brand) => ({
-            brandId: brand.brandId,
-            variants: brand.variantOptions
-              .filter((option) => option.isActive)
-              .map((option) => ({
-                variantOptionId: option.variantOptionId,
-                consumerPrice: option.consumerPrice || "0",
-              })),
-          })) ??
-        [],
+      brands: isSingleMode
+        ? []
+        : (adapter?.initialBrands ??
+          configuration?.brands
+            .filter((brand) => brand.status !== "inactive")
+            .map((brand) => ({
+              brandId: brand.brandId,
+              variants: brand.variantOptions
+                .filter((option) => option.isActive)
+                .map((option) => ({
+                  variantOptionId: option.variantOptionId,
+                  consumerPrice: option.consumerPrice || "0",
+                })),
+            })) ??
+          []),
     }),
     [
       adapter?.initialBrands,
       configuration?.brands,
       configuration?.template,
       core,
+      isSingleMode,
     ],
   );
 
@@ -243,6 +248,9 @@ export default function CoreProductConfigForm({
           }),
         ]);
       }
+      if (isSingleMode) {
+        setSingleSaveVersion((version) => version + 1);
+      }
     },
     onError: (error) => {
       toast.error(error.message || "Could not save product changes");
@@ -257,6 +265,14 @@ export default function CoreProductConfigForm({
       onSubmit: coreProductConfigSchema,
     },
     onSubmit: async ({ value }) => {
+      const submission = validateBrandCreationSubmission(
+        isSingleMode ? "single" : "batch",
+        value.brands.length,
+      );
+      if (!submission.valid) {
+        toast.error(submission.message);
+        return;
+      }
       const normalizedTemplate = mergeTemplateDetails(
         value.template,
         defaultValues.template,
@@ -270,6 +286,11 @@ export default function CoreProductConfigForm({
       });
     },
   });
+
+  useEffect(() => {
+    if (singleSaveVersion === 0) return;
+    form.setFieldValue("brands", []);
+  }, [form, singleSaveVersion]);
 
   useEffect(() => {
     if (!configuration) return;
@@ -303,7 +324,7 @@ export default function CoreProductConfigForm({
       }));
 
     form.setFieldValue("brands", [
-      ...current,
+      ...(isSingleMode ? [] : current),
       {
         brandId,
         variants:
@@ -317,6 +338,28 @@ export default function CoreProductConfigForm({
     ]);
     setBrandDialogOpen(false);
     setBrandSearch("");
+    setSaved(false);
+  };
+
+  const editSingleBrand = (brandId: number) => {
+    const existing = existingByBrandId.get(brandId);
+    if (!existing) return;
+    const variants = existing.variantOptions.map((option) => ({
+      variantOptionId: option.variantOptionId,
+      consumerPrice: option.consumerPrice || "0",
+    }));
+    form.setFieldValue("brands", [
+      {
+        brandId,
+        variants:
+          variants.length > 0
+            ? variants
+            : availableVariants.map((variant) => ({
+                variantOptionId: variant.id,
+                consumerPrice: "0",
+              })),
+      },
+    ]);
     setSaved(false);
   };
 
@@ -370,6 +413,14 @@ export default function CoreProductConfigForm({
   };
 
   const submitChanges = () => {
+    const submission = validateBrandCreationSubmission(
+      isSingleMode ? "single" : "batch",
+      form.state.values.brands.length,
+    );
+    if (!submission.valid) {
+      toast.error(submission.message);
+      return;
+    }
     const allowedVariantIds = new Set(
       availableVariants.map((variant) => variant.id),
     );
@@ -442,12 +493,16 @@ export default function CoreProductConfigForm({
         const addableBrands = allBrands.filter(
           (brand) =>
             !selectedBrandIds.has(brand.id) &&
+            (!isSingleMode || !existingByBrandId.has(brand.id)) &&
             brand.name.toLowerCase().includes(brandSearch.toLowerCase()),
         );
-        const pendingDeactivations = existingBrands.filter(
-          (brand) =>
-            brand.status !== "inactive" && !selectedBrandIds.has(brand.brandId),
-        );
+        const pendingDeactivations = isSingleMode
+          ? []
+          : existingBrands.filter(
+              (brand) =>
+                brand.status !== "inactive" &&
+                !selectedBrandIds.has(brand.brandId),
+            );
         const pendingCreations = selectedBrands.filter(
           (brand) => !existingByBrandId.has(brand.brandId),
         ).length;
@@ -477,21 +532,23 @@ export default function CoreProductConfigForm({
                   </Button>
                   <div className="min-w-0">
                     <p className="text-xs text-muted-foreground">
-                      Products <span className="opacity-50">/</span> Edit brand
-                      products
+                      Products <span className="opacity-50">/</span>{" "}
+                      {isSingleMode ? "Manage brands" : "Edit brand products"}
                     </p>
                     <div className="flex items-center gap-2">
                       <h1 className="truncate text-base font-semibold leading-tight">
                         {core.name}
                       </h1>
                       <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
-                        {selectedBrands.length} brands
+                        {isSingleMode
+                          ? `${existingBrands.length} configured`
+                          : `${selectedBrands.length} brands`}
                       </span>
                     </div>
                   </div>
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
-                  {adapter?.presetBrands && (
+                  {!isSingleMode && adapter?.presetBrands && (
                     <Button
                       type="button"
                       variant="outline"
@@ -523,7 +580,9 @@ export default function CoreProductConfigForm({
                     size="sm"
                     onClick={submitChanges}
                     disabled={
-                      configureMutation.isPending || hasUnavailableVariants
+                      configureMutation.isPending ||
+                      hasUnavailableVariants ||
+                      (isSingleMode && selectedBrands.length !== 1)
                     }
                   >
                     {configureMutation.isPending && (
@@ -581,19 +640,29 @@ export default function CoreProductConfigForm({
                     </ProductEditorSection>
 
                     <ProductEditorSection
-                      title="Brands and variants"
-                      description="Choose each brand's variants. Prices are managed in Product Price."
+                      title={
+                        isSingleMode ? "Manage brands" : "Brands and variants"
+                      }
+                      description={
+                        isSingleMode
+                          ? "Add or edit one Brand Product at a time. Existing brands are never changed by another brand's save."
+                          : "Choose each brand's variants. Prices are managed in Product Price."
+                      }
                       action={
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          className="h-8"
-                          onClick={() => setBrandDialogOpen(true)}
-                        >
-                          <Plus className="h-4 w-4" />
-                          Add brand
-                        </Button>
+                        (!isSingleMode || selectedBrands.length === 0) && (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="h-8"
+                            onClick={() => setBrandDialogOpen(true)}
+                          >
+                            <Plus className="h-4 w-4" />
+                            {isSingleMode && existingBrands.length > 0
+                              ? "Add another brand"
+                              : "Add brand"}
+                          </Button>
+                        )
                       }
                     >
                       {hasUnavailableVariants && (
@@ -624,13 +693,66 @@ export default function CoreProductConfigForm({
                           </div>
                         </div>
                       )}
-                      {selectedBrands.length === 0 ? (
+                      {isSingleMode &&
+                      selectedBrands.length === 0 &&
+                      existingBrands.length > 0 ? (
+                        <div className="divide-y rounded-lg border">
+                          {existingBrands.map((existingBrand) => {
+                            const brand = allBrands.find(
+                              (item) => item.id === existingBrand.brandId,
+                            ) ?? {
+                              id: existingBrand.brandId,
+                              name: existingBrand.brandName,
+                              logo: existingBrand.brandLogo,
+                            };
+                            return (
+                              <div
+                                key={existingBrand.productId}
+                                className="flex items-center gap-3 p-3"
+                              >
+                                <BrandMark brand={brand} />
+                                <div className="min-w-0 flex-1">
+                                  <p className="truncate text-sm font-medium">
+                                    {existingBrand.brandName}
+                                  </p>
+                                  <p className="text-xs text-muted-foreground">
+                                    <span className="capitalize">
+                                      {existingBrand.status}
+                                    </span>{" "}
+                                    · {existingBrand.variantOptions.length}{" "}
+                                    {existingBrand.variantOptions.length === 1
+                                      ? "variant"
+                                      : "variants"}
+                                  </p>
+                                </div>
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() =>
+                                    editSingleBrand(existingBrand.brandId)
+                                  }
+                                >
+                                  {existingBrand.status === "inactive" && (
+                                    <RotateCcw className="h-4 w-4" />
+                                  )}
+                                  {existingBrand.status === "inactive"
+                                    ? "Reactivate / Edit"
+                                    : "Edit"}
+                                </Button>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ) : selectedBrands.length === 0 ? (
                         <div className="rounded-lg border border-dashed p-6 text-center">
                           <p className="text-sm font-medium">
-                            No brands selected
+                            {isSingleMode
+                              ? "No brands configured"
+                              : "No brands selected"}
                           </p>
                           <p className="mt-1 text-xs text-muted-foreground">
-                            Add a brand to start configuring variants.
+                            Add a brand to start configuring its variants.
                           </p>
                           <Button
                             type="button"
@@ -640,7 +762,7 @@ export default function CoreProductConfigForm({
                             onClick={() => setBrandDialogOpen(true)}
                           >
                             <Plus className="h-4 w-4" />
-                            Add first brand
+                            Add brand
                           </Button>
                         </div>
                       ) : (
@@ -877,8 +999,9 @@ export default function CoreProductConfigForm({
                 <DialogHeader>
                   <DialogTitle>Select brand</DialogTitle>
                   <DialogDescription>
-                    New brands create products; removed brands reuse their
-                    existing product.
+                    {isSingleMode
+                      ? "Choose one brand that has not been configured yet."
+                      : "New brands create products; removed brands reuse their existing product."}
                   </DialogDescription>
                 </DialogHeader>
                 <div className="space-y-3">

@@ -1,4 +1,5 @@
 import { db } from "@bikalpo-project/db";
+import { BRAND_CREATION_MODES } from "@bikalpo-project/db/brand-creation";
 import {
   category,
   coreProductIdentity,
@@ -23,10 +24,12 @@ const createCoreProductSchema = z.object({
   categoryId: z.number().int(),
   subCategoryId: z.number().int().optional().nullable(),
   isActive: z.boolean().default(true),
+  brandCreationMode: z.enum(BRAND_CREATION_MODES).default("batch"),
 });
 
 const updateCoreProductSchema = createCoreProductSchema.extend({
   id: z.number().int(),
+  brandCreationMode: z.enum(BRAND_CREATION_MODES).optional(),
 });
 
 const listCoreProductsSchema = z.object({
@@ -102,11 +105,10 @@ export const adminCoreProductRouter = {
         },
       });
 
-      // Per-core admin product counts → drives Add vs Edit in the list
+      // Per-core admin Brand Product counts drive Add/Edit/Manage in the list.
       const configRows = await db
         .select({
           coreProductId: product.coreProductId,
-          activeBrandCount: sql<number>`count(*) filter (where ${product.status} = 'active')::int`,
           totalBrandCount: sql<number>`count(*)::int`,
         })
         .from(product)
@@ -133,9 +135,9 @@ export const adminCoreProductRouter = {
           ...cp,
           composedSku,
           // "Configured" = at least one admin product exists (any status),
-          // which is the true source of truth for the Add vs Edit action.
+          // which is the true source of truth for the listing action.
           hasConfiguration: (config?.totalBrandCount ?? 0) > 0,
-          configuredBrandCount: config?.activeBrandCount ?? 0,
+          configuredBrandCount: config?.totalBrandCount ?? 0,
         };
       });
 
@@ -415,7 +417,7 @@ export const adminCoreProductRouter = {
     })
     .input(updateCoreProductSchema)
     .handler(async ({ input }) => {
-      const { id, ...updateData } = input;
+      const { id, brandCreationMode, ...updateData } = input;
 
       // Check existence
       const existing = await db.query.coreProductIdentity.findFirst({
@@ -447,6 +449,7 @@ export const adminCoreProductRouter = {
         .update(coreProductIdentity)
         .set({
           ...updateData,
+          ...(brandCreationMode ? { brandCreationMode } : {}),
           subCategoryId: updateData.subCategoryId || null,
         })
         .where(eq(coreProductIdentity.id, id));

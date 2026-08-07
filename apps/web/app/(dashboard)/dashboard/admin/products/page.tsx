@@ -1,5 +1,6 @@
 "use client";
 
+import { resolveBrandCreationAction } from "@bikalpo-project/db/brand-creation";
 import { useQuery } from "@tanstack/react-query";
 import {
   type Column,
@@ -68,6 +69,7 @@ type CatalogCoreProduct = {
   subCategoryId: number | null;
   hasConfiguration?: boolean;
   configuredBrandCount?: number;
+  brandCreationMode: "single" | "batch";
   createdAt?: string | Date;
   updatedAt?: string | Date;
   category: {
@@ -385,37 +387,44 @@ export default function ProductsPage() {
         id: "actions",
         header: () => <div className="text-right">Action</div>,
         enableSorting: false,
-        cell: ({ row }) => (
-          <div
-            className="flex justify-end gap-1.5"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => setSelectedProduct(row.original)}
+        cell: ({ row }) => {
+          const action = resolveBrandCreationAction({
+            mode: row.original.brandCreationMode,
+            configuredBrandCount: row.original.configuredBrandCount ?? 0,
+          });
+          const configured = (row.original.configuredBrandCount ?? 0) > 0;
+          return (
+            <div
+              className="flex justify-end gap-1.5"
+              onClick={(event) => event.stopPropagation()}
             >
-              <Eye className="h-4 w-4" />
-              View
-            </Button>
-            <Button size="sm" asChild>
-              <Link
-                href={
-                  row.original.hasConfiguration
-                    ? `${ADMIN_BASE}/products/core/${row.original.id}/edit`
-                    : `${ADMIN_BASE}/products/new?coreProductId=${row.original.id}`
-                }
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setSelectedProduct(row.original)}
               >
-                {row.original.hasConfiguration ? (
-                  <Edit3 className="h-4 w-4" />
-                ) : (
-                  <Plus className="h-4 w-4" />
-                )}
-                {row.original.hasConfiguration ? "Edit" : "Add"}
-              </Link>
-            </Button>
-          </div>
-        ),
+                <Eye className="h-4 w-4" />
+                View
+              </Button>
+              <Button size="sm" asChild>
+                <Link
+                  href={
+                    configured
+                      ? `${ADMIN_BASE}/products/core/${row.original.id}/edit`
+                      : `${ADMIN_BASE}/products/new?coreProductId=${row.original.id}`
+                  }
+                >
+                  {configured ? (
+                    <Edit3 className="h-4 w-4" />
+                  ) : (
+                    <Plus className="h-4 w-4" />
+                  )}
+                  {action.label}
+                </Link>
+              </Button>
+            </div>
+          );
+        },
       },
     ],
     [],
@@ -665,6 +674,11 @@ function ProductDetailDialog({
   product: CatalogCoreProduct;
   onOpenChange: (open: boolean) => void;
 }) {
+  const action = resolveBrandCreationAction({
+    mode: product.brandCreationMode,
+    configuredBrandCount: product.configuredBrandCount ?? 0,
+  });
+  const configured = (product.configuredBrandCount ?? 0) > 0;
   const priceQuery = useQuery(
     orpc.product.listConsumerReferencePrices.queryOptions({
       input: { coreProductId: product.id },
@@ -676,7 +690,7 @@ function ProductDetailDialog({
     ...orpc.adminProductConfig.get.queryOptions({
       input: { coreProductId: product.id },
     }),
-    enabled: product.hasConfiguration === true,
+    enabled: configured,
     retry: false,
   });
   const configuredProducts = configurationQuery.data?.brands ?? [];
@@ -709,7 +723,7 @@ function ProductDetailDialog({
     totalReviews: 0,
   };
 
-  const editHref = product.hasConfiguration
+  const editHref = configured
     ? `${ADMIN_BASE}/products/core/${product.id}/edit`
     : `${ADMIN_BASE}/products/new?coreProductId=${product.id}`;
 
@@ -861,12 +875,12 @@ function ProductDetailDialog({
             ) : (
               <Button size="sm" asChild>
                 <Link href={editHref}>
-                  {product.hasConfiguration ? (
+                  {configured ? (
                     <Edit3 className="mr-1.5 h-4 w-4" />
                   ) : (
                     <Plus className="mr-1.5 h-4 w-4" />
                   )}
-                  {product.hasConfiguration ? "Edit" : "Add"}
+                  {action.label}
                 </Link>
               </Button>
             )}

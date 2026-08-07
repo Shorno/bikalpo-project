@@ -1,4 +1,5 @@
 import { db, FULFILLMENT_UNIT_CODES } from "@bikalpo-project/db";
+import { validateBrandCreationSubmission } from "@bikalpo-project/db/brand-creation";
 import {
   type AdminProductGenerationTemplateDetails,
   adminProductGenerationTemplate,
@@ -728,6 +729,13 @@ export const productRouter = {
             message:
               "Only admin-created core products can generate admin products",
           });
+        }
+        const submission = validateBrandCreationSubmission(
+          core.brandCreationMode,
+          brandIds.length,
+        );
+        if (!submission.valid) {
+          throw new ORPCError("BAD_REQUEST", { message: submission.message });
         }
 
         // Product existence is the single source of truth for "already

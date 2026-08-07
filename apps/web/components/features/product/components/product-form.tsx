@@ -437,6 +437,9 @@ export default function ProductForm({
   const lockedCoreProduct =
     editAdapter?.coreProduct ?? lockedCoreProductQuery.data?.coreProduct;
   const activeCoreProduct = lockedCoreProduct ?? selectedCoreProduct;
+  const isSingleBrandCreation =
+    !isStructureLocked &&
+    (activeCoreProduct as any)?.brandCreationMode === "single";
   const availableVariantOptions =
     isCoreIdentityLocked && !activeCoreProduct
       ? []
@@ -500,7 +503,11 @@ export default function ProductForm({
     onSuccess: async () => {
       queryClient.invalidateQueries({ queryKey: ["admin-products"] });
       toast.success("Product created successfully");
-      router.push("/dashboard/admin/products");
+      router.push(
+        isSingleBrandCreation && selectedCoreProductId
+          ? `/dashboard/admin/products/core/${selectedCoreProductId}/edit`
+          : "/dashboard/admin/products",
+      );
     },
     onError: handleError,
   });
@@ -608,6 +615,10 @@ export default function ProductForm({
     onSubmit: async ({ value }) => {
       if (brandConfigs.length === 0) {
         toast.error("Add at least one brand");
+        return;
+      }
+      if (isSingleBrandCreation && brandConfigs.length !== 1) {
+        toast.error("This core identity accepts exactly one brand per save");
         return;
       }
       if (
@@ -788,7 +799,9 @@ export default function ProductForm({
       variantSettings: {},
     };
 
-    setBrandConfigs((prev) => [...prev, newConfig]);
+    setBrandConfigs((prev) =>
+      isSingleBrandCreation ? [newConfig] : [...prev, newConfig],
+    );
     setActiveBrandId(brandId);
     // New brands start expanded — make sure they aren't in the collapsed set.
     setCollapsedBrandIds((prev) => {
@@ -1296,7 +1309,11 @@ export default function ProductForm({
                 ) : (
                   <FormSection
                     title="Brands and variants"
-                    description="Pick the variants each brand offers. Prices are managed in Product Price."
+                    description={
+                      isSingleBrandCreation
+                        ? "Choose one brand and its variants. You can add more brands after saving."
+                        : "Pick the variants each brand offers. Prices are managed in Product Price."
+                    }
                   >
                     <div className="space-y-3">
                       {brandConfigs.map((bc) => (
@@ -1327,18 +1344,21 @@ export default function ProductForm({
                         />
                       ))}
 
-                      <Button
-                        type="button"
-                        variant="outline"
-                        className="w-full justify-center gap-2 border-dashed text-muted-foreground"
-                        onClick={() => {
-                          setBrandSearch("");
-                          setBrandModalOpen(true);
-                        }}
-                      >
-                        <Plus className="h-4 w-4" />
-                        Add a brand
-                      </Button>
+                      {(!isSingleBrandCreation ||
+                        brandConfigs.length === 0) && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="w-full justify-center gap-2 border-dashed text-muted-foreground"
+                          onClick={() => {
+                            setBrandSearch("");
+                            setBrandModalOpen(true);
+                          }}
+                        >
+                          <Plus className="h-4 w-4" />
+                          Add a brand
+                        </Button>
+                      )}
 
                       {brandConfigs.length === 0 && (
                         <p className="text-center text-xs text-muted-foreground">

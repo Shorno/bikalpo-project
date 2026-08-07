@@ -29,8 +29,13 @@ export default function WarehouseCoreProductConfigPage() {
   });
 
   const configureMutation = useMutation({
-    mutationFn: (values: any) =>
-      (orpc.warehouse as any).configureWarehouseCoreProducts.call({
+    mutationFn: (values: any) => {
+      const selectedVariantIds = new Set(
+        values.brands.flatMap((brand: any) =>
+          brand.variants.map((variant: any) => variant.variantOptionId),
+        ),
+      );
+      return (orpc.warehouse as any).configureWarehouseCoreProducts.call({
         coreProductId,
         expectedVersion: configurationQuery.data?.version ?? null,
         details: values.template,
@@ -41,12 +46,16 @@ export default function WarehouseCoreProductConfigPage() {
           })),
         })),
         variantAliases: Object.entries(variantAliases)
-          .filter(([, alias]) => alias.trim())
+          .filter(
+            ([variantOptionId, alias]) =>
+              selectedVariantIds.has(Number(variantOptionId)) && alias.trim(),
+          )
           .map(([variantOptionId, alias]) => ({
             variantOptionId: Number(variantOptionId),
             alias: alias.trim(),
           })),
-      }),
+      });
+    },
   });
 
   const data = configurationQuery.data;
@@ -156,7 +165,10 @@ export default function WarehouseCoreProductConfigPage() {
           normalizedCurrent.length > 0 ? normalizedCurrent : normalizedPreset,
         onSaved: async () => {
           await queryClient.invalidateQueries({ queryKey: ["warehouse"] });
-          router.push(PRODUCTS_URL);
+          await configurationQuery.refetch();
+          if (data?.core?.brandCreationMode !== "single") {
+            router.push(PRODUCTS_URL);
+          }
         },
       }}
     />
