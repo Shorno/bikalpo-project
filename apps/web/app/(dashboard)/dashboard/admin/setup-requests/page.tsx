@@ -574,7 +574,6 @@ export default function AdminSetupRequestsPage() {
     <SetupPageShell>
       <SetupPageHeader
         count={stats.total}
-        description="Review and resolve centralized Brand, Variant, and Core Identity setup requests."
         secondaryActions={
           <>
             <Button variant="outline" onClick={refresh} disabled={isRefreshing}>

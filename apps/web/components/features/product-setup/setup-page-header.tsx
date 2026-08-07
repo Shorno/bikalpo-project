@@ -5,7 +5,6 @@ import { ADMIN_BASE } from "@/lib/routes";
 
 type SetupPageHeaderProps = {
   title: string;
-  description: string;
   count?: number;
   action?: ReactNode;
   secondaryActions?: ReactNode;
@@ -13,7 +12,6 @@ type SetupPageHeaderProps = {
 
 export function SetupPageHeader({
   title,
-  description,
   count,
   action,
   secondaryActions,
@@ -31,7 +29,7 @@ export function SetupPageHeader({
         <span aria-current="page">Setup</span>
       </nav>
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <div className="min-w-0 space-y-1">
+        <div className="min-w-0">
           <div className="flex flex-wrap items-baseline gap-2.5">
             <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
             {count !== undefined && (
@@ -40,9 +38,6 @@ export function SetupPageHeader({
               </span>
             )}
           </div>
-          <p className="max-w-3xl text-sm text-muted-foreground">
-            {description}
-          </p>
         </div>
         {(action || secondaryActions) && (
           <div className="flex shrink-0 flex-wrap items-center gap-2 [&_button]:min-h-11 sm:[&_button]:min-h-9">

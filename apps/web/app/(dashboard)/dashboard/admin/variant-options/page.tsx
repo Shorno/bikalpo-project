@@ -92,7 +92,6 @@ export default function VariantOptionsPage() {
           </Button>
         }
         count={variantOptions?.length ?? 0}
-        description="Define canonical Pack and Loose options and scope them to a Type or Category."
         secondaryActions={<VariantBulkActions />}
         title="Variants"
       />

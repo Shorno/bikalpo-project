@@ -27,7 +27,6 @@ export default function BrandList() {
       <SetupPageHeader
         action={<NewBrandDialog />}
         count={brands.length}
-        description="Manage reusable brands and see where each brand is used across the product hierarchy."
         secondaryActions={<BrandCsvActions brands={brands} />}
         title="Brands"
       />
