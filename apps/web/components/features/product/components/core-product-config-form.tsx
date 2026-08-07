@@ -1341,7 +1341,6 @@ function normalizeTemplateDetails(
     stockTrackingEnabled: details?.stockTrackingEnabled ?? true,
     minimumOrderEnabled: details?.minimumOrderEnabled ?? true,
     minimumOrderQty: String(details?.minimumOrderQty ?? "1"),
-    inventoryUnit: details?.inventoryUnit || "unit",
     conversionEnabled: details?.conversionEnabled ?? false,
     inventoryLooseUnitEnabled: details?.inventoryLooseUnitEnabled ?? false,
     inventoryLooseUnit: details?.inventoryLooseUnit || "kg",
@@ -1361,7 +1360,6 @@ function mergeTemplateDetails(
       ...defaults,
       ...current,
       trackingType: current.trackingType || defaults.trackingType,
-      inventoryUnit: current.inventoryUnit || defaults.inventoryUnit,
       inventoryLooseUnit:
         current.inventoryLooseUnit || defaults.inventoryLooseUnit,
     },
@@ -1496,20 +1494,6 @@ function SharedTemplateEditor({
                     )}
                   </form.Field>
                 </div>
-              </TemplateRuleRow>
-            )}
-          </form.Field>
-          <form.Field name="template.inventoryUnit">
-            {(field: any) => (
-              <TemplateRuleRow
-                label="Inventory unit"
-                description="Saved to the product and applied to generated variants."
-              >
-                <UnitSelect
-                  value={field.state.value || defaults.inventoryUnit}
-                  units={units}
-                  onChange={field.handleChange}
-                />
               </TemplateRuleRow>
             )}
           </form.Field>

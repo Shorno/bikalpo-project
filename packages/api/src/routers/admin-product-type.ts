@@ -72,9 +72,6 @@ const productTypeRuleSettingsSchema = z.object({
     .string()
     .min(1)
     .regex(/^\d+(\.\d{1,2})?$/),
-  inventoryUnitOptions: z.array(z.enum(FULFILLMENT_UNIT_CODES)).min(1),
-  inventoryUnitAvailable: z.boolean(),
-  defaultInventoryUnit: z.enum(FULFILLMENT_UNIT_CODES),
   conversionAvailable: z.boolean(),
   conversionDefault: z.boolean(),
   inventoryLooseUnitAvailable: z.boolean(),
@@ -127,9 +124,6 @@ function buildDefaultRuleSettings<
     minimumOrderAvailable: true,
     minimumOrderDefault: true,
     minimumOrderQtyDefault: "1",
-    inventoryUnitOptions: ALL_UNIT_CODES,
-    inventoryUnitAvailable: true,
-    defaultInventoryUnit: profile.stockUnit,
     conversionAvailable: true,
     conversionDefault: hasConversion,
     inventoryLooseUnitAvailable: hasLoose,
@@ -151,13 +145,9 @@ function normalizeRuleSettings(
     minimumOrderQtyDefault: String(settings.minimumOrderQtyDefault ?? "1"),
     defaultPackDepositAmount: String(settings.defaultPackDepositAmount ?? "0"),
     trackingAvailable: settings.trackingAvailable ?? true,
-    inventoryUnitAvailable: settings.inventoryUnitAvailable ?? true,
     trackingTypes: settings.trackingTypes?.length
       ? settings.trackingTypes
       : ["none"],
-    inventoryUnitOptions: settings.inventoryUnitOptions?.length
-      ? settings.inventoryUnitOptions
-      : ["unit"],
     inventoryLooseUnitOptions: settings.inventoryLooseUnitOptions?.length
       ? settings.inventoryLooseUnitOptions
       : ["kg"],
@@ -190,13 +180,6 @@ function validateRuleSettingsInput(
   if (!input.trackingTypes.includes(input.defaultTrackingType)) {
     throw new ORPCError("BAD_REQUEST", {
       message: "Default tracking type must be in the allowed tracking list.",
-    });
-  }
-
-  if (!input.inventoryUnitOptions.includes(input.defaultInventoryUnit)) {
-    throw new ORPCError("BAD_REQUEST", {
-      message:
-        "Default inventory unit must be in the allowed inventory unit list.",
     });
   }
 
@@ -743,9 +726,6 @@ export const adminProductTypeRouter = {
             minimumOrderAvailable: input.minimumOrderAvailable,
             minimumOrderDefault: input.minimumOrderDefault,
             minimumOrderQtyDefault: input.minimumOrderQtyDefault,
-            inventoryUnitOptions: input.inventoryUnitOptions,
-            inventoryUnitAvailable: input.inventoryUnitAvailable,
-            defaultInventoryUnit: input.defaultInventoryUnit,
             conversionAvailable: input.conversionAvailable,
             conversionDefault: input.conversionDefault,
             inventoryLooseUnitAvailable: input.inventoryLooseUnitAvailable,

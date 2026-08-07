@@ -60,18 +60,6 @@ export const productTypeRuleSetting = pgTable("product_type_rule_setting", {
     .default("1")
     .notNull(),
 
-  inventoryUnitOptions: jsonb("inventory_unit_options")
-    .$type<FulfillmentUnitCode[]>()
-    .default(["unit"])
-    .notNull(),
-  inventoryUnitAvailable: boolean("inventory_unit_available")
-    .default(true)
-    .notNull(),
-  defaultInventoryUnit: varchar("default_inventory_unit", { length: 20 })
-    .$type<FulfillmentUnitCode>()
-    .default("unit")
-    .notNull(),
-
   conversionAvailable: boolean("conversion_available").default(true).notNull(),
   conversionDefault: boolean("conversion_default").default(false).notNull(),
 

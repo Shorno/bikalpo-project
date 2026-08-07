@@ -119,7 +119,6 @@ type EditableProductCandidate = {
   conversionEnabled?: boolean | null;
   minimumOrderEnabled?: boolean | null;
   minimumOrderQty?: string | number | null;
-  inventoryUnit?: string | null;
   inventoryLooseUnitEnabled?: boolean | null;
   inventoryLooseUnit?: string | null;
   isReturnablePack?: boolean | null;
@@ -755,12 +754,9 @@ function ProductDetailDialog({
     (product.image.startsWith("http") || product.image.startsWith("/"));
 
   // Inventory & product rules — sourced from the resolved admin product row.
-  const inventoryUnitLabel = editableProduct?.inventoryUnit?.trim() || null;
   const minimumOrderLabel =
     editableProduct && editableProduct.minimumOrderEnabled !== false
-      ? `${formatQuantity(editableProduct.minimumOrderQty)}${
-          inventoryUnitLabel ? ` ${inventoryUnitLabel}` : ""
-        }`
+      ? formatQuantity(editableProduct.minimumOrderQty)
       : null;
   const packDepositLabel = formatCurrency(
     editableProduct?.defaultPackDepositAmount,
@@ -923,12 +919,6 @@ function ProductDetailDialog({
                   <DataField label="Core Name" value={product.name} />
                   <DataField label="SKU" value={product.sku} />
                   <DataField label="Core ID" value={`#${product.id}`} />
-                  {inventoryUnitLabel ? (
-                    <DataField
-                      label="Inventory Unit"
-                      value={inventoryUnitLabel}
-                    />
-                  ) : null}
                   {minimumOrderLabel ? (
                     <DataField
                       label="Minimum Order"

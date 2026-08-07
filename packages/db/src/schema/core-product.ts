@@ -119,7 +119,6 @@ export type AdminProductGenerationTemplateDetails = {
   stockTrackingEnabled: boolean;
   minimumOrderEnabled: boolean;
   minimumOrderQty: string;
-  inventoryUnit: string;
   conversionEnabled: boolean;
   inventoryLooseUnitEnabled: boolean;
   inventoryLooseUnit: string;

@@ -309,6 +309,13 @@
       "when": 1786300000000,
       "tag": "0044_brand_creation_mode",
       "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1786400000000,
+      "tag": "0045_remove_product_inventory_unit",
+      "breakpoints": true
     }
   ]
 }

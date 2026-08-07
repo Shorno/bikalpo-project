@@ -50,6 +50,10 @@ _Avoid_: Catalog Variant, brand configuration
 A compatible configured choice such as a package size, weight, or unit presentation.
 _Avoid_: Variant type, owner variant
 
+**Operational Unit**:
+The unit in which one Variant Option is ordered and stocked, derived from its definition and packaging.
+_Avoid_: Product inventory unit, template unit
+
 **Catalog Variant**:
 The canonical identity of one exact Core Product Identity, brand, and Variant Option combination, shared by equivalent Owner Variants.
 _Avoid_: Local SKU, trade variant, retail variant

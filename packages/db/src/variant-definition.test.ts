@@ -85,6 +85,57 @@ test("keeps loose and attribute inventory in their operational units", () => {
 	assert.equal(formatVariantStockQuantity(size, 4), "4 units");
 });
 
+test("derives operational units from structured variant definitions", () => {
+  const cases = [
+    {
+      family: "lpg" as const,
+      definition: {
+        kind: "measurement",
+        value: "12",
+        measurementUnit: "KG",
+        container: "cylinder",
+      },
+      expected: "cylinder",
+    },
+    {
+      family: "grocery" as const,
+      definition: {
+        kind: "measurement",
+        value: "500",
+        measurementUnit: "Gram",
+        container: "packet",
+      },
+      expected: "pack",
+    },
+    {
+      family: "grocery" as const,
+      definition: {
+        kind: "loose",
+        measurementUnit: "KG",
+      },
+      expected: "kg",
+    },
+    {
+      family: "electronics" as const,
+      definition: {
+        kind: "attribute",
+        attribute: "Model",
+        value: "Pro",
+      },
+      expected: "unit",
+    },
+  ];
+
+  for (const testCase of cases) {
+    const movement = resolveVariantMovementSemantics(
+      option(testCase.definition),
+      testCase.family,
+    );
+    assert.equal(movement.enteredUnit, testCase.expected);
+    assert.equal(movement.inventoryUnit, testCase.expected);
+  }
+});
+
 test("requires matching LPG capacity for linked inventory variants", () => {
   const cylinder = (value: string) =>
     option({

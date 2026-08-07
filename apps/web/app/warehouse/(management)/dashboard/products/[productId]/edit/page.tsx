@@ -76,7 +76,6 @@ export default function WarehouseProductEditPage() {
               stockTrackingEnabled: payload.stockTrackingEnabled,
               minimumOrderEnabled: payload.minimumOrderEnabled,
               minimumOrderQty: String(payload.minimumOrderQty),
-              inventoryUnit: payload.inventoryUnit,
               conversionEnabled: payload.conversionEnabled,
               inventoryLooseUnitEnabled: payload.inventoryLooseUnitEnabled,
               inventoryLooseUnit: payload.inventoryLooseUnit,
