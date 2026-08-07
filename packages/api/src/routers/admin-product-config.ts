@@ -4,6 +4,7 @@ import {
   validateBrandCreationSubmission,
 } from "@bikalpo-project/db/brand-creation";
 import {
+  type AdminProductGenerationTemplateDetails,
   adminProductGenerationTemplate,
   brand as brandTable,
   coreProductIdentity,
@@ -52,7 +53,10 @@ const sharedTemplateDetailsSchema = z.object({
   damageControlEnabled: z.boolean().default(false),
   stockTrackingEnabled: z.boolean().default(true),
   minimumOrderEnabled: z.boolean().default(true),
-  minimumOrderQty: z.string().regex(/^\d+(\.\d{1,2})?$/).default("1"),
+  minimumOrderQty: z
+    .string()
+    .regex(/^\d+(\.\d{1,2})?$/)
+    .default("1"),
   conversionEnabled: z.boolean().default(false),
   inventoryLooseUnitEnabled: z.boolean().default(false),
   inventoryLooseUnit: z.string().default("kg"),
@@ -111,6 +115,47 @@ function slugify(str: string): string {
     .replace(/(^-|-$)/g, "");
 }
 
+function buildInitialTemplateDetails(core: {
+  name: string;
+  slug: string;
+  description: string | null;
+  image: string;
+}): AdminProductGenerationTemplateDetails {
+  return {
+    name: core.name,
+    slug: core.slug,
+    description: core.description,
+    shortDescription: null,
+    videoUrl: null,
+    size: "",
+    price: "0",
+    image: core.image,
+    additionalImages: [],
+    features: [],
+    inStock: true,
+    isFeatured: false,
+    reorderLevel: 0,
+    supplier: null,
+    isReturnablePack: false,
+    defaultPackDepositAmount: "0",
+    allowedPackBrands: [],
+    allowedPackSizes: [],
+    returnPolicyEnabled: true,
+    trackingType: "none",
+    expiryEnabled: false,
+    damageControlEnabled: false,
+    stockTrackingEnabled: true,
+    minimumOrderEnabled: true,
+    minimumOrderQty: "1",
+    conversionEnabled: false,
+    inventoryLooseUnitEnabled: false,
+    inventoryLooseUnit: "kg",
+    visibility: "public",
+    scheduledAt: null,
+    status: "active",
+  };
+}
+
 /**
  * Admin product configuration.
  *
@@ -161,45 +206,42 @@ export const adminProductConfigRouter = {
 
       const [template, products] = await Promise.all([
         db.query.adminProductGenerationTemplate.findFirst({
-          where: eq(adminProductGenerationTemplate.coreProductId, input.coreProductId),
+          where: eq(
+            adminProductGenerationTemplate.coreProductId,
+            input.coreProductId,
+          ),
         }),
         db.query.product.findMany({
-        where: and(
-          eq(product.coreProductId, input.coreProductId),
-          eq(product.creatorSource, "admin"),
-        ),
-        with: {
-          brand: {
-            columns: { id: true, name: true, slug: true, logo: true },
-          },
-          variantPrices: {
-            with: {
-              variantOption: {
-                columns: {
-                  id: true,
-                  name: true,
-                  unit: true,
-                  size: true,
-                  variantType: true,
-                  definitionKind: true,
-                  definition: true,
-                  needsReview: true,
-                  isActive: true,
+          where: and(
+            eq(product.coreProductId, input.coreProductId),
+            eq(product.creatorSource, "admin"),
+          ),
+          with: {
+            brand: {
+              columns: { id: true, name: true, slug: true, logo: true },
+            },
+            variantPrices: {
+              with: {
+                variantOption: {
+                  columns: {
+                    id: true,
+                    name: true,
+                    unit: true,
+                    size: true,
+                    variantType: true,
+                    definitionKind: true,
+                    definition: true,
+                    needsReview: true,
+                    isActive: true,
+                  },
                 },
               },
+              orderBy: (vp, { asc }) => [asc(vp.sortOrder)],
             },
-            orderBy: (vp, { asc }) => [asc(vp.sortOrder)],
           },
-        },
-        orderBy: (p, { asc }) => [asc(p.createdAt)],
+          orderBy: (p, { asc }) => [asc(p.createdAt)],
         }),
       ]);
-
-      if (!template) {
-        throw new ORPCError("NOT_FOUND", {
-          message: "Shared product template not found",
-        });
-      }
 
       const brands = products
         .filter((p) => p.brandId !== null)
@@ -254,8 +296,10 @@ export const adminProductConfigRouter = {
       return {
         core,
         template: {
-          version: template.version,
-          details: sharedTemplateDetailsSchema.parse(template.details),
+          version: template?.version ?? null,
+          details: sharedTemplateDetailsSchema.parse(
+            template?.details ?? buildInitialTemplateDetails(core),
+          ),
         },
         brands,
       };
@@ -311,7 +355,10 @@ export const adminProductConfigRouter = {
       }
 
       const brandRows = await db.query.brand.findMany({
-        where: inArray(brandTable.id, brandIds),
+        where: and(
+          inArray(brandTable.id, brandIds),
+          eq(brandTable.isActive, true),
+        ),
       });
       if (brandRows.length !== brandIds.length) {
         throw new ORPCError("BAD_REQUEST", {
@@ -374,32 +421,41 @@ export const adminProductConfigRouter = {
       const result = await db.transaction(async (tx) => {
         const currentTemplate =
           await tx.query.adminProductGenerationTemplate.findFirst({
-            where: eq(adminProductGenerationTemplate.coreProductId, coreProductId),
+            where: eq(
+              adminProductGenerationTemplate.coreProductId,
+              coreProductId,
+            ),
           });
-        if (!currentTemplate) {
-          throw new ORPCError("NOT_FOUND", {
-            message: "Shared product template not found",
-          });
-        }
         if (
           input.expectedVersion != null &&
-          currentTemplate.version !== input.expectedVersion
+          currentTemplate?.version !== input.expectedVersion
         ) {
           throw new ORPCError("CONFLICT", {
-            message: "This shared template changed in another session. Reload it.",
+            message:
+              "This shared template changed in another session. Reload it.",
           });
         }
 
+        const initialTemplateDetails = buildInitialTemplateDetails(core);
         const previousSharedDetails = sharedTemplateDetailsSchema.parse(
-          currentTemplate.details,
+          currentTemplate?.details ?? initialTemplateDetails,
         );
         const templateChanged =
-          JSON.stringify(previousSharedDetails) !== JSON.stringify(input.details);
+          !currentTemplate ||
+          JSON.stringify(previousSharedDetails) !==
+            JSON.stringify(input.details);
         const effectiveTemplateDetails = {
-          ...currentTemplate.details,
+          ...(currentTemplate?.details ?? initialTemplateDetails),
           ...input.details,
         };
-        if (templateChanged) {
+        if (!currentTemplate) {
+          await tx.insert(adminProductGenerationTemplate).values({
+            coreProductId,
+            version: 1,
+            details: effectiveTemplateDetails,
+            createdById: context.session.user.id,
+          });
+        } else if (templateChanged) {
           await tx
             .update(adminProductGenerationTemplate)
             .set({
@@ -407,7 +463,9 @@ export const adminProductConfigRouter = {
               details: effectiveTemplateDetails,
               updatedAt: new Date(),
             })
-            .where(eq(adminProductGenerationTemplate.coreProductId, coreProductId));
+            .where(
+              eq(adminProductGenerationTemplate.coreProductId, coreProductId),
+            );
         }
 
         const existingProducts = await tx.query.product.findMany({
@@ -597,9 +655,11 @@ export const adminProductConfigRouter = {
           updated,
           reactivated,
           deactivated,
-          templateVersion: templateChanged
-            ? currentTemplate.version + 1
-            : currentTemplate.version,
+          templateVersion: currentTemplate
+            ? templateChanged
+              ? currentTemplate.version + 1
+              : currentTemplate.version
+            : 1,
         };
       });
 

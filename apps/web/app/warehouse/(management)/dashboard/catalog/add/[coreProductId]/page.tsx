@@ -59,6 +59,7 @@ export default function WarehouseCoreProductConfigPage() {
   });
 
   const data = configurationQuery.data;
+  const managementUrl = `${CATALOG_URL}/${coreProductId}`;
   useEffect(() => {
     if (!data?.variantAliases) return;
     setVariantAliases(
@@ -147,7 +148,10 @@ export default function WarehouseCoreProductConfigPage() {
         variantOptions: data?.options?.variantOptions ?? [],
         isLoading: configurationQuery.isLoading,
         isError: configurationQuery.isError,
-        listHref: CATALOG_URL,
+        listHref:
+          data?.core?.brandCreationMode === "single"
+            ? managementUrl
+            : CATALOG_URL,
         productEditHref: (productId) => `${PRODUCTS_URL}/${productId}/edit`,
         presetBrands:
           data?.adminPreset?.available && normalizedPreset.length > 0
@@ -165,10 +169,11 @@ export default function WarehouseCoreProductConfigPage() {
           normalizedCurrent.length > 0 ? normalizedCurrent : normalizedPreset,
         onSaved: async () => {
           await queryClient.invalidateQueries({ queryKey: ["warehouse"] });
-          await configurationQuery.refetch();
-          if (data?.core?.brandCreationMode !== "single") {
-            router.push(PRODUCTS_URL);
-          }
+          router.push(
+            data?.core?.brandCreationMode === "single"
+              ? managementUrl
+              : PRODUCTS_URL,
+          );
         },
       }}
     />

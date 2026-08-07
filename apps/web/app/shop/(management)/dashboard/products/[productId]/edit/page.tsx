@@ -7,8 +7,6 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { orpc } from "@/utils/orpc";
 
-const PRODUCTS_URL = "/dashboard/products";
-
 export default function RetailerProductEditPage() {
   const queryClient = useQueryClient();
   const productId = Number(useParams<{ productId: string }>().productId);
@@ -66,7 +64,7 @@ export default function RetailerProductEditPage() {
     <ProductEditForm
       product={retailerProduct}
       editAdapter={{
-        backHref: PRODUCTS_URL,
+        backHref: `/dashboard/product-catalog/${retailerProduct.coreProductId}`,
         coreProduct,
         variantOptions: data.options.variantOptions,
         productType: retailerProduct.category?.type,

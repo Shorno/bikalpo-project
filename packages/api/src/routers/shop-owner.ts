@@ -11,6 +11,7 @@
 
 import { auth, setCredentialPassword } from "@bikalpo-project/auth";
 import { db } from "@bikalpo-project/db";
+import { countAddableBrands } from "@bikalpo-project/db/brand-creation";
 import {
     buildProductTypeFulfillmentProfile,
     FULFILLMENT_MODE_LABELS,
@@ -8483,9 +8484,9 @@ const publicCatalogEndpoints = {
             ]);
 
             const coreProductIds = coreProducts.map((cp) => cp.id);
-            const shopProducts =
+            const [shopProducts, activeBrands] = await Promise.all([
                 coreProductIds.length > 0
-                    ? await db.query.product.findMany({
+                    ? db.query.product.findMany({
                           where: and(
                               eq(product.creatorSource, "shop"),
                               eq(product.createdById, shopId),
@@ -8493,7 +8494,13 @@ const publicCatalogEndpoints = {
                           ),
                           columns: { coreProductId: true, brandId: true },
                       })
-                    : [];
+                    : Promise.resolve([]),
+                db.query.brand.findMany({
+                    where: eq(brand.isActive, true),
+                    columns: { id: true },
+                }),
+            ]);
+            const activeBrandIds = activeBrands.map((row) => row.id);
             const shopBrandsByCore = new Map<number, Set<number>>();
             for (const row of shopProducts) {
                 if (row.coreProductId == null || row.brandId == null) continue;
@@ -8540,6 +8547,10 @@ const publicCatalogEndpoints = {
                           }
                         : null,
                     shopBrandCount: shopBrandsByCore.get(cp.id)?.size ?? 0,
+                    shopAddableBrandCount: countAddableBrands(
+                        activeBrandIds,
+                        [...(shopBrandsByCore.get(cp.id) ?? new Set<number>())],
+                    ),
                 };
             });
 

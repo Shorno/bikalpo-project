@@ -237,6 +237,7 @@ interface ProductFormProps {
   product?: ProductWithRelations;
   initialCoreProductId?: number | null;
   structureLocked?: boolean;
+  backHref?: string;
   editAdapter?: {
     backHref: string;
     coreProduct: any;
@@ -253,12 +254,14 @@ export default function ProductForm({
   product,
   initialCoreProductId = null,
   structureLocked = false,
+  backHref,
   editAdapter,
 }: ProductFormProps) {
   const router = useRouter();
   const queryClient = useQueryClient();
   const isEdit = mode === "edit";
-  const listHref = editAdapter?.backHref ?? "/dashboard/admin/products";
+  const listHref =
+    editAdapter?.backHref ?? backHref ?? "/dashboard/admin/products";
   const usesExternalEditAdapter = Boolean(editAdapter && isEdit);
   const initialCoreProductIdForCreate =
     !isEdit && initialCoreProductId && Number.isFinite(initialCoreProductId)
@@ -302,7 +305,7 @@ export default function ProductForm({
       // Find variant prices for this brand
       const brandVPs = (existingVPs || []).filter(
         (vp: any) =>
-          vp.isActive !== false &&
+          ((product as any)?.status === "inactive" || vp.isActive !== false) &&
           ((vp.brandId ?? null) === pb.brandId ||
             (!vp.brandId && pbs.length === 1)),
       );

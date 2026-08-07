@@ -416,12 +416,13 @@ export const shopProductConfigEndpoints = {
             where: and(
               eq(product.coreProductId, core.id),
               eq(product.creatorSource, "admin"),
+              eq(product.status, "active"),
             ),
             with: {
               brand: true,
-              variants: {
-                where: eq(productVariant.isActive, true),
-                with: { sourceVariantOption: true },
+              variantPrices: {
+                where: eq(productVariantPrice.isActive, true),
+                with: { variantOption: true },
               },
             },
           }),
@@ -477,16 +478,13 @@ export const shopProductConfigEndpoints = {
               brandId: row.brandId!,
               brandName: row.brand?.name ?? "Unknown brand",
               sourceProductId: row.id,
-              variants: row.variants
-                .filter((variant) => variant.sourceVariantOptionId !== null)
-                .map((variant) => ({
-                  variantOptionId: variant.sourceVariantOptionId!,
-                  variantOptionName: variant.sourceVariantOption?.name ?? null,
-                  definitionKind:
-                    variant.sourceVariantOption?.definitionKind ?? null,
-                  definition: variant.sourceVariantOption?.definition ?? null,
-                  needsReview: variant.sourceVariantOption?.needsReview ?? true,
-                })),
+              variants: row.variantPrices.map((price) => ({
+                variantOptionId: price.variantOptionId,
+                variantOptionName: price.variantOption?.name ?? null,
+                definitionKind: price.variantOption?.definitionKind ?? null,
+                definition: price.variantOption?.definition ?? null,
+                needsReview: price.variantOption?.needsReview ?? true,
+              })),
             })),
         },
         current: currentProducts.map((row) => ({
@@ -595,7 +593,7 @@ export const shopProductConfigEndpoints = {
         }
 
         const brandRows = await tx.query.brand.findMany({
-          where: inArray(brand.id, brandIds),
+          where: and(inArray(brand.id, brandIds), eq(brand.isActive, true)),
         });
         if (brandRows.length !== brandIds.length) {
           throw new ORPCError("BAD_REQUEST", {
@@ -755,7 +753,8 @@ export const shopProductConfigEndpoints = {
         if (shouldDeactivateOmittedBrands(core.brandCreationMode)) {
           const selectedBrands = new Set(brandIds);
           for (const row of existingProducts) {
-            if (row.brandId === null || selectedBrands.has(row.brandId)) continue;
+            if (row.brandId === null || selectedBrands.has(row.brandId))
+              continue;
             await assertNoShopStock(
               tx,
               shopId,
@@ -834,7 +833,6 @@ export const shopProductConfigEndpoints = {
           productBrands: { with: { brand: true } },
           variantPrices: { with: { variantOption: true } },
           variants: {
-            where: eq(productVariant.isActive, true),
             with: { sourceVariantOption: true },
           },
         },

@@ -7,16 +7,18 @@ import { CoreProductBrandManagement } from "@/components/features/product/compon
 import { Skeleton } from "@/components/ui/skeleton";
 import { orpc } from "@/utils/orpc";
 
-const CATALOG_URL = "/dashboard/product-catalog";
+const CATALOG_URL = "/warehouse/dashboard/catalog";
 
-export default function RetailerCoreProductBrandManagementPage() {
+export default function WarehouseCoreProductBrandManagementPage() {
   const coreProductId = Number(
     useParams<{ coreProductId: string }>().coreProductId,
   );
   const configurationQuery = useQuery({
-    queryKey: ["shopOwner", "getShopCoreConfiguration", { coreProductId }],
+    queryKey: ["warehouse", "getWarehouseCoreConfiguration", { coreProductId }],
     queryFn: () =>
-      (orpc.shopOwner as any).getShopCoreConfiguration.call({ coreProductId }),
+      (orpc.warehouse as any).getWarehouseCoreConfiguration.call({
+        coreProductId,
+      }),
   });
 
   if (configurationQuery.isLoading) return <ManagementLoading />;
@@ -67,7 +69,9 @@ export default function RetailerCoreProductBrandManagementPage() {
       backHref={CATALOG_URL}
       addHref={`${CATALOG_URL}/add/${coreProductId}`}
       editConfigurationHref={`${CATALOG_URL}/add/${coreProductId}`}
-      productEditHref={(productId) => `/dashboard/products/${productId}/edit`}
+      productEditHref={(productId) =>
+        `/warehouse/dashboard/products/${productId}/edit`
+      }
     />
   );
 }

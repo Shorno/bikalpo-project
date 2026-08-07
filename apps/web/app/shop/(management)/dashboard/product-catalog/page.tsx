@@ -206,8 +206,8 @@ export default function ProductCatalogPage() {
                     const action = resolveBrandCreationAction({
                       mode: item.brandCreationMode,
                       configuredBrandCount: item.shopBrandCount,
+                      addableBrandCount: item.shopAddableBrandCount,
                     });
-                    const configured = item.shopBrandCount > 0;
                     return (
                       <TableRow
                         key={item.id}
@@ -265,22 +265,33 @@ export default function ProductCatalogPage() {
                                 View
                               </Button>
                             </Link>
-                            <Link
-                              href={`/dashboard/product-catalog/add/${item.id}`}
-                            >
+                            {action.disabled ? (
                               <Button
                                 variant="ghost"
                                 size="sm"
-                                className="h-7 px-2 text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                                className="h-7 px-2"
+                                disabled
                               >
-                                {configured ? (
-                                  <Settings className="h-3.5 w-3.5 mr-1" />
-                                ) : (
-                                  <Plus className="h-3.5 w-3.5 mr-1" />
-                                )}
                                 {action.label}
                               </Button>
-                            </Link>
+                            ) : (
+                              <Link
+                                href={`/dashboard/product-catalog/add/${item.id}`}
+                              >
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-7 px-2 text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                                >
+                                  {action.kind === "edit_configuration" ? (
+                                    <Settings className="h-3.5 w-3.5 mr-1" />
+                                  ) : (
+                                    <Plus className="h-3.5 w-3.5 mr-1" />
+                                  )}
+                                  {action.label}
+                                </Button>
+                              </Link>
+                            )}
                           </div>
                         </TableCell>
                       </TableRow>

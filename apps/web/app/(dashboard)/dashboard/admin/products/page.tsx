@@ -69,6 +69,7 @@ type CatalogCoreProduct = {
   subCategoryId: number | null;
   hasConfiguration?: boolean;
   configuredBrandCount?: number;
+  addableBrandCount?: number;
   brandCreationMode: "single" | "batch";
   createdAt?: string | Date;
   updatedAt?: string | Date;
@@ -390,37 +391,40 @@ export default function ProductsPage() {
           const action = resolveBrandCreationAction({
             mode: row.original.brandCreationMode,
             configuredBrandCount: row.original.configuredBrandCount ?? 0,
+            addableBrandCount: row.original.addableBrandCount ?? 0,
           });
           const configured = (row.original.configuredBrandCount ?? 0) > 0;
+          const configureHref =
+            row.original.brandCreationMode === "single" || configured
+              ? `${ADMIN_BASE}/products/core/${row.original.id}/edit`
+              : `${ADMIN_BASE}/products/new?coreProductId=${row.original.id}`;
           return (
             <div
               className="flex justify-end gap-1.5"
               onClick={(event) => event.stopPropagation()}
             >
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => setSelectedProduct(row.original)}
-              >
-                <Eye className="h-4 w-4" />
-                View
-              </Button>
-              <Button size="sm" asChild>
-                <Link
-                  href={
-                    configured
-                      ? `${ADMIN_BASE}/products/core/${row.original.id}/edit`
-                      : `${ADMIN_BASE}/products/new?coreProductId=${row.original.id}`
-                  }
-                >
-                  {configured ? (
-                    <Edit3 className="h-4 w-4" />
-                  ) : (
-                    <Plus className="h-4 w-4" />
-                  )}
-                  {action.label}
+              <Button size="sm" variant="outline" asChild>
+                <Link href={`${ADMIN_BASE}/products/core/${row.original.id}`}>
+                  <Eye className="h-4 w-4" />
+                  View
                 </Link>
               </Button>
+              {action.disabled ? (
+                <Button size="sm" disabled>
+                  {action.label}
+                </Button>
+              ) : (
+                <Button size="sm" asChild>
+                  <Link href={configureHref}>
+                    {action.kind === "edit_configuration" ? (
+                      <Edit3 className="h-4 w-4" />
+                    ) : (
+                      <Plus className="h-4 w-4" />
+                    )}
+                    {action.label}
+                  </Link>
+                </Button>
+              )}
             </div>
           );
         },
@@ -676,6 +680,7 @@ function ProductDetailDialog({
   const action = resolveBrandCreationAction({
     mode: product.brandCreationMode,
     configuredBrandCount: product.configuredBrandCount ?? 0,
+    addableBrandCount: product.addableBrandCount ?? 0,
   });
   const configured = (product.configuredBrandCount ?? 0) > 0;
   const priceQuery = useQuery(
@@ -722,9 +727,10 @@ function ProductDetailDialog({
     totalReviews: 0,
   };
 
-  const editHref = configured
-    ? `${ADMIN_BASE}/products/core/${product.id}/edit`
-    : `${ADMIN_BASE}/products/new?coreProductId=${product.id}`;
+  const editHref =
+    product.brandCreationMode === "single" || configured
+      ? `${ADMIN_BASE}/products/core/${product.id}/edit`
+      : `${ADMIN_BASE}/products/new?coreProductId=${product.id}`;
 
   const priceGroups = useMemo(() => {
     const map = new Map<string, typeof priceItems>();
@@ -868,10 +874,14 @@ function ProductDetailDialog({
                 <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
                 Edit
               </Button>
+            ) : action.disabled ? (
+              <Button size="sm" disabled>
+                {action.label}
+              </Button>
             ) : (
               <Button size="sm" asChild>
                 <Link href={editHref}>
-                  {configured ? (
+                  {action.kind === "edit_configuration" ? (
                     <Edit3 className="mr-1.5 h-4 w-4" />
                   ) : (
                     <Plus className="mr-1.5 h-4 w-4" />

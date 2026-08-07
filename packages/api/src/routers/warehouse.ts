@@ -9,6 +9,7 @@
 
 import { buildProductTypeFulfillmentProfile, db } from "@bikalpo-project/db";
 import {
+	countAddableBrands,
 	shouldDeactivateOmittedBrands,
 	validateBrandCreationSubmission,
 } from "@bikalpo-project/db/brand-creation";
@@ -6302,6 +6303,12 @@ const catalogBrowse = {
 		)
 		.handler(async ({ context, input }) => {
 			const userId = context.session.user.id;
+			const activeBrandIds = (
+				await db.query.brand.findMany({
+					where: eq(brandTable.isActive, true),
+					columns: { id: true },
+				})
+			).map((row) => row.id);
 
 			// 1. Build core product conditions
 			const coreConditions: SQL[] = [
@@ -6445,6 +6452,20 @@ const catalogBrowse = {
 				const cpProducts = linkedProducts.filter(
 					(p: any) => p.coreProductId === cp.id,
 				);
+				const configuredWarehouseBrandIds = [
+					...new Set<number>(
+						cpProducts
+							.filter(
+								(p: any) =>
+									p.creatorSource === "warehouse" &&
+									p.createdById === userId,
+							)
+							.map((p: any) => p.brandId)
+							.filter((brandId: unknown): brandId is number =>
+								Number.isInteger(brandId),
+							),
+					),
+				];
 				const coreProductData = {
 					id: cp.id,
 					name: cp.name,
@@ -6466,16 +6487,11 @@ const catalogBrowse = {
 							.map((p: any) => p.brandId)
 							.filter(Boolean),
 					).size,
-					warehouseBrandCount: new Set(
-						cpProducts
-							.filter(
-								(p: any) =>
-									p.creatorSource === "warehouse" &&
-									p.createdById === userId,
-							)
-							.map((p: any) => p.brandId)
-							.filter(Boolean),
-					).size,
+					warehouseBrandCount: configuredWarehouseBrandIds.length,
+					warehouseAddableBrandCount: countAddableBrands(
+						activeBrandIds,
+						configuredWarehouseBrandIds,
+					),
 				};
 
 				if (cp.subCategoryId && cp.subCategory) {
@@ -6930,7 +6946,6 @@ const warehouseProductCreation = {
 						with: { variantOption: true },
 					},
 					variants: {
-						where: eq(productVariant.isActive, true),
 						with: { sourceVariantOption: true },
 					},
 				},
@@ -7235,12 +7250,13 @@ const warehouseProductCreation = {
 						where: and(
 							eq(productTable.coreProductId, core.id),
 							eq(productTable.creatorSource, "admin"),
+							eq(productTable.status, "active"),
 						),
 						with: {
 							brand: true,
-							variants: {
-								where: eq(productVariant.isActive, true),
-								with: { sourceVariantOption: true },
+							variantPrices: {
+								where: eq(productVariantPrice.isActive, true),
+								with: { variantOption: true },
 							},
 						},
 					}),
@@ -7312,16 +7328,14 @@ const warehouseProductCreation = {
 							brandId: product.brandId!,
 							brandName: product.brand?.name ?? "Unknown brand",
 							sourceProductId: product.id,
-							variants: product.variants
-								.filter((variant) => variant.sourceVariantOptionId !== null)
-								.map((variant) => ({
-									variantOptionId: variant.sourceVariantOptionId!,
-									variantOptionName: variant.sourceVariantOption?.name ?? null,
-									color: variant.color,
-									size: variant.size,
-									definitionKind: variant.sourceVariantOption?.definitionKind ?? null,
-									definition: variant.sourceVariantOption?.definition ?? null,
-									needsReview: variant.sourceVariantOption?.needsReview ?? true,
+							variants: product.variantPrices.map((price) => ({
+									variantOptionId: price.variantOptionId,
+									variantOptionName: price.variantOption?.name ?? null,
+									color: null,
+									size: price.variantOption?.size ?? null,
+									definitionKind: price.variantOption?.definitionKind ?? null,
+									definition: price.variantOption?.definition ?? null,
+									needsReview: price.variantOption?.needsReview ?? true,
 								})),
 						})),
 				},
@@ -7408,7 +7422,10 @@ const warehouseProductCreation = {
 				}
 
 				const brandRows = await tx.query.brand.findMany({
-					where: inArray(brandTable.id, brandIds),
+					where: and(
+						inArray(brandTable.id, brandIds),
+						eq(brandTable.isActive, true),
+					),
 				});
 				if (brandRows.length !== brandIds.length) {
 					throw new ORPCError("BAD_REQUEST", {

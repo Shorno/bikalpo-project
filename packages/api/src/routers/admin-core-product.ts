@@ -1,6 +1,10 @@
 import { db } from "@bikalpo-project/db";
-import { BRAND_CREATION_MODES } from "@bikalpo-project/db/brand-creation";
 import {
+  BRAND_CREATION_MODES,
+  countAddableBrands,
+} from "@bikalpo-project/db/brand-creation";
+import {
+  brand,
   category,
   coreProductIdentity,
   product,
@@ -105,23 +109,36 @@ export const adminCoreProductRouter = {
         },
       });
 
-      // Per-core admin Brand Product counts drive Add/Edit/Manage in the list.
-      const configRows = await db
-        .select({
-          coreProductId: product.coreProductId,
-          totalBrandCount: sql<number>`count(*)::int`,
-        })
-        .from(product)
-        .where(
-          and(
-            eq(product.creatorSource, "admin"),
-            isNotNull(product.coreProductId),
+      // Actual Product rows, including inactive rows, are the source of truth.
+      // An inactive Product still owns its brand and must be managed/reactivated
+      // instead of being offered as a duplicate Add operation.
+      const [configRows, activeBrands] = await Promise.all([
+        db
+          .select({
+            coreProductId: product.coreProductId,
+            brandId: product.brandId,
+          })
+          .from(product)
+          .where(
+            and(
+              eq(product.creatorSource, "admin"),
+              isNotNull(product.coreProductId),
+            ),
           ),
-        )
-        .groupBy(product.coreProductId);
-      const configMap = new Map(
-        configRows.map((row) => [row.coreProductId, row]),
-      );
+        db.query.brand.findMany({
+          where: eq(brand.isActive, true),
+          columns: { id: true },
+        }),
+      ]);
+      const configuredBrandsByCore = new Map<number, Set<number>>();
+      for (const row of configRows) {
+        if (row.coreProductId == null || row.brandId == null) continue;
+        const configured =
+          configuredBrandsByCore.get(row.coreProductId) ?? new Set<number>();
+        configured.add(row.brandId);
+        configuredBrandsByCore.set(row.coreProductId, configured);
+      }
+      const activeBrandIds = activeBrands.map((row) => row.id);
 
       // Compose full hierarchical SKU for each core product
       const coreProducts = results.map((cp) => {
@@ -130,14 +147,20 @@ export const adminCoreProductRouter = {
         const subCatCode = cp.subCategory?.skuCode || "???";
         const coreCode = cp.sku || "???";
         const composedSku = `${typeCode}-${catCode}-${subCatCode}-${coreCode}`;
-        const config = configMap.get(cp.id);
+        const configuredBrandIds = [
+          ...(configuredBrandsByCore.get(cp.id) ?? new Set<number>()),
+        ];
         return {
           ...cp,
           composedSku,
           // "Configured" = at least one admin product exists (any status),
           // which is the true source of truth for the listing action.
-          hasConfiguration: (config?.totalBrandCount ?? 0) > 0,
-          configuredBrandCount: config?.totalBrandCount ?? 0,
+          hasConfiguration: configuredBrandIds.length > 0,
+          configuredBrandCount: configuredBrandIds.length,
+          addableBrandCount: countAddableBrands(
+            activeBrandIds,
+            configuredBrandIds,
+          ),
         };
       });
 

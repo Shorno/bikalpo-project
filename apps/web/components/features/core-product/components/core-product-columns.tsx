@@ -21,6 +21,7 @@ export interface CoreProductWithRelations {
   subCategoryId: number | null;
   hasConfiguration?: boolean;
   configuredBrandCount?: number;
+  addableBrandCount?: number;
   createdAt: Date;
   updatedAt: Date;
   category: {

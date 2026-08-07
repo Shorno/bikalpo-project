@@ -13,7 +13,12 @@ export default function EditProductClient({ product }: EditProductClientProps) {
     product.coreProductId !== null && product.creatorSource === "admin";
 
   if (isCoreManaged) {
-    return <ProductEditForm product={product} />;
+    return (
+      <ProductEditForm
+        product={product}
+        backHref={`/dashboard/admin/products/core/${product.coreProductId}`}
+      />
+    );
   }
 
   return <ProductForm mode="edit" product={product} />;

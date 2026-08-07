@@ -1,27 +1,94 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  countAddableBrands,
   resolveBrandCreationAction,
+  resolveSingleBrandVariantDefaults,
   shouldDeactivateOmittedBrands,
   validateBrandCreationSubmission,
 } from "./brand-creation";
 
 test("brand creation actions distinguish empty and configured cores in both modes", () => {
   assert.deepEqual(
-    resolveBrandCreationAction({ mode: "batch", configuredBrandCount: 0 }),
-    { kind: "add_brands", label: "Add Brands" },
+    resolveBrandCreationAction({
+      mode: "batch",
+      configuredBrandCount: 0,
+      addableBrandCount: 3,
+    }),
+    { kind: "add_brands", label: "Add Brands", disabled: false },
   );
   assert.deepEqual(
-    resolveBrandCreationAction({ mode: "batch", configuredBrandCount: 2 }),
-    { kind: "edit_configuration", label: "Edit Configuration" },
+    resolveBrandCreationAction({
+      mode: "batch",
+      configuredBrandCount: 2,
+      addableBrandCount: 1,
+    }),
+    {
+      kind: "edit_configuration",
+      label: "Edit Configuration",
+      disabled: false,
+    },
   );
   assert.deepEqual(
-    resolveBrandCreationAction({ mode: "single", configuredBrandCount: 0 }),
-    { kind: "add_brand", label: "Add Brand" },
+    resolveBrandCreationAction({
+      mode: "single",
+      configuredBrandCount: 0,
+      addableBrandCount: 3,
+    }),
+    { kind: "add_brand", label: "Add Brand", disabled: false },
   );
   assert.deepEqual(
-    resolveBrandCreationAction({ mode: "single", configuredBrandCount: 2 }),
-    { kind: "manage_brands", label: "Manage Brands" },
+    resolveBrandCreationAction({
+      mode: "single",
+      configuredBrandCount: 2,
+      addableBrandCount: 1,
+    }),
+    { kind: "add_brand", label: "Add Brand", disabled: false },
+  );
+  assert.deepEqual(
+    resolveBrandCreationAction({
+      mode: "single",
+      configuredBrandCount: 2,
+      addableBrandCount: 0,
+    }),
+    {
+      kind: "all_brands_added",
+      label: "All Brands Added",
+      disabled: true,
+    },
+  );
+});
+
+test("addable brands exclude active and inactive configured products", () => {
+  assert.equal(countAddableBrands([1, 2, 3, 4], [2, 4]), 2);
+  assert.equal(countAddableBrands([1, 2], [1, 2, 3]), 0);
+});
+
+test("single-brand defaults use only compatible variants from that Admin preset brand", () => {
+  assert.deepEqual(
+    resolveSingleBrandVariantDefaults({
+      brandId: 7,
+      compatibleVariantOptionIds: [10, 11, 12],
+      adminPresetBrands: [
+        { brandId: 7, variantOptionIds: [12, 10, 99, 10] },
+        { brandId: 8, variantOptionIds: [11] },
+      ],
+    }),
+    {
+      source: "admin_preset",
+      variantOptionIds: [12, 10],
+    },
+  );
+});
+
+test("single-brand defaults start empty for brands absent from the Admin preset", () => {
+  assert.deepEqual(
+    resolveSingleBrandVariantDefaults({
+      brandId: 9,
+      compatibleVariantOptionIds: [10, 11, 12],
+      adminPresetBrands: [{ brandId: 7, variantOptionIds: [10, 11] }],
+    }),
+    { source: "manual", variantOptionIds: [] },
   );
 });
 
