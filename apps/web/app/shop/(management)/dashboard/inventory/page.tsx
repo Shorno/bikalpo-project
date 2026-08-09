@@ -54,6 +54,16 @@ interface InventoryItem {
     packCountInside?: number | null;
     piecesPerUnit?: number | null;
     variantType?: string | null;
+    variantOperations: {
+      operationalUnit: string;
+      receivingMode: "direct" | "pack" | "loose";
+      quantityKind: "count" | "mass" | "volume";
+      allowsDecimal: boolean;
+      referenceMeasurement?: {
+        unit: "kg" | "liter";
+        perInventoryUnit: string;
+      };
+    };
     price: string;
     color?: string | null;
     size?: string | null;
@@ -175,17 +185,17 @@ function groupInventory(items: InventoryItem[]) {
     const packCountInside = Number(variant.packCountInside || 0);
     const weightKg = Number(variant.weightKg || 0);
 
-    // Determine display unit based on variant data
+    // The Admin Variant Option is authoritative for inventory handling.
     // If inner pack data exists → qty is in packs, show "Pack" / total weight in KG
     // Loose products are never pack-based — they're sold by weight (KG)
-    const isLoose = (variant.packType || "").toLowerCase() === "loose";
+    const isLoose = variant.variantOperations.receivingMode === "loose";
     const isPackBased = !isLoose && innerPackSizeKg > 0 && packCountInside > 1;
     const displayUnit = isPackBased
       ? `${innerPackSizeKg}kg Pack`
       : isLoose
         ? "KG"
-        : variant.unitLabel || "Unit";
-    const unit = variant.unitLabel || "Unit";
+        : variant.variantOperations.operationalUnit;
+    const unit = variant.variantOperations.operationalUnit;
 
     // Calculate weight contribution
     // Pack-based: qty × innerPackSizeKg (each item in qty = 1 inner pack)

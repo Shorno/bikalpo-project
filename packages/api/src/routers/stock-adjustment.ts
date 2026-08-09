@@ -10,7 +10,7 @@
  */
 
 import { db } from "@bikalpo-project/db";
-import { resolveVariantMovementSemantics } from "@bikalpo-project/db/variant-definition";
+import { resolveVariantOperations } from "@bikalpo-project/db/variant-definition";
 import {
     stockAdjustment,
     stockAdjustmentItem,
@@ -250,26 +250,16 @@ export const stockAdjustmentRouter = {
                 columns: { id: true },
                 with: {
                     sourceVariantOption: true,
-                    product: {
-                        columns: { id: true },
-                        with: {
-                            category: {
-                                columns: { id: true },
-                                with: { type: { columns: { family: true } } },
-                            },
-                        },
-                    },
                 },
             });
             const movementByVariant = new Map(
                 variantRows
                     .filter((row) => row.sourceVariantOption)
                     .map((row) => {
-                        const movement = resolveVariantMovementSemantics(
+                        const operations = resolveVariantOperations(
                             row.sourceVariantOption!,
-                            row.product?.category?.type?.family ?? "generic",
                         );
-                        return [row.id, movement] as const;
+                        return [row.id, operations] as const;
                     }),
             );
 
@@ -280,10 +270,10 @@ export const stockAdjustmentRouter = {
             }
 
             for (const item of normalizedItems) {
-                const movement = movementByVariant.get(item.variantId);
-                if (movement?.inventoryUnit === "cylinder" && !Number.isInteger(item.adjustQty)) {
+                const operations = movementByVariant.get(item.variantId);
+                if (operations && !operations.allowsDecimal && !Number.isInteger(item.adjustQty)) {
                     throw new ORPCError("BAD_REQUEST", {
-                        message: `Variant ${item.variantId}: LPG cylinder adjustments must use whole cylinders`,
+                        message: `Variant ${item.variantId}: adjustments must use whole ${operations.operationalUnit} quantities`,
                     });
                 }
             }
@@ -333,7 +323,7 @@ export const stockAdjustmentRouter = {
                     adjustQty: String(item.adjustQty),
                     afterQty: String(currentQty + item.adjustQty),
                     quantityUnit:
-                        movementByVariant.get(item.variantId)?.inventoryUnit ?? null,
+                        movementByVariant.get(item.variantId)?.operationalUnit ?? null,
                     note: item.note || null,
                 };
             });

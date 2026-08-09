@@ -3,9 +3,11 @@
 import { inferProductTypeFamily } from "@bikalpo-project/db/fulfillment";
 import {
   RECOMMENDED_VARIANT_CONTAINERS,
+  resolveVariantOperations,
   VARIANT_CONTAINERS,
   type VariantContainerCode,
   type VariantDefinition,
+  withDerivedOperationalUnit,
 } from "@bikalpo-project/db/variant-definition";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as React from "react";
@@ -145,6 +147,24 @@ function VariantDefinitionFields({
   const moreContainers = (
     Object.keys(VARIANT_CONTAINERS) as VariantContainerCode[]
   ).filter((code) => !recommended.includes(code));
+  const operationsPreview = React.useMemo(() => {
+    try {
+      const definition = withDerivedOperationalUnit(
+        buildVariantDefinition(value),
+        family,
+      );
+      return resolveVariantOperations({
+        name: "Variant preview",
+        definitionKind: definition.kind,
+        definition,
+        needsReview: false,
+      });
+    } catch {
+      return null;
+    }
+  }, [family, value]);
+  const titleCase = (text: string) =>
+    text.charAt(0).toUpperCase() + text.slice(1);
 
   const measurementSelect = (label: string, key: "measurementUnit") => (
     <Field>
@@ -332,6 +352,35 @@ function VariantDefinitionFields({
           Leave blank to use the generated canonical label.
         </FieldDescription>
       </Field>
+      {operationsPreview && (
+        <div className="rounded-md border bg-muted/30 p-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Inventory preview
+          </p>
+          <dl className="mt-2 grid gap-3 text-sm sm:grid-cols-3">
+            <div>
+              <dt className="text-muted-foreground">Operational Unit</dt>
+              <dd className="font-medium">
+                {titleCase(operationsPreview.operationalUnit)}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-muted-foreground">Stock Entry</dt>
+              <dd className="font-medium">
+                {titleCase(operationsPreview.receivingMode)}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-muted-foreground">Quantity</dt>
+              <dd className="font-medium">
+                {operationsPreview.allowsDecimal
+                  ? `Decimal ${operationsPreview.operationalUnit}`
+                  : `Whole ${operationsPreview.operationalUnit}${operationsPreview.operationalUnit.endsWith("s") ? "" : "s"}`}
+              </dd>
+            </div>
+          </dl>
+        </div>
+      )}
     </div>
   );
 }

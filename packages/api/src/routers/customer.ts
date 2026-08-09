@@ -45,7 +45,7 @@ import {
   userProfile,
 } from "@bikalpo-project/db/schema";
 import {
-  resolveVariantMovementSemantics,
+  resolveVariantOperations,
   resolveVariantOption,
 } from "@bikalpo-project/db/variant-definition";
 import { ORPCError } from "@orpc/server";
@@ -4351,13 +4351,7 @@ const mutations = {
         with: {
           items: {
             with: {
-              product: {
-                with: {
-                  category: {
-                    with: { type: { columns: { family: true } } },
-                  },
-                },
-              },
+              product: true,
               variant: { with: { sourceVariantOption: true } },
             },
           },
@@ -4531,18 +4525,16 @@ const mutations = {
           });
         }
 
-        const movementSemantics = item.variant?.sourceVariantOption
-          ? resolveVariantMovementSemantics(
-              item.variant.sourceVariantOption,
-              item.product.category?.type?.family ?? "generic",
-            )
+        const operations = item.variant?.sourceVariantOption
+          ? resolveVariantOperations(item.variant.sourceVariantOption)
           : null;
         if (
-          movementSemantics?.inventoryUnit === "cylinder" &&
+          operations &&
+          !operations.allowsDecimal &&
           !Number.isInteger(item.quantity)
         ) {
           throw new ORPCError("BAD_REQUEST", {
-            message: `${item.product.name} must be ordered in whole cylinders`,
+            message: `${item.product.name} must be ordered in whole ${operations.operationalUnit} quantities`,
           });
         }
 
@@ -4591,16 +4583,16 @@ const mutations = {
           productSize: item.variant?.quantitySelectorLabel ?? item.product.size,
           quantity: item.quantity,
           quantityUnit:
-            movementSemantics?.enteredUnit ||
+            operations?.operationalUnit ||
             item.variant?.orderUnit ||
             item.variant?.packType ||
             null,
           inventoryUnit:
-            movementSemantics?.inventoryUnit ||
+            operations?.operationalUnit ||
             item.variant?.orderUnit ||
             item.variant?.packType ||
             null,
-          conversionFactor: movementSemantics?.conversionFactor ?? "1",
+          conversionFactor: "1",
           inventoryQty: String(item.quantity),
           unitPrice: effectiveUnitPrice,
           totalPrice: itemTotal.toFixed(2),

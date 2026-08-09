@@ -306,8 +306,8 @@ type StructuredStockDetailData = {
     variantCount: number;
   };
   quantityGroups: Array<{
-    family: string;
-    familyLabel: string;
+    productTypeId: number;
+    productTypeName: string;
     inventoryUnit: string;
     productCount: number;
     variantCount: number;

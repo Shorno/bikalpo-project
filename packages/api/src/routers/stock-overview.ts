@@ -239,7 +239,7 @@ export async function loadStructuredStockSnapshot(
                             category: {
                                 columns: { id: true, name: true },
                                 with: {
-                                    type: { columns: { family: true } },
+                                    type: { columns: { id: true, name: true, family: true } },
                                 },
                             },
                         },
@@ -304,6 +304,8 @@ export async function loadStructuredStockSnapshot(
                     brandName: brandRow?.name ?? null,
                     categoryId: productRow.categoryId,
                     categoryName: productRow.category?.name ?? "Uncategorized",
+                    productTypeId: productRow.category?.type?.id ?? null,
+                    productTypeName: productRow.category?.type?.name ?? null,
                     family: productRow.category?.type?.family ?? null,
                     sku: variant.sku,
                     catalogVariantId: variant.catalogVariantId,
@@ -461,6 +463,7 @@ export const stockOverviewRouter = {
                     coreProductImage: coreProductIdentity.image,
                     categoryId: category.id,
                     categoryName: category.name,
+                    productTypeId: productType.id,
                     productTypeName: productType.name,
                     family: productType.family,
                     variantId: productVariant.id,
@@ -570,6 +573,7 @@ export const stockOverviewRouter = {
                     productName: row.productName,
                     productImage: row.productImage,
                     productIsActive: row.productStatus === "active",
+                    productTypeId: row.productTypeId,
                     productTypeName: row.productTypeName,
                     brandId: row.brandId ?? row.variantBrandId ?? row.productBrandId,
                     brandName: row.brandName,

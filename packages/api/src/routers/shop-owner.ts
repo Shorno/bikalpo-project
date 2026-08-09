@@ -60,27 +60,11 @@ import {
 } from "@bikalpo-project/db/schema";
 import {
     formatVariantStockQuantity,
-    resolveVariantMovementSemantics,
+    resolveVariantOperations,
     resolveVariantStockSemantics,
 } from "@bikalpo-project/db/variant-definition";
 import { ORPCError } from "@orpc/server";
-import {
-    and,
-    asc,
-    avg,
-    count,
-    desc,
-    eq,
-    gte,
-    ilike,
-    inArray,
-    lte,
-    min,
-    or,
-    type SQL,
-    sql,
-    sum,
-} from "drizzle-orm";
+import { and, asc, avg, count, desc, eq, gte, ilike, inArray, lte, min, or, type SQL, sql, sum } from "drizzle-orm";
 import { z } from "zod";
 
 import { publicProcedure, shopOwnerProcedure } from "../index";
@@ -93,10 +77,7 @@ import {
 } from "../services/open-order-matching";
 import { ensureShopBuyerTargetVariant } from "./helpers/b2b-buyer-target";
 import { convertB2bOrderToRetailInventory } from "./helpers/b2b-conversion";
-import {
-    prepareB2bMovementForApproval,
-    releaseB2bOrderReservations,
-} from "./helpers/b2b-inventory-movement";
+import { prepareB2bMovementForApproval, releaseB2bOrderReservations } from "./helpers/b2b-inventory-movement";
 import { configureExistingInvoiceFulfillmentForOwner } from "./helpers/order-dispatch";
 import { buildCanonicalOrderFlow } from "./helpers/order-lifecycle";
 import {
@@ -104,13 +85,8 @@ import {
     getRetailerDispatchQueueStatus,
     getRetailerOrderTransition,
 } from "./helpers/retailer-consumer-flow";
-import {
-    getRetailerHandoffOtps,
-    getRetailerOrderDisplayStatus,
-} from "./helpers/retailer-delivery-handoff";
-import {
-    createRetailerDispatchInvoiceForOrder,
-} from "./helpers/retailer-dispatch";
+import { getRetailerHandoffOtps, getRetailerOrderDisplayStatus } from "./helpers/retailer-delivery-handoff";
+import { createRetailerDispatchInvoiceForOrder } from "./helpers/retailer-dispatch";
 import {
     createRetailerOrderStockWriter,
     RetailerOrderStockError,
@@ -168,15 +144,7 @@ const productFiltersSchema = z.object({
 const PAID_INVOICE_STATUSES = new Set(["collected", "settled"]);
 const NON_PURCHASE_ORDER_STATUSES = new Set(["cancelled", "returned"]);
 const PAYABLE_ORDER_STATUSES = new Set(["confirmed", "processing", "delivered"]);
-const DAY_NAMES = [
-    "Sunday",
-    "Monday",
-    "Tuesday",
-    "Wednesday",
-    "Thursday",
-    "Friday",
-    "Saturday",
-] as const;
+const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"] as const;
 
 const warehouseOrderModeSchema = z.enum(FULFILLMENT_MODES);
 
@@ -184,10 +152,7 @@ function toSafeNumber(value: string | number | null | undefined) {
     return Number(value || 0);
 }
 
-function isOrderPaid(
-    orderPaymentStatus: string | null | undefined,
-    invoicePaymentStatus: string | null | undefined,
-) {
+function isOrderPaid(orderPaymentStatus: string | null | undefined, invoicePaymentStatus: string | null | undefined) {
     return orderPaymentStatus === "paid" || PAID_INVOICE_STATUSES.has(invoicePaymentStatus || "");
 }
 
@@ -218,10 +183,7 @@ function isPayableOrder(
     orderPaymentStatus: string | null | undefined,
     invoicePaymentStatus: string | null | undefined,
 ) {
-    return (
-        PAYABLE_ORDER_STATUSES.has(status || "") &&
-        !isOrderPaid(orderPaymentStatus, invoicePaymentStatus)
-    );
+    return PAYABLE_ORDER_STATUSES.has(status || "") && !isOrderPaid(orderPaymentStatus, invoicePaymentStatus);
 }
 
 function normalizeDeliveryText(value: string | null | undefined) {
@@ -326,7 +288,12 @@ const b2bQueries = {
                 } else {
                     return {
                         products: [],
-                        pagination: { page, limit, totalCount: 0, totalPages: 0 },
+                        pagination: {
+                            page,
+                            limit,
+                            totalCount: 0,
+                            totalPages: 0,
+                        },
                     };
                 }
             }
@@ -357,7 +324,12 @@ const b2bQueries = {
                 } else {
                     return {
                         products: [],
-                        pagination: { page, limit, totalCount: 0, totalPages: 0 },
+                        pagination: {
+                            page,
+                            limit,
+                            totalCount: 0,
+                            totalPages: 0,
+                        },
                     };
                 }
             }
@@ -448,12 +420,7 @@ const b2bQueries = {
 
                 return {
                     ...item,
-                    price:
-                        variantPrice > 0
-                            ? variantPrice
-                            : Number.isFinite(basePrice)
-                              ? basePrice
-                              : 0,
+                    price: variantPrice > 0 ? variantPrice : Number.isFinite(basePrice) ? basePrice : 0,
                 };
             });
 
@@ -488,7 +455,10 @@ const b2bQueries = {
                     images: true,
                 },
             });
-            if (!found) throw new ORPCError("NOT_FOUND", { message: "Product not found" });
+            if (!found)
+                throw new ORPCError("NOT_FOUND", {
+                    message: "Product not found",
+                });
 
             // Get only TRADE variants visible to shop_owner
             const variants = await db.query.productVariant.findMany({
@@ -524,9 +494,7 @@ const b2bQueries = {
                 product: found,
                 variants,
                 reviewStats: {
-                    averageRating: reviewStats[0]?.averageRating
-                        ? parseFloat(reviewStats[0].averageRating)
-                        : 0,
+                    averageRating: reviewStats[0]?.averageRating ? parseFloat(reviewStats[0].averageRating) : 0,
                     totalReviews: reviewStats[0]?.totalReviews || 0,
                 },
             };
@@ -661,11 +629,7 @@ const managementQueries = {
                 stockDisplay: p.stockLines.join(" + "),
                 image: p.image,
                 status:
-                    p.totalQty > 20
-                        ? ("high" as const)
-                        : p.totalQty > 5
-                          ? ("available" as const)
-                          : ("low" as const),
+                    p.totalQty > 20 ? ("high" as const) : p.totalQty > 5 ? ("available" as const) : ("low" as const),
             }));
 
         // 5. Damage alert — count active damage entries in last 30 days
@@ -739,7 +703,9 @@ const managementQueries = {
                         with: {
                             product: {
                                 with: {
-                                    category: { columns: { id: true, name: true } },
+                                    category: {
+                                        columns: { id: true, name: true },
+                                    },
                                 },
                             },
                             brand: { columns: { id: true, name: true } },
@@ -798,8 +764,7 @@ const managementQueries = {
                 const qty = parseFloat(inv.availableQty || "0");
                 const cartonQty = parseFloat(inv.inCartonQty || "0");
                 const isLoose = semantics.entryType === "loose";
-                const retailPrice =
-                    parseFloat(inv.retailPrice || "0") || parseFloat(inv.variant.price || "0");
+                const retailPrice = parseFloat(inv.retailPrice || "0") || parseFloat(inv.variant.price || "0");
 
                 if (!productMap.has(pid)) {
                     productMap.set(pid, {
@@ -858,9 +823,7 @@ const managementQueries = {
             // Status filter
             const withStatus = products.map((p) => {
                 const quantities = p.variants.map((variant) => variant.availableQty);
-                const status: "in_stock" | "low" | "out_of_stock" = quantities.every(
-                    (quantity) => quantity <= 0,
-                )
+                const status: "in_stock" | "low" | "out_of_stock" = quantities.every((quantity) => quantity <= 0)
                     ? "out_of_stock"
                     : quantities.some((quantity) => quantity <= LOW_STOCK_THRESHOLD)
                       ? "low"
@@ -868,10 +831,7 @@ const managementQueries = {
                 return { ...p, status };
             });
 
-            const filtered =
-                input.status === "all"
-                    ? withStatus
-                    : withStatus.filter((p) => p.status === input.status);
+            const filtered = input.status === "all" ? withStatus : withStatus.filter((p) => p.status === input.status);
 
             // 4. Derive unique categories for filter dropdown
             const categorySet = new Map<number, string>();
@@ -948,8 +908,7 @@ const managementQueries = {
         let shortageVariants = 0;
 
         for (const inv of shopInventory) {
-            if (!inv.variant?.product || !inv.variant.sourceVariantOption || !inv.variant.isActive)
-                continue;
+            if (!inv.variant?.product || !inv.variant.sourceVariantOption || !inv.variant.isActive) continue;
             let semantics;
             try {
                 semantics = resolveVariantStockSemantics(inv.variant.sourceVariantOption);
@@ -1039,16 +998,19 @@ const managementQueries = {
             if (!hasLowVariant) continue;
 
             // Determine product-level status and issue label
-            const hasCritical = group.variants.some(
-                (v) => v.status === "critical" || v.status === "out_of_stock",
-            );
+            const hasCritical = group.variants.some((v) => v.status === "critical" || v.status === "out_of_stock");
             group.status = hasCritical ? "critical" : "low";
 
             // Build issue label from the most urgent variant
             const worstVariant = group.variants
                 .filter((v) => v.status !== "ok")
                 .sort((a, b) => {
-                    const order = { out_of_stock: 0, critical: 1, low: 2, ok: 3 };
+                    const order = {
+                        out_of_stock: 0,
+                        critical: 1,
+                        low: 2,
+                        ok: 3,
+                    };
                     return order[a.status] - order[b.status];
                 })[0];
 
@@ -1095,11 +1057,16 @@ const managementQueries = {
                     with: {
                         variant: {
                             with: {
+                                sourceVariantOption: true,
                                 product: {
-                                    columns: { id: true, name: true, image: true, sku: true },
+                                    columns: {
+                                        id: true,
+                                        name: true,
+                                        image: true,
+                                        sku: true,
+                                    },
                                 },
                                 brand: { columns: { id: true, name: true } },
-                                sourceVariantOption: true,
                             },
                         },
                     },
@@ -1223,11 +1190,7 @@ const managementQueries = {
         >();
 
         for (const inv of shopInventory) {
-            if (
-                !inv.variant?.product?.expiryEnabled ||
-                !inv.variant.sourceVariantOption ||
-                !inv.variant.isActive
-            )
+            if (!inv.variant?.product?.expiryEnabled || !inv.variant.sourceVariantOption || !inv.variant.isActive)
                 continue;
             try {
                 resolveVariantStockSemantics(inv.variant.sourceVariantOption);
@@ -1309,10 +1272,18 @@ const managementQueries = {
             where: eq(purchase.warehouseId, userId),
             with: {
                 items: {
-                    columns: { variantId: true, returnPackQty: true, productName: true },
+                    columns: {
+                        variantId: true,
+                        returnPackQty: true,
+                        productName: true,
+                    },
                 },
                 supplier: {
-                    columns: { id: true, name: true, returnPackAgreement: true },
+                    columns: {
+                        id: true,
+                        name: true,
+                        returnPackAgreement: true,
+                    },
                 },
             },
         });
@@ -1381,8 +1352,7 @@ const managementQueries = {
             totalPacks += qty;
 
             if (pack.status === "verified") reusable += qty;
-            else if (pack.status === "collected" || pack.status === "submitted")
-                returnPending += qty;
+            else if (pack.status === "collected" || pack.status === "submitted") returnPending += qty;
 
             if (!productMap.has(pid)) {
                 const rule = ruleMap.get(pid);
@@ -1392,8 +1362,7 @@ const managementQueries = {
                     productImage: prod.image,
                     emptyQty: 0,
                     packType: pack.packDescription || "Pack",
-                    isReturnable:
-                        rule?.isEmptyPackReturnable ?? pack.variant?.isPackReturnRequired ?? false,
+                    isReturnable: rule?.isEmptyPackReturnable ?? pack.variant?.isPackReturnRequired ?? false,
                     status: "reusable",
                     variants: [],
                     totalCollected: 0,
@@ -1424,12 +1393,7 @@ const managementQueries = {
                 collected: qty,
                 verified: pack.status === "verified" ? qty : 0,
                 rejected: pack.status === "rejected" ? qty : 0,
-                condition:
-                    pack.status === "rejected"
-                        ? "damaged"
-                        : pack.status === "verified"
-                          ? "reusable"
-                          : "pending",
+                condition: pack.status === "rejected" ? "damaged" : pack.status === "verified" ? "reusable" : "pending",
             });
         }
 
@@ -1446,9 +1410,7 @@ const managementQueries = {
             .filter((p) => p.isReturnable && p.status === "return_pending")
             .map((p) => {
                 const firstVariant = p.variants[0];
-                const supplierInfo = firstVariant?.variantId
-                    ? supplierByProduct.get(firstVariant.variantId)
-                    : null;
+                const supplierInfo = firstVariant?.variantId ? supplierByProduct.get(firstVariant.variantId) : null;
 
                 return {
                     productId: p.productId,
@@ -1547,18 +1509,14 @@ const managementQueries = {
 
             for (const o of b2bOrders) {
                 for (const item of o.items) {
-                    const status =
-                        item.conversionStatus ??
-                        (o.status === "delivered" ? "converted" : "pending");
+                    const status = item.conversionStatus ?? (o.status === "delivered" ? "converted" : "pending");
                     if (status === "converted") totalConverted++;
                     else if (status === "failed") totalFailed++;
                     else totalPending++;
 
                     const modeLabel =
                         item.supplyMode && item.supplyMode in FULFILLMENT_MODE_LABELS
-                            ? FULFILLMENT_MODE_LABELS[
-                                  item.supplyMode as keyof typeof FULFILLMENT_MODE_LABELS
-                              ]
+                            ? FULFILLMENT_MODE_LABELS[item.supplyMode as keyof typeof FULFILLMENT_MODE_LABELS]
                             : "Legacy";
 
                     conversionItems.push({
@@ -1634,12 +1592,21 @@ const managementQueries = {
                             },
                             product: {
                                 with: {
-                                    category: { columns: { name: true, slug: true } },
+                                    category: {
+                                        columns: { name: true, slug: true },
+                                    },
                                     images: { limit: 1 },
-                                    brand: { columns: { id: true, name: true } },
+                                    brand: {
+                                        columns: { id: true, name: true },
+                                    },
                                     productBrands: {
                                         with: {
-                                            brand: { columns: { id: true, name: true } },
+                                            brand: {
+                                                columns: {
+                                                    id: true,
+                                                    name: true,
+                                                },
+                                            },
                                         },
                                     },
                                 },
@@ -1666,10 +1633,7 @@ const managementQueries = {
             // Match the stable hierarchy used by the admin and warehouse price
             // lists. Price and updatedAt are deliberately excluded so editing a
             // price cannot move its row after the query is refreshed.
-            const compareLabels = (
-                left: string | null | undefined,
-                right: string | null | undefined,
-            ) =>
+            const compareLabels = (left: string | null | undefined, right: string | null | undefined) =>
                 (left ?? "").localeCompare(right ?? "", "en", {
                     numeric: true,
                     sensitivity: "base",
@@ -1680,17 +1644,11 @@ const managementQueries = {
                 item.variant?.product?.productBrands?.[0]?.brand?.name ??
                 "";
             const getVariantLabel = (item: (typeof shopInventory)[number]) =>
-                item.variant?.quantitySelectorLabel ??
-                item.variant?.unitLabel ??
-                item.variant?.sku ??
-                "";
+                item.variant?.quantitySelectorLabel ?? item.variant?.unitLabel ?? item.variant?.sku ?? "";
 
             filtered = [...filtered].sort(
                 (left, right) =>
-                    compareLabels(
-                        left.variant?.product?.category?.name,
-                        right.variant?.product?.category?.name,
-                    ) ||
+                    compareLabels(left.variant?.product?.category?.name, right.variant?.product?.category?.name) ||
                     compareLabels(left.variant?.product?.name, right.variant?.product?.name) ||
                     compareLabels(getBrandName(left), getBrandName(right)) ||
                     (left.variant?.sortOrder ?? 0) - (right.variant?.sortOrder ?? 0) ||
@@ -1738,12 +1696,29 @@ const managementQueries = {
                                 },
                             },
                             brand: { columns: { id: true, name: true } },
+                            sourceVariantOption: true,
                         },
                     },
                 },
             });
 
-            return { items };
+            return {
+                items: items.map((item) => {
+                    if (!item.variant?.sourceVariantOption) {
+                        throw new ORPCError("BAD_REQUEST", {
+                            message: "An inventory variant is missing its Admin Variant definition",
+                        });
+                    }
+
+                    return {
+                        ...item,
+                        variant: {
+                            ...item.variant,
+                            variantOperations: resolveVariantOperations(item.variant.sourceVariantOption),
+                        },
+                    };
+                }),
+            };
         }),
 
     /**
@@ -1863,17 +1838,11 @@ const mutations = {
             // Invalidating an offer's discount rolls the price update back.
             let recalculatedOrderIds: number[];
             try {
-                recalculatedOrderIds = await recalculateOffersForInventory(
-                    input.inventoryId,
-                    userId,
-                    newPrice,
-                );
+                recalculatedOrderIds = await recalculateOffersForInventory(input.inventoryId, userId, newPrice);
             } catch (error) {
                 throw new ORPCError("CONFLICT", {
                     message:
-                        error instanceof Error
-                            ? error.message
-                            : "The price could not be applied to active offers.",
+                        error instanceof Error ? error.message : "The price could not be applied to active offers.",
                 });
             }
             for (const orderId of recalculatedOrderIds) {
@@ -1964,7 +1933,9 @@ const mutations = {
             });
 
             if (!existingOrder) {
-                throw new ORPCError("NOT_FOUND", { message: "Order not found" });
+                throw new ORPCError("NOT_FOUND", {
+                    message: "Order not found",
+                });
             }
 
             // Receiving is the inventory ownership boundary; the full order must
@@ -2071,14 +2042,12 @@ const mutations = {
             });
 
             if (!existingOrder) {
-                throw new ORPCError("NOT_FOUND", { message: "Order not found" });
+                throw new ORPCError("NOT_FOUND", {
+                    message: "Order not found",
+                });
             }
 
-            if (
-                !["pending", "approved", "confirmed", "ready_for_dispatch"].includes(
-                    existingOrder.status,
-                )
-            ) {
+            if (!["pending", "approved", "confirmed", "ready_for_dispatch"].includes(existingOrder.status)) {
                 throw new ORPCError("BAD_REQUEST", {
                     message: `Cannot cancel an order with status '${existingOrder.status}'`,
                 });
@@ -2278,10 +2247,9 @@ const orderQueries = {
                 db
                     .select({
                         totalOrders: count(),
-                        pendingCount:
-                            sql<number>`count(*) filter (where ${order.status} = 'pending')`.as(
-                                "pending_count",
-                            ),
+                        pendingCount: sql<number>`count(*) filter (where ${order.status} = 'pending')`.as(
+                            "pending_count",
+                        ),
                         approvedCount:
                             sql<number>`count(*) filter (where ${order.status} in ('approved', 'confirmed'))`.as(
                                 "approved_count",
@@ -2294,29 +2262,23 @@ const orderQueries = {
                             sql<number>`count(*) filter (where ${order.status} = 'partially_invoiced')`.as(
                                 "partially_invoiced_count",
                             ),
-                        invoicedCount:
-                            sql<number>`count(*) filter (where ${order.status} = 'invoiced')`.as(
-                                "invoiced_count",
-                            ),
+                        invoicedCount: sql<number>`count(*) filter (where ${order.status} = 'invoiced')`.as(
+                            "invoiced_count",
+                        ),
                         confirmedCount:
                             sql<number>`count(*) filter (where ${order.status} in ('approved', 'confirmed'))`.as(
                                 "confirmed_count",
                             ),
-                        processingCount:
-                            sql<number>`count(*) filter (where ${order.status} = 'processing')`.as(
-                                "processing_count",
-                            ),
-                        deliveredCount:
-                            sql<number>`count(*) filter (where ${order.status} = 'delivered')`.as(
-                                "delivered_count",
-                            ),
-                        cancelledCount:
-                            sql<number>`count(*) filter (where ${order.status} = 'cancelled')`.as(
-                                "cancelled_count",
-                            ),
-                        totalAmount: sql<string>`coalesce(sum(${order.total}), 0)`.as(
-                            "total_amount",
+                        processingCount: sql<number>`count(*) filter (where ${order.status} = 'processing')`.as(
+                            "processing_count",
                         ),
+                        deliveredCount: sql<number>`count(*) filter (where ${order.status} = 'delivered')`.as(
+                            "delivered_count",
+                        ),
+                        cancelledCount: sql<number>`count(*) filter (where ${order.status} = 'cancelled')`.as(
+                            "cancelled_count",
+                        ),
+                        totalAmount: sql<string>`coalesce(sum(${order.total}), 0)`.as("total_amount"),
                         pendingAmount:
                             sql<string>`coalesce(sum(case when ${order.status} in ('pending','approved','ready_for_dispatch','partially_invoiced','invoiced','confirmed','processing') then ${order.total} else 0 end), 0)`.as(
                                 "pending_amount",
@@ -2330,13 +2292,15 @@ const orderQueries = {
             const kpi = kpiResult[0];
 
             // Resolve warehouse names for orders that have warehouseId
-            const warehouseIds = [
-                ...new Set(orders.map((o: any) => o.warehouseId).filter(Boolean)),
-            ];
+            const warehouseIds = [...new Set(orders.map((o: any) => o.warehouseId).filter(Boolean))];
             const warehouseMap: Record<string, string> = {};
             if (warehouseIds.length > 0) {
                 const warehouses = await db
-                    .select({ id: user.id, name: user.name, shopName: user.shopName })
+                    .select({
+                        id: user.id,
+                        name: user.name,
+                        shopName: user.shopName,
+                    })
                     .from(user)
                     .where(inArray(user.id, warehouseIds));
                 for (const w of warehouses) {
@@ -2491,13 +2455,7 @@ const orderQueries = {
                 "processing",
                 "delivered",
             ];
-            const readyStatuses = [
-                "ready_for_dispatch",
-                "partially_invoiced",
-                "invoiced",
-                "processing",
-                "delivered",
-            ];
+            const readyStatuses = ["ready_for_dispatch", "partially_invoiced", "invoiced", "processing", "delivered"];
 
             // Build status timeline
             const timeline = [
@@ -2524,8 +2482,7 @@ const orderQueries = {
                 {
                     step: "Partially Invoiced",
                     date: null,
-                    completed:
-                        result.status === "partially_invoiced" || result.status === "invoiced",
+                    completed: result.status === "partially_invoiced" || result.status === "invoiced",
                 },
                 {
                     step: "Invoiced",
@@ -2555,10 +2512,7 @@ const orderQueries = {
                     displayStatus,
                     items: enrichPurchaseOrderItemsFulfillment(result.items),
                     warehouseName:
-                        warehouseInfo?.warehouseName ||
-                        warehouseInfo?.shopName ||
-                        warehouseInfo?.name ||
-                        "Admin",
+                        warehouseInfo?.warehouseName || warehouseInfo?.shopName || warehouseInfo?.name || "Admin",
                     warehousePhone: warehouseInfo?.phone || null,
                 },
                 flow,
@@ -2659,13 +2613,15 @@ const orderQueries = {
             const totalCount = countResult[0]?.count || 0;
 
             // Resolve warehouse names
-            const warehouseIds = [
-                ...new Set(orders.map((o: any) => o.warehouseId).filter(Boolean)),
-            ];
+            const warehouseIds = [...new Set(orders.map((o: any) => o.warehouseId).filter(Boolean))];
             const warehouseMap: Record<string, string> = {};
             if (warehouseIds.length > 0) {
                 const warehouses = await db
-                    .select({ id: user.id, name: user.name, shopName: user.shopName })
+                    .select({
+                        id: user.id,
+                        name: user.name,
+                        shopName: user.shopName,
+                    })
                     .from(user)
                     .where(inArray(user.id, warehouseIds));
                 for (const w of warehouses) {
@@ -2675,20 +2631,11 @@ const orderQueries = {
 
             // Build tracking data for each order
             const trackingOrders = orders.map((o: any) => {
-                const totalOrdered = o.items.reduce(
-                    (s: number, i: any) => s + (i.modifiedQty ?? i.quantity),
-                    0,
-                );
-                const totalDelivered = o.items.reduce(
-                    (s: number, i: any) => s + (i.deliveredQty || 0),
-                    0,
-                );
+                const totalOrdered = o.items.reduce((s: number, i: any) => s + (i.modifiedQty ?? i.quantity), 0);
+                const totalDelivered = o.items.reduce((s: number, i: any) => s + (i.deliveredQty || 0), 0);
                 const isModified = !!o.modifiedByWarehouseAt;
                 const needsApproval =
-                    isModified &&
-                    !o.modificationAcceptedAt &&
-                    !o.modificationRejectedAt &&
-                    o.status !== "cancelled";
+                    isModified && !o.modificationAcceptedAt && !o.modificationRejectedAt && o.status !== "cancelled";
 
                 const approvedStatuses = [
                     "approved",
@@ -2718,10 +2665,7 @@ const orderQueries = {
                     {
                         step: "Approved",
                         date: o.modificationAcceptedAt || o.confirmedAt,
-                        completed:
-                            !!o.confirmedAt ||
-                            !!o.modificationAcceptedAt ||
-                            approvedStatuses.includes(o.status),
+                        completed: !!o.confirmedAt || !!o.modificationAcceptedAt || approvedStatuses.includes(o.status),
                     },
                     {
                         step: "Ready",
@@ -2733,14 +2677,15 @@ const orderQueries = {
                         date: null,
                         completed: o.status === "partially_invoiced" || o.status === "invoiced",
                     },
-                    { step: "Invoiced", date: null, completed: o.status === "invoiced" },
+                    {
+                        step: "Invoiced",
+                        date: null,
+                        completed: o.status === "invoiced",
+                    },
                     {
                         step: "Processing",
                         date: o.processingStartedAt,
-                        completed:
-                            !!o.processingStartedAt ||
-                            o.status === "processing" ||
-                            o.status === "delivered",
+                        completed: !!o.processingStartedAt || o.status === "processing" || o.status === "delivered",
                     },
                     {
                         step: "Packing",
@@ -2752,23 +2697,22 @@ const orderQueries = {
                         date: o.deliveredAt,
                         completed: !!o.deliveredAt || o.status === "delivered",
                     },
-                    { step: "Received", date: o.receivedAt, completed: !!o.receivedAt },
+                    {
+                        step: "Received",
+                        date: o.receivedAt,
+                        completed: !!o.receivedAt,
+                    },
                 ].filter((t) => !t.isModification || t.completed);
 
                 return {
                     ...o,
                     items: enrichPurchaseOrderItemsFulfillment(o.items),
-                    warehouseName: o.warehouseId
-                        ? warehouseMap[o.warehouseId] || "Unknown"
-                        : "Admin",
+                    warehouseName: o.warehouseId ? warehouseMap[o.warehouseId] || "Unknown" : "Admin",
                     tracking: {
                         totalOrdered,
                         totalDelivered,
                         remaining: totalOrdered - totalDelivered,
-                        deliveryProgress:
-                            totalOrdered > 0
-                                ? Math.round((totalDelivered / totalOrdered) * 100)
-                                : 0,
+                        deliveryProgress: totalOrdered > 0 ? Math.round((totalDelivered / totalOrdered) * 100) : 0,
                         isPartialDelivery: totalDelivered > 0 && totalDelivered < totalOrdered,
                     },
                     modification: {
@@ -2788,12 +2732,9 @@ const orderQueries = {
                         sql<number>`count(*) filter (where ${order.modifiedByWarehouseAt} is not null and ${order.modificationAcceptedAt} is null and ${order.modificationRejectedAt} is null and ${order.status} != 'cancelled')`.as(
                             "mc",
                         ),
-                    pendingApprovals:
-                        sql<number>`count(*) filter (where ${order.status} = 'pending')`.as("pa"),
+                    pendingApprovals: sql<number>`count(*) filter (where ${order.status} = 'pending')`.as("pa"),
                     totalActive:
-                        sql<number>`count(*) filter (where ${order.status} not in ('delivered', 'cancelled'))`.as(
-                            "ta",
-                        ),
+                        sql<number>`count(*) filter (where ${order.status} not in ('delivered', 'cancelled'))`.as("ta"),
                 })
                 .from(order)
                 .where(eq(order.userId, userId));
@@ -2835,7 +2776,9 @@ const orderQueries = {
             });
 
             if (!existingOrder) {
-                throw new ORPCError("NOT_FOUND", { message: "Order not found" });
+                throw new ORPCError("NOT_FOUND", {
+                    message: "Order not found",
+                });
             }
 
             if (!existingOrder.modifiedByWarehouseAt) {
@@ -2886,7 +2829,9 @@ const orderQueries = {
             });
 
             if (!existingOrder) {
-                throw new ORPCError("NOT_FOUND", { message: "Order not found" });
+                throw new ORPCError("NOT_FOUND", {
+                    message: "Order not found",
+                });
             }
 
             if (!existingOrder.modifiedByWarehouseAt) {
@@ -3040,7 +2985,11 @@ const orderQueries = {
             const whMap: Record<string, string> = {};
             if (whIds.length > 0) {
                 const whs = await db
-                    .select({ id: user.id, name: user.name, shopName: user.shopName })
+                    .select({
+                        id: user.id,
+                        name: user.name,
+                        shopName: user.shopName,
+                    })
                     .from(user)
                     .where(inArray(user.id, whIds));
                 for (const w of whs) whMap[w.id] = w.shopName || w.name;
@@ -3062,10 +3011,7 @@ const orderQueries = {
 
             // Build history records
             const historyOrders = orders.map((o: any) => {
-                const totalQty = o.items.reduce(
-                    (s: number, i: any) => s + (i.modifiedQty ?? i.quantity),
-                    0,
-                );
+                const totalQty = o.items.reduce((s: number, i: any) => s + (i.modifiedQty ?? i.quantity), 0);
                 const totalAmount = o.items.reduce((s: number, i: any) => {
                     const qty = i.modifiedQty ?? i.quantity;
                     const price = i.modifiedUnitPrice ?? i.unitPrice;
@@ -3126,9 +3072,7 @@ const orderQueries = {
                 .select({
                     day: sql<string>`TO_CHAR(${order.createdAt}, 'YYYY-MM-DD')`.as("day"),
                     orderCount: count(),
-                    totalAmount: sql<number>`COALESCE(SUM(CAST(${order.total} AS numeric)), 0)`.as(
-                        "total_amount",
-                    ),
+                    totalAmount: sql<number>`COALESCE(SUM(CAST(${order.total} AS numeric)), 0)`.as("total_amount"),
                 })
                 .from(order)
                 .where(
@@ -3218,16 +3162,8 @@ const orderQueries = {
                 })
                 .from(shopWarehouseConnection)
                 .innerJoin(user, eq(shopWarehouseConnection.warehouseId, user.id))
-                .where(
-                    and(
-                        eq(shopWarehouseConnection.shopId, shopId),
-                        eq(shopWarehouseConnection.status, "active"),
-                    ),
-                )
-                .orderBy(
-                    desc(shopWarehouseConnection.lastOrderedAt),
-                    desc(shopWarehouseConnection.connectedAt),
-                );
+                .where(and(eq(shopWarehouseConnection.shopId, shopId), eq(shopWarehouseConnection.status, "active")))
+                .orderBy(desc(shopWarehouseConnection.lastOrderedAt), desc(shopWarehouseConnection.connectedAt));
 
             if (connections.length === 0) {
                 return {
@@ -3253,10 +3189,7 @@ const orderQueries = {
                     invoicePaymentStatus: invoice.paymentStatus,
                 })
                 .from(order)
-                .leftJoin(
-                    invoice,
-                    and(eq(invoice.orderId, order.id), eq(invoice.invoiceType, "main")),
-                )
+                .leftJoin(invoice, and(eq(invoice.orderId, order.id), eq(invoice.invoiceType, "main")))
                 .where(and(eq(order.userId, shopId), inArray(order.warehouseId, warehouseIds)));
 
             const supplierOrderMap = new Map<
@@ -3292,10 +3225,7 @@ const orderQueries = {
                 const total = toSafeNumber(row.total);
                 current.totalOrders += 1;
 
-                if (
-                    !current.lastPurchaseDate ||
-                    (row.createdAt && row.createdAt > current.lastPurchaseDate)
-                ) {
+                if (!current.lastPurchaseDate || (row.createdAt && row.createdAt > current.lastPurchaseDate)) {
                     current.lastPurchaseDate = row.createdAt;
                 }
 
@@ -3348,10 +3278,7 @@ const orderQueries = {
                 .where(and(eq(order.userId, shopId), inArray(order.warehouseId, warehouseIds)))
                 .groupBy(order.warehouseId, category.name);
 
-            const inventoryCategoryMap = new Map<
-                string,
-                { categoryName: string; itemCount: number }
-            >();
+            const inventoryCategoryMap = new Map<string, { categoryName: string; itemCount: number }>();
             for (const row of inventoryCategoryRows) {
                 const current = inventoryCategoryMap.get(row.warehouseId);
                 const nextCount = Number(row.itemCount || 0);
@@ -3363,10 +3290,7 @@ const orderQueries = {
                 }
             }
 
-            const orderedCategoryMap = new Map<
-                string,
-                { categoryName: string; itemCount: number }
-            >();
+            const orderedCategoryMap = new Map<string, { categoryName: string; itemCount: number }>();
             for (const row of orderedCategoryRows) {
                 if (!row.warehouseId) continue;
 
@@ -3423,13 +3347,8 @@ const orderQueries = {
 
             const summary = {
                 connectedSuppliers: allSuppliers.length,
-                activeSuppliers: allSuppliers.filter(
-                    (supplier) => supplier.activityStatus === "active",
-                ).length,
-                totalPurchase: allSuppliers.reduce(
-                    (total, supplier) => total + supplier.totalPurchase,
-                    0,
-                ),
+                activeSuppliers: allSuppliers.filter((supplier) => supplier.activityStatus === "active").length,
+                totalPurchase: allSuppliers.reduce((total, supplier) => total + supplier.totalPurchase, 0),
             };
 
             const categories = [
@@ -3445,29 +3364,19 @@ const orderQueries = {
             if (input.search?.trim()) {
                 const search = input.search.trim().toLowerCase();
                 suppliers = suppliers.filter((supplier) =>
-                    [
-                        supplier.name,
-                        supplier.phone,
-                        supplier.email,
-                        supplier.address,
-                        supplier.primaryCategory,
-                    ]
+                    [supplier.name, supplier.phone, supplier.email, supplier.address, supplier.primaryCategory]
                         .filter(Boolean)
                         .some((value) => value!.toLowerCase().includes(search)),
                 );
             }
 
             if (input.status !== "all") {
-                suppliers = suppliers.filter(
-                    (supplier) => supplier.activityStatus === input.status,
-                );
+                suppliers = suppliers.filter((supplier) => supplier.activityStatus === input.status);
             }
 
             if (input.category?.trim()) {
                 const categoryFilter = input.category.trim().toLowerCase();
-                suppliers = suppliers.filter(
-                    (supplier) => supplier.primaryCategory?.toLowerCase() === categoryFilter,
-                );
+                suppliers = suppliers.filter((supplier) => supplier.primaryCategory?.toLowerCase() === categoryFilter);
             }
 
             suppliers = suppliers.sort((a, b) => {
@@ -3480,14 +3389,8 @@ const orderQueries = {
                 }
 
                 return (
-                    (b.lastPurchaseDate?.getTime() ||
-                        b.lastOrderedAt?.getTime() ||
-                        b.connectedAt?.getTime() ||
-                        0) -
-                    (a.lastPurchaseDate?.getTime() ||
-                        a.lastOrderedAt?.getTime() ||
-                        a.connectedAt?.getTime() ||
-                        0)
+                    (b.lastPurchaseDate?.getTime() || b.lastOrderedAt?.getTime() || b.connectedAt?.getTime() || 0) -
+                    (a.lastPurchaseDate?.getTime() || a.lastOrderedAt?.getTime() || a.connectedAt?.getTime() || 0)
                 );
             });
 
@@ -3597,10 +3500,7 @@ const orderQueries = {
                     expectedDeliveryAt: invoice.expectedDeliveryAt,
                 })
                 .from(order)
-                .leftJoin(
-                    invoice,
-                    and(eq(invoice.orderId, order.id), eq(invoice.invoiceType, "main")),
-                )
+                .leftJoin(invoice, and(eq(invoice.orderId, order.id), eq(invoice.invoiceType, "main")))
                 .where(and(eq(order.userId, shopId), eq(order.warehouseId, warehouseId)))
                 .orderBy(desc(order.createdAt));
 
@@ -3638,10 +3538,7 @@ const orderQueries = {
                     totalPurchase += total;
                 }
 
-                if (
-                    isPurchaseOrderStatus(row.status) &&
-                    isOrderPaid(row.paymentStatus, row.invoicePaymentStatus)
-                ) {
+                if (isPurchaseOrderStatus(row.status) && isOrderPaid(row.paymentStatus, row.invoicePaymentStatus)) {
                     totalPaid += total;
                 }
 
@@ -3658,8 +3555,7 @@ const orderQueries = {
             const lastPayment =
                 supplierOrders.find(
                     (row) =>
-                        isPurchaseOrderStatus(row.status) &&
-                        isOrderPaid(row.paymentStatus, row.invoicePaymentStatus),
+                        isPurchaseOrderStatus(row.status) && isOrderPaid(row.paymentStatus, row.invoicePaymentStatus),
                 ) || null;
 
             const pendingOrders = await db.query.order.findMany({
@@ -3693,12 +3589,7 @@ const orderQueries = {
                               expectedDeliveryAt: invoice.expectedDeliveryAt,
                           })
                           .from(invoice)
-                          .where(
-                              and(
-                                  eq(invoice.invoiceType, "main"),
-                                  inArray(invoice.orderId, pendingOrderIds),
-                              ),
-                          )
+                          .where(and(eq(invoice.invoiceType, "main"), inArray(invoice.orderId, pendingOrderIds)))
                     : [];
 
             const pendingInvoiceMap = new Map(pendingInvoices.map((row) => [row.orderId, row]));
@@ -3731,13 +3622,7 @@ const orderQueries = {
                         ? productNames.join(", ")
                         : `${productNames[0]}, ${productNames[1]} +${productNames.length - 2} more`;
                 const paid = isOrderPaid(row.paymentStatus, row.invoicePaymentStatus);
-                const dueAmount = isPayableOrder(
-                    row.status,
-                    row.paymentStatus,
-                    row.invoicePaymentStatus,
-                )
-                    ? total
-                    : 0;
+                const dueAmount = isPayableOrder(row.status, row.paymentStatus, row.invoicePaymentStatus) ? total : 0;
 
                 return {
                     id: row.id,
@@ -3755,10 +3640,7 @@ const orderQueries = {
                 .select({
                     productName: orderItem.productName,
                     productImage: orderItem.productImage,
-                    totalQty:
-                        sql<number>`SUM(COALESCE(${orderItem.modifiedQty}, ${orderItem.quantity}))`.as(
-                            "tq",
-                        ),
+                    totalQty: sql<number>`SUM(COALESCE(${orderItem.modifiedQty}, ${orderItem.quantity}))`.as("tq"),
                     orderCount: count(),
                 })
                 .from(orderItem)
@@ -3771,10 +3653,7 @@ const orderQueries = {
             const topCategories = await db
                 .select({
                     categoryName: category.name,
-                    totalQty:
-                        sql<number>`SUM(COALESCE(${orderItem.modifiedQty}, ${orderItem.quantity}))`.as(
-                            "tq",
-                        ),
+                    totalQty: sql<number>`SUM(COALESCE(${orderItem.modifiedQty}, ${orderItem.quantity}))`.as("tq"),
                     orderCount: count(),
                 })
                 .from(orderItem)
@@ -3788,9 +3667,7 @@ const orderQueries = {
 
             const [skuSummary] = await db
                 .select({
-                    totalSkuPurchased: sql<number>`COUNT(DISTINCT ${orderItem.productId})`.as(
-                        "total_sku_purchased",
-                    ),
+                    totalSkuPurchased: sql<number>`COUNT(DISTINCT ${orderItem.productId})`.as("total_sku_purchased"),
                 })
                 .from(orderItem)
                 .innerJoin(order, eq(orderItem.orderId, order.id))
@@ -3802,28 +3679,20 @@ const orderQueries = {
                         sql<number>`AVG(EXTRACT(EPOCH FROM (${order.deliveredAt} - ${order.createdAt})) / 86400)`.as(
                             "ad",
                         ),
-                    modifiedCount:
-                        sql<number>`count(*) filter (where ${order.modifiedByWarehouseAt} is not null)`.as(
-                            "mc",
-                        ),
-                    deliveredTotal:
-                        sql<number>`count(*) filter (where ${order.status} = 'delivered')`.as("dt"),
+                    modifiedCount: sql<number>`count(*) filter (where ${order.modifiedByWarehouseAt} is not null)`.as(
+                        "mc",
+                    ),
+                    deliveredTotal: sql<number>`count(*) filter (where ${order.status} = 'delivered')`.as("dt"),
                 })
                 .from(order)
                 .where(
-                    and(
-                        eq(order.userId, shopId),
-                        eq(order.warehouseId, warehouseId),
-                        eq(order.status, "delivered"),
-                    ),
+                    and(eq(order.userId, shopId), eq(order.warehouseId, warehouseId), eq(order.status, "delivered")),
                 );
 
             const avgDeliveryDays = Math.round(Number(perfData[0]?.avgDays) || 0);
             const deliveredTotal = Number(perfData[0]?.deliveredTotal) || 0;
             const modifiedRate =
-                deliveredTotal > 0
-                    ? Math.round(((Number(perfData[0]?.modifiedCount) || 0) / deliveredTotal) * 100)
-                    : 0;
+                deliveredTotal > 0 ? Math.round(((Number(perfData[0]?.modifiedCount) || 0) / deliveredTotal) * 100) : 0;
 
             const complaintRows = await db
                 .select({
@@ -3836,22 +3705,13 @@ const orderQueries = {
                 })
                 .from(complaint)
                 .innerJoin(order, eq(complaint.orderId, order.id))
-                .where(
-                    and(
-                        eq(complaint.userId, shopId),
-                        eq(order.userId, shopId),
-                        eq(order.warehouseId, warehouseId),
-                    ),
-                )
+                .where(and(eq(complaint.userId, shopId), eq(order.userId, shopId), eq(order.warehouseId, warehouseId)))
                 .orderBy(desc(complaint.createdAt));
 
             const totalIssues = complaintRows.length;
-            const resolvedIssues = complaintRows.filter((row) =>
-                ["resolved", "closed"].includes(row.status),
-            ).length;
+            const resolvedIssues = complaintRows.filter((row) => ["resolved", "closed"].includes(row.status)).length;
             const latestIssue = complaintRows[0] || null;
-            const issueRate =
-                orderStats.total > 0 ? Math.round((totalIssues / orderStats.total) * 100) : 0;
+            const issueRate = orderStats.total > 0 ? Math.round((totalIssues / orderStats.total) * 100) : 0;
 
             const assignment = await db.query.customerAssignment.findFirst({
                 where: eq(customerAssignment.customerId, shopId),
@@ -3882,10 +3742,7 @@ const orderQueries = {
                     : null;
 
             const warehouseAreas = await db.query.deliveryArea.findMany({
-                where: and(
-                    eq(deliveryArea.warehouseId, warehouseId),
-                    eq(deliveryArea.status, "active"),
-                ),
+                where: and(eq(deliveryArea.warehouseId, warehouseId), eq(deliveryArea.status, "active")),
                 with: {
                     schedules: {
                         where: eq(deliverySchedule.isActive, true),
@@ -3932,9 +3789,7 @@ const orderQueries = {
 
                 const matchedHint = deliveryHints.find((hint) => {
                     const normalizedHint = normalizeDeliveryText(hint.value);
-                    return areaTerms.some(
-                        (term) => normalizedHint.includes(term) || term.includes(normalizedHint),
-                    );
+                    return areaTerms.some((term) => normalizedHint.includes(term) || term.includes(normalizedHint));
                 });
 
                 if (matchedHint) {
@@ -3994,26 +3849,17 @@ const orderQueries = {
                   }))
                 : [];
             const deliveryScope =
-                matchedWeeklyDays.length > 0
-                    ? "matched_area"
-                    : warehouseWeeklyDays.length > 0
-                      ? "warehouse"
-                      : "none";
-            const effectiveWeeklyDays =
-                deliveryScope === "matched_area" ? matchedWeeklyDays : warehouseWeeklyDays;
+                matchedWeeklyDays.length > 0 ? "matched_area" : warehouseWeeklyDays.length > 0 ? "warehouse" : "none";
+            const effectiveWeeklyDays = deliveryScope === "matched_area" ? matchedWeeklyDays : warehouseWeeklyDays;
             const today = new Date();
             const todayDayOfWeek = today.getDay();
-            const hasDeliveryToday = effectiveWeeklyDays.some(
-                (day) => day.dayOfWeek === todayDayOfWeek,
-            );
+            const hasDeliveryToday = effectiveWeeklyDays.some((day) => day.dayOfWeek === todayDayOfWeek);
             const nextDelivery = findNextDeliveryDate(
                 effectiveWeeklyDays.map((day) => day.dayOfWeek),
                 today,
             );
 
-            const uploadedDocuments = Array.isArray(warehouseProfile?.documents)
-                ? warehouseProfile.documents
-                : [];
+            const uploadedDocuments = Array.isArray(warehouseProfile?.documents) ? warehouseProfile.documents : [];
             const locationParts = [
                 warehouseProfile?.area,
                 warehouseProfile?.district,
@@ -4074,8 +3920,7 @@ const orderQueries = {
                 },
                 orderStatus: {
                     totalOrders: orderStats.total,
-                    pendingOrders:
-                        orderStats.pending + orderStats.confirmed + orderStats.processing,
+                    pendingOrders: orderStats.pending + orderStats.confirmed + orderStats.processing,
                     processingOrders: orderStats.processing,
                     outForDeliveryOrders: orderStats.outForDelivery,
                     deliveredOrders: orderStats.delivered,
@@ -4164,11 +4009,7 @@ const orderQueries = {
                     scope: deliveryScope,
                     matchSource,
                     yourAddress: shopUser?.shopAddress || latestOrder?.shippingAddress || null,
-                    areaHint:
-                        latestOrder?.shippingArea ||
-                        latestOrder?.shippingCity ||
-                        shopUser?.serviceArea ||
-                        null,
+                    areaHint: latestOrder?.shippingArea || latestOrder?.shippingCity || shopUser?.serviceArea || null,
                     matchedArea: matchedArea
                         ? {
                               id: matchedArea.id,
@@ -4239,10 +4080,7 @@ const orderQueries = {
                     invoicePaymentStatus: invoice.paymentStatus,
                 })
                 .from(order)
-                .leftJoin(
-                    invoice,
-                    and(eq(invoice.orderId, order.id), eq(invoice.invoiceType, "main")),
-                )
+                .leftJoin(invoice, and(eq(invoice.orderId, order.id), eq(invoice.invoiceType, "main")))
                 .where(and(eq(order.userId, userId), sql`${order.warehouseId} is not null`));
 
             if (supplierOrders.length === 0) {
@@ -4290,10 +4128,7 @@ const orderQueries = {
 
                 existing.totalOrders += 1;
 
-                if (
-                    !existing.lastOrderDate ||
-                    (row.createdAt && row.createdAt > existing.lastOrderDate)
-                ) {
+                if (!existing.lastOrderDate || (row.createdAt && row.createdAt > existing.lastOrderDate)) {
                     existing.lastOrderDate = row.createdAt;
                     existing.lastPurchaseAmount = total;
                 }
@@ -4321,12 +4156,8 @@ const orderQueries = {
             const allSuppliers = Array.from(supplierMap.values());
             const baseSummary = {
                 totalSuppliers: allSuppliers.length,
-                payableSuppliers: allSuppliers.filter((supplier) => supplier.totalPayable > 0)
-                    .length,
-                totalPayable: allSuppliers.reduce(
-                    (total, supplier) => total + supplier.totalPayable,
-                    0,
-                ),
+                payableSuppliers: allSuppliers.filter((supplier) => supplier.totalPayable > 0).length,
+                totalPayable: allSuppliers.reduce((total, supplier) => total + supplier.totalPayable, 0),
             };
 
             const whIds = Array.from(supplierMap.keys());
@@ -4358,9 +4189,7 @@ const orderQueries = {
                 );
 
             const userMap = new Map(warehouseUsers.map((u) => [u.id, u]));
-            const connectionMap = new Map(
-                connections.map((connection) => [connection.warehouseId, connection]),
-            );
+            const connectionMap = new Map(connections.map((connection) => [connection.warehouseId, connection]));
 
             let suppliers = Array.from(supplierMap.values()).map((supplier) => {
                 const u = userMap.get(supplier.warehouseId);
@@ -4388,9 +4217,7 @@ const orderQueries = {
             if (input.search) {
                 const s = input.search.toLowerCase();
                 suppliers = suppliers.filter((sup) =>
-                    [sup.name, sup.phone, sup.email]
-                        .filter(Boolean)
-                        .some((value) => value!.toLowerCase().includes(s)),
+                    [sup.name, sup.phone, sup.email].filter(Boolean).some((value) => value!.toLowerCase().includes(s)),
                 );
             }
 
@@ -4465,7 +4292,9 @@ const orderQueries = {
                 .limit(1);
 
             if (!whUser) {
-                throw new ORPCError("NOT_FOUND", { message: "Supplier not found" });
+                throw new ORPCError("NOT_FOUND", {
+                    message: "Supplier not found",
+                });
             }
 
             const [connection] = await db
@@ -4475,12 +4304,7 @@ const orderQueries = {
                     lastOrderedAt: shopWarehouseConnection.lastOrderedAt,
                 })
                 .from(shopWarehouseConnection)
-                .where(
-                    and(
-                        eq(shopWarehouseConnection.shopId, userId),
-                        eq(shopWarehouseConnection.warehouseId, whId),
-                    ),
-                )
+                .where(and(eq(shopWarehouseConnection.shopId, userId), eq(shopWarehouseConnection.warehouseId, whId)))
                 .limit(1);
 
             const supplierOrders = await db
@@ -4499,10 +4323,7 @@ const orderQueries = {
                     invoicePaymentStatus: invoice.paymentStatus,
                 })
                 .from(order)
-                .leftJoin(
-                    invoice,
-                    and(eq(invoice.orderId, order.id), eq(invoice.invoiceType, "main")),
-                )
+                .leftJoin(invoice, and(eq(invoice.orderId, order.id), eq(invoice.invoiceType, "main")))
                 .where(and(eq(order.userId, userId), eq(order.warehouseId, whId)))
                 .orderBy(desc(order.createdAt));
 
@@ -4535,10 +4356,7 @@ const orderQueries = {
                     totalPurchased += total;
                 }
 
-                if (
-                    isPurchaseOrderStatus(row.status) &&
-                    isOrderPaid(row.paymentStatus, row.invoicePaymentStatus)
-                ) {
+                if (isPurchaseOrderStatus(row.status) && isOrderPaid(row.paymentStatus, row.invoicePaymentStatus)) {
                     totalPaid += total;
                 }
 
@@ -4598,13 +4416,7 @@ const orderQueries = {
                         ? productNames.join(", ")
                         : `${productNames[0]}, ${productNames[1]} +${productNames.length - 2} more`;
                 const paid = isOrderPaid(row.paymentStatus, row.invoicePaymentStatus);
-                const dueAmount = isPayableOrder(
-                    row.status,
-                    row.paymentStatus,
-                    row.invoicePaymentStatus,
-                )
-                    ? total
-                    : 0;
+                const dueAmount = isPayableOrder(row.status, row.paymentStatus, row.invoicePaymentStatus) ? total : 0;
 
                 return {
                     id: row.id,
@@ -4633,10 +4445,7 @@ const orderQueries = {
                 .select({
                     productName: orderItem.productName,
                     productImage: orderItem.productImage,
-                    totalQty:
-                        sql<number>`SUM(COALESCE(${orderItem.modifiedQty}, ${orderItem.quantity}))`.as(
-                            "tq",
-                        ),
+                    totalQty: sql<number>`SUM(COALESCE(${orderItem.modifiedQty}, ${orderItem.quantity}))`.as("tq"),
                     orderCount: count(),
                 })
                 .from(orderItem)
@@ -4652,27 +4461,17 @@ const orderQueries = {
                         sql<number>`AVG(EXTRACT(EPOCH FROM (${order.deliveredAt} - ${order.createdAt})) / 86400)`.as(
                             "ad",
                         ),
-                    modifiedCount:
-                        sql<number>`count(*) filter (where ${order.modifiedByWarehouseAt} is not null)`.as(
-                            "mc",
-                        ),
-                    deliveredTotal:
-                        sql<number>`count(*) filter (where ${order.status} = 'delivered')`.as("dt"),
+                    modifiedCount: sql<number>`count(*) filter (where ${order.modifiedByWarehouseAt} is not null)`.as(
+                        "mc",
+                    ),
+                    deliveredTotal: sql<number>`count(*) filter (where ${order.status} = 'delivered')`.as("dt"),
                 })
                 .from(order)
-                .where(
-                    and(
-                        eq(order.userId, userId),
-                        eq(order.warehouseId, whId),
-                        eq(order.status, "delivered"),
-                    ),
-                );
+                .where(and(eq(order.userId, userId), eq(order.warehouseId, whId), eq(order.status, "delivered")));
 
             const avgDeliveryDays = Math.round(Number(perfData[0]?.avgDays) || 0);
             const deliveredTotal = Number(perfData[0]?.deliveredTotal) || 1;
-            const modifiedRate = Math.round(
-                ((Number(perfData[0]?.modifiedCount) || 0) / deliveredTotal) * 100,
-            );
+            const modifiedRate = Math.round(((Number(perfData[0]?.modifiedCount) || 0) / deliveredTotal) * 100);
 
             const assignment = await db.query.customerAssignment.findFirst({
                 where: eq(customerAssignment.customerId, userId),
@@ -4750,9 +4549,7 @@ const orderQueries = {
 
                 const matchedHint = deliveryHints.find((hint) => {
                     const normalizedHint = normalizeDeliveryText(hint.value);
-                    return areaTerms.some(
-                        (term) => normalizedHint.includes(term) || term.includes(normalizedHint),
-                    );
+                    return areaTerms.some((term) => normalizedHint.includes(term) || term.includes(normalizedHint));
                 });
 
                 if (matchedHint) {
@@ -4812,18 +4609,11 @@ const orderQueries = {
                   }))
                 : [];
             const deliveryScope =
-                matchedWeeklyDays.length > 0
-                    ? "matched_area"
-                    : warehouseWeeklyDays.length > 0
-                      ? "warehouse"
-                      : "none";
-            const effectiveWeeklyDays =
-                deliveryScope === "matched_area" ? matchedWeeklyDays : warehouseWeeklyDays;
+                matchedWeeklyDays.length > 0 ? "matched_area" : warehouseWeeklyDays.length > 0 ? "warehouse" : "none";
+            const effectiveWeeklyDays = deliveryScope === "matched_area" ? matchedWeeklyDays : warehouseWeeklyDays;
             const today = new Date();
             const todayDayOfWeek = today.getDay();
-            const hasDeliveryToday = effectiveWeeklyDays.some(
-                (day) => day.dayOfWeek === todayDayOfWeek,
-            );
+            const hasDeliveryToday = effectiveWeeklyDays.some((day) => day.dayOfWeek === todayDayOfWeek);
             const nextDelivery = findNextDeliveryDate(
                 effectiveWeeklyDays.map((day) => day.dayOfWeek),
                 today,
@@ -4860,11 +4650,7 @@ const orderQueries = {
                     scope: deliveryScope,
                     matchSource,
                     yourAddress: shopUser?.shopAddress || latestOrder?.shippingAddress || null,
-                    areaHint:
-                        latestOrder?.shippingArea ||
-                        latestOrder?.shippingCity ||
-                        shopUser?.serviceArea ||
-                        null,
+                    areaHint: latestOrder?.shippingArea || latestOrder?.shippingCity || shopUser?.serviceArea || null,
                     matchedArea: matchedArea
                         ? {
                               id: matchedArea.id,
@@ -4889,13 +4675,10 @@ const orderQueries = {
                 quickInfo: {
                     lastOrderNumber: latestOrder?.orderNumber || null,
                     lastOrderStatus: latestOrder?.status || null,
-                    pendingOrders:
-                        orderStats.pending + orderStats.confirmed + orderStats.processing,
+                    pendingOrders: orderStats.pending + orderStats.confirmed + orderStats.processing,
                     activeOrders: orderStats.pending + orderStats.confirmed + orderStats.processing,
                     payableOrders,
-                    lastDeliveredAt:
-                        supplierOrders.find((row) => row.status === "delivered")?.deliveredAt ||
-                        null,
+                    lastDeliveredAt: supplierOrders.find((row) => row.status === "delivered")?.deliveredAt || null,
                 },
                 pendingOrders: pendingOrders.map((o: any) => ({
                     id: o.id,
@@ -4922,8 +4705,7 @@ const orderQueries = {
                     avgDeliveryDays,
                     modificationRate: modifiedRate,
                     orderAccuracy: 100 - modifiedRate,
-                    deliverySpeed:
-                        avgDeliveryDays <= 1 ? "Fast" : avgDeliveryDays <= 3 ? "Normal" : "Slow",
+                    deliverySpeed: avgDeliveryDays <= 1 ? "Fast" : avgDeliveryDays <= 3 ? "Normal" : "Slow",
                 },
             };
         }),
@@ -5050,17 +4832,11 @@ const retailerSupplierQueries = {
                         totalPurchase: sql<string>`COALESCE(SUM(${purchase.total}::numeric), 0)`,
                     })
                     .from(purchase)
-                    .where(
-                        and(
-                            eq(purchase.warehouseId, userId),
-                            inArray(purchase.supplierId, supplierIds),
-                        ),
-                    )
+                    .where(and(eq(purchase.warehouseId, userId), inArray(purchase.supplierId, supplierIds)))
                     .groupBy(purchase.supplierId);
 
                 for (const total of totals) {
-                    purchaseTotals[total.supplierId] =
-                        parseFloat(total.totalPurchase) || 0;
+                    purchaseTotals[total.supplierId] = parseFloat(total.totalPurchase) || 0;
                 }
             }
 
@@ -5085,16 +4861,16 @@ const retailerSupplierQueries = {
 
             const allSuppliers = await db.query.supplier.findMany({
                 where: eq(supplier.addedBy, userId),
-                columns: { id: true, currentPayable: true, status: true, isActive: true },
+                columns: {
+                    id: true,
+                    currentPayable: true,
+                    status: true,
+                    isActive: true,
+                },
             });
 
-            const activeCount = allSuppliers.filter(
-                (item) => item.status === "active",
-            ).length;
-            const totalPayable = allSuppliers.reduce(
-                (sum, item) => sum + parseFloat(item.currentPayable),
-                0,
-            );
+            const activeCount = allSuppliers.filter((item) => item.status === "active").length;
+            const totalPayable = allSuppliers.reduce((sum, item) => sum + parseFloat(item.currentPayable), 0);
 
             const [purchaseStats] = await db
                 .select({
@@ -5134,14 +4910,13 @@ const retailerSupplierQueries = {
             });
 
             if (!sup) {
-                throw new ORPCError("NOT_FOUND", { message: "Supplier not found" });
+                throw new ORPCError("NOT_FOUND", {
+                    message: "Supplier not found",
+                });
             }
 
             const purchases = await db.query.purchase.findMany({
-                where: and(
-                    eq(purchase.warehouseId, userId),
-                    eq(purchase.supplierId, input.id),
-                ),
+                where: and(eq(purchase.warehouseId, userId), eq(purchase.supplierId, input.id)),
                 with: {
                     items: {
                         columns: {
@@ -5154,10 +4929,7 @@ const retailerSupplierQueries = {
                 orderBy: [desc(purchase.createdAt)],
             });
 
-            const totalPurchaseValue = purchases.reduce(
-                (sum, item) => sum + parseFloat(item.total ?? "0"),
-                0,
-            );
+            const totalPurchaseValue = purchases.reduce((sum, item) => sum + parseFloat(item.total ?? "0"), 0);
 
             const payments = await db
                 .select({
@@ -5177,19 +4949,13 @@ const retailerSupplierQueries = {
                 )
                 .orderBy(desc(financialLedger.createdAt));
 
-            const totalPaid = payments.reduce(
-                (sum, item) => sum + parseFloat(item.amount ?? "0"),
-                0,
-            );
+            const totalPaid = payments.reduce((sum, item) => sum + parseFloat(item.amount ?? "0"), 0);
 
             const cashPurchaseTotal = purchases
                 .filter((item) => item.paymentType === "cash")
                 .reduce((sum, item) => sum + parseFloat(item.total ?? "0"), 0);
 
-            const productMap = new Map<
-                string,
-                { totalQty: number; totalValue: number }
-            >();
+            const productMap = new Map<string, { totalQty: number; totalValue: number }>();
             for (const purchaseRow of purchases) {
                 for (const item of purchaseRow.items) {
                     const existing = productMap.get(item.productName) ?? {
@@ -5261,7 +5027,11 @@ const retailerSupplierQueries = {
         })
         .handler(async () => {
             const categories = await db
-                .select({ id: category.id, name: category.name, slug: category.slug })
+                .select({
+                    id: category.id,
+                    name: category.name,
+                    slug: category.slug,
+                })
                 .from(category)
                 .where(eq(category.isActive, true))
                 .orderBy(category.name);
@@ -5318,19 +5088,14 @@ const retailerSupplierQueries = {
             const userId = context.session.user.id;
             const updateData: Record<string, any> = { name: input.name };
 
-            if (input.company !== undefined)
-                updateData.company = input.company || null;
-            if (input.contactPerson !== undefined)
-                updateData.contactPerson = input.contactPerson || null;
+            if (input.company !== undefined) updateData.company = input.company || null;
+            if (input.contactPerson !== undefined) updateData.contactPerson = input.contactPerson || null;
             if (input.phone !== undefined) updateData.phone = input.phone || null;
             if (input.email !== undefined) updateData.email = input.email || null;
-            if (input.address !== undefined)
-                updateData.address = input.address || null;
+            if (input.address !== undefined) updateData.address = input.address || null;
             if (input.notes !== undefined) updateData.notes = input.notes || null;
-            if (input.creditLimit !== undefined)
-                updateData.creditLimit = input.creditLimit;
-            if (input.returnPackAgreement !== undefined)
-                updateData.returnPackAgreement = input.returnPackAgreement;
+            if (input.creditLimit !== undefined) updateData.creditLimit = input.creditLimit;
+            if (input.returnPackAgreement !== undefined) updateData.returnPackAgreement = input.returnPackAgreement;
             if (input.categoryId !== undefined) updateData.categoryId = input.categoryId;
             if (input.isActive !== undefined) updateData.isActive = input.isActive;
             if (input.status !== undefined) updateData.status = input.status;
@@ -5342,7 +5107,9 @@ const retailerSupplierQueries = {
                 .returning();
 
             if (!updated) {
-                throw new ORPCError("NOT_FOUND", { message: "Supplier not found" });
+                throw new ORPCError("NOT_FOUND", {
+                    message: "Supplier not found",
+                });
             }
 
             return { supplier: updated };
@@ -5359,9 +5126,7 @@ const retailerSupplierQueries = {
         .handler(async ({ context, input }) => {
             const userId = context.session.user.id;
 
-            await db
-                .delete(supplier)
-                .where(and(eq(supplier.id, input.id), eq(supplier.addedBy, userId)));
+            await db.delete(supplier).where(and(eq(supplier.id, input.id), eq(supplier.addedBy, userId)));
 
             return { success: true };
         }),
@@ -5372,21 +5137,14 @@ async function approveRetailerOrder(shopId: string, orderId: number) {
     return db.transaction(async (tx) => {
         await tx.execute(sql`SELECT pg_advisory_xact_lock(${orderId})`);
         const existingOrder = await tx.query.order.findFirst({
-            where: and(
-                eq(order.id, orderId),
-                eq(order.shopId, shopId),
-                eq(order.orderType, "b2c"),
-            ),
+            where: and(eq(order.id, orderId), eq(order.shopId, shopId), eq(order.orderType, "b2c")),
         });
         if (!existingOrder) {
             throw new ORPCError("NOT_FOUND", {
                 message: "Order not found or not owned by your shop",
             });
         }
-        const transition = getRetailerOrderTransition(
-            existingOrder.status,
-            "confirm",
-        );
+        const transition = getRetailerOrderTransition(existingOrder.status, "confirm");
         if (!transition) {
             throw new ORPCError("BAD_REQUEST", {
                 message: `Order cannot be approved from '${existingOrder.status}'`,
@@ -5500,10 +5258,7 @@ const incomingOrderQueries = {
             const orderIds = orders.map((o) => o.id);
             const items =
                 orderIds.length > 0
-                    ? await db
-                          .select()
-                          .from(orderItem)
-                          .where(inArray(orderItem.orderId, orderIds))
+                    ? await db.select().from(orderItem).where(inArray(orderItem.orderId, orderIds))
                     : [];
 
             const itemsByOrder = new Map<number, typeof items>();
@@ -5515,54 +5270,38 @@ const incomingOrderQueries = {
 
             const fulfillmentRows =
                 orderIds.length > 0
-                ? await db
-                    .select({
-                        orderId: invoice.orderId,
-                        invoiceId: invoice.id,
-                        invoiceNumber: invoice.invoiceNumber,
-                        fulfillmentMode: invoice.fulfillmentMode,
-                        deliveryStatus: invoice.deliveryStatus,
-                        groupId: deliveryGroup.id,
-                        groupStatus: deliveryGroup.status,
-                        linkStatus: deliveryGroupInvoice.status,
-                        deliverymanId: deliveryGroup.deliverymanId,
-                        assignedAt: deliveryGroup.assignedAt,
-                        startedAt: deliveryGroup.startedAt,
-                    })
-                    .from(invoice)
-                    .leftJoin(
-                        deliveryGroupInvoice,
-                        eq(deliveryGroupInvoice.invoiceId, invoice.id),
-                    )
-                    .leftJoin(
-                        deliveryGroup,
-                        eq(deliveryGroup.id, deliveryGroupInvoice.groupId),
-                    )
-                    .where(inArray(invoice.orderId, orderIds))
-                : [];
-            const fulfillmentByOrder = new Map<
-                number,
-                (typeof fulfillmentRows)[number]
-            >();
+                    ? await db
+                          .select({
+                              orderId: invoice.orderId,
+                              invoiceId: invoice.id,
+                              invoiceNumber: invoice.invoiceNumber,
+                              fulfillmentMode: invoice.fulfillmentMode,
+                              deliveryStatus: invoice.deliveryStatus,
+                              groupId: deliveryGroup.id,
+                              groupStatus: deliveryGroup.status,
+                              linkStatus: deliveryGroupInvoice.status,
+                              deliverymanId: deliveryGroup.deliverymanId,
+                              assignedAt: deliveryGroup.assignedAt,
+                              startedAt: deliveryGroup.startedAt,
+                          })
+                          .from(invoice)
+                          .leftJoin(deliveryGroupInvoice, eq(deliveryGroupInvoice.invoiceId, invoice.id))
+                          .leftJoin(deliveryGroup, eq(deliveryGroup.id, deliveryGroupInvoice.groupId))
+                          .where(inArray(invoice.orderId, orderIds))
+                    : [];
+            const fulfillmentByOrder = new Map<number, (typeof fulfillmentRows)[number]>();
             const groupPriority = (row: (typeof fulfillmentRows)[number]) => {
                 if (
                     row.linkStatus === "pending" &&
-                    ["pending_assignment", "assigned", "out_for_delivery"].includes(
-                        row.groupStatus ?? "",
-                    )
+                    ["pending_assignment", "assigned", "out_for_delivery"].includes(row.groupStatus ?? "")
                 ) {
                     return 2;
                 }
                 return row.groupId ? 1 : 0;
             };
             for (const row of fulfillmentRows) {
-                const current = row.orderId
-                    ? fulfillmentByOrder.get(row.orderId)
-                    : undefined;
-                if (
-                    row.orderId &&
-                    (!current || groupPriority(row) > groupPriority(current))
-                ) {
+                const current = row.orderId ? fulfillmentByOrder.get(row.orderId) : undefined;
+                if (row.orderId && (!current || groupPriority(row) > groupPriority(current))) {
                     fulfillmentByOrder.set(row.orderId, row);
                 }
             }
@@ -5577,16 +5316,16 @@ const incomingOrderQueries = {
                         items: itemsByOrder.get(o.id) || [],
                         fulfillment:
                             fulfillment?.deliveryStatus === "not_assigned"
-                            ? {
-                                ...fulfillment,
-                                groupId: null,
-                                groupStatus: null,
-                                linkStatus: null,
-                                deliverymanId: null,
-                                assignedAt: null,
-                                startedAt: null,
-                            }
-                            : fulfillment,
+                                ? {
+                                      ...fulfillment,
+                                      groupId: null,
+                                      groupStatus: null,
+                                      linkStatus: null,
+                                      deliverymanId: null,
+                                      assignedAt: null,
+                                      startedAt: null,
+                                  }
+                                : fulfillment,
                     };
                 }),
                 pagination: {
@@ -5610,20 +5349,23 @@ const incomingOrderQueries = {
         .handler(async ({ context, input }) => {
             const shopId = context.session.user.id;
             const detail = await db.query.order.findFirst({
-                    where: and(
-                        eq(order.id, input.orderId),
-                        eq(order.shopId, shopId),
-                        eq(order.orderType, "b2c"),
-                    ),
+                where: and(eq(order.id, input.orderId), eq(order.shopId, shopId), eq(order.orderType, "b2c")),
                 with: { items: true },
-                });
+            });
             if (!detail) {
-                throw new ORPCError("NOT_FOUND", { message: "Order not found" });
-                }
+                throw new ORPCError("NOT_FOUND", {
+                    message: "Order not found",
+                });
+            }
             const [customer, orderInvoices] = await Promise.all([
                 db.query.user.findFirst({
                     where: eq(user.id, detail.userId),
-                    columns: { id: true, name: true, email: true, phoneNumber: true },
+                    columns: {
+                        id: true,
+                        name: true,
+                        email: true,
+                        phoneNumber: true,
+                    },
                 }),
                 db.query.invoice.findMany({
                     where: eq(invoice.orderId, detail.id),
@@ -5635,18 +5377,18 @@ const incomingOrderQueries = {
             const links =
                 invoiceIds.length > 0
                     ? await db.query.deliveryGroupInvoice.findMany({
-                            where: inArray(deliveryGroupInvoice.invoiceId, invoiceIds),
-                            with: { group: { with: { deliveryman: true } } },
-                    })
+                          where: inArray(deliveryGroupInvoice.invoiceId, invoiceIds),
+                          with: { group: { with: { deliveryman: true } } },
+                      })
                     : [];
-                return {
+            return {
                 order: {
                     ...detail,
                     customer,
                     invoices: orderInvoices,
                     deliveryLinks: links,
                 },
-                };
+            };
         }),
 
     /** Canonical operational approval. Consumer tracking still projects this as Store confirmed. */
@@ -5658,9 +5400,7 @@ const incomingOrderQueries = {
             summary: "Approve an incoming B2C consumer order",
         })
         .input(z.object({ orderId: z.number() }))
-        .handler(({ context, input }) =>
-            approveRetailerOrder(context.session.user.id, input.orderId),
-        ),
+        .handler(({ context, input }) => approveRetailerOrder(context.session.user.id, input.orderId)),
 
     /** Compatibility wrapper for clients that still call confirmation. */
     confirmIncomingOrder: shopOwnerProcedure
@@ -5671,9 +5411,7 @@ const incomingOrderQueries = {
             summary: "Confirm an incoming B2C consumer order",
         })
         .input(z.object({ orderId: z.number() }))
-        .handler(({ context, input }) =>
-            approveRetailerOrder(context.session.user.id, input.orderId),
-        ),
+        .handler(({ context, input }) => approveRetailerOrder(context.session.user.id, input.orderId)),
 
     /** Cancel a retailer order before invoicing and restore reserved stock. */
     cancelIncomingOrder: shopOwnerProcedure
@@ -5690,11 +5428,7 @@ const incomingOrderQueries = {
             return db.transaction(async (tx) => {
                 await tx.execute(sql`SELECT pg_advisory_xact_lock(${input.orderId})`);
                 const existingOrder = await tx.query.order.findFirst({
-                    where: and(
-                        eq(order.id, input.orderId),
-                        eq(order.shopId, shopId),
-                        eq(order.orderType, "b2c"),
-                    ),
+                    where: and(eq(order.id, input.orderId), eq(order.shopId, shopId), eq(order.orderType, "b2c")),
                     with: { items: true },
                 });
                 if (!existingOrder) {
@@ -5702,10 +5436,7 @@ const incomingOrderQueries = {
                         message: "Order not found or not owned by your shop",
                     });
                 }
-                const transition = getRetailerOrderTransition(
-                    existingOrder.status,
-                    "cancel",
-                );
+                const transition = getRetailerOrderTransition(existingOrder.status, "cancel");
                 if (!transition) {
                     throw new ORPCError("BAD_REQUEST", {
                         message: "Only orders that have not been invoiced can be cancelled",
@@ -5713,11 +5444,7 @@ const incomingOrderQueries = {
                 }
 
                 try {
-                    await restoreRetailerOrderStock(
-                        createRetailerOrderStockWriter(tx),
-                        shopId,
-                        existingOrder.items,
-                    );
+                    await restoreRetailerOrderStock(createRetailerOrderStockWriter(tx), shopId, existingOrder.items);
                 } catch (error) {
                     if (error instanceof RetailerOrderStockError) {
                         throw new ORPCError("BAD_REQUEST", {
@@ -5850,9 +5577,7 @@ const incomingOrderQueries = {
         })
         .input(
             z.object({
-                view: z
-                    .enum(["ready_for_dispatch", "invoiced"])
-                    .default("ready_for_dispatch"),
+                view: z.enum(["ready_for_dispatch", "invoiced"]).default("ready_for_dispatch"),
                 search: z.string().trim().optional(),
             }),
         )
@@ -5869,10 +5594,7 @@ const incomingOrderQueries = {
             const conditions: SQL[] = [
                 eq(order.shopId, context.session.user.id),
                 eq(order.orderType, "b2c"),
-                inArray(
-                    order.status,
-                    getRetailerDispatchQueryStatuses(input.view),
-                ),
+                inArray(order.status, getRetailerDispatchQueryStatuses(input.view)),
             ];
             if (input.search) {
                 conditions.push(
@@ -5892,13 +5614,11 @@ const incomingOrderQueries = {
             const invoices =
                 ids.length > 0
                     ? await db.query.invoice.findMany({
-                            where: inArray(invoice.orderId, ids),
-                            with: { items: true },
-                        })
+                          where: inArray(invoice.orderId, ids),
+                          with: { items: true },
+                      })
                     : [];
-            const invoiceByOrder = new Map(
-                invoices.map((entry) => [entry.orderId, entry]),
-            );
+            const invoiceByOrder = new Map(invoices.map((entry) => [entry.orderId, entry]));
             return {
                 pickupAvailable: Boolean(shopProfile?.shopAddress?.trim()),
                 pickupLocation: shopProfile?.shopAddress
@@ -5927,15 +5647,7 @@ const incomingOrderQueries = {
         .input(
             z.object({
                 status: z
-                    .enum([
-                        "all",
-                        "not_assigned",
-                        "pending",
-                        "out_for_delivery",
-                        "delivered",
-                        "failed",
-                        "returned",
-                    ])
+                    .enum(["all", "not_assigned", "pending", "out_for_delivery", "delivered", "failed", "returned"])
                     .default("all"),
             }),
         )
@@ -5956,9 +5668,13 @@ const incomingOrderQueries = {
                 where: and(...conditions),
                 with: {
                     order: true,
-                    customer: { columns: { id: true, name: true, phoneNumber: true } },
+                    customer: {
+                        columns: { id: true, name: true, phoneNumber: true },
+                    },
                     items: true,
-                    deliveryman: { columns: { id: true, name: true, phoneNumber: true } },
+                    deliveryman: {
+                        columns: { id: true, name: true, phoneNumber: true },
+                    },
                 },
                 orderBy: [desc(invoice.createdAt)],
             });
@@ -5966,13 +5682,11 @@ const incomingOrderQueries = {
             const links =
                 ids.length > 0
                     ? await db.query.deliveryGroupInvoice.findMany({
-                            where: inArray(deliveryGroupInvoice.invoiceId, ids),
-                            with: { group: { with: { deliveryman: true } } },
-                        })
+                          where: inArray(deliveryGroupInvoice.invoiceId, ids),
+                          with: { group: { with: { deliveryman: true } } },
+                      })
                     : [];
-            const linkByInvoice = new Map(
-                links.map((entry) => [entry.invoiceId, entry]),
-            );
+            const linkByInvoice = new Map(links.map((entry) => [entry.invoiceId, entry]));
             return {
                 invoices: invoices.map((entry) => ({
                     ...entry,
@@ -5997,7 +5711,11 @@ const incomingOrderQueries = {
                     with: {
                         deliveryman: true,
                         invoices: {
-                            with: { invoice: { with: { order: true, customer: true } } },
+                            with: {
+                                invoice: {
+                                    with: { order: true, customer: true },
+                                },
+                            },
                             orderBy: [deliveryGroupInvoice.sequence],
                         },
                     },
@@ -6008,11 +5726,7 @@ const incomingOrderQueries = {
                     orderBy: [asc(user.name)],
                 }),
             ]);
-            const activeStatuses = new Set([
-                "assigned",
-                "out_for_delivery",
-                "partial",
-            ]);
+            const activeStatuses = new Set(["assigned", "out_for_delivery", "partial"]);
             const busyIds = new Set(
                 groups
                     .filter((entry) => activeStatuses.has(entry.status))
@@ -6026,17 +5740,10 @@ const incomingOrderQueries = {
                     hasActiveGroup: busyIds.has(entry.id),
                 })),
                 stats: {
-                    pendingGroups: groups.filter(
-                        (entry) => entry.status === "pending_assignment",
-                    ).length,
-                    assignedGroups: groups.filter((entry) => entry.status === "assigned")
-                        .length,
-                    activeGroups: groups.filter(
-                        (entry) => entry.status === "out_for_delivery",
-                    ).length,
-                    availableRiders: riders.filter(
-                        (entry) => !entry.banned && !busyIds.has(entry.id),
-                    ).length,
+                    pendingGroups: groups.filter((entry) => entry.status === "pending_assignment").length,
+                    assignedGroups: groups.filter((entry) => entry.status === "assigned").length,
+                    activeGroups: groups.filter((entry) => entry.status === "out_for_delivery").length,
+                    availableRiders: riders.filter((entry) => !entry.banned && !busyIds.has(entry.id)).length,
                 },
             };
         }),
@@ -6067,25 +5774,20 @@ const incomingOrderQueries = {
 
             const activeGroups =
                 deliverymen.length > 0
-                ? await db
-                    .select({
-                        deliverymanId: deliveryGroup.deliverymanId,
-                        groupId: deliveryGroup.id,
-                    })
-                    .from(deliveryGroup)
-                    .where(
-                        and(
-                            eq(deliveryGroup.shopId, shopId),
-                                    inArray(deliveryGroup.status, [
-                                        "assigned",
-                                        "out_for_delivery",
-                                    ]),
-                        ),
-                    )
-                : [];
-            const activeByRider = new Map(
-                activeGroups.map((entry) => [entry.deliverymanId, entry.groupId]),
-            );
+                    ? await db
+                          .select({
+                              deliverymanId: deliveryGroup.deliverymanId,
+                              groupId: deliveryGroup.id,
+                          })
+                          .from(deliveryGroup)
+                          .where(
+                              and(
+                                  eq(deliveryGroup.shopId, shopId),
+                                  inArray(deliveryGroup.status, ["assigned", "out_for_delivery"]),
+                              ),
+                          )
+                    : [];
+            const activeByRider = new Map(activeGroups.map((entry) => [entry.deliverymanId, entry.groupId]));
 
             return {
                 deliverymen: deliverymen.map((entry) => ({
@@ -6107,21 +5809,14 @@ const incomingOrderQueries = {
         .handler(async ({ context, input }) => {
             const shopId = context.session.user.id;
             const rider = await db.query.user.findFirst({
-                where: and(
-                    eq(user.id, input.deliverymanId),
-                    eq(user.shopId, shopId),
-                    eq(user.role, "deliveryman"),
-                ),
+                where: and(eq(user.id, input.deliverymanId), eq(user.shopId, shopId), eq(user.role, "deliveryman")),
             });
             if (!rider)
                 throw new ORPCError("NOT_FOUND", {
                     message: "Delivery rider not found",
                 });
             const groups = await db.query.deliveryGroup.findMany({
-                where: and(
-                    eq(deliveryGroup.shopId, shopId),
-                    eq(deliveryGroup.deliverymanId, rider.id),
-                ),
+                where: and(eq(deliveryGroup.shopId, shopId), eq(deliveryGroup.deliverymanId, rider.id)),
                 with: { invoices: true },
                 orderBy: [desc(deliveryGroup.createdAt)],
             });
@@ -6235,7 +5930,10 @@ const incomingOrderQueries = {
                     headers,
                 });
             } else {
-                await auth.api.unbanUser({ body: { userId: rider.id }, headers });
+                await auth.api.unbanUser({
+                    body: { userId: rider.id },
+                    headers,
+                });
             }
             return { success: true };
         }),
@@ -6251,11 +5949,7 @@ const incomingOrderQueries = {
         .handler(async ({ context, input }) => {
             const shopId = context.session.user.id;
             const rider = await db.query.user.findFirst({
-                where: and(
-                    eq(user.id, input.deliverymanId),
-                    eq(user.shopId, shopId),
-                    eq(user.role, "deliveryman"),
-                ),
+                where: and(eq(user.id, input.deliverymanId), eq(user.shopId, shopId), eq(user.role, "deliveryman")),
                 columns: { id: true },
             });
             if (!rider)
@@ -6266,18 +5960,13 @@ const incomingOrderQueries = {
                 where: and(
                     eq(deliveryGroup.shopId, shopId),
                     eq(deliveryGroup.deliverymanId, rider.id),
-                    inArray(deliveryGroup.status, [
-                        "assigned",
-                        "out_for_delivery",
-                        "partial",
-                    ]),
+                    inArray(deliveryGroup.status, ["assigned", "out_for_delivery", "partial"]),
                 ),
                 columns: { id: true },
             });
             if (activeGroup) {
                 throw new ORPCError("BAD_REQUEST", {
-                    message:
-                        "Complete or reassign the rider's active group before deleting them",
+                    message: "Complete or reassign the rider's active group before deleting them",
                 });
             }
             await auth.api.removeUser({
@@ -6299,11 +5988,11 @@ const incomingOrderQueries = {
         })
         .input(
             z.object({
-            name: z.string().trim().min(2).max(100),
-            email: z.string().trim().email(),
-            password: z.string().min(8).max(100),
-            phoneNumber: z.string().trim().max(20).optional(),
-            serviceArea: z.string().trim().max(200).optional(),
+                name: z.string().trim().min(2).max(100),
+                email: z.string().trim().email(),
+                password: z.string().min(8).max(100),
+                phoneNumber: z.string().trim().max(20).optional(),
+                serviceArea: z.string().trim().max(200).optional(),
             }),
         )
         .handler(async ({ context, input }) => {
@@ -6353,10 +6042,10 @@ const incomingOrderQueries = {
         })
         .input(
             z.object({
-            orderId: z.number(),
-            groupName: z.string().trim().min(1).max(120),
-            vehicleType: z.enum(["bike", "car", "van", "truck"]).optional(),
-            expectedDeliveryAt: z.string().optional(),
+                orderId: z.number(),
+                groupName: z.string().trim().min(1).max(120),
+                vehicleType: z.enum(["bike", "car", "van", "truck"]).optional(),
+                expectedDeliveryAt: z.string().optional(),
             }),
         )
         .handler(async ({ context, input }) => {
@@ -6412,9 +6101,7 @@ const incomingOrderQueries = {
                         totalInvoices: 1,
                         completedInvoices: 0,
                         vehicleType: input.vehicleType ?? null,
-                        expectedDeliveryAt: input.expectedDeliveryAt
-                            ? new Date(input.expectedDeliveryAt)
-                            : null,
+                        expectedDeliveryAt: input.expectedDeliveryAt ? new Date(input.expectedDeliveryAt) : null,
                         assignedAt: null,
                     })
                     .returning();
@@ -6436,9 +6123,7 @@ const incomingOrderQueries = {
                         deliveryStatus: "pending",
                         deliverymanId: null,
                         vehicleType: input.vehicleType ?? null,
-                        expectedDeliveryAt: input.expectedDeliveryAt
-                            ? new Date(input.expectedDeliveryAt)
-                            : null,
+                        expectedDeliveryAt: input.expectedDeliveryAt ? new Date(input.expectedDeliveryAt) : null,
                     })
                     .where(eq(invoice.id, existingInvoice.id));
 
@@ -6456,8 +6141,8 @@ const incomingOrderQueries = {
         })
         .input(
             z.object({
-            groupId: z.number(),
-            deliverymanId: z.string(),
+                groupId: z.number(),
+                deliverymanId: z.string(),
             }),
         )
         .handler(async ({ context, input }) => {
@@ -6465,10 +6150,7 @@ const incomingOrderQueries = {
             return db.transaction(async (tx) => {
                 await tx.execute(sql`SELECT pg_advisory_xact_lock(${input.groupId})`);
                 const group = await tx.query.deliveryGroup.findFirst({
-                    where: and(
-                        eq(deliveryGroup.id, input.groupId),
-                        eq(deliveryGroup.shopId, shopId),
-                    ),
+                    where: and(eq(deliveryGroup.id, input.groupId), eq(deliveryGroup.shopId, shopId)),
                 });
                 if (!group) {
                     throw new ORPCError("NOT_FOUND", {
@@ -6522,10 +6204,7 @@ const incomingOrderQueries = {
                 });
                 const invoiceIds = links.map((entry) => entry.invoiceId);
                 if (invoiceIds.length > 0) {
-                    await tx
-                        .update(invoice)
-                        .set({ deliverymanId: rider.id })
-                        .where(inArray(invoice.id, invoiceIds));
+                    await tx.update(invoice).set({ deliverymanId: rider.id }).where(inArray(invoice.id, invoiceIds));
                     const orderIds = [
                         ...new Set(
                             links
@@ -6650,7 +6329,9 @@ const warehouseOrderQueries = {
                 .limit(1);
 
             if (warehouseUser.length === 0) {
-                throw new ORPCError("NOT_FOUND", { message: "Warehouse not found" });
+                throw new ORPCError("NOT_FOUND", {
+                    message: "Warehouse not found",
+                });
             }
 
             const warehouseId = warehouseUser[0]!.id;
@@ -6701,6 +6382,7 @@ const warehouseOrderQueries = {
                     with: {
                         variant: {
                             with: {
+                                sourceVariantOption: true,
                                 product: {
                                     columns: {
                                         id: true,
@@ -6712,7 +6394,11 @@ const warehouseOrderQueries = {
                                     },
                                     with: {
                                         category: {
-                                            columns: { id: true, name: true, slug: true },
+                                            columns: {
+                                                id: true,
+                                                name: true,
+                                                slug: true,
+                                            },
                                             with: {
                                                 type: {
                                                     columns: {
@@ -6750,29 +6436,30 @@ const warehouseOrderQueries = {
                         ),
                     );
                 const activeCartonCount = cartonCountResult?.cnt ?? 0;
+                if (!inv.variant?.sourceVariantOption) {
+                    throw new ORPCError("BAD_REQUEST", {
+                        message: "This variant is missing its Admin Variant definition",
+                    });
+                }
+                const variantOperations = resolveVariantOperations(inv.variant.sourceVariantOption);
                 const requestedMode = item.fulfillmentMode ?? item.supplyMode ?? null;
                 const resolvedMode = resolveWarehouseOrderMode({
                     requestedMode,
                     activeCartonCount,
                     productType: {
-                        family: inv.variant?.product?.category?.type?.family,
-                        typeName: inv.variant?.product?.category?.type?.name,
-                        typeSlug: inv.variant?.product?.category?.type?.slug,
-                        inventoryBehaviour:
-                            inv.variant?.product?.category?.type?.inventoryBehaviour,
-                        trackingType: inv.variant?.product?.trackingType,
-                        isReturnablePack: inv.variant?.product?.isReturnablePack,
+                        inventoryBehaviour: inv.variant?.product?.category?.type?.inventoryBehaviour,
                     },
+                    variantOperations,
                 });
 
                 if (requestedMode && !resolvedMode.supportsRequestedMode) {
                     throw new ORPCError("BAD_REQUEST", {
-                        message: `${requestedMode} mode is not supported for ${inv.variant?.product?.name || "this product type"}. Supported modes: ${resolvedMode.profile.supportedModes.join(", ")}`,
+                        message: `${requestedMode} mode is not supported for ${inv.variant?.product?.name || "this variant"}. Supported modes: ${resolvedMode.availableModes.join(", ")}`,
                     });
                 }
-                if (resolvedMode.profile.family === "lpg" && !Number.isInteger(item.quantity)) {
+                if (!variantOperations.allowsDecimal && !Number.isInteger(item.quantity)) {
                     throw new ORPCError("BAD_REQUEST", {
-                        message: "LPG orders must use whole cylinder quantities",
+                        message: `${variantOperations.operationalUnit} orders must use whole quantities`,
                     });
                 }
 
@@ -6797,7 +6484,7 @@ const warehouseOrderQueries = {
                 const vp = Number(inv.variant?.price || 0);
                 let unitPrice = rp > 0 ? inv.retailPrice! : vp > 0 ? inv.variant!.price! : "0";
 
-                const isLooseVariant = (inv.variant?.packType || "").toLowerCase() === "loose";
+                const isLooseVariant = variantOperations.receivingMode === "loose";
                 const isLooseOrder = resolvedMode.mode === "loose";
                 const usesContainerPricing = resolvedMode.stockStrategy === "container_count";
 
@@ -6818,49 +6505,40 @@ const warehouseOrderQueries = {
                         ),
                         with: {
                             config: {
-                                columns: { cartonPrice: true, deliveryCostPerCarton: true },
+                                columns: {
+                                    cartonPrice: true,
+                                    deliveryCostPerCarton: true,
+                                },
                             },
                         },
                     });
 
                     // Also look up cartonConfig directly as fallback
                     const variantConfig = await db.query.cartonConfig.findFirst({
-                        where: and(
-                            eq(cartonConfig.variantId, item.variantId),
-                            eq(cartonConfig.isActive, true),
-                        ),
+                        where: and(eq(cartonConfig.variantId, item.variantId), eq(cartonConfig.isActive, true)),
                         orderBy: [desc(cartonConfig.isDefault)],
                     });
 
                     // Price resolution: carton.cartonPrice → carton.config.cartonPrice → cartonConfig.cartonPrice → calculated
                     const cartonRecordPrice = Number(activeCarton?.cartonPrice || 0);
-                    const linkedConfigPrice = Number(
-                        (activeCarton as any)?.config?.cartonPrice || 0,
-                    );
+                    const linkedConfigPrice = Number((activeCarton as any)?.config?.cartonPrice || 0);
                     const directConfigPrice = Number(variantConfig?.cartonPrice || 0);
 
                     if (cartonRecordPrice > 0) {
                         unitPrice = activeCarton!.cartonPrice!;
-                        console.log(
-                            `[ORDER-PRICE] variant=${item.variantId}: Using carton record price: ${unitPrice}`,
-                        );
+                        console.log(`[ORDER-PRICE] variant=${item.variantId}: Using carton record price: ${unitPrice}`);
                     } else if (linkedConfigPrice > 0) {
                         unitPrice = (activeCarton as any).config.cartonPrice;
-                        console.log(
-                            `[ORDER-PRICE] variant=${item.variantId}: Using linked config price: ${unitPrice}`,
-                        );
+                        console.log(`[ORDER-PRICE] variant=${item.variantId}: Using linked config price: ${unitPrice}`);
                     } else if (directConfigPrice > 0) {
                         unitPrice = variantConfig!.cartonPrice;
-                        console.log(
-                            `[ORDER-PRICE] variant=${item.variantId}: Using direct config price: ${unitPrice}`,
-                        );
+                        console.log(`[ORDER-PRICE] variant=${item.variantId}: Using direct config price: ${unitPrice}`);
                     } else if (isLooseVariant && activeCarton) {
                         // Loose fallback: calculate from per-KG price × carton weight
                         const variantWeightKg = Number(inv.variant?.weightKg || 0);
                         const rawUnitPrice = Number(unitPrice);
                         const cartonWeightKg = Number(activeCarton.totalWeightKg) || 0;
-                        const perKg =
-                            variantWeightKg > 0 ? rawUnitPrice / variantWeightKg : rawUnitPrice;
+                        const perKg = variantWeightKg > 0 ? rawUnitPrice / variantWeightKg : rawUnitPrice;
                         unitPrice = (perKg * cartonWeightKg).toFixed(2);
                         console.log(
                             `[ORDER-PRICE] variant=${item.variantId}: Loose calc: perKg=${perKg}, cartonKg=${cartonWeightKg}, price=${unitPrice}`,
@@ -6889,13 +6567,12 @@ const warehouseOrderQueries = {
 
                 // Validate targetVariantId only when the fulfillment strategy needs it.
                 const canCarryOptionalTargetVariant =
-                    resolvedMode.profile.inventoryBehaviour === "loose_convert" &&
+                    resolvedMode.inventoryBehaviour === "loose_convert" &&
                     (resolvedMode.mode === "drum" ||
                         resolvedMode.mode === "loose" ||
                         resolvedMode.stockStrategy === "container_count");
                 const shouldPersistTargetVariant =
-                    resolvedMode.requiresTargetVariant ||
-                    (canCarryOptionalTargetVariant && !!item.targetVariantId);
+                    resolvedMode.requiresTargetVariant || (canCarryOptionalTargetVariant && !!item.targetVariantId);
 
                 if (resolvedMode.requiresTargetVariant && !item.targetVariantId) {
                     throw new ORPCError("BAD_REQUEST", {
@@ -7057,9 +6734,7 @@ const warehouseOrderQueries = {
     getMyWarehouseOrders: shopOwnerProcedure
         .input(
             z.object({
-                status: z
-                    .enum(["pending", "confirmed", "processing", "delivered", "cancelled"])
-                    .optional(),
+                status: z.enum(["pending", "confirmed", "processing", "delivered", "cancelled"]).optional(),
                 page: z.number().default(1),
                 limit: z.number().default(20),
             }),
@@ -7069,10 +6744,7 @@ const warehouseOrderQueries = {
             const { page, limit } = input;
             const offset = (page - 1) * limit;
 
-            const conditions: SQL[] = [
-                eq(order.userId, userId),
-                sql`${order.warehouseId} IS NOT NULL`,
-            ];
+            const conditions: SQL[] = [eq(order.userId, userId), sql`${order.warehouseId} IS NOT NULL`];
             if (input.status) conditions.push(eq(order.status, input.status));
 
             const where = and(...conditions);
@@ -7100,9 +6772,7 @@ const warehouseOrderQueries = {
             ]);
 
             // Get warehouse names
-            const warehouseIds = [
-                ...new Set(orders.map((o: any) => o.warehouseId).filter(Boolean)),
-            ];
+            const warehouseIds = [...new Set(orders.map((o: any) => o.warehouseId).filter(Boolean))];
             const warehouseMap = new Map<string, string>();
             if (warehouseIds.length > 0) {
                 const warehouses = await db
@@ -7127,9 +6797,7 @@ const warehouseOrderQueries = {
                         ...item,
                         supplyModeLabel:
                             item.supplyMode && item.supplyMode in FULFILLMENT_MODE_LABELS
-                                ? FULFILLMENT_MODE_LABELS[
-                                      item.supplyMode as keyof typeof FULFILLMENT_MODE_LABELS
-                                  ]
+                                ? FULFILLMENT_MODE_LABELS[item.supplyMode as keyof typeof FULFILLMENT_MODE_LABELS]
                                 : "Legacy",
                     })),
                     warehouseName: warehouseMap.get(o.warehouseId) || "Unknown Warehouse",
@@ -7163,12 +6831,7 @@ const openOrderEndpoints = {
                 .select({ orderId: openOrderBid.subOrderId })
                 .from(openOrderBid)
                 .innerJoin(order, eq(order.id, openOrderBid.subOrderId))
-                .where(
-                    and(
-                        eq(openOrderBid.shopId, shopId),
-                        inArray(order.status, ["matching_shop", "negotiating"]),
-                    ),
-                );
+                .where(and(eq(openOrderBid.shopId, shopId), inArray(order.status, ["matching_shop", "negotiating"])));
             for (const orderId of [...new Set(candidates.map((row) => row.orderId))]) {
                 await reconcileOpenOrder(orderId);
             }
@@ -7229,8 +6892,7 @@ const openOrderEndpoints = {
                         ...offer,
                         distanceKm: Number(offer.distanceKm ?? 0),
                         referenceSubtotal: Number(offer.referenceSubtotal),
-                        itemSubtotal:
-                            offer.itemSubtotal == null ? null : Number(offer.itemSubtotal),
+                        itemSubtotal: offer.itemSubtotal == null ? null : Number(offer.itemSubtotal),
                         discountValue: Number(offer.discountValue ?? 0),
                         discountAmount: Number(offer.discountAmount ?? 0),
                         deliveryCharge: Number(offer.deliveryCharge ?? 0),
@@ -7242,8 +6904,7 @@ const openOrderEndpoints = {
                         customerArea: offer.shippingArea ?? offer.shippingCity,
                         items: items.map((item) => {
                             const currentStorePrice = Number(item.currentStorePrice ?? 0);
-                            const offerUnitPrice =
-                                item.offerUnitPrice == null ? null : Number(item.offerUnitPrice);
+                            const offerUnitPrice = item.offerUnitPrice == null ? null : Number(item.offerUnitPrice);
                             const resolvedPrice = resolveRetailerOfferLinePrice({
                                 currentStorePrice,
                                 offerUnitPrice,
@@ -7358,8 +7019,7 @@ const openOrderEndpoints = {
                 };
             } catch (error) {
                 throw new ORPCError("CONFLICT", {
-                    message:
-                        error instanceof Error ? error.message : "Offer could not be submitted.",
+                    message: error instanceof Error ? error.message : "Offer could not be submitted.",
                 });
             }
         }),
@@ -7384,8 +7044,7 @@ const openOrderEndpoints = {
                 return { success: true };
             } catch (error) {
                 throw new ORPCError("CONFLICT", {
-                    message:
-                        error instanceof Error ? error.message : "Offer could not be withdrawn.",
+                    message: error instanceof Error ? error.message : "Offer could not be withdrawn.",
                 });
             }
         }),
@@ -7589,10 +7248,7 @@ const warehouseConnectionEndpoints = {
                 .from(shopWarehouseConnection)
                 .innerJoin(user, eq(shopWarehouseConnection.warehouseId, user.id))
                 .where(and(...conditions))
-                .orderBy(
-                    desc(shopWarehouseConnection.lastOrderedAt),
-                    desc(shopWarehouseConnection.connectedAt),
-                );
+                .orderBy(desc(shopWarehouseConnection.lastOrderedAt), desc(shopWarehouseConnection.connectedAt));
 
             // Get product counts for active warehouses
             const result = await Promise.all(
@@ -7654,9 +7310,7 @@ const warehouseConnectionEndpoints = {
                 });
             }
 
-            await db
-                .delete(shopWarehouseConnection)
-                .where(eq(shopWarehouseConnection.id, input.connectionId));
+            await db.delete(shopWarehouseConnection).where(eq(shopWarehouseConnection.id, input.connectionId));
 
             return { success: true, message: "Request cancelled" };
         }),
@@ -7729,12 +7383,7 @@ const warehouseConnectionEndpoints = {
                 })
                 .from(shopWarehouseConnection)
                 .innerJoin(user, eq(shopWarehouseConnection.warehouseId, user.id))
-                .where(
-                    and(
-                        eq(shopWarehouseConnection.shopId, shopId),
-                        eq(shopWarehouseConnection.status, "active"),
-                    ),
-                )
+                .where(and(eq(shopWarehouseConnection.shopId, shopId), eq(shopWarehouseConnection.status, "active")))
                 .orderBy(desc(shopWarehouseConnection.lastOrderedAt));
 
             // Get product counts for each warehouse
@@ -7823,9 +7472,7 @@ const warehouseConnectionEndpoints = {
                 .from(shopCategoryAssignment)
                 .where(eq(shopCategoryAssignment.shopId, shopId));
 
-            const allowedSubcatIds = new Set(
-                shopAssignments.map((a) => a.subcategoryId).filter(Boolean) as number[],
-            );
+            const allowedSubcatIds = new Set(shopAssignments.map((a) => a.subcategoryId).filter(Boolean) as number[]);
             const allowedCatIds = new Set(shopAssignments.map((a) => a.categoryId));
             const hasAssignments = shopAssignments.length > 0;
 
@@ -7892,6 +7539,15 @@ const warehouseConnectionEndpoints = {
                     variantPackType: productVariant.packType,
                     variantInnerPackSizeKg: productVariant.innerPackSizeKg,
                     variantPackCountInside: productVariant.packCountInside,
+                    sourceVariantOptionId: productVariant.sourceVariantOptionId,
+                    sourceOptionName: variantOption.name,
+                    sourceOptionUnit: variantOption.unit,
+                    sourceOptionSize: variantOption.size,
+                    sourceOptionVariantType: variantOption.variantType,
+                    sourceOptionDefinitionKind: variantOption.definitionKind,
+                    sourceOptionDefinition: variantOption.definition,
+                    sourceOptionDisplayAlias: variantOption.displayAlias,
+                    sourceOptionNeedsReview: variantOption.needsReview,
                     productUnitSize: product.size,
                     productBrandId: product.brandId,
                     productCreatorSource: product.creatorSource,
@@ -7906,16 +7562,30 @@ const warehouseConnectionEndpoints = {
                 .innerJoin(product, eq(productVariant.productId, product.id))
                 .leftJoin(category, eq(product.categoryId, category.id))
                 .leftJoin(productType, eq(category.typeId, productType.id))
+                .leftJoin(variantOption, eq(productVariant.sourceVariantOptionId, variantOption.id))
                 // Prefer variant-level brand, fall back to product-level brand
-                .leftJoin(
-                    brand,
-                    eq(brand.id, sql`COALESCE(${productVariant.brandId}, ${product.brandId})`),
-                )
+                .leftJoin(brand, eq(brand.id, sql`COALESCE(${productVariant.brandId}, ${product.brandId})`))
                 .where(and(...conditions, inArray(product.id, pageProductIds)))
                 .orderBy(asc(category.name), asc(product.name), asc(productVariant.sortOrder));
 
             // Annotate each product with canOrder flag
-            const products = items.map((item) => {
+            const products = items.flatMap((item) => {
+                if (item.sourceVariantOptionId === null) return [];
+                let variantOperations;
+                try {
+                    variantOperations = resolveVariantOperations({
+                        name: item.sourceOptionName,
+                        unit: item.sourceOptionUnit,
+                        size: item.sourceOptionSize,
+                        variantType: item.sourceOptionVariantType,
+                        definitionKind: item.sourceOptionDefinitionKind,
+                        definition: item.sourceOptionDefinition,
+                        displayAlias: item.sourceOptionDisplayAlias,
+                        needsReview: item.sourceOptionNeedsReview,
+                    });
+                } catch {
+                    return [];
+                }
                 let canOrder = true;
                 if (hasAssignments) {
                     const subCatMatch = item.productSubCategoryId
@@ -7941,52 +7611,52 @@ const warehouseConnectionEndpoints = {
                     isReturnablePack: item.productIsReturnablePack,
                 });
 
-                return {
-                    inventoryId: item.inventoryId,
-                    variantId: item.variantId,
-                    availableQty: effectiveQty.toFixed(2),
-                    totalPackStock: rawQty.toFixed(2),
-                    price,
-                    canOrder,
-                    product: {
-                        id: item.productId,
-                        name: item.productName,
-                        image: item.productImage,
-                        size: item.productSize,
-                        unitSize: item.productUnitSize,
-                        categoryName: item.categoryName || "Uncategorized",
-                        type: {
-                            family: item.productTypeFamily,
-                            name: item.productTypeName ?? "Generic",
-                            slug: item.productTypeSlug,
-                            inventoryBehaviour: item.productTypeInventoryBehaviour ?? "fixed_pack",
-                            trackingType: item.productTrackingType,
-                            isReturnablePack: item.productIsReturnablePack,
+                return [
+                    {
+                        inventoryId: item.inventoryId,
+                        variantId: item.variantId,
+                        availableQty: effectiveQty.toFixed(2),
+                        totalPackStock: rawQty.toFixed(2),
+                        price,
+                        canOrder,
+                        product: {
+                            id: item.productId,
+                            name: item.productName,
+                            image: item.productImage,
+                            size: item.productSize,
+                            unitSize: item.productUnitSize,
+                            categoryName: item.categoryName || "Uncategorized",
+                            type: {
+                                family: item.productTypeFamily,
+                                name: item.productTypeName ?? "Generic",
+                                slug: item.productTypeSlug,
+                                inventoryBehaviour: item.productTypeInventoryBehaviour ?? "fixed_pack",
+                                trackingType: item.productTrackingType,
+                                isReturnablePack: item.productIsReturnablePack,
+                            },
+                            fulfillmentProfile,
+                            creator: {
+                                source: item.productCreatorSource,
+                                creatorId: item.productCreatedById,
+                                warehouseId: item.productCreatorSource === "warehouse" ? item.productCreatedById : null,
+                            },
                         },
-                        fulfillmentProfile,
-                        creator: {
-                            source: item.productCreatorSource,
-                            creatorId: item.productCreatedById,
-                            warehouseId:
-                                item.productCreatorSource === "warehouse"
-                                    ? item.productCreatedById
-                                    : null,
+                        variant: {
+                            unitLabel: item.variantUnitLabel,
+                            weightKg: item.variantWeightKg,
+                            sku: item.variantSku,
+                            price: item.variantPrice,
+                            packType: item.variantPackType,
+                            innerPackSizeKg: item.variantInnerPackSizeKg,
+                            packCountInside: item.variantPackCountInside,
+                            brandId: item.variantBrandId ?? item.productBrandId,
+                            brandName: item.brandName,
+                            color: item.variantColor,
+                            size: item.variantSize,
+                            variantOperations,
                         },
                     },
-                    variant: {
-                        unitLabel: item.variantUnitLabel,
-                        weightKg: item.variantWeightKg,
-                        sku: item.variantSku,
-                        price: item.variantPrice,
-                        packType: item.variantPackType,
-                        innerPackSizeKg: item.variantInnerPackSizeKg,
-                        packCountInside: item.variantPackCountInside,
-                        brandId: item.variantBrandId ?? item.productBrandId,
-                        brandName: item.brandName,
-                        color: item.variantColor,
-                        size: item.variantSize,
-                    },
-                };
+                ];
             });
 
             // Enrich with carton data per variant (single query)
@@ -8013,17 +7683,17 @@ const warehouseConnectionEndpoints = {
                     ),
                     with: {
                         config: {
-                            columns: { cartonPrice: true, deliveryCostPerCarton: true },
+                            columns: {
+                                cartonPrice: true,
+                                deliveryCostPerCarton: true,
+                            },
                         },
                     },
                 });
 
                 // Also query cartonConfig directly for variants without linked config
                 const configs = await db.query.cartonConfig.findMany({
-                    where: and(
-                        inArray(cartonConfig.variantId, allVariantIds),
-                        eq(cartonConfig.isActive, true),
-                    ),
+                    where: and(inArray(cartonConfig.variantId, allVariantIds), eq(cartonConfig.isActive, true)),
                 });
                 const configPriceMap = new Map<number, string>();
                 const configDeliveryCostMap = new Map<number, string>();
@@ -8039,7 +7709,10 @@ const warehouseConnectionEndpoints = {
                 for (const c of activeCartons) {
                     // Build cartonMap (totals per variant)
                     if (!cartonMap.has(c.variantId)) {
-                        cartonMap.set(c.variantId, { cartonCount: 0, totalWeightKg: 0 });
+                        cartonMap.set(c.variantId, {
+                            cartonCount: 0,
+                            totalWeightKg: 0,
+                        });
                     }
                     const entry = cartonMap.get(c.variantId)!;
                     entry.cartonCount += 1;
@@ -8057,13 +7730,9 @@ const warehouseConnectionEndpoints = {
                     } else {
                         // Price priority: carton record → linked config → config by variantId → null
                         const linkedConfigPrice = (c as any).config?.cartonPrice || null;
-                        const linkedConfigDelivery =
-                            (c as any).config?.deliveryCostPerCarton || null;
+                        const linkedConfigDelivery = (c as any).config?.deliveryCostPerCarton || null;
                         const resolvedPrice =
-                            c.cartonPrice ||
-                            linkedConfigPrice ||
-                            configPriceMap.get(c.variantId) ||
-                            null;
+                            c.cartonPrice || linkedConfigPrice || configPriceMap.get(c.variantId) || null;
                         const resolvedDelivery =
                             c.deliveryCostPerUnit ||
                             linkedConfigDelivery ||
@@ -8195,7 +7864,13 @@ const shopStorefrontEndpoints = {
                         with: {
                             product: {
                                 with: {
-                                    category: { columns: { id: true, name: true, slug: true } },
+                                    category: {
+                                        columns: {
+                                            id: true,
+                                            name: true,
+                                            slug: true,
+                                        },
+                                    },
                                 },
                             },
                         },
@@ -8204,10 +7879,7 @@ const shopStorefrontEndpoints = {
             });
 
             // Extract unique categories
-            const categoryMap = new Map<
-                number,
-                { id: number; name: string; slug: string; productCount: number }
-            >();
+            const categoryMap = new Map<number, { id: number; name: string; slug: string; productCount: number }>();
             for (const inv of inventoryItems) {
                 const cat = inv.variant?.product?.category;
                 if (!cat) continue;
@@ -8283,9 +7955,21 @@ const shopStorefrontEndpoints = {
                         with: {
                             product: {
                                 with: {
-                                    category: { columns: { id: true, name: true, slug: true } },
+                                    category: {
+                                        columns: {
+                                            id: true,
+                                            name: true,
+                                            slug: true,
+                                        },
+                                    },
                                     images: { limit: 1 },
-                                    brand: { columns: { id: true, name: true, slug: true } },
+                                    brand: {
+                                        columns: {
+                                            id: true,
+                                            name: true,
+                                            slug: true,
+                                        },
+                                    },
                                 },
                             },
                         },
@@ -8446,7 +8130,12 @@ const publicCatalogEndpoints = {
                 } else {
                     return {
                         items: [],
-                        pagination: { page, limit, totalCount: 0, totalPages: 0 },
+                        pagination: {
+                            page,
+                            limit,
+                            totalCount: 0,
+                            totalPages: 0,
+                        },
                     };
                 }
             }
@@ -8471,12 +8160,22 @@ const publicCatalogEndpoints = {
                             },
                             with: {
                                 type: {
-                                    columns: { id: true, name: true, slug: true, skuCode: true },
+                                    columns: {
+                                        id: true,
+                                        name: true,
+                                        slug: true,
+                                        skuCode: true,
+                                    },
                                 },
                             },
                         },
                         subCategory: {
-                            columns: { id: true, name: true, slug: true, skuCode: true },
+                            columns: {
+                                id: true,
+                                name: true,
+                                slug: true,
+                                skuCode: true,
+                            },
                         },
                     },
                 }),
@@ -8547,10 +8246,9 @@ const publicCatalogEndpoints = {
                           }
                         : null,
                     shopBrandCount: shopBrandsByCore.get(cp.id)?.size ?? 0,
-                    shopAddableBrandCount: countAddableBrands(
-                        activeBrandIds,
-                        [...(shopBrandsByCore.get(cp.id) ?? new Set<number>())],
-                    ),
+                    shopAddableBrandCount: countAddableBrands(activeBrandIds, [
+                        ...(shopBrandsByCore.get(cp.id) ?? new Set<number>()),
+                    ]),
                 };
             });
 
@@ -8572,162 +8270,170 @@ const publicCatalogEndpoints = {
      * Returns the core product info + all linked products with their variants,
      * brands, and seller count.
      */
-    getCoreProductDetail: publicProcedure
-        .input(z.object({ coreProductId: z.number() }))
-        .handler(async ({ input }) => {
-            // 1. Get core product
-            const coreProduct = await db.query.coreProductIdentity.findFirst({
-                where: eq(coreProductIdentity.id, input.coreProductId),
-                with: {
-                    category: {
-                        columns: { id: true, name: true, slug: true, typeId: true },
-                        with: {
-                            type: { columns: { id: true, name: true, slug: true } },
+    getCoreProductDetail: publicProcedure.input(z.object({ coreProductId: z.number() })).handler(async ({ input }) => {
+        // 1. Get core product
+        const coreProduct = await db.query.coreProductIdentity.findFirst({
+            where: eq(coreProductIdentity.id, input.coreProductId),
+            with: {
+                category: {
+                    columns: {
+                        id: true,
+                        name: true,
+                        slug: true,
+                        typeId: true,
+                    },
+                    with: {
+                        type: {
+                            columns: { id: true, name: true, slug: true },
                         },
                     },
-                    subCategory: {
-                        columns: { id: true, name: true, slug: true },
-                    },
                 },
-            });
+                subCategory: {
+                    columns: { id: true, name: true, slug: true },
+                },
+            },
+        });
 
-            if (!coreProduct) {
-                throw new ORPCError("NOT_FOUND", {
-                    message: "Core product identity not found",
+        if (!coreProduct) {
+            throw new ORPCError("NOT_FOUND", {
+                message: "Core product identity not found",
+            });
+        }
+
+        // 2. Get all linked products (active ones created by warehouses)
+        const linkedProducts = await db.query.product.findMany({
+            where: and(eq(product.coreProductId, input.coreProductId), eq(product.status, "active")),
+            with: {
+                brand: { columns: { id: true, name: true, slug: true } },
+                images: { limit: 5 },
+                variants: {
+                    where: eq(productVariant.isActive, true),
+                    columns: {
+                        id: true,
+                        sku: true,
+                        unitLabel: true,
+                        weightKg: true,
+                        price: true,
+                        packType: true,
+                        packWeightKg: true,
+                        innerPackSizeKg: true,
+                        packCountInside: true,
+                        sellUnit: true,
+                        color: true,
+                        size: true,
+                        brandId: true,
+                        variantType: true,
+                        isPackReturnRequired: true,
+                        packDepositAmount: true,
+                        sortOrder: true,
+                    },
+                    with: {
+                        brand: { columns: { id: true, name: true } },
+                    },
+                    orderBy: [productVariant.sortOrder],
+                },
+            },
+        });
+
+        // 3. Count sellers (shops with stock > 0 for any variant of these products)
+        const allVariantIds = linkedProducts.flatMap((p) => p.variants.map((v) => v.id));
+        let sellerCount = 0;
+        if (allVariantIds.length > 0) {
+            const sellerResult = await db
+                .select({
+                    distinctShops: sql<number>`COUNT(DISTINCT ${inventory.ownerId})`,
+                })
+                .from(inventory)
+                .where(
+                    and(
+                        eq(inventory.ownerType, "shop"),
+                        inArray(inventory.variantId, allVariantIds),
+                        sql`CAST(${inventory.availableQty} AS numeric) > 0`,
+                    ),
+                );
+            sellerCount = Number(sellerResult[0]?.distinctShops) || 0;
+        }
+
+        // 4. Get review stats for linked products
+        const productIds = linkedProducts.map((p) => p.id);
+        let reviewStats = { avgRating: 0, reviewCount: 0 };
+        if (productIds.length > 0) {
+            const [stats] = await db
+                .select({
+                    avgRating: avg(productReview.rating),
+                    reviewCount: count(),
+                })
+                .from(productReview)
+                .where(inArray(productReview.productId, productIds));
+            reviewStats = {
+                avgRating: Number(stats?.avgRating) || 0,
+                reviewCount: Number(stats?.reviewCount) || 0,
+            };
+        }
+
+        // 5. Extract unique brands across all linked products
+        const brandMap = new Map<number, { id: number; name: string }>();
+        for (const p of linkedProducts) {
+            if (p.brand) {
+                brandMap.set(p.brand.id, {
+                    id: p.brand.id,
+                    name: p.brand.name,
                 });
             }
-
-            // 2. Get all linked products (active ones created by warehouses)
-            const linkedProducts = await db.query.product.findMany({
-                where: and(
-                    eq(product.coreProductId, input.coreProductId),
-                    eq(product.status, "active"),
-                ),
-                with: {
-                    brand: { columns: { id: true, name: true, slug: true } },
-                    images: { limit: 5 },
-                    variants: {
-                        where: eq(productVariant.isActive, true),
-                        columns: {
-                            id: true,
-                            sku: true,
-                            unitLabel: true,
-                            weightKg: true,
-                            price: true,
-                            packType: true,
-                            packWeightKg: true,
-                            innerPackSizeKg: true,
-                            packCountInside: true,
-                            sellUnit: true,
-                            color: true,
-                            size: true,
-                            brandId: true,
-                            variantType: true,
-                            isPackReturnRequired: true,
-                            packDepositAmount: true,
-                            sortOrder: true,
-                        },
-                        with: {
-                            brand: { columns: { id: true, name: true } },
-                        },
-                        orderBy: [productVariant.sortOrder],
-                    },
-                },
-            });
-
-            // 3. Count sellers (shops with stock > 0 for any variant of these products)
-            const allVariantIds = linkedProducts.flatMap((p) => p.variants.map((v) => v.id));
-            let sellerCount = 0;
-            if (allVariantIds.length > 0) {
-                const sellerResult = await db
-                    .select({
-                        distinctShops: sql<number>`COUNT(DISTINCT ${inventory.ownerId})`,
-                    })
-                    .from(inventory)
-                    .where(
-                        and(
-                            eq(inventory.ownerType, "shop"),
-                            inArray(inventory.variantId, allVariantIds),
-                            sql`CAST(${inventory.availableQty} AS numeric) > 0`,
-                        ),
-                    );
-                sellerCount = Number(sellerResult[0]?.distinctShops) || 0;
-            }
-
-            // 4. Get review stats for linked products
-            const productIds = linkedProducts.map((p) => p.id);
-            let reviewStats = { avgRating: 0, reviewCount: 0 };
-            if (productIds.length > 0) {
-                const [stats] = await db
-                    .select({
-                        avgRating: avg(productReview.rating),
-                        reviewCount: count(),
-                    })
-                    .from(productReview)
-                    .where(inArray(productReview.productId, productIds));
-                reviewStats = {
-                    avgRating: Number(stats?.avgRating) || 0,
-                    reviewCount: Number(stats?.reviewCount) || 0,
-                };
-            }
-
-            // 5. Extract unique brands across all linked products
-            const brandMap = new Map<number, { id: number; name: string }>();
-            for (const p of linkedProducts) {
-                if (p.brand) {
-                    brandMap.set(p.brand.id, { id: p.brand.id, name: p.brand.name });
-                }
-                for (const v of p.variants) {
-                    if (v.brand) {
-                        brandMap.set(v.brand.id, { id: v.brand.id, name: v.brand.name });
-                    }
+            for (const v of p.variants) {
+                if (v.brand) {
+                    brandMap.set(v.brand.id, {
+                        id: v.brand.id,
+                        name: v.brand.name,
+                    });
                 }
             }
+        }
 
-            // 6. Flatten all variants with brand info
-            const allVariants = linkedProducts.flatMap((p) =>
-                p.variants.map((v) => ({
-                    ...v,
-                    productId: p.id,
-                    productName: p.name,
-                    productImage: p.image,
-                    brand: v.brand || p.brand || null,
-                })),
-            );
+        // 6. Flatten all variants with brand info
+        const allVariants = linkedProducts.flatMap((p) =>
+            p.variants.map((v) => ({
+                ...v,
+                productId: p.id,
+                productName: p.name,
+                productImage: p.image,
+                brand: v.brand || p.brand || null,
+            })),
+        );
 
-            return {
-                coreProduct: {
-                    id: coreProduct.id,
-                    name: coreProduct.name,
-                    slug: coreProduct.slug,
-                    sku: coreProduct.sku,
-                    image: coreProduct.image,
-                    description: coreProduct.description,
-                    type: coreProduct.category?.type || null,
-                    category: coreProduct.category
-                        ? {
-                              id: coreProduct.category.id,
-                              name: coreProduct.category.name,
-                              slug: coreProduct.category.slug,
-                          }
-                        : null,
-                    subCategory: coreProduct.subCategory || null,
-                },
-                products: linkedProducts.map((p) => ({
-                    id: p.id,
-                    name: p.name,
-                    slug: p.slug,
-                    image: p.image,
-                    images: p.images,
-                    brand: p.brand,
-                    variantCount: p.variants.length,
-                })),
-                variants: allVariants,
-                brands: Array.from(brandMap.values()),
-                sellerCount,
-                reviewStats,
-            };
-        }),
+        return {
+            coreProduct: {
+                id: coreProduct.id,
+                name: coreProduct.name,
+                slug: coreProduct.slug,
+                sku: coreProduct.sku,
+                image: coreProduct.image,
+                description: coreProduct.description,
+                type: coreProduct.category?.type || null,
+                category: coreProduct.category
+                    ? {
+                          id: coreProduct.category.id,
+                          name: coreProduct.category.name,
+                          slug: coreProduct.category.slug,
+                      }
+                    : null,
+                subCategory: coreProduct.subCategory || null,
+            },
+            products: linkedProducts.map((p) => ({
+                id: p.id,
+                name: p.name,
+                slug: p.slug,
+                image: p.image,
+                images: p.images,
+                brand: p.brand,
+                variantCount: p.variants.length,
+            })),
+            variants: allVariants,
+            brands: Array.from(brandMap.values()),
+            sellerCount,
+            reviewStats,
+        };
+    }),
 
     /**
      * Get filter options for the catalog: active types, categories, subcategories.
@@ -8829,9 +8535,7 @@ const publicCatalogEndpoints = {
 
 type RetailerProductStockStatus = "in_stock" | "attention" | "out_of_stock" | "setup_required";
 
-function resolveRetailerProductStockStatus(
-    variants: StructuredStockVariant[],
-): RetailerProductStockStatus {
+function resolveRetailerProductStockStatus(variants: StructuredStockVariant[]): RetailerProductStockStatus {
     if (variants.some((variant) => variant.configurationState === "needs_admin_variant_setup")) {
         return "setup_required";
     }
@@ -8856,10 +8560,7 @@ function buildRetailerProductGroups(rows: StructuredBrandStockSourceRow[]) {
         .flatMap(([productId, productRows]) => {
             const first = productRows[0];
             if (!first) return [];
-            const detail = buildStructuredStockDetail(
-                { kind: "product", id: productId },
-                productRows,
-            );
+            const detail = buildStructuredStockDetail({ kind: "product", id: productId }, productRows);
             if (!detail) return [];
 
             return [
@@ -8902,12 +8603,12 @@ async function loadRetailerProductStockSnapshot(ownerId: string) {
     const structured = buildStructuredStockOverview(rows);
     const products = buildRetailerProductGroups(rows);
 
-    const categories = Array.from(
-        new Map(products.map((item) => [item.category.id, item.category])).values(),
-    ).sort((a, b) => a.name.localeCompare(b.name));
-    const brands = Array.from(
-        new Map(products.map((item) => [item.brand.id, item.brand])).values(),
-    ).sort((a, b) => a.name.localeCompare(b.name));
+    const categories = Array.from(new Map(products.map((item) => [item.category.id, item.category])).values()).sort(
+        (a, b) => a.name.localeCompare(b.name),
+    );
+    const brands = Array.from(new Map(products.map((item) => [item.brand.id, item.brand])).values()).sort((a, b) =>
+        a.name.localeCompare(b.name),
+    );
 
     return {
         products,
@@ -8938,10 +8639,7 @@ const shopProductEndpoints = {
                 and(
                     eq(inventory.ownerType, "shop"),
                     eq(inventory.ownerId, userId),
-                    or(
-                        sql`${product.creatorSource} <> 'shop'`,
-                        sql`${product.createdById} IS DISTINCT FROM ${userId}`,
-                    ),
+                    or(sql`${product.creatorSource} <> 'shop'`, sql`${product.createdById} IS DISTINCT FROM ${userId}`),
                 ),
             );
 
@@ -9038,11 +8736,11 @@ const shopProductEndpoints = {
         .handler(async ({ input, context }) => {
             const userId = context.session.user.id;
             const snapshot = await loadRetailerProductStockSnapshot(userId);
-            const productGroup = snapshot.products.find(
-                (item) => item.productId === input.productId,
-            );
+            const productGroup = snapshot.products.find((item) => item.productId === input.productId);
             if (!productGroup) {
-                throw new ORPCError("NOT_FOUND", { message: "Product not found" });
+                throw new ORPCError("NOT_FOUND", {
+                    message: "Product not found",
+                });
             }
 
             const prod = await db.query.product.findFirst({
@@ -9051,7 +8749,12 @@ const shopProductEndpoints = {
                     category: { columns: { id: true, name: true, slug: true } },
                     subCategory: { columns: { id: true, name: true } },
                     coreProduct: {
-                        columns: { id: true, name: true, sku: true, image: true },
+                        columns: {
+                            id: true,
+                            name: true,
+                            sku: true,
+                            image: true,
+                        },
                     },
                     images: true,
                     variants: {
@@ -9064,11 +8767,12 @@ const shopProductEndpoints = {
                 },
             });
 
-            if (!prod) throw new ORPCError("NOT_FOUND", { message: "Product not found" });
+            if (!prod)
+                throw new ORPCError("NOT_FOUND", {
+                    message: "Product not found",
+                });
 
-            const cylinderSaleByVariant = new Map(
-                prod.variants.map((variant) => [variant.id, variant]),
-            );
+            const cylinderSaleByVariant = new Map(prod.variants.map((variant) => [variant.id, variant]));
 
             return {
                 product: {
@@ -9102,12 +8806,9 @@ const shopProductEndpoints = {
                 variants: productGroup.variants.map(({ warehouseSellingPrice, ...variant }) => ({
                     ...variant,
                     retailPrice: warehouseSellingPrice,
-                    exchangeEnabled:
-                        cylinderSaleByVariant.get(variant.variantId)
-                            ?.exchangeEnabled ?? false,
+                    exchangeEnabled: cylinderSaleByVariant.get(variant.variantId)?.exchangeEnabled ?? false,
                     exchangeCreditAmount: Number(
-                        cylinderSaleByVariant.get(variant.variantId)
-                            ?.exchangeCreditAmount ?? 0,
+                        cylinderSaleByVariant.get(variant.variantId)?.exchangeCreditAmount ?? 0,
                     ),
                 })),
             };
@@ -9155,10 +8856,8 @@ const shopProductEndpoints = {
 
             // Core products filtered by category+subcategory
             const cpConditions: SQL[] = [];
-            if (input.categoryId)
-                cpConditions.push(eq(coreProductIdentity.categoryId, input.categoryId));
-            if (input.subCategoryId)
-                cpConditions.push(eq(coreProductIdentity.subCategoryId, input.subCategoryId));
+            if (input.categoryId) cpConditions.push(eq(coreProductIdentity.categoryId, input.categoryId));
+            if (input.subCategoryId) cpConditions.push(eq(coreProductIdentity.subCategoryId, input.subCategoryId));
             const coreProducts = await db.query.coreProductIdentity.findMany({
                 where: cpConditions.length > 0 ? and(...cpConditions) : undefined,
                 columns: {
@@ -9182,19 +8881,11 @@ const shopProductEndpoints = {
             const voConditions: SQL[] = [eq(variantOption.isActive, true)];
             if (input.typeId) {
                 // Include global options (typeId=null) + type-specific + category-specific
-                voConditions.push(
-                    or(
-                        sql`${variantOption.typeId} IS NULL`,
-                        eq(variantOption.typeId, input.typeId),
-                    )!,
-                );
+                voConditions.push(or(sql`${variantOption.typeId} IS NULL`, eq(variantOption.typeId, input.typeId))!);
             }
             if (input.categoryId) {
                 voConditions.push(
-                    or(
-                        sql`${variantOption.categoryId} IS NULL`,
-                        eq(variantOption.categoryId, input.categoryId),
-                    )!,
+                    or(sql`${variantOption.categoryId} IS NULL`, eq(variantOption.categoryId, input.categoryId))!,
                 );
             }
             const variantOptions = await db.query.variantOption.findMany({
@@ -9287,10 +8978,18 @@ const shopProductEndpoints = {
                                 isReturnablePack: true,
                             },
                             with: {
-                                category: { columns: { id: true, name: true, slug: true } },
+                                category: {
+                                    columns: {
+                                        id: true,
+                                        name: true,
+                                        slug: true,
+                                    },
+                                },
                             },
                         },
-                        brand: { columns: { id: true, name: true, logo: true } },
+                        brand: {
+                            columns: { id: true, name: true, logo: true },
+                        },
                     },
                 },
             },
@@ -9364,10 +9063,7 @@ const shopProductEndpoints = {
         }
 
         // 4. Derive categories
-        const categoryMap = new Map<
-            number,
-            { id: number; name: string; slug: string; productCount: number }
-        >();
+        const categoryMap = new Map<number, { id: number; name: string; slug: string; productCount: number }>();
         for (const entry of productMap.values()) {
             const cat = entry.product.category;
             if (cat) {
@@ -9392,9 +9088,7 @@ const shopProductEndpoints = {
                 else stockStatus = "in_stock";
 
                 // Lowest retail price across variants
-                const prices = entry.variants
-                    .map((v) => Number(v.retailPrice))
-                    .filter((p) => p > 0);
+                const prices = entry.variants.map((v) => Number(v.retailPrice)).filter((p) => p > 0);
                 const lowestPrice = prices.length > 0 ? Math.min(...prices) : null;
 
                 return {
@@ -9516,9 +9210,18 @@ const shopProductEndpoints = {
                                     categoryId: true,
                                 },
                                 with: {
-                                    category: { columns: { id: true, name: true } },
+                                    category: {
+                                        columns: { id: true, name: true },
+                                    },
                                     productBrands: {
-                                        with: { brand: { columns: { id: true, name: true } } },
+                                        with: {
+                                            brand: {
+                                                columns: {
+                                                    id: true,
+                                                    name: true,
+                                                },
+                                            },
+                                        },
                                     },
                                 },
                             },
@@ -9551,12 +9254,7 @@ const shopProductEndpoints = {
             >();
 
             for (const inv of shopInventory) {
-                if (
-                    !inv.variant?.product ||
-                    !inv.variant.sourceVariantOption ||
-                    !inv.variant.isActive
-                )
-                    continue;
+                if (!inv.variant?.product || !inv.variant.sourceVariantOption || !inv.variant.isActive) continue;
                 let semantics;
                 try {
                     semantics = resolveVariantStockSemantics(inv.variant.sourceVariantOption);
@@ -9577,10 +9275,7 @@ const shopProductEndpoints = {
                 }
 
                 // Resolve brand
-                const brandName =
-                    inv.variant.brand?.name ||
-                    (prod as any).productBrands?.[0]?.brand?.name ||
-                    null;
+                const brandName = inv.variant.brand?.name || (prod as any).productBrands?.[0]?.brand?.name || null;
 
                 productMap.get(pid)!.variants.push({
                     variantId: inv.variant.id,
@@ -9626,9 +9321,7 @@ const shopProductEndpoints = {
                         }),
                     )
                     .min(1, "At least one entry is required"),
-                stockType: z
-                    .enum(["purchase", "return", "adjustment", "opening"])
-                    .default("purchase"),
+                stockType: z.enum(["purchase", "return", "adjustment", "opening"]).default("purchase"),
                 note: z.string().optional(),
             }),
         )
@@ -9666,10 +9359,7 @@ const shopProductEndpoints = {
                     resolveVariantStockSemantics(row.variant.sourceVariantOption);
                 } catch (error) {
                     throw new ORPCError("BAD_REQUEST", {
-                        message:
-                            error instanceof Error
-                                ? error.message
-                                : "Variant definition is invalid",
+                        message: error instanceof Error ? error.message : "Variant definition is invalid",
                     });
                 }
             }
@@ -9733,10 +9423,7 @@ const shopProductEndpoints = {
         .handler(async ({ context, input }) => {
             const userId = context.session.user.id;
 
-            const baseConditions = and(
-                eq(inventory.ownerType, "shop"),
-                eq(inventory.ownerId, userId),
-            );
+            const baseConditions = and(eq(inventory.ownerType, "shop"), eq(inventory.ownerId, userId));
 
             let searchCondition;
             if (input.search?.trim()) {
@@ -9789,8 +9476,7 @@ const shopProductEndpoints = {
                     productImage: r.productImage,
                     brandName: r.brandName,
                     availableQty: parseFloat(r.availableQty || "0"),
-                    retailPrice:
-                        parseFloat(r.retailPrice || "0") || parseFloat(r.variantPrice || "0"),
+                    retailPrice: parseFloat(r.retailPrice || "0") || parseFloat(r.variantPrice || "0"),
                 })),
             };
         }),
@@ -9803,14 +9489,7 @@ const shopProductEndpoints = {
         .input(
             z.object({
                 adjustmentType: z.enum(["increase", "decrease", "damage", "loss", "correction"]),
-                reason: z.enum([
-                    "physical_count",
-                    "damage",
-                    "expired",
-                    "theft",
-                    "system_error",
-                    "other",
-                ]),
+                reason: z.enum(["physical_count", "damage", "expired", "theft", "system_error", "other"]),
                 referenceNote: z.string().optional(),
                 adjustmentDate: z.string(),
                 items: z
@@ -9840,17 +9519,6 @@ const shopProductEndpoints = {
                         columns: { id: true },
                         with: {
                             sourceVariantOption: true,
-                            product: {
-                                columns: { id: true },
-                                with: {
-                                    category: {
-                                        columns: { id: true },
-                                        with: {
-                                            type: { columns: { family: true } },
-                                        },
-                                    },
-                                },
-                            },
                         },
                     },
                 },
@@ -9872,9 +9540,7 @@ const shopProductEndpoints = {
                 .from(stockAdjustment)
                 .where(eq(stockAdjustment.warehouseId, userId));
 
-            const lastNum = maxResult?.maxNo
-                ? parseInt(maxResult.maxNo.replace(/^ADJ-S?-?/, ""), 10) || 0
-                : 0;
+            const lastNum = maxResult?.maxNo ? parseInt(maxResult.maxNo.replace(/^ADJ-S?-?/, ""), 10) || 0 : 0;
             const adjustmentNo = `ADJ-S-${String(lastNum + 1).padStart(4, "0")}`;
 
             // 3. Build line items with auto-calculated adjustQty
@@ -9882,18 +9548,16 @@ const shopProductEndpoints = {
                 const inv = invLookup.get(item.inventoryId)!;
                 const currentQty = parseFloat(inv.availableQty || "0");
                 const adjustQty = item.actualQty - currentQty;
-                const movement = inv.variant?.sourceVariantOption
-                    ? resolveVariantMovementSemantics(
-                          inv.variant.sourceVariantOption,
-                          inv.variant.product?.category?.type?.family ?? "generic",
-                      )
+                const operations = inv.variant?.sourceVariantOption
+                    ? resolveVariantOperations(inv.variant.sourceVariantOption)
                     : null;
                 if (
-                    movement?.inventoryUnit === "cylinder" &&
+                    operations &&
+                    !operations.allowsDecimal &&
                     (!Number.isInteger(currentQty) || !Number.isInteger(item.actualQty))
                 ) {
                     throw new ORPCError("BAD_REQUEST", {
-                        message: `Variant ${inv.variantId}: LPG adjustments require whole cylinders`,
+                        message: `Variant ${inv.variantId}: adjustments require whole ${operations.operationalUnit} quantities`,
                     });
                 }
                 return {
@@ -9901,7 +9565,7 @@ const shopProductEndpoints = {
                     currentQty: String(currentQty),
                     adjustQty: String(adjustQty),
                     afterQty: String(item.actualQty),
-                    quantityUnit: movement?.inventoryUnit ?? null,
+                    quantityUnit: operations?.operationalUnit ?? null,
                     note: item.note || null,
                     inventoryId: inv.id,
                     actualQty: item.actualQty,
@@ -9913,15 +9577,11 @@ const shopProductEndpoints = {
 
             if (changedItems.length === 0) {
                 throw new ORPCError("BAD_REQUEST", {
-                    message:
-                        "No stock changes detected — all actual quantities match current stock",
+                    message: "No stock changes detected — all actual quantities match current stock",
                 });
             }
 
-            const totalQtyChange = changedItems.reduce(
-                (sum, li) => sum + parseFloat(li.adjustQty),
-                0,
-            );
+            const totalQtyChange = changedItems.reduce((sum, li) => sum + parseFloat(li.adjustQty), 0);
 
             // 4. Transaction: insert adjustment + items + update inventory
             const result = await db.transaction(async (tx) => {
@@ -9994,9 +9654,7 @@ const shopProductEndpoints = {
         .input(
             z.object({
                 search: z.string().optional(),
-                adjustmentType: z
-                    .enum(["increase", "decrease", "damage", "loss", "correction"])
-                    .optional(),
+                adjustmentType: z.enum(["increase", "decrease", "damage", "loss", "correction"]).optional(),
                 page: z.number().int().min(1).default(1),
                 pageSize: z.number().int().min(1).max(100).default(20),
             }),
@@ -10115,9 +9773,7 @@ const shopProductEndpoints = {
                 .select({ id: productVariant.id, price: productVariant.price })
                 .from(productVariant)
                 .where(inArray(productVariant.id, variantIds));
-            const variantPriceLookup = new Map(
-                variantRows.map((v) => [v.id, parseFloat(v.price || "0")]),
-            );
+            const variantPriceLookup = new Map(variantRows.map((v) => [v.id, parseFloat(v.price || "0")]));
 
             // 3. Generate entry number (DMG-0001)
             const [maxResult] = await db
@@ -10127,9 +9783,7 @@ const shopProductEndpoints = {
                 .from(damageEntry)
                 .where(eq(damageEntry.shopId, userId));
 
-            const lastNum = maxResult?.maxNo
-                ? parseInt(maxResult.maxNo.replace(/^DMG-/, ""), 10) || 0
-                : 0;
+            const lastNum = maxResult?.maxNo ? parseInt(maxResult.maxNo.replace(/^DMG-/, ""), 10) || 0 : 0;
             const entryNo = `DMG-${String(lastNum + 1).padStart(4, "0")}`;
 
             // 4. Build line items
@@ -10137,8 +9791,7 @@ const shopProductEndpoints = {
                 const inv = invLookup.get(item.inventoryId)!;
                 const retailPrice = parseFloat(inv.retailPrice || "0");
                 const variantBasePrice = variantPriceLookup.get(inv.variantId) ?? 0;
-                const unitPrice =
-                    item.unitPrice ?? (retailPrice > 0 ? retailPrice : variantBasePrice);
+                const unitPrice = item.unitPrice ?? (retailPrice > 0 ? retailPrice : variantBasePrice);
                 return {
                     inventoryId: inv.id,
                     variantId: inv.variantId,
@@ -10222,10 +9875,7 @@ const shopProductEndpoints = {
             const userId = context.session.user.id;
             const offset = (input.page - 1) * input.pageSize;
 
-            const conditions: SQL[] = [
-                eq(damageEntry.shopId, userId),
-                eq(damageEntry.status, "active"),
-            ];
+            const conditions: SQL[] = [eq(damageEntry.shopId, userId), eq(damageEntry.status, "active")];
 
             if (input.damageType) {
                 conditions.push(eq(damageEntry.damageType, input.damageType));
