@@ -30,7 +30,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
 import {
   Table,
   TableBody,
@@ -64,7 +63,6 @@ type PriceItem = {
   packPrice: string;
   basePrice: string;
   isActive: boolean;
-  availableQty: string;
   updatedAt: string;
   isLoose: boolean;
   weightKg: number;
@@ -203,7 +201,6 @@ function CoreProductSection({
   onSaveEdit,
   onCancelEdit,
   onEditPriceChange,
-  onToggleAvailability,
   isSaving,
 }: {
   group: GroupedCoreProduct;
@@ -213,7 +210,6 @@ function CoreProductSection({
   onSaveEdit: () => void;
   onCancelEdit: () => void;
   onEditPriceChange: (val: string) => void;
-  onToggleAvailability: (inventoryId: number, available: boolean) => void;
   isSaving: boolean;
 }) {
   const queryClient = useQueryClient();
@@ -345,7 +341,6 @@ function CoreProductSection({
             <TableBody>
               {group.items.map((item) => {
                 const isEditing = editingId === item.inventoryId;
-                const isAvailable = Number(item.availableQty) > 0;
                 const cartonInfo = cartonByVariant.get(item.variantId);
                 const cartonCfg = configByVariant.get(item.variantId);
 
@@ -543,25 +538,15 @@ function CoreProductSection({
                             </Button>
                           </>
                         ) : (
-                          <>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-7 w-7 text-gray-400 hover:text-amber-600 hover:bg-amber-50"
-                              onClick={() => onStartEdit(item)}
-                              title="Edit Price"
-                            >
-                              <Pencil size={13} />
-                            </Button>
-                            <Switch
-                              size="sm"
-                              checked={isAvailable}
-                              onCheckedChange={(checked) =>
-                                onToggleAvailability(item.inventoryId, checked)
-                              }
-                              title={isAvailable ? "Mark unavailable" : "Mark available"}
-                            />
-                          </>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7 text-gray-400 hover:text-amber-600 hover:bg-amber-50"
+                            onClick={() => onStartEdit(item)}
+                            title="Edit Price"
+                          >
+                            <Pencil size={13} />
+                          </Button>
                         )}
                       </div>
                     </TableCell>
@@ -645,18 +630,6 @@ export default function WarehousePricingPage() {
     },
     onError: (err: any) => {
       toast.error(err?.message || "Failed to update price");
-    },
-  });
-
-  const toggleMutation = useMutation({
-    mutationFn: (d: { inventoryId: number; available: boolean }) =>
-      (orpc.warehouse as any).toggleInventoryAvailability.call(d),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["warehouse", "getWarehousePriceList"] });
-      toast.success("Availability updated");
-    },
-    onError: (err: any) => {
-      toast.error(err?.message || "Failed to toggle availability");
     },
   });
 
@@ -1072,9 +1045,6 @@ export default function WarehousePricingPage() {
                   onSaveEdit={handleSaveEdit}
                   onCancelEdit={handleCancelEdit}
                   onEditPriceChange={setEditPrice}
-                  onToggleAvailability={(id, available) =>
-                    toggleMutation.mutate({ inventoryId: id, available })
-                  }
                   isSaving={priceMutation.isPending}
                 />
               ))}

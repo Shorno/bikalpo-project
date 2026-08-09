@@ -9561,53 +9561,6 @@ const pricingQueries = {
 			return { inventory: updated };
 		}),
 
-	/**
-	 * Toggle availability of an inventory item (set qty to 0 or keep as-is).
-	 */
-	toggleInventoryAvailability: warehouseProcedure
-		.input(
-			z.object({
-				inventoryId: z.number(),
-				available: z.boolean(),
-			}),
-		)
-		.handler(async ({ context, input }) => {
-			const userId = context.session.user.id;
-
-			const existing = await db.query.inventory.findFirst({
-				where: and(
-					eq(inventory.id, input.inventoryId),
-					eq(inventory.ownerType, "warehouse"),
-					eq(inventory.ownerId, userId),
-				),
-			});
-
-			if (!existing) {
-				throw new ORPCError("NOT_FOUND", {
-					message: "Inventory item not found",
-				});
-			}
-
-			const updateData: Record<string, any> = {};
-			if (!input.available) {
-				// Set to unavailable — zero out stock
-				updateData.availableQty = "0";
-			} else {
-				// Restore to 1 as minimum (user can adjust from inventory page)
-				if (Number(existing.availableQty) <= 0) {
-					updateData.availableQty = "1";
-				}
-			}
-
-			if (Object.keys(updateData).length > 0) {
-				await db
-					.update(inventory)
-					.set(updateData)
-					.where(eq(inventory.id, input.inventoryId));
-			}
-
-			return { success: true };
-		}),
 };
 
 // ────────────────────────────────────────────────────────────────
