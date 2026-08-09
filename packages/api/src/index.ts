@@ -1,5 +1,6 @@
 import { ORPCError, os } from "@orpc/server";
 
+import { isCatalogRequesterRole } from "./catalog-requester-role";
 import type { Context } from "./context";
 
 export const o = os.$context<Context>();
@@ -128,6 +129,28 @@ const requireWarehouse = o.middleware(async ({ context, next }) => {
 });
 
 export const warehouseProcedure = publicProcedure.use(requireWarehouse);
+
+// Catalog requester procedure - shared by Warehouse Owners and Shop Owners.
+const requireCatalogRequester = o.middleware(async ({ context, next }) => {
+  if (!context.session?.user) {
+    throw new ORPCError("UNAUTHORIZED");
+  }
+  if (!isCatalogRequesterRole(context.session.user.role)) {
+    throw new ORPCError("FORBIDDEN", {
+      message: "Warehouse or Shop Owner access required",
+    });
+  }
+  return next({
+    context: {
+      ...context,
+      session: context.session,
+    },
+  });
+});
+
+export const catalogRequesterProcedure = publicProcedure.use(
+  requireCatalogRequester,
+);
 
 // Warehouse OR Admin procedure - allows both roles for delivery management
 const requireWarehouseOrAdmin = o.middleware(async ({ context, next }) => {

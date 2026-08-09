@@ -34,6 +34,13 @@ import {
   SetupStatusBadge,
   SetupToolbar,
 } from "@/components/features/product-setup";
+import {
+  EMPTY_VARIANT_DRAFT,
+  isVariantDraftComplete,
+  structuredPayloadToVariantDraft,
+  VariantDefinitionEditor,
+  variantDraftToPayload,
+} from "@/components/features/variant-option/components/variant-definition-editor";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -96,7 +103,21 @@ type CatalogApprovalRequest = {
 };
 
 type RequestOptions = {
-  types: Array<{ id: number; name: string; slug?: string }>;
+  types: Array<{
+    id: number;
+    name: string;
+    slug?: string;
+    family?:
+      | "grocery"
+      | "fashion"
+      | "footwear"
+      | "electronics"
+      | "lpg"
+      | "bulk_liquid"
+      | "generic"
+      | null;
+    inventoryBehaviour?: "auto_break" | "loose_convert" | "fixed_pack" | null;
+  }>;
   categories: Array<{
     id: number;
     name: string;
@@ -127,7 +148,6 @@ type RequestOptions = {
     categoryId: number;
     subCategoryId: number | null;
   }>;
-  units: string[];
 };
 
 type RequestStats = {
@@ -208,6 +228,18 @@ function requesterName(request: CatalogApprovalRequest) {
 function itemName(
   request: Pick<CatalogApprovalRequest, "requestType" | "payload">,
 ) {
+  if (request.requestType === "variant_option") {
+    const draft = structuredPayloadToVariantDraft(request.payload);
+    if (!draft) return "Legacy variant request — definition required";
+    return (
+      draft.displayAlias ||
+      (draft.kind === "attribute"
+        ? `${draft.attribute} ${draft.value}`
+        : draft.kind === "loose"
+          ? `Loose ${draft.measurementUnit}`
+          : `${draft.value} ${draft.measurementUnit} ${draft.container}`)
+    );
+  }
   return (
     request.payload.name ||
     request.payload.productName ||
@@ -253,21 +285,19 @@ function mappingRows(
   }
 
   if (request.requestType === "variant_option") {
-    const isGlobal = payload.typeId === null || payload.typeId === undefined;
+    const isLegacy = !structuredPayloadToVariantDraft(payload);
     return [
       {
         label: "Type",
-        value: isGlobal
-          ? "Global"
+        value: isLegacy
+          ? "Definition required"
           : findType(options, payload.typeId)?.name || "Not found",
       },
       {
         label: "Category",
-        value: isGlobal
-          ? "All categories"
-          : payload.categoryId
-            ? findCategory(options, payload.categoryId)?.name || "Not found"
-            : "All categories in type",
+        value: payload.categoryId
+          ? findCategory(options, payload.categoryId)?.name || "Not found"
+          : "All categories in type",
       },
       { label: "Sub Category", value: "All matching sub categories" },
       { label: "Core Identity", value: "All matching core products" },
@@ -318,12 +348,37 @@ function payloadSummary(
   }
 
   if (requestType === "variant_option") {
+    const draft = structuredPayloadToVariantDraft(payload);
+    if (!draft) {
+      return [
+        {
+          label: "Definition",
+          value: "Legacy request — Admin completion required",
+        },
+        { label: "Legacy Name", value: payload.name || "--" },
+        { label: "Legacy Type", value: payload.variantType || "--" },
+        { label: "Legacy Unit", value: payload.unit || "--" },
+        { label: "Legacy Size", value: payload.size || "--" },
+      ];
+    }
     return [
-      { label: "Variant Name", value: payload.name },
-      { label: "Variant Type", value: payload.variantType || "pack" },
-      { label: "Unit", value: payload.unit },
-      { label: "Size", value: payload.size || "Generic" },
-      { label: "Sort Order", value: payload.sortOrder ?? 0 },
+      { label: "Definition Kind", value: draft.kind },
+      ...(draft.kind === "attribute"
+        ? [
+            { label: "Attribute", value: draft.attribute },
+            { label: "Value", value: draft.value },
+          ]
+        : draft.kind === "loose"
+          ? [{ label: "Measurement Unit", value: draft.measurementUnit }]
+          : [
+              { label: "Value", value: draft.value },
+              { label: "Measurement Unit", value: draft.measurementUnit },
+              { label: "Container", value: draft.container },
+            ]),
+      {
+        label: "Display Alias",
+        value: draft.displayAlias || "Generated canonical label",
+      },
     ];
   }
 
@@ -759,6 +814,13 @@ function RequestDetailDialog({
   const activePayload = editMode ? draftPayload : request.payload;
   const mapping = mappingRows(request, activePayload, options);
   const canReview = request.status === "pending";
+  const variantDraft =
+    request.requestType === "variant_option"
+      ? structuredPayloadToVariantDraft(activePayload)
+      : null;
+  const canApprovePayload =
+    request.requestType !== "variant_option" ||
+    Boolean(variantDraft && isVariantDraftComplete(variantDraft));
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[90vh] gap-0 overflow-y-auto p-0 sm:max-w-3xl">
@@ -829,7 +891,12 @@ function RequestDetailDialog({
                       onClick={() => setEditMode((v) => !v)}
                     >
                       <Pencil className="mr-1 h-2.5 w-2.5" />
-                      {editMode ? "Cancel" : "Edit"}
+                      {editMode
+                        ? "Cancel"
+                        : request.requestType === "variant_option" &&
+                            !structuredPayloadToVariantDraft(request.payload)
+                          ? "Complete structure"
+                          : "Edit"}
                     </Button>
                   ) : undefined
                 }
@@ -842,10 +909,21 @@ function RequestDetailDialog({
                     onChange={setDraftPayload}
                   />
                 ) : (
-                  <PayloadDisplay
-                    requestType={request.requestType}
-                    payload={activePayload}
-                  />
+                  <>
+                    {request.requestType === "variant_option" &&
+                      !structuredPayloadToVariantDraft(activePayload) && (
+                        <div className="mb-3 rounded-md border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900">
+                          This is a legacy request. Review its old fields below,
+                          then choose Complete structure. Approval stays
+                          disabled until Admin provides a valid structured
+                          definition.
+                        </div>
+                      )}
+                    <PayloadDisplay
+                      requestType={request.requestType}
+                      payload={activePayload}
+                    />
+                  </>
                 )}
               </DetailSection>
             </div>
@@ -932,7 +1010,9 @@ function RequestDetailDialog({
                       <Button
                         size="sm"
                         className="flex-1"
-                        disabled={isApproving || isRejecting}
+                        disabled={
+                          isApproving || isRejecting || !canApprovePayload
+                        }
                         onClick={() =>
                           onApprove(
                             activePayload,
@@ -1273,80 +1353,25 @@ function PayloadEditor({
   }
 
   if (requestType === "variant_option") {
+    const variantDraft = structuredPayloadToVariantDraft(payload) ?? {
+      ...EMPTY_VARIANT_DRAFT,
+    };
+    const legacyPayload = !structuredPayloadToVariantDraft(payload);
     return (
       <div className="space-y-3">
-        <LabeledInput
-          label="Variant Name"
-          value={payload.name || ""}
-          onChange={(value) => update("name", value)}
+        {legacyPayload && (
+          <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900">
+            The submitted legacy fields are kept in request history, but their
+            meaning will not be guessed. Define the variant below before
+            approval.
+          </div>
+        )}
+        <VariantDefinitionEditor
+          value={variantDraft}
+          onChange={(nextDraft) => onChange(variantDraftToPayload(nextDraft))}
+          types={options?.types ?? []}
+          categories={options?.categories ?? []}
         />
-        <div className="grid gap-3 sm:grid-cols-3">
-          <SelectField
-            label="Type Scope"
-            value={payload.typeId == null ? "global" : String(payload.typeId)}
-            onChange={(value) => {
-              update("typeId", value === "global" ? null : Number(value));
-              update("categoryId", null);
-            }}
-            items={[
-              { value: "global", label: "Global" },
-              ...(options?.types.map((type) => ({
-                value: String(type.id),
-                label: type.name,
-              })) ?? []),
-            ]}
-          />
-          <SelectField
-            label="Category Scope"
-            value={
-              payload.categoryId == null ? "none" : String(payload.categoryId)
-            }
-            onChange={(value) =>
-              update("categoryId", value === "none" ? null : Number(value))
-            }
-            disabled={payload.typeId == null}
-            items={[
-              { value: "none", label: "All categories" },
-              ...categories.map((category) => ({
-                value: String(category.id),
-                label: category.name,
-              })),
-            ]}
-          />
-          <SelectField
-            label="Variant Type"
-            value={payload.variantType || "pack"}
-            onChange={(value) => update("variantType", value)}
-            items={[
-              { value: "pack", label: "Pack" },
-              { value: "loose", label: "Loose" },
-            ]}
-          />
-        </div>
-        <div className="grid gap-3 sm:grid-cols-3">
-          <SelectField
-            label="Unit"
-            value={payload.unit || "KG"}
-            onChange={(value) => update("unit", value)}
-            items={(options?.units?.length ? options.units : ["KG"]).map(
-              (unit) => ({
-                value: unit,
-                label: unit,
-              }),
-            )}
-          />
-          <LabeledInput
-            label="Size"
-            value={payload.size || ""}
-            onChange={(value) => update("size", value)}
-          />
-          <LabeledInput
-            label="Sort Order"
-            type="number"
-            value={String(payload.sortOrder ?? 0)}
-            onChange={(value) => update("sortOrder", Number(value))}
-          />
-        </div>
       </div>
     );
   }

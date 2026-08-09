@@ -62,6 +62,11 @@ const shopOwnerNavGroups: NavGroup[] = [
         url: `${D}/product-catalog`,
         icon: BookOpenIcon,
       },
+      {
+        title: "Catalog Requests",
+        url: `${D}/product-catalog/requests`,
+        icon: ClipboardListIcon,
+      },
       { title: "My Store", url: `${D}/stores`, icon: StoreIcon },
     ],
   },

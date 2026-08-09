@@ -50,6 +50,10 @@ _Avoid_: Catalog Variant, brand configuration
 A compatible configured choice such as a package size, weight, or unit presentation.
 _Avoid_: Variant type, owner variant
 
+**Variant Request**:
+A Warehouse Owner or Shop Owner proposal for one structured, type-scoped Variant Option. The requester uses the same definition as Admin; approval creates one canonical reusable Variant Option, while rejection creates nothing.
+_Avoid_: Free-form variant, owner variant, global variant
+
 **Operational Unit**:
 The unit in which one Variant Option is ordered and stocked, derived from its definition and packaging.
 _Avoid_: Product inventory unit, template unit

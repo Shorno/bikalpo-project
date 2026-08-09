@@ -114,7 +114,15 @@ export default function ProductCatalogPage() {
             → Core Identity
           </p>
         </div>
-        <RequestProductModal />
+        <div className="flex flex-wrap items-center gap-2">
+          <Button asChild variant="outline">
+            <Link href="/dashboard/product-catalog/requests?new=variant_option">
+              <Plus className="mr-2 h-4 w-4" />
+              Request Variant
+            </Link>
+          </Button>
+          <RequestProductModal />
+        </div>
       </div>
 
       {/* Filter Bar */}
@@ -368,7 +376,14 @@ export default function ProductCatalogPage() {
             after admin review.
           </p>
         </div>
-        <RequestProductModal />
+        <div className="flex flex-wrap items-center gap-2">
+          <Button asChild variant="outline">
+            <Link href="/dashboard/product-catalog/requests?new=variant_option">
+              Request Variant
+            </Link>
+          </Button>
+          <RequestProductModal />
+        </div>
       </div>
     </div>
   );
