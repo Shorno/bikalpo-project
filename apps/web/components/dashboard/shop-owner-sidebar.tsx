@@ -263,6 +263,21 @@ const shopOwnerNavGroups: NavGroup[] = [
         icon: FileTextIcon,
       },
       {
+        title: "ACCOUNTS PAYABLE Report",
+        url: `${D}/reports/accounts-payable`,
+        icon: FileTextIcon,
+      },
+      {
+        title: "ACCOUNTS RECEIVABLE Report",
+        url: `${D}/reports/accounts-receivable`,
+        icon: FileTextIcon,
+      },
+      {
+        title: "PROFIT & LOSS Report",
+        url: `${D}/reports/profit-loss`,
+        icon: BarChart3Icon,
+      },
+      {
         title: "Stock Movement",
         url: `${D}/reports/stock-movement`,
         icon: BoxesIcon,
