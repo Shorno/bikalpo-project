@@ -1,5 +1,5 @@
 import {
-  resolveVariantMovementSemantics,
+  resolveVariantOperations,
   resolveVariantStockSemantics,
   type VariantOptionLike,
   type VariantProductFamily,
@@ -8,7 +8,7 @@ import {
 export type StockStatus = "in_stock" | "low_stock" | "out_of_stock";
 export type ThresholdSource = "variant" | "product" | null;
 export type ConfigurationIssue =
-  | "missing_product_family"
+  | "missing_product_type"
   | "missing_variant_definition"
   | "invalid_variant_definition";
 
@@ -22,6 +22,8 @@ export type StructuredStockSourceRow = {
   brandName: string | null;
   categoryId: number;
   categoryName: string;
+  productTypeId: number | null;
+  productTypeName: string | null;
   family: VariantProductFamily | null;
   sku: string | null;
   catalogVariantId?: number | null;
@@ -39,8 +41,8 @@ export type StructuredStockSourceRow = {
 };
 
 export type StockQuantityGroup = {
-  family: VariantProductFamily;
-  familyLabel: string;
+  productTypeId: number;
+  productTypeName: string;
   inventoryUnit: string;
   productCount: number;
   variantCount: number;
@@ -98,7 +100,6 @@ export type StructuredStockDetailSourceRow = StructuredStockSourceRow & {
   coreProductSku: string | null;
   coreProductImage: string | null;
   productImage: string | null;
-  productTypeName: string | null;
 };
 
 export type StructuredStockDetail = {
@@ -204,8 +205,8 @@ export type StructuredStockDashboard = {
 };
 
 type QuantityGroupAccumulator = {
-  family: VariantProductFamily;
-  familyLabel: string;
+  productTypeId: number;
+  productTypeName: string;
   inventoryUnit: string;
   productIds: Set<number>;
   variantCount: number;
@@ -280,17 +281,18 @@ function resolveStatus(
 }
 
 function quantityGroupKey(input: {
-  family: VariantProductFamily;
+  productTypeId: number;
   inventoryUnit: string;
   referenceUnit: "kg" | "liter" | null;
 }) {
-  return `${input.family}:${input.inventoryUnit}:${input.referenceUnit ?? "none"}`;
+  return `${input.productTypeId}:${input.inventoryUnit}:${input.referenceUnit ?? "none"}`;
 }
 
 function addQuantityGroup(
   groups: Map<string, QuantityGroupAccumulator>,
   input: {
-    family: VariantProductFamily;
+    productTypeId: number;
+    productTypeName: string;
     inventoryUnit: string;
     productId: number;
     available: number;
@@ -304,8 +306,8 @@ function addQuantityGroup(
   let group = groups.get(key);
   if (!group) {
     group = {
-      family: input.family,
-      familyLabel: formatFamilyLabel(input.family),
+      productTypeId: input.productTypeId,
+      productTypeName: input.productTypeName,
       inventoryUnit: input.inventoryUnit,
       productIds: new Set<number>(),
       variantCount: 0,
@@ -336,8 +338,8 @@ function addQuantityGroup(
 function finalizeQuantityGroups(groups: Map<string, QuantityGroupAccumulator>) {
   return Array.from(groups.values())
     .map<StockQuantityGroup>((group) => ({
-      family: group.family,
-      familyLabel: group.familyLabel,
+      productTypeId: group.productTypeId,
+      productTypeName: group.productTypeName,
       inventoryUnit: group.inventoryUnit,
       productCount: group.productIds.size,
       variantCount: group.variantCount,
@@ -357,7 +359,7 @@ function finalizeQuantityGroups(groups: Map<string, QuantityGroupAccumulator>) {
     }))
     .sort(
       (a, b) =>
-        a.familyLabel.localeCompare(b.familyLabel) ||
+        a.productTypeName.localeCompare(b.productTypeName) ||
         a.inventoryUnit.localeCompare(b.inventoryUnit) ||
         (a.referenceMeasurement?.unit ?? "").localeCompare(
           b.referenceMeasurement?.unit ?? "",
@@ -444,8 +446,8 @@ export function buildStructuredStockOverview(
       | undefined;
     let configurationIssue: ConfigurationIssue | null = null;
 
-    if (!row.family) {
-      configurationIssue = "missing_product_family";
+    if (row.productTypeId === null || !row.productTypeName) {
+      configurationIssue = "missing_product_type";
     } else if (!row.sourceVariantOption || row.sourceVariantOptionId === null) {
       configurationIssue = "missing_variant_definition";
     } else {
@@ -453,21 +455,20 @@ export function buildStructuredStockOverview(
         const stockSemantics = resolveVariantStockSemantics(
           row.sourceVariantOption,
         );
-        const movementSemantics = resolveVariantMovementSemantics(
-          row.sourceVariantOption,
-          row.family,
-        );
+        const operations = resolveVariantOperations(row.sourceVariantOption);
         canonicalLabel = stockSemantics.canonicalLabel;
         if (!displayAlias && stockSemantics.displayLabel !== canonicalLabel) {
           displayAlias = stockSemantics.displayLabel;
         }
-        movementKind = movementSemantics.movementKind;
-        inventoryUnit = movementSemantics.inventoryUnit;
+        movementKind = operations.receivingMode === "pack"
+          ? "container"
+          : operations.receivingMode;
+        inventoryUnit = operations.operationalUnit;
 
         const referenceUnit =
-          movementSemantics.referenceMeasurement?.unit ?? null;
+          operations.referenceMeasurement?.unit ?? null;
         const referencePerInventoryUnit = numberFrom(
-          movementSemantics.referenceMeasurement?.perInventoryUnit,
+          operations.referenceMeasurement?.perInventoryUnit,
         );
         if (referenceUnit && referencePerInventoryUnit > 0) {
           referenceMeasurement = {
@@ -480,7 +481,8 @@ export function buildStructuredStockOverview(
         }
 
         const groupInput = {
-          family: row.family,
+          productTypeId: row.productTypeId,
+          productTypeName: row.productTypeName,
           inventoryUnit,
           productId: row.productId,
           available,
@@ -509,7 +511,7 @@ export function buildStructuredStockOverview(
       localSku: row.localSku ?? row.sku,
       canonicalLabel,
       displayAlias,
-      family: configurationIssue ? null : row.family,
+      family: row.family,
       movementKind,
       inventoryUnit,
       available: cleanNumber(available),

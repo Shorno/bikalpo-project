@@ -1,21 +1,12 @@
 import { db } from "@bikalpo-project/db";
-import { buildProductTypeFulfillmentProfile } from "@bikalpo-project/db/fulfillment";
 import {
-  category,
   order,
   orderItem,
   product,
-  productType,
   productVariant,
   productVariantPrice,
   variantOption,
 } from "@bikalpo-project/db/schema";
-import {
-  formatVariantDefinition,
-  VARIANT_CONTAINERS,
-  variantDefinitionSignature,
-  withDerivedOperationalUnit,
-} from "@bikalpo-project/db/variant-definition";
 import { ORPCError } from "@orpc/server";
 import {
   and,
@@ -30,39 +21,14 @@ import {
 } from "drizzle-orm";
 import { z } from "zod";
 import { adminProcedure } from "../index";
-import { nextSkuCode } from "./helpers/generate-sku";
+import {
+  createStructuredVariantOption,
+  prepareStructuredVariantOption,
+  structuredVariantOptionInputSchema,
+} from "./helpers/structured-variant-option";
 import { resyncGeneratedVariantsForOption } from "./helpers/sync-generated-variants";
 
-const commonUnits = z.string().min(1).max(20).trim();
-const definitionSchema = z.discriminatedUnion("kind", [
-  z.object({
-    kind: z.literal("measurement"),
-    value: z.string().min(1).max(20).trim(),
-    measurementUnit: commonUnits,
-    container: z
-      .string()
-      .refine(
-        (value) => Object.hasOwn(VARIANT_CONTAINERS, value),
-        "Select a supported container",
-      ),
-  }),
-  z.object({ kind: z.literal("loose"), measurementUnit: commonUnits }),
-  z.object({
-    kind: z.literal("attribute"),
-    attribute: z.string().min(1).max(30).trim(),
-    value: z.string().min(1).max(30).trim(),
-  }),
-]);
-
-const createInput = z.object({
-  definition: definitionSchema,
-  displayAlias: z.string().max(100).trim().optional(),
-  typeId: z.number().int(),
-  categoryId: z.number().int().nullable(),
-  sortOrder: z.number().int().default(0),
-});
-
-const updateInput = createInput.extend({
+const updateInput = structuredVariantOptionInputSchema.extend({
   id: z.number().int(),
   isActive: z.boolean().default(true),
 });
@@ -75,22 +41,6 @@ const filtersInput = z.object({
   variantType: z.enum(["all", "pack", "loose"]).default("all"),
   status: z.enum(["all", "active", "disabled"]).default("all"),
 });
-
-async function validateCategoryScope(
-  typeId: number,
-  categoryId: number | null,
-) {
-  if (categoryId === null) return;
-  const scopedCategory = await db.query.category.findFirst({
-    where: and(eq(category.id, categoryId), eq(category.typeId, typeId)),
-    columns: { id: true, isActive: true },
-  });
-  if (!scopedCategory || !scopedCategory.isActive) {
-    throw new ORPCError("BAD_REQUEST", {
-      message: "The selected category does not belong to this product type",
-    });
-  }
-}
 
 export const adminVariantOptionRouter = {
   /**
@@ -287,82 +237,9 @@ export const adminVariantOptionRouter = {
   /**
    * Create a new variant option.
    */
-  create: adminProcedure.input(createInput).handler(async ({ input }) => {
-    const type = await db.query.productType.findFirst({
-      where: eq(productType.id, input.typeId),
-    });
-    if (!type?.isActive)
-      throw new ORPCError("BAD_REQUEST", {
-        message: "Select an active Product Type",
-      });
-    await validateCategoryScope(input.typeId, input.categoryId);
-    const definition = withDerivedOperationalUnit(
-      input.definition,
-      buildProductTypeFulfillmentProfile(type).family,
-    );
-    const name = formatVariantDefinition(definition);
-    const signature = variantDefinitionSignature(definition);
-
-    // Check uniqueness: name must be unique within same typeId + categoryId scope
-    const existingConditions: SQL[] = [
-      eq(variantOption.canonicalSignature, signature),
-    ];
-
-    existingConditions.push(eq(variantOption.typeId, input.typeId));
-
-    if (input.categoryId === null) {
-      existingConditions.push(isNull(variantOption.categoryId));
-    } else {
-      existingConditions.push(eq(variantOption.categoryId, input.categoryId));
-    }
-
-    const existing = await db.query.variantOption.findFirst({
-      where: and(...existingConditions),
-    });
-
-    if (existing) {
-      throw new Error(
-        `The same structured variant already exists in this scope`,
-      );
-    }
-
-    // Auto-generate next 2-digit skuCode scoped to typeId + categoryId
-    const skuFilterCondition =
-      input.categoryId === null
-        ? sql`${variantOption.typeId} = ${input.typeId} AND ${variantOption.categoryId} IS NULL`
-        : sql`${variantOption.typeId} = ${input.typeId} AND ${variantOption.categoryId} = ${input.categoryId}`;
-
-    const skuCode = await nextSkuCode(
-      variantOption,
-      variantOption.skuCode,
-      2,
-      skuFilterCondition,
-    );
-
-    const [created] = await db
-      .insert(variantOption)
-      .values({
-        name,
-        unit:
-          "measurementUnit" in definition
-            ? definition.measurementUnit
-            : definition.operationalUnit || "unit",
-        size: "value" in definition ? definition.value : null,
-        variantType: definition.kind === "loose" ? "loose" : "pack",
-        definitionKind: definition.kind,
-        definition,
-        displayAlias: input.displayAlias || null,
-        canonicalSignature: signature,
-        needsReview: false,
-        typeId: input.typeId,
-        categoryId: input.categoryId,
-        sortOrder: input.sortOrder,
-        skuCode,
-      })
-      .returning();
-
-    return created;
-  }),
+  create: adminProcedure
+    .input(structuredVariantOptionInputSchema)
+    .handler(async ({ input }) => createStructuredVariantOption(input)),
 
   /**
    * Update an existing variant option.
@@ -374,18 +251,8 @@ export const adminVariantOptionRouter = {
 
     if (!existing) throw new Error("Variant option not found");
 
-    const type = await db.query.productType.findFirst({
-      where: eq(productType.id, input.typeId),
-    });
-    if (!type)
-      throw new ORPCError("BAD_REQUEST", { message: "Product type not found" });
-    await validateCategoryScope(input.typeId, input.categoryId);
-    const definition = withDerivedOperationalUnit(
-      input.definition,
-      buildProductTypeFulfillmentProfile(type).family,
-    );
-    const name = formatVariantDefinition(definition);
-    const signature = variantDefinitionSignature(definition);
+    const { definition, name, signature } =
+      await prepareStructuredVariantOption(input);
     const [priceRef, generatedRef] = await Promise.all([
       db.query.productVariantPrice.findFirst({
         where: eq(productVariantPrice.variantOptionId, input.id),

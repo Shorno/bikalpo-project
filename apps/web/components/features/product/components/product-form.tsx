@@ -115,9 +115,6 @@ type ProductRuleSettings = {
   minimumOrderAvailable: boolean;
   minimumOrderDefault: boolean;
   minimumOrderQtyDefault: string;
-  inventoryUnitOptions: FulfillmentUnitCode[];
-  inventoryUnitAvailable: boolean;
-  defaultInventoryUnit: FulfillmentUnitCode;
   conversionAvailable: boolean;
   conversionDefault: boolean;
   inventoryLooseUnitAvailable: boolean;
@@ -138,7 +135,6 @@ type ProductRuleDefaults = {
   stockTrackingEnabled: boolean;
   minimumOrderEnabled: boolean;
   minimumOrderQty: string;
-  inventoryUnit: FulfillmentUnitCode;
   conversionEnabled: boolean;
   inventoryLooseUnitEnabled: boolean;
   inventoryLooseUnit: FulfillmentUnitCode;
@@ -160,9 +156,6 @@ const FALLBACK_RULE_SETTINGS: ProductRuleSettings = {
   minimumOrderAvailable: true,
   minimumOrderDefault: true,
   minimumOrderQtyDefault: "1",
-  inventoryUnitOptions: ["unit"],
-  inventoryUnitAvailable: true,
-  defaultInventoryUnit: "unit",
   conversionAvailable: true,
   conversionDefault: false,
   inventoryLooseUnitAvailable: false,
@@ -181,9 +174,6 @@ function normalizeRuleSettings(
   const trackingTypes = source.trackingTypes?.length
     ? source.trackingTypes
     : FALLBACK_RULE_SETTINGS.trackingTypes;
-  const inventoryUnitOptions = source.inventoryUnitOptions?.length
-    ? source.inventoryUnitOptions
-    : FALLBACK_RULE_SETTINGS.inventoryUnitOptions;
   const inventoryLooseUnitOptions = source.inventoryLooseUnitOptions?.length
     ? source.inventoryLooseUnitOptions
     : FALLBACK_RULE_SETTINGS.inventoryLooseUnitOptions;
@@ -196,13 +186,6 @@ function normalizeRuleSettings(
     defaultTrackingType: trackingTypes.includes(source.defaultTrackingType)
       ? source.defaultTrackingType
       : trackingTypes[0]!,
-    inventoryUnitOptions,
-    defaultInventoryUnit: inventoryUnitOptions.includes(
-      source.defaultInventoryUnit,
-    )
-      ? source.defaultInventoryUnit
-      : inventoryUnitOptions[0]!,
-    inventoryUnitAvailable: source.inventoryUnitAvailable ?? true,
     inventoryLooseUnitOptions,
     defaultInventoryLooseUnit: inventoryLooseUnitOptions.includes(
       source.defaultInventoryLooseUnit,
@@ -235,7 +218,6 @@ function getRuleDefaultsFromSettings(
     minimumOrderEnabled:
       normalized.minimumOrderAvailable && normalized.minimumOrderDefault,
     minimumOrderQty: normalized.minimumOrderQtyDefault,
-    inventoryUnit: normalized.defaultInventoryUnit,
     conversionEnabled:
       normalized.conversionAvailable && normalized.conversionDefault,
     inventoryLooseUnitEnabled:
@@ -255,6 +237,7 @@ interface ProductFormProps {
   product?: ProductWithRelations;
   initialCoreProductId?: number | null;
   structureLocked?: boolean;
+  backHref?: string;
   editAdapter?: {
     backHref: string;
     coreProduct: any;
@@ -271,12 +254,14 @@ export default function ProductForm({
   product,
   initialCoreProductId = null,
   structureLocked = false,
+  backHref,
   editAdapter,
 }: ProductFormProps) {
   const router = useRouter();
   const queryClient = useQueryClient();
   const isEdit = mode === "edit";
-  const listHref = editAdapter?.backHref ?? "/dashboard/admin/products";
+  const listHref =
+    editAdapter?.backHref ?? backHref ?? "/dashboard/admin/products";
   const usesExternalEditAdapter = Boolean(editAdapter && isEdit);
   const initialCoreProductIdForCreate =
     !isEdit && initialCoreProductId && Number.isFinite(initialCoreProductId)
@@ -320,7 +305,7 @@ export default function ProductForm({
       // Find variant prices for this brand
       const brandVPs = (existingVPs || []).filter(
         (vp: any) =>
-          vp.isActive !== false &&
+          ((product as any)?.status === "inactive" || vp.isActive !== false) &&
           ((vp.brandId ?? null) === pb.brandId ||
             (!vp.brandId && pbs.length === 1)),
       );
@@ -437,6 +422,9 @@ export default function ProductForm({
   const lockedCoreProduct =
     editAdapter?.coreProduct ?? lockedCoreProductQuery.data?.coreProduct;
   const activeCoreProduct = lockedCoreProduct ?? selectedCoreProduct;
+  const isSingleBrandCreation =
+    !isStructureLocked &&
+    (activeCoreProduct as any)?.brandCreationMode === "single";
   const availableVariantOptions =
     isCoreIdentityLocked && !activeCoreProduct
       ? []
@@ -500,7 +488,11 @@ export default function ProductForm({
     onSuccess: async () => {
       queryClient.invalidateQueries({ queryKey: ["admin-products"] });
       toast.success("Product created successfully");
-      router.push("/dashboard/admin/products");
+      router.push(
+        isSingleBrandCreation && selectedCoreProductId
+          ? `/dashboard/admin/products/core/${selectedCoreProductId}/edit`
+          : "/dashboard/admin/products",
+      );
     },
     onError: handleError,
   });
@@ -587,8 +579,6 @@ export default function ProductForm({
       minimumOrderQty: String(
         (product as any)?.minimumOrderQty ?? activeRuleDefaults.minimumOrderQty,
       ),
-      inventoryUnit:
-        (product as any)?.inventoryUnit ?? activeRuleDefaults.inventoryUnit,
       conversionEnabled:
         (product as any)?.conversionEnabled ??
         activeRuleDefaults.conversionEnabled,
@@ -608,6 +598,10 @@ export default function ProductForm({
     onSubmit: async ({ value }) => {
       if (brandConfigs.length === 0) {
         toast.error("Add at least one brand");
+        return;
+      }
+      if (isSingleBrandCreation && brandConfigs.length !== 1) {
+        toast.error("This core identity accepts exactly one brand per save");
         return;
       }
       if (
@@ -754,7 +748,6 @@ export default function ProductForm({
     form.setFieldValue("stockTrackingEnabled", defaults.stockTrackingEnabled);
     form.setFieldValue("minimumOrderEnabled", defaults.minimumOrderEnabled);
     form.setFieldValue("minimumOrderQty", defaults.minimumOrderQty);
-    form.setFieldValue("inventoryUnit", defaults.inventoryUnit);
     form.setFieldValue("conversionEnabled", defaults.conversionEnabled);
     form.setFieldValue(
       "inventoryLooseUnitEnabled",
@@ -788,7 +781,9 @@ export default function ProductForm({
       variantSettings: {},
     };
 
-    setBrandConfigs((prev) => [...prev, newConfig]);
+    setBrandConfigs((prev) =>
+      isSingleBrandCreation ? [newConfig] : [...prev, newConfig],
+    );
     setActiveBrandId(brandId);
     // New brands start expanded — make sure they aren't in the collapsed set.
     setCollapsedBrandIds((prev) => {
@@ -900,12 +895,6 @@ export default function ProductForm({
   };
 
   const supportsLooseInventory = activeRuleSettings.inventoryLooseUnitAvailable;
-  const inventoryUnitOptions = activeRuleSettings.inventoryUnitOptions.map(
-    (code) => ({
-      value: code,
-      label: FULFILLMENT_UNITS[code]?.label ?? code,
-    }),
-  );
   const looseUnitOptions = activeRuleSettings.inventoryLooseUnitOptions.map(
     (code) => ({
       value: code,
@@ -1296,7 +1285,11 @@ export default function ProductForm({
                 ) : (
                   <FormSection
                     title="Brands and variants"
-                    description="Pick the variants each brand offers. Prices are managed in Product Price."
+                    description={
+                      isSingleBrandCreation
+                        ? "Choose one brand and its variants. You can add more brands after saving."
+                        : "Pick the variants each brand offers. Prices are managed in Product Price."
+                    }
                   >
                     <div className="space-y-3">
                       {brandConfigs.map((bc) => (
@@ -1327,18 +1320,21 @@ export default function ProductForm({
                         />
                       ))}
 
-                      <Button
-                        type="button"
-                        variant="outline"
-                        className="w-full justify-center gap-2 border-dashed text-muted-foreground"
-                        onClick={() => {
-                          setBrandSearch("");
-                          setBrandModalOpen(true);
-                        }}
-                      >
-                        <Plus className="h-4 w-4" />
-                        Add a brand
-                      </Button>
+                      {(!isSingleBrandCreation ||
+                        brandConfigs.length === 0) && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="w-full justify-center gap-2 border-dashed text-muted-foreground"
+                          onClick={() => {
+                            setBrandSearch("");
+                            setBrandModalOpen(true);
+                          }}
+                        >
+                          <Plus className="h-4 w-4" />
+                          Add a brand
+                        </Button>
+                      )}
 
                       {brandConfigs.length === 0 && (
                         <p className="text-center text-xs text-muted-foreground">
@@ -1595,35 +1591,6 @@ export default function ProductForm({
                               )}
                             </form.Field>
                           </div>
-                        </RuleControlRow>
-                      )}
-                    </form.Field>
-                  )}
-
-                  {activeRuleSettings.inventoryUnitAvailable && (
-                    <form.Field name="inventoryUnit">
-                      {(field) => (
-                        <RuleControlRow
-                          description="Saved to the product and applied to generated variants."
-                          label="Inventory unit"
-                        >
-                          <Select
-                            value={field.state.value}
-                            onValueChange={(value) =>
-                              field.handleChange(value as FulfillmentUnitCode)
-                            }
-                          >
-                            <SelectTrigger className="h-9 w-full">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {inventoryUnitOptions.map((unit) => (
-                                <SelectItem key={unit.value} value={unit.value}>
-                                  {unit.label}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
                         </RuleControlRow>
                       )}
                     </form.Field>

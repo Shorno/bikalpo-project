@@ -1,6 +1,6 @@
 import { db } from "@bikalpo-project/db";
 import {
-    resolveVariantMovementSemantics,
+    resolveVariantOperations,
     resolveVariantStockSemantics,
 } from "@bikalpo-project/db/variant-definition";
 import {
@@ -64,6 +64,7 @@ type CatalogVariantRow = {
     pack: string;
     variantLabel: string;
     unitLabel: string;
+    allowsDecimal: boolean;
     availableQty: number;
     unitPrice: number;
 };
@@ -184,7 +185,7 @@ async function getCatalogRows(warehouseId: string): Promise<CatalogVariantRow[]>
                                 columns: { id: true, name: true, typeId: true },
                                 with: {
                                     type: {
-                                        columns: { id: true, name: true, family: true },
+                                        columns: { id: true, name: true },
                                     },
                                 },
                             },
@@ -215,11 +216,8 @@ async function getCatalogRows(warehouseId: string): Promise<CatalogVariantRow[]>
         const stockSemantics = variant.sourceVariantOption
             ? resolveVariantStockSemantics(variant.sourceVariantOption)
             : null;
-        const movementSemantics = variant.sourceVariantOption
-            ? resolveVariantMovementSemantics(
-                variant.sourceVariantOption,
-                type.family,
-            )
+        const operations = variant.sourceVariantOption
+            ? resolveVariantOperations(variant.sourceVariantOption)
             : null;
         const pack = stockSemantics?.displayLabel ?? formatPackLabel({
             packWeightKg: variant.packWeightKg,
@@ -249,7 +247,8 @@ async function getCatalogRows(warehouseId: string): Promise<CatalogVariantRow[]>
             brandName,
             pack,
             variantLabel: pack,
-            unitLabel: movementSemantics?.inventoryUnit ?? variant.orderUnit ?? variant.unitLabel,
+            unitLabel: operations?.operationalUnit ?? variant.orderUnit ?? variant.unitLabel,
+            allowsDecimal: operations?.allowsDecimal ?? false,
             availableQty: toNumber(entry.availableQty),
             unitPrice,
         });
@@ -304,12 +303,6 @@ async function resolveSaleLines(
                             name: true,
                         },
                         with: {
-                            category: {
-                                columns: { id: true },
-                                with: {
-                                    type: { columns: { family: true } },
-                                },
-                            },
                             coreProduct: {
                                 columns: {
                                     name: true,
@@ -344,18 +337,16 @@ async function resolveSaleLines(
             });
         }
 
-        const movementSemantics = stock.variant.sourceVariantOption
-            ? resolveVariantMovementSemantics(
-                stock.variant.sourceVariantOption,
-                stock.variant.product.category?.type?.family ?? "generic",
-            )
+        const operations = stock.variant.sourceVariantOption
+            ? resolveVariantOperations(stock.variant.sourceVariantOption)
             : null;
         if (
-            movementSemantics?.inventoryUnit === "cylinder" &&
+            operations &&
+            !operations.allowsDecimal &&
             !Number.isInteger(item.quantity)
         ) {
             throw new ORPCError("BAD_REQUEST", {
-                message: `${stock.variant.product.name} must be sold in whole cylinders`,
+                message: `${stock.variant.product.name} must be sold in whole ${operations.operationalUnit} quantities`,
             });
         }
 
@@ -381,7 +372,7 @@ async function resolveSaleLines(
             productName: stock.variant.product.coreProduct?.name || stock.variant.product.name,
             variantLabel: pack,
             unitLabel:
-                movementSemantics?.inventoryUnit ??
+                operations?.operationalUnit ??
                 stock.variant.orderUnit ??
                 stock.variant.unitLabel,
             quantity: item.quantity,

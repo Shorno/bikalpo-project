@@ -148,11 +148,6 @@ export const product = pgTable(
       .default("1")
       .notNull(),
 
-    /** Product-level inventory/order unit applied to generated variants */
-    inventoryUnit: varchar("inventory_unit", { length: 20 })
-      .default("unit")
-      .notNull(),
-
     /** Product-level conversion flag, defaulted from product type behavior */
     conversionEnabled: boolean("conversion_enabled").default(false).notNull(),
 

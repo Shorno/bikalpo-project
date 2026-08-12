@@ -286,7 +286,7 @@ export default function ShopProductDetailPage() {
           <div className="divide-y">
             {summary.quantityGroups.map((group) => (
               <QuantityBalanceRow
-                key={`${group.family}:${group.inventoryUnit}:${group.referenceMeasurement?.unit ?? "none"}`}
+                key={`${group.productTypeId}:${group.inventoryUnit}:${group.referenceMeasurement?.unit ?? "none"}`}
                 group={group}
               />
             ))}
@@ -388,7 +388,7 @@ function QuantityBalanceRow({ group }: { group: QuantityGroup }) {
   return (
     <div className="grid gap-4 px-4 py-4 sm:grid-cols-[minmax(160px,1.2fr)_repeat(3,minmax(110px,1fr))] sm:px-5">
       <div>
-        <p className="text-sm font-medium">{group.familyLabel}</p>
+        <p className="text-sm font-medium">{group.productTypeName}</p>
         <p className="text-xs text-muted-foreground">
           Operational unit: {group.inventoryUnit.toLowerCase()}
         </p>

@@ -16,10 +16,12 @@ export interface CoreProductWithRelations {
   description: string | null;
   image: string;
   isActive: boolean;
+  brandCreationMode: "single" | "batch";
   categoryId: number;
   subCategoryId: number | null;
   hasConfiguration?: boolean;
   configuredBrandCount?: number;
+  addableBrandCount?: number;
   createdAt: Date;
   updatedAt: Date;
   category: {

@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node -e \"const p=require\\('./package.json'\\);console.log\\(JSON.stringify\\(p.scripts,null,2\\)\\)\")",
+      "Bash(node -e \"const p=require\\('./apps/web/package.json'\\);console.log\\(JSON.stringify\\(p.scripts,null,2\\)\\)\")",
+      "Bash(npx tsc *)",
+      "Bash(npx biome *)",
+      "Bash(pnpm exec *)",
+      "Bash(grep -E \"^app\\\\\\\\\\\\\\\\|^components\\\\\\\\\\\\\\\\\")",
+      "Bash(grep -E \"━━━$|━━━━ *$\")"
+    ]
+  }
+}

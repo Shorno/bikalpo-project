@@ -1,6 +1,9 @@
 "use client";
 
-import type { ProductTypeFamily } from "@bikalpo-project/db/fulfillment";
+import {
+  PRODUCT_TYPE_FAMILY_LABELS,
+  type ProductTypeFamily,
+} from "@bikalpo-project/db/fulfillment";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import {
   AlertCircle,
@@ -36,8 +39,8 @@ type StockStatus = "in_stock" | "low_stock" | "out_of_stock";
 type ConfigurationFilter = "all" | "needs_admin_variant_setup";
 
 type StockQuantityGroup = {
-  family: ProductTypeFamily;
-  familyLabel: string;
+  productTypeId: number;
+  productTypeName: string;
   inventoryUnit: string;
   productCount: number;
   variantCount: number;
@@ -243,14 +246,9 @@ export default function RetailerStockPage() {
             100,
         )
       : 100;
-  const familyOptions = Array.from(
-    new Map(
-      dashboard.quantityGroups.map((group) => [
-        group.family,
-        group.familyLabel,
-      ]),
-    ),
-  );
+  const familyOptions = Object.entries(PRODUCT_TYPE_FAMILY_LABELS) as Array<
+    [ProductTypeFamily, string]
+  >;
   const filtersActive =
     search.length > 0 ||
     family !== "all" ||
@@ -379,7 +377,7 @@ export default function RetailerStockPage() {
             Stock position
           </h2>
           <p className="mt-0.5 text-sm text-muted-foreground">
-            Quantities remain separated by product family and operational
+            Quantities remain separated by Product Type and operational
             inventory unit.
           </p>
         </div>
@@ -398,7 +396,7 @@ export default function RetailerStockPage() {
         ) : (
           <div className="overflow-hidden rounded-lg border bg-background">
             <div className="hidden grid-cols-[1.4fr_repeat(3,1fr)_1.35fr] gap-4 border-b bg-muted/40 px-5 py-2.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground md:grid">
-              <span>Family and unit</span>
+              <span>Product Type and unit</span>
               <span>Available</span>
               <span>Reserved</span>
               <span>On hand</span>
@@ -408,10 +406,12 @@ export default function RetailerStockPage() {
               {dashboard.quantityGroups.map((group) => (
                 <div
                   className="grid gap-4 px-4 py-4 sm:px-5 md:grid-cols-[1.4fr_repeat(3,1fr)_1.35fr] md:items-center"
-                  key={`${group.family}:${group.inventoryUnit}:${group.referenceMeasurement?.unit ?? "none"}`}
+                  key={`${group.productTypeId}:${group.inventoryUnit}:${group.referenceMeasurement?.unit ?? "none"}`}
                 >
                   <div>
-                    <p className="text-sm font-semibold">{group.familyLabel}</p>
+                    <p className="text-sm font-semibold">
+                      {group.productTypeName}
+                    </p>
                     <p className="mt-0.5 text-xs text-muted-foreground">
                       {group.variantCount} variants across {group.productCount}{" "}
                       products · {group.inventoryUnit.toLowerCase()}

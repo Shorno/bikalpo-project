@@ -24,7 +24,6 @@ export default function CoreProductList() {
       <SetupPageHeader
         action={<NewCoreProductDialog />}
         count={coreProducts.length}
-        description="Define the canonical identity that connects taxonomy, configured brands, variants, and products."
         secondaryActions={
           <a
             className="inline-flex h-10 items-center rounded-md border px-4 text-sm font-medium hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"

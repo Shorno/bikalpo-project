@@ -157,7 +157,7 @@ function QuantityLines({ groups }: { groups: QuantityGroup[] }) {
     <div className="space-y-1">
       {groups.map((group) => (
         <div
-          key={`${group.family}:${group.inventoryUnit}:${group.referenceMeasurement?.unit ?? "none"}`}
+          key={`${group.productTypeId}:${group.inventoryUnit}:${group.referenceMeasurement?.unit ?? "none"}`}
           className="text-xs"
         >
           <span className="font-mono font-medium tabular-nums text-foreground">

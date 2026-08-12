@@ -101,6 +101,7 @@ export default function EditCoreProductDialog({
       categoryId: coreProduct.categoryId,
       subCategoryId: coreProduct.subCategoryId,
       isActive: coreProduct.isActive,
+      brandCreationMode: coreProduct.brandCreationMode,
 
       typeId: initialTypeId,
     },
@@ -120,6 +121,7 @@ export default function EditCoreProductDialog({
         categoryId: value.categoryId,
         subCategoryId: value.subCategoryId,
         isActive: value.isActive,
+        brandCreationMode: value.brandCreationMode,
       });
     },
   });
@@ -335,6 +337,26 @@ export default function EditCoreProductDialog({
               <Switch
                 checked={field.state.value}
                 onCheckedChange={field.handleChange}
+              />
+            </Field>
+          )}
+        </form.Field>
+
+        <form.Field name="brandCreationMode">
+          {(field) => (
+            <Field className="flex min-h-16 flex-row items-center justify-between rounded-lg border px-4 py-3">
+              <div>
+                <FieldLabel>Create one brand at a time</FieldLabel>
+                <FieldDescription>
+                  This changes the configuration screen only. Existing Brand
+                  Products are kept.
+                </FieldDescription>
+              </div>
+              <Switch
+                checked={field.state.value === "single"}
+                onCheckedChange={(checked) =>
+                  field.handleChange(checked ? "single" : "batch")
+                }
               />
             </Field>
           )}

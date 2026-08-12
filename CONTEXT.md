@@ -38,6 +38,10 @@ _Avoid_: Required subset, master configuration
 A warehouse or retailer's independently maintained selection of approved brands and compatible Variant Options for a Core Product Identity.
 _Avoid_: Admin configuration copy, inherited configuration
 
+**Brand Creation Mode**:
+A Core Product Identity setting that controls whether an owner saves one Brand Product at a time (`single`) or synchronizes the full desired brand set (`batch`). It does not limit the total brands that may exist and does not control conversion, loose units, pricing, or inventory.
+_Avoid_: Product type rule, unit policy, brand limit
+
 **Brand Product**:
 One owner-specific product for one Core Product Identity and one brand, containing one or more Owner Variants.
 _Avoid_: Catalog Variant, brand configuration
@@ -45,6 +49,14 @@ _Avoid_: Catalog Variant, brand configuration
 **Variant Option**:
 A compatible configured choice such as a package size, weight, or unit presentation.
 _Avoid_: Variant type, owner variant
+
+**Variant Request**:
+A Warehouse Owner or Shop Owner proposal for one structured, type-scoped Variant Option. The requester uses the same definition as Admin; approval creates one canonical reusable Variant Option, while rejection creates nothing.
+_Avoid_: Free-form variant, owner variant, global variant
+
+**Operational Unit**:
+The unit in which one Variant Option is ordered and stocked, derived from its definition and packaging.
+_Avoid_: Product inventory unit, template unit
 
 **Catalog Variant**:
 The canonical identity of one exact Core Product Identity, brand, and Variant Option combination, shared by equivalent Owner Variants.

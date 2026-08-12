@@ -1,5 +1,9 @@
 import { db } from "@bikalpo-project/db";
 import {
+  shouldDeactivateOmittedBrands,
+  validateBrandCreationSubmission,
+} from "@bikalpo-project/db/brand-creation";
+import {
   adminProductGenerationTemplate,
   brand,
   coreProductIdentity,
@@ -56,7 +60,6 @@ const templateDetailsSchema = z.object({
   stockTrackingEnabled: z.boolean().default(true),
   minimumOrderEnabled: z.boolean().default(true),
   minimumOrderQty: z.string().default("1"),
-  inventoryUnit: z.string().default("unit"),
   conversionEnabled: z.boolean().default(false),
   inventoryLooseUnitEnabled: z.boolean().default(false),
   inventoryLooseUnit: z.string().default("kg"),
@@ -121,7 +124,6 @@ function fullTemplateDetails(
     stockTrackingEnabled: details.stockTrackingEnabled,
     minimumOrderEnabled: details.minimumOrderEnabled,
     minimumOrderQty: details.minimumOrderQty,
-    inventoryUnit: details.inventoryUnit,
     conversionEnabled: details.conversionEnabled,
     inventoryLooseUnitEnabled: details.inventoryLooseUnitEnabled,
     inventoryLooseUnit: details.inventoryLooseUnit,
@@ -414,12 +416,13 @@ export const shopProductConfigEndpoints = {
             where: and(
               eq(product.coreProductId, core.id),
               eq(product.creatorSource, "admin"),
+              eq(product.status, "active"),
             ),
             with: {
               brand: true,
-              variants: {
-                where: eq(productVariant.isActive, true),
-                with: { sourceVariantOption: true },
+              variantPrices: {
+                where: eq(productVariantPrice.isActive, true),
+                with: { variantOption: true },
               },
             },
           }),
@@ -475,16 +478,13 @@ export const shopProductConfigEndpoints = {
               brandId: row.brandId!,
               brandName: row.brand?.name ?? "Unknown brand",
               sourceProductId: row.id,
-              variants: row.variants
-                .filter((variant) => variant.sourceVariantOptionId !== null)
-                .map((variant) => ({
-                  variantOptionId: variant.sourceVariantOptionId!,
-                  variantOptionName: variant.sourceVariantOption?.name ?? null,
-                  definitionKind:
-                    variant.sourceVariantOption?.definitionKind ?? null,
-                  definition: variant.sourceVariantOption?.definition ?? null,
-                  needsReview: variant.sourceVariantOption?.needsReview ?? true,
-                })),
+              variants: row.variantPrices.map((price) => ({
+                variantOptionId: price.variantOptionId,
+                variantOptionName: price.variantOption?.name ?? null,
+                definitionKind: price.variantOption?.definitionKind ?? null,
+                definition: price.variantOption?.definition ?? null,
+                needsReview: price.variantOption?.needsReview ?? true,
+              })),
             })),
         },
         current: currentProducts.map((row) => ({
@@ -546,6 +546,13 @@ export const shopProductConfigEndpoints = {
             message: "Admin core product identity not found",
           });
         }
+        const submission = validateBrandCreationSubmission(
+          core.brandCreationMode,
+          input.brands.length,
+        );
+        if (!submission.valid) {
+          throw new ORPCError("BAD_REQUEST", { message: submission.message });
+        }
         const requestedExchangeVariants = input.brands.flatMap((row) =>
           row.variants.filter((variant) => variant.exchangeEnabled),
         );
@@ -586,7 +593,7 @@ export const shopProductConfigEndpoints = {
         }
 
         const brandRows = await tx.query.brand.findMany({
-          where: inArray(brand.id, brandIds),
+          where: and(inArray(brand.id, brandIds), eq(brand.isActive, true)),
         });
         if (brandRows.length !== brandIds.length) {
           throw new ORPCError("BAD_REQUEST", {
@@ -686,7 +693,6 @@ export const shopProductConfigEndpoints = {
                 stockTrackingEnabled: input.details.stockTrackingEnabled,
                 minimumOrderEnabled: input.details.minimumOrderEnabled,
                 minimumOrderQty: input.details.minimumOrderQty,
-                inventoryUnit: input.details.inventoryUnit,
                 conversionEnabled: input.details.conversionEnabled,
                 inventoryLooseUnitEnabled:
                   input.details.inventoryLooseUnitEnabled,
@@ -744,28 +750,31 @@ export const shopProductConfigEndpoints = {
           });
         }
 
-        const selectedBrands = new Set(brandIds);
-        for (const row of existingProducts) {
-          if (row.brandId === null || selectedBrands.has(row.brandId)) continue;
-          await assertNoShopStock(
-            tx,
-            shopId,
-            row.variants.map((variant) => variant.id),
-            row.name,
-          );
-          await tx
-            .update(product)
-            .set({ status: "inactive" })
-            .where(eq(product.id, row.id));
-          await tx
-            .update(productVariant)
-            .set({ isActive: false })
-            .where(eq(productVariant.productId, row.id));
-          await tx
-            .update(productVariantPrice)
-            .set({ isActive: false, updatedAt: new Date() })
-            .where(eq(productVariantPrice.productId, row.id));
-          deactivated.push(row.id);
+        if (shouldDeactivateOmittedBrands(core.brandCreationMode)) {
+          const selectedBrands = new Set(brandIds);
+          for (const row of existingProducts) {
+            if (row.brandId === null || selectedBrands.has(row.brandId))
+              continue;
+            await assertNoShopStock(
+              tx,
+              shopId,
+              row.variants.map((variant) => variant.id),
+              row.name,
+            );
+            await tx
+              .update(product)
+              .set({ status: "inactive" })
+              .where(eq(product.id, row.id));
+            await tx
+              .update(productVariant)
+              .set({ isActive: false })
+              .where(eq(productVariant.productId, row.id));
+            await tx
+              .update(productVariantPrice)
+              .set({ isActive: false, updatedAt: new Date() })
+              .where(eq(productVariantPrice.productId, row.id));
+            deactivated.push(row.id);
+          }
         }
 
         await tx
@@ -824,7 +833,6 @@ export const shopProductConfigEndpoints = {
           productBrands: { with: { brand: true } },
           variantPrices: { with: { variantOption: true } },
           variants: {
-            where: eq(productVariant.isActive, true),
             with: { sourceVariantOption: true },
           },
         },
@@ -932,7 +940,6 @@ export const shopProductConfigEndpoints = {
             stockTrackingEnabled: input.details.stockTrackingEnabled,
             minimumOrderEnabled: input.details.minimumOrderEnabled,
             minimumOrderQty: input.details.minimumOrderQty,
-            inventoryUnit: input.details.inventoryUnit,
             conversionEnabled: input.details.conversionEnabled,
             inventoryLooseUnitEnabled: input.details.inventoryLooseUnitEnabled,
             inventoryLooseUnit: input.details.inventoryLooseUnit,

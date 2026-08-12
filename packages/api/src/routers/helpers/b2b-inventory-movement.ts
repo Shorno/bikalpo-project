@@ -3,6 +3,7 @@ import {
   type InventoryBehaviour,
   isContainerFulfillmentMode,
 } from "@bikalpo-project/db/fulfillment";
+import { resolveVariantOperations } from "@bikalpo-project/db/variant-definition";
 import {
   carton,
   inventory,
@@ -204,6 +205,7 @@ export async function prepareB2bMovementForApproval(
   const source = await tx.query.productVariant.findFirst({
     where: eq(productVariant.id, input.item.variantId),
     with: {
+      sourceVariantOption: true,
       catalogVariant: {
         columns: { conversionTargetCatalogVariantId: true },
       },
@@ -212,17 +214,12 @@ export async function prepareB2bMovementForApproval(
           id: true,
           brandId: true,
           coreProductId: true,
-          trackingType: true,
-          isReturnablePack: true,
         },
         with: {
           category: {
             with: {
               type: {
                 columns: {
-                  family: true,
-                  name: true,
-                  slug: true,
                   inventoryBehaviour: true,
                 },
               },
@@ -234,6 +231,20 @@ export async function prepareB2bMovementForApproval(
   });
 
   if (!source) throw new Error("Source variant was not found");
+  if (!source.sourceVariantOption) {
+    throw new Error("Source variant is missing its Admin Variant definition");
+  }
+  const variantOperations = resolveVariantOperations(
+    source.sourceVariantOption,
+  );
+  if (
+    !variantOperations.allowsDecimal &&
+    !Number.isInteger(input.approvedQty)
+  ) {
+    throw new Error(
+      `${variantOperations.operationalUnit} transfers require whole quantities`,
+    );
+  }
 
   const activeCartons = await tx.query.carton.findMany({
     where: and(
@@ -252,13 +263,9 @@ export async function prepareB2bMovementForApproval(
       | undefined,
     activeCartonCount: activeCartons.length,
     productType: {
-      family: productType?.family,
-      typeName: productType?.name,
-      typeSlug: productType?.slug,
       inventoryBehaviour: productType?.inventoryBehaviour,
-      trackingType: source.product?.trackingType,
-      isReturnablePack: source.product?.isReturnablePack,
     },
+    variantOperations,
   });
 
   const selectedCartons =
@@ -291,6 +298,7 @@ export async function prepareB2bMovementForApproval(
       : await tx.query.productVariant.findFirst({
           where: eq(productVariant.id, requestedTargetId),
           with: {
+            sourceVariantOption: true,
             catalogVariant: {
               columns: { conversionTargetCatalogVariantId: true },
             },
@@ -305,10 +313,10 @@ export async function prepareB2bMovementForApproval(
   const movement = buildB2bMovementSnapshot({
     orderQty: input.approvedQty,
     mode: resolvedMode.mode,
-    inventoryBehaviour: resolvedMode.profile.inventoryBehaviour,
-    stockUnit: resolvedMode.profile.stockUnit,
+    inventoryBehaviour: resolvedMode.inventoryBehaviour,
+    stockUnit: variantOperations.operationalUnit,
     cartons: selectedCartons,
-    sourceIsLoose: source.packType === "loose",
+    sourceIsLoose: variantOperations.receivingMode === "loose",
     conversionLossPercent: Number(source.conversionLossPercent || 0),
   });
 

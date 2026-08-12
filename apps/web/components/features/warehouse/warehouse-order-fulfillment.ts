@@ -2,7 +2,6 @@ import {
   FULFILLMENT_MODE_LABELS,
   FULFILLMENT_UNITS,
   type FulfillmentMode,
-  isContainerFulfillmentMode,
   PRODUCT_TYPE_FAMILY_LABELS,
   type ProductTypeFulfillmentProfile,
   supportsFulfillmentMode,
@@ -28,6 +27,16 @@ export type WarehouseCatalogVariantLike = {
     orderUnit?: string | null;
     totalCartonCount?: number;
     cartonOptions?: WarehouseCatalogCartonOption[];
+    variantOperations: {
+      operationalUnit: string;
+      receivingMode: "direct" | "pack" | "loose";
+      quantityKind: "count" | "mass" | "volume";
+      allowsDecimal: boolean;
+      referenceMeasurement?: {
+        unit: "kg" | "liter";
+        perInventoryUnit: string;
+      };
+    };
   };
 };
 
@@ -60,9 +69,7 @@ function normalizePackType(value?: string | null) {
   return (value || "").trim().toLowerCase();
 }
 
-function normalizeVariantMode(
-  value?: string | null,
-): FulfillmentMode | null {
+function normalizeVariantMode(value?: string | null): FulfillmentMode | null {
   const normalized = normalizePackType(value);
   switch (normalized) {
     case "loose":
@@ -97,53 +104,19 @@ export function getWarehouseVariantMeasure(
 }
 
 export function getWarehouseVariantMode(
-  profile: ProductTypeFulfillmentProfile,
+  _profile: ProductTypeFulfillmentProfile,
   variant: WarehouseCatalogVariantLike["variant"],
 ): FulfillmentMode | null {
-  if (profile.family === "lpg") {
-    return "cylinder";
+  const operations = variant.variantOperations;
+  if (operations.receivingMode === "loose") return "loose";
+  if (operations.receivingMode === "pack") {
+    return normalizeVariantMode(operations.operationalUnit) ?? "pack";
   }
-
-  const packMode = normalizeVariantMode(variant.packType);
-  if (packMode) {
-    return packMode;
-  }
-
-  const measure = getWarehouseVariantMeasure(profile, variant);
-  const normalizedMeasureUnit = measure.quantityUnit.toLowerCase();
-
-  if (normalizedMeasureUnit === "pair") {
-    return "pair";
-  }
-
-  if (normalizedMeasureUnit === "unit") {
-    return "unit";
-  }
-
-  return null;
-}
-
-function isPackStyleLabel(label?: string | null) {
-  const normalized = normalizePackType(label);
-  if (!normalized) {
-    return false;
-  }
-
-  return /(^|\b)(kg|g|gm|gram|liter|litre|ml|pc|pcs|piece|pack|packet|box|bundle|carton|pair|unit|set|dozen|drum|cylinder)(\b|$)/.test(
-    normalized,
-  );
-}
-
-function isFashionAttributeVariant(
-  profile: ProductTypeFulfillmentProfile,
-  variant: WarehouseCatalogVariantLike["variant"],
-) {
-  return (
-    profile.family === "fashion" &&
-    Number(variant.weightKg || 0) <= 0 &&
-    !isPackStyleLabel(variant.unitLabel) &&
-    normalizePackType(variant.packType) !== "loose"
-  );
+  return operations.operationalUnit === "pair"
+    ? "pair"
+    : operations.operationalUnit === "cylinder"
+      ? "cylinder"
+      : "unit";
 }
 
 export function getWarehouseModeDisplayLabel(
@@ -161,32 +134,10 @@ function getVariantDisplayUnit(
   profile: ProductTypeFulfillmentProfile,
   variant: WarehouseCatalogVariantLike["variant"],
 ) {
-  if (profile.family === "lpg") {
-    return FULFILLMENT_UNITS.cylinder.shortLabel;
-  }
-
-  if (isFashionAttributeVariant(profile, variant)) {
-    return FULFILLMENT_UNITS.piece.shortLabel;
-  }
-
-  const weightKg = Number(variant.weightKg || 0);
-  if (weightKg > 0 && normalizePackType(variant.packType) === "loose") {
-    return `${weightKg} KG`;
-  }
-
-  if (profile.family === "fashion") {
-    return FULFILLMENT_UNITS[profile.displayUnit].shortLabel;
-  }
-
-  if (profile.family === "lpg") {
-    return FULFILLMENT_UNITS.cylinder.label;
-  }
-
-  return (
-    variant.unitLabel ||
-    FULFILLMENT_UNITS[profile.displayUnit].shortLabel ||
-    "Unit"
-  );
+  const unit = variant.variantOperations.operationalUnit;
+  if (unit === "piece") return FULFILLMENT_UNITS.piece.shortLabel;
+  const knownUnit = FULFILLMENT_UNITS[unit as keyof typeof FULFILLMENT_UNITS];
+  return knownUnit?.shortLabel || variant.unitLabel || unit;
 }
 
 function getDirectModeUnitLabel(
@@ -209,7 +160,10 @@ function getDirectModeUnitLabel(
   }
 
   if (mode === "unit") {
-    if (profile.family === "electronics" || measure.quantityUnit === "UNIT") {
+    if (
+      variant.variantOperations.operationalUnit === "unit" ||
+      measure.quantityUnit === "UNIT"
+    ) {
       return FULFILLMENT_UNITS.unit.label;
     }
 
@@ -284,78 +238,53 @@ export function getWarehouseOrderModeOptions(
   profile: ProductTypeFulfillmentProfile,
   variantRow: WarehouseCatalogVariantLike,
 ): WarehouseOrderModeOption[] {
-  const isFashionAttributeDirect = isFashionAttributeVariant(
-    profile,
-    variantRow.variant,
-  );
   const hasCartons =
     Number(variantRow.variant.totalCartonCount || 0) > 0 ||
     (variantRow.variant.cartonOptions?.length || 0) > 0;
-  const isLooseVariant =
-    normalizePackType(variantRow.variant.packType) === "loose";
-  const preferredContainerMode = getPreferredContainerMode(
-    profile,
-    variantRow.variant,
-  );
-  const preferredDirectMode = getPreferredDirectMode(
-    profile,
-    variantRow.variant,
-  );
+  const operationalMode = getWarehouseVariantMode(profile, variantRow.variant);
   const modes = new Set<FulfillmentMode>();
 
   if (hasCartons) {
-    modes.add(preferredContainerMode);
+    modes.add("carton");
   }
 
-  if (isLooseVariant && supportsFulfillmentMode(profile, "loose")) {
+  if (operationalMode) {
+    modes.add(operationalMode);
+  }
+
+  if (profile.inventoryBehaviour === "loose_convert") {
     modes.add("loose");
   }
 
-  if (!hasCartons || profile.inventoryBehaviour !== "auto_break") {
-    modes.add(preferredDirectMode);
-  }
-
-  if (supportsFulfillmentMode(profile, profile.defaultMode)) {
-    modes.add(profile.defaultMode);
-  }
-
-  return [...modes]
-    .filter((mode) => !(isFashionAttributeDirect && mode === "pack"))
-    .filter((mode) => !(profile.family === "lpg" && mode === "unit"))
-    .filter((mode) => supportsFulfillmentMode(profile, mode))
-    .map((mode) => {
-      const usesContainerStock = isContainerFulfillmentMode(mode) && hasCartons;
-      const modeLabel = getWarehouseModeDisplayLabel(profile, mode);
-      const quantityUnitLabel = usesContainerStock
-        ? modeLabel
-        : getDirectModeUnitLabel(profile, variantRow.variant, mode);
-      const stockUnitLabel = usesContainerStock
-        ? modeLabel
-        : mode === "pair"
-          ? FULFILLMENT_UNITS.pair.label
+  return [...modes].map((mode) => {
+    const usesContainerStock = mode === "carton" && hasCartons;
+    const modeLabel = getWarehouseModeDisplayLabel(profile, mode);
+    const quantityUnitLabel = usesContainerStock
+      ? modeLabel
+      : getDirectModeUnitLabel(profile, variantRow.variant, mode);
+    const stockUnitLabel = usesContainerStock
+      ? modeLabel
+      : mode === "pair"
+        ? FULFILLMENT_UNITS.pair.label
         : mode === "cylinder"
           ? FULFILLMENT_UNITS.cylinder.label
-        : mode === "drum"
-          ? FULFILLMENT_UNITS.drum.label
-        : profile.family === "electronics" && mode === "unit"
-          ? FULFILLMENT_UNITS.unit.label
-        : isFashionAttributeDirect
-          ? FULFILLMENT_UNITS.piece.shortLabel
-        : FULFILLMENT_UNITS[profile.displayUnit].shortLabel;
+          : mode === "drum"
+            ? FULFILLMENT_UNITS.drum.label
+            : getVariantDisplayUnit(profile, variantRow.variant);
 
-      return {
-        mode,
-        label: modeLabel,
-        description: usesContainerStock
-          ? `Order using ${modeLabel.toLowerCase()} stock.`
-          : `Order as ${modeLabel.toLowerCase()} quantity.`,
-        quantityUnitLabel,
-        stockUnitLabel,
-        usesContainerStock,
-        requiresTargetVariant:
-          usesContainerStock && profile.inventoryBehaviour === "auto_break",
-      };
-    });
+    return {
+      mode,
+      label: modeLabel,
+      description: usesContainerStock
+        ? `Order using ${modeLabel.toLowerCase()} stock.`
+        : `Order as ${modeLabel.toLowerCase()} quantity.`,
+      quantityUnitLabel,
+      stockUnitLabel,
+      usesContainerStock,
+      requiresTargetVariant:
+        usesContainerStock && profile.inventoryBehaviour === "auto_break",
+    };
+  });
 }
 
 export function getDefaultWarehouseOrderMode(
@@ -364,6 +293,7 @@ export function getDefaultWarehouseOrderMode(
 ): FulfillmentMode {
   return (
     getWarehouseOrderModeOptions(profile, variantRow)[0]?.mode ??
+    getWarehouseVariantMode(profile, variantRow.variant) ??
     profile.defaultMode
   );
 }

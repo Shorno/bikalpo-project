@@ -18,7 +18,6 @@
  */
 
 import {
-    buildProductTypeFulfillmentProfile,
     isContainerFulfillmentMode,
     isDirectFulfillmentMode,
     usesWeightPoolFulfillmentMode,
@@ -26,14 +25,20 @@ import {
 } from "@bikalpo-project/db/fulfillment";
 import {
     areVariantOptionsStructurallyCompatible,
-    resolveVariantMovementSemantics,
+    resolveVariantOperations,
 } from "@bikalpo-project/db/variant-definition";
-import {carton, inventory, order, orderItem, product, productVariant, user, variantConversionMap,} from "@bikalpo-project/db/schema";
-import {and, desc, eq, inArray, sql} from "drizzle-orm";
 import {
-    assertCompatibleB2bTargetVariant,
-    getReceivedRetailerQty,
-} from "./b2b-inventory-movement";
+    carton,
+    inventory,
+    order,
+    orderItem,
+    product,
+    productVariant,
+    user,
+    variantConversionMap,
+} from "@bikalpo-project/db/schema";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { assertCompatibleB2bTargetVariant, getReceivedRetailerQty } from "./b2b-inventory-movement";
 import {
     assertInventoryVariantOwnedBy,
     ensureShopBuyerTargetVariant,
@@ -44,10 +49,7 @@ import {
  * Convert B2B order items to retail inventory upon confirmed receipt.
  * Must be called inside the receipt transaction.
  */
-export async function convertB2bOrderToRetailInventory(
-    tx: any,
-    orderId: number,
-) {
+export async function convertB2bOrderToRetailInventory(tx: any, orderId: number) {
     console.log(`[B2B-CONVERT] Starting conversion for order #${orderId}`);
 
     // 1. Load the order to check if it's B2B and determine source warehouse
@@ -77,16 +79,16 @@ export async function convertB2bOrderToRetailInventory(
     // ─── IDEMPOTENCY GUARD ───
     // Receipt can be completed through the retailer or verified self-pickup path.
     // Skip items already converted to prevent double-counting inventory.
-    const items = allItems.filter(
-        (item: any) => item.conversionStatus !== "converted",
-    );
+    const items = allItems.filter((item: any) => item.conversionStatus !== "converted");
 
     if (items.length === 0) {
         console.log(`[B2B-CONVERT] All items already converted for order #${orderId}, skipping`);
         return;
     }
 
-    console.log(`[B2B-CONVERT] Converting ${items.length}/${allItems.length} items (${allItems.length - items.length} already converted)`);
+    console.log(
+        `[B2B-CONVERT] Converting ${items.length}/${allItems.length} items (${allItems.length - items.length} already converted)`,
+    );
 
     const buyer = await tx.query.user.findFirst({
         where: eq(user.id, orderData.userId),
@@ -118,13 +120,15 @@ export async function convertB2bOrderToRetailInventory(
 
         // Resolve variant: use order item's variant, or fall back to product's first variant
         let resolvedVariantId = item.variantId;
-        console.log(`[B2B-CONVERT] Item productId=${item.productId}, variantId=${item.variantId}, supplyMode=${item.supplyMode ?? 'legacy'}`);
+        console.log(
+            `[B2B-CONVERT] Item productId=${item.productId}, variantId=${item.variantId}, supplyMode=${item.supplyMode ?? "legacy"}`,
+        );
         if (!resolvedVariantId) {
             const firstVariant = await tx.query.productVariant.findFirst({
                 where: eq(productVariant.productId, item.productId),
                 columns: { id: true },
             });
-            console.log(`[B2B-CONVERT] No variantId, fallback variant=${firstVariant?.id ?? 'NONE'}`);
+            console.log(`[B2B-CONVERT] No variantId, fallback variant=${firstVariant?.id ?? "NONE"}`);
             if (!firstVariant) {
                 throw new Error(`No source variant exists for order item ${item.id}`);
             }
@@ -145,7 +149,6 @@ export async function convertB2bOrderToRetailInventory(
                 packCountInside: true,
                 innerPackSizeKg: true,
                 weightKg: true,
-                packType: true,
             },
             with: {
                 sourceVariantOption: true,
@@ -158,13 +161,17 @@ export async function convertB2bOrderToRetailInventory(
         if (!tradeVariant) {
             throw new Error(`Source variant ${resolvedVariantId} was not found`);
         }
+        if (!tradeVariant.sourceVariantOption) {
+            throw new Error("Source variant is missing its Admin Variant definition");
+        }
+        const sourceOperations = resolveVariantOperations(tradeVariant.sourceVariantOption);
 
         const orderedQty = Number(item.modifiedQty ?? item.quantity);
         const purchaseUnitPrice = item.modifiedUnitPrice
             ? String(item.modifiedUnitPrice)
             : item.unitPrice
-                ? String(item.unitPrice)
-                : null;
+              ? String(item.unitPrice)
+              : null;
 
         // Load product to get unitSize (carton/sack total size)
         const productData = await tx.query.product.findFirst({
@@ -173,8 +180,6 @@ export async function convertB2bOrderToRetailInventory(
                 id: true,
                 brandId: true,
                 coreProductId: true,
-                trackingType: true,
-                isReturnablePack: true,
             },
             with: {
                 category: {
@@ -182,10 +187,6 @@ export async function convertB2bOrderToRetailInventory(
                     with: {
                         type: {
                             columns: {
-                                id: true,
-                                name: true,
-                                slug: true,
-                                family: true,
                                 inventoryBehaviour: true,
                             },
                         },
@@ -194,14 +195,7 @@ export async function convertB2bOrderToRetailInventory(
             },
         });
         const productUnitSize = 0;
-        const fulfillmentProfile = buildProductTypeFulfillmentProfile({
-            family: productData?.category?.type?.family,
-            name: productData?.category?.type?.name,
-            slug: productData?.category?.type?.slug,
-            inventoryBehaviour: productData?.category?.type?.inventoryBehaviour,
-            trackingType: productData?.trackingType,
-            isReturnablePack: productData?.isReturnablePack,
-        });
+        const inventoryBehaviour = productData?.category?.type?.inventoryBehaviour ?? "fixed_pack";
 
         // ─── Determine target variant & conversion ratio ───
         // NEW: Check shop's supplyMode first, then fall back to legacy logic
@@ -212,30 +206,25 @@ export async function convertB2bOrderToRetailInventory(
         let conversionSource = "legacy"; // For logging
 
         const rawSupplyMode = String(item.supplyMode || "").toLowerCase();
-        const shopSupplyMode = rawSupplyMode
-            ? (rawSupplyMode as FulfillmentMode)
-            : null;
+        const shopSupplyMode = rawSupplyMode ? (rawSupplyMode as FulfillmentMode) : null;
         const shopTargetVariantId = item.targetVariantId; // number | null
 
         if (
-            shopSupplyMode
-            && isContainerFulfillmentMode(shopSupplyMode)
-            && fulfillmentProfile.inventoryBehaviour === "auto_break"
-            && shopTargetVariantId
+            shopSupplyMode &&
+            isContainerFulfillmentMode(shopSupplyMode) &&
+            inventoryBehaviour === "auto_break" &&
+            shopTargetVariantId
         ) {
             // ═══ PACK MODE: Shop chose a specific retail variant (e.g. 5KG) ═══
             targetRetailVariantId = shopTargetVariantId;
 
-            const isLooseTrade = (tradeVariant.packType || "").toLowerCase() === "loose";
+            const isLooseTrade = sourceOperations.receivingMode === "loose";
             const tradeWeightKg = Number(tradeVariant.weightKg || 0);
 
             if (isLooseTrade) {
                 // Loose variant ordered as carton: look up actual carton weight
                 const activeCarton = await tx.query.carton.findFirst({
-                    where: and(
-                        eq(carton.variantId, tradeVariant.id),
-                        eq(carton.status, "active"),
-                    ),
+                    where: and(eq(carton.variantId, tradeVariant.id), eq(carton.status, "active")),
                     columns: { totalWeightKg: true },
                     orderBy: [desc(carton.createdAt)],
                 });
@@ -244,7 +233,9 @@ export async function convertB2bOrderToRetailInventory(
                 // Each ordered unit = 1 carton = cartonWeightKg in KG
                 conversionRatio = cartonWeightKg > 0 ? cartonWeightKg : 1;
                 conversionSource = "loose_carton_weight";
-                console.log(`[B2B-CONVERT] Loose carton mode: cartonKg=${cartonWeightKg}, ratio=${conversionRatio} (KG per carton)`);
+                console.log(
+                    `[B2B-CONVERT] Loose carton mode: cartonKg=${cartonWeightKg}, ratio=${conversionRatio} (KG per carton)`,
+                );
             } else {
                 // Pack variant ordered as carton: use carton weight for ratio
                 const targetVariant = await tx.query.productVariant.findFirst({
@@ -256,10 +247,7 @@ export async function convertB2bOrderToRetailInventory(
 
                 // Look up actual carton weight first (e.g. 50 KG per carton)
                 const packCarton = await tx.query.carton.findFirst({
-                    where: and(
-                        eq(carton.variantId, tradeVariant.id),
-                        eq(carton.status, "active"),
-                    ),
+                    where: and(eq(carton.variantId, tradeVariant.id), eq(carton.status, "active")),
                     columns: { totalWeightKg: true, totalPacks: true },
                     orderBy: [desc(carton.createdAt)],
                 });
@@ -274,7 +262,9 @@ export async function convertB2bOrderToRetailInventory(
                 } else if (cartonTotalWeightKg > 0 && targetWeightKg > 0) {
                     // Fallback: carton weight / pack weight (e.g. 50 KG / 5 KG = 10 pcs)
                     conversionRatio = cartonTotalWeightKg / targetWeightKg;
-                    console.log(`[B2B-CONVERT] Pack carton mode: ${cartonTotalWeightKg}KG carton / ${targetWeightKg}KG pack = ${conversionRatio} pcs`);
+                    console.log(
+                        `[B2B-CONVERT] Pack carton mode: ${cartonTotalWeightKg}KG carton / ${targetWeightKg}KG pack = ${conversionRatio} pcs`,
+                    );
                 } else if (tradeWeightKg > 0 && targetWeightKg > 0) {
                     // Last resort: variant weight ratio
                     conversionRatio = tradeWeightKg / targetWeightKg;
@@ -286,45 +276,50 @@ export async function convertB2bOrderToRetailInventory(
 
                 isPackBreakdown = true;
                 conversionSource = "shop_pack_choice";
-                console.log(`[B2B-CONVERT] Pack mode: target=${shopTargetVariantId}, cartonKg=${cartonTotalWeightKg}, cartonPacks=${cartonTotalPacks}, tradeKg=${tradeWeightKg}, targetKg=${targetWeightKg}, ratio=${conversionRatio}`);
+                console.log(
+                    `[B2B-CONVERT] Pack mode: target=${shopTargetVariantId}, cartonKg=${cartonTotalWeightKg}, cartonPacks=${cartonTotalPacks}, tradeKg=${tradeWeightKg}, targetKg=${targetWeightKg}, ratio=${conversionRatio}`,
+                );
             }
-
         } else if (
-            shopSupplyMode
-            && usesWeightPoolFulfillmentMode(shopSupplyMode)
-            && fulfillmentProfile.inventoryBehaviour === "loose_convert"
+            shopSupplyMode &&
+            usesWeightPoolFulfillmentMode(shopSupplyMode) &&
+            inventoryBehaviour === "loose_convert"
         ) {
             // ═══ BULK → LOOSE MODE: Convert drums/cartons to a loose KG/L pool ═══
+            const looseTargetCandidates = shopTargetVariantId
+                ? []
+                : await tx.query.productVariant.findMany({
+                      where: eq(productVariant.productId, tradeVariant.productId),
+                      columns: { id: true, weightKg: true },
+                      with: { sourceVariantOption: true },
+                  });
+            const derivedLooseTarget = looseTargetCandidates.find(
+                (candidate: any) =>
+                    candidate.sourceVariantOption &&
+                    resolveVariantOperations(candidate.sourceVariantOption).receivingMode === "loose",
+            );
             const looseTargetVariant = shopTargetVariantId
                 ? await tx.query.productVariant.findFirst({
-                    where: eq(productVariant.id, shopTargetVariantId),
-                    columns: { id: true, weightKg: true },
-                })
-                : await tx.query.productVariant.findFirst({
-                    where: and(
-                        eq(productVariant.productId, tradeVariant.productId),
-                        eq(productVariant.packType, "loose"),
-                    ),
-                    columns: { id: true, weightKg: true },
-                });
+                      where: eq(productVariant.id, shopTargetVariantId),
+                      columns: { id: true, weightKg: true },
+                  })
+                : derivedLooseTarget;
 
             targetRetailVariantId = looseTargetVariant?.id ?? tradeVariant.id;
 
             const activeCarton = await tx.query.carton.findFirst({
-                where: and(
-                    eq(carton.variantId, tradeVariant.id),
-                    eq(carton.status, "active"),
-                ),
+                where: and(eq(carton.variantId, tradeVariant.id), eq(carton.status, "active")),
                 columns: { totalWeightKg: true },
                 orderBy: [desc(carton.createdAt)],
             });
 
             const containerWeightKg = Number(activeCarton?.totalWeightKg || 0);
             const variantWeightKg = Number(tradeVariant.weightKg || 0);
-            conversionRatio = containerWeightKg > 0 ? containerWeightKg : (variantWeightKg > 0 ? variantWeightKg : 1);
+            conversionRatio = containerWeightKg > 0 ? containerWeightKg : variantWeightKg > 0 ? variantWeightKg : 1;
             conversionSource = "bulk_loose_convert";
-            console.log(`[B2B-CONVERT] Bulk loose convert: mode=${shopSupplyMode}, target=${targetRetailVariantId}, ratio=${conversionRatio}`);
-
+            console.log(
+                `[B2B-CONVERT] Bulk loose convert: mode=${shopSupplyMode}, target=${targetRetailVariantId}, ratio=${conversionRatio}`,
+            );
         } else if (shopSupplyMode === "loose") {
             // ═══ LOOSE MODE: Direct KG transfer — no conversion ═══
             // Add raw KG directly to shop's loose variant inventory.
@@ -336,64 +331,46 @@ export async function convertB2bOrderToRetailInventory(
             conversionRatio = variantWeightKg > 0 ? variantWeightKg : 1;
 
             conversionSource = "loose_direct_kg";
-            console.log(`[B2B-CONVERT] Loose direct KG: target=${targetRetailVariantId}, variantKg=${variantWeightKg}, ratio=${conversionRatio} (KG per unit), totalKg=${orderedQty * conversionRatio}`);
-
+            console.log(
+                `[B2B-CONVERT] Loose direct KG: target=${targetRetailVariantId}, variantKg=${variantWeightKg}, ratio=${conversionRatio} (KG per unit), totalKg=${orderedQty * conversionRatio}`,
+            );
         } else if (
-            shopSupplyMode
-            && (isDirectFulfillmentMode(shopSupplyMode)
-                || (
-                    isContainerFulfillmentMode(shopSupplyMode)
-                    && fulfillmentProfile.inventoryBehaviour === "fixed_pack"
-                ))
+            shopSupplyMode &&
+            (isDirectFulfillmentMode(shopSupplyMode) ||
+                (isContainerFulfillmentMode(shopSupplyMode) && inventoryBehaviour === "fixed_pack"))
         ) {
             // ═══ DIRECT UNIT MODE: transfer fixed-pack, cylinder, pair, unit, or box as-is ═══
-            targetRetailVariantId =
-                shopTargetVariantId
-                ?? tradeVariant.linkedRetailVariantId
-                ?? tradeVariant.id;
+            targetRetailVariantId = shopTargetVariantId ?? tradeVariant.linkedRetailVariantId ?? tradeVariant.id;
             conversionRatio = 1;
             conversionSource = "direct_unit_transfer";
 
-            if (fulfillmentProfile.family === "lpg") {
-                if (!Number.isInteger(orderedQty)) {
-                    throw new Error("LPG transfers require a whole number of cylinders");
-                }
-                if (!tradeVariant.sourceVariantOption) {
-                    throw new Error("LPG source variant is missing its Admin Variant definition");
-                }
-                const sourceMovement = resolveVariantMovementSemantics(
-                    tradeVariant.sourceVariantOption,
-                    "lpg",
-                );
-                const targetVariant = targetRetailVariantId === tradeVariant.id
+            if (!sourceOperations.allowsDecimal && !Number.isInteger(orderedQty)) {
+                throw new Error(`${sourceOperations.operationalUnit} transfers require whole quantities`);
+            }
+            const targetVariant =
+                targetRetailVariantId === tradeVariant.id
                     ? tradeVariant
                     : await tx.query.productVariant.findFirst({
-                        where: eq(productVariant.id, targetRetailVariantId),
-                        columns: { id: true },
-                        with: { sourceVariantOption: true },
-                    });
-                if (!targetVariant?.sourceVariantOption) {
-                    throw new Error("Linked LPG target variant is missing its Admin Variant definition");
-                }
-                const targetMovement = resolveVariantMovementSemantics(
-                    targetVariant.sourceVariantOption,
-                    "lpg",
-                );
-                if (
-                    sourceMovement.inventoryUnit !== "cylinder" ||
-                    targetMovement.inventoryUnit !== "cylinder" ||
-                    !areVariantOptionsStructurallyCompatible(
-                        tradeVariant.sourceVariantOption,
-                        targetVariant.sourceVariantOption,
-                    )
-                ) {
-                    throw new Error(
-                        "Linked LPG variants must use the same cylinder capacity and unit",
-                    );
-                }
+                          where: eq(productVariant.id, targetRetailVariantId),
+                          columns: { id: true },
+                          with: { sourceVariantOption: true },
+                      });
+            if (!targetVariant?.sourceVariantOption) {
+                throw new Error("Linked target variant is missing its Admin Variant definition");
             }
-            console.log(`[B2B-CONVERT] Direct transfer: mode=${shopSupplyMode}, target=${targetRetailVariantId}, ratio=${conversionRatio}`);
-
+            const targetOperations = resolveVariantOperations(targetVariant.sourceVariantOption);
+            if (
+                sourceOperations.operationalUnit !== targetOperations.operationalUnit ||
+                !areVariantOptionsStructurallyCompatible(
+                    tradeVariant.sourceVariantOption,
+                    targetVariant.sourceVariantOption,
+                )
+            ) {
+                throw new Error("Linked variants must use the same structured definition and operational unit");
+            }
+            console.log(
+                `[B2B-CONVERT] Direct transfer: mode=${shopSupplyMode}, target=${targetRetailVariantId}, ratio=${conversionRatio}`,
+            );
         } else {
             // ═══ LEGACY MODE: No supplyMode set — use existing logic ═══
             // Look up conversion rule from variantConversionMap (set by admin UI)
@@ -402,12 +379,9 @@ export async function convertB2bOrderToRetailInventory(
             });
 
             // Use map rule first, then fall back to variant's own fields
-            targetRetailVariantId =
-                conversionMap?.toVariantId ??
-                tradeVariant.linkedRetailVariantId ??
-                tradeVariant.id;
+            targetRetailVariantId = conversionMap?.toVariantId ?? tradeVariant.linkedRetailVariantId ?? tradeVariant.id;
 
-            const isLoose = tradeVariant.packType === "loose";
+            const isLoose = sourceOperations.receivingMode === "loose";
             const packCount = Number(tradeVariant.packCountInside || 0);
             const variantSize = Number(tradeVariant.weightKg || 0);
 
@@ -421,7 +395,9 @@ export async function convertB2bOrderToRetailInventory(
             } else if (!isLoose && productUnitSize > 0 && variantSize > 0 && productUnitSize > variantSize) {
                 conversionRatio = productUnitSize / variantSize;
                 isPackBreakdown = true;
-                console.log(`[B2B-CONVERT] Auto-calc from unitSize: ${productUnitSize}KG / ${variantSize}KG = ${conversionRatio}`);
+                console.log(
+                    `[B2B-CONVERT] Auto-calc from unitSize: ${productUnitSize}KG / ${variantSize}KG = ${conversionRatio}`,
+                );
             } else {
                 conversionRatio = 1;
             }
@@ -431,19 +407,16 @@ export async function convertB2bOrderToRetailInventory(
 
         const lossPercent = Number(tradeVariant.conversionLossPercent || 0);
         const isNoLossTransfer =
-            conversionSource === "loose_direct_kg"
-            || conversionSource === "bulk_loose_convert"
-            || conversionSource === "direct_unit_transfer";
+            conversionSource === "loose_direct_kg" ||
+            conversionSource === "bulk_loose_convert" ||
+            conversionSource === "direct_unit_transfer";
         // Direct loose/unit transfers: no loss applied
         // Supplier target variants are conversion choices, not buyer inventory
         // identities. Resolve the exact retailer-owned variant before crediting.
         const buyerTarget = await ensureShopBuyerTargetVariant(tx, {
             shopId: orderData.userId,
             sourceVariantId: tradeVariant.id,
-            requestedTargetVariantId:
-                targetRetailVariantId === tradeVariant.id
-                    ? null
-                    : targetRetailVariantId,
+            requestedTargetVariantId: targetRetailVariantId === tradeVariant.id ? null : targetRetailVariantId,
         });
         targetRetailVariantId = buyerTarget.targetVariantId;
         await assertInventoryVariantOwnedBy(tx, {
@@ -470,17 +443,14 @@ export async function convertB2bOrderToRetailInventory(
             item.inventoryQty !== undefined &&
             item.conversionFactor !== null &&
             item.conversionFactor !== undefined;
-        const sourceInventoryQty = hasMovementSnapshot
-            ? Number(item.inventoryQty)
-            : calculatedRetailQty;
+        const sourceInventoryQty = hasMovementSnapshot ? Number(item.inventoryQty) : calculatedRetailQty;
         const receivedOrderQty = Number(item.receivedQty ?? orderedQty);
         const retailerInventoryQty = hasMovementSnapshot
             ? getReceivedRetailerQty({
-                receivedOrderQty,
-                approvedOrderQty: orderedQty,
-                retailerInventoryQty:
-                    orderedQty * Number(item.conversionFactor),
-            })
+                  receivedOrderQty,
+                  approvedOrderQty: orderedQty,
+                  retailerInventoryQty: orderedQty * Number(item.conversionFactor),
+              })
             : calculatedRetailQty;
 
         // Calculate per-pack price when doing pack breakdown
@@ -492,32 +462,35 @@ export async function convertB2bOrderToRetailInventory(
         const targetIdentity =
             targetRetailVariantId === tradeVariant.id
                 ? {
-                    ...tradeVariant,
-                    product: productData,
-                }
+                      ...tradeVariant,
+                      product: productData,
+                  }
                 : await tx.query.productVariant.findFirst({
-                    where: eq(productVariant.id, targetRetailVariantId),
-                    columns: {
-                        id: true,
-                        productId: true,
-                        brandId: true,
-                        catalogVariantId: true,
-                    },
-                    with: {
-                        product: {
-                            columns: { id: true, brandId: true, coreProductId: true },
-                        },
-                    },
-                });
+                      where: eq(productVariant.id, targetRetailVariantId),
+                      columns: {
+                          id: true,
+                          productId: true,
+                          brandId: true,
+                          catalogVariantId: true,
+                      },
+                      with: {
+                          product: {
+                              columns: {
+                                  id: true,
+                                  brandId: true,
+                                  coreProductId: true,
+                              },
+                          },
+                      },
+                  });
         if (!targetIdentity) {
             throw new Error(`Target retail variant ${targetRetailVariantId} was not found`);
         }
-        assertCompatibleB2bTargetVariant(
-            { ...tradeVariant, product: productData },
-            targetIdentity,
-        );
+        assertCompatibleB2bTargetVariant({ ...tradeVariant, product: productData }, targetIdentity);
 
-        console.log(`[B2B-CONVERT] Variant ${tradeVariant.id}: source=${conversionSource}, target=${targetRetailVariantId}, ratio=${conversionRatio}, packBreakdown=${isPackBreakdown}, orderedQty=${orderedQty}, sourceQty=${sourceInventoryQty}, retailQty=${retailerInventoryQty}, perPackPrice=${effectiveRetailPrice ?? 'N/A'}`);
+        console.log(
+            `[B2B-CONVERT] Variant ${tradeVariant.id}: source=${conversionSource}, target=${targetRetailVariantId}, ratio=${conversionRatio}, packBreakdown=${isPackBreakdown}, orderedQty=${orderedQty}, sourceQty=${sourceInventoryQty}, retailQty=${retailerInventoryQty}, perPackPrice=${effectiveRetailPrice ?? "N/A"}`,
+        );
 
         // ─── A. Deduct warehouse inventory ───
 
@@ -540,28 +513,21 @@ export async function convertB2bOrderToRetailInventory(
             const reservedQty = Number(sourceInv.reservedQty || 0);
             const availableQty = Number(sourceInv.availableQty || 0);
             const newReservedQty = Math.max(0, reservedQty - deductQty);
-            const newSourceQty = reservedQty >= deductQty
-                ? availableQty
-                : Math.max(0, availableQty - (deductQty - reservedQty));
+            const newSourceQty =
+                reservedQty >= deductQty ? availableQty : Math.max(0, availableQty - (deductQty - reservedQty));
 
             // Also decrement inCartonQty for carton orders (packs leaving warehouse inside a carton)
             const isCartonOrder =
-                conversionSource === "shop_pack_choice"
-                || conversionSource === "loose_carton_weight"
-                || (
-                    conversionSource === "direct_unit_transfer"
-                    && !!shopSupplyMode
-                    && isContainerFulfillmentMode(shopSupplyMode)
-                )
-                || (
-                    conversionSource === "bulk_loose_convert"
-                    && !!shopSupplyMode
-                    && isContainerFulfillmentMode(shopSupplyMode)
-                );
+                conversionSource === "shop_pack_choice" ||
+                conversionSource === "loose_carton_weight" ||
+                (conversionSource === "direct_unit_transfer" &&
+                    !!shopSupplyMode &&
+                    isContainerFulfillmentMode(shopSupplyMode)) ||
+                (conversionSource === "bulk_loose_convert" &&
+                    !!shopSupplyMode &&
+                    isContainerFulfillmentMode(shopSupplyMode));
             const currentInCarton = Number(sourceInv.inCartonQty || 0);
-            const newInCarton = isCartonOrder
-                ? Math.max(0, currentInCarton - deductQty)
-                : currentInCarton;
+            const newInCarton = isCartonOrder ? Math.max(0, currentInCarton - deductQty) : currentInCarton;
             const currentActiveCartonCount = Number(sourceInv.activeCartonCount || 0);
             const newActiveCartonCount = isCartonOrder
                 ? Math.max(0, currentActiveCartonCount - orderedQty)
@@ -573,54 +539,46 @@ export async function convertB2bOrderToRetailInventory(
 
             const allocatedCartons = hasMovementSnapshot
                 ? await tx.query.carton.findMany({
-                    where: and(
-                        eq(carton.reservedForOrderItemId, item.id),
-                        inArray(carton.status, ["reserved", "dispatched"]),
-                    ),
-                    columns: { id: true },
-                })
+                      where: and(
+                          eq(carton.reservedForOrderItemId, item.id),
+                          inArray(carton.status, ["reserved", "dispatched"]),
+                      ),
+                      columns: { id: true },
+                  })
                 : [];
             const sourceUpdate = hasMovementSnapshot
                 ? await tx
-                    .update(inventory)
-                    .set({
-                        reservedQty: sql`${inventory.reservedQty}::numeric - ${deductQty}`,
-                        updatedAt: new Date(),
-                    })
-                    .where(
-                        and(
-                            eq(inventory.id, sourceInv.id),
-                            sql`${inventory.reservedQty}::numeric >= ${deductQty}`,
-                        ),
-                    )
-                    .returning({ id: inventory.id })
-                : fulfillmentProfile.family === "lpg"
-                ? await tx
-                    .update(inventory)
-                    .set({
-                        reservedQty: sql`${inventory.reservedQty}::numeric - ${deductQty}`,
-                        updatedAt: new Date(),
-                    })
-                    .where(
-                        and(
-                            eq(inventory.id, sourceInv.id),
-                            sql`${inventory.reservedQty}::numeric >= ${deductQty}`,
-                        ),
-                    )
-                    .returning({ id: inventory.id })
-                : await tx
-                    .update(inventory)
-                    .set({
-                        availableQty: newSourceQty.toFixed(2),
-                        reservedQty: newReservedQty.toFixed(2),
-                        ...(isCartonOrder ? { inCartonQty: newInCarton.toFixed(2) } : {}),
-                        ...(isCartonOrder
-                            ? { activeCartonCount: newActiveCartonCount }
-                            : {}),
-                        updatedAt: new Date(),
-                    })
-                    .where(eq(inventory.id, sourceInv.id))
-                    .returning({ id: inventory.id });
+                      .update(inventory)
+                      .set({
+                          reservedQty: sql`${inventory.reservedQty}::numeric - ${deductQty}`,
+                          updatedAt: new Date(),
+                      })
+                      .where(
+                          and(eq(inventory.id, sourceInv.id), sql`${inventory.reservedQty}::numeric >= ${deductQty}`),
+                      )
+                      .returning({ id: inventory.id })
+                : sourceOperations.receivingMode === "direct"
+                  ? await tx
+                        .update(inventory)
+                        .set({
+                            reservedQty: sql`${inventory.reservedQty}::numeric - ${deductQty}`,
+                            updatedAt: new Date(),
+                        })
+                        .where(
+                            and(eq(inventory.id, sourceInv.id), sql`${inventory.reservedQty}::numeric >= ${deductQty}`),
+                        )
+                        .returning({ id: inventory.id })
+                  : await tx
+                        .update(inventory)
+                        .set({
+                            availableQty: newSourceQty.toFixed(2),
+                            reservedQty: newReservedQty.toFixed(2),
+                            ...(isCartonOrder ? { inCartonQty: newInCarton.toFixed(2) } : {}),
+                            ...(isCartonOrder ? { activeCartonCount: newActiveCartonCount } : {}),
+                            updatedAt: new Date(),
+                        })
+                        .where(eq(inventory.id, sourceInv.id))
+                        .returning({ id: inventory.id });
             if (sourceUpdate.length === 0) {
                 throw new Error(`Reserved stock changed for variant ${tradeVariant.id}`);
             }
@@ -655,17 +613,15 @@ export async function convertB2bOrderToRetailInventory(
                 }
             }
         } else {
-            throw new Error(
-                `Warehouse inventory was not found for variant ${tradeVariant.id}`,
-            );
+            throw new Error(`Warehouse inventory was not found for variant ${tradeVariant.id}`);
         }
 
         // ─── B. Upsert shop owner's RETAIL inventory ───
 
         if (retailerInventoryQty > 0) {
             // Use per-pack price (after breakdown), or fall back to warehouse's retail_price
-            const initialRetailPrice = effectiveRetailPrice
-                ?? (sourceInv?.retailPrice ? String(sourceInv.retailPrice) : null);
+            const initialRetailPrice =
+                effectiveRetailPrice ?? (sourceInv?.retailPrice ? String(sourceInv.retailPrice) : null);
 
             await tx
                 .insert(inventory)
@@ -678,11 +634,7 @@ export async function convertB2bOrderToRetailInventory(
                     ...(initialRetailPrice ? { retailPrice: initialRetailPrice } : {}),
                 })
                 .onConflictDoUpdate({
-                    target: [
-                        inventory.ownerType,
-                        inventory.ownerId,
-                        inventory.variantId,
-                    ],
+                    target: [inventory.ownerType, inventory.ownerId, inventory.variantId],
                     set: {
                         availableQty: sql`${inventory.availableQty}::numeric + ${retailerInventoryQty}`,
                         updatedAt: new Date(),
@@ -698,12 +650,7 @@ export async function convertB2bOrderToRetailInventory(
                 conversionStatus: "converted",
                 convertedQty: retailerInventoryQty.toFixed(2),
             })
-            .where(
-                and(
-                    eq(orderItem.id, item.id),
-                    sql`${orderItem.conversionStatus} IS DISTINCT FROM 'converted'`,
-                ),
-            );
+            .where(and(eq(orderItem.id, item.id), sql`${orderItem.conversionStatus} IS DISTINCT FROM 'converted'`));
     }
 }
 
@@ -730,11 +677,10 @@ async function transferB2bOrderToWarehouseInventory(
         const targetInventoryQty =
             item.conversionFactor !== null && item.conversionFactor !== undefined
                 ? getReceivedRetailerQty({
-                    receivedOrderQty,
-                    approvedOrderQty,
-                    retailerInventoryQty:
-                        approvedOrderQty * Number(item.conversionFactor),
-                })
+                      receivedOrderQty,
+                      approvedOrderQty,
+                      retailerInventoryQty: approvedOrderQty * Number(item.conversionFactor),
+                  })
                 : receivedOrderQty;
         if (
             !Number.isFinite(approvedOrderQty) ||
@@ -785,7 +731,11 @@ async function transferB2bOrderToWarehouseInventory(
                         columns: { conversionTargetCatalogVariantId: true },
                     },
                     product: {
-                        columns: { id: true, brandId: true, coreProductId: true },
+                        columns: {
+                            id: true,
+                            brandId: true,
+                            coreProductId: true,
+                        },
                     },
                 },
             }),
@@ -799,7 +749,11 @@ async function transferB2bOrderToWarehouseInventory(
                 },
                 with: {
                     product: {
-                        columns: { id: true, brandId: true, coreProductId: true },
+                        columns: {
+                            id: true,
+                            brandId: true,
+                            coreProductId: true,
+                        },
                     },
                 },
             }),
@@ -827,22 +781,14 @@ async function transferB2bOrderToWarehouseInventory(
                 reservedQty: sql`${inventory.reservedQty}::numeric - ${sourceInventoryQty}`,
                 updatedAt: new Date(),
             })
-            .where(
-                and(
-                    eq(inventory.id, sourceInv.id),
-                    sql`${inventory.reservedQty}::numeric >= ${sourceInventoryQty}`,
-                ),
-            )
+            .where(and(eq(inventory.id, sourceInv.id), sql`${inventory.reservedQty}::numeric >= ${sourceInventoryQty}`))
             .returning({ id: inventory.id });
         if (released.length === 0) {
             throw new Error(`Reserved stock changed for variant ${item.variantId}`);
         }
 
         const allocatedCartons = await tx.query.carton.findMany({
-            where: and(
-                eq(carton.reservedForOrderItemId, item.id),
-                inArray(carton.status, ["reserved", "dispatched"]),
-            ),
+            where: and(eq(carton.reservedForOrderItemId, item.id), inArray(carton.status, ["reserved", "dispatched"])),
             columns: { id: true },
         });
         if (allocatedCartons.length > 0) {
@@ -869,19 +815,16 @@ async function transferB2bOrderToWarehouseInventory(
             await tx
                 .update(inventory)
                 .set({
-                    availableQty: (
-                        Number(buyerInv.availableQty || 0) + targetInventoryQty
-                    ).toFixed(2),
+                    availableQty: (Number(buyerInv.availableQty || 0) + targetInventoryQty).toFixed(2),
                     updatedAt: new Date(),
                 })
                 .where(eq(inventory.id, buyerInv.id));
         } else if (targetInventoryQty > 0) {
-            const initialPrice =
-                sourceInv.retailPrice
-                    ? String(sourceInv.retailPrice)
-                    : item.unitPrice
-                        ? String(item.unitPrice)
-                        : null;
+            const initialPrice = sourceInv.retailPrice
+                ? String(sourceInv.retailPrice)
+                : item.unitPrice
+                  ? String(item.unitPrice)
+                  : null;
 
             await tx.insert(inventory).values({
                 ownerType: "warehouse" as const,
@@ -899,12 +842,7 @@ async function transferB2bOrderToWarehouseInventory(
                 conversionStatus: "converted",
                 convertedQty: targetInventoryQty.toFixed(2),
             })
-            .where(
-                and(
-                    eq(orderItem.id, item.id),
-                    sql`${orderItem.conversionStatus} IS DISTINCT FROM 'converted'`,
-                ),
-            );
+            .where(and(eq(orderItem.id, item.id), sql`${orderItem.conversionStatus} IS DISTINCT FROM 'converted'`));
 
         console.log(
             `[B2B-W2W] Transferred source=${item.variantId}, target=${targetVariantId}, sourceQty=${sourceInventoryQty}, receivedQty=${targetInventoryQty}, item=${item.id}`,

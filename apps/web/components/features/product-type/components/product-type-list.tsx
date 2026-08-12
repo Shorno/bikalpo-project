@@ -71,7 +71,6 @@ export default function ProductTypeList() {
       <SetupPageHeader
         action={<NewTypeDialog />}
         count={total}
-        description="Manage the global top-level classifications used by the product taxonomy."
         title="Types"
       />
       {isLoading ? (

@@ -7,8 +7,6 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { orpc } from "@/utils/orpc";
 
-const PRODUCTS_URL = "/warehouse/dashboard/products";
-
 export default function WarehouseProductEditPage() {
   const queryClient = useQueryClient();
   const productId = Number(useParams<{ productId: string }>().productId);
@@ -50,7 +48,7 @@ export default function WarehouseProductEditPage() {
     <ProductEditForm
       product={product}
       editAdapter={{
-        backHref: PRODUCTS_URL,
+        backHref: `/warehouse/dashboard/catalog/${product.coreProductId}`,
         coreProduct,
         variantOptions: data.options.variantOptions,
         productType: product.category?.type,
@@ -76,7 +74,6 @@ export default function WarehouseProductEditPage() {
               stockTrackingEnabled: payload.stockTrackingEnabled,
               minimumOrderEnabled: payload.minimumOrderEnabled,
               minimumOrderQty: String(payload.minimumOrderQty),
-              inventoryUnit: payload.inventoryUnit,
               conversionEnabled: payload.conversionEnabled,
               inventoryLooseUnitEnabled: payload.inventoryLooseUnitEnabled,
               inventoryLooseUnit: payload.inventoryLooseUnit,

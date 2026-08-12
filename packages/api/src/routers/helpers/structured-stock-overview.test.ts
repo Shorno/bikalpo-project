@@ -43,6 +43,8 @@ function sourceRow(
 		brandName: input.brandName ?? `Brand ${input.productId}`,
 		categoryId: input.categoryId ?? 1,
 		categoryName: input.categoryName ?? "LPG",
+		productTypeId: input.productTypeId ?? 1,
+		productTypeName: input.productTypeName ?? "LPG",
 		family: input.family === undefined ? "lpg" : input.family,
 		sku: input.sku ?? `SKU-${input.variantId}`,
 		variantIsActive: input.variantIsActive ?? true,
@@ -79,7 +81,6 @@ function detailSourceRow(
 		coreProductSku: input.coreProductSku ?? "001",
 		coreProductImage: input.coreProductImage ?? "/core-lpg.png",
 		productImage: input.productImage ?? `/product-${input.productId}.png`,
-		productTypeName: input.productTypeName ?? "LPG",
 	};
 }
 
@@ -130,8 +131,8 @@ test("aggregates current LPG inventory as cylinders with reference KG", () => {
 	assert.equal(dashboard.stockStatus.missingThreshold, 8);
 	assert.deepEqual(dashboard.quantityGroups, [
 		{
-			family: "lpg",
-			familyLabel: "LPG",
+			productTypeId: 1,
+			productTypeName: "LPG",
 			inventoryUnit: "cylinder",
 			productCount: 3,
 			variantCount: 8,
@@ -189,10 +190,12 @@ test("keeps reservation in on-hand selling value and uses configured thresholds 
 test("does not combine unlike structured inventory units", () => {
 	const { dashboard } = buildStructuredStockOverview([
 		sourceRow({ productId: 1, variantId: 1, availableQty: 5 }),
-		sourceRow({
-			productId: 2,
-			variantId: 2,
-			family: "bulk_liquid",
+			sourceRow({
+				productId: 2,
+				variantId: 2,
+				family: "bulk_liquid",
+				productTypeId: 2,
+				productTypeName: "Bulk Liquid",
 			categoryId: 2,
 			categoryName: "Oil",
 			availableQty: 3,
@@ -207,14 +210,14 @@ test("does not combine unlike structured inventory units", () => {
 
 	assert.equal(dashboard.quantityGroups.length, 2);
 	assert.deepEqual(
-		dashboard.quantityGroups.map((group) => [
-			group.family,
+			dashboard.quantityGroups.map((group) => [
+			group.productTypeName,
 			group.inventoryUnit,
 			group.available,
 		]),
 		[
-			["bulk_liquid", "bottle", 3],
-			["lpg", "cylinder", 5],
+			["Bulk Liquid", "bottle", 3],
+			["LPG", "cylinder", 5],
 		],
 	);
 });

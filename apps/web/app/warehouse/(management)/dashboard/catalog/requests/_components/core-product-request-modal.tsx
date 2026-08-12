@@ -8,25 +8,40 @@ import { toast } from "sonner";
 import ImageUploader from "@/components/ImageUploader";
 import { Button } from "@/components/ui/button";
 import {
-  Dialog, DialogContent, DialogDescription, DialogFooter,
-  DialogHeader, DialogTitle, DialogTrigger,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
 } from "@/components/ui/dialog";
-import { Field, FieldDescription, FieldError, FieldLabel } from "@/components/ui/field";
+import {
+  Field,
+  FieldDescription,
+  FieldError,
+  FieldLabel,
+} from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
 } from "@/components/ui/select";
 import { generateSlug } from "@/utils/generate-slug";
 import { orpc } from "@/utils/orpc";
 
-interface Props {
-  options: any;
-}
-
-export default function CoreProductRequestModal({ options }: Props) {
+export default function CoreProductRequestModal() {
   const [open, setOpen] = React.useState(false);
   const queryClient = useQueryClient();
-  const [selectedTypeId, setSelectedTypeId] = React.useState<number | null>(null);
+  const { data: options } = useQuery(
+    orpc.catalogRequest.getRequestOptions.queryOptions({ input: {} }),
+  );
+  const [selectedTypeId, setSelectedTypeId] = React.useState<number | null>(
+    null,
+  );
   const [selectedCategoryId, setSelectedCategoryId] = React.useState<number>(0);
 
   const allCategories = options?.categories ?? [];
@@ -42,14 +57,14 @@ export default function CoreProductRequestModal({ options }: Props) {
 
   const mutation = useMutation({
     mutationFn: (payload: any) =>
-      orpc.warehouseCatalogApproval.createRequest.call({
+      orpc.catalogRequest.createRequest.call({
         requestType: "core_product" as const,
         payload,
       }),
     onSuccess: async (result) => {
       toast.success(result.message || "Core product request submitted");
       await queryClient.invalidateQueries({
-        queryKey: ["warehouseCatalogApproval", "myRequests"],
+        queryKey: orpc.catalogRequest.getMyRequests.key(),
       });
       form.reset();
       setSelectedTypeId(null);
@@ -103,13 +118,21 @@ export default function CoreProductRequestModal({ options }: Props) {
         </DialogHeader>
         <form
           id="core-product-request-form"
-          onSubmit={(e) => { e.preventDefault(); e.stopPropagation(); form.handleSubmit(); }}
+          onSubmit={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            form.handleSubmit();
+          }}
           className="space-y-6"
         >
           {/* Image */}
           <form.Field name="image">
             {(field) => (
-              <Field data-invalid={field.state.meta.isTouched && !field.state.meta.isValid}>
+              <Field
+                data-invalid={
+                  field.state.meta.isTouched && !field.state.meta.isValid
+                }
+              >
                 <FieldLabel htmlFor={field.name}>Product Image</FieldLabel>
                 <ImageUploader
                   value={field.state.value}
@@ -130,10 +153,17 @@ export default function CoreProductRequestModal({ options }: Props) {
               {(field) => (
                 <Field>
                   <FieldLabel htmlFor={field.name}>SKU</FieldLabel>
-                  <Input id={field.name} value={field.state.value} onBlur={field.handleBlur}
+                  <Input
+                    id={field.name}
+                    value={field.state.value}
+                    onBlur={field.handleBlur}
                     onChange={(e) => field.handleChange(e.target.value)}
-                    placeholder="e.g. 003 (leave empty to auto-generate)" autoComplete="off" />
-                  <FieldDescription>Leave empty to auto-generate</FieldDescription>
+                    placeholder="e.g. 003 (leave empty to auto-generate)"
+                    autoComplete="off"
+                  />
+                  <FieldDescription>
+                    Leave empty to auto-generate
+                  </FieldDescription>
                 </Field>
               )}
             </form.Field>
@@ -142,9 +172,17 @@ export default function CoreProductRequestModal({ options }: Props) {
               {(field) => (
                 <Field>
                   <FieldLabel htmlFor={field.name}>Product Name *</FieldLabel>
-                  <Input id={field.name} value={field.state.value} onBlur={field.handleBlur}
-                    onChange={(e) => { field.handleChange(e.target.value); autoSlug(e.target.value); }}
-                    placeholder="Miniket Rice" autoComplete="off" />
+                  <Input
+                    id={field.name}
+                    value={field.state.value}
+                    onBlur={field.handleBlur}
+                    onChange={(e) => {
+                      field.handleChange(e.target.value);
+                      autoSlug(e.target.value);
+                    }}
+                    placeholder="Miniket Rice"
+                    autoComplete="off"
+                  />
                 </Field>
               )}
             </form.Field>
@@ -153,9 +191,14 @@ export default function CoreProductRequestModal({ options }: Props) {
               {(field) => (
                 <Field>
                   <FieldLabel htmlFor={field.name}>Slug *</FieldLabel>
-                  <Input id={field.name} value={field.state.value} onBlur={field.handleBlur}
+                  <Input
+                    id={field.name}
+                    value={field.state.value}
+                    onBlur={field.handleBlur}
                     onChange={(e) => field.handleChange(e.target.value)}
-                    placeholder="miniket-rice" autoComplete="off" />
+                    placeholder="miniket-rice"
+                    autoComplete="off"
+                  />
                   <FieldDescription>Auto-generated</FieldDescription>
                 </Field>
               )}
@@ -169,7 +212,9 @@ export default function CoreProductRequestModal({ options }: Props) {
                 <Field>
                   <FieldLabel htmlFor={field.name}>Type</FieldLabel>
                   <Select
-                    value={field.state.value ? String(field.state.value) : "none"}
+                    value={
+                      field.state.value ? String(field.state.value) : "none"
+                    }
                     onValueChange={(v) => {
                       const val = v === "none" ? null : Number(v);
                       field.handleChange(val);
@@ -179,11 +224,15 @@ export default function CoreProductRequestModal({ options }: Props) {
                       form.setFieldValue("subCategoryId", null);
                     }}
                   >
-                    <SelectTrigger><SelectValue placeholder="Select type" /></SelectTrigger>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select type" />
+                    </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="none">All Types</SelectItem>
                       {(options?.types ?? []).map((t: any) => (
-                        <SelectItem key={t.id} value={String(t.id)}>{t.name}</SelectItem>
+                        <SelectItem key={t.id} value={String(t.id)}>
+                          {t.name}
+                        </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -204,11 +253,17 @@ export default function CoreProductRequestModal({ options }: Props) {
                       form.setFieldValue("subCategoryId", null);
                     }}
                   >
-                    <SelectTrigger><SelectValue placeholder="Select category" /></SelectTrigger>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select category" />
+                    </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="0" disabled>Select category</SelectItem>
+                      <SelectItem value="0" disabled>
+                        Select category
+                      </SelectItem>
                       {filteredCategories.map((c: any) => (
-                        <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
+                        <SelectItem key={c.id} value={String(c.id)}>
+                          {c.name}
+                        </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -221,15 +276,23 @@ export default function CoreProductRequestModal({ options }: Props) {
                 <Field>
                   <FieldLabel htmlFor={field.name}>Sub Category</FieldLabel>
                   <Select
-                    value={field.state.value ? String(field.state.value) : "none"}
-                    onValueChange={(v) => field.handleChange(v === "none" ? null : Number(v))}
+                    value={
+                      field.state.value ? String(field.state.value) : "none"
+                    }
+                    onValueChange={(v) =>
+                      field.handleChange(v === "none" ? null : Number(v))
+                    }
                     disabled={filteredSubcategories.length === 0}
                   >
-                    <SelectTrigger><SelectValue placeholder="Select subcategory" /></SelectTrigger>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select subcategory" />
+                    </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="none">None</SelectItem>
                       {filteredSubcategories.map((sc: any) => (
-                        <SelectItem key={sc.id} value={String(sc.id)}>{sc.name}</SelectItem>
+                        <SelectItem key={sc.id} value={String(sc.id)}>
+                          {sc.name}
+                        </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -243,19 +306,36 @@ export default function CoreProductRequestModal({ options }: Props) {
             {(field) => (
               <Field>
                 <FieldLabel htmlFor={field.name}>Description</FieldLabel>
-                <Input id={field.name} value={field.state.value} onBlur={field.handleBlur}
+                <Input
+                  id={field.name}
+                  value={field.state.value}
+                  onBlur={field.handleBlur}
                   onChange={(e) => field.handleChange(e.target.value)}
-                  placeholder="Optional description" autoComplete="off" />
+                  placeholder="Optional description"
+                  autoComplete="off"
+                />
               </Field>
             )}
           </form.Field>
-
         </form>
 
         <DialogFooter>
-          <Button type="button" variant="outline" onClick={() => setOpen(false)} disabled={mutation.isPending}>Cancel</Button>
-          <Button type="submit" form="core-product-request-form" disabled={mutation.isPending}>
-            {mutation.isPending && <Loader className="mr-2 h-4 w-4 animate-spin" />}
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => setOpen(false)}
+            disabled={mutation.isPending}
+          >
+            Cancel
+          </Button>
+          <Button
+            type="submit"
+            form="core-product-request-form"
+            disabled={mutation.isPending}
+          >
+            {mutation.isPending && (
+              <Loader className="mr-2 h-4 w-4 animate-spin" />
+            )}
             Submit Request
           </Button>
         </DialogFooter>

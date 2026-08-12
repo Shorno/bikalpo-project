@@ -88,6 +88,16 @@ type VariantItem = {
     brandName: string | null;
     cartonOptions: CartonOption[];
     totalCartonCount: number;
+    variantOperations: {
+      operationalUnit: string;
+      receivingMode: "direct" | "pack" | "loose";
+      quantityKind: "count" | "mass" | "volume";
+      allowsDecimal: boolean;
+      referenceMeasurement?: {
+        unit: "kg" | "liter";
+        perInventoryUnit: string;
+      };
+    };
   };
 };
 
@@ -330,7 +340,7 @@ function VariantModal({
     modeOptions[0];
   const selectedBrandKey = selected.variant.brandName || "Unbranded";
   const isLooseVariant =
-    (selected.variant.packType || "").toLowerCase() === "loose";
+    selected.variant.variantOperations.receivingMode === "loose";
   const variantWeightKg = Number(selected.variant.weightKg) || 0;
   const rawPrice = Number(selected.price) || 0;
   const usesContainerStock = selectedModeOption?.usesContainerStock ?? false;
@@ -679,13 +689,13 @@ function VariantModal({
           {brandVariants.length > 1 &&
             (() => {
               const packVars = brandVariants.filter(
-                (v) => (v.variant.packType || "").toLowerCase() !== "loose",
+                (v) => v.variant.variantOperations.receivingMode !== "loose",
               );
               const looseVars = brandVariants.filter(
-                (v) => (v.variant.packType || "").toLowerCase() === "loose",
+                (v) => v.variant.variantOperations.receivingMode === "loose",
               );
               const selectedIsLoose =
-                (selected.variant.packType || "").toLowerCase() === "loose";
+                selected.variant.variantOperations.receivingMode === "loose";
 
               return (
                 <div className="space-y-3">

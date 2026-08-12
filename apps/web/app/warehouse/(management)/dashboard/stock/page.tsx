@@ -1,5 +1,6 @@
 "use client";
 
+import { PRODUCT_TYPE_FAMILY_LABELS } from "@bikalpo-project/db/fulfillment";
 import { useQuery } from "@tanstack/react-query";
 import {
   AlertCircle,
@@ -25,8 +26,8 @@ const WAREHOUSE_DASHBOARD = "/warehouse/dashboard";
 type StockStatus = "in_stock" | "low_stock" | "out_of_stock";
 
 type StockQuantityGroup = {
-  family: string;
-  familyLabel: string;
+  productTypeId: number;
+  productTypeName: string;
   inventoryUnit: string;
   productCount: number;
   variantCount: number;
@@ -261,14 +262,7 @@ export default function StockOverviewDashboard() {
             100,
         )
       : 100;
-  const familyOptions = Array.from(
-    new Map(
-      dashboard.quantityGroups.map((group) => [
-        group.family,
-        group.familyLabel,
-      ]),
-    ),
-  );
+  const familyOptions = Object.entries(PRODUCT_TYPE_FAMILY_LABELS);
 
   const resetPage = () => setPage(1);
 
@@ -385,7 +379,7 @@ export default function StockOverviewDashboard() {
               Stock position
             </h2>
             <p className="mt-0.5 text-sm text-zinc-500">
-              Quantities remain separated by family and inventory unit.
+              Quantities remain separated by Product Type and operational unit.
             </p>
           </div>
         </div>
@@ -403,7 +397,7 @@ export default function StockOverviewDashboard() {
         ) : (
           <div className="overflow-hidden rounded-lg border border-zinc-200 bg-white">
             <div className="hidden grid-cols-[1.4fr_repeat(3,1fr)_1.35fr] gap-4 border-b border-zinc-200 bg-zinc-50 px-5 py-2.5 text-xs font-semibold uppercase tracking-wide text-zinc-500 md:grid">
-              <span>Family and unit</span>
+              <span>Product Type and unit</span>
               <span>Available</span>
               <span>Reserved</span>
               <span>On hand</span>
@@ -413,11 +407,11 @@ export default function StockOverviewDashboard() {
               {dashboard.quantityGroups.map((group) => (
                 <div
                   className="grid gap-4 px-5 py-4 md:grid-cols-[1.4fr_repeat(3,1fr)_1.35fr] md:items-center"
-                  key={`${group.family}:${group.inventoryUnit}:${group.referenceMeasurement?.unit ?? "none"}`}
+                  key={`${group.productTypeId}:${group.inventoryUnit}:${group.referenceMeasurement?.unit ?? "none"}`}
                 >
                   <div>
                     <p className="font-semibold text-zinc-900">
-                      {group.familyLabel}
+                      {group.productTypeName}
                     </p>
                     <p className="mt-0.5 text-xs text-zinc-500">
                       {group.variantCount} variants across {group.productCount}{" "}

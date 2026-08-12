@@ -38,6 +38,7 @@ export default function RetailerCoreProductConfigPage() {
   });
 
   const data = configurationQuery.data;
+  const managementUrl = `${CATALOG_URL}/${coreProductId}`;
   const currentBrands = data?.current ?? [];
   const presetBrands = data?.adminPreset?.brands ?? [];
   const configuration = data
@@ -115,7 +116,10 @@ export default function RetailerCoreProductConfigPage() {
         variantOptions: data?.options?.variantOptions ?? [],
         isLoading: configurationQuery.isLoading,
         isError: configurationQuery.isError,
-        listHref: CATALOG_URL,
+        listHref:
+          data?.core?.brandCreationMode === "single"
+            ? managementUrl
+            : CATALOG_URL,
         productEditHref: (productId) => `${PRODUCTS_URL}/${productId}/edit`,
         presetBrands:
           data?.adminPreset?.available && normalizedPreset.length > 0
@@ -127,7 +131,11 @@ export default function RetailerCoreProductConfigPage() {
           normalizedCurrent.length > 0 ? normalizedCurrent : normalizedPreset,
         onSaved: async () => {
           await queryClient.invalidateQueries({ queryKey: ["shopOwner"] });
-          router.push(PRODUCTS_URL);
+          router.push(
+            data?.core?.brandCreationMode === "single"
+              ? managementUrl
+              : PRODUCTS_URL,
+          );
         },
       }}
     />

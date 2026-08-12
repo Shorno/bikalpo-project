@@ -2,15 +2,25 @@
 
 import { useForm } from "@tanstack/react-form";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Loader, Plus, Tags } from "lucide-react";
+import { Loader, Tags } from "lucide-react";
 import * as React from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
-  Dialog, DialogContent, DialogDescription, DialogFooter,
-  DialogHeader, DialogTitle, DialogTrigger,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
 } from "@/components/ui/dialog";
-import { Field, FieldDescription, FieldError, FieldLabel } from "@/components/ui/field";
+import {
+  Field,
+  FieldDescription,
+  FieldError,
+  FieldLabel,
+} from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { generateSlug } from "@/utils/generate-slug";
 import { orpc } from "@/utils/orpc";
@@ -21,14 +31,14 @@ export default function BrandRequestModal() {
 
   const mutation = useMutation({
     mutationFn: (payload: any) =>
-      orpc.warehouseCatalogApproval.createRequest.call({
+      orpc.catalogRequest.createRequest.call({
         requestType: "brand" as const,
         payload,
       }),
     onSuccess: async (result) => {
       toast.success(result.message || "Brand request submitted");
       await queryClient.invalidateQueries({
-        queryKey: ["warehouseCatalogApproval", "myRequests"],
+        queryKey: orpc.catalogRequest.getMyRequests.key(),
       });
       form.reset();
       setOpen(false);
@@ -60,12 +70,17 @@ export default function BrandRequestModal() {
         </DialogHeader>
         <form
           id="brand-request-form"
-          onSubmit={(e) => { e.preventDefault(); e.stopPropagation(); form.handleSubmit(); }}
+          onSubmit={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            form.handleSubmit();
+          }}
           className="space-y-4"
         >
           <form.Field name="name">
             {(field) => {
-              const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
+              const isInvalid =
+                field.state.meta.isTouched && !field.state.meta.isValid;
               return (
                 <Field data-invalid={isInvalid}>
                   <FieldLabel htmlFor={field.name}>Brand Name *</FieldLabel>
@@ -73,7 +88,10 @@ export default function BrandRequestModal() {
                     id={field.name}
                     value={field.state.value}
                     onBlur={field.handleBlur}
-                    onChange={(e) => { field.handleChange(e.target.value); autoSlug(e.target.value); }}
+                    onChange={(e) => {
+                      field.handleChange(e.target.value);
+                      autoSlug(e.target.value);
+                    }}
                     placeholder="Unilever"
                     autoComplete="off"
                   />
@@ -85,7 +103,8 @@ export default function BrandRequestModal() {
 
           <form.Field name="slug">
             {(field) => {
-              const isInvalid = field.state.meta.isTouched && !field.state.meta.isValid;
+              const isInvalid =
+                field.state.meta.isTouched && !field.state.meta.isValid;
               return (
                 <Field data-invalid={isInvalid}>
                   <FieldLabel htmlFor={field.name}>Slug *</FieldLabel>
@@ -97,7 +116,9 @@ export default function BrandRequestModal() {
                     placeholder="unilever"
                     autoComplete="off"
                   />
-                  <FieldDescription>URL-friendly version of the name.</FieldDescription>
+                  <FieldDescription>
+                    URL-friendly version of the name.
+                  </FieldDescription>
                   {isInvalid && <FieldError errors={field.state.meta.errors} />}
                 </Field>
               );
@@ -105,11 +126,22 @@ export default function BrandRequestModal() {
           </form.Field>
         </form>
         <DialogFooter>
-          <Button type="button" variant="outline" onClick={() => setOpen(false)} disabled={mutation.isPending}>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => setOpen(false)}
+            disabled={mutation.isPending}
+          >
             Cancel
           </Button>
-          <Button type="submit" form="brand-request-form" disabled={mutation.isPending}>
-            {mutation.isPending && <Loader className="mr-2 h-4 w-4 animate-spin" />}
+          <Button
+            type="submit"
+            form="brand-request-form"
+            disabled={mutation.isPending}
+          >
+            {mutation.isPending && (
+              <Loader className="mr-2 h-4 w-4 animate-spin" />
+            )}
             Submit Request
           </Button>
         </DialogFooter>

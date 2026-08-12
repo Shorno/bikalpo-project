@@ -3,7 +3,7 @@ import test from "node:test";
 import {
   areVariantOptionsStructurallyCompatible,
   formatVariantStockQuantity,
-  resolveVariantMovementSemantics,
+  resolveVariantOperations,
   resolveVariantStockSemantics,
 } from "./variant-definition";
 
@@ -26,21 +26,18 @@ test("formats cylinders as count plus normalized mass", () => {
   assert.equal(semantics.massKgPerUnit, 12);
 	assert.equal(formatVariantStockQuantity(semantics, 2), "2 cylinders · 24 KG");
 
-  const movement = resolveVariantMovementSemantics(option({
+  const movement = resolveVariantOperations(option({
     kind: "measurement",
     value: "12",
     measurementUnit: "KG",
     container: "cylinder",
     operationalUnit: "cylinder",
-  }), "lpg");
+  }));
   assert.deepEqual(movement, {
-    family: "lpg",
-    movementKind: "direct",
-    enteredUnit: "cylinder",
-    inventoryUnit: "cylinder",
+    operationalUnit: "cylinder",
+    receivingMode: "direct",
     quantityKind: "count",
     allowsDecimal: false,
-    conversionFactor: "1",
     referenceMeasurement: { unit: "kg", perInventoryUnit: "12" },
   });
 });
@@ -83,6 +80,102 @@ test("keeps loose and attribute inventory in their operational units", () => {
     operationalUnit: "unit",
   }));
 	assert.equal(formatVariantStockQuantity(size, 4), "4 units");
+});
+
+test("derives family-independent operations from structured variant definitions", () => {
+  const cases = [
+    {
+      definition: {
+        kind: "measurement",
+        value: "12",
+        measurementUnit: "KG",
+        container: "cylinder",
+      },
+      expected: { operationalUnit: "cylinder", receivingMode: "direct", quantityKind: "count", allowsDecimal: false },
+    },
+    {
+      definition: {
+        kind: "measurement",
+        value: "500",
+        measurementUnit: "Gram",
+        container: "packet",
+      },
+      expected: { operationalUnit: "pack", receivingMode: "pack", quantityKind: "count", allowsDecimal: false },
+    },
+    {
+      definition: {
+        kind: "loose",
+        measurementUnit: "KG",
+      },
+      expected: { operationalUnit: "kg", receivingMode: "loose", quantityKind: "mass", allowsDecimal: true },
+    },
+    {
+      definition: {
+        kind: "attribute",
+        attribute: "Model",
+        value: "Pro",
+      },
+      expected: { operationalUnit: "unit", receivingMode: "direct", quantityKind: "count", allowsDecimal: false },
+    },
+    {
+      definition: {
+        kind: "attribute",
+        attribute: "Size",
+        value: "42",
+        operationalUnit: "pair",
+      },
+      expected: { operationalUnit: "pair", receivingMode: "direct", quantityKind: "count", allowsDecimal: false },
+    },
+    {
+      definition: {
+        kind: "attribute",
+        attribute: "Size",
+        value: "XL",
+        operationalUnit: "piece",
+      },
+      expected: { operationalUnit: "piece", receivingMode: "direct", quantityKind: "count", allowsDecimal: false },
+    },
+  ];
+
+  for (const testCase of cases) {
+    const operations = resolveVariantOperations(option(testCase.definition));
+    assert.deepEqual(
+      {
+        operationalUnit: operations.operationalUnit,
+        receivingMode: operations.receivingMode,
+        quantityKind: operations.quantityKind,
+        allowsDecimal: operations.allowsDecimal,
+      },
+      testCase.expected,
+    );
+  }
+});
+
+test("RAM operations do not accept or depend on a Product Type family", () => {
+  const ram = option({
+    kind: "attribute",
+    attribute: "RAM Capacity",
+    value: "16 GB",
+    operationalUnit: "unit",
+  });
+
+  assert.deepEqual(resolveVariantOperations(ram), {
+    operationalUnit: "unit",
+    receivingMode: "direct",
+    quantityKind: "count",
+    allowsDecimal: false,
+  });
+});
+
+test("rejects an attribute definition that claims a container unit", () => {
+  assert.throws(() =>
+    resolveVariantOperations(option({
+      kind: "attribute",
+      attribute: "RAM Capacity",
+      value: "16 GB",
+      operationalUnit: "box",
+    })),
+  );
 });
 
 test("requires matching LPG capacity for linked inventory variants", () => {

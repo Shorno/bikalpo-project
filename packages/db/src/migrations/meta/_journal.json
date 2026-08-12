@@ -302,6 +302,27 @@
       "when": 1786200000000,
       "tag": "0043_product_setup_status",
       "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1786300000000,
+      "tag": "0044_brand_creation_mode",
+      "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1786400000000,
+      "tag": "0045_remove_product_inventory_unit",
+      "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "7",
+      "when": 1786500000000,
+      "tag": "0046_flag_invalid_variant_definitions",
+      "breakpoints": true
     }
   ]
 }

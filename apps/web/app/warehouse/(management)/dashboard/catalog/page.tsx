@@ -1,5 +1,6 @@
 "use client";
 
+import { resolveBrandCreationAction } from "@bikalpo-project/db/brand-creation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   type ColumnDef,
@@ -77,6 +78,8 @@ type CoreProduct = {
   products: CatalogProduct[];
   adminBrandCount: number;
   warehouseBrandCount: number;
+  warehouseAddableBrandCount: number;
+  brandCreationMode: "single" | "batch";
 };
 
 type SubCategoryData = {
@@ -338,22 +341,39 @@ export default function WarehouseCatalogPage() {
         header: () => <div className="text-right">Action</div>,
         cell: ({ row }) => {
           const cpId = row.original.coreProduct.id;
-          const configured = row.original.coreProduct.warehouseBrandCount > 0;
+          const action = resolveBrandCreationAction({
+            mode: row.original.coreProduct.brandCreationMode,
+            configuredBrandCount: row.original.coreProduct.warehouseBrandCount,
+            addableBrandCount:
+              row.original.coreProduct.warehouseAddableBrandCount,
+          });
           return (
             <div className="flex justify-end gap-1.5">
-              <Button variant="outline" size="sm" className="h-7 text-xs gap-1">
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 text-xs gap-1"
+                onClick={() =>
+                  router.push(`/warehouse/dashboard/catalog/${cpId}`)
+                }
+              >
                 <Eye size={12} />
                 View
               </Button>
               <Button
                 size="sm"
                 className="h-7 text-xs gap-1"
+                disabled={action.disabled}
                 onClick={() =>
                   router.push(`/warehouse/dashboard/catalog/add/${cpId}`)
                 }
               >
-                {configured ? <Settings size={12} /> : <Plus size={12} />}
-                {configured ? "Manage" : "Configure"}
+                {action.kind === "edit_configuration" ? (
+                  <Settings size={12} />
+                ) : (
+                  <Plus size={12} />
+                )}
+                {action.label}
               </Button>
             </div>
           );

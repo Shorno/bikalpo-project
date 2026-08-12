@@ -37,7 +37,7 @@ import { barikoiRouter } from "./barikoi";
 import { brandRouter } from "./brand";
 import {
   adminCatalogApprovalRouter,
-  warehouseCatalogApprovalRouter,
+  catalogRequestRouter,
 } from "./catalog-approval-request";
 import { categoryRouter } from "./category";
 import { cloudinaryRouter } from "./cloudinary";
@@ -56,8 +56,8 @@ import { payeeRouter } from "./payee";
 import { productRouter } from "./product";
 import { profitLossRouter } from "./profit-loss";
 import { purchaseRouter } from "./purchase";
-import { returnsRouter } from "./returns";
 import { retailerPosRouter } from "./retailer-pos";
+import { returnsRouter } from "./returns";
 import { salesmanRouter } from "./salesman";
 import { sellerApplicationRouter } from "./seller-application";
 import { shopOwnerRouter } from "./shop-owner";
@@ -161,7 +161,7 @@ export const appRouter = {
   stockAdjustment: stockAdjustmentRouter,
   warehousePos: warehousePosRouter,
   warehouseSales: warehouseSalesRouter,
-  warehouseCatalogApproval: warehouseCatalogApprovalRouter,
+  catalogRequest: catalogRequestRouter,
   adminCatalogApproval: adminCatalogApprovalRouter,
 };
 export type AppRouter = typeof appRouter;

@@ -1,4 +1,5 @@
 import { relations } from "drizzle-orm";
+import { BRAND_CREATION_MODES } from "../brand-creation";
 import {
   boolean,
   integer,
@@ -21,6 +22,11 @@ export const catalogCreatorSourceEnum = pgEnum("catalog_creator_source", [
   "warehouse",
   "shop",
 ]);
+
+export const brandCreationModeEnum = pgEnum(
+  "brand_creation_mode",
+  BRAND_CREATION_MODES,
+);
 
 // === Core Product Identity ===
 
@@ -74,6 +80,11 @@ export const coreProductIdentity = pgTable("core_product_identity", {
   /** Disabled identities remain attached to existing products but cannot be newly configured. */
   isActive: boolean("is_active").default(true).notNull(),
 
+  /** Controls whether owners configure one Brand Product or the full brand set per save. */
+  brandCreationMode: brandCreationModeEnum("brand_creation_mode")
+    .default("batch")
+    .notNull(),
+
   ...timestamps,
 });
 
@@ -108,7 +119,6 @@ export type AdminProductGenerationTemplateDetails = {
   stockTrackingEnabled: boolean;
   minimumOrderEnabled: boolean;
   minimumOrderQty: string;
-  inventoryUnit: string;
   conversionEnabled: boolean;
   inventoryLooseUnitEnabled: boolean;
   inventoryLooseUnit: string;

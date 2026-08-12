@@ -1,5 +1,6 @@
 "use client";
 
+import { resolveBrandCreationAction } from "@bikalpo-project/db/brand-creation";
 import {
   AlertCircle,
   BookOpen,
@@ -113,7 +114,15 @@ export default function ProductCatalogPage() {
             → Core Identity
           </p>
         </div>
-        <RequestProductModal />
+        <div className="flex flex-wrap items-center gap-2">
+          <Button asChild variant="outline">
+            <Link href="/dashboard/product-catalog/requests?new=variant_option">
+              <Plus className="mr-2 h-4 w-4" />
+              Request Variant
+            </Link>
+          </Button>
+          <RequestProductModal />
+        </div>
       </div>
 
       {/* Filter Bar */}
@@ -202,8 +211,11 @@ export default function ProductCatalogPage() {
                 </TableHeader>
                 <TableBody>
                   {typeItems.map((item, idx) => {
-                    const configured =
-                      item.hasShopTemplate || item.shopBrandCount > 0;
+                    const action = resolveBrandCreationAction({
+                      mode: item.brandCreationMode,
+                      configuredBrandCount: item.shopBrandCount,
+                      addableBrandCount: item.shopAddableBrandCount,
+                    });
                     return (
                       <TableRow
                         key={item.id}
@@ -261,22 +273,33 @@ export default function ProductCatalogPage() {
                                 View
                               </Button>
                             </Link>
-                            <Link
-                              href={`/dashboard/product-catalog/add/${item.id}`}
-                            >
+                            {action.disabled ? (
                               <Button
                                 variant="ghost"
                                 size="sm"
-                                className="h-7 px-2 text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                                className="h-7 px-2"
+                                disabled
                               >
-                                {configured ? (
-                                  <Settings className="h-3.5 w-3.5 mr-1" />
-                                ) : (
-                                  <Plus className="h-3.5 w-3.5 mr-1" />
-                                )}
-                                {configured ? "Edit" : "Add"}
+                                {action.label}
                               </Button>
-                            </Link>
+                            ) : (
+                              <Link
+                                href={`/dashboard/product-catalog/add/${item.id}`}
+                              >
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-7 px-2 text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                                >
+                                  {action.kind === "edit_configuration" ? (
+                                    <Settings className="h-3.5 w-3.5 mr-1" />
+                                  ) : (
+                                    <Plus className="h-3.5 w-3.5 mr-1" />
+                                  )}
+                                  {action.label}
+                                </Button>
+                              </Link>
+                            )}
                           </div>
                         </TableCell>
                       </TableRow>
@@ -353,7 +376,14 @@ export default function ProductCatalogPage() {
             after admin review.
           </p>
         </div>
-        <RequestProductModal />
+        <div className="flex flex-wrap items-center gap-2">
+          <Button asChild variant="outline">
+            <Link href="/dashboard/product-catalog/requests?new=variant_option">
+              Request Variant
+            </Link>
+          </Button>
+          <RequestProductModal />
+        </div>
       </div>
     </div>
   );

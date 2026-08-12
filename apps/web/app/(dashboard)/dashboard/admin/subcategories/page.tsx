@@ -87,7 +87,6 @@ export default function SubcategoryListPage() {
           />
         }
         count={subcategories?.length ?? 0}
-        description="Manage the third level of the product taxonomy and its Type and Category path."
         title="Sub Categories"
       />
 

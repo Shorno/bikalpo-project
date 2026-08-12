@@ -79,6 +79,7 @@ export default function NewCoreProductDialog() {
       categoryId: 0,
       subCategoryId: null as number | null,
       isActive: true,
+      brandCreationMode: "batch" as "batch" | "single",
 
       typeId: null as number | null,
     },
@@ -97,6 +98,7 @@ export default function NewCoreProductDialog() {
         categoryId: value.categoryId,
         subCategoryId: value.subCategoryId,
         isActive: value.isActive,
+        brandCreationMode: value.brandCreationMode,
       });
     },
   });
@@ -331,6 +333,26 @@ export default function NewCoreProductDialog() {
               <Switch
                 checked={field.state.value}
                 onCheckedChange={field.handleChange}
+              />
+            </Field>
+          )}
+        </form.Field>
+
+        <form.Field name="brandCreationMode">
+          {(field) => (
+            <Field className="flex min-h-16 flex-row items-center justify-between rounded-lg border px-4 py-3">
+              <div>
+                <FieldLabel>Create one brand at a time</FieldLabel>
+                <FieldDescription>
+                  When enabled, each save creates or edits exactly one Brand
+                  Product.
+                </FieldDescription>
+              </div>
+              <Switch
+                checked={field.state.value === "single"}
+                onCheckedChange={(checked) =>
+                  field.handleChange(checked ? "single" : "batch")
+                }
               />
             </Field>
           )}

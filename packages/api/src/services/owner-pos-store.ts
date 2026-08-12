@@ -7,7 +7,7 @@ import {
 	warehousePosCustomer as posCustomer,
 } from "@bikalpo-project/db/schema";
 import {
-	resolveVariantMovementSemantics,
+	resolveVariantOperations,
 	resolveVariantStockSemantics,
 } from "@bikalpo-project/db/variant-definition";
 import { ORPCError } from "@orpc/server";
@@ -35,6 +35,7 @@ export type PosCatalogRow = {
 	pack: string;
 	variantLabel: string;
 	unitLabel: string;
+	allowsDecimal: boolean;
 	availableQty: number;
 	unitPrice: number;
 };
@@ -218,7 +219,7 @@ export async function getOwnerPosCatalog(
 							category: {
 								columns: { id: true, name: true, typeId: true },
 								with: {
-									type: { columns: { id: true, name: true, family: true } },
+								type: { columns: { id: true, name: true } },
 								},
 							},
 							subCategory: { columns: { id: true, name: true } },
@@ -245,11 +246,8 @@ export async function getOwnerPosCatalog(
 		) {
 			continue;
 		}
-		const movement = variant.sourceVariantOption
-			? resolveVariantMovementSemantics(
-					variant.sourceVariantOption,
-					type.family,
-				)
+		const operations = variant.sourceVariantOption
+			? resolveVariantOperations(variant.sourceVariantOption)
 			: null;
 		const pack = variant.sourceVariantOption
 			? resolveVariantStockSemantics(variant.sourceVariantOption).displayLabel
@@ -277,7 +275,8 @@ export async function getOwnerPosCatalog(
 			pack,
 			variantLabel: pack,
 			unitLabel:
-				movement?.inventoryUnit ?? variant.orderUnit ?? variant.unitLabel,
+				operations?.operationalUnit ?? variant.orderUnit ?? variant.unitLabel,
+			allowsDecimal: operations?.allowsDecimal ?? false,
 			availableQty: number(entry.availableQty),
 			unitPrice: price,
 		});
@@ -308,9 +307,9 @@ export async function resolveOwnerPosSaleLines(
 				message: "Quantity must be positive",
 			});
 		}
-		if (row.unitLabel === "cylinder" && !Number.isInteger(item.quantity)) {
+		if (!row.allowsDecimal && !Number.isInteger(item.quantity)) {
 			throw new ORPCError("BAD_REQUEST", {
-				message: `${row.productName} must be sold in whole cylinders`,
+				message: `${row.productName} must be sold in whole ${row.unitLabel} quantities`,
 			});
 		}
 		if (item.quantity > row.availableQty) {

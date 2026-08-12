@@ -1,8 +1,4 @@
-export const VARIANT_DEFINITION_KINDS = [
-  "measurement",
-  "loose",
-  "attribute",
-] as const;
+export const VARIANT_DEFINITION_KINDS = ["measurement", "loose", "attribute"] as const;
 
 export type VariantDefinitionKind = (typeof VARIANT_DEFINITION_KINDS)[number];
 
@@ -26,7 +22,14 @@ export type VariantDefinition =
       operationalUnit?: string;
     };
 
-export type VariantProductFamily = "grocery" | "fashion" | "footwear" | "electronics" | "lpg" | "bulk_liquid" | "generic";
+export type VariantProductFamily =
+  | "grocery"
+  | "fashion"
+  | "footwear"
+  | "electronics"
+  | "lpg"
+  | "bulk_liquid"
+  | "generic";
 export const PRODUCT_VARIANT_PACK_TYPES = [
   "sack",
   "carton",
@@ -44,14 +47,23 @@ export const PRODUCT_VARIANT_PACK_TYPES = [
   "bundle",
 ] as const;
 
-export type ProductVariantPackType =
-  (typeof PRODUCT_VARIANT_PACK_TYPES)[number];
+export type ProductVariantPackType = (typeof PRODUCT_VARIANT_PACK_TYPES)[number];
 export type VariantContainerCode = Exclude<ProductVariantPackType, "loose">;
 
 export const VARIANT_CONTAINERS: Record<VariantContainerCode, string> = {
-  sack: "Sack", carton: "Carton", packet: "Pack / Packet", bottle: "Bottle",
-  can: "Can", jar: "Jar", pouch: "Pouch", box: "Box", unit: "Unit",
-  pair: "Pair", cylinder: "Cylinder", drum: "Drum", bundle: "Bundle",
+  sack: "Sack",
+  carton: "Carton",
+  packet: "Pack / Packet",
+  bottle: "Bottle",
+  can: "Can",
+  jar: "Jar",
+  pouch: "Pouch",
+  box: "Box",
+  unit: "Unit",
+  pair: "Pair",
+  cylinder: "Cylinder",
+  drum: "Drum",
+  bundle: "Bundle",
 };
 
 export const RECOMMENDED_VARIANT_CONTAINERS: Record<VariantProductFamily, readonly VariantContainerCode[]> = {
@@ -65,12 +77,25 @@ export const RECOMMENDED_VARIANT_CONTAINERS: Record<VariantProductFamily, readon
 };
 
 const containerOperationalUnit: Record<VariantContainerCode, string> = {
-  sack: "sack", carton: "carton", packet: "pack", bottle: "bottle", can: "can",
-  jar: "jar", pouch: "pouch", box: "box", unit: "unit", pair: "pair",
-  cylinder: "cylinder", drum: "drum", bundle: "bundle",
+  sack: "sack",
+  carton: "carton",
+  packet: "pack",
+  bottle: "bottle",
+  can: "can",
+  jar: "jar",
+  pouch: "pouch",
+  box: "box",
+  unit: "unit",
+  pair: "pair",
+  cylinder: "cylinder",
+  drum: "drum",
+  bundle: "bundle",
 };
 
-export function deriveVariantOperationalUnit(definition: VariantDefinition, family: VariantProductFamily = "generic"): string {
+export function deriveVariantOperationalUnit(
+  definition: VariantDefinition,
+  family: VariantProductFamily = "generic",
+): string {
   if (definition.operationalUnit) return definition.operationalUnit;
   if (definition.kind === "loose") return tidy(definition.measurementUnit).toLowerCase();
   if (definition.kind === "attribute") {
@@ -79,11 +104,20 @@ export function deriveVariantOperationalUnit(definition: VariantDefinition, fami
     return "unit";
   }
   const container = definition.kind === "measurement" ? definition.container : "unit";
-  return containerOperationalUnit[container.toLowerCase() as VariantContainerCode] ?? (tidy(container).toLowerCase() || "unit");
+  return (
+    containerOperationalUnit[container.toLowerCase() as VariantContainerCode] ??
+    (tidy(container).toLowerCase() || "unit")
+  );
 }
 
-export function withDerivedOperationalUnit(definition: VariantDefinition, family: VariantProductFamily): VariantDefinition {
-  return { ...definition, operationalUnit: deriveVariantOperationalUnit({ ...definition, operationalUnit: undefined }, family) };
+export function withDerivedOperationalUnit(
+  definition: VariantDefinition,
+  family: VariantProductFamily,
+): VariantDefinition {
+  return {
+    ...definition,
+    operationalUnit: deriveVariantOperationalUnit({ ...definition, operationalUnit: undefined }, family),
+  };
 }
 
 const tidy = (value: string | undefined) => value?.trim().replace(/\s+/g, " ") ?? "";
@@ -91,10 +125,7 @@ const tidy = (value: string | undefined) => value?.trim().replace(/\s+/g, " ") ?
 export function formatVariantDefinition(definition: VariantDefinition): string {
   switch (definition.kind) {
     case "measurement":
-      return [definition.value, definition.measurementUnit, definition.container]
-        .map(tidy)
-        .filter(Boolean)
-        .join(" ");
+      return [definition.value, definition.measurementUnit, definition.container].map(tidy).filter(Boolean).join(" ");
     case "loose":
       return `Loose (per ${tidy(definition.measurementUnit)})`;
     case "attribute":
@@ -107,9 +138,7 @@ export function variantDefinitionSignature(definition: VariantDefinition): strin
     ([key]) => !["operationalUnit", "stockUnit", "orderUnit"].includes(key),
   );
   return JSON.stringify(
-    Object.fromEntries(
-      structuralEntries.map(([key, value]) => [key, tidy(String(value)).toLowerCase()]),
-    ),
+    Object.fromEntries(structuralEntries.map(([key, value]) => [key, tidy(String(value)).toLowerCase()])),
   );
 }
 
@@ -128,23 +157,17 @@ export function getVariantDefinition(option?: VariantOptionLike | null): Variant
   const value = option?.definition;
   if (!value || typeof value !== "object" || !("kind" in value)) return null;
   if (!VARIANT_DEFINITION_KINDS.includes((value as { kind: VariantDefinitionKind }).kind)) return null;
-  const candidate = value as Record<string, unknown> & { kind: VariantDefinitionKind };
-  const hasText = (field: unknown) =>
-    typeof field === "string" && Boolean(tidy(field));
+  const candidate = value as Record<string, unknown> & {
+    kind: VariantDefinitionKind;
+  };
+  const hasText = (field: unknown) => typeof field === "string" && Boolean(tidy(field));
   if (
     candidate.kind === "measurement" &&
-    (!hasText(candidate.value) ||
-      !hasText(candidate.measurementUnit) ||
-      !hasText(candidate.container))
-  ) return null;
-  if (
-    candidate.kind === "loose" &&
-    !hasText(candidate.measurementUnit)
-  ) return null;
-  if (
-    candidate.kind === "attribute" &&
-    (!hasText(candidate.attribute) || !hasText(candidate.value))
-  ) return null;
+    (!hasText(candidate.value) || !hasText(candidate.measurementUnit) || !hasText(candidate.container))
+  )
+    return null;
+  if (candidate.kind === "loose" && !hasText(candidate.measurementUnit)) return null;
+  if (candidate.kind === "attribute" && (!hasText(candidate.attribute) || !hasText(candidate.value))) return null;
   return value as VariantDefinition;
 }
 
@@ -157,6 +180,25 @@ export class ConcreteVariantDefinitionError extends Error {
 
 export type VariantMeasurementDimension = "mass" | "volume" | "count";
 
+export type VariantReceivingMode = "direct" | "pack" | "loose";
+
+/**
+ * The complete operational contract for one structured Admin Variant Option.
+ *
+ * Inventory callers must use this result instead of Product Type family,
+ * generated Product fields, or the legacy pack/loose variantType flag.
+ */
+export type VariantOperations = {
+  operationalUnit: string;
+  receivingMode: VariantReceivingMode;
+  quantityKind: VariantMeasurementDimension;
+  allowsDecimal: boolean;
+  referenceMeasurement?: {
+    unit: "kg" | "liter";
+    perInventoryUnit: string;
+  };
+};
+
 export type VariantStockSemantics = {
   displayLabel: string;
   canonicalLabel: string;
@@ -167,20 +209,6 @@ export type VariantStockSemantics = {
   measurementUnit: "KG" | "L" | null;
   massKgPerUnit: number;
   volumeLPerUnit: number;
-};
-
-export type MovementSemantics = {
-  family: VariantProductFamily;
-  movementKind: "direct" | "loose" | "container";
-  enteredUnit: string;
-  inventoryUnit: string;
-  quantityKind: VariantMeasurementDimension;
-  allowsDecimal: boolean;
-  conversionFactor: string;
-  referenceMeasurement?: {
-    unit: "kg" | "liter";
-    perInventoryUnit: string;
-  };
 };
 
 const parsePositiveNumber = (value: string | undefined) => {
@@ -199,7 +227,11 @@ const normalizedMeasurement = (value: string, unit: string) => {
     case "gm":
     case "gram":
     case "grams":
-      return { dimension: "mass" as const, unit: "KG" as const, amount: amount / 1000 };
+      return {
+        dimension: "mass" as const,
+        unit: "KG" as const,
+        amount: amount / 1000,
+      };
     case "l":
     case "ltr":
     case "liter":
@@ -212,17 +244,90 @@ const normalizedMeasurement = (value: string, unit: string) => {
     case "milliliters":
     case "millilitre":
     case "millilitres":
-      return { dimension: "volume" as const, unit: "L" as const, amount: amount / 1000 };
+      return {
+        dimension: "volume" as const,
+        unit: "L" as const,
+        amount: amount / 1000,
+      };
     default:
       return { dimension: "count" as const, unit: null, amount: 0 };
   }
 };
 
+const ATTRIBUTE_DIRECT_OPERATIONAL_UNITS = new Set(["unit", "piece", "pair"]);
+const MEASUREMENT_DIRECT_OPERATIONAL_UNITS = new Set([
+  "unit",
+  "piece",
+  "pair",
+  "cylinder",
+]);
+
+function buildReferenceMeasurement(
+  measurement: ReturnType<typeof normalizedMeasurement>,
+): VariantOperations["referenceMeasurement"] {
+  if (measurement.dimension === "mass" && measurement.amount > 0) {
+    return { unit: "kg", perInventoryUnit: String(measurement.amount) };
+  }
+  if (measurement.dimension === "volume" && measurement.amount > 0) {
+    return { unit: "liter", perInventoryUnit: String(measurement.amount) };
+  }
+  return undefined;
+}
+
+/** Authoritative inventory operations derived only from one Admin Variant Option. */
+export function resolveVariantOperations(option: VariantOptionLike): VariantOperations {
+  const resolved = resolveConcreteVariantOption(option);
+  const definition = resolved.definition!;
+  const operationalUnit = tidy(resolved.orderUnit || "unit").toLowerCase();
+
+  if (definition.kind === "attribute") {
+    if (!ATTRIBUTE_DIRECT_OPERATIONAL_UNITS.has(operationalUnit)) {
+      throw new ConcreteVariantDefinitionError(resolved.label);
+    }
+    return {
+      operationalUnit,
+      receivingMode: "direct",
+      quantityKind: "count",
+      allowsDecimal: false,
+    };
+  }
+
+  const measurement = normalizedMeasurement(
+    definition.kind === "loose" ? "1" : definition.value,
+    definition.measurementUnit,
+  );
+
+  if (definition.kind === "loose") {
+    if (measurement.dimension === "count") {
+      throw new ConcreteVariantDefinitionError(resolved.label);
+    }
+    return {
+      operationalUnit,
+      receivingMode: "loose",
+      quantityKind: measurement.dimension,
+      allowsDecimal: true,
+    };
+  }
+
+  const receivingMode = MEASUREMENT_DIRECT_OPERATIONAL_UNITS.has(operationalUnit)
+    ? "direct"
+    : "pack";
+  const referenceMeasurement = buildReferenceMeasurement(measurement);
+  return {
+    operationalUnit,
+    receivingMode,
+    quantityKind: "count",
+    allowsDecimal: false,
+    ...(referenceMeasurement ? { referenceMeasurement } : {}),
+  };
+}
+
 /** Canonical inventory and presentation semantics for one structured option. */
 export function resolveVariantStockSemantics(option: VariantOptionLike): VariantStockSemantics {
   const resolved = resolveConcreteVariantOption(option);
   const definition = resolved.definition!;
-  const operationalUnit = resolved.orderUnit || "unit";
+  const operations = resolveVariantOperations(option);
+  const operationalUnit = operations.operationalUnit;
 
   if (definition.kind === "attribute") {
     return {
@@ -255,52 +360,14 @@ export function resolveVariantStockSemantics(option: VariantOptionLike): Variant
   };
 }
 
-export function areVariantOptionsStructurallyCompatible(
-  source: VariantOptionLike,
-  target: VariantOptionLike,
-) {
+export function areVariantOptionsStructurallyCompatible(source: VariantOptionLike, target: VariantOptionLike) {
   const sourceDefinition = getVariantDefinition(source);
   const targetDefinition = getVariantDefinition(target);
   return Boolean(
     sourceDefinition &&
       targetDefinition &&
-      variantDefinitionSignature(sourceDefinition) ===
-        variantDefinitionSignature(targetDefinition),
+      variantDefinitionSignature(sourceDefinition) === variantDefinitionSignature(targetDefinition),
   );
-}
-
-/** Shared, server-authoritative quantity contract for every inventory movement. */
-export function resolveVariantMovementSemantics(
-  option: VariantOptionLike,
-  family: VariantProductFamily = "generic",
-): MovementSemantics {
-  const semantics = resolveVariantStockSemantics(option);
-  if (family === "lpg" && semantics.operationalUnit !== "cylinder") {
-    throw new ConcreteVariantDefinitionError(semantics.displayLabel);
-  }
-
-  const movementKind = semantics.entryType === "loose"
-    ? "loose"
-    : ["carton", "box", "bundle", "drum"].includes(semantics.packType)
-      ? "container"
-      : "direct";
-  const referenceMeasurement = semantics.measurementDimension === "mass"
-    && semantics.massKgPerUnit > 0
-    ? { unit: "kg" as const, perInventoryUnit: String(semantics.massKgPerUnit) }
-    : semantics.measurementDimension === "volume" && semantics.volumeLPerUnit > 0
-      ? { unit: "liter" as const, perInventoryUnit: String(semantics.volumeLPerUnit) }
-      : undefined;
-
-  return {
-    family,
-    movementKind,
-    enteredUnit: semantics.operationalUnit,
-    inventoryUnit: semantics.operationalUnit,
-    quantityKind: family === "lpg" ? "count" : semantics.measurementDimension,
-    allowsDecimal: movementKind === "loose",
-    conversionFactor: "1",
-    ...(referenceMeasurement ? { referenceMeasurement } : {}),
-  };
 }
 
 const formatQuantity = (value: number) =>
@@ -313,11 +380,8 @@ const formatOperationalUnit = (unit: string, quantity: number) => {
   return `${unit}s`;
 };
 
-export function formatVariantStockQuantity(
-  semantics: VariantStockSemantics,
-  quantity: number,
-) {
-	const inventory = `${formatQuantity(quantity)} ${formatOperationalUnit(semantics.operationalUnit, quantity)}`;
+export function formatVariantStockQuantity(semantics: VariantStockSemantics, quantity: number) {
+  const inventory = `${formatQuantity(quantity)} ${formatOperationalUnit(semantics.operationalUnit, quantity)}`;
   if (semantics.entryType === "loose") return inventory;
   if (semantics.measurementDimension === "mass" && semantics.massKgPerUnit > 0) {
     return `${inventory} · ${formatQuantity(quantity * semantics.massKgPerUnit)} KG`;
@@ -331,14 +395,8 @@ export function formatVariantStockQuantity(
 /** Resolve the canonical, database-safe metadata used by generated variants. */
 export function resolveConcreteVariantOption(option: VariantOptionLike) {
   const resolved = resolveVariantOption(option);
-  if (
-    !resolved.definition ||
-    option.needsReview ||
-    option.definitionKind !== resolved.definition.kind
-  ) {
-    throw new ConcreteVariantDefinitionError(
-      tidy(option.displayAlias ?? undefined) || tidy(option.name ?? "Variant"),
-    );
+  if (!resolved.definition || option.needsReview || option.definitionKind !== resolved.definition.kind) {
+    throw new ConcreteVariantDefinitionError(tidy(option.displayAlias ?? undefined) || tidy(option.name ?? "Variant"));
   }
   const packType = resolved.container.trim().toLowerCase().replace(/\s+/g, "_");
   if (
@@ -361,17 +419,25 @@ export function resolveVariantOption(option?: VariantOptionLike | null) {
   const isLoose = definition?.kind === "loose" || (!definition && option?.variantType === "loose");
   const legacyDefinition = definition as (VariantDefinition & { stockUnit?: string; orderUnit?: string }) | null;
   const operationalUnit = definition
-    ? definition.operationalUnit || legacyDefinition?.orderUnit || legacyDefinition?.stockUnit || deriveVariantOperationalUnit(definition)
-    : isLoose ? tidy(option?.unit ?? undefined) : "pack";
+    ? definition.operationalUnit ||
+      legacyDefinition?.orderUnit ||
+      legacyDefinition?.stockUnit ||
+      deriveVariantOperationalUnit(definition)
+    : isLoose
+      ? tidy(option?.unit ?? undefined)
+      : "pack";
   const stockUnit = operationalUnit || "unit";
   const orderUnit = operationalUnit || tidy(option?.unit ?? undefined) || "unit";
-  const container = definition?.kind === "measurement"
-    ? definition.container
-    : definition?.kind === "attribute"
-        ? operationalUnit === "pair" ? "pair" : "unit"
-      : isLoose
-        ? "loose"
-        : stockUnit;
+  const container =
+    definition?.kind === "measurement"
+      ? definition.container
+      : definition?.kind === "attribute"
+        ? operationalUnit === "pair"
+          ? "pair"
+          : "unit"
+        : isLoose
+          ? "loose"
+          : stockUnit;
 
   return {
     definition,
@@ -381,10 +447,13 @@ export function resolveVariantOption(option?: VariantOptionLike | null) {
     stockUnit,
     orderUnit,
     container,
-    weightKg: definition?.kind === "measurement"
-      ? String(normalizedMeasurement(definition.value, definition.measurementUnit).dimension === "mass"
-          ? normalizedMeasurement(definition.value, definition.measurementUnit).amount
-          : 0)
-      : "0",
+    weightKg:
+      definition?.kind === "measurement"
+        ? String(
+            normalizedMeasurement(definition.value, definition.measurementUnit).dimension === "mass"
+              ? normalizedMeasurement(definition.value, definition.measurementUnit).amount
+              : 0,
+          )
+        : "0",
   };
 }
