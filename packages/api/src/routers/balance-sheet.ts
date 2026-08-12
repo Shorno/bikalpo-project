@@ -13,15 +13,7 @@ import {
   warehousePosSale,
 } from "@bikalpo-project/db/schema";
 import { ORPCError } from "@orpc/server";
-import {
-  and,
-  asc,
-  eq,
-  gte,
-  inArray,
-  isNotNull,
-  lte,
-} from "drizzle-orm";
+import { and, asc, eq, gte, inArray, isNotNull, lte, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { protectedProcedure } from "../index";
@@ -45,6 +37,14 @@ function toNumber(value: number | string | null | undefined) {
 
 function toMoney(value: number) {
   return value.toFixed(2);
+}
+
+function signedProfitLossAmount(input: {
+  amount: number;
+  direction: "credit" | "debit";
+  normalBalance: "credit" | "debit";
+}) {
+  return input.direction === input.normalBalance ? input.amount : -input.amount;
 }
 
 function getCashAndBankRows(rows: Array<{ amount: number; label: string }>) {
@@ -344,6 +344,46 @@ export const balanceSheetRouter = {
             0,
           );
 
+      const equityRows = await db
+        .select({
+          amount: financeAccount.currentBalance,
+          balanceSheetLine: financeAccount.balanceSheetLine,
+          label: financeAccount.name,
+          normalBalance: financeAccount.normalBalance,
+        })
+        .from(financeAccount)
+        .where(
+          and(
+            eq(financeAccount.ownerId, ownerId),
+            eq(financeAccount.ownerType, ownerType),
+            eq(financeAccount.accountType, "equity"),
+            inArray(financeAccount.balanceSheetLine, [
+              "owner_capital",
+              "owner_drawings",
+            ]),
+          ),
+        )
+        .orderBy(asc(financeAccount.sortOrder), asc(financeAccount.name));
+      const currentEquityRows = equityRows
+        .map((row) => {
+          const amount = toNumber(row.amount);
+          const signedAmount =
+            row.balanceSheetLine === "owner_drawings" ||
+            row.normalBalance === "debit"
+              ? -Math.abs(amount)
+              : amount;
+
+          return {
+            amount: signedAmount,
+            label: row.label,
+          };
+        })
+        .filter((row) => Math.abs(row.amount) >= 0.005);
+      const currentEquity = currentEquityRows.reduce(
+        (sum, row) => sum + row.amount,
+        0,
+      );
+
       const expenseRows = await db
         .select({ total: expense.amount })
         .from(expense)
@@ -408,6 +448,57 @@ export const balanceSheetRouter = {
         (sum, row) =>
           row.direction === "debit" ? sum + toNumber(row.total) : sum,
         0,
+      );
+      const centralProfitLossRows = await db
+        .select({
+          direction: financialLedger.direction,
+          line: financeAccount.profitAndLossLine,
+          normalBalance: financeAccount.normalBalance,
+          total: financialLedger.amount,
+        })
+        .from(financialLedger)
+        .innerJoin(
+          financeAccount,
+          eq(financialLedger.referenceId, financeAccount.id),
+        )
+        .where(
+          and(
+            eq(financialLedger.ownerId, ownerId),
+            eq(financialLedger.ownerType, ownerType),
+            eq(financialLedger.entryType, "adjustment"),
+            eq(financialLedger.referenceType, "adjustment"),
+            eq(financeAccount.ownerId, ownerId),
+            eq(financeAccount.ownerType, ownerType),
+            isNotNull(financeAccount.profitAndLossLine),
+            gte(financialLedger.createdAt, startDateTime),
+            lte(financialLedger.createdAt, asOfEnd),
+            sql`(${financialLedger.description} ILIKE 'Money In%' OR ${financialLedger.description} ILIKE 'Money Out%' OR ${financialLedger.description} ILIKE 'Bill due%' OR ${financialLedger.description} ILIKE 'Bill paid%')`,
+          ),
+        );
+      const centralProfitLoss = centralProfitLossRows.reduce(
+        (totals, row) => {
+          const signedAmount = signedProfitLossAmount({
+            amount: toNumber(row.total),
+            direction: row.direction,
+            normalBalance: row.normalBalance,
+          });
+
+          if (
+            row.line === "product_sales" ||
+            row.line === "service_income" ||
+            row.line === "other_income"
+          ) {
+            totals.revenue += signedAmount;
+          } else if (
+            row.line === "product_purchase_cost" ||
+            row.line === "operating_expenses"
+          ) {
+            totals.expense += signedAmount;
+          }
+
+          return totals;
+        },
+        { expense: 0, revenue: 0 },
       );
 
       let revenue = 0;
@@ -718,8 +809,8 @@ export const balanceSheetRouter = {
 
       payable += manualAccountsPayable;
       receivable += manualAccountsReceivable;
-      revenue += manualProductSales;
-      expenseTotal += manualProductSaleCost;
+      revenue += manualProductSales + centralProfitLoss.revenue;
+      expenseTotal += manualProductSaleCost + centralProfitLoss.expense;
 
       const retainedEarnings = revenue - expenseTotal;
       const displayedCashBankRows = getCashAndBankRows(currentCashBankRows);
@@ -730,9 +821,23 @@ export const balanceSheetRouter = {
       const totalAssets =
         cashAndBank + receivable + supplierAdvance + inventory + fixedAssets;
       const totalLiabilities = payable + customerAdvance + loanPayable;
-      const totalEquity = totalAssets - totalLiabilities;
-      const ownerCapital = totalEquity - retainedEarnings;
-      const netAssets = totalEquity;
+      const netAssets = totalAssets - totalLiabilities;
+      const openingBalanceEquity = netAssets - currentEquity - retainedEarnings;
+      const ownerEquityRows =
+        Math.abs(openingBalanceEquity) >= 0.005
+          ? [
+              ...currentEquityRows,
+              {
+                label: "Opening Balance Equity",
+                amount: openingBalanceEquity,
+              },
+            ]
+          : currentEquityRows;
+      const ownerCapital = ownerEquityRows.reduce(
+        (sum, row) => sum + row.amount,
+        0,
+      );
+      const totalEquity = ownerCapital + retainedEarnings;
       const asOfLabel = formatReportDate(endDate);
       const startLabel = formatReportDate(startDate);
 
@@ -883,21 +988,10 @@ export const balanceSheetRouter = {
             groups: [
               {
                 title: "Owner Equity",
-                rows:
-                  Math.abs(ownerCapital) >= 0.005
-                    ? [
-                        {
-                          label: "Opening Balance Equity",
-                          amount: toMoney(ownerCapital),
-                        },
-                      ]
-                    : [
-                        {
-                          label: "Opening Balance Equity",
-                          amount: toMoney(0),
-                          muted: true,
-                        },
-                      ],
+                rows: ownerEquityRows.map((row) => ({
+                  label: row.label,
+                  amount: toMoney(row.amount),
+                })),
                 total: toMoney(ownerCapital),
                 totalLabel: "Total Owner Equity",
               },

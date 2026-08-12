@@ -28,17 +28,21 @@ export type NavItem = {
   icon?: LucideIcon;
   badge?: number;
   activePrefixes?: string[];
-  items?: { title: string; url: string; badge?: number }[];
+  defaultOpen?: boolean;
+  items?: { title: string; url: string; badge?: number; icon?: LucideIcon }[];
 };
 
 export type NavGroup = {
   label: string;
+  hideLabel?: boolean;
   items: NavItem[];
 };
 
 function isNavItemActive(pathname: string, item: NavItem) {
   if (pathname === item.url) return true;
-  return item.activePrefixes?.some((prefix) => pathname.startsWith(prefix)) ?? false;
+  return (
+    item.activePrefixes?.some((prefix) => pathname.startsWith(prefix)) ?? false
+  );
 }
 
 function NavBadge({ count }: { count?: number }) {
@@ -58,9 +62,11 @@ export function NavGrouped({ groups }: { groups: NavGroup[] }) {
     <>
       {groups.map((group) => (
         <SidebarGroup key={group.label}>
-          <SidebarGroupLabel className="text-xs font-semibold text-muted-foreground uppercase tracking-wider px-3 mb-1">
-            {group.label}
-          </SidebarGroupLabel>
+          {!group.hideLabel && (
+            <SidebarGroupLabel className="text-xs font-semibold text-muted-foreground uppercase tracking-wider px-3 mb-1">
+              {group.label}
+            </SidebarGroupLabel>
+          )}
           <SidebarMenu>
             {group.items.map((item) => {
               // Items with sub-items → collapsible
@@ -74,7 +80,9 @@ export function NavGrouped({ groups }: { groups: NavGroup[] }) {
                   <Collapsible
                     key={item.title}
                     asChild
-                    defaultOpen={isChildActive || isParentActive}
+                    defaultOpen={
+                      item.defaultOpen || isChildActive || isParentActive
+                    }
                     className="group/collapsible"
                   >
                     <SidebarMenuItem>
@@ -104,6 +112,7 @@ export function NavGrouped({ groups }: { groups: NavGroup[] }) {
                                     href={sub.url}
                                     onClick={() => setOpenMobile(false)}
                                   >
+                                    {sub.icon && <sub.icon size={16} />}
                                     <span>{sub.title}</span>
                                   </Link>
                                 </SidebarMenuSubButton>

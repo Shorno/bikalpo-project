@@ -541,10 +541,12 @@ export function useConnectedSupplierDetail(warehouseId: string) {
 }
 
 /** Dashboard summary stats */
-export function useDashboardStats() {
+export function useDashboardStats(options?: { enabled?: boolean }) {
   return useQuery(
     orpc.shopOwner.getDashboardStats.queryOptions({
       input: undefined,
+      enabled: options?.enabled ?? true,
+      retry: false,
       staleTime: 1000 * 60,
     }),
   );
@@ -866,11 +868,16 @@ export function useDeleteRetailDeliveryman() {
 // ────────────────────────────────────────────────────────────────
 
 /** Available open order broadcasts for this shop */
-export function useOpenOrderPool() {
+export function useOpenOrderPool(options?: {
+  enabled?: boolean;
+  refetchInterval?: number | false;
+}) {
   return useQuery(
     orpc.shopOwner.getOpenOrderPool.queryOptions({
+      enabled: options?.enabled ?? true,
+      retry: false,
       staleTime: 1000 * 5,
-      refetchInterval: 1000 * 10,
+      refetchInterval: options?.refetchInterval ?? 1000 * 10,
     }),
   );
 }

@@ -47,11 +47,16 @@ export const link = new RPCLink({
       });
       if (!response.ok && shouldLogRpcResponseAsError(response.status)) {
         const errText = await response.clone().text();
-        console.error("orpc response error", {
-          ...requestInfo,
-          status: response.status,
-          body: errText.substring(0, 500),
-        });
+        const isContextCreationFailure = errText.includes(
+          "Context creation failed",
+        );
+        if (!isContextCreationFailure) {
+          console.error("orpc response error", {
+            ...requestInfo,
+            status: response.status,
+            body: errText.substring(0, 500),
+          });
+        }
       }
       return response;
     } catch (error: any) {

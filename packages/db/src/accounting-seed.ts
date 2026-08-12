@@ -1,16 +1,13 @@
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { and, eq, isNull } from "drizzle-orm";
-import { db } from "./index";
+import { ACCOUNTING_OWNER_TYPES, type AccountingOwnerType } from "./accounting";
 import {
   assertDefaultFinanceSeeds,
   DEFAULT_FINANCE_ACCOUNT_SEEDS,
   DEFAULT_FINANCE_CATEGORY_SEEDS,
 } from "./accounting-defaults";
-import {
-  ACCOUNTING_OWNER_TYPES,
-  type AccountingOwnerType,
-} from "./accounting";
+import { db } from "./index";
 import {
   financeAccount,
   financeCategory,
@@ -154,6 +151,18 @@ export async function ensureDefaultFinanceCategories(
     );
 
     if (existingCategory) {
+      await database
+        .update(financeCategory)
+        .set({
+          accountType: seed.accountType,
+          description: seed.description,
+          isActive: true,
+          isSystem: true,
+          name: seed.name,
+          sortOrder: seed.sortOrder,
+        })
+        .where(eq(financeCategory.id, existingCategory.id));
+
       idsByCode.set(seed.code, existingCategory.id);
       skipped += 1;
       continue;
@@ -294,6 +303,16 @@ async function ensureDefaultFinancePaymentAccountsUncached({
     );
 
     if (existingPaymentAccount) {
+      await database
+        .update(financePaymentAccount)
+        .set({
+          isActive: true,
+          isDefault: seed.code === "1001-cash-on-hand",
+          name: seed.name,
+          type: resolvePaymentAccountType(seed.code),
+        })
+        .where(eq(financePaymentAccount.id, existingPaymentAccount.id));
+
       idsByCode.set(seed.code, existingPaymentAccount.id);
       skipped += 1;
       continue;
@@ -369,20 +388,37 @@ async function ensureDefaultFinanceAccountsUncached(
   let skipped = 0;
 
   for (const seed of DEFAULT_FINANCE_ACCOUNT_SEEDS) {
-    const existingAccount = await findSystemFinanceAccount(database, seed.code);
-
-    if (existingAccount) {
-      idsByCode.set(seed.code, existingAccount.id);
-      skipped += 1;
-      continue;
-    }
-
     const categoryId = categories.idsByCode.get(seed.categoryCode);
 
     if (!categoryId) {
       throw new Error(
         `Missing category ${seed.categoryCode} for finance account ${seed.code}`,
       );
+    }
+
+    const existingAccount = await findSystemFinanceAccount(database, seed.code);
+
+    if (existingAccount) {
+      await database
+        .update(financeAccount)
+        .set({
+          accountType: seed.accountType,
+          balanceSheetLine: seed.balanceSheetLine ?? null,
+          categoryId,
+          description: seed.description,
+          isActive: true,
+          isPaymentAccount: seed.isPaymentAccount,
+          isSystem: true,
+          name: seed.name,
+          normalBalance: seed.normalBalance,
+          profitAndLossLine: seed.profitAndLossLine ?? null,
+          sortOrder: seed.sortOrder,
+        })
+        .where(eq(financeAccount.id, existingAccount.id));
+
+      idsByCode.set(seed.code, existingAccount.id);
+      skipped += 1;
+      continue;
     }
 
     const [insertedAccount] = await database

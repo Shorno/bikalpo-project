@@ -13,7 +13,7 @@ export type RetailerSupplierOption = {
 };
 
 export function useRetailerSuppliers(scope: DaybookExpenseScope) {
-  const { data } = useQuery({
+  const shopSuppliersQuery = useQuery({
     enabled: scope === "retailer",
     queryKey: ["shopOwner", "suppliers", "daybook-selector"],
     queryFn: () =>
@@ -22,6 +22,19 @@ export function useRetailerSuppliers(scope: DaybookExpenseScope) {
       }),
     staleTime: 0,
   });
+  const warehouseSuppliersQuery = useQuery({
+    enabled: scope === "warehouse",
+    queryKey: ["warehouse", "suppliers", "daybook-selector"],
+    queryFn: () =>
+      orpc.warehouse.getSuppliers.call({
+        status: "active",
+      }),
+    staleTime: 0,
+  });
+  const data =
+    scope === "warehouse"
+      ? warehouseSuppliersQuery.data
+      : shopSuppliersQuery.data;
 
   return (data?.suppliers ?? []).map((supplier) => ({
     company: supplier.company,

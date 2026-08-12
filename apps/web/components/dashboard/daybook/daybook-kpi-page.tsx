@@ -19,6 +19,7 @@ import {
   ShoppingBagIcon,
   ShoppingCartIcon,
   TrendingDownIcon,
+  TrendingUpIcon,
   UserRoundIcon,
   UsersIcon,
   WarehouseIcon,
@@ -32,6 +33,8 @@ import { DaybookCustomerAdvanceDialog } from "@/components/dashboard/daybook/day
 import { DaybookExpenseDialog } from "@/components/dashboard/daybook/daybook-expense-dialog";
 import { DaybookFixedAssetDialog } from "@/components/dashboard/daybook/daybook-fixed-asset-dialog";
 import { DaybookLoanDialog } from "@/components/dashboard/daybook/daybook-loan-dialog";
+import { DaybookMoneyMovementDialog } from "@/components/dashboard/daybook/daybook-money-movement-dialog";
+import { DaybookOpeningStockDialog } from "@/components/dashboard/daybook/daybook-opening-stock-dialog";
 import { DaybookProductPurchaseDialog } from "@/components/dashboard/daybook/daybook-product-purchase-dialog";
 import { DaybookProductSaleDialog } from "@/components/dashboard/daybook/daybook-product-sale-dialog";
 import { DaybookSupplierAdvanceDialog } from "@/components/dashboard/daybook/daybook-supplier-advance-dialog";
@@ -83,6 +86,9 @@ type ActionItem = {
     | "loan"
     | "bill"
     | "customerAdvance"
+    | "moneyIn"
+    | "moneyOut"
+    | "openingStock"
     | "productPurchase"
     | "productSale"
     | "supplierAdvance";
@@ -233,6 +239,21 @@ const daybookConfigs: Record<DaybookVariant, DaybookConfig> = {
         kind: "productSale",
         label: "Sale",
         primary: true,
+      },
+      {
+        icon: <TrendingUpIcon className="size-4" />,
+        kind: "moneyIn",
+        label: "Money In",
+      },
+      {
+        icon: <TrendingDownIcon className="size-4" />,
+        kind: "moneyOut",
+        label: "Money Out",
+      },
+      {
+        icon: <PackagePlusIcon className="size-4" />,
+        kind: "openingStock",
+        label: "Opening Stock",
       },
       {
         icon: <PackageIcon className="size-4" />,
@@ -409,6 +430,21 @@ const daybookConfigs: Record<DaybookVariant, DaybookConfig> = {
         primary: true,
       },
       {
+        icon: <TrendingUpIcon className="size-4" />,
+        kind: "moneyIn",
+        label: "Money In",
+      },
+      {
+        icon: <TrendingDownIcon className="size-4" />,
+        kind: "moneyOut",
+        label: "Money Out",
+      },
+      {
+        icon: <PackagePlusIcon className="size-4" />,
+        kind: "openingStock",
+        label: "Opening Stock",
+      },
+      {
         icon: <PackageIcon className="size-4" />,
         kind: "productPurchase",
         label: "Create Purchase",
@@ -521,6 +557,9 @@ export function DaybookKpiPage({ variant }: { variant: DaybookVariant }) {
   const [expenseDialogOpen, setExpenseDialogOpen] = useState(false);
   const [fixedAssetDialogOpen, setFixedAssetDialogOpen] = useState(false);
   const [loanDialogOpen, setLoanDialogOpen] = useState(false);
+  const [moneyInDialogOpen, setMoneyInDialogOpen] = useState(false);
+  const [moneyOutDialogOpen, setMoneyOutDialogOpen] = useState(false);
+  const [openingStockDialogOpen, setOpeningStockDialogOpen] = useState(false);
   const [productPurchaseDialogOpen, setProductPurchaseDialogOpen] =
     useState(false);
   const [productSaleDialogOpen, setProductSaleDialogOpen] = useState(false);
@@ -923,6 +962,9 @@ export function DaybookKpiPage({ variant }: { variant: DaybookVariant }) {
                 onFixedAssetClick={() => setFixedAssetDialogOpen(true)}
                 onExpenseClick={() => setExpenseDialogOpen(true)}
                 onLoanClick={() => setLoanDialogOpen(true)}
+                onMoneyInClick={() => setMoneyInDialogOpen(true)}
+                onMoneyOutClick={() => setMoneyOutDialogOpen(true)}
+                onOpeningStockClick={() => setOpeningStockDialogOpen(true)}
                 onProductPurchaseClick={() =>
                   setProductPurchaseDialogOpen(true)
                 }
@@ -1139,6 +1181,23 @@ export function DaybookKpiPage({ variant }: { variant: DaybookVariant }) {
         open={loanDialogOpen}
         scope={variant}
       />
+      <DaybookMoneyMovementDialog
+        onOpenChange={setMoneyInDialogOpen}
+        open={moneyInDialogOpen}
+        scope={variant}
+        type="money_in"
+      />
+      <DaybookMoneyMovementDialog
+        onOpenChange={setMoneyOutDialogOpen}
+        open={moneyOutDialogOpen}
+        scope={variant}
+        type="money_out"
+      />
+      <DaybookOpeningStockDialog
+        onOpenChange={setOpeningStockDialogOpen}
+        open={openingStockDialogOpen}
+        scope={variant}
+      />
       <DaybookProductPurchaseDialog
         onOpenChange={setProductPurchaseDialogOpen}
         open={productPurchaseDialogOpen}
@@ -1253,6 +1312,9 @@ function QuickAction({
   onCustomerAdvanceClick,
   onExpenseClick,
   onLoanClick,
+  onMoneyInClick,
+  onMoneyOutClick,
+  onOpeningStockClick,
   onProductPurchaseClick,
   onProductSaleClick,
   onSupplierAdvanceClick,
@@ -1263,6 +1325,9 @@ function QuickAction({
   onCustomerAdvanceClick: () => void;
   onExpenseClick: () => void;
   onLoanClick: () => void;
+  onMoneyInClick: () => void;
+  onMoneyOutClick: () => void;
+  onOpeningStockClick: () => void;
   onProductPurchaseClick: () => void;
   onProductSaleClick: () => void;
   onSupplierAdvanceClick: () => void;
@@ -1292,6 +1357,57 @@ function QuickAction({
           !action.primary && "bg-slate-100 text-slate-800 hover:bg-slate-200",
         )}
         onClick={onExpenseClick}
+        type="button"
+        variant={action.primary ? "default" : "secondary"}
+      >
+        {action.icon}
+        {action.label}
+      </Button>
+    );
+  }
+
+  if (action.kind === "moneyIn") {
+    return (
+      <Button
+        className={cn(
+          "h-10 justify-start rounded-lg",
+          !action.primary && "bg-slate-100 text-slate-800 hover:bg-slate-200",
+        )}
+        onClick={onMoneyInClick}
+        type="button"
+        variant={action.primary ? "default" : "secondary"}
+      >
+        {action.icon}
+        {action.label}
+      </Button>
+    );
+  }
+
+  if (action.kind === "moneyOut") {
+    return (
+      <Button
+        className={cn(
+          "h-10 justify-start rounded-lg",
+          !action.primary && "bg-slate-100 text-slate-800 hover:bg-slate-200",
+        )}
+        onClick={onMoneyOutClick}
+        type="button"
+        variant={action.primary ? "default" : "secondary"}
+      >
+        {action.icon}
+        {action.label}
+      </Button>
+    );
+  }
+
+  if (action.kind === "openingStock") {
+    return (
+      <Button
+        className={cn(
+          "h-10 justify-start rounded-lg",
+          !action.primary && "bg-slate-100 text-slate-800 hover:bg-slate-200",
+        )}
+        onClick={onOpeningStockClick}
         type="button"
         variant={action.primary ? "default" : "secondary"}
       >

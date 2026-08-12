@@ -2,6 +2,7 @@ export const dynamic = "force-dynamic";
 
 import type { Metadata } from "next";
 import { Poppins } from "next/font/google";
+import Script from "next/script";
 import { NuqsAdapter } from "nuqs/adapters/next/app";
 import "./globals.css";
 import type React from "react";
@@ -76,8 +77,9 @@ export default function RootLayout({
         className={`${poppins.variable} font-(family-name:--font-poppins) antialiased`}
         suppressHydrationWarning
       >
-        <script
+        <Script
           id="extension-hydration-cleanup"
+          strategy="beforeInteractive"
           dangerouslySetInnerHTML={{ __html: extensionHydrationCleanup }}
         />
         <NuqsAdapter>

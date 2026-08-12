@@ -30,6 +30,7 @@ const UI_ACCOUNT_TYPES = [
   "LIABILITY",
   "EQUITY",
   "INCOME",
+  "COGS",
   "EXPENSE",
 ] as const;
 
@@ -90,10 +91,26 @@ type ResolvedInventoryAccount = {
   name: string;
 };
 
+type ResolvedOwnerCapitalAccount = {
+  currentBalance: number;
+  id: number;
+  name: string;
+};
+
 type ResolvedReceivableAccount = {
   currentBalance: number;
   id: number;
   name: string;
+};
+
+type ResolvedCentralMovementAccount = {
+  accountType: AccountingAccountType;
+  balanceSheetLine: BalanceSheetLine | null;
+  currentBalance: number;
+  id: number;
+  isPaymentAccount: boolean;
+  name: string;
+  normalBalance: "credit" | "debit";
 };
 
 type ProductSaleItem = {
@@ -112,6 +129,7 @@ function toUiAccountType(accountType: AccountingAccountType): UIAccountType {
   if (accountType === "liability") return "LIABILITY";
   if (accountType === "equity") return "EQUITY";
   if (accountType === "income") return "INCOME";
+  if (accountType === "cogs") return "COGS";
   return "EXPENSE";
 }
 
@@ -120,6 +138,7 @@ function toDbAccountType(accountType: UIAccountType): AccountingAccountType {
   if (accountType === "LIABILITY") return "liability";
   if (accountType === "EQUITY") return "equity";
   if (accountType === "INCOME") return "income";
+  if (accountType === "COGS") return "cogs";
   return "expense";
 }
 
@@ -142,6 +161,28 @@ function parseMoney(value: string | number | null | undefined) {
 
 function toMoney(value: number) {
   return value.toFixed(2);
+}
+
+function normalBalanceForAccountType(
+  accountType: AccountingAccountType,
+): "credit" | "debit" {
+  return accountType === "liability" ||
+    accountType === "equity" ||
+    accountType === "income"
+    ? "credit"
+    : "debit";
+}
+
+function balanceDeltaForDirection(input: {
+  accountType: AccountingAccountType;
+  amount: number;
+  direction: "credit" | "debit";
+  normalBalance?: "credit" | "debit";
+}) {
+  const normalBalance =
+    input.normalBalance ?? normalBalanceForAccountType(input.accountType);
+
+  return input.direction === normalBalance ? input.amount : -input.amount;
 }
 
 function assertSufficientPaymentBalance(input: {
@@ -224,6 +265,144 @@ async function resolvePaymentAccountId(input: {
   return matchingAccount.id;
 }
 
+async function resolveCentralMovementAccount(input: {
+  accountId?: string | number | null;
+  accountName: string;
+  ownerId: string;
+  ownerType: AccountingOwnerType;
+}): Promise<ResolvedCentralMovementAccount> {
+  const parsedAccountId =
+    input.accountId === null || input.accountId === undefined
+      ? Number.NaN
+      : Number(input.accountId);
+  const accountName = input.accountName.trim();
+  const selectedAccount = Number.isFinite(parsedAccountId)
+    ? await db.query.financeAccount.findFirst({
+        where: (table, { and: andFn, eq: eqFn }) =>
+          andFn(
+            eqFn(table.id, parsedAccountId),
+            eqFn(table.isActive, true),
+            scopeWhere(table, input.ownerId, input.ownerType),
+          ),
+      })
+    : await db.query.financeAccount.findFirst({
+        where: (table, { and: andFn, eq: eqFn }) =>
+          andFn(
+            eqFn(table.name, accountName),
+            eqFn(table.isActive, true),
+            scopeWhere(table, input.ownerId, input.ownerType),
+          ),
+      });
+
+  if (!selectedAccount) {
+    throw new ORPCError("NOT_FOUND", {
+      message: `Account ${accountName || input.accountId} not found`,
+    });
+  }
+
+  if (
+    selectedAccount.ownerId === input.ownerId &&
+    selectedAccount.ownerType === input.ownerType
+  ) {
+    return {
+      accountType: selectedAccount.accountType,
+      balanceSheetLine: selectedAccount.balanceSheetLine,
+      currentBalance: parseMoney(selectedAccount.currentBalance),
+      id: selectedAccount.id,
+      isPaymentAccount: selectedAccount.isPaymentAccount,
+      name: selectedAccount.name,
+      normalBalance: selectedAccount.normalBalance,
+    };
+  }
+
+  const ownerAccount = await db.query.financeAccount.findFirst({
+    where: (table, { and: andFn, eq: eqFn }) =>
+      andFn(
+        eqFn(table.ownerId, input.ownerId),
+        eqFn(table.ownerType, input.ownerType),
+        eqFn(table.categoryId, selectedAccount.categoryId),
+        eqFn(table.name, selectedAccount.name),
+        eqFn(table.isActive, true),
+      ),
+  });
+
+  if (ownerAccount) {
+    return {
+      accountType: ownerAccount.accountType,
+      balanceSheetLine: ownerAccount.balanceSheetLine,
+      currentBalance: parseMoney(ownerAccount.currentBalance),
+      id: ownerAccount.id,
+      isPaymentAccount: ownerAccount.isPaymentAccount,
+      name: ownerAccount.name,
+      normalBalance: ownerAccount.normalBalance,
+    };
+  }
+
+  const code = await generateUniqueCode(
+    financeAccount,
+    input.ownerId,
+    input.ownerType,
+    `${selectedAccount.accountType}-${slugify(selectedAccount.name)}`,
+  );
+  const [created] = await db
+    .insert(financeAccount)
+    .values({
+      accountType: selectedAccount.accountType,
+      balanceSheetLine: selectedAccount.balanceSheetLine,
+      categoryId: selectedAccount.categoryId,
+      code,
+      currentBalance: "0.00",
+      description: selectedAccount.description,
+      isActive: true,
+      isPaymentAccount: selectedAccount.isPaymentAccount,
+      isSystem: false,
+      name: selectedAccount.name,
+      normalBalance: selectedAccount.normalBalance,
+      openingBalance: "0.00",
+      ownerId: input.ownerId,
+      ownerType: input.ownerType,
+      parentAccountId: null,
+      profitAndLossLine: selectedAccount.profitAndLossLine,
+      sortOrder: selectedAccount.sortOrder,
+    })
+    .returning({
+      accountType: financeAccount.accountType,
+      balanceSheetLine: financeAccount.balanceSheetLine,
+      id: financeAccount.id,
+      isPaymentAccount: financeAccount.isPaymentAccount,
+      name: financeAccount.name,
+      normalBalance: financeAccount.normalBalance,
+    });
+
+  if (!created) {
+    throw new ORPCError("INTERNAL_SERVER_ERROR", {
+      message: "Failed to create owner account",
+    });
+  }
+
+  if (selectedAccount.isPaymentAccount) {
+    await ensureCashBankPaymentAccountForFinanceAccount({
+      accountCode: code,
+      accountId: created.id,
+      accountName: created.name,
+      currentBalance: 0,
+      openingBalance: 0,
+      ownerId: input.ownerId,
+      ownerType: input.ownerType,
+    });
+  }
+
+  return {
+    accountType: created.accountType,
+    balanceSheetLine: created.balanceSheetLine,
+    currentBalance: 0,
+    id: created.id,
+    isPaymentAccount: created.isPaymentAccount,
+    name: created.name,
+    normalBalance: created.normalBalance,
+  };
+}
+
 async function resolveLedgerBalanceTargets(input: {
   description?: string | null;
   ownerId: string;
@@ -286,17 +465,19 @@ function signedLedgerAmount(input: {
   amount: number;
   direction: "credit" | "debit";
   isPaymentAccount?: boolean;
+  normalBalance?: "credit" | "debit";
 }) {
   if (input.isPaymentAccount) {
     return input.direction === "credit" ? input.amount : -input.amount;
   }
 
   const normalBalance =
-    input.accountType === "liability" ||
+    input.normalBalance ??
+    (input.accountType === "liability" ||
     input.accountType === "equity" ||
     input.accountType === "income"
       ? "credit"
-      : "debit";
+      : "debit");
 
   return input.direction === normalBalance ? input.amount : -input.amount;
 }
@@ -309,12 +490,115 @@ function extractLedgerAccountName(description: string | null | undefined) {
   return match?.[1]?.trim() ?? null;
 }
 
-function formatLedgerEntryType(value: string) {
-  return value
+function extractLedgerDescriptionValue(
+  description: string | null | undefined,
+  label: string,
+) {
+  const escapedLabel = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = description?.match(
+    new RegExp(`(?:^|\\|)\\s*${escapedLabel}:\\s*([^|]+)`, "i"),
+  );
+
+  return match?.[1]?.trim() ?? null;
+}
+
+function inferLedgerTransactionType(input: {
+  description: string | null | undefined;
+  entryType: string;
+}) {
+  const firstSegment =
+    input.description?.split("|")[0]?.trim().toLowerCase() ?? "";
+
+  if (firstSegment.startsWith("expense:")) {
+    return "Expense Payment";
+  }
+
+  if (firstSegment === "supplier expense payment") {
+    return "Supplier Payment";
+  }
+
+  if (firstSegment === "fixed asset purchase") {
+    return "Fixed Asset Purchase";
+  }
+
+  if (firstSegment === "product purchase due") {
+    return "Purchase Credit";
+  }
+
+  if (firstSegment === "product purchase") {
+    return "Purchase Payment";
+  }
+
+  if (firstSegment.includes("cogs")) {
+    return "Cost of Sales";
+  }
+
+  if (firstSegment === "product sale") {
+    return "Sale Invoice";
+  }
+
+  if (firstSegment === "loan received") {
+    return "Loan Received";
+  }
+
+  if (firstSegment === "supplier advance payment") {
+    return "Supplier Advance";
+  }
+
+  if (firstSegment === "customer advance payment") {
+    return "Customer Advance";
+  }
+
+  if (firstSegment === "money in") {
+    return "Money In";
+  }
+
+  if (firstSegment === "money out") {
+    return "Money Out";
+  }
+
+  if (firstSegment === "bill due") {
+    return "Bill Due";
+  }
+
+  if (firstSegment === "bill paid") {
+    return "Bill Paid";
+  }
+
+  if (firstSegment === "opening stock") {
+    return "Opening Stock";
+  }
+
+  return input.entryType
     .split("_")
     .filter(Boolean)
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(" ");
+}
+
+function formatLedgerDescription(input: {
+  description: string | null | undefined;
+  documentId?: string | null;
+  referenceId: number;
+  referenceType: string;
+}) {
+  const description = input.description?.trim() || input.referenceType;
+  const extractedId =
+    input.documentId ||
+    extractLedgerDescriptionValue(description, "Advance") ||
+    extractLedgerDescriptionValue(description, "Loan") ||
+    extractLedgerDescriptionValue(description, "Bill") ||
+    extractLedgerDescriptionValue(description, "Money In No") ||
+    extractLedgerDescriptionValue(description, "Money Out No") ||
+    extractLedgerDescriptionValue(description, "Reference") ||
+    extractLedgerDescriptionValue(description, "Customer ID") ||
+    `${input.referenceType.toUpperCase()}-${input.referenceId}`;
+
+  if (description.toLowerCase().startsWith(extractedId.toLowerCase())) {
+    return description;
+  }
+
+  return `${extractedId} | ${description}`;
 }
 
 function ledgerDateValue(value: Date) {
@@ -325,6 +609,7 @@ function ledgerDateValue(value: Date) {
 }
 
 function resolveAccountReportLines(input: {
+  accountName?: string;
   accountType: AccountingAccountType;
   categoryCode: string;
   categoryName: string;
@@ -332,10 +617,13 @@ function resolveAccountReportLines(input: {
   balanceSheetLine: BalanceSheetLine | null;
   profitAndLossLine: ProfitAndLossLine | null;
 } {
+  const normalizedAccountName = input.accountName?.trim().toLowerCase() ?? "";
+  const normalizedCategoryName = input.categoryName.trim().toLowerCase();
+
   if (
     input.accountType === "asset" &&
     (input.categoryCode === "asset-cash-bank" ||
-      input.categoryName.toLowerCase() === "cash and bank")
+      normalizedCategoryName === "cash and bank")
   ) {
     return {
       balanceSheetLine: "cash_and_bank",
@@ -346,7 +634,7 @@ function resolveAccountReportLines(input: {
   if (
     input.accountType === "asset" &&
     (input.categoryCode === "asset-fixed" ||
-      input.categoryName.toLowerCase() === "fixed assets")
+      normalizedCategoryName === "fixed assets")
   ) {
     return {
       balanceSheetLine: "fixed_assets",
@@ -356,8 +644,9 @@ function resolveAccountReportLines(input: {
 
   if (
     input.accountType === "asset" &&
-    (input.categoryCode === "asset-supplier-advance" ||
-      input.categoryName.toLowerCase() === "supplier advance")
+    (normalizedAccountName.includes("supplier advance") ||
+      input.categoryCode === "asset-supplier-advance" ||
+      normalizedCategoryName === "supplier advance")
   ) {
     return {
       balanceSheetLine: "supplier_advance",
@@ -367,8 +656,9 @@ function resolveAccountReportLines(input: {
 
   if (
     input.accountType === "liability" &&
-    (input.categoryCode === "liability-customer-advance" ||
-      input.categoryName.toLowerCase() === "customer advance")
+    (normalizedAccountName.includes("customer advance") ||
+      input.categoryCode === "liability-customer-advance" ||
+      normalizedCategoryName === "customer advance")
   ) {
     return {
       balanceSheetLine: "customer_advance",
@@ -379,7 +669,9 @@ function resolveAccountReportLines(input: {
   if (
     input.accountType === "liability" &&
     (input.categoryCode === "liability-loan-payable" ||
-      input.categoryName.toLowerCase() === "loan payable")
+      input.categoryCode === "liability-loan" ||
+      normalizedCategoryName === "loan" ||
+      normalizedCategoryName === "loan payable")
   ) {
     return {
       balanceSheetLine: "loan_payable",
@@ -390,7 +682,11 @@ function resolveAccountReportLines(input: {
   if (
     input.accountType === "liability" &&
     (input.categoryCode === "liability-accounts-payable" ||
-      input.categoryName.toLowerCase() === "accounts payable")
+      input.categoryCode === "liability-tax-payable" ||
+      input.categoryCode === "liability-salary-payable" ||
+      normalizedCategoryName === "accounts payable" ||
+      normalizedCategoryName === "tax payable" ||
+      normalizedCategoryName === "salary payable")
   ) {
     return {
       balanceSheetLine: "accounts_payable",
@@ -398,10 +694,99 @@ function resolveAccountReportLines(input: {
     };
   }
 
+  if (
+    input.accountType === "equity" &&
+    (input.categoryCode === "equity-owner" ||
+      input.categoryCode === "equity-retained-earnings" ||
+      input.categoryCode === "equity-drawings" ||
+      normalizedCategoryName === "capital" ||
+      normalizedCategoryName === "owner's equity" ||
+      normalizedCategoryName === "retained earnings" ||
+      normalizedCategoryName === "drawings" ||
+      normalizedCategoryName === "owners equity")
+  ) {
+    if (normalizedAccountName.includes("drawing")) {
+      return {
+        balanceSheetLine: "owner_drawings",
+        profitAndLossLine: null,
+      };
+    }
+
+    if (
+      normalizedAccountName.includes("profit") ||
+      normalizedAccountName.includes("earning")
+    ) {
+      return {
+        balanceSheetLine: "current_year_profit",
+        profitAndLossLine: null,
+      };
+    }
+
+    return {
+      balanceSheetLine: "owner_capital",
+      profitAndLossLine: null,
+    };
+  }
+
+  if (input.accountType === "income") {
+    if (
+      input.categoryCode === "income-service" ||
+      normalizedCategoryName === "service income"
+    ) {
+      return {
+        balanceSheetLine: null,
+        profitAndLossLine: "service_income",
+      };
+    }
+
+    if (
+      input.categoryCode === "income-other" ||
+      normalizedCategoryName === "other income"
+    ) {
+      return {
+        balanceSheetLine: null,
+        profitAndLossLine: "other_income",
+      };
+    }
+
+    return {
+      balanceSheetLine: null,
+      profitAndLossLine: "product_sales",
+    };
+  }
+
+  if (input.accountType === "cogs") {
+    return {
+      balanceSheetLine: null,
+      profitAndLossLine: "product_purchase_cost",
+    };
+  }
+
+  if (input.accountType === "expense") {
+    return {
+      balanceSheetLine: null,
+      profitAndLossLine: "operating_expenses",
+    };
+  }
+
   return {
     balanceSheetLine: null,
     profitAndLossLine: null,
   };
+}
+
+function resolveNormalBalance(input: {
+  accountName?: string;
+  accountType: AccountingAccountType;
+}) {
+  if (
+    input.accountType === "equity" &&
+    input.accountName?.trim().toLowerCase().includes("drawing")
+  ) {
+    return "debit";
+  }
+
+  return normalBalanceForAccountType(input.accountType);
 }
 
 function scopeWhere<TTable extends { ownerId: any; ownerType: any }>(
@@ -767,7 +1152,7 @@ async function resolveSupplierAdvanceCategoryId() {
   const category = await db.query.financeCategory.findFirst({
     where: (table, { and: andFn, eq: eqFn, isNull: isNullFn }) =>
       andFn(
-        eqFn(table.code, "asset-supplier-advance"),
+        eqFn(table.code, "asset-accounts-receivable"),
         isNullFn(table.ownerId),
         isNullFn(table.ownerType),
       ),
@@ -788,7 +1173,7 @@ async function resolveCustomerAdvanceCategoryId() {
   const category = await db.query.financeCategory.findFirst({
     where: (table, { and: andFn, eq: eqFn, isNull: isNullFn }) =>
       andFn(
-        eqFn(table.code, "liability-customer-advance"),
+        eqFn(table.code, "liability-accounts-payable"),
         isNullFn(table.ownerId),
         isNullFn(table.ownerType),
       ),
@@ -860,6 +1245,27 @@ async function resolveAccountsPayableCategoryId() {
   if (!category) {
     throw new ORPCError("INTERNAL_SERVER_ERROR", {
       message: "Accounts payable category is not configured",
+    });
+  }
+
+  return category.id;
+}
+
+async function resolveOwnerEquityCategoryId() {
+  await ensureDefaultFinanceAccounts();
+
+  const category = await db.query.financeCategory.findFirst({
+    where: (table, { and: andFn, eq: eqFn, isNull: isNullFn }) =>
+      andFn(
+        eqFn(table.code, "equity-owner"),
+        isNullFn(table.ownerId),
+        isNullFn(table.ownerType),
+      ),
+  });
+
+  if (!category) {
+    throw new ORPCError("INTERNAL_SERVER_ERROR", {
+      message: "Owner equity category is not configured",
     });
   }
 
@@ -1430,6 +1836,89 @@ async function resolveInventoryAccount(input: {
   });
 }
 
+async function ensureOwnerCapitalAccount(input: {
+  categoryId: number;
+  ownerId: string;
+  ownerType: AccountingOwnerType;
+}): Promise<ResolvedOwnerCapitalAccount> {
+  const name = "Owner Capital";
+
+  const existing = await db.query.financeAccount.findFirst({
+    where: (table, { and: andFn, eq: eqFn }) =>
+      andFn(
+        eqFn(table.accountType, "equity"),
+        eqFn(table.balanceSheetLine, "owner_capital"),
+        eqFn(table.ownerId, input.ownerId),
+        eqFn(table.ownerType, input.ownerType),
+        eqFn(table.isActive, true),
+      ),
+  });
+
+  if (existing) {
+    return {
+      currentBalance: parseMoney(existing.currentBalance),
+      id: existing.id,
+      name: existing.name,
+    };
+  }
+
+  const code = await generateUniqueCode(
+    financeAccount,
+    input.ownerId,
+    input.ownerType,
+    "owner-capital",
+  );
+  const [created] = await db
+    .insert(financeAccount)
+    .values({
+      accountType: "equity",
+      balanceSheetLine: "owner_capital",
+      categoryId: input.categoryId,
+      code,
+      currentBalance: "0.00",
+      description: "Owner capital contributions.",
+      isActive: true,
+      isPaymentAccount: false,
+      isSystem: false,
+      name,
+      normalBalance: "credit",
+      openingBalance: "0.00",
+      ownerId: input.ownerId,
+      ownerType: input.ownerType,
+      parentAccountId: null,
+      profitAndLossLine: null,
+      sortOrder: 900,
+    })
+    .returning({
+      id: financeAccount.id,
+    });
+
+  if (!created) {
+    throw new ORPCError("INTERNAL_SERVER_ERROR", {
+      message: "Failed to create owner capital account",
+    });
+  }
+
+  return {
+    currentBalance: 0,
+    id: created.id,
+    name,
+  };
+}
+
+async function resolveOwnerCapitalAccount(input: {
+  ownerId: string;
+  ownerType: AccountingOwnerType;
+}): Promise<ResolvedOwnerCapitalAccount> {
+  const categoryId = await resolveOwnerEquityCategoryId();
+
+  return ensureOwnerCapitalAccount({
+    categoryId,
+    ownerId: input.ownerId,
+    ownerType: input.ownerType,
+  });
+}
+
 async function ensureOwnerAccountsReceivableAccount(input: {
   categoryId: number;
   ownerId: string;
@@ -1665,8 +2154,6 @@ export const financeRouter = {
                   eqFn(table.ownerType, ownerType),
                 ),
               ),
-              // hide system cogs from the chart UI
-              sql`${table.accountType} <> 'cogs'`,
             ),
           orderBy: (table, { asc: ascFn }) => [
             ascFn(table.accountType),
@@ -1689,14 +2176,12 @@ export const financeRouter = {
             ? String(account.parentAccountId)
             : "",
         })),
-        categories: categories
-          .filter((category) => category.accountType !== "cogs")
-          .map((category) => ({
-            accountType: toUiAccountType(category.accountType),
-            id: String(category.id),
-            isDefault: category.isSystem,
-            name: category.name,
-          })),
+        categories: categories.map((category) => ({
+          accountType: toUiAccountType(category.accountType),
+          id: String(category.id),
+          isDefault: category.isSystem,
+          name: category.name,
+        })),
       };
     }),
 
@@ -1711,6 +2196,8 @@ export const financeRouter = {
     .handler(async ({ context }) => {
       const ownerId = context.session.user.id;
       const ownerType = resolveOwnerScope(context.session.user.role);
+
+      await ensurePaymentAccountsReady({ ownerId, ownerType });
 
       let paymentAccounts = await db.query.financePaymentAccount.findMany({
         where: (table, { and: andFn, eq: eqFn }) =>
@@ -1758,6 +2245,513 @@ export const financeRouter = {
       };
     }),
 
+  createMoneyMovement: protectedProcedure
+    .route({
+      method: "POST",
+      path: "/finance/money-movements/create",
+      tags: ["Finance"],
+      summary: "Create centralized money movement",
+      description:
+        "Record money in or money out against chart of account lines.",
+    })
+    .input(
+      z.object({
+        lines: z
+          .array(
+            z.object({
+              accountId: z
+                .union([z.string(), z.number()])
+                .optional()
+                .nullable(),
+              accountName: z.string().min(1).max(180),
+              amount: z.union([z.string(), z.number()]),
+              description: z.string().max(300).optional().nullable(),
+            }),
+          )
+          .min(1),
+        movementNo: z.string().max(120).optional().nullable(),
+        notes: z.string().max(1000).optional().nullable(),
+        partyName: z.string().max(200).optional().nullable(),
+        paymentAccountId: z.union([z.string(), z.number()]),
+        paymentDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        paymentMethod: z.enum(PAYMENT_METHODS),
+        referenceNo: z.string().max(120).optional().nullable(),
+        type: z.enum(["money_in", "money_out"]),
+      }),
+    )
+    .handler(async ({ context, input }) => {
+      const ownerId = context.session.user.id;
+      const ownerType = resolveOwnerScope(context.session.user.role);
+      const paymentAccountId = Number(input.paymentAccountId);
+
+      if (!Number.isFinite(paymentAccountId)) {
+        throw new ORPCError("BAD_REQUEST", {
+          message: "Select a valid cash or bank account",
+        });
+      }
+
+      await ensurePaymentAccountsReady({ ownerId, ownerType });
+
+      const paymentAccount = await db.query.financePaymentAccount.findFirst({
+        where: (table, { and: andFn, eq: eqFn }) =>
+          andFn(
+            eqFn(table.id, paymentAccountId),
+            eqFn(table.ownerId, ownerId),
+            eqFn(table.ownerType, ownerType),
+            eqFn(table.isActive, true),
+          ),
+      });
+
+      if (
+        !paymentAccount ||
+        (paymentAccount.type !== "cash" && paymentAccount.type !== "bank")
+      ) {
+        throw new ORPCError("NOT_FOUND", {
+          message: "Cash or bank account not found",
+        });
+      }
+
+      if (paymentAccount.type !== input.paymentMethod) {
+        throw new ORPCError("BAD_REQUEST", {
+          message:
+            "Payment method must match the selected cash or bank account",
+        });
+      }
+
+      const targetDirection = input.type === "money_in" ? "credit" : "debit";
+      const paymentLedgerDirection =
+        input.type === "money_in" ? "credit" : "debit";
+      const paymentDeltaSign = input.type === "money_in" ? 1 : -1;
+      const label = input.type === "money_in" ? "Money In" : "Money Out";
+      const documentLabel =
+        input.type === "money_in" ? "Money In No" : "Money Out No";
+      const ledgerCreatedAt = new Date(`${input.paymentDate}T12:00:00.000`);
+      const validLines: Array<{
+        account: ResolvedCentralMovementAccount;
+        amount: number;
+        description: string;
+      }> = [];
+
+      for (const line of input.lines) {
+        const amount = parseMoney(line.amount);
+        const accountName = line.accountName.trim();
+
+        if (amount <= 0 || !accountName) {
+          continue;
+        }
+
+        const account = await resolveCentralMovementAccount({
+          accountId: line.accountId,
+          accountName,
+          ownerId,
+          ownerType,
+        });
+
+        if (
+          input.type === "money_in" &&
+          (account.accountType === "expense" || account.accountType === "cogs")
+        ) {
+          throw new ORPCError("BAD_REQUEST", {
+            message:
+              "Expense and cost of sales accounts are not available for Money In",
+          });
+        }
+
+        if (input.type === "money_out" && account.accountType === "income") {
+          throw new ORPCError("BAD_REQUEST", {
+            message: "Income accounts are not available for Money Out",
+          });
+        }
+
+        if (account.id === paymentAccount.financeAccountId) {
+          throw new ORPCError("BAD_REQUEST", {
+            message:
+              "Choose a different account name than the cash/bank account",
+          });
+        }
+
+        validLines.push({
+          account,
+          amount,
+          description: line.description?.trim() || account.name,
+        });
+      }
+
+      if (validLines.length === 0) {
+        throw new ORPCError("BAD_REQUEST", {
+          message: "Enter at least one account line amount",
+        });
+      }
+
+      const total = validLines.reduce((sum, line) => sum + line.amount, 0);
+      const paymentBalanceBefore = parseMoney(paymentAccount.currentBalance);
+      const paymentBalanceAfter =
+        paymentBalanceBefore + total * paymentDeltaSign;
+
+      if (input.type === "money_out") {
+        assertSufficientPaymentBalance({
+          accountName: paymentAccount.name,
+          balanceBefore: paymentBalanceBefore,
+          total,
+        });
+      }
+
+      const paymentAccounts = await db.query.financePaymentAccount.findMany({
+        where: (table, { and: andFn, eq: eqFn }) =>
+          andFn(
+            eqFn(table.ownerId, ownerId),
+            eqFn(table.ownerType, ownerType),
+            eqFn(table.isActive, true),
+          ),
+      });
+      const paymentByFinanceAccountId = new Map(
+        paymentAccounts.map((account) => [account.financeAccountId, account]),
+      );
+      const accountDeltas = new Map<
+        number,
+        {
+          account: ResolvedCentralMovementAccount;
+          before: number;
+          delta: number;
+          linkedPaymentAccount?: (typeof paymentAccounts)[number];
+        }
+      >();
+      const addAccountDelta = (
+        account: ResolvedCentralMovementAccount,
+        delta: number,
+      ) => {
+        const linkedPaymentAccount = paymentByFinanceAccountId.get(account.id);
+        const existing = accountDeltas.get(account.id);
+        const before =
+          existing?.before ??
+          (linkedPaymentAccount
+            ? parseMoney(linkedPaymentAccount.currentBalance)
+            : account.currentBalance);
+
+        accountDeltas.set(account.id, {
+          account,
+          before,
+          delta: (existing?.delta ?? 0) + delta,
+          linkedPaymentAccount,
+        });
+      };
+
+      addAccountDelta(
+        {
+          accountType: "asset",
+          balanceSheetLine: "cash_and_bank",
+          currentBalance: paymentBalanceBefore,
+          id: paymentAccount.financeAccountId,
+          isPaymentAccount: true,
+          name: paymentAccount.name,
+          normalBalance: "debit",
+        },
+        total * paymentDeltaSign,
+      );
+
+      for (const line of validLines) {
+        addAccountDelta(
+          line.account,
+          balanceDeltaForDirection({
+            accountType: line.account.accountType,
+            amount: line.amount,
+            direction: targetDirection,
+            normalBalance: line.account.normalBalance,
+          }),
+        );
+      }
+
+      for (const accountDelta of accountDeltas.values()) {
+        if (
+          accountDelta.linkedPaymentAccount &&
+          accountDelta.before + accountDelta.delta < 0
+        ) {
+          throw new ORPCError("BAD_REQUEST", {
+            message: `${accountDelta.account.name} balance cannot be less than 0`,
+          });
+        }
+      }
+
+      await db.transaction(async (tx) => {
+        for (const [accountId, accountDelta] of accountDeltas) {
+          const balanceAfter = accountDelta.before + accountDelta.delta;
+
+          await tx
+            .update(financeAccount)
+            .set({
+              currentBalance: toMoney(balanceAfter),
+              updatedAt: new Date(),
+            })
+            .where(eq(financeAccount.id, accountId));
+
+          if (accountDelta.linkedPaymentAccount) {
+            await tx
+              .update(financePaymentAccount)
+              .set({
+                currentBalance: toMoney(balanceAfter),
+                updatedAt: new Date(),
+              })
+              .where(
+                eq(
+                  financePaymentAccount.id,
+                  accountDelta.linkedPaymentAccount.id,
+                ),
+              );
+          }
+        }
+
+        await tx.insert(financialLedger).values({
+          amount: toMoney(total),
+          balanceAfter: toMoney(paymentBalanceAfter),
+          balanceBefore: toMoney(paymentBalanceBefore),
+          createdAt: ledgerCreatedAt,
+          description: [
+            label,
+            input.movementNo?.trim()
+              ? `${documentLabel}: ${input.movementNo.trim()}`
+              : null,
+            input.partyName?.trim() ? `Name: ${input.partyName.trim()}` : null,
+            input.referenceNo?.trim()
+              ? `Reference: ${input.referenceNo.trim()}`
+              : null,
+            `Cash/Bank: ${paymentAccount.name}`,
+            `Accounts: ${validLines
+              .map((line) => `${line.account.name} (${line.description})`)
+              .join(", ")}`,
+          ]
+            .filter(Boolean)
+            .join(" | "),
+          direction: paymentLedgerDirection,
+          entryType: "adjustment",
+          ownerId,
+          ownerType,
+          referenceId: paymentAccount.id,
+          referenceType: "adjustment",
+        });
+
+        for (const line of validLines) {
+          const accountDelta = accountDeltas.get(line.account.id);
+          const balanceAfter =
+            (accountDelta?.before ?? line.account.currentBalance) +
+            (accountDelta?.delta ?? 0);
+          const ledgerDirection =
+            line.account.isPaymentAccount && accountDelta
+              ? accountDelta.delta >= 0
+                ? "credit"
+                : "debit"
+              : targetDirection;
+
+          await tx.insert(financialLedger).values({
+            amount: toMoney(line.amount),
+            balanceAfter: toMoney(balanceAfter),
+            balanceBefore: toMoney(
+              accountDelta?.before ?? line.account.currentBalance,
+            ),
+            createdAt: ledgerCreatedAt,
+            description: [
+              label,
+              input.movementNo?.trim()
+                ? `${documentLabel}: ${input.movementNo.trim()}`
+                : null,
+              input.partyName?.trim()
+                ? `Name: ${input.partyName.trim()}`
+                : null,
+              input.referenceNo?.trim()
+                ? `Reference: ${input.referenceNo.trim()}`
+                : null,
+              `Account: ${line.account.name}`,
+              line.description ? `Description: ${line.description}` : null,
+              `Cash/Bank: ${paymentAccount.name}`,
+            ]
+              .filter(Boolean)
+              .join(" | "),
+            direction: ledgerDirection,
+            entryType: "adjustment",
+            ownerId,
+            ownerType,
+            referenceId: line.account.id,
+            referenceType: "adjustment",
+          });
+        }
+      });
+
+      return {
+        balanceAfter: toMoney(paymentBalanceAfter),
+        message: `${label} saved and reports updated`,
+        total: toMoney(total),
+      };
+    }),
+
+  createOpeningStock: protectedProcedure
+    .route({
+      method: "POST",
+      path: "/finance/opening-stock/create",
+      tags: ["Finance"],
+      summary: "Create opening stock",
+      description:
+        "Record opening inventory introduced by owner as Inventory debit and Owner Capital credit.",
+    })
+    .input(
+      z.object({
+        lines: z
+          .array(
+            z.object({
+              accountId: z
+                .union([z.string(), z.number()])
+                .optional()
+                .nullable(),
+              accountName: z.string().min(1).max(180),
+              amount: z.union([z.string(), z.number()]),
+              description: z.string().max(300).optional().nullable(),
+            }),
+          )
+          .min(1),
+        notes: z.string().max(1000).optional().nullable(),
+        openingDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        referenceNo: z.string().max(120).optional().nullable(),
+        stockNo: z.string().max(120).optional().nullable(),
+      }),
+    )
+    .handler(async ({ context, input }) => {
+      const ownerId = context.session.user.id;
+      const ownerType = resolveOwnerScope(context.session.user.role);
+      const ledgerCreatedAt = new Date(`${input.openingDate}T12:00:00.000`);
+      const ownerCapital = await resolveOwnerCapitalAccount({
+        ownerId,
+        ownerType,
+      });
+      const validLines: Array<{
+        account: ResolvedCentralMovementAccount;
+        amount: number;
+        description: string;
+      }> = [];
+
+      for (const line of input.lines) {
+        const amount = parseMoney(line.amount);
+        const accountName = line.accountName.trim();
+
+        if (amount <= 0 || !accountName) {
+          continue;
+        }
+
+        const account = await resolveCentralMovementAccount({
+          accountId: line.accountId,
+          accountName,
+          ownerId,
+          ownerType,
+        });
+
+        if (
+          account.accountType !== "asset" ||
+          account.balanceSheetLine !== "inventory"
+        ) {
+          throw new ORPCError("BAD_REQUEST", {
+            message: "Opening stock can only be posted to Inventory accounts",
+          });
+        }
+
+        validLines.push({
+          account,
+          amount,
+          description:
+            line.description?.trim() || "Inventory introduced by owner",
+        });
+      }
+
+      if (validLines.length === 0) {
+        throw new ORPCError("BAD_REQUEST", {
+          message: "Enter at least one opening stock line amount",
+        });
+      }
+
+      const total = validLines.reduce((sum, line) => sum + line.amount, 0);
+      const stockNo =
+        input.stockNo?.trim() ||
+        `OST-${new Date().getFullYear()}-${String(Date.now()).slice(-4)}`;
+      const descriptionPrefix = [
+        "Opening Stock",
+        `Opening Stock No: ${stockNo}`,
+        input.referenceNo?.trim()
+          ? `Reference: ${input.referenceNo.trim()}`
+          : null,
+      ]
+        .filter(Boolean)
+        .join(" | ");
+
+      await db.transaction(async (tx) => {
+        for (const line of validLines) {
+          const balanceBefore = line.account.currentBalance;
+          const balanceAfter = balanceBefore + line.amount;
+
+          await tx
+            .update(financeAccount)
+            .set({
+              currentBalance: toMoney(balanceAfter),
+              updatedAt: new Date(),
+            })
+            .where(eq(financeAccount.id, line.account.id));
+
+          await tx.insert(financialLedger).values({
+            amount: toMoney(line.amount),
+            balanceAfter: toMoney(balanceAfter),
+            balanceBefore: toMoney(balanceBefore),
+            createdAt: ledgerCreatedAt,
+            description: [
+              descriptionPrefix,
+              `Inventory account: ${line.account.name}`,
+              `Description: ${line.description}`,
+              `Equity account: ${ownerCapital.name}`,
+            ].join(" | "),
+            direction: "debit",
+            entryType: "adjustment",
+            ownerId,
+            ownerType,
+            referenceId: line.account.id,
+            referenceType: "adjustment",
+          });
+        }
+
+        const capitalBalanceBefore = ownerCapital.currentBalance;
+        const capitalBalanceAfter = capitalBalanceBefore + total;
+
+        await tx
+          .update(financeAccount)
+          .set({
+            currentBalance: toMoney(capitalBalanceAfter),
+            updatedAt: new Date(),
+          })
+          .where(eq(financeAccount.id, ownerCapital.id));
+
+        await tx.insert(financialLedger).values({
+          amount: toMoney(total),
+          balanceAfter: toMoney(capitalBalanceAfter),
+          balanceBefore: toMoney(capitalBalanceBefore),
+          createdAt: ledgerCreatedAt,
+          description: [
+            descriptionPrefix,
+            `Equity account: ${ownerCapital.name}`,
+            `Accounts: ${validLines
+              .map((line) => `${line.account.name} (${line.description})`)
+              .join(", ")}`,
+            input.notes?.trim() ? `Notes: ${input.notes.trim()}` : null,
+          ]
+            .filter(Boolean)
+            .join(" | "),
+          direction: "credit",
+          entryType: "adjustment",
+          ownerId,
+          ownerType,
+          referenceId: ownerCapital.id,
+          referenceType: "adjustment",
+        });
+      });
+
+      return {
+        message: "Opening stock saved and Owner Capital updated",
+        total: toMoney(total),
+      };
+    }),
+
   getGeneralLedger: protectedProcedure
     .route({
       method: "POST",
@@ -1769,6 +2763,7 @@ export const financeRouter = {
       z.object({
         accountId: z.union([z.string(), z.number()]).optional().nullable(),
         endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        includeZeroBalance: z.boolean().optional().default(false),
         startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
       }),
     )
@@ -1782,57 +2777,71 @@ export const financeRouter = {
           ? Number(input.accountId)
           : null;
 
-      const [accountRows, paymentRows, ledgerRows] = await Promise.all([
-        db
-          .select({
-            accountType: financeAccount.accountType,
-            categoryName: financeCategory.name,
-            currentBalance: financeAccount.currentBalance,
-            id: financeAccount.id,
-            isPaymentAccount: financeAccount.isPaymentAccount,
-            name: financeAccount.name,
-            openingBalance: financeAccount.openingBalance,
-            sortOrder: financeAccount.sortOrder,
-          })
-          .from(financeAccount)
-          .innerJoin(
-            financeCategory,
-            eq(financeAccount.categoryId, financeCategory.id),
-          )
-          .where(
-            and(
-              eq(financeAccount.ownerId, ownerId),
-              eq(financeAccount.ownerType, ownerType),
-              eq(financeAccount.isActive, true),
+      const [accountRows, paymentRows, ledgerRows, expenseNumberRows] =
+        await Promise.all([
+          db
+            .select({
+              accountType: financeAccount.accountType,
+              categoryName: financeCategory.name,
+              currentBalance: financeAccount.currentBalance,
+              id: financeAccount.id,
+              isPaymentAccount: financeAccount.isPaymentAccount,
+              name: financeAccount.name,
+              normalBalance: financeAccount.normalBalance,
+              openingBalance: financeAccount.openingBalance,
+              sortOrder: financeAccount.sortOrder,
+            })
+            .from(financeAccount)
+            .innerJoin(
+              financeCategory,
+              eq(financeAccount.categoryId, financeCategory.id),
+            )
+            .where(
+              and(
+                eq(financeAccount.ownerId, ownerId),
+                eq(financeAccount.ownerType, ownerType),
+                eq(financeAccount.isActive, true),
+              ),
+            )
+            .orderBy(
+              asc(financeAccount.accountType),
+              asc(financeAccount.sortOrder),
+              asc(financeAccount.name),
             ),
-          )
-          .orderBy(
-            asc(financeAccount.accountType),
-            asc(financeAccount.sortOrder),
-            asc(financeAccount.name),
-          ),
-        db.query.financePaymentAccount.findMany({
-          where: (table, { and: andFn, eq: eqFn }) =>
-            andFn(
-              eqFn(table.ownerId, ownerId),
-              eqFn(table.ownerType, ownerType),
-              eqFn(table.isActive, true),
+          db.query.financePaymentAccount.findMany({
+            where: (table, { and: andFn, eq: eqFn }) =>
+              andFn(
+                eqFn(table.ownerId, ownerId),
+                eqFn(table.ownerType, ownerType),
+                eqFn(table.isActive, true),
+              ),
+          }),
+          db.query.financialLedger.findMany({
+            where: (table, { and: andFn, eq: eqFn, gte: gteFn, lte: lteFn }) =>
+              andFn(
+                eqFn(table.ownerId, ownerId),
+                eqFn(table.ownerType, ownerType),
+                gteFn(table.createdAt, startDateTime),
+                lteFn(table.createdAt, endDateTime),
+              ),
+            orderBy: (table, { asc: ascFn }) => [
+              ascFn(table.createdAt),
+              ascFn(table.id),
+            ],
+          }),
+          db
+            .select({
+              expenseNumber: expense.expenseNumber,
+              id: expense.id,
+            })
+            .from(expense)
+            .where(
+              and(
+                eq(expense.ownerId, ownerId),
+                eq(expense.ownerType, ownerType),
+              ),
             ),
-        }),
-        db.query.financialLedger.findMany({
-          where: (table, { and: andFn, eq: eqFn, gte: gteFn, lte: lteFn }) =>
-            andFn(
-              eqFn(table.ownerId, ownerId),
-              eqFn(table.ownerType, ownerType),
-              gteFn(table.createdAt, startDateTime),
-              lteFn(table.createdAt, endDateTime),
-            ),
-          orderBy: (table, { asc: ascFn }) => [
-            ascFn(table.createdAt),
-            ascFn(table.id),
-          ],
-        }),
-      ]);
+        ]);
 
       const paymentById = new Map(paymentRows.map((row) => [row.id, row]));
       const paymentByName = new Map(
@@ -1843,6 +2852,9 @@ export const financeRouter = {
       );
       const paymentByFinanceAccountId = new Map(
         paymentRows.map((row) => [row.financeAccountId, row]),
+      );
+      const expenseNumberById = new Map(
+        expenseNumberRows.map((row) => [row.id, row.expenseNumber]),
       );
       const accountsById = new Map(
         accountRows.map((account) => [account.id, account]),
@@ -1898,6 +2910,7 @@ export const financeRouter = {
             amount,
             direction: row.direction,
             isPaymentAccount: account.isPaymentAccount,
+            normalBalance: account.normalBalance,
           });
           const currentRows = ledgerByAccount.get(accountId) ?? [];
 
@@ -1906,13 +2919,24 @@ export const financeRouter = {
             balance: "0.00",
             createdAt: row.createdAt,
             date: ledgerDateValue(row.createdAt),
-            description: row.description ?? "",
+            description: formatLedgerDescription({
+              description: row.description,
+              documentId:
+                row.referenceType === "expense"
+                  ? expenseNumberById.get(row.referenceId)
+                  : null,
+              referenceId: row.referenceId,
+              referenceType: row.referenceType,
+            }),
             direction: row.direction,
             id: row.id,
             referenceId: row.referenceId,
             referenceType: row.referenceType,
             signedAmount: toMoney(signedAmount),
-            transactionType: formatLedgerEntryType(row.entryType),
+            transactionType: inferLedgerTransactionType({
+              description: row.description,
+              entryType: row.entryType,
+            }),
           });
           ledgerByAccount.set(accountId, currentRows);
         }
@@ -1957,6 +2981,10 @@ export const financeRouter = {
             return Number(account.id) === selectedAccountId;
           }
 
+          if (input.includeZeroBalance) {
+            return true;
+          }
+
           return parseMoney(account.balance) !== 0;
         });
 
@@ -1979,7 +3007,12 @@ export const financeRouter = {
     .input(
       z.object({
         amount: z.union([z.string(), z.number()]),
+        description: z.string().max(1500).optional(),
         id: z.number().int().positive(),
+        transactionDate: z
+          .string()
+          .regex(/^\d{4}-\d{2}-\d{2}$/)
+          .optional(),
       }),
     )
     .handler(async ({ context, input }) => {
@@ -2043,6 +3076,7 @@ export const financeRouter = {
             amount: delta,
             direction: row.direction,
             isPaymentAccount: false,
+            normalBalance: account.normalBalance,
           });
 
           await tx
@@ -2071,6 +3105,14 @@ export const financeRouter = {
                         isPaymentAccount: true,
                       }),
                   ),
+            ...(input.description !== undefined
+              ? { description: input.description.trim() || null }
+              : {}),
+            ...(input.transactionDate
+              ? {
+                  createdAt: new Date(`${input.transactionDate}T12:00:00.000`),
+                }
+              : {}),
           })
           .where(eq(financialLedger.id, row.id));
 
@@ -2149,6 +3191,7 @@ export const financeRouter = {
             amount: parseMoney(row.amount),
             direction: row.direction,
             isPaymentAccount: false,
+            normalBalance: account.normalBalance,
           });
 
           await tx
@@ -2701,6 +3744,11 @@ export const financeRouter = {
         items: z
           .array(
             z.object({
+              accountId: z
+                .union([z.string(), z.number()])
+                .optional()
+                .nullable(),
+              accountName: z.string().max(180).optional().nullable(),
               amount: z.union([z.string(), z.number()]),
               description: z.string().max(260).optional().nullable(),
               productName: z.string().min(1).max(220),
@@ -2715,6 +3763,9 @@ export const financeRouter = {
         paymentDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
         paymentMethod: z.enum(PAYMENT_METHODS).optional().nullable(),
         paymentType: z.enum(PRODUCT_PURCHASE_PAYMENT_TYPES).default("cash"),
+        postingSource: z
+          .enum(["bill", "product_purchase"])
+          .default("product_purchase"),
         referenceNo: z.string().max(120).optional().nullable(),
         supplier: z.string().max(200).optional().nullable(),
       }),
@@ -2763,6 +3814,8 @@ export const financeRouter = {
 
       const validItems = input.items
         .map((item) => ({
+          accountId: item.accountId,
+          accountName: item.accountName?.trim() || item.productName.trim(),
           amount: parseMoney(item.amount),
           description: item.description?.trim() || "Product Purchased",
           productName: item.productName.trim(),
@@ -2790,6 +3843,30 @@ export const financeRouter = {
       const accountsPayable = isDuePurchase
         ? await resolveAccountsPayableAccount({ ownerId, ownerType })
         : null;
+      const isBillPosting = input.postingSource === "bill";
+      const billLineAccounts = isBillPosting
+        ? await Promise.all(
+            validItems.map(async (item) => {
+              const account = await resolveCentralMovementAccount({
+                accountId: item.accountId,
+                accountName: item.accountName,
+                ownerId,
+                ownerType,
+              });
+
+              if (account.isPaymentAccount) {
+                throw new ORPCError("BAD_REQUEST", {
+                  message: "Bill line account cannot be a cash or bank account",
+                });
+              }
+
+              return {
+                ...item,
+                account,
+              };
+            }),
+          )
+        : [];
 
       await db.transaction(async (tx) => {
         if (paymentAccount) {
@@ -2802,43 +3879,125 @@ export const financeRouter = {
             .where(eq(financePaymentAccount.id, paymentAccount.id));
         }
 
+        if (isBillPosting) {
+          for (const item of billLineAccounts) {
+            const balanceBefore = item.account.currentBalance;
+            const lineDelta = balanceDeltaForDirection({
+              accountType: item.account.accountType,
+              amount: item.amount,
+              direction: "debit",
+              normalBalance: item.account.normalBalance,
+            });
+            const balanceAfter = balanceBefore + lineDelta;
+
+            await tx
+              .update(financeAccount)
+              .set({
+                currentBalance: toMoney(balanceAfter),
+                updatedAt: new Date(),
+              })
+              .where(eq(financeAccount.id, item.account.id));
+
+            await tx.insert(financialLedger).values({
+              amount: toMoney(item.amount),
+              balanceAfter: toMoney(balanceAfter),
+              balanceBefore: toMoney(balanceBefore),
+              description: [
+                isDuePurchase ? "Bill due" : "Bill paid",
+                input.supplier?.trim()
+                  ? `Supplier: ${input.supplier.trim()}`
+                  : null,
+                input.billNo?.trim() ? `Bill: ${input.billNo.trim()}` : null,
+                input.referenceNo?.trim()
+                  ? `Reference: ${input.referenceNo.trim()}`
+                  : null,
+                `Account: ${item.account.name}`,
+                `Product: ${item.productName}`,
+                `Description: ${item.description}`,
+              ]
+                .filter(Boolean)
+                .join(" | "),
+              direction: "debit",
+              entryType: "adjustment",
+              ownerId,
+              ownerType,
+              referenceId: item.account.id,
+              referenceType: "adjustment",
+            });
+          }
+        }
+
         if (accountsPayable) {
+          const payableBalanceAfter = accountsPayable.currentBalance + total;
+
           await tx
             .update(financeAccount)
             .set({
               balanceSheetLine: "accounts_payable",
-              currentBalance: toMoney(accountsPayable.currentBalance + total),
+              currentBalance: toMoney(payableBalanceAfter),
               updatedAt: new Date(),
             })
             .where(eq(financeAccount.id, accountsPayable.id));
+
+          if (isBillPosting) {
+            await tx.insert(financialLedger).values({
+              amount: toMoney(total),
+              balanceAfter: toMoney(payableBalanceAfter),
+              balanceBefore: toMoney(accountsPayable.currentBalance),
+              description: [
+                "Bill due",
+                input.supplier?.trim()
+                  ? `Supplier: ${input.supplier.trim()}`
+                  : null,
+                input.billNo?.trim() ? `Bill: ${input.billNo.trim()}` : null,
+                input.referenceNo?.trim()
+                  ? `Reference: ${input.referenceNo.trim()}`
+                  : null,
+                `Account: ${accountsPayable.name}`,
+                `Items: ${validItems
+                  .map((item) => `${item.productName} (${item.description})`)
+                  .join(", ")}`,
+              ]
+                .filter(Boolean)
+                .join(" | "),
+              direction: "credit",
+              entryType: "adjustment",
+              ownerId,
+              ownerType,
+              referenceId: accountsPayable.id,
+              referenceType: "adjustment",
+            });
+          }
         }
 
-        await tx.insert(financialLedger).values({
-          amount: toMoney(total),
-          balanceAfter: paymentAccount ? toMoney(balanceAfter) : null,
-          balanceBefore: paymentAccount ? toMoney(balanceBefore) : null,
-          description: [
-            isDuePurchase ? "Product purchase due" : "Product purchase",
-            input.supplier?.trim()
-              ? `Supplier: ${input.supplier.trim()}`
-              : null,
-            input.billNo?.trim() ? `Bill: ${input.billNo.trim()}` : null,
-            input.referenceNo?.trim()
-              ? `Reference: ${input.referenceNo.trim()}`
-              : null,
-            `Items: ${validItems
-              .map((item) => `${item.productName} (${item.description})`)
-              .join(", ")}`,
-          ]
-            .filter(Boolean)
-            .join(" | "),
-          direction: "debit",
-          entryType: isDuePurchase ? "purchase_credit" : "purchase_cash",
-          ownerId,
-          ownerType,
-          referenceId: paymentAccount?.id ?? accountsPayable?.id ?? 0,
-          referenceType: "adjustment",
-        });
+        if (!isBillPosting) {
+          await tx.insert(financialLedger).values({
+            amount: toMoney(total),
+            balanceAfter: paymentAccount ? toMoney(balanceAfter) : null,
+            balanceBefore: paymentAccount ? toMoney(balanceBefore) : null,
+            description: [
+              isDuePurchase ? "Product purchase due" : "Product purchase",
+              input.supplier?.trim()
+                ? `Supplier: ${input.supplier.trim()}`
+                : null,
+              input.billNo?.trim() ? `Bill: ${input.billNo.trim()}` : null,
+              input.referenceNo?.trim()
+                ? `Reference: ${input.referenceNo.trim()}`
+                : null,
+              `Items: ${validItems
+                .map((item) => `${item.productName} (${item.description})`)
+                .join(", ")}`,
+            ]
+              .filter(Boolean)
+              .join(" | "),
+            direction: "debit",
+            entryType: isDuePurchase ? "purchase_credit" : "purchase_cash",
+            ownerId,
+            ownerType,
+            referenceId: paymentAccount?.id ?? accountsPayable?.id ?? 0,
+            referenceType: "adjustment",
+          });
+        }
       });
 
       return {
@@ -3694,6 +4853,7 @@ export const financeRouter = {
       );
       const openingBalance = parseMoney(input.amount);
       const reportLines = resolveAccountReportLines({
+        accountName: name,
         accountType,
         categoryCode: category.code,
         categoryName: category.name,
@@ -3718,12 +4878,10 @@ export const financeRouter = {
           isPaymentAccount: shouldCreatePaymentAccount,
           isSystem: false,
           name,
-          normalBalance:
-            accountType === "liability" ||
-            accountType === "equity" ||
-            accountType === "income"
-              ? "credit"
-              : "debit",
+          normalBalance: resolveNormalBalance({
+            accountName: name,
+            accountType,
+          }),
           openingBalance: String(openingBalance),
           ownerId,
           ownerType,
@@ -3878,6 +5036,7 @@ export const financeRouter = {
 
       const amount = parseMoney(input.amount);
       const reportLines = resolveAccountReportLines({
+        accountName: name,
         accountType,
         categoryCode: category.code,
         categoryName: category.name,
@@ -3899,12 +5058,10 @@ export const financeRouter = {
           description: input.description?.trim() || null,
           isPaymentAccount: shouldCreatePaymentAccount,
           name,
-          normalBalance:
-            accountType === "liability" ||
-            accountType === "equity" ||
-            accountType === "income"
-              ? "credit"
-              : "debit",
+          normalBalance: resolveNormalBalance({
+            accountName: name,
+            accountType,
+          }),
           openingBalance: String(amount),
           parentAccountId: null,
           profitAndLossLine: reportLines.profitAndLossLine,
