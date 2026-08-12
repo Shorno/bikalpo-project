@@ -8,6 +8,7 @@ import {
 import { ORPCError } from "@orpc/server";
 import { and, eq, sql } from "drizzle-orm";
 import { settleRetailerCylinderReturns } from "../../services/retailer-cylinder-sale";
+import { fulfillmentInvoiceOwnerCondition } from "./fulfillment-owner";
 import {
   consumeRetailerOrderStock,
   createRetailerOrderStockWriter,
@@ -35,12 +36,7 @@ export async function settleRetailerCylinderHandoff(
   const invoiceRecord = await tx.query.invoice.findFirst({
     where: and(
       eq(invoice.id, input.invoiceId),
-      sql`EXISTS (
-        SELECT 1 FROM ${order}
-        WHERE ${order.id} = ${invoice.orderId}
-          AND ${order.shopId} = ${input.shopId}
-          AND ${order.orderType} = 'b2c'
-      )`,
+      fulfillmentInvoiceOwnerCondition({ kind: "shop", id: input.shopId }),
     ),
     with: {
       order: {
