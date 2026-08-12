@@ -4,11 +4,11 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { CustomerPreviewBanner } from "@/components/storefront/customer-preview-banner";
 import { ProductReviews } from "../reviews/product-reviews";
+import { ProductImageGallery } from "./product-image-gallery";
 import {
   type DetailVariant,
   ProductDetailClient,
 } from "./trade-product-detail-client";
-import { ProductImageGallery } from "./product-image-gallery";
 
 interface ProductDetailsViewProps {
   product: {

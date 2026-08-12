@@ -21,6 +21,8 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
+import { Label } from "@/components/ui/label";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import type { CartItem } from "@/hooks/use-orpc-cart";
 import { getCartItemProductHref } from "@/lib/retailer-storefront-url";
 import { cn } from "@/lib/utils";
@@ -42,6 +44,10 @@ interface CheckoutSummaryProps {
   onOpenChange?: (open: boolean) => void;
   onRemoveItem: (cartItemId: number) => Promise<void>;
   onUpdateQuantity: (cartItemId: number, quantity: number) => Promise<void>;
+  onUpdateCylinderSaleMode: (
+    cartItemId: number,
+    mode: "new" | "exchange",
+  ) => Promise<void>;
   open?: boolean;
   presentation: "desktop" | "compact";
   shippingCost: number;
@@ -54,11 +60,16 @@ function CheckoutLineItem({
   item,
   onRemoveItem,
   onUpdateQuantity,
+  onUpdateCylinderSaleMode,
 }: {
   cartLoading: boolean;
   item: CartItem;
   onRemoveItem: (cartItemId: number) => Promise<void>;
   onUpdateQuantity: (cartItemId: number, quantity: number) => Promise<void>;
+  onUpdateCylinderSaleMode: (
+    cartItemId: number,
+    mode: "new" | "exchange",
+  ) => Promise<void>;
 }) {
   const productHref = getCartItemProductHref({
     shopSlug: item.shopSlug,
@@ -89,10 +100,7 @@ function CheckoutLineItem({
             </Link>
             <p className="mt-0.5 text-xs text-slate-500">{item.size}</p>
             {item.shopName && (
-              <CartRetailerLabel
-                className="mt-1.5"
-                shopName={item.shopName}
-              />
+              <CartRetailerLabel className="mt-1.5" shopName={item.shopName} />
             )}
           </div>
           <p className="shrink-0 whitespace-nowrap text-sm font-semibold tabular-nums text-slate-900">
@@ -141,6 +149,65 @@ function CheckoutLineItem({
             <Trash2 aria-hidden="true" />
           </Button>
         </div>
+
+        {item.cylinderSale?.exchangeEnabled && (
+          <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50/60 p-2.5">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-emerald-800">
+              Cylinder purchase
+            </p>
+            <RadioGroup
+              className="mt-2 grid grid-cols-2 gap-2"
+              disabled={cartLoading}
+              onValueChange={(value) =>
+                void onUpdateCylinderSaleMode(
+                  item.id,
+                  value as "new" | "exchange",
+                )
+              }
+              value={item.cylinderSale.mode}
+            >
+              <Label
+                className={cn(
+                  "flex cursor-pointer items-start gap-2 rounded-md border bg-white px-2.5 py-2 text-xs",
+                  item.cylinderSale.mode === "exchange" &&
+                    "border-emerald-500 ring-1 ring-emerald-500/20",
+                )}
+                htmlFor={`exchange-${item.id}`}
+              >
+                <RadioGroupItem id={`exchange-${item.id}`} value="exchange" />
+                <span>
+                  <span className="block font-semibold text-slate-900">
+                    Exchange
+                  </span>
+                  <span className="mt-0.5 block leading-4 text-slate-500">
+                    Return {item.quantity} empty; save{" "}
+                    {formatCheckoutPrice(
+                      item.cylinderSale.exchangeCreditAmount * item.quantity,
+                    )}
+                  </span>
+                </span>
+              </Label>
+              <Label
+                className={cn(
+                  "flex cursor-pointer items-start gap-2 rounded-md border bg-white px-2.5 py-2 text-xs",
+                  item.cylinderSale.mode === "new" &&
+                    "border-emerald-500 ring-1 ring-emerald-500/20",
+                )}
+                htmlFor={`new-${item.id}`}
+              >
+                <RadioGroupItem id={`new-${item.id}`} value="new" />
+                <span>
+                  <span className="block font-semibold text-slate-900">
+                    New
+                  </span>
+                  <span className="mt-0.5 block leading-4 text-slate-500">
+                    No empty cylinder return
+                  </span>
+                </span>
+              </Label>
+            </RadioGroup>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -154,6 +221,7 @@ function CheckoutSummaryBody({
   modeValid,
   onRemoveItem,
   onUpdateQuantity,
+  onUpdateCylinderSaleMode,
   shippingCost,
   showAction,
   totalPrice,
@@ -172,6 +240,7 @@ function CheckoutSummaryBody({
             item={item}
             cartLoading={cartLoading}
             onUpdateQuantity={onUpdateQuantity}
+            onUpdateCylinderSaleMode={onUpdateCylinderSaleMode}
             onRemoveItem={onRemoveItem}
           />
         ))}

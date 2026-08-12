@@ -1,20 +1,11 @@
 import {
-  buildProductTypeFulfillmentProfile,
-  isContainerFulfillmentMode,
-  supportsFulfillmentMode,
   type FulfillmentMode,
   type InventoryBehaviour,
-  type ProductTypeFulfillmentProfile,
-  type ProductTypeFamily,
 } from "@bikalpo-project/db/fulfillment";
+import type { VariantOperations } from "@bikalpo-project/db/variant-definition";
 
 export type WarehouseOrderProductTypeContext = {
-  family?: ProductTypeFamily | null;
-  typeName?: string | null;
-  typeSlug?: string | null;
   inventoryBehaviour?: InventoryBehaviour | null;
-  trackingType?: "none" | "batch" | "serial" | null;
-  isReturnablePack?: boolean | null;
 };
 
 export type WarehouseOrderModeRequest = {
@@ -22,6 +13,7 @@ export type WarehouseOrderModeRequest = {
   fallbackMode?: FulfillmentMode | null;
   activeCartonCount?: number | null;
   productType: WarehouseOrderProductTypeContext;
+  variantOperations: VariantOperations;
 };
 
 export type WarehouseOrderStockStrategy =
@@ -29,49 +21,64 @@ export type WarehouseOrderStockStrategy =
   | "direct_quantity";
 
 export type ResolvedWarehouseOrderMode = {
-  profile: ProductTypeFulfillmentProfile;
+  inventoryBehaviour: InventoryBehaviour;
   mode: FulfillmentMode;
   stockStrategy: WarehouseOrderStockStrategy;
   requiresTargetVariant: boolean;
   supportsRequestedMode: boolean;
+  availableModes: FulfillmentMode[];
 };
-
-export function buildWarehouseOrderProfile(
-  context: WarehouseOrderProductTypeContext,
-): ProductTypeFulfillmentProfile {
-  return buildProductTypeFulfillmentProfile({
-    family: context.family,
-    name: context.typeName,
-    slug: context.typeSlug,
-    inventoryBehaviour: context.inventoryBehaviour,
-    trackingType: context.trackingType,
-    isReturnablePack: context.isReturnablePack,
-  });
-}
 
 export function resolveWarehouseOrderMode(
   input: WarehouseOrderModeRequest,
 ): ResolvedWarehouseOrderMode {
-  const profile = buildWarehouseOrderProfile(input.productType);
-  const requestedMode =
-    input.requestedMode ?? input.fallbackMode ?? profile.defaultMode;
-  const supportsRequestedMode = supportsFulfillmentMode(profile, requestedMode);
-  const mode = supportsRequestedMode ? requestedMode : profile.defaultMode;
+  const inventoryBehaviour = input.productType.inventoryBehaviour ?? "fixed_pack";
   const hasCartons = Number(input.activeCartonCount || 0) > 0;
+  const operationalMode = operationalFulfillmentMode(input.variantOperations);
+  const requestedMode = input.requestedMode ?? input.fallbackMode ?? operationalMode;
+  const allowedModes = new Set<FulfillmentMode>([operationalMode]);
+  if (hasCartons) allowedModes.add("carton");
+  if (inventoryBehaviour === "loose_convert") allowedModes.add("loose");
+  const supportsRequestedMode = allowedModes.has(requestedMode);
+  const mode = supportsRequestedMode ? requestedMode : operationalMode;
   const stockStrategy: WarehouseOrderStockStrategy =
-    isContainerFulfillmentMode(mode) && hasCartons
+    mode === "carton" && hasCartons
       ? "container_count"
       : "direct_quantity";
 
   const requiresTargetVariant =
     stockStrategy === "container_count"
-    && profile.inventoryBehaviour === "auto_break";
+    && inventoryBehaviour === "auto_break";
 
   return {
-    profile,
+    inventoryBehaviour,
     mode,
     stockStrategy,
     requiresTargetVariant,
     supportsRequestedMode,
+    availableModes: [...allowedModes],
   };
+}
+
+export function operationalFulfillmentMode(
+  operations: VariantOperations,
+): FulfillmentMode {
+  if (operations.receivingMode === "loose") return "loose";
+  if (operations.receivingMode === "pack") {
+    switch (operations.operationalUnit) {
+      case "box":
+      case "bundle":
+      case "drum":
+        return operations.operationalUnit;
+      default:
+        return "pack";
+    }
+  }
+  switch (operations.operationalUnit) {
+    case "pair":
+    case "cylinder":
+      return operations.operationalUnit;
+    default:
+      return "unit";
+  }
 }

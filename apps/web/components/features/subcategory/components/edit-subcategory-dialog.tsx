@@ -3,28 +3,12 @@
 import type { SubCategory } from "@bikalpo-project/db/schema";
 import { useForm } from "@tanstack/react-form";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Loader, Pencil } from "lucide-react";
 import * as React from "react";
 import { toast } from "sonner";
-
-import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
-import {
-  Field,
-
-  FieldDescription,
-  FieldError,
-  FieldLabel,
-} from "@/components/ui/field";
+import { SetupFormDialog } from "@/components/features/product-setup";
+import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import {
   Select,
   SelectContent,
@@ -32,10 +16,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-
-import { updateSubcategorySchema } from "@/schema/category.scheam";
-import { generateSlug } from "@/utils/generate-slug";
-import { client, orpc } from "@/utils/orpc";
+import { updateSubcategorySetupFormSchema } from "@/schema/category.scheam";
+import { orpc } from "@/utils/orpc";
 
 interface EditSubcategoryDialogProps {
   subcategory: SubCategory;
@@ -49,243 +31,242 @@ export default function EditSubcategoryDialog({
   onOpenChange,
 }: EditSubcategoryDialogProps) {
   const queryClient = useQueryClient();
-
-  // Fetch types & categories for cascade dropdown
+  const [selectedTypeId, setSelectedTypeId] = React.useState("");
   const { data: typesData } = useQuery({
     ...orpc.adminProductType.getAll.queryOptions({ input: {} }),
     enabled: open,
   });
-  const productTypes = typesData?.types ?? [];
-
   const { data: categoriesData } = useQuery({
     ...orpc.category.getAll.queryOptions(),
     enabled: open,
   });
-  const allCategories = (categoriesData ?? []).map((c) => ({
-    id: c.id,
-    name: c.name,
-    typeId: c.typeId,
-  }));
-
-  // Derive initial type from the subcategory's category
-  const initialTypeId = React.useMemo(() => {
-    if (!categoriesData) return "";
-    const cat = categoriesData.find((c) => c.id === subcategory.categoryId);
-    return cat?.typeId ? String(cat.typeId) : "";
-  }, [categoriesData, subcategory.categoryId]);
-
-  const [selectedTypeId, setSelectedTypeId] = React.useState<string>("");
-
-  // Set initial type when data loads
-  React.useEffect(() => {
-    if (initialTypeId && !selectedTypeId) {
-      setSelectedTypeId(initialTypeId);
-    }
-  }, [initialTypeId]);
-
+  const currentCategory = categoriesData?.find(
+    (category) => category.id === subcategory.categoryId,
+  );
+  const currentTypeId = currentCategory?.typeId ?? null;
+  const productTypes = (typesData?.types ?? []).filter(
+    (type) => type.isActive || type.id === currentTypeId,
+  );
+  const categories = (categoriesData ?? [])
+    .filter(
+      (category) =>
+        category.id === subcategory.categoryId ||
+        (category.isActive && category.typeId !== null),
+    )
+    .map((category) => ({
+      id: category.id,
+      name: category.name,
+      typeId: category.typeId,
+      isActive: category.isActive,
+    }));
   const filteredCategories = React.useMemo(() => {
-    if (!selectedTypeId) return allCategories;
-    return allCategories.filter((c) => c.typeId === Number(selectedTypeId));
-  }, [allCategories, selectedTypeId]);
+    if (!selectedTypeId) return categories;
+    return categories.filter(
+      (category) => category.typeId === Number(selectedTypeId),
+    );
+  }, [categories, selectedTypeId]);
 
-  const mutation = useMutation({
-    mutationFn: (data: Parameters<typeof client.adminSubcategory.update>[0]) =>
-      client.adminSubcategory.update(data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({
-        queryKey: ["admin-subcategories", subcategory.categoryId],
-      });
-      queryClient.invalidateQueries({ queryKey: ["admin-categories"] });
-      queryClient.invalidateQueries({ queryKey: ["adminSubcategory"] });
-      toast.success("Subcategory updated successfully");
-      onOpenChange(false);
-    },
-    onError: (error) => {
-      toast.error(error.message || "Failed to update subcategory.");
-    },
-  });
+  React.useEffect(() => {
+    if (open && currentTypeId !== null) {
+      setSelectedTypeId(String(currentTypeId));
+    }
+  }, [currentTypeId, open]);
+
+  const mutation = useMutation(
+    orpc.adminSubcategory.update.mutationOptions({
+      onSuccess: (result) => {
+        void queryClient.invalidateQueries({
+          queryKey: orpc.adminSubcategory.getAllGlobal.key(),
+        });
+        void queryClient.invalidateQueries({
+          queryKey: orpc.adminSubcategory.getById.key(),
+        });
+        void queryClient.invalidateQueries({
+          queryKey: orpc.category.getAll.key(),
+        });
+        toast.success(result.message);
+        onOpenChange(false);
+      },
+      onError: (error) => {
+        toast.error(error.message || "Failed to update Sub Category.");
+      },
+    }),
+  );
 
   const form = useForm({
     defaultValues: {
       id: subcategory.id,
       name: subcategory.name,
-      slug: subcategory.slug,
       categoryId: subcategory.categoryId,
+      isActive: subcategory.isActive,
     },
-
     validators: {
-      onSubmit: updateSubcategorySchema,
+      onSubmit: updateSubcategorySetupFormSchema as never,
     },
     onSubmit: async ({ value }) => {
-      mutation.mutate(value);
+      mutation.mutate({
+        ...value,
+        name: value.name.trim(),
+        slug: subcategory.slug,
+        image: subcategory.image ?? undefined,
+        displayOrder: subcategory.displayOrder,
+      });
     },
   });
 
-  const autoGenerateSlugFromName = (value: string) => {
-    const generatedSlug = generateSlug(value);
-    form.setFieldValue("slug", generatedSlug);
+  const handleOpenChange = (nextOpen: boolean) => {
+    form.reset({
+      id: subcategory.id,
+      name: subcategory.name,
+      categoryId: subcategory.categoryId,
+      isActive: subcategory.isActive,
+    });
+    if (!nextOpen) setSelectedTypeId("");
+    onOpenChange(nextOpen);
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-3xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>Edit Subcategory</DialogTitle>
-          <DialogDescription>
-            Update the details of {subcategory.name} subcategory.
-          </DialogDescription>
-        </DialogHeader>
-        <form
-          id="edit-subcategory-form"
-          onSubmit={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            form.handleSubmit();
+    <SetupFormDialog
+      description={`Update ${subcategory.name}.`}
+      formId="edit-subcategory-form"
+      hasUnsavedChanges={() => form.state.isDirty}
+      isSubmitting={mutation.isPending}
+      onOpenChange={handleOpenChange}
+      onSubmit={() => form.handleSubmit()}
+      open={open}
+      submitLabel="Save Changes"
+      title="Edit Sub Category"
+    >
+      <form
+        className="space-y-5"
+        id="edit-subcategory-form"
+        onSubmit={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          form.handleSubmit();
+        }}
+      >
+        <Field>
+          <FieldLabel htmlFor="edit-subcategory-type">Type</FieldLabel>
+          <Select
+            onValueChange={(value) => {
+              setSelectedTypeId(value);
+              form.setFieldValue("categoryId", 0);
+            }}
+            value={selectedTypeId}
+          >
+            <SelectTrigger id="edit-subcategory-type">
+              <SelectValue placeholder="Select Type" />
+            </SelectTrigger>
+            <SelectContent>
+              {productTypes.map((type) => (
+                <SelectItem key={type.id} value={String(type.id)}>
+                  {type.name}
+                  {!type.isActive && type.id === currentTypeId
+                    ? " (Inactive, current)"
+                    : ""}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </Field>
+
+        <form.Field name="categoryId">
+          {(field) => {
+            const isInvalid =
+              field.state.meta.isTouched && !field.state.meta.isValid;
+            return (
+              <Field data-invalid={isInvalid}>
+                <FieldLabel htmlFor="edit-subcategory-category">
+                  Category
+                </FieldLabel>
+                <Select
+                  onValueChange={(value) => field.handleChange(Number(value))}
+                  value={field.state.value ? String(field.state.value) : ""}
+                >
+                  <SelectTrigger
+                    aria-invalid={isInvalid}
+                    id="edit-subcategory-category"
+                  >
+                    <SelectValue placeholder="Select Category" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {filteredCategories.map((category) => (
+                      <SelectItem key={category.id} value={String(category.id)}>
+                        {category.name}
+                        {!category.isActive &&
+                        category.id === subcategory.categoryId
+                          ? " (Inactive, current)"
+                          : ""}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {isInvalid && <FieldError errors={field.state.meta.errors} />}
+              </Field>
+            );
           }}
-          className="space-y-4"
-        >
-          {/* Type → Category (side by side) */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        </form.Field>
+
+        <form.Field name="name">
+          {(field) => {
+            const isInvalid =
+              field.state.meta.isTouched && !field.state.meta.isValid;
+            return (
+              <Field data-invalid={isInvalid}>
+                <FieldLabel htmlFor={field.name}>Sub Category Name</FieldLabel>
+                <Input
+                  aria-invalid={isInvalid}
+                  autoComplete="off"
+                  id={field.name}
+                  name={field.name}
+                  onBlur={field.handleBlur}
+                  onChange={(event) => field.handleChange(event.target.value)}
+                  placeholder="Miniket"
+                  value={field.state.value}
+                />
+                {isInvalid && <FieldError errors={field.state.meta.errors} />}
+              </Field>
+            );
+          }}
+        </form.Field>
+
+        <form.Field name="isActive">
+          {(field) => (
             <Field>
-              <FieldLabel>Product Type</FieldLabel>
-              <Select
-                value={selectedTypeId}
-                onValueChange={(v) => {
-                  setSelectedTypeId(v);
-                  form.setFieldValue("categoryId", 0);
-                }}
+              <FieldLabel>Status</FieldLabel>
+              <RadioGroup
+                className="grid gap-2 sm:grid-cols-2"
+                onValueChange={(value) =>
+                  field.handleChange(value === "active")
+                }
+                value={field.state.value ? "active" : "inactive"}
               >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select a type" />
-                </SelectTrigger>
-                <SelectContent>
-                  {productTypes.map((t) => (
-                    <SelectItem key={t.id} value={String(t.id)}>
-                      {t.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <FieldDescription>
-                Filter categories by type
-              </FieldDescription>
+                <label
+                  className="flex min-h-11 cursor-pointer items-center gap-3 rounded-lg border px-4 py-3 hover:bg-muted/30"
+                  htmlFor={`edit-subcategory-${subcategory.id}-active`}
+                >
+                  <RadioGroupItem
+                    id={`edit-subcategory-${subcategory.id}-active`}
+                    value="active"
+                  />
+                  <span className="text-sm font-medium">Active</span>
+                </label>
+                <label
+                  className="flex min-h-11 cursor-pointer items-center gap-3 rounded-lg border px-4 py-3 hover:bg-muted/30"
+                  htmlFor={`edit-subcategory-${subcategory.id}-inactive`}
+                >
+                  <RadioGroupItem
+                    id={`edit-subcategory-${subcategory.id}-inactive`}
+                    value="inactive"
+                  />
+                  <span className="text-sm font-medium">Inactive</span>
+                </label>
+              </RadioGroup>
             </Field>
-
-            <form.Field name="categoryId">
-              {(field) => {
-                const isInvalid =
-                  field.state.meta.isTouched && !field.state.meta.isValid;
-                return (
-                  <Field data-invalid={isInvalid}>
-                    <FieldLabel>Category *</FieldLabel>
-                    <Select
-                      value={
-                        field.state.value ? String(field.state.value) : ""
-                      }
-                      onValueChange={(v) => field.handleChange(Number(v))}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select a category" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {filteredCategories.map((c) => (
-                          <SelectItem key={c.id} value={String(c.id)}>
-                            {c.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    {isInvalid && (
-                      <FieldError errors={field.state.meta.errors} />
-                    )}
-                  </Field>
-                );
-              }}
-            </form.Field>
-          </div>
-
-
-
-          {/* Name & Slug — side by side */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <form.Field name="name">
-              {(field) => {
-                const isInvalid =
-                  field.state.meta.isTouched && !field.state.meta.isValid;
-                return (
-                  <Field data-invalid={isInvalid}>
-                    <FieldLabel htmlFor={field.name}>
-                      Subcategory Name *
-                    </FieldLabel>
-                    <Input
-                      id={field.name}
-                      name={field.name}
-                      value={field.state.value}
-                      onBlur={field.handleBlur}
-                      onChange={(e) => {
-                        field.handleChange(e.target.value);
-                        autoGenerateSlugFromName(e.target.value);
-                      }}
-                      aria-invalid={isInvalid}
-                      placeholder="Smartphones"
-                      autoComplete="off"
-                    />
-                    {isInvalid && <FieldError errors={field.state.meta.errors} />}
-                  </Field>
-                );
-              }}
-            </form.Field>
-
-            <form.Field name="slug">
-              {(field) => {
-                const isInvalid =
-                  field.state.meta.isTouched && !field.state.meta.isValid;
-                return (
-                  <Field data-invalid={isInvalid}>
-                    <FieldLabel htmlFor={field.name}>Slug *</FieldLabel>
-                    <Input
-                      id={field.name}
-                      name={field.name}
-                      value={field.state.value}
-                      onBlur={field.handleBlur}
-                      onChange={(e) => field.handleChange(e.target.value)}
-                      aria-invalid={isInvalid}
-                      placeholder="smartphones"
-                      autoComplete="off"
-                    />
-                    <FieldDescription>
-                      URL-friendly version of the name
-                    </FieldDescription>
-                    {isInvalid && <FieldError errors={field.state.meta.errors} />}
-                  </Field>
-                );
-              }}
-            </form.Field>
-          </div>
-
-
-        </form>
-        <DialogFooter>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => onOpenChange(false)}
-            disabled={mutation.isPending}
-          >
-            Cancel
-          </Button>
-          <Button
-            type="submit"
-            form="edit-subcategory-form"
-            disabled={mutation.isPending}
-          >
-            {mutation.isPending && (
-              <Loader className="mr-2 h-4 w-4 animate-spin" />
-            )}
-            Update Subcategory
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+          )}
+        </form.Field>
+      </form>
+    </SetupFormDialog>
   );
 }

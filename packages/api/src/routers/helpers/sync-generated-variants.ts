@@ -9,7 +9,6 @@ import {
 import {
   ConcreteVariantDefinitionError,
   resolveConcreteVariantOption,
-  resolveVariantOption,
 } from "@bikalpo-project/db/variant-definition";
 import { ORPCError } from "@orpc/server";
 import { and, eq, inArray, sql } from "drizzle-orm";
@@ -20,9 +19,6 @@ export type DbClient = typeof db | DbTransaction;
 export type GeneratedVariantProductSettings = {
   minimumOrderEnabled?: boolean;
   minimumOrderQty?: string | null;
-  inventoryUnit?: string | null;
-  inventoryLooseUnitEnabled?: boolean;
-  inventoryLooseUnit?: string | null;
 };
 
 type VariantPriceRow = typeof productVariantPrice.$inferSelect;
@@ -62,33 +58,6 @@ export function getGeneratedVariantOrderMin(productData: {
   return productData.minimumOrderEnabled === false
     ? "1"
     : productData.minimumOrderQty || "1";
-}
-
-export function getGeneratedVariantOrderUnit(
-  productData: {
-    inventoryUnit?: string | null;
-    inventoryLooseUnitEnabled?: boolean;
-    inventoryLooseUnit?: string | null;
-  },
-  option:
-    | { unit?: string | null; variantType?: "pack" | "loose" | string | null }
-    | undefined,
-) {
-  const resolved = resolveVariantOption(option);
-  if (resolved.definition) return resolved.orderUnit;
-  if (
-    option?.variantType === "loose" &&
-    productData.inventoryLooseUnitEnabled
-  ) {
-    return (
-      productData.inventoryLooseUnit ||
-      productData.inventoryUnit ||
-      option.unit ||
-      "piece"
-    );
-  }
-
-  return productData.inventoryUnit || option?.unit || "piece";
 }
 
 /** Additive dual-write bridge for generated owner variants. */
@@ -192,7 +161,7 @@ export function buildAutoVariantRows(params: {
       weightKg,
       price: pvp.consumerPrice || "0",
       orderMin: generatedOrderMin,
-      orderUnit: getGeneratedVariantOrderUnit(settings, vo),
+      orderUnit: resolved.orderUnit,
       packType: resolved.packType,
       packWeightKg: weightKg || null,
       sellUnit: resolved.label,

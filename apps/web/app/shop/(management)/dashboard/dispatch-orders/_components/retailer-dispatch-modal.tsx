@@ -1,8 +1,12 @@
 "use client";
 
 import { KeyRound, Loader2, Store, Truck } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
+import {
+  CylinderHandoffFields,
+  calculateHandoffBalance,
+} from "@/components/features/delivery/cylinder-handoff-fields";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -22,6 +26,12 @@ import {
 type RetailDispatchOrder = {
   id: number;
   status: string;
+  items: Array<{
+    id: number;
+    productName: string;
+    expectedEmptyPackQty: number;
+    exchangeCreditAmount: string;
+  }>;
   invoice?: {
     id: number;
     invoiceNumber: string;
@@ -57,6 +67,30 @@ export function RetailerDispatchModal({
   >("delivery");
   const [otp, setOtp] = useState("");
   const [step, setStep] = useState<"select" | "verify">("select");
+  const [acceptedById, setAcceptedById] = useState<Record<number, number>>({});
+  const [balancePaid, setBalancePaid] = useState(false);
+  const [handoffPaymentMethod, setHandoffPaymentMethod] = useState("cash");
+  const [handoffPaymentReference, setHandoffPaymentReference] = useState("");
+  const exchangeLines = useMemo(
+    () =>
+      (order?.items ?? []).flatMap((item) =>
+        item.expectedEmptyPackQty > 0
+          ? [
+              {
+                orderItemId: item.id,
+                productName: item.productName,
+                expectedEmptyPackQty: item.expectedEmptyPackQty,
+                exchangeCreditAmount: Number(item.exchangeCreditAmount),
+              },
+            ]
+          : [],
+      ),
+    [order?.items],
+  );
+  const handoffBalance = useMemo(
+    () => calculateHandoffBalance(exchangeLines, acceptedById),
+    [acceptedById, exchangeLines],
+  );
 
   const isPending =
     createInvoice.isPending ||
@@ -81,6 +115,16 @@ export function RetailerDispatchModal({
         : "delivery",
     );
     setOtp("");
+    setAcceptedById(
+      Object.fromEntries(
+        (order.items ?? [])
+          .filter((item) => item.expectedEmptyPackQty > 0)
+          .map((item) => [item.id, item.expectedEmptyPackQty]),
+      ),
+    );
+    setBalancePaid(false);
+    setHandoffPaymentMethod("cash");
+    setHandoffPaymentReference("");
     setStep(isExistingPickup ? "verify" : "select");
   }, [open, order, isExistingPickup]);
 
@@ -92,7 +136,21 @@ export function RetailerDispatchModal({
         return;
       }
       verifyPickup.mutate(
-        { invoiceId: order.invoice.id, otp },
+        {
+          invoiceId: order.invoice.id,
+          otp,
+          acceptedReturns: exchangeLines.map((line) => ({
+            orderItemId: line.orderItemId,
+            quantity: acceptedById[line.orderItemId] ?? 0,
+          })),
+          handoffBalancePaid: balancePaid,
+          handoffPaymentMethod:
+            handoffBalance > 0 ? handoffPaymentMethod : undefined,
+          handoffPaymentReference:
+            handoffBalance > 0 && handoffPaymentReference
+              ? handoffPaymentReference
+              : undefined,
+        },
         {
           onSuccess: () => {
             toast.success("Self pickup completed and payment recorded");
@@ -176,6 +234,22 @@ export function RetailerDispatchModal({
               placeholder="0000"
               className="h-12 w-full rounded-lg border bg-background text-center font-mono text-2xl tracking-[0.4em] outline-none focus:border-ring focus:ring-2 focus:ring-ring/20"
             />
+            <CylinderHandoffFields
+              acceptedById={acceptedById}
+              balancePaid={balancePaid}
+              lines={exchangeLines}
+              onAcceptedChange={(orderItemId, quantity) =>
+                setAcceptedById((current) => ({
+                  ...current,
+                  [orderItemId]: quantity,
+                }))
+              }
+              onBalancePaidChange={setBalancePaid}
+              onPaymentMethodChange={setHandoffPaymentMethod}
+              onPaymentReferenceChange={setHandoffPaymentReference}
+              paymentMethod={handoffPaymentMethod}
+              paymentReference={handoffPaymentReference}
+            />
           </div>
         ) : (
           <div className="space-y-3">
@@ -230,7 +304,11 @@ export function RetailerDispatchModal({
           <Button
             type="button"
             onClick={handleSubmit}
-            disabled={isPending || (step === "verify" && otp.length !== 4)}
+            disabled={
+              isPending ||
+              (step === "verify" &&
+                (otp.length !== 4 || (handoffBalance > 0 && !balancePaid)))
+            }
           >
             {isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             {step === "verify"

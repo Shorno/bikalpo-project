@@ -7,6 +7,10 @@ import {
     type FulfillmentOwner,
 } from "./fulfillment-owner";
 import { syncOrderFromDeliveredInvoice } from "./invoice-fulfillment";
+import {
+    type RetailerCylinderHandoffInput,
+    settleRetailerCylinderHandoff,
+} from "./retailer-cylinder-handoff";
 
 type SelfPickupPaymentStatus = "collected" | "settled";
 
@@ -21,7 +25,7 @@ export async function completeSelfPickupInvoice(input: {
     otp: string;
     paymentStatus: SelfPickupPaymentStatus;
     markOrderPaid: boolean;
-}) {
+} & RetailerCylinderHandoffInput) {
     return db.transaction(async (tx) => {
         await tx.execute(sql`SELECT pg_advisory_xact_lock(${input.invoiceId})`);
 
@@ -59,6 +63,19 @@ export async function completeSelfPickupInvoice(input: {
                 message: "Invalid pickup OTP",
             });
         }
+
+        const cylinderSettlement =
+            input.owner.kind === "shop"
+                ? await settleRetailerCylinderHandoff(tx, {
+                      shopId: input.owner.id,
+                      invoiceId: input.invoiceId,
+                      actorId: input.owner.id,
+                      acceptedReturns: input.acceptedReturns,
+                      handoffBalancePaid: input.handoffBalancePaid,
+                      handoffPaymentMethod: input.handoffPaymentMethod,
+                      handoffPaymentReference: input.handoffPaymentReference,
+                  })
+                : null;
 
         const completedAt = new Date();
         const [completedInvoice] = await tx
@@ -100,6 +117,7 @@ export async function completeSelfPickupInvoice(input: {
             success: true,
             orderId: existingInvoice.order.id,
             fullyDelivered: sync.fullyDelivered,
+            cylinderSettlement,
             message: "Self pickup completed successfully",
         };
     });

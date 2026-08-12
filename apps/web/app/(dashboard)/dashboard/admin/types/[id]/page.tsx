@@ -1,330 +1,164 @@
 "use client";
 
-import {
-  INVENTORY_BEHAVIOUR_LABELS,
-} from "@bikalpo-project/db/fulfillment";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  ArrowLeft,
-  FolderOpen,
-  Loader,
-  Package,
-  Power,
-  Store,
-  Trash2,
-} from "lucide-react";
-import Image from "next/image";
+import { LoaderCircle, Power, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
+import { parseAsString, useQueryState } from "nuqs";
+import { useState } from "react";
 import { toast } from "sonner";
-import FulfillmentProfilePreview from "@/components/features/product-type/components/fulfillment-profile-preview";
-import { resolveProductTypeProfile } from "@/components/features/product-type/components/product-type-row";
-import { Badge } from "@/components/ui/badge";
+import {
+  ActiveStatusBadge,
+  SetupDeleteDialog,
+  SetupDetailHeader,
+  SetupErrorState,
+  SetupSection,
+} from "@/components/features/product-setup";
+import EditTypeDialog from "@/components/features/product-type/components/edit-type-dialog";
+import { TypeSellerRankingTable } from "@/components/features/product-type/components/type-seller-ranking-table";
+import {
+  normalizeTypeSellerRole,
+  TypeSellerTabs,
+} from "@/components/features/product-type/components/type-seller-tabs";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { ADMIN_BASE } from "@/lib/routes";
 import { orpc } from "@/utils/orpc";
 
-
-
 export default function TypeDetailPage() {
-  const params = useParams();
+  const params = useParams<{ id: string }>();
   const router = useRouter();
   const queryClient = useQueryClient();
   const id = Number(params.id);
-
-  const { data, isLoading } = useQuery({
+  const [showDelete, setShowDelete] = useState(false);
+  const [roleParam, setRoleParam] = useQueryState(
+    "role",
+    parseAsString.withDefault("retailer").withOptions({ clearOnDefault: true }),
+  );
+  const activeRole = normalizeTypeSellerRole(roleParam);
+  const { data, isError, isLoading, refetch } = useQuery({
     queryKey: ["adminProductType", "getById", id],
     queryFn: () => orpc.adminProductType.getById.call({ id }),
-    enabled: !isNaN(id),
+    enabled: Number.isFinite(id),
   });
-
   const toggleMutation = useMutation({
     mutationFn: () => orpc.adminProductType.toggleActive.call({ id }),
     onSuccess: (result) => {
-      queryClient.invalidateQueries({ queryKey: ["adminProductType"] });
+      void queryClient.invalidateQueries({ queryKey: ["adminProductType"] });
       toast.success(result.message);
     },
-    onError: (error) => {
-      toast.error(error.message || "Failed to toggle status.");
-    },
+    onError: (error) => toast.error(error.message || "Failed to update status"),
   });
-
   const deleteMutation = useMutation({
     mutationFn: () => orpc.adminProductType.delete.call({ id }),
     onSuccess: (result) => {
-      queryClient.invalidateQueries({ queryKey: ["adminProductType"] });
       toast.success(result.message);
-      router.push("/dashboard/admin/types");
+      router.push(`${ADMIN_BASE}/types`);
     },
-    onError: (error) => {
-      toast.error(error.message || "Failed to delete type.");
-    },
+    onError: (error) => toast.error(error.message || "Failed to delete Type"),
   });
 
   if (isLoading) {
     return (
-      <div className="container mx-auto space-y-6">
-        <Skeleton className="h-8 w-48" />
-        <div className="grid gap-4 md:grid-cols-2">
-          <Skeleton className="h-48" />
-          <Skeleton className="h-48" />
-        </div>
+      <div className="space-y-5">
+        <Skeleton className="h-24 w-full" />
+        <Skeleton className="h-24 w-full" />
+        <Skeleton className="h-72 w-full" />
       </div>
     );
   }
+  if (isError) return <SetupErrorState onRetry={() => void refetch()} />;
 
-  if (!data?.type) {
-    return (
-      <div className="container mx-auto text-center py-16">
-        <p className="text-muted-foreground">Product type not found.</p>
-        <Button asChild variant="outline" className="mt-4">
-          <Link href="/dashboard/admin/types">
-            <ArrowLeft className="mr-2 h-4 w-4" />
-            Back to Types
-          </Link>
-        </Button>
-      </div>
-    );
-  }
-
-  const t = data.type;
-  const profile = resolveProductTypeProfile(t);
-  const categories = t.categories || [];
-  const products = data.products || [];
-  const sellerCount = data.sellerCount ?? 0;
-
+  const type = data?.type;
+  if (!type) return null;
+  const categories = type.categories ?? [];
+  const typeForDialog = {
+    ...type,
+    categoryCount: categories.length,
+  };
 
   return (
-    <div className="container mx-auto space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <Button asChild variant="ghost" size="icon">
-            <Link href="/dashboard/admin/types">
-              <ArrowLeft className="h-4 w-4" />
-            </Link>
-          </Button>
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-2xl font-bold">{t.name}</h1>
-              <Badge variant={t.isActive ? "default" : "secondary"}>
-                {t.isActive ? "Active" : "Draft"}
-              </Badge>
-            </div>
-            <p className="text-sm text-muted-foreground font-mono">{t.slug}</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => toggleMutation.mutate()}
-            disabled={toggleMutation.isPending}
-          >
-            {toggleMutation.isPending ? (
-              <Loader className="mr-2 h-4 w-4 animate-spin" />
-            ) : (
-              <Power className="mr-2 h-4 w-4" />
-            )}
-            {t.isActive ? "Disable" : "Enable"}
-          </Button>
-          <Button
-            variant="destructive"
-            size="sm"
-            onClick={() => {
-              if (categories.length > 0) {
-                toast.error(
-                  `Cannot delete — ${categories.length} categories are linked to this type.`,
-                );
-                return;
-              }
-              if (confirm("Are you sure you want to delete this type?")) {
-                deleteMutation.mutate();
-              }
-            }}
-            disabled={deleteMutation.isPending}
-          >
-            {deleteMutation.isPending ? (
-              <Loader className="mr-2 h-4 w-4 animate-spin" />
-            ) : (
-              <Trash2 className="mr-2 h-4 w-4" />
-            )}
-            Delete
-          </Button>
-        </div>
-      </div>
-
-      {/* Categories Under This Type */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-sm">Fulfillment Profile</CardTitle>
-          <CardDescription>
-            Shared rules that later phases will use from admin setup through retailer conversion.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="rounded-lg border border-dashed bg-muted/20 px-4 py-3 text-sm text-muted-foreground">
-            Inventory behaviour for this type is set to{" "}
-            <span className="font-medium text-foreground">
-              {INVENTORY_BEHAVIOUR_LABELS[t.inventoryBehaviour]}
-            </span>
-            . This shared profile will drive admin setup, retailer ordering, and stock conversion in later phases.
-          </div>
-
-          <FulfillmentProfilePreview profile={profile} />
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-sm flex items-center gap-2">
-            <FolderOpen className="h-4 w-4" />
-            Categories ({categories.length})
-          </CardTitle>
-          <CardDescription>
-            Categories assigned to this product type
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {categories.length === 0 ? (
-            <div className="text-center py-8 text-muted-foreground text-sm">
-              No categories under this type yet.
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {categories.map((cat: any) => (
-                <div
-                  key={cat.id}
-                  className="flex items-center justify-between rounded-lg border px-3 py-2"
-                >
-                  <div className="flex items-center gap-3">
-                    <div>
-                      <p className="text-sm font-medium">{cat.name}</p>
-                      <p className="text-xs text-muted-foreground font-mono">
-                        {cat.slug}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Stats Row */}
-      <div className="grid grid-cols-3 gap-4">
-        <Card className="p-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
-              <FolderOpen className="h-5 w-5 text-primary" />
-            </div>
-            <div>
-              <p className="text-2xl font-bold">{categories.length}</p>
-              <p className="text-xs text-muted-foreground">Categories</p>
-            </div>
-          </div>
-        </Card>
-        <Card className="p-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-blue-500/10 flex items-center justify-center">
-              <Package className="h-5 w-5 text-blue-500" />
-            </div>
-            <div>
-              <p className="text-2xl font-bold">{products.length}</p>
-              <p className="text-xs text-muted-foreground">Products</p>
-            </div>
-          </div>
-        </Card>
-        <Card className="p-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-orange-500/10 flex items-center justify-center">
-              <Store className="h-5 w-5 text-orange-500" />
-            </div>
-            <div>
-              <p className="text-2xl font-bold">{sellerCount}</p>
-              <p className="text-xs text-muted-foreground">Sellers</p>
-            </div>
-          </div>
-        </Card>
-      </div>
-
-      {/* Products Under This Type */}
-      <div>
-        <h2 className="text-lg font-semibold mb-3 flex items-center gap-2">
-          <Package className="h-4 w-4" />
-          Products ({products.length})
-        </h2>
-        <div className="rounded-md border">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-[60px]">Image</TableHead>
-                <TableHead>Name</TableHead>
-                <TableHead>Size</TableHead>
-                <TableHead>Category</TableHead>
-                <TableHead className="text-center">Status</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {products.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={5} className="h-24 text-center">
-                    No products under this type yet.
-                  </TableCell>
-                </TableRow>
+    <div className="space-y-5">
+      <SetupDetailHeader
+        actions={
+          <>
+            <EditTypeDialog type={typeForDialog} />
+            <Button
+              disabled={toggleMutation.isPending}
+              onClick={() => toggleMutation.mutate()}
+              variant="outline"
+            >
+              {toggleMutation.isPending ? (
+                <LoaderCircle
+                  aria-hidden="true"
+                  className="size-4 animate-spin"
+                />
               ) : (
-                products.map((prod: any) => {
-                  const cat = categories.find((c: any) => c.id === prod.categoryId);
-                  return (
-                    <TableRow key={prod.id}>
-                      <TableCell>
-                        {prod.image ? (
-                          <div className="h-10 w-10 relative">
-                            <Image
-                              src={prod.image}
-                              alt={prod.name}
-                              fill
-                              className="object-contain rounded"
-                            />
-                          </div>
-                        ) : (
-                          <div className="h-10 w-10 rounded bg-muted flex items-center justify-center">
-                            <Package className="h-4 w-4 text-muted-foreground" />
-                          </div>
-                        )}
-                      </TableCell>
-                      <TableCell className="font-medium">{prod.name}</TableCell>
-                      <TableCell className="text-muted-foreground">{prod.size}</TableCell>
-                      <TableCell className="text-muted-foreground">{cat?.name || "—"}</TableCell>
-                      <TableCell className="text-center">
-                        <Badge variant={prod.status === "active" ? "default" : "secondary"}>
-                          {prod.status}
-                        </Badge>
-                      </TableCell>
-                    </TableRow>
-                  );
-                })
+                <Power aria-hidden="true" className="size-4" />
               )}
-            </TableBody>
-          </Table>
-        </div>
-      </div>
+              {type.isActive ? "Disable" : "Enable"}
+            </Button>
+            <Button onClick={() => setShowDelete(true)} variant="destructive">
+              <Trash2 aria-hidden="true" className="size-4" />
+              Delete
+            </Button>
+          </>
+        }
+        backHref={`${ADMIN_BASE}/types`}
+        backLabel="Back to types"
+        name={type.name}
+        status={<ActiveStatusBadge isActive={type.isActive} />}
+      />
+
+      <SetupDeleteDialog
+        dependencyMessage={
+          categories.length > 0
+            ? `${categories.length} categories still depend on this Type. Reassign or remove them before deletion.`
+            : undefined
+        }
+        description="This permanently removes the Type. Existing dependencies are never cascaded."
+        isDeleting={deleteMutation.isPending}
+        onConfirm={() => deleteMutation.mutate()}
+        onOpenChange={setShowDelete}
+        open={showDelete}
+        title={`Delete ${type.name}?`}
+      />
+
+      <SetupSection title="Used by sellers">
+        <dl className="px-4 py-4">
+          <div className="flex min-h-11 items-center justify-between gap-4">
+            <dt className="text-sm text-muted-foreground">Total Users</dt>
+            <dd className="font-mono text-sm font-semibold tabular-nums">
+              {data.sellerCount.toLocaleString()}
+            </dd>
+          </div>
+        </dl>
+      </SetupSection>
+
+      <SetupSection title="User ranking">
+        <TypeSellerTabs
+          onValueChange={(role) => void setRoleParam(role)}
+          value={activeRole}
+        >
+          {(role, label) => (
+            <TypeSellerRankingTable
+              footer={
+                <div className="flex justify-end border-t px-4 py-3">
+                  <Button asChild className="h-11 sm:h-9" variant="outline">
+                    <Link
+                      href={`${ADMIN_BASE}/types/${id}/sellers?role=${role}`}
+                    >
+                      View All Sellers
+                    </Link>
+                  </Button>
+                </div>
+              }
+              roleLabel={label}
+              rows={data.rankings[role]}
+            />
+          )}
+        </TypeSellerTabs>
+      </SetupSection>
     </div>
   );
 }

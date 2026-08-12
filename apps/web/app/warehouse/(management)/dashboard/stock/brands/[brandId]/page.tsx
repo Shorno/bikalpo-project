@@ -28,8 +28,8 @@ type StockStatus = "in_stock" | "low_stock" | "out_of_stock";
 type AggregateStockStatus = "in_stock" | "attention" | "out_of_stock";
 
 type QuantityGroup = {
-  family: string;
-  familyLabel: string;
+  productTypeId: number;
+  productTypeName: string;
   inventoryUnit: string;
   productCount: number;
   variantCount: number;
@@ -146,7 +146,7 @@ function QuantityGroups({
   return (
     <div className={compact ? "space-y-0.5" : "space-y-1"}>
       {groups.map((group) => {
-        const key = `${group.family}:${group.inventoryUnit}:${group.referenceMeasurement?.unit ?? "none"}`;
+        const key = `${group.productTypeId}:${group.inventoryUnit}:${group.referenceMeasurement?.unit ?? "none"}`;
         return (
           <div key={key}>
             <div
@@ -154,7 +154,7 @@ function QuantityGroups({
             >
               {groups.length > 1 && (
                 <span className="mr-1 font-medium text-gray-500">
-                  {group.familyLabel}:
+                  {group.productTypeName}:
                 </span>
               )}
               {formatQuantity(group.onHand, group.inventoryUnit)}

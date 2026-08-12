@@ -445,7 +445,7 @@ export function BusinessInformationSection({
             Business Name
           </p>
           <DetailField label={businessNameLabel} value={businessName} alwaysShow />
-          <DetailField label="Business Type" value={typeName} alwaysShow />
+          <DetailField label="Product Type" value={typeName} alwaysShow />
           <DetailField label="Coverage" value={coverage} alwaysShow />
           <DetailField label="Address" value={data.businessAddress} alwaysShow />
           {businessType && businessTypeLabel && (
@@ -458,7 +458,7 @@ export function BusinessInformationSection({
             Business Overview
           </p>
           <DetailField
-            label="Nature"
+            label="Business Nature"
             value={formatBusinessNature(data.businessNature)}
             alwaysShow
           />

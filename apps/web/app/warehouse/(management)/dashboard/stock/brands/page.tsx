@@ -33,8 +33,8 @@ import {
 import { orpc } from "@/utils/orpc";
 
 type QuantityGroup = {
-  family: string;
-  familyLabel: string;
+  productTypeId: number;
+  productTypeName: string;
   inventoryUnit: string;
   productCount: number;
   variantCount: number;
@@ -71,7 +71,7 @@ type BrandStockItem = {
 
 type DistributionGroup = {
   key: string;
-  familyLabel: string;
+  productTypeName: string;
   inventoryUnit: string;
   totalOnHand: number;
   brands: Array<{
@@ -123,13 +123,13 @@ function QuantityGroupsCell({ groups }: { groups: QuantityGroup[] }) {
   return (
     <div className="space-y-1">
       {groups.map((group) => {
-        const key = `${group.family}:${group.inventoryUnit}:${group.referenceMeasurement?.unit ?? "none"}`;
+        const key = `${group.productTypeId}:${group.inventoryUnit}:${group.referenceMeasurement?.unit ?? "none"}`;
         return (
           <div key={key}>
             <div className="text-sm font-bold text-gray-900 tabular-nums">
               {groups.length > 1 && (
                 <span className="mr-1 font-medium text-gray-500">
-                  {group.familyLabel}:
+                  {group.productTypeName}:
                 </span>
               )}
               {formatQuantity(group.onHand, group.inventoryUnit)}
@@ -215,12 +215,12 @@ export default function BrandStockPage() {
     for (const brand of brands) {
       for (const quantityGroup of brand.quantityGroups) {
         if (quantityGroup.onHand <= 0) continue;
-        const key = `${quantityGroup.family}:${quantityGroup.inventoryUnit}:${quantityGroup.referenceMeasurement?.unit ?? "none"}`;
+        const key = `${quantityGroup.productTypeId}:${quantityGroup.inventoryUnit}:${quantityGroup.referenceMeasurement?.unit ?? "none"}`;
         let group = groups.get(key);
         if (!group) {
           group = {
             key,
-            familyLabel: quantityGroup.familyLabel,
+            productTypeName: quantityGroup.productTypeName,
             inventoryUnit: quantityGroup.inventoryUnit,
             totalOnHand: 0,
             brands: [],
@@ -242,7 +242,7 @@ export default function BrandStockPage() {
       }))
       .sort(
         (a, b) =>
-          a.familyLabel.localeCompare(b.familyLabel) ||
+          a.productTypeName.localeCompare(b.productTypeName) ||
           a.inventoryUnit.localeCompare(b.inventoryUnit),
       );
   }, [brands]);
@@ -537,7 +537,7 @@ export default function BrandStockPage() {
               >
                 {distributionGroups.length > 1 && (
                   <div className="mb-3 text-xs font-semibold text-gray-500">
-                    {group.familyLabel} ·{" "}
+                    {group.productTypeName} ·{" "}
                     {formatUnit(group.inventoryUnit, group.totalOnHand)}
                   </div>
                 )}

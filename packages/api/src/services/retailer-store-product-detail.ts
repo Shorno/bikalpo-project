@@ -52,6 +52,8 @@ interface StoreProductVariant {
   variantType: string | null;
   packType: string | null;
   isActive: boolean;
+  exchangeEnabled?: boolean | null;
+  exchangeCreditAmount?: string | number | null;
   inventory: {
     availableQty: string | number;
     retailPrice: string | number;
@@ -88,6 +90,13 @@ export function buildStoreProductDetail({
     .map((variant) => {
       const availableQty = toFiniteNumber(variant.inventory?.availableQty);
       const retailPrice = toFiniteNumber(variant.inventory?.retailPrice);
+      const exchangeEnabled = Boolean(variant.exchangeEnabled);
+      const exchangeCreditAmount = exchangeEnabled
+        ? Math.min(
+            retailPrice,
+            Math.max(0, toFiniteNumber(variant.exchangeCreditAmount)),
+          )
+        : 0;
 
       return {
         ...variant,
@@ -99,6 +108,13 @@ export function buildStoreProductDetail({
         inventory: {
           availableQty,
           retailPrice,
+        },
+        cylinderSale: {
+          exchangeEnabled,
+          exchangeCreditAmount,
+          defaultMode: exchangeEnabled
+            ? ("exchange" as const)
+            : ("new" as const),
         },
       };
     });

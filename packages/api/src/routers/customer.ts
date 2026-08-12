@@ -45,7 +45,7 @@ import {
   userProfile,
 } from "@bikalpo-project/db/schema";
 import {
-  resolveVariantMovementSemantics,
+  resolveVariantOperations,
   resolveVariantOption,
 } from "@bikalpo-project/db/variant-definition";
 import { ORPCError } from "@orpc/server";
@@ -96,6 +96,7 @@ import {
   reconcileOpenOrder,
   SELECTION_WINDOW_SECONDS,
 } from "../services/open-order-matching";
+import { resolveRetailerCylinderSale } from "../services/retailer-cylinder-sale";
 import { buildStoreProductDetail } from "../services/retailer-store-product-detail";
 import { buildConsumerOrderJourney } from "./helpers/consumer-order-journey";
 import {
@@ -167,9 +168,7 @@ const shippingInfoSchema = z.object({
   lng: z.string().optional(),
 });
 
-async function loadConsumerOrderJourney(
-  orderData: typeof order.$inferSelect,
-) {
+async function loadConsumerOrderJourney(orderData: typeof order.$inferSelect) {
   const orderInvoices = await db.query.invoice.findMany({
     where: eq(invoice.orderId, orderData.id),
     columns: {
@@ -237,7 +236,9 @@ type RetailerCartInventoryKey = {
   variantId: number;
 };
 
-type CustomerDbTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
+type CustomerDbTransaction = Parameters<
+  Parameters<typeof db.transaction>[0]
+>[0];
 type CustomerDbClient = typeof db | CustomerDbTransaction;
 
 function getRetailerCartInventoryKey({
@@ -256,9 +257,7 @@ async function getRetailerCartInventorySnapshots(
   if (requestedItems.length === 0) return snapshots;
 
   const shopIds = [...new Set(requestedItems.map((item) => item.shopId))];
-  const variantIds = [
-    ...new Set(requestedItems.map((item) => item.variantId)),
-  ];
+  const variantIds = [...new Set(requestedItems.map((item) => item.variantId))];
   const rows = await database
     .select({
       shopId: inventory.ownerId,
@@ -273,6 +272,8 @@ async function getRetailerCartInventorySnapshots(
       orderMin: productVariant.orderMin,
       orderMax: productVariant.orderMax,
       orderIncrement: productVariant.orderIncrement,
+      exchangeEnabled: productVariant.exchangeEnabled,
+      exchangeCreditAmount: productVariant.exchangeCreditAmount,
     })
     .from(inventory)
     .innerJoin(productVariant, eq(productVariant.id, inventory.variantId))
@@ -288,7 +289,9 @@ async function getRetailerCartInventorySnapshots(
       ),
     );
 
-  const requestedKeys = new Set(requestedItems.map(getRetailerCartInventoryKey));
+  const requestedKeys = new Set(
+    requestedItems.map(getRetailerCartInventoryKey),
+  );
   for (const row of rows) {
     const key = getRetailerCartInventoryKey(row);
     if (requestedKeys.has(key)) snapshots.set(key, row);
@@ -330,6 +333,7 @@ async function assertCustomerCartSnapshot(
       shopId: cartItem.shopId,
       quantity: cartItem.quantity,
       price: cartItem.price,
+      cylinderSaleMode: cartItem.cylinderSaleMode,
     })
     .from(cartItem)
     .where(eq(cartItem.cartId, cartId));
@@ -2270,6 +2274,8 @@ const queries = {
                   price: true,
                   weightKg: true,
                   sku: true,
+                  exchangeEnabled: true,
+                  exchangeCreditAmount: true,
                 },
               },
             },
@@ -2363,10 +2369,22 @@ const queries = {
           : variant
             ? Number(variant.price)
             : Number(item.product.price);
-        const effectivePrice =
+        const listedPrice =
           item.shopId && retailerDecision?.ok
             ? Number(retailerDecision.retailPrice)
             : Number(item.price);
+        const exchangeEnabled = Boolean(
+          item.shopId && variant?.exchangeEnabled,
+        );
+        const exchangeCreditAmount = exchangeEnabled
+          ? Number(variant?.exchangeCreditAmount ?? 0)
+          : 0;
+        const cylinderSelectionValid =
+          item.cylinderSaleMode !== "exchange" || exchangeEnabled;
+        const effectivePrice =
+          item.cylinderSaleMode === "exchange" && exchangeEnabled
+            ? Math.max(0, listedPrice - exchangeCreditAmount)
+            : listedPrice;
 
         return {
           id: item.id,
@@ -2387,6 +2405,21 @@ const queries = {
           shopName: item.shopId ? shopMap.get(item.shopId)?.name || null : null,
           shopSlug: item.shopId
             ? shopMap.get(item.shopId)?.shopSlug || null
+            : null,
+          cylinderSale: item.shopId
+            ? {
+                exchangeEnabled,
+                mode: item.cylinderSaleMode,
+                defaultMode: exchangeEnabled ? "exchange" : "new",
+                exchangeCreditAmount,
+                newUnitPrice: listedPrice,
+                effectiveUnitPrice: effectivePrice,
+                expectedReturnQty:
+                  item.cylinderSaleMode === "exchange" && exchangeEnabled
+                    ? item.quantity
+                    : 0,
+                selectionValid: cylinderSelectionValid,
+              }
             : null,
         };
       });
@@ -3840,6 +3873,7 @@ const mutations = {
         variantId: z.number().int().positive().optional(),
         shopId: z.string().min(1).optional(),
         purchaseMode: z.enum(["open_order", "direct"]).optional(),
+        cylinderSaleMode: z.enum(["new", "exchange"]).optional(),
         replaceCart: z.boolean().default(false),
       }),
     )
@@ -3897,6 +3931,11 @@ const mutations = {
         }
       }
 
+      let directVariantConfig: {
+        id: number;
+        exchangeEnabled: boolean;
+        exchangeCreditAmount: string;
+      } | null = null;
       if (purchaseMode === "direct") {
         if (
           productData.creatorSource !== "shop" ||
@@ -3917,21 +3956,31 @@ const mutations = {
           });
         }
 
-        const directVariant = await db.query.productVariant.findFirst({
-          where: and(
-            eq(productVariant.id, input.variantId),
-            eq(productVariant.productId, input.productId),
-            eq(productVariant.isActive, true),
-          ),
-          columns: { id: true },
-        });
-        if (!directVariant) {
+        directVariantConfig =
+          (await db.query.productVariant.findFirst({
+            where: and(
+              eq(productVariant.id, input.variantId),
+              eq(productVariant.productId, input.productId),
+              eq(productVariant.isActive, true),
+            ),
+            columns: {
+              id: true,
+              exchangeEnabled: true,
+              exchangeCreditAmount: true,
+            },
+          })) ?? null;
+        if (!directVariantConfig) {
           throw new ORPCError("BAD_REQUEST", {
             message: "The selected retailer variant is unavailable.",
           });
         }
-
       }
+
+      const cylinderSaleMode =
+        purchaseMode === "direct"
+          ? (input.cylinderSaleMode ??
+            (directVariantConfig?.exchangeEnabled ? "exchange" : "new"))
+          : "new";
 
       let itemPrice = productData.price;
       if (purchaseMode === "open_order" && input.variantId) {
@@ -4037,7 +4086,23 @@ const mutations = {
               existingQuantity: existing?.quantity ?? 0,
             }),
           );
-          itemPrice = decision.retailPrice;
+          try {
+            itemPrice = resolveRetailerCylinderSale({
+              newUnitPrice: decision.retailPrice,
+              exchangeEnabled: directVariantConfig?.exchangeEnabled ?? false,
+              exchangeCreditAmount:
+                directVariantConfig?.exchangeCreditAmount ?? "0",
+              requestedMode: cylinderSaleMode,
+              quantity: (existing?.quantity ?? 0) + input.quantity,
+            }).effectiveUnitPrice;
+          } catch (error) {
+            throw new ORPCError("BAD_REQUEST", {
+              message:
+                error instanceof Error
+                  ? error.message
+                  : "Cylinder sale configuration is invalid",
+            });
+          }
         }
 
         if (!userCart) {
@@ -4058,6 +4123,7 @@ const mutations = {
             .set({
               quantity: existing.quantity + input.quantity,
               price: itemPrice,
+              cylinderSaleMode,
             })
             .where(eq(cartItem.id, existing.id));
         } else {
@@ -4068,6 +4134,7 @@ const mutations = {
             shopId: input.shopId ?? null,
             quantity: input.quantity,
             price: itemPrice,
+            cylinderSaleMode,
           });
         }
 
@@ -4094,6 +4161,7 @@ const mutations = {
       z.object({
         cartItemId: z.number().int().positive(),
         quantity: z.number().int().min(0),
+        cylinderSaleMode: z.enum(["new", "exchange"]).optional(),
       }),
     )
     .handler(async ({ context, input }) => {
@@ -4126,6 +4194,8 @@ const mutations = {
         }
 
         let retailerPrice: string | undefined;
+        const cylinderSaleMode =
+          input.cylinderSaleMode ?? item.cylinderSaleMode;
         if (item.shopId) {
           if (!item.variantId) {
             throw new ORPCError("NOT_FOUND", {
@@ -4149,7 +4219,22 @@ const mutations = {
               existingQuantity: 0,
             }),
           );
-          retailerPrice = decision.retailPrice;
+          try {
+            retailerPrice = resolveRetailerCylinderSale({
+              newUnitPrice: decision.retailPrice,
+              exchangeEnabled: snapshot?.exchangeEnabled ?? false,
+              exchangeCreditAmount: snapshot?.exchangeCreditAmount ?? "0",
+              requestedMode: cylinderSaleMode,
+              quantity: input.quantity,
+            }).effectiveUnitPrice;
+          } catch (error) {
+            throw new ORPCError("BAD_REQUEST", {
+              message:
+                error instanceof Error
+                  ? error.message
+                  : "Cylinder sale configuration is invalid",
+            });
+          }
         }
 
         await tx
@@ -4157,6 +4242,7 @@ const mutations = {
           .set({
             quantity: input.quantity,
             ...(retailerPrice ? { price: retailerPrice } : {}),
+            cylinderSaleMode,
           })
           .where(eq(cartItem.id, input.cartItemId));
 
@@ -4265,13 +4351,7 @@ const mutations = {
         with: {
           items: {
             with: {
-              product: {
-                with: {
-                  category: {
-                    with: { type: { columns: { family: true } } },
-                  },
-                },
-              },
+              product: true,
               variant: { with: { sourceVariantOption: true } },
             },
           },
@@ -4358,6 +4438,10 @@ const mutations = {
         inventoryQty: string;
         unitPrice: string;
         totalPrice: string;
+        cylinderSaleMode: "new" | "exchange";
+        newUnitPrice: string;
+        exchangeCreditAmount: string;
+        expectedEmptyPackQty: number;
       }> = [];
 
       let subtotal = 0;
@@ -4410,17 +4494,14 @@ const mutations = {
                 }),
               )
             : undefined;
-        const stockDecision = getCustomerOrderLineDecision(
-          retailerInventory,
-          {
-            shopId: item.shopId,
-            productId: item.productId,
-            variantId: item.variantId,
-            quantity: item.quantity,
-            referenceProductInStock: item.product.inStock,
-            referenceAvailableQuantity: item.variant?.stockQuantity ?? null,
-          },
-        );
+        const stockDecision = getCustomerOrderLineDecision(retailerInventory, {
+          shopId: item.shopId,
+          productId: item.productId,
+          variantId: item.variantId,
+          quantity: item.quantity,
+          referenceProductInStock: item.product.inStock,
+          referenceAvailableQuantity: item.variant?.stockQuantity ?? null,
+        });
         if (!stockDecision.ok) {
           if (stockDecision.source === "reference") {
             throw new ORPCError("BAD_REQUEST", {
@@ -4444,26 +4525,48 @@ const mutations = {
           });
         }
 
-        const movementSemantics = item.variant?.sourceVariantOption
-          ? resolveVariantMovementSemantics(
-              item.variant.sourceVariantOption,
-              item.product.category?.type?.family ?? "generic",
-            )
+        const operations = item.variant?.sourceVariantOption
+          ? resolveVariantOperations(item.variant.sourceVariantOption)
           : null;
         if (
-          movementSemantics?.inventoryUnit === "cylinder" &&
+          operations &&
+          !operations.allowsDecimal &&
           !Number.isInteger(item.quantity)
         ) {
           throw new ORPCError("BAD_REQUEST", {
-            message: `${item.product.name} must be ordered in whole cylinders`,
+            message: `${item.product.name} must be ordered in whole ${operations.operationalUnit} quantities`,
           });
         }
 
-        const effectiveUnitPrice =
-          stockDecision.source === "retailer"
-            ? stockDecision.retailPrice
-            : item.price;
-        const itemTotal = Number(effectiveUnitPrice) * item.quantity;
+        let cylinderSale: ReturnType<typeof resolveRetailerCylinderSale> = {
+          mode: "new",
+          newUnitPrice: item.price,
+          exchangeCreditAmount: "0.00",
+          effectiveUnitPrice: item.price,
+          expectedEmptyPackQty: 0,
+          lineTotal: (Number(item.price) * item.quantity).toFixed(2),
+        };
+        if (stockDecision.source === "retailer") {
+          try {
+            cylinderSale = resolveRetailerCylinderSale({
+              newUnitPrice: stockDecision.retailPrice,
+              exchangeEnabled: retailerInventory?.exchangeEnabled ?? false,
+              exchangeCreditAmount:
+                retailerInventory?.exchangeCreditAmount ?? "0",
+              requestedMode: item.cylinderSaleMode,
+              quantity: item.quantity,
+            });
+          } catch (error) {
+            throw new ORPCError("BAD_REQUEST", {
+              message:
+                error instanceof Error
+                  ? `${item.product.name}: ${error.message}`
+                  : `${item.product.name} has an invalid cylinder sale configuration`,
+            });
+          }
+        }
+        const effectiveUnitPrice = cylinderSale.effectiveUnitPrice;
+        const itemTotal = Number(cylinderSale.lineTotal);
         subtotal += itemTotal;
 
         const weightPerUnit = item.variant
@@ -4480,19 +4583,23 @@ const mutations = {
           productSize: item.variant?.quantitySelectorLabel ?? item.product.size,
           quantity: item.quantity,
           quantityUnit:
-            movementSemantics?.enteredUnit ||
+            operations?.operationalUnit ||
             item.variant?.orderUnit ||
             item.variant?.packType ||
             null,
           inventoryUnit:
-            movementSemantics?.inventoryUnit ||
+            operations?.operationalUnit ||
             item.variant?.orderUnit ||
             item.variant?.packType ||
             null,
-          conversionFactor: movementSemantics?.conversionFactor ?? "1",
+          conversionFactor: "1",
           inventoryQty: String(item.quantity),
           unitPrice: effectiveUnitPrice,
           totalPrice: itemTotal.toFixed(2),
+          cylinderSaleMode: cylinderSale.mode,
+          newUnitPrice: cylinderSale.newUnitPrice,
+          exchangeCreditAmount: cylinderSale.exchangeCreditAmount,
+          expectedEmptyPackQty: cylinderSale.expectedEmptyPackQty,
         });
       }
 
@@ -4595,6 +4702,10 @@ const mutations = {
             inventoryQty: oi.inventoryQty,
             unitPrice: oi.unitPrice,
             totalPrice: oi.totalPrice,
+            cylinderSaleMode: oi.cylinderSaleMode,
+            newUnitPrice: oi.newUnitPrice,
+            exchangeCreditAmount: oi.exchangeCreditAmount,
+            expectedEmptyPackQty: oi.expectedEmptyPackQty,
           })),
         );
 
@@ -5847,10 +5958,9 @@ const openOrderEndpoints = {
             item.quantity,
         })),
         referenceSubtotal: Number(request.previousTotal ?? request.subtotal),
-        finalRetailer:
-          isAccepted
-            ? (offers.find((offer) => offer.isWinner)?.shopName ?? null)
-            : null,
+        finalRetailer: isAccepted
+          ? (offers.find((offer) => offer.isWinner)?.shopName ?? null)
+          : null,
         journey,
       };
     }),

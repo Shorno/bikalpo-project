@@ -7,13 +7,42 @@ test("LPG rejects legacy pack requests and resolves to cylinders", () => {
     requestedMode: "pack",
     activeCartonCount: 10,
     productType: {
-      family: "lpg",
       inventoryBehaviour: "fixed_pack",
+    },
+    variantOperations: {
+      operationalUnit: "cylinder",
+      receivingMode: "direct",
+      quantityKind: "count",
+      allowsDecimal: false,
     },
   });
 
   assert.equal(resolved.supportsRequestedMode, false);
   assert.equal(resolved.mode, "cylinder");
   assert.equal(resolved.stockStrategy, "direct_quantity");
-  assert.deepEqual(resolved.profile.supportedModes, ["cylinder"]);
+  assert.equal(resolved.inventoryBehaviour, "fixed_pack");
+});
+
+test("RAM resolves to unit ordering without Product Type family input", () => {
+  const variantOperations = {
+    operationalUnit: "unit",
+    receivingMode: "direct" as const,
+    quantityKind: "count" as const,
+    allowsDecimal: false,
+  };
+  const first = resolveWarehouseOrderMode({
+    requestedMode: "pack",
+    productType: { inventoryBehaviour: "fixed_pack" },
+    variantOperations,
+  });
+  const second = resolveWarehouseOrderMode({
+    requestedMode: "pack",
+    productType: { inventoryBehaviour: "fixed_pack" },
+    variantOperations,
+  });
+
+  assert.equal(first.mode, "unit");
+  assert.equal(second.mode, "unit");
+  assert.equal(first.stockStrategy, "direct_quantity");
+  assert.equal(second.stockStrategy, "direct_quantity");
 });

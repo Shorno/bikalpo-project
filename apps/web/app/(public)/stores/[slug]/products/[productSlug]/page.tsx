@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
-import type { DetailVariant } from "@/components/features/products/trade-product-detail-client";
 import { ProductDetailsView } from "@/components/features/products/product-details-view";
 import { StoreRelatedProducts } from "@/components/features/products/store-related-products";
+import type { DetailVariant } from "@/components/features/products/trade-product-detail-client";
 import {
   isCustomerStorefrontPreview,
   withCustomerStorefrontPreview,
@@ -51,6 +51,7 @@ export default async function StoreProductDetailsPage({
     variantType: variant.variantType,
     packType: variant.packType,
     isActive: variant.isActive,
+    cylinderSale: variant.cylinderSale,
   }));
   const storeHref = withCustomerStorefrontPreview(
     `/stores/${encodeURIComponent(slug)}`,

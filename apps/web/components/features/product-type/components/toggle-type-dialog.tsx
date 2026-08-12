@@ -1,6 +1,5 @@
 "use client";
 
-import type { ProductTypeRow } from "./product-type-columns";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Loader, Power } from "lucide-react";
 import * as React from "react";
@@ -18,6 +17,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { orpc } from "@/utils/orpc";
+import type { ProductTypeRow } from "./product-type-columns";
 
 interface ToggleTypeDialogProps {
   type: ProductTypeRow;
@@ -28,8 +28,7 @@ export default function ToggleTypeDialog({ type }: ToggleTypeDialogProps) {
   const queryClient = useQueryClient();
 
   const mutation = useMutation({
-    mutationFn: (id: number) =>
-      orpc.adminProductType.toggleActive.call({ id }),
+    mutationFn: (id: number) => orpc.adminProductType.toggleActive.call({ id }),
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ["adminProductType"] });
       toast.success(result.message);

@@ -2,28 +2,19 @@
 
 import { useForm } from "@tanstack/react-form";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Loader } from "lucide-react";
 import * as React from "react";
 import { toast } from "sonner";
-
+import { SetupFormDialog } from "@/components/features/product-setup";
+import ImageUploader from "@/components/ImageUploader";
 import { Button } from "@/components/ui/button";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
-import {
   Field,
-  FieldContent,
   FieldDescription,
   FieldError,
   FieldLabel,
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
 
 import { createBrandSchema } from "@/schema/brand.schema";
 import { generateSlug } from "@/utils/generate-slug";
@@ -37,6 +28,9 @@ export default function NewBrandDialog() {
     orpc.brand.create.mutationOptions({
       onSuccess: (result) => {
         queryClient.invalidateQueries({ queryKey: orpc.brand.getAll.key() });
+        queryClient.invalidateQueries({
+          queryKey: orpc.brand.getAdminAll.key(),
+        });
         toast.success(result.message);
         form.reset();
         setOpen(false);
@@ -54,10 +48,13 @@ export default function NewBrandDialog() {
     defaultValues: {
       name: "",
       slug: "",
+      logo: "",
+      isActive: true,
+      displayOrder: 0,
     },
 
     validators: {
-      onSubmit: createBrandSchema,
+      onSubmit: createBrandSchema as any,
     },
     onSubmit: async ({ value }) => {
       mutation.mutate(value);
@@ -70,105 +67,133 @@ export default function NewBrandDialog() {
   };
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button>New Brand</Button>
-      </DialogTrigger>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>Create New Brand</DialogTitle>
-          <DialogDescription>
-            Add a new brand to organize your products.
-          </DialogDescription>
-        </DialogHeader>
-        <form
-          id="new-brand-form"
-          onSubmit={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            form.handleSubmit();
+    <SetupFormDialog
+      description="Add a reusable brand to the Product Setup catalog."
+      formId="new-brand-form"
+      hasUnsavedChanges={() => form.state.isDirty}
+      isSubmitting={mutation.isPending}
+      onOpenChange={setOpen}
+      onSubmit={() => form.handleSubmit()}
+      open={open}
+      submitLabel="Create Brand"
+      title="Create Brand"
+      trigger={<Button>Create Brand</Button>}
+    >
+      <form
+        id="new-brand-form"
+        onSubmit={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          form.handleSubmit();
+        }}
+        className="space-y-4"
+      >
+        {/* Brand Name */}
+        <form.Field name="name">
+          {(field) => {
+            const isInvalid =
+              field.state.meta.isTouched && !field.state.meta.isValid;
+            return (
+              <Field data-invalid={isInvalid}>
+                <FieldLabel htmlFor={field.name}>Brand Name *</FieldLabel>
+                <Input
+                  id={field.name}
+                  name={field.name}
+                  value={field.state.value}
+                  onBlur={field.handleBlur}
+                  onChange={(e) => {
+                    field.handleChange(e.target.value);
+                    autoGenerateSlugFromName(e.target.value);
+                  }}
+                  aria-invalid={isInvalid}
+                  placeholder="Unilever"
+                  autoComplete="off"
+                />
+                {isInvalid && <FieldError errors={field.state.meta.errors} />}
+              </Field>
+            );
           }}
-          className="space-y-4"
-        >
+        </form.Field>
 
+        {/* Slug */}
+        <form.Field name="slug">
+          {(field) => {
+            const isInvalid =
+              field.state.meta.isTouched && !field.state.meta.isValid;
+            return (
+              <Field data-invalid={isInvalid}>
+                <FieldLabel htmlFor={field.name}>Slug *</FieldLabel>
+                <Input
+                  id={field.name}
+                  name={field.name}
+                  value={field.state.value}
+                  onBlur={field.handleBlur}
+                  onChange={(e) => field.handleChange(e.target.value)}
+                  aria-invalid={isInvalid}
+                  placeholder="unilever"
+                  autoComplete="off"
+                />
+                <FieldDescription>
+                  URL-friendly version of the name.
+                </FieldDescription>
+                {isInvalid && <FieldError errors={field.state.meta.errors} />}
+              </Field>
+            );
+          }}
+        </form.Field>
 
-          {/* Brand Name */}
-          <form.Field name="name">
-            {(field) => {
-              const isInvalid =
-                field.state.meta.isTouched && !field.state.meta.isValid;
-              return (
-                <Field data-invalid={isInvalid}>
-                  <FieldLabel htmlFor={field.name}>Brand Name *</FieldLabel>
-                  <Input
-                    id={field.name}
-                    name={field.name}
-                    value={field.state.value}
-                    onBlur={field.handleBlur}
-                    onChange={(e) => {
-                      field.handleChange(e.target.value);
-                      autoGenerateSlugFromName(e.target.value);
-                    }}
-                    aria-invalid={isInvalid}
-                    placeholder="Unilever"
-                    autoComplete="off"
-                  />
-                  {isInvalid && <FieldError errors={field.state.meta.errors} />}
-                </Field>
-              );
-            }}
-          </form.Field>
+        <form.Field name="logo">
+          {(field) => (
+            <Field>
+              <FieldLabel>Brand logo</FieldLabel>
+              <ImageUploader
+                folder="brands"
+                maxSizeMB={3}
+                onChange={field.handleChange}
+                value={field.state.value ?? ""}
+              />
+              <FieldDescription>
+                Optional square logo used in product setup.
+              </FieldDescription>
+            </Field>
+          )}
+        </form.Field>
 
-          {/* Slug */}
-          <form.Field name="slug">
-            {(field) => {
-              const isInvalid =
-                field.state.meta.isTouched && !field.state.meta.isValid;
-              return (
-                <Field data-invalid={isInvalid}>
-                  <FieldLabel htmlFor={field.name}>Slug *</FieldLabel>
-                  <Input
-                    id={field.name}
-                    name={field.name}
-                    value={field.state.value}
-                    onBlur={field.handleBlur}
-                    onChange={(e) => field.handleChange(e.target.value)}
-                    aria-invalid={isInvalid}
-                    placeholder="unilever"
-                    autoComplete="off"
-                  />
-                  <FieldDescription>
-                    URL-friendly version of the name.
-                  </FieldDescription>
-                  {isInvalid && <FieldError errors={field.state.meta.errors} />}
-                </Field>
-              );
-            }}
-          </form.Field>
-
-
-        </form>
-        <DialogFooter>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => setOpen(false)}
-            disabled={mutation.isPending}
-          >
-            Cancel
-          </Button>
-          <Button
-            type="submit"
-            form="new-brand-form"
-            disabled={mutation.isPending}
-          >
-            {mutation.isPending && (
-              <Loader className="mr-2 h-4 w-4 animate-spin" />
+        <div className="grid gap-4 sm:grid-cols-2">
+          <form.Field name="displayOrder">
+            {(field) => (
+              <Field>
+                <FieldLabel htmlFor={field.name}>Display order</FieldLabel>
+                <Input
+                  id={field.name}
+                  min={0}
+                  onChange={(event) =>
+                    field.handleChange(Number(event.target.value))
+                  }
+                  type="number"
+                  value={field.state.value}
+                />
+              </Field>
             )}
-            Create Brand
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+          </form.Field>
+          <form.Field name="isActive">
+            {(field) => (
+              <Field className="flex min-h-16 flex-row items-center justify-between rounded-lg border px-4 py-3">
+                <div>
+                  <FieldLabel>Status</FieldLabel>
+                  <FieldDescription>
+                    Available for new associations
+                  </FieldDescription>
+                </div>
+                <Switch
+                  checked={field.state.value}
+                  onCheckedChange={field.handleChange}
+                />
+              </Field>
+            )}
+          </form.Field>
+        </div>
+      </form>
+    </SetupFormDialog>
   );
 }

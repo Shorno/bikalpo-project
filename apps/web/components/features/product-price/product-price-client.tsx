@@ -21,6 +21,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
+import { SetupPageShell } from "@/components/features/product-setup";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -238,7 +239,7 @@ export function ProductPriceClient() {
   };
 
   return (
-    <div className="mx-auto w-full max-w-6xl space-y-5">
+    <SetupPageShell>
       {/* ── Header ── */}
       <header className="overflow-hidden rounded-xl border bg-card shadow-sm">
         <div className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between">
@@ -406,7 +407,7 @@ export function ProductPriceClient() {
           ) : null}
         </div>
       )}
-    </div>
+    </SetupPageShell>
   );
 }
 

@@ -2,37 +2,49 @@
 
 import type { Brand } from "@bikalpo-project/db/schema";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Loader, Trash2 } from "lucide-react";
 import * as React from "react";
 import { toast } from "sonner";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
-import { Button } from "@/components/ui/button";
+import { SetupDeleteDialog } from "@/components/features/product-setup";
 import { orpc } from "@/utils/orpc";
 
 interface DeleteBrandDialogProps {
-  brand: Brand;
+  brand: Brand & { productCount?: number; variantCount?: number };
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  onDeleted?: () => void;
+  trigger?: React.ReactNode;
 }
 
-export default function DeleteBrandDialog({ brand }: DeleteBrandDialogProps) {
-  const [open, setOpen] = React.useState(false);
+export default function DeleteBrandDialog({
+  brand,
+  open,
+  onOpenChange,
+  onDeleted,
+  trigger,
+}: DeleteBrandDialogProps) {
+  const [internalOpen, setInternalOpen] = React.useState(false);
+  const dialogOpen = open ?? internalOpen;
   const queryClient = useQueryClient();
+  const setDialogOpen = React.useCallback(
+    (nextOpen: boolean) => {
+      setInternalOpen(nextOpen);
+      onOpenChange?.(nextOpen);
+    },
+    [onOpenChange],
+  );
 
   const mutation = useMutation(
     orpc.brand.delete.mutationOptions({
       onSuccess: (result) => {
-        queryClient.invalidateQueries({ queryKey: orpc.brand.getAll.key() });
+        void queryClient.invalidateQueries({
+          queryKey: orpc.brand.getAll.key(),
+        });
+        void queryClient.invalidateQueries({
+          queryKey: orpc.brand.getAdminAll.key(),
+        });
         toast.success(result.message);
-        setOpen(false);
+        setDialogOpen(false);
+        onDeleted?.();
       },
       onError: (error) => {
         toast.error(
@@ -46,50 +58,22 @@ export default function DeleteBrandDialog({ brand }: DeleteBrandDialogProps) {
   const handleDelete = () => {
     mutation.mutate({ id: brand.id });
   };
+  const usageCount = (brand.productCount ?? 0) + (brand.variantCount ?? 0);
 
   return (
-    <AlertDialog open={open} onOpenChange={setOpen}>
-      <AlertDialogTrigger asChild>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="w-full justify-start text-destructive hover:text-destructive"
-        >
-          <Trash2 className="h-4 w-4 mr-2" />
-          Delete
-        </Button>
-      </AlertDialogTrigger>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle className="flex items-center gap-2">
-            <Trash2 className="h-5 w-5 text-destructive" />
-            Delete {brand.name}?
-          </AlertDialogTitle>
-          <AlertDialogDescription>
-            This action cannot be undone. This will permanently delete the brand
-            and may affect products associated with it.
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-
-        <AlertDialogFooter>
-          <AlertDialogCancel disabled={mutation.isPending}>
-            Cancel
-          </AlertDialogCancel>
-          <AlertDialogAction
-            onClick={(e) => {
-              e.preventDefault();
-              handleDelete();
-            }}
-            disabled={mutation.isPending}
-            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-          >
-            {mutation.isPending && (
-              <Loader className="mr-2 h-4 w-4 animate-spin" />
-            )}
-            Delete Brand
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+    <SetupDeleteDialog
+      dependencyMessage={
+        usageCount > 0
+          ? `This brand is used by ${brand.productCount ?? 0} products and ${brand.variantCount ?? 0} Variants. Disable it instead.`
+          : undefined
+      }
+      description="This action permanently deletes the brand. Brands referenced by configured products or variants are protected by the server."
+      isDeleting={mutation.isPending}
+      onConfirm={handleDelete}
+      onOpenChange={setDialogOpen}
+      open={dialogOpen}
+      title={`Delete ${brand.name}?`}
+      trigger={trigger}
+    />
   );
 }

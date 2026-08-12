@@ -3,8 +3,8 @@
 import {
   FULFILLMENT_UNITS,
   PRODUCT_TYPE_FAMILY_LABELS,
-  VARIANT_DIMENSION_LABELS,
   type ProductTypeFulfillmentProfile,
+  VARIANT_DIMENSION_LABELS,
 } from "@bikalpo-project/db/fulfillment";
 import { Badge } from "@/components/ui/badge";
 
@@ -27,7 +27,8 @@ export default function FulfillmentProfilePreview({
           Modes: {profile.supportedModes.join(", ")}
         </div>
         <div className="text-muted-foreground">
-          Flow: {profile.orderUnit} order {"->"} {profile.conversionUnit} conversion
+          Flow: {profile.orderUnit} order {"->"} {profile.conversionUnit}{" "}
+          conversion
         </div>
       </div>
     );
@@ -44,7 +45,9 @@ export default function FulfillmentProfilePreview({
         </div>
         <div className="rounded-lg border p-3">
           <div className="text-xs text-muted-foreground">Default Mode</div>
-          <div className="mt-1 font-semibold capitalize">{profile.defaultMode}</div>
+          <div className="mt-1 font-semibold capitalize">
+            {profile.defaultMode}
+          </div>
         </div>
         <div className="rounded-lg border p-3">
           <div className="text-xs text-muted-foreground">Mode Switching</div>
@@ -66,7 +69,9 @@ export default function FulfillmentProfilePreview({
           <div className="mt-3 space-y-2 text-sm text-muted-foreground">
             <div>Order: {FULFILLMENT_UNITS[profile.orderUnit].label}</div>
             <div>Stock: {FULFILLMENT_UNITS[profile.stockUnit].label}</div>
-            <div>Conversion: {FULFILLMENT_UNITS[profile.conversionUnit].label}</div>
+            <div>
+              Conversion: {FULFILLMENT_UNITS[profile.conversionUnit].label}
+            </div>
             <div>Display: {FULFILLMENT_UNITS[profile.displayUnit].label}</div>
           </div>
         </div>

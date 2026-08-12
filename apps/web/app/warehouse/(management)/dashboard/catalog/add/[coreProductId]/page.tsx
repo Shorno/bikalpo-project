@@ -29,8 +29,13 @@ export default function WarehouseCoreProductConfigPage() {
   });
 
   const configureMutation = useMutation({
-    mutationFn: (values: any) =>
-      (orpc.warehouse as any).configureWarehouseCoreProducts.call({
+    mutationFn: (values: any) => {
+      const selectedVariantIds = new Set(
+        values.brands.flatMap((brand: any) =>
+          brand.variants.map((variant: any) => variant.variantOptionId),
+        ),
+      );
+      return (orpc.warehouse as any).configureWarehouseCoreProducts.call({
         coreProductId,
         expectedVersion: configurationQuery.data?.version ?? null,
         details: values.template,
@@ -41,15 +46,20 @@ export default function WarehouseCoreProductConfigPage() {
           })),
         })),
         variantAliases: Object.entries(variantAliases)
-          .filter(([, alias]) => alias.trim())
+          .filter(
+            ([variantOptionId, alias]) =>
+              selectedVariantIds.has(Number(variantOptionId)) && alias.trim(),
+          )
           .map(([variantOptionId, alias]) => ({
             variantOptionId: Number(variantOptionId),
             alias: alias.trim(),
           })),
-      }),
+      });
+    },
   });
 
   const data = configurationQuery.data;
+  const managementUrl = `${CATALOG_URL}/${coreProductId}`;
   useEffect(() => {
     if (!data?.variantAliases) return;
     setVariantAliases(
@@ -138,7 +148,10 @@ export default function WarehouseCoreProductConfigPage() {
         variantOptions: data?.options?.variantOptions ?? [],
         isLoading: configurationQuery.isLoading,
         isError: configurationQuery.isError,
-        listHref: CATALOG_URL,
+        listHref:
+          data?.core?.brandCreationMode === "single"
+            ? managementUrl
+            : CATALOG_URL,
         productEditHref: (productId) => `${PRODUCTS_URL}/${productId}/edit`,
         presetBrands:
           data?.adminPreset?.available && normalizedPreset.length > 0
@@ -156,7 +169,11 @@ export default function WarehouseCoreProductConfigPage() {
           normalizedCurrent.length > 0 ? normalizedCurrent : normalizedPreset,
         onSaved: async () => {
           await queryClient.invalidateQueries({ queryKey: ["warehouse"] });
-          router.push(PRODUCTS_URL);
+          router.push(
+            data?.core?.brandCreationMode === "single"
+              ? managementUrl
+              : PRODUCTS_URL,
+          );
         },
       }}
     />

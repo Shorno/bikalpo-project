@@ -1,5 +1,9 @@
 import { db } from "@bikalpo-project/db";
 import {
+  shouldDeactivateOmittedBrands,
+  validateBrandCreationSubmission,
+} from "@bikalpo-project/db/brand-creation";
+import {
   adminProductGenerationTemplate,
   brand,
   coreProductIdentity,
@@ -24,6 +28,14 @@ import {
 
 const configuredVariantSchema = z.object({
   variantOptionId: z.number().int().positive(),
+  exchangeEnabled: z.boolean().default(false),
+  exchangeCreditAmount: z.coerce
+    .number()
+    .finite()
+    .min(0)
+    .max(99_999_999)
+    .default(0)
+    .transform((value) => value.toFixed(2)),
 });
 
 const templateDetailsSchema = z.object({
@@ -48,7 +60,6 @@ const templateDetailsSchema = z.object({
   stockTrackingEnabled: z.boolean().default(true),
   minimumOrderEnabled: z.boolean().default(true),
   minimumOrderQty: z.string().default("1"),
-  inventoryUnit: z.string().default("unit"),
   conversionEnabled: z.boolean().default(false),
   inventoryLooseUnitEnabled: z.boolean().default(false),
   inventoryLooseUnit: z.string().default("kg"),
@@ -113,7 +124,6 @@ function fullTemplateDetails(
     stockTrackingEnabled: details.stockTrackingEnabled,
     minimumOrderEnabled: details.minimumOrderEnabled,
     minimumOrderQty: details.minimumOrderQty,
-    inventoryUnit: details.inventoryUnit,
     conversionEnabled: details.conversionEnabled,
     inventoryLooseUnitEnabled: details.inventoryLooseUnitEnabled,
     inventoryLooseUnit: details.inventoryLooseUnit,
@@ -124,7 +134,11 @@ function fullTemplateDetails(
 }
 
 function optionIsValid(
-  option: { isActive: boolean; typeId: number | null; categoryId: number | null },
+  option: {
+    isActive: boolean;
+    typeId: number | null;
+    categoryId: number | null;
+  },
   typeId: number | null,
   categoryId: number,
 ) {
@@ -195,7 +209,7 @@ async function syncProductVariants({
   shopId,
   targetProduct,
   brandId,
-  desiredOptionIds,
+  desiredVariants,
   optionMap,
   details,
 }: {
@@ -203,10 +217,14 @@ async function syncProductVariants({
   shopId: string;
   targetProduct: any;
   brandId: number;
-  desiredOptionIds: number[];
+  desiredVariants: Array<z.infer<typeof configuredVariantSchema>>;
   optionMap: Map<number, any>;
   details: TemplateDetails;
 }) {
+  const desiredOptionIds = desiredVariants.map((row) => row.variantOptionId);
+  const configurationByOption = new Map(
+    desiredVariants.map((row) => [row.variantOptionId, row]),
+  );
   const existingVariants = targetProduct.variants ?? [];
   const existingByOption = new Map(
     existingVariants
@@ -216,7 +234,8 @@ async function syncProductVariants({
   const desiredSet = new Set(desiredOptionIds);
   const removed = existingVariants.filter(
     (row: any) =>
-      row.sourceVariantOptionId !== null && !desiredSet.has(row.sourceVariantOptionId),
+      row.sourceVariantOptionId !== null &&
+      !desiredSet.has(row.sourceVariantOptionId),
   );
   await assertNoShopStock(
     tx,
@@ -247,6 +266,7 @@ async function syncProductVariants({
   for (const [sortOrder, optionId] of desiredOptionIds.entries()) {
     const option = optionMap.get(optionId)!;
     const resolved = resolveConcreteVariantForConfig(option);
+    const cylinderSale = configurationByOption.get(optionId)!;
     const label = resolved.label;
     const existing = existingByOption.get(optionId) as any;
     if (existing) {
@@ -263,6 +283,10 @@ async function syncProductVariants({
           packWeightKg: resolved.weightKg || null,
           sellUnit: label,
           sortOrder,
+          exchangeEnabled: cylinderSale.exchangeEnabled,
+          exchangeCreditAmount: cylinderSale.exchangeEnabled
+            ? cylinderSale.exchangeCreditAmount
+            : "0.00",
         })
         .where(eq(productVariant.id, existing.id));
       const existingPrice = await tx.query.productVariantPrice.findFirst({
@@ -338,6 +362,10 @@ async function syncProductVariants({
         reorderLevel: 0,
         sortOrder,
         isActive: true,
+        exchangeEnabled: cylinderSale.exchangeEnabled,
+        exchangeCreditAmount: cylinderSale.exchangeEnabled
+          ? cylinderSale.exchangeCreditAmount
+          : "0.00",
       })
       .returning();
     await tx.insert(inventory).values({
@@ -388,12 +416,13 @@ export const shopProductConfigEndpoints = {
             where: and(
               eq(product.coreProductId, core.id),
               eq(product.creatorSource, "admin"),
+              eq(product.status, "active"),
             ),
             with: {
               brand: true,
-              variants: {
-                where: eq(productVariant.isActive, true),
-                with: { sourceVariantOption: true },
+              variantPrices: {
+                where: eq(productVariantPrice.isActive, true),
+                with: { variantOption: true },
               },
             },
           }),
@@ -428,9 +457,10 @@ export const shopProductConfigEndpoints = {
         core,
         version: shopTemplate?.version ?? null,
         sourceAdminTemplateVersion:
-          shopTemplate?.sourceAdminTemplateVersion ?? adminTemplate?.version ?? null,
-        defaults:
-          shopTemplate?.details ??
+          shopTemplate?.sourceAdminTemplateVersion ??
+          adminTemplate?.version ??
+          null,
+        defaults: shopTemplate?.details ??
           adminTemplate?.details ?? {
             name: core.name,
             slug: core.slug,
@@ -448,18 +478,13 @@ export const shopProductConfigEndpoints = {
               brandId: row.brandId!,
               brandName: row.brand?.name ?? "Unknown brand",
               sourceProductId: row.id,
-              variants: row.variants
-                .filter((variant) => variant.sourceVariantOptionId !== null)
-                .map((variant) => ({
-                  variantOptionId: variant.sourceVariantOptionId!,
-                  variantOptionName:
-                    variant.sourceVariantOption?.name ?? null,
-                  definitionKind:
-                    variant.sourceVariantOption?.definitionKind ?? null,
-                  definition: variant.sourceVariantOption?.definition ?? null,
-                  needsReview:
-                    variant.sourceVariantOption?.needsReview ?? true,
-                })),
+              variants: row.variantPrices.map((price) => ({
+                variantOptionId: price.variantOptionId,
+                variantOptionName: price.variantOption?.name ?? null,
+                definitionKind: price.variantOption?.definitionKind ?? null,
+                definition: price.variantOption?.definition ?? null,
+                needsReview: price.variantOption?.needsReview ?? true,
+              })),
             })),
         },
         current: currentProducts.map((row) => ({
@@ -481,6 +506,8 @@ export const shopProductConfigEndpoints = {
                 variant.sourceVariantOption?.definitionKind ?? null,
               definition: variant.sourceVariantOption?.definition ?? null,
               needsReview: variant.sourceVariantOption?.needsReview ?? true,
+              exchangeEnabled: variant.exchangeEnabled,
+              exchangeCreditAmount: variant.exchangeCreditAmount,
             })),
         })),
         options: { brands, variantOptions },
@@ -519,6 +546,35 @@ export const shopProductConfigEndpoints = {
             message: "Admin core product identity not found",
           });
         }
+        const submission = validateBrandCreationSubmission(
+          core.brandCreationMode,
+          input.brands.length,
+        );
+        if (!submission.valid) {
+          throw new ORPCError("BAD_REQUEST", { message: submission.message });
+        }
+        const requestedExchangeVariants = input.brands.flatMap((row) =>
+          row.variants.filter((variant) => variant.exchangeEnabled),
+        );
+        if (
+          core.category?.type?.family !== "lpg" &&
+          requestedExchangeVariants.length > 0
+        ) {
+          throw new ORPCError("BAD_REQUEST", {
+            message:
+              "Empty cylinder exchange is only available for LPG products",
+          });
+        }
+        if (
+          requestedExchangeVariants.some(
+            (variant) => Number(variant.exchangeCreditAmount) <= 0,
+          )
+        ) {
+          throw new ORPCError("BAD_REQUEST", {
+            message:
+              "Exchange Credit must be greater than zero when Exchange is enabled",
+          });
+        }
         const existingTemplate =
           await tx.query.shopProductGenerationTemplate.findFirst({
             where: and(
@@ -531,12 +587,13 @@ export const shopProductConfigEndpoints = {
           existingTemplate?.version !== input.expectedVersion
         ) {
           throw new ORPCError("CONFLICT", {
-            message: "This configuration changed in another session. Reload it.",
+            message:
+              "This configuration changed in another session. Reload it.",
           });
         }
 
         const brandRows = await tx.query.brand.findMany({
-          where: inArray(brand.id, brandIds),
+          where: and(inArray(brand.id, brandIds), eq(brand.isActive, true)),
         });
         if (brandRows.length !== brandIds.length) {
           throw new ORPCError("BAD_REQUEST", {
@@ -594,11 +651,12 @@ export const shopProductConfigEndpoints = {
           const brandRow = brandMap.get(brandConfig.brandId)!;
           let targetProduct = existingByBrand.get(brandRow.id) as any;
           if (!targetProduct) {
-            const baseSlug = `${brandRow.slug}-${core.slug}-${shopId.slice(0, 6)}`
-              .toLowerCase()
-              .replace(/[^a-z0-9]+/g, "-")
-              .replace(/(^-|-$)/g, "")
-              .slice(0, 140);
+            const baseSlug =
+              `${brandRow.slug}-${core.slug}-${shopId.slice(0, 6)}`
+                .toLowerCase()
+                .replace(/[^a-z0-9]+/g, "-")
+                .replace(/(^-|-$)/g, "")
+                .slice(0, 140);
             let slug = baseSlug;
             let suffix = 2;
             while (
@@ -612,7 +670,9 @@ export const shopProductConfigEndpoints = {
             const [inserted] = await tx
               .insert(product)
               .values({
-                name: `${brandRow.name} ${input.details.name}`.trim().slice(0, 150),
+                name: `${brandRow.name} ${input.details.name}`
+                  .trim()
+                  .slice(0, 150),
                 slug,
                 description: input.details.description ?? null,
                 shortDescription: input.details.shortDescription ?? null,
@@ -633,12 +693,13 @@ export const shopProductConfigEndpoints = {
                 stockTrackingEnabled: input.details.stockTrackingEnabled,
                 minimumOrderEnabled: input.details.minimumOrderEnabled,
                 minimumOrderQty: input.details.minimumOrderQty,
-                inventoryUnit: input.details.inventoryUnit,
                 conversionEnabled: input.details.conversionEnabled,
-                inventoryLooseUnitEnabled: input.details.inventoryLooseUnitEnabled,
+                inventoryLooseUnitEnabled:
+                  input.details.inventoryLooseUnitEnabled,
                 inventoryLooseUnit: input.details.inventoryLooseUnit,
                 isReturnablePack: input.details.isReturnablePack,
-                defaultPackDepositAmount: input.details.defaultPackDepositAmount,
+                defaultPackDepositAmount:
+                  input.details.defaultPackDepositAmount,
                 allowedPackBrands: input.details.allowedPackBrands,
                 allowedPackSizes: input.details.allowedPackSizes,
                 visibility: input.details.visibility,
@@ -683,36 +744,37 @@ export const shopProductConfigEndpoints = {
             shopId,
             targetProduct,
             brandId: brandRow.id,
-            desiredOptionIds: brandConfig.variants.map(
-              (row) => row.variantOptionId,
-            ),
+            desiredVariants: brandConfig.variants,
             optionMap,
             details: input.details,
           });
         }
 
-        const selectedBrands = new Set(brandIds);
-        for (const row of existingProducts) {
-          if (row.brandId === null || selectedBrands.has(row.brandId)) continue;
-          await assertNoShopStock(
-            tx,
-            shopId,
-            row.variants.map((variant) => variant.id),
-            row.name,
-          );
-          await tx
-            .update(product)
-            .set({ status: "inactive" })
-            .where(eq(product.id, row.id));
-          await tx
-            .update(productVariant)
-            .set({ isActive: false })
-            .where(eq(productVariant.productId, row.id));
-          await tx
-            .update(productVariantPrice)
-            .set({ isActive: false, updatedAt: new Date() })
-            .where(eq(productVariantPrice.productId, row.id));
-          deactivated.push(row.id);
+        if (shouldDeactivateOmittedBrands(core.brandCreationMode)) {
+          const selectedBrands = new Set(brandIds);
+          for (const row of existingProducts) {
+            if (row.brandId === null || selectedBrands.has(row.brandId))
+              continue;
+            await assertNoShopStock(
+              tx,
+              shopId,
+              row.variants.map((variant) => variant.id),
+              row.name,
+            );
+            await tx
+              .update(product)
+              .set({ status: "inactive" })
+              .where(eq(product.id, row.id));
+            await tx
+              .update(productVariant)
+              .set({ isActive: false })
+              .where(eq(productVariant.productId, row.id));
+            await tx
+              .update(productVariantPrice)
+              .set({ isActive: false, updatedAt: new Date() })
+              .where(eq(productVariantPrice.productId, row.id));
+            deactivated.push(row.id);
+          }
         }
 
         await tx
@@ -771,7 +833,6 @@ export const shopProductConfigEndpoints = {
           productBrands: { with: { brand: true } },
           variantPrices: { with: { variantOption: true } },
           variants: {
-            where: eq(productVariant.isActive, true),
             with: { sourceVariantOption: true },
           },
         },
@@ -815,7 +876,10 @@ export const shopProductConfigEndpoints = {
           ),
           with: {
             brand: true,
-            category: { columns: { typeId: true } },
+            category: {
+              columns: { typeId: true },
+              with: { type: { columns: { family: true } } },
+            },
             coreProduct: true,
             variants: true,
           },
@@ -823,6 +887,26 @@ export const shopProductConfigEndpoints = {
         if (!existing || !existing.coreProductId || !existing.brandId) {
           throw new ORPCError("NOT_FOUND", {
             message: "Retailer product not found or is not configurable",
+          });
+        }
+        if (
+          existing.category?.type?.family !== "lpg" &&
+          input.variants.some((row) => row.exchangeEnabled)
+        ) {
+          throw new ORPCError("BAD_REQUEST", {
+            message:
+              "Empty cylinder exchange is only available for LPG products",
+          });
+        }
+        if (
+          input.variants.some(
+            (row) =>
+              row.exchangeEnabled && Number(row.exchangeCreditAmount) <= 0,
+          )
+        ) {
+          throw new ORPCError("BAD_REQUEST", {
+            message:
+              "Exchange Credit must be greater than zero when Exchange is enabled",
           });
         }
         const optionMap = await loadScopedOptions(
@@ -836,7 +920,7 @@ export const shopProductConfigEndpoints = {
           shopId,
           targetProduct: existing,
           brandId: existing.brandId,
-          desiredOptionIds: optionIds,
+          desiredVariants: input.variants,
           optionMap,
           details: input.details,
         });
@@ -856,7 +940,6 @@ export const shopProductConfigEndpoints = {
             stockTrackingEnabled: input.details.stockTrackingEnabled,
             minimumOrderEnabled: input.details.minimumOrderEnabled,
             minimumOrderQty: input.details.minimumOrderQty,
-            inventoryUnit: input.details.inventoryUnit,
             conversionEnabled: input.details.conversionEnabled,
             inventoryLooseUnitEnabled: input.details.inventoryLooseUnitEnabled,
             inventoryLooseUnit: input.details.inventoryLooseUnit,
@@ -868,7 +951,9 @@ export const shopProductConfigEndpoints = {
             status: input.details.status,
           })
           .where(eq(product.id, existing.id));
-        await tx.delete(productImage).where(eq(productImage.productId, existing.id));
+        await tx
+          .delete(productImage)
+          .where(eq(productImage.productId, existing.id));
         if (input.details.additionalImages.length > 0) {
           await tx.insert(productImage).values(
             input.details.additionalImages.map((imageUrl) => ({

@@ -2,33 +2,22 @@
 
 import type { SubCategory } from "@bikalpo-project/db/schema";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Loader, Trash2 } from "lucide-react";
-import * as React from "react";
-import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
+import { SetupDeleteDialog } from "@/components/features/product-setup";
 import { client } from "@/utils/orpc";
 
 interface DeleteSubcategoryDialogProps {
   subcategory: SubCategory;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  onDeleted?: () => void;
 }
 
 export default function DeleteSubcategoryDialog({
   subcategory,
   open,
   onOpenChange,
+  onDeleted,
 }: DeleteSubcategoryDialogProps) {
   const queryClient = useQueryClient();
 
@@ -43,6 +32,7 @@ export default function DeleteSubcategoryDialog({
       queryClient.invalidateQueries({ queryKey: ["adminSubcategory"] });
       toast.success("Subcategory deleted successfully");
       onOpenChange(false);
+      onDeleted?.();
     },
     onError: (error) => {
       toast.error(error.message || "Failed to delete subcategory.");
@@ -54,38 +44,13 @@ export default function DeleteSubcategoryDialog({
   };
 
   return (
-    <AlertDialog open={open} onOpenChange={onOpenChange}>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle className="flex items-center gap-2">
-            <Trash2 className="h-5 w-5 text-destructive" />
-            Delete {subcategory.name}?
-          </AlertDialogTitle>
-          <AlertDialogDescription>
-            This action cannot be undone. This will permanently delete the
-            subcategory and all associated products.
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-
-        <AlertDialogFooter>
-          <AlertDialogCancel disabled={mutation.isPending}>
-            Cancel
-          </AlertDialogCancel>
-          <AlertDialogAction
-            onClick={(e) => {
-              e.preventDefault();
-              handleDelete();
-            }}
-            disabled={mutation.isPending}
-            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-          >
-            {mutation.isPending && (
-              <Loader className="h-4 w-4 mr-2 animate-spin" />
-            )}
-            Delete Subcategory
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+    <SetupDeleteDialog
+      description="This permanently deletes the Sub Category. Existing dependencies are never cascaded."
+      isDeleting={mutation.isPending}
+      onConfirm={handleDelete}
+      onOpenChange={onOpenChange}
+      open={open}
+      title={`Delete ${subcategory.name}?`}
+    />
   );
 }

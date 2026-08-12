@@ -48,9 +48,6 @@ type RuleSettings = {
   minimumOrderAvailable: boolean;
   minimumOrderDefault: boolean;
   minimumOrderQtyDefault: string;
-  inventoryUnitOptions: FulfillmentUnitCode[];
-  inventoryUnitAvailable: boolean;
-  defaultInventoryUnit: FulfillmentUnitCode;
   conversionAvailable: boolean;
   conversionDefault: boolean;
   inventoryLooseUnitAvailable: boolean;
@@ -77,7 +74,6 @@ type VisibilityKey =
   | "damageAvailable"
   | "stockTrackingAvailable"
   | "minimumOrderAvailable"
-  | "inventoryUnitAvailable"
   | "conversionAvailable"
   | "inventoryLooseUnitAvailable"
   | "returnablePackAvailable";
@@ -92,7 +88,6 @@ const VISIBILITY_RULES: Array<{
   { key: "damageAvailable", label: "Damage" },
   { key: "stockTrackingAvailable", label: "Stock" },
   { key: "minimumOrderAvailable", label: "Minimum Order" },
-  { key: "inventoryUnitAvailable", label: "Inventory Unit" },
   { key: "conversionAvailable", label: "Conversion" },
   { key: "inventoryLooseUnitAvailable", label: "Loose Unit" },
   { key: "returnablePackAvailable", label: "Pack Return" },
@@ -123,13 +118,6 @@ function fallbackSettingsForType(type: ProductTypeRow): RuleSettings {
     minimumOrderAvailable: true,
     minimumOrderDefault: true,
     minimumOrderQtyDefault: "1",
-    inventoryUnitOptions: [...FULFILLMENT_UNIT_CODES],
-    inventoryUnitAvailable: true,
-    defaultInventoryUnit: isAutoBreak
-      ? "carton"
-      : isLooseConvert
-        ? "kg"
-        : "pack",
     conversionAvailable: true,
     conversionDefault: isAutoBreak || isLooseConvert,
     inventoryLooseUnitAvailable: isLooseConvert,
@@ -147,9 +135,6 @@ function normalizeSettings(type: ProductTypeRow): RuleSettings {
   const trackingTypes = settings.trackingTypes?.length
     ? settings.trackingTypes
     : (["none"] as TrackingType[]);
-  const inventoryUnitOptions = settings.inventoryUnitOptions?.length
-    ? settings.inventoryUnitOptions
-    : (["unit"] as FulfillmentUnitCode[]);
   const inventoryLooseUnitOptions = settings.inventoryLooseUnitOptions?.length
     ? settings.inventoryLooseUnitOptions
     : (["kg"] as FulfillmentUnitCode[]);
@@ -162,13 +147,6 @@ function normalizeSettings(type: ProductTypeRow): RuleSettings {
     defaultTrackingType: trackingTypes.includes(settings.defaultTrackingType)
       ? settings.defaultTrackingType
       : trackingTypes[0]!,
-    inventoryUnitOptions,
-    inventoryUnitAvailable: settings.inventoryUnitAvailable ?? true,
-    defaultInventoryUnit: inventoryUnitOptions.includes(
-      settings.defaultInventoryUnit,
-    )
-      ? settings.defaultInventoryUnit
-      : inventoryUnitOptions[0]!,
     inventoryLooseUnitOptions,
     defaultInventoryLooseUnit: inventoryLooseUnitOptions.includes(
       settings.defaultInventoryLooseUnit,

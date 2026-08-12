@@ -1,15 +1,18 @@
 import { db } from "@bikalpo-project/db";
-import { coreProductIdentity, product } from "@bikalpo-project/db/schema";
-import { ORPCError } from "@orpc/server";
 import {
-  and,
-  desc,
-  eq,
-  ilike,
-  isNotNull,
-  type SQL,
-  sql,
-} from "drizzle-orm";
+  BRAND_CREATION_MODES,
+  countAddableBrands,
+} from "@bikalpo-project/db/brand-creation";
+import {
+  brand,
+  category,
+  coreProductIdentity,
+  product,
+  productType,
+  subCategory,
+} from "@bikalpo-project/db/schema";
+import { ORPCError } from "@orpc/server";
+import { and, desc, eq, ilike, isNotNull, type SQL, sql } from "drizzle-orm";
 import { z } from "zod";
 import { adminProcedure } from "../index";
 import { nextSkuCode } from "./helpers/generate-sku";
@@ -24,16 +27,21 @@ const createCoreProductSchema = z.object({
   image: z.string().min(1),
   categoryId: z.number().int(),
   subCategoryId: z.number().int().optional().nullable(),
+  isActive: z.boolean().default(true),
+  brandCreationMode: z.enum(BRAND_CREATION_MODES).default("batch"),
 });
 
 const updateCoreProductSchema = createCoreProductSchema.extend({
   id: z.number().int(),
+  brandCreationMode: z.enum(BRAND_CREATION_MODES).optional(),
 });
 
 const listCoreProductsSchema = z.object({
   search: z.string().optional(),
   categoryId: z.number().int().optional(),
   subCategoryId: z.number().int().optional(),
+  typeId: z.number().int().optional(),
+  status: z.enum(["all", "active", "inactive"]).default("all"),
 });
 
 export const adminCoreProductRouter = {
@@ -66,6 +74,16 @@ export const adminCoreProductRouter = {
           eq(coreProductIdentity.subCategoryId, input.subCategoryId),
         );
       }
+      if (input.typeId) {
+        conditions.push(
+          sql`${coreProductIdentity.categoryId} in (select id from category where type_id = ${input.typeId})`,
+        );
+      }
+      if (input.status !== "all") {
+        conditions.push(
+          eq(coreProductIdentity.isActive, input.status === "active"),
+        );
+      }
 
       const where = conditions.length > 0 ? and(...conditions) : undefined;
 
@@ -91,24 +109,36 @@ export const adminCoreProductRouter = {
         },
       });
 
-      // Per-core admin product counts → drives Add vs Edit in the list
-      const configRows = await db
-        .select({
-          coreProductId: product.coreProductId,
-          activeBrandCount: sql<number>`count(*) filter (where ${product.status} = 'active')::int`,
-          totalBrandCount: sql<number>`count(*)::int`,
-        })
-        .from(product)
-        .where(
-          and(
-            eq(product.creatorSource, "admin"),
-            isNotNull(product.coreProductId),
+      // Actual Product rows, including inactive rows, are the source of truth.
+      // An inactive Product still owns its brand and must be managed/reactivated
+      // instead of being offered as a duplicate Add operation.
+      const [configRows, activeBrands] = await Promise.all([
+        db
+          .select({
+            coreProductId: product.coreProductId,
+            brandId: product.brandId,
+          })
+          .from(product)
+          .where(
+            and(
+              eq(product.creatorSource, "admin"),
+              isNotNull(product.coreProductId),
+            ),
           ),
-        )
-        .groupBy(product.coreProductId);
-      const configMap = new Map(
-        configRows.map((row) => [row.coreProductId, row]),
-      );
+        db.query.brand.findMany({
+          where: eq(brand.isActive, true),
+          columns: { id: true },
+        }),
+      ]);
+      const configuredBrandsByCore = new Map<number, Set<number>>();
+      for (const row of configRows) {
+        if (row.coreProductId == null || row.brandId == null) continue;
+        const configured =
+          configuredBrandsByCore.get(row.coreProductId) ?? new Set<number>();
+        configured.add(row.brandId);
+        configuredBrandsByCore.set(row.coreProductId, configured);
+      }
+      const activeBrandIds = activeBrands.map((row) => row.id);
 
       // Compose full hierarchical SKU for each core product
       const coreProducts = results.map((cp) => {
@@ -117,14 +147,20 @@ export const adminCoreProductRouter = {
         const subCatCode = cp.subCategory?.skuCode || "???";
         const coreCode = cp.sku || "???";
         const composedSku = `${typeCode}-${catCode}-${subCatCode}-${coreCode}`;
-        const config = configMap.get(cp.id);
+        const configuredBrandIds = [
+          ...(configuredBrandsByCore.get(cp.id) ?? new Set<number>()),
+        ];
         return {
           ...cp,
           composedSku,
           // "Configured" = at least one admin product exists (any status),
-          // which is the true source of truth for the Add vs Edit action.
-          hasConfiguration: (config?.totalBrandCount ?? 0) > 0,
-          configuredBrandCount: config?.activeBrandCount ?? 0,
+          // which is the true source of truth for the listing action.
+          hasConfiguration: configuredBrandIds.length > 0,
+          configuredBrandCount: configuredBrandIds.length,
+          addableBrandCount: countAddableBrands(
+            activeBrandIds,
+            configuredBrandIds,
+          ),
         };
       });
 
@@ -149,6 +185,9 @@ export const adminCoreProductRouter = {
         with: {
           category: {
             columns: { id: true, name: true, slug: true, typeId: true },
+            with: {
+              type: { columns: { id: true, name: true, skuCode: true } },
+            },
           },
           subCategory: {
             columns: { id: true, name: true },
@@ -172,10 +211,100 @@ export const adminCoreProductRouter = {
         columns: { id: true },
       });
 
+      const configuredProducts = await db.query.product.findMany({
+        where: eq(product.coreProductId, result.id),
+        columns: {
+          id: true,
+          name: true,
+          status: true,
+          creatorSource: true,
+          brandId: true,
+        },
+        with: {
+          brand: {
+            columns: { id: true, name: true, logo: true, isActive: true },
+          },
+          variantPrices: {
+            columns: { id: true, isActive: true },
+            with: {
+              variantOption: {
+                columns: {
+                  id: true,
+                  name: true,
+                  unit: true,
+                  size: true,
+                  variantType: true,
+                  skuCode: true,
+                },
+              },
+            },
+          },
+        },
+      });
+
+      const brandMap = new Map<
+        number,
+        {
+          id: number;
+          name: string;
+          logo: string | null;
+          isActive: boolean;
+          productCount: number;
+        }
+      >();
+      const variantMap = new Map<
+        number,
+        {
+          id: number;
+          name: string;
+          unit: string;
+          size: string | null;
+          variantType: "pack" | "loose";
+          skuCode: string | null;
+          productCount: number;
+        }
+      >();
+
+      for (const configuredProduct of configuredProducts) {
+        if (configuredProduct.brand) {
+          const current = brandMap.get(configuredProduct.brand.id);
+          brandMap.set(configuredProduct.brand.id, {
+            ...configuredProduct.brand,
+            productCount: (current?.productCount ?? 0) + 1,
+          });
+        }
+        for (const price of configuredProduct.variantPrices) {
+          const option = price.variantOption;
+          const current = variantMap.get(option.id);
+          variantMap.set(option.id, {
+            ...option,
+            productCount: (current?.productCount ?? 0) + 1,
+          });
+        }
+      }
+
+      const configuredBrands = [...brandMap.values()].sort(
+        (a, b) =>
+          b.productCount - a.productCount || a.name.localeCompare(b.name),
+      );
+      const variantOptions = [...variantMap.values()].sort((a, b) =>
+        a.name.localeCompare(b.name),
+      );
+
       return {
         coreProduct: {
           ...result,
           hasConfiguration: Boolean(existingProduct),
+          configuredProducts,
+          configuredBrands,
+          variantOptions,
+          packVariantCount: variantOptions.filter(
+            (option) => option.variantType === "pack",
+          ).length,
+          looseVariantCount: variantOptions.filter(
+            (option) => option.variantType === "loose",
+          ).length,
+          topBrand: configuredBrands[0] ?? null,
         },
       };
     }),
@@ -194,6 +323,43 @@ export const adminCoreProductRouter = {
     .input(createCoreProductSchema)
     .handler(async ({ input, context }) => {
       const identityData = input;
+
+      const activeCategory = await db.query.category.findFirst({
+        where: and(
+          eq(category.id, identityData.categoryId),
+          eq(category.isActive, true),
+        ),
+        columns: { id: true, typeId: true },
+      });
+      const activeType = activeCategory?.typeId
+        ? await db.query.productType.findFirst({
+            where: and(
+              eq(productType.id, activeCategory.typeId),
+              eq(productType.isActive, true),
+            ),
+            columns: { id: true },
+          })
+        : null;
+      const activeSubCategory = identityData.subCategoryId
+        ? await db.query.subCategory.findFirst({
+            where: and(
+              eq(subCategory.id, identityData.subCategoryId),
+              eq(subCategory.categoryId, identityData.categoryId),
+              eq(subCategory.isActive, true),
+            ),
+            columns: { id: true },
+          })
+        : null;
+      if (
+        !activeCategory ||
+        !activeType ||
+        (identityData.subCategoryId && !activeSubCategory)
+      ) {
+        throw new ORPCError("BAD_REQUEST", {
+          message:
+            "Core Identities can only be created under an active Type, Category, and Sub Category path.",
+        });
+      }
 
       // Check uniqueness for name
       const existingName = await db.query.coreProductIdentity.findFirst({
@@ -274,7 +440,7 @@ export const adminCoreProductRouter = {
     })
     .input(updateCoreProductSchema)
     .handler(async ({ input }) => {
-      const { id, ...updateData } = input;
+      const { id, brandCreationMode, ...updateData } = input;
 
       // Check existence
       const existing = await db.query.coreProductIdentity.findFirst({
@@ -306,11 +472,35 @@ export const adminCoreProductRouter = {
         .update(coreProductIdentity)
         .set({
           ...updateData,
+          ...(brandCreationMode ? { brandCreationMode } : {}),
           subCategoryId: updateData.subCategoryId || null,
         })
         .where(eq(coreProductIdentity.id, id));
 
       return { message: "Core product updated successfully" };
+    }),
+
+  toggleActive: adminProcedure
+    .input(z.object({ id: z.number().int() }))
+    .handler(async ({ input }) => {
+      const existing = await db.query.coreProductIdentity.findFirst({
+        where: eq(coreProductIdentity.id, input.id),
+        columns: { id: true, name: true, isActive: true },
+      });
+      if (!existing) {
+        throw new ORPCError("NOT_FOUND", {
+          message: "Core Identity not found",
+        });
+      }
+      const [updated] = await db
+        .update(coreProductIdentity)
+        .set({ isActive: !existing.isActive, updatedAt: new Date() })
+        .where(eq(coreProductIdentity.id, input.id))
+        .returning({ isActive: coreProductIdentity.isActive });
+      return {
+        isActive: updated!.isActive,
+        message: `${existing.name} ${updated!.isActive ? "enabled" : "disabled"}`,
+      };
     }),
 
   /**

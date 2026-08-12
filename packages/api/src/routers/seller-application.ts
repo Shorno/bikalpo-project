@@ -12,6 +12,8 @@ import { sellerApplication, invite, adminInvite } from "@bikalpo-project/db/sche
 import { eq, desc, and, sql } from "drizzle-orm";
 import { z } from "zod";
 
+import { assertBusinessNatureMatchesApplicationPath } from "../business-registration";
+
 import { protectedProcedure, adminProcedure } from "../index";
 import {
     buildSharedApplicationValues,
@@ -26,11 +28,23 @@ import { createPendingKycForUser, deriveKycStatus, ensurePendingKycForUser, getL
 // SCHEMAS
 // ════════════════════════════════════════════════════════════════
 
-const submitApplicationSchema = sharedApplicationFieldsSchema.extend({
-    shopName: z.string().min(2).max(100),
-    businessType: z.enum(["retail", "restaurant"]).default("retail"),
-    shopAddress: z.string().min(5).max(500),
-});
+export const sellerApplicationInputSchema = sharedApplicationFieldsSchema
+    .extend({
+        shopName: z.string().min(2).max(100),
+        businessType: z.enum(["retail", "restaurant"]).default("retail"),
+        shopAddress: z.string().min(5).max(500),
+    })
+    .superRefine((input, context) => {
+        try {
+            assertBusinessNatureMatchesApplicationPath(input.businessNature, "seller");
+        } catch (error) {
+            context.addIssue({
+                code: "custom",
+                path: ["businessNature"],
+                message: error instanceof Error ? error.message : "Invalid business nature for a shop owner application",
+            });
+        }
+    });
 
 const reviewApplicationSchema = z.object({
     applicationId: z.string(),
@@ -51,7 +65,7 @@ export const sellerApplicationRouter = {
             tags: ["Seller Application"],
             summary: "Submit a new seller application",
         })
-        .input(submitApplicationSchema)
+        .input(sellerApplicationInputSchema)
         .handler(async ({ input, context }) => {
             const userId = context.session.user.id;
 
@@ -101,7 +115,7 @@ export const sellerApplicationRouter = {
                 const localPhone = digitsOnly.replace(/^880/, "0");
                 const intlPhone = `+880${localPhone.replace(/^0/, "")}`;
                 const plainIntl = `880${localPhone.replace(/^0/, "")}`;
-                
+
                 const phoneVariants = [...new Set([
                     rawPhone,        // original
                     localPhone,      // 01577039666
@@ -358,7 +372,7 @@ export const sellerApplicationRouter = {
             tags: ["Seller Application"],
             summary: "Update own pending/rejected seller application",
         })
-        .input(submitApplicationSchema)
+        .input(sellerApplicationInputSchema)
         .handler(async ({ input, context }) => {
             const userId = context.session.user.id;
 

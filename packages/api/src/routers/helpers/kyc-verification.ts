@@ -31,6 +31,12 @@ export async function createPendingKycForUser(userId: string) {
     })
     .returning();
 
+  if (!record) {
+    throw new ORPCError("INTERNAL_SERVER_ERROR", {
+      message: "Failed to create KYC verification record",
+    });
+  }
+
   return record;
 }
 
@@ -68,6 +74,12 @@ export async function verifyKycForUser(
     })
     .where(eq(kycVerification.id, latest.id))
     .returning();
+
+  if (!updated) {
+    throw new ORPCError("INTERNAL_SERVER_ERROR", {
+      message: "Failed to update KYC verification record",
+    });
+  }
 
   return updated;
 }

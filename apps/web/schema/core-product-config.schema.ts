@@ -31,7 +31,6 @@ export const coreProductTemplateSchema = z.object({
     .string()
     .regex(/^\d+(\.\d{1,2})?$/, "Use a valid minimum quantity")
     .default("1"),
-  inventoryUnit: z.enum(FULFILLMENT_UNIT_CODES).default("unit"),
   conversionEnabled: z.boolean().default(false),
   inventoryLooseUnitEnabled: z.boolean().default(false),
   inventoryLooseUnit: z.enum(FULFILLMENT_UNIT_CODES).default("kg"),

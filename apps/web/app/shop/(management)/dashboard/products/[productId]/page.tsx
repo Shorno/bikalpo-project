@@ -286,7 +286,7 @@ export default function ShopProductDetailPage() {
           <div className="divide-y">
             {summary.quantityGroups.map((group) => (
               <QuantityBalanceRow
-                key={`${group.family}:${group.inventoryUnit}:${group.referenceMeasurement?.unit ?? "none"}`}
+                key={`${group.productTypeId}:${group.inventoryUnit}:${group.referenceMeasurement?.unit ?? "none"}`}
                 group={group}
               />
             ))}
@@ -315,6 +315,7 @@ export default function ShopProductDetailPage() {
                 <TableHead className="text-right">Reserved</TableHead>
                 <TableHead className="text-right">On hand</TableHead>
                 <TableHead className="text-right">Retail price</TableHead>
+                <TableHead>Empty return</TableHead>
                 <TableHead>Threshold</TableHead>
                 <TableHead className="text-right">Status</TableHead>
               </TableRow>
@@ -344,8 +345,8 @@ export default function ShopProductDetailPage() {
         </div>
         <dl className="grid sm:grid-cols-2 lg:grid-cols-4 lg:divide-x">
           <SettingItem
-            label="Pack return"
-            value={product.isReturnablePack ? "Enabled" : "Disabled"}
+            label="Empty return config"
+            value={`${variants.filter((variant) => variant.exchangeEnabled).length} variant${variants.filter((variant) => variant.exchangeEnabled).length === 1 ? "" : "s"} enabled`}
           />
           <SettingItem
             label="Expiry tracking"
@@ -387,7 +388,7 @@ function QuantityBalanceRow({ group }: { group: QuantityGroup }) {
   return (
     <div className="grid gap-4 px-4 py-4 sm:grid-cols-[minmax(160px,1.2fr)_repeat(3,minmax(110px,1fr))] sm:px-5">
       <div>
-        <p className="text-sm font-medium">{group.familyLabel}</p>
+        <p className="text-sm font-medium">{group.productTypeName}</p>
         <p className="text-xs text-muted-foreground">
           Operational unit: {group.inventoryUnit.toLowerCase()}
         </p>
@@ -468,6 +469,7 @@ function VariantRow({ variant }: { variant: ProductVariant }) {
               ? "Not set"
               : currencyFormatter.format(variant.retailPrice)}
           </TableCell>
+          <ExchangeCell variant={variant} />
           <TableCell className="text-xs text-muted-foreground">
             Admin setup required
           </TableCell>
@@ -489,6 +491,7 @@ function VariantRow({ variant }: { variant: ProductVariant }) {
               ? "Not set"
               : currencyFormatter.format(variant.retailPrice)}
           </TableCell>
+          <ExchangeCell variant={variant} />
           <TableCell>
             <p className="text-xs text-muted-foreground">
               {variant.reorderLevel === null
@@ -516,6 +519,28 @@ function VariantRow({ variant }: { variant: ProductVariant }) {
         )}
       </TableCell>
     </TableRow>
+  );
+}
+
+function ExchangeCell({ variant }: { variant: ProductVariant }) {
+  return (
+    <TableCell>
+      {variant.exchangeEnabled ? (
+        <div>
+          <Badge
+            variant="outline"
+            className="border-emerald-200 bg-emerald-50 text-emerald-700"
+          >
+            Exchange + New
+          </Badge>
+          <p className="mt-1 text-[11px] text-muted-foreground">
+            {currencyFormatter.format(variant.exchangeCreditAmount)} credit
+          </p>
+        </div>
+      ) : (
+        <span className="text-xs text-muted-foreground">New only</span>
+      )}
+    </TableCell>
   );
 }
 
@@ -623,6 +648,14 @@ function VariantMobileRow({ variant }: { variant: ProductVariant }) {
                 variant.reorderLevel === null
                   ? "Not configured"
                   : formatQuantity(variant.reorderLevel, variant.inventoryUnit)
+              }
+            />
+            <MobileMetric
+              label="Cylinder sale"
+              value={
+                variant.exchangeEnabled
+                  ? `Exchange + New · ${currencyFormatter.format(variant.exchangeCreditAmount)} credit`
+                  : "New only"
               }
             />
           </dl>

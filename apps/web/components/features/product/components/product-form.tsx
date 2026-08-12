@@ -78,6 +78,8 @@ export type VariantPriceSettings = {
   variantOptionId: number;
   brandId?: number | null;
   consumerPrice: string;
+  exchangeEnabled: boolean;
+  exchangeCreditAmount: string;
 };
 
 /** A saved brand configuration with its selected variant options */
@@ -113,9 +115,6 @@ type ProductRuleSettings = {
   minimumOrderAvailable: boolean;
   minimumOrderDefault: boolean;
   minimumOrderQtyDefault: string;
-  inventoryUnitOptions: FulfillmentUnitCode[];
-  inventoryUnitAvailable: boolean;
-  defaultInventoryUnit: FulfillmentUnitCode;
   conversionAvailable: boolean;
   conversionDefault: boolean;
   inventoryLooseUnitAvailable: boolean;
@@ -136,7 +135,6 @@ type ProductRuleDefaults = {
   stockTrackingEnabled: boolean;
   minimumOrderEnabled: boolean;
   minimumOrderQty: string;
-  inventoryUnit: FulfillmentUnitCode;
   conversionEnabled: boolean;
   inventoryLooseUnitEnabled: boolean;
   inventoryLooseUnit: FulfillmentUnitCode;
@@ -158,9 +156,6 @@ const FALLBACK_RULE_SETTINGS: ProductRuleSettings = {
   minimumOrderAvailable: true,
   minimumOrderDefault: true,
   minimumOrderQtyDefault: "1",
-  inventoryUnitOptions: ["unit"],
-  inventoryUnitAvailable: true,
-  defaultInventoryUnit: "unit",
   conversionAvailable: true,
   conversionDefault: false,
   inventoryLooseUnitAvailable: false,
@@ -179,9 +174,6 @@ function normalizeRuleSettings(
   const trackingTypes = source.trackingTypes?.length
     ? source.trackingTypes
     : FALLBACK_RULE_SETTINGS.trackingTypes;
-  const inventoryUnitOptions = source.inventoryUnitOptions?.length
-    ? source.inventoryUnitOptions
-    : FALLBACK_RULE_SETTINGS.inventoryUnitOptions;
   const inventoryLooseUnitOptions = source.inventoryLooseUnitOptions?.length
     ? source.inventoryLooseUnitOptions
     : FALLBACK_RULE_SETTINGS.inventoryLooseUnitOptions;
@@ -194,13 +186,6 @@ function normalizeRuleSettings(
     defaultTrackingType: trackingTypes.includes(source.defaultTrackingType)
       ? source.defaultTrackingType
       : trackingTypes[0]!,
-    inventoryUnitOptions,
-    defaultInventoryUnit: inventoryUnitOptions.includes(
-      source.defaultInventoryUnit,
-    )
-      ? source.defaultInventoryUnit
-      : inventoryUnitOptions[0]!,
-    inventoryUnitAvailable: source.inventoryUnitAvailable ?? true,
     inventoryLooseUnitOptions,
     defaultInventoryLooseUnit: inventoryLooseUnitOptions.includes(
       source.defaultInventoryLooseUnit,
@@ -233,7 +218,6 @@ function getRuleDefaultsFromSettings(
     minimumOrderEnabled:
       normalized.minimumOrderAvailable && normalized.minimumOrderDefault,
     minimumOrderQty: normalized.minimumOrderQtyDefault,
-    inventoryUnit: normalized.defaultInventoryUnit,
     conversionEnabled:
       normalized.conversionAvailable && normalized.conversionDefault,
     inventoryLooseUnitEnabled:
@@ -253,6 +237,7 @@ interface ProductFormProps {
   product?: ProductWithRelations;
   initialCoreProductId?: number | null;
   structureLocked?: boolean;
+  backHref?: string;
   editAdapter?: {
     backHref: string;
     coreProduct: any;
@@ -269,12 +254,14 @@ export default function ProductForm({
   product,
   initialCoreProductId = null,
   structureLocked = false,
+  backHref,
   editAdapter,
 }: ProductFormProps) {
   const router = useRouter();
   const queryClient = useQueryClient();
   const isEdit = mode === "edit";
-  const listHref = editAdapter?.backHref ?? "/dashboard/admin/products";
+  const listHref =
+    editAdapter?.backHref ?? backHref ?? "/dashboard/admin/products";
   const usesExternalEditAdapter = Boolean(editAdapter && isEdit);
   const initialCoreProductIdForCreate =
     !isEdit && initialCoreProductId && Number.isFinite(initialCoreProductId)
@@ -318,7 +305,7 @@ export default function ProductForm({
       // Find variant prices for this brand
       const brandVPs = (existingVPs || []).filter(
         (vp: any) =>
-          vp.isActive !== false &&
+          ((product as any)?.status === "inactive" || vp.isActive !== false) &&
           ((vp.brandId ?? null) === pb.brandId ||
             (!vp.brandId && pbs.length === 1)),
       );
@@ -331,6 +318,8 @@ export default function ProductForm({
           variantOptionId: vp.variantOptionId,
           brandId: pb.brandId,
           consumerPrice: vp.consumerPrice || "",
+          exchangeEnabled: vp.exchangeEnabled ?? false,
+          exchangeCreditAmount: String(vp.exchangeCreditAmount ?? "0"),
         };
       }
 
@@ -371,7 +360,7 @@ export default function ProductForm({
   });
   const productTypes = editAdapter?.productType
     ? [editAdapter.productType]
-    : typesData?.types ?? [];
+    : (typesData?.types ?? []);
 
   const { data: categoriesData } = useQuery({
     ...orpc.category.getAll.queryOptions(),
@@ -433,12 +422,17 @@ export default function ProductForm({
   const lockedCoreProduct =
     editAdapter?.coreProduct ?? lockedCoreProductQuery.data?.coreProduct;
   const activeCoreProduct = lockedCoreProduct ?? selectedCoreProduct;
+  const isSingleBrandCreation =
+    !isStructureLocked &&
+    (activeCoreProduct as any)?.brandCreationMode === "single";
   const availableVariantOptions =
     isCoreIdentityLocked && !activeCoreProduct
       ? []
       : getAvailableVariantsForCoreProduct(
           activeCoreProduct,
-          editAdapter?.variantOptions ?? catalogOptionsData?.variantOptions ?? [],
+          editAdapter?.variantOptions ??
+            catalogOptionsData?.variantOptions ??
+            [],
         );
   const isLoadingLockedCoreProduct =
     isCoreIdentityLocked &&
@@ -452,6 +446,9 @@ export default function ProductForm({
   const activeFulfillmentProfile = activeProductType?.fulfillmentProfile as
     | ProductTypeFulfillmentProfile
     | undefined;
+  const isLpgRules =
+    activeFulfillmentProfile?.family === "lpg" ||
+    activeProductType?.family === "lpg";
   const activeRuleSettings = useMemo(
     () =>
       normalizeRuleSettings(
@@ -491,7 +488,11 @@ export default function ProductForm({
     onSuccess: async () => {
       queryClient.invalidateQueries({ queryKey: ["admin-products"] });
       toast.success("Product created successfully");
-      router.push("/dashboard/admin/products");
+      router.push(
+        isSingleBrandCreation && selectedCoreProductId
+          ? `/dashboard/admin/products/core/${selectedCoreProductId}/edit`
+          : "/dashboard/admin/products",
+      );
     },
     onError: handleError,
   });
@@ -578,8 +579,6 @@ export default function ProductForm({
       minimumOrderQty: String(
         (product as any)?.minimumOrderQty ?? activeRuleDefaults.minimumOrderQty,
       ),
-      inventoryUnit:
-        (product as any)?.inventoryUnit ?? activeRuleDefaults.inventoryUnit,
       conversionEnabled:
         (product as any)?.conversionEnabled ??
         activeRuleDefaults.conversionEnabled,
@@ -601,10 +600,31 @@ export default function ProductForm({
         toast.error("Add at least one brand");
         return;
       }
+      if (isSingleBrandCreation && brandConfigs.length !== 1) {
+        toast.error("This core identity accepts exactly one brand per save");
+        return;
+      }
       if (
         brandConfigs.some((config) => config.selectedVariantIds.length === 0)
       ) {
         toast.error("Select at least one variant for every brand");
+        return;
+      }
+      if (
+        isLpgRules &&
+        brandConfigs.some((config) =>
+          config.selectedVariantIds.some((variantOptionId) => {
+            const settings = config.variantSettings[variantOptionId];
+            return (
+              settings?.exchangeEnabled &&
+              Number(settings.exchangeCreditAmount) <= 0
+            );
+          }),
+        )
+      ) {
+        toast.error(
+          "Enter an Exchange Credit greater than zero for every enabled variant",
+        );
         return;
       }
 
@@ -618,6 +638,10 @@ export default function ProductForm({
             variantOptionId: settings.variantOptionId,
             brandId: bc.brandId,
             consumerPrice: settings.consumerPrice || "0",
+            exchangeEnabled: settings.exchangeEnabled,
+            exchangeCreditAmount: settings.exchangeEnabled
+              ? settings.exchangeCreditAmount || "0"
+              : "0",
           });
         }
       }
@@ -724,7 +748,6 @@ export default function ProductForm({
     form.setFieldValue("stockTrackingEnabled", defaults.stockTrackingEnabled);
     form.setFieldValue("minimumOrderEnabled", defaults.minimumOrderEnabled);
     form.setFieldValue("minimumOrderQty", defaults.minimumOrderQty);
-    form.setFieldValue("inventoryUnit", defaults.inventoryUnit);
     form.setFieldValue("conversionEnabled", defaults.conversionEnabled);
     form.setFieldValue(
       "inventoryLooseUnitEnabled",
@@ -758,7 +781,9 @@ export default function ProductForm({
       variantSettings: {},
     };
 
-    setBrandConfigs((prev) => [...prev, newConfig]);
+    setBrandConfigs((prev) =>
+      isSingleBrandCreation ? [newConfig] : [...prev, newConfig],
+    );
     setActiveBrandId(brandId);
     // New brands start expanded — make sure they aren't in the collapsed set.
     setCollapsedBrandIds((prev) => {
@@ -826,14 +851,50 @@ export default function ProductForm({
     );
   };
 
-  const isLpgRules = activeFulfillmentProfile?.family === "lpg";
+  const handleVariantExchangeChange = (
+    brandId: number,
+    variantOptionId: number,
+    changes: Partial<
+      Pick<VariantPriceSettings, "exchangeEnabled" | "exchangeCreditAmount">
+    >,
+  ) => {
+    setBrandConfigs((previous) =>
+      previous.map((config) => {
+        if (config.brandId !== brandId) return config;
+        const current =
+          config.variantSettings[variantOptionId] ??
+          makeDefaultSettings(variantOptionId, brandId);
+        return {
+          ...config,
+          variantSettings: {
+            ...config.variantSettings,
+            [variantOptionId]: { ...current, ...changes },
+          },
+        };
+      }),
+    );
+  };
+
+  const handleEnableExchangeForAll = (brandId: number, enabled: boolean) => {
+    setBrandConfigs((previous) =>
+      previous.map((config) => {
+        if (config.brandId !== brandId) return config;
+        const variantSettings = { ...config.variantSettings };
+        for (const variantOptionId of config.selectedVariantIds) {
+          const current =
+            variantSettings[variantOptionId] ??
+            makeDefaultSettings(variantOptionId, brandId);
+          variantSettings[variantOptionId] = {
+            ...current,
+            exchangeEnabled: enabled,
+          };
+        }
+        return { ...config, variantSettings };
+      }),
+    );
+  };
+
   const supportsLooseInventory = activeRuleSettings.inventoryLooseUnitAvailable;
-  const inventoryUnitOptions = activeRuleSettings.inventoryUnitOptions.map(
-    (code) => ({
-      value: code,
-      label: FULFILLMENT_UNITS[code]?.label ?? code,
-    }),
-  );
   const looseUnitOptions = activeRuleSettings.inventoryLooseUnitOptions.map(
     (code) => ({
       value: code,
@@ -1210,6 +1271,13 @@ export default function ProductForm({
                         onSetVariants={(voIds) =>
                           handleSetVariants(bc.brandId, voIds)
                         }
+                        showCylinderExchange={isLpgRules}
+                        onExchangeChange={(voId, changes) =>
+                          handleVariantExchangeChange(bc.brandId, voId, changes)
+                        }
+                        onEnableExchangeForAll={(enabled) =>
+                          handleEnableExchangeForAll(bc.brandId, enabled)
+                        }
                         canRemove={false}
                       />
                     ))}
@@ -1217,7 +1285,11 @@ export default function ProductForm({
                 ) : (
                   <FormSection
                     title="Brands and variants"
-                    description="Pick the variants each brand offers. Prices are managed in Product Price."
+                    description={
+                      isSingleBrandCreation
+                        ? "Choose one brand and its variants. You can add more brands after saving."
+                        : "Pick the variants each brand offers. Prices are managed in Product Price."
+                    }
                   >
                     <div className="space-y-3">
                       {brandConfigs.map((bc) => (
@@ -1234,21 +1306,35 @@ export default function ProductForm({
                           onSetVariants={(voIds) =>
                             handleSetVariants(bc.brandId, voIds)
                           }
+                          showCylinderExchange={isLpgRules}
+                          onExchangeChange={(voId, changes) =>
+                            handleVariantExchangeChange(
+                              bc.brandId,
+                              voId,
+                              changes,
+                            )
+                          }
+                          onEnableExchangeForAll={(enabled) =>
+                            handleEnableExchangeForAll(bc.brandId, enabled)
+                          }
                         />
                       ))}
 
-                      <Button
-                        type="button"
-                        variant="outline"
-                        className="w-full justify-center gap-2 border-dashed text-muted-foreground"
-                        onClick={() => {
-                          setBrandSearch("");
-                          setBrandModalOpen(true);
-                        }}
-                      >
-                        <Plus className="h-4 w-4" />
-                        Add a brand
-                      </Button>
+                      {(!isSingleBrandCreation ||
+                        brandConfigs.length === 0) && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="w-full justify-center gap-2 border-dashed text-muted-foreground"
+                          onClick={() => {
+                            setBrandSearch("");
+                            setBrandModalOpen(true);
+                          }}
+                        >
+                          <Plus className="h-4 w-4" />
+                          Add a brand
+                        </Button>
+                      )}
 
                       {brandConfigs.length === 0 && (
                         <p className="text-center text-xs text-muted-foreground">
@@ -1510,35 +1596,6 @@ export default function ProductForm({
                     </form.Field>
                   )}
 
-                  {activeRuleSettings.inventoryUnitAvailable && (
-                    <form.Field name="inventoryUnit">
-                      {(field) => (
-                        <RuleControlRow
-                          description="Saved to the product and applied to generated variants."
-                          label="Inventory unit"
-                        >
-                          <Select
-                            value={field.state.value}
-                            onValueChange={(value) =>
-                              field.handleChange(value as FulfillmentUnitCode)
-                            }
-                          >
-                            <SelectTrigger className="h-9 w-full">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {inventoryUnitOptions.map((unit) => (
-                                <SelectItem key={unit.value} value={unit.value}>
-                                  {unit.label}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </RuleControlRow>
-                      )}
-                    </form.Field>
-                  )}
-
                   {activeRuleSettings.conversionAvailable && (
                     <form.Field name="conversionEnabled">
                       {(field) => (
@@ -1602,42 +1659,43 @@ export default function ProductForm({
                     </form.Field>
                   )}
 
-                  {activeRuleSettings.returnablePackAvailable && (
-                    <form.Field name="isReturnablePack">
-                      {(returnableField) => (
-                        <RuleControlRow
-                          description={returnableRuleDescription}
-                          label={returnableRuleLabel}
-                        >
-                          <div className="flex w-full items-center justify-end gap-3">
-                            <Switch
-                              aria-label={returnableRuleLabel}
-                              checked={returnableField.state.value}
-                              onCheckedChange={returnableField.handleChange}
-                            />
-                            <form.Field name="defaultPackDepositAmount">
-                              {(depositField) => (
-                                <Input
-                                  aria-label={depositLabel}
-                                  className="h-9 flex-1 text-right"
-                                  disabled={!returnableField.state.value}
-                                  min="0"
-                                  onChange={(event) =>
-                                    depositField.handleChange(
-                                      event.target.value,
-                                    )
-                                  }
-                                  step="0.01"
-                                  type="number"
-                                  value={depositField.state.value}
-                                />
-                              )}
-                            </form.Field>
-                          </div>
-                        </RuleControlRow>
-                      )}
-                    </form.Field>
-                  )}
+                  {activeRuleSettings.returnablePackAvailable &&
+                    !isLpgRules && (
+                      <form.Field name="isReturnablePack">
+                        {(returnableField) => (
+                          <RuleControlRow
+                            description={returnableRuleDescription}
+                            label={returnableRuleLabel}
+                          >
+                            <div className="flex w-full items-center justify-end gap-3">
+                              <Switch
+                                aria-label={returnableRuleLabel}
+                                checked={returnableField.state.value}
+                                onCheckedChange={returnableField.handleChange}
+                              />
+                              <form.Field name="defaultPackDepositAmount">
+                                {(depositField) => (
+                                  <Input
+                                    aria-label={depositLabel}
+                                    className="h-9 flex-1 text-right"
+                                    disabled={!returnableField.state.value}
+                                    min="0"
+                                    onChange={(event) =>
+                                      depositField.handleChange(
+                                        event.target.value,
+                                      )
+                                    }
+                                    step="0.01"
+                                    type="number"
+                                    value={depositField.state.value}
+                                  />
+                                )}
+                              </form.Field>
+                            </div>
+                          </RuleControlRow>
+                        )}
+                      </form.Field>
+                    )}
                 </div>
               </FormSection>
 
@@ -1813,6 +1871,8 @@ function makeDefaultSettings(
     variantOptionId,
     brandId,
     consumerPrice: "0",
+    exchangeEnabled: false,
+    exchangeCreditAmount: "0",
   };
 }
 
@@ -1906,6 +1966,9 @@ function BrandConfigCard({
   onRemove,
   onToggleVariant,
   onSetVariants,
+  showCylinderExchange = false,
+  onExchangeChange,
+  onEnableExchangeForAll,
   canRemove = true,
 }: {
   config: BrandConfig;
@@ -1915,11 +1978,25 @@ function BrandConfigCard({
   onRemove: () => void;
   onToggleVariant: (variantOptionId: number) => void;
   onSetVariants: (variantOptionIds: number[]) => void;
+  showCylinderExchange?: boolean;
+  onExchangeChange?: (
+    variantOptionId: number,
+    changes: Partial<
+      Pick<VariantPriceSettings, "exchangeEnabled" | "exchangeCreditAmount">
+    >,
+  ) => void;
+  onEnableExchangeForAll?: (enabled: boolean) => void;
   canRemove?: boolean;
 }) {
   const selectedCount = config.selectedVariantIds.length;
   const totalCount = variantOptions.length;
   const allSelected = totalCount > 0 && selectedCount === totalCount;
+  const allExchangeEnabled =
+    selectedCount > 0 &&
+    config.selectedVariantIds.every(
+      (variantOptionId) =>
+        config.variantSettings[variantOptionId]?.exchangeEnabled,
+    );
 
   return (
     <div className="rounded-lg border bg-card">
@@ -2017,6 +2094,79 @@ function BrandConfigCard({
                     );
                   })}
                 </div>
+                {showCylinderExchange && selectedCount > 0 && (
+                  <div className="overflow-hidden rounded-md border">
+                    <div className="flex items-center justify-between gap-4 border-b bg-muted/40 px-3 py-2">
+                      <div>
+                        <p className="text-xs font-medium">
+                          Empty cylinder exchange
+                        </p>
+                        <p className="text-[11px] text-muted-foreground">
+                          Configure Exchange per exact brand and capacity.
+                        </p>
+                      </div>
+                      <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                        Enable for all variants
+                        <Switch
+                          aria-label="Enable exchange for all variants"
+                          checked={allExchangeEnabled}
+                          onCheckedChange={(checked) =>
+                            onEnableExchangeForAll?.(checked)
+                          }
+                        />
+                      </label>
+                    </div>
+                    <div className="divide-y">
+                      {config.selectedVariantIds.map((variantOptionId) => {
+                        const option = variantOptions.find(
+                          (row: any) => row.id === variantOptionId,
+                        );
+                        const settings =
+                          config.variantSettings[variantOptionId] ??
+                          makeDefaultSettings(variantOptionId, config.brandId);
+                        return (
+                          <div
+                            className="grid grid-cols-[minmax(0,1fr)_auto_minmax(120px,180px)] items-center gap-3 px-3 py-2.5"
+                            key={variantOptionId}
+                          >
+                            <span className="truncate text-sm font-medium">
+                              {option?.name ?? `Variant #${variantOptionId}`}
+                            </span>
+                            <Switch
+                              aria-label={`Enable exchange for ${option?.name ?? variantOptionId}`}
+                              checked={settings.exchangeEnabled}
+                              onCheckedChange={(checked) =>
+                                onExchangeChange?.(variantOptionId, {
+                                  exchangeEnabled: checked,
+                                })
+                              }
+                            />
+                            <div className="relative">
+                              <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
+                                ৳
+                              </span>
+                              <Input
+                                aria-label={`Exchange Credit for ${option?.name ?? variantOptionId}`}
+                                className="h-8 pl-7 text-right"
+                                disabled={!settings.exchangeEnabled}
+                                min="0"
+                                onChange={(event) =>
+                                  onExchangeChange?.(variantOptionId, {
+                                    exchangeCreditAmount: event.target.value,
+                                  })
+                                }
+                                placeholder="Credit"
+                                step="0.01"
+                                type="number"
+                                value={settings.exchangeCreditAmount}
+                              />
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
               </>
             )}
           </div>

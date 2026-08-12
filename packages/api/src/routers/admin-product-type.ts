@@ -7,26 +7,46 @@ import {
 } from "@bikalpo-project/db";
 import {
   category,
+  order,
+  orderItem,
   product,
+  productReview,
   productType,
   productTypeRuleSetting,
+  sellerApplication,
   shopCategoryAssignment,
+  user,
+  variantOption,
+  warehouseApplication,
 } from "@bikalpo-project/db/schema";
 import { ORPCError } from "@orpc/server";
 import {
   and,
   asc,
+  avg,
   count,
   countDistinct,
+  desc,
   eq,
   ilike,
   inArray,
+  isNotNull,
+  ne,
   type SQL,
+  sql,
 } from "drizzle-orm";
 import { z } from "zod";
 
 import { adminProcedure, publicProcedure } from "../index";
 import { nextSkuCode } from "./helpers/generate-sku";
+import {
+  classifyProductTypeSellerRole,
+  compareProductTypeSellers,
+  PRODUCT_TYPE_SELLER_ROLES,
+  type ProductTypeSellerRankingRow,
+  type ProductTypeSellerRole,
+  resolveProductTypePagination,
+} from "./helpers/product-type-sellers";
 
 const TRACKING_TYPES = ["none", "batch", "serial"] as const;
 const ALL_UNIT_CODES = [...FULFILLMENT_UNIT_CODES];
@@ -52,9 +72,6 @@ const productTypeRuleSettingsSchema = z.object({
     .string()
     .min(1)
     .regex(/^\d+(\.\d{1,2})?$/),
-  inventoryUnitOptions: z.array(z.enum(FULFILLMENT_UNIT_CODES)).min(1),
-  inventoryUnitAvailable: z.boolean(),
-  defaultInventoryUnit: z.enum(FULFILLMENT_UNIT_CODES),
   conversionAvailable: z.boolean(),
   conversionDefault: z.boolean(),
   inventoryLooseUnitAvailable: z.boolean(),
@@ -107,9 +124,6 @@ function buildDefaultRuleSettings<
     minimumOrderAvailable: true,
     minimumOrderDefault: true,
     minimumOrderQtyDefault: "1",
-    inventoryUnitOptions: ALL_UNIT_CODES,
-    inventoryUnitAvailable: true,
-    defaultInventoryUnit: profile.stockUnit,
     conversionAvailable: true,
     conversionDefault: hasConversion,
     inventoryLooseUnitAvailable: hasLoose,
@@ -131,13 +145,9 @@ function normalizeRuleSettings(
     minimumOrderQtyDefault: String(settings.minimumOrderQtyDefault ?? "1"),
     defaultPackDepositAmount: String(settings.defaultPackDepositAmount ?? "0"),
     trackingAvailable: settings.trackingAvailable ?? true,
-    inventoryUnitAvailable: settings.inventoryUnitAvailable ?? true,
     trackingTypes: settings.trackingTypes?.length
       ? settings.trackingTypes
       : ["none"],
-    inventoryUnitOptions: settings.inventoryUnitOptions?.length
-      ? settings.inventoryUnitOptions
-      : ["unit"],
     inventoryLooseUnitOptions: settings.inventoryLooseUnitOptions?.length
       ? settings.inventoryLooseUnitOptions
       : ["kg"],
@@ -173,13 +183,6 @@ function validateRuleSettingsInput(
     });
   }
 
-  if (!input.inventoryUnitOptions.includes(input.defaultInventoryUnit)) {
-    throw new ORPCError("BAD_REQUEST", {
-      message:
-        "Default inventory unit must be in the allowed inventory unit list.",
-    });
-  }
-
   if (
     !input.inventoryLooseUnitOptions.includes(input.defaultInventoryLooseUnit)
   ) {
@@ -187,6 +190,171 @@ function validateRuleSettingsInput(
       message: "Default loose unit must be in the allowed loose unit list.",
     });
   }
+}
+
+const productTypePageSizeSchema = z.union([
+  z.literal(10),
+  z.literal(20),
+  z.literal(50),
+]);
+
+async function getProductTypeSellerRankings(categoryIds: number[]) {
+  let assignedSellerIds: string[] = [];
+  if (categoryIds.length > 0) {
+    const result = await db
+      .selectDistinct({ id: shopCategoryAssignment.shopId })
+      .from(shopCategoryAssignment)
+      .where(inArray(shopCategoryAssignment.categoryId, categoryIds));
+    assignedSellerIds = result.map((row) => row.id);
+  }
+
+  const productOwners =
+    categoryIds.length > 0
+      ? await db
+          .selectDistinct({ id: product.createdById })
+          .from(product)
+          .where(
+            and(
+              inArray(product.categoryId, categoryIds),
+              ne(product.creatorSource, "admin"),
+              isNotNull(product.createdById),
+            ),
+          )
+      : [];
+  const sellerIds = [
+    ...new Set([
+      ...assignedSellerIds,
+      ...productOwners.flatMap((row) => (row.id ? [row.id] : [])),
+    ]),
+  ];
+
+  const users =
+    sellerIds.length > 0
+      ? await db
+          .select({ id: user.id, name: user.name, role: user.role })
+          .from(user)
+          .where(inArray(user.id, sellerIds))
+      : [];
+  const [sellerApplications, warehouseApplications] =
+    sellerIds.length > 0
+      ? await Promise.all([
+          db
+            .select({
+              userId: sellerApplication.userId,
+              businessNature: sellerApplication.businessNature,
+              createdAt: sellerApplication.createdAt,
+            })
+            .from(sellerApplication)
+            .where(
+              and(
+                inArray(sellerApplication.userId, sellerIds),
+                eq(sellerApplication.status, "approved"),
+              ),
+            )
+            .orderBy(desc(sellerApplication.createdAt)),
+          db
+            .select({
+              userId: warehouseApplication.userId,
+              businessNature: warehouseApplication.businessNature,
+              createdAt: warehouseApplication.createdAt,
+            })
+            .from(warehouseApplication)
+            .where(
+              and(
+                inArray(warehouseApplication.userId, sellerIds),
+                eq(warehouseApplication.status, "approved"),
+              ),
+            )
+            .orderBy(desc(warehouseApplication.createdAt)),
+        ])
+      : [[], []];
+
+  const sellerExpression = sql<string>`coalesce(${order.shopId}, ${order.warehouseId})`;
+  const orderStats =
+    categoryIds.length > 0
+      ? await db
+          .select({
+            userId: sellerExpression,
+            deliveredOrderCount: countDistinct(order.id),
+          })
+          .from(order)
+          .innerJoin(orderItem, eq(orderItem.orderId, order.id))
+          .innerJoin(product, eq(product.id, orderItem.productId))
+          .where(
+            and(
+              eq(order.status, "delivered"),
+              inArray(product.categoryId, categoryIds),
+              isNotNull(sellerExpression),
+            ),
+          )
+          .groupBy(sellerExpression)
+      : [];
+  const ratingStats =
+    categoryIds.length > 0
+      ? await db
+          .select({
+            userId: product.createdById,
+            averageRating: avg(productReview.rating),
+          })
+          .from(product)
+          .leftJoin(productReview, eq(productReview.productId, product.id))
+          .where(
+            and(
+              inArray(product.categoryId, categoryIds),
+              ne(product.creatorSource, "admin"),
+              isNotNull(product.createdById),
+            ),
+          )
+          .groupBy(product.createdById)
+      : [];
+
+  const latestApplication = new Map<
+    string,
+    { businessNature: string | null; warehouse: boolean; createdAt: Date }
+  >();
+  for (const application of [
+    ...sellerApplications.map((item) => ({ ...item, warehouse: false })),
+    ...warehouseApplications.map((item) => ({ ...item, warehouse: true })),
+  ].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())) {
+    if (!latestApplication.has(application.userId)) {
+      latestApplication.set(application.userId, application);
+    }
+  }
+
+  const ordersByUser = new Map(
+    orderStats.map((row) => [row.userId, row.deliveredOrderCount]),
+  );
+  const ratingsByUser = new Map(
+    ratingStats.flatMap((row) =>
+      row.userId ? [[row.userId, Number(row.averageRating ?? 0)] as const] : [],
+    ),
+  );
+  const rankings = Object.fromEntries(
+    PRODUCT_TYPE_SELLER_ROLES.map((role) => [
+      role,
+      [] as ProductTypeSellerRankingRow[],
+    ]),
+  ) as Record<ProductTypeSellerRole, ProductTypeSellerRankingRow[]>;
+
+  for (const seller of users) {
+    const application = latestApplication.get(seller.id);
+    const role = classifyProductTypeSellerRole(
+      application?.businessNature,
+      application?.warehouse || seller.role === "warehouse_owner",
+    );
+    rankings[role].push({
+      userId: seller.id,
+      displayName: seller.name,
+      deliveredOrderCount: ordersByUser.get(seller.id) ?? 0,
+      averageRating: ratingsByUser.get(seller.id) ?? 0,
+    });
+  }
+
+  for (const role of PRODUCT_TYPE_SELLER_ROLES) {
+    rankings[role].sort(compareProductTypeSellers);
+  }
+
+  return { sellerIds, rankings };
 }
 
 export const adminProductTypeRouter = {
@@ -232,6 +400,65 @@ export const adminProductTypeRouter = {
           ...decorateProductType(rest),
           categoryCount: cats.length,
         })),
+      };
+    }),
+
+  // Paginated admin list. getAll remains unpaginated for setup pickers.
+  listPage: adminProcedure
+    .input(
+      z.object({
+        search: z.string().optional(),
+        status: z.enum(["all", "active", "inactive"]).default("all"),
+        page: z.number().int().positive().default(1),
+        pageSize: productTypePageSizeSchema.default(10),
+      }),
+    )
+    .handler(async ({ input }) => {
+      const conditions: SQL[] = [];
+      const search = input.search?.trim();
+      if (search) conditions.push(ilike(productType.name, `%${search}%`));
+      if (input.status === "active") {
+        conditions.push(eq(productType.isActive, true));
+      } else if (input.status === "inactive") {
+        conditions.push(eq(productType.isActive, false));
+      }
+      const where = conditions.length > 0 ? and(...conditions) : undefined;
+      const [totalResult] = await db
+        .select({ value: count() })
+        .from(productType)
+        .where(where);
+      const pagination = resolveProductTypePagination(
+        totalResult?.value ?? 0,
+        input.page,
+        input.pageSize,
+      );
+
+      const types = await db.query.productType.findMany({
+        where,
+        orderBy: [
+          asc(productType.displayOrder),
+          asc(productType.name),
+          asc(productType.id),
+        ],
+        limit: pagination.pageSize,
+        offset: pagination.offset,
+        with: {
+          categories: { columns: { id: true } },
+          ruleSettings: true,
+        },
+      });
+
+      return {
+        types: types.map(({ categories: cats, ...rest }) => ({
+          ...decorateProductType(rest),
+          categoryCount: cats.length,
+        })),
+        pagination: {
+          page: pagination.page,
+          pageSize: pagination.pageSize,
+          total: pagination.total,
+          totalPages: pagination.totalPages,
+        },
       };
     }),
 
@@ -289,17 +516,72 @@ export const adminProductTypeRouter = {
           .orderBy(asc(product.name));
       }
 
-      // Count distinct sellers (shops) assigned to categories under this type
-      let sellerCount = 0;
-      if (categoryIds.length > 0) {
-        const result = await db
-          .select({ count: countDistinct(shopCategoryAssignment.shopId) })
-          .from(shopCategoryAssignment)
-          .where(inArray(shopCategoryAssignment.categoryId, categoryIds));
-        sellerCount = result[0]?.count ?? 0;
+      const { sellerIds, rankings: allRankings } =
+        await getProductTypeSellerRankings(categoryIds);
+      const rankings = Object.fromEntries(
+        PRODUCT_TYPE_SELLER_ROLES.map((role) => [
+          role,
+          allRankings[role].slice(0, 10),
+        ]),
+      ) as Record<ProductTypeSellerRole, ProductTypeSellerRankingRow[]>;
+
+      return {
+        type: decorateProductType(type),
+        products,
+        sellerCount: sellerIds.length,
+        totalUsers: sellerIds.length,
+        activeSellers: sellerIds.length,
+        rankings,
+      };
+    }),
+
+  listSellers: adminProcedure
+    .input(
+      z.object({
+        id: z.number().int().positive(),
+        role: z.enum(PRODUCT_TYPE_SELLER_ROLES).default("retailer"),
+        page: z.number().int().positive().default(1),
+        pageSize: productTypePageSizeSchema.default(20),
+      }),
+    )
+    .handler(async ({ input }) => {
+      const type = await db.query.productType.findFirst({
+        where: eq(productType.id, input.id),
+        columns: { id: true, name: true, isActive: true },
+        with: { categories: { columns: { id: true } } },
+      });
+      if (!type) {
+        throw new ORPCError("NOT_FOUND", { message: "Product type not found" });
       }
 
-      return { type: decorateProductType(type), products, sellerCount };
+      const { rankings } = await getProductTypeSellerRankings(
+        type.categories.map((item) => item.id),
+      );
+      const roleRows = rankings[input.role];
+      const pagination = resolveProductTypePagination(
+        roleRows.length,
+        input.page,
+        input.pageSize,
+      );
+
+      return {
+        type: {
+          id: type.id,
+          name: type.name,
+          isActive: type.isActive,
+        },
+        role: input.role,
+        sellers: roleRows.slice(
+          pagination.offset,
+          pagination.offset + pagination.pageSize,
+        ),
+        pagination: {
+          page: pagination.page,
+          pageSize: pagination.pageSize,
+          total: pagination.total,
+          totalPages: pagination.totalPages,
+        },
+      };
     }),
 
   // Create a new product type
@@ -312,6 +594,7 @@ export const adminProductTypeRouter = {
         image: z.string().optional(),
         inventoryBehaviour: z.enum(INVENTORY_BEHAVIOURS).default("fixed_pack"),
         family: z.enum(PRODUCT_TYPE_FAMILIES).optional(),
+        isActive: z.boolean().default(true),
         displayOrder: z.number().default(0),
       }),
     )
@@ -340,6 +623,7 @@ export const adminProductTypeRouter = {
           family:
             input.family ?? buildProductTypeFulfillmentProfile(input).family,
           displayOrder: input.displayOrder,
+          isActive: input.isActive,
           skuCode,
         })
         .returning();
@@ -369,6 +653,7 @@ export const adminProductTypeRouter = {
         image: z.string().optional(),
         inventoryBehaviour: z.enum(INVENTORY_BEHAVIOURS).default("fixed_pack"),
         family: z.enum(PRODUCT_TYPE_FAMILIES),
+        isActive: z.boolean(),
         displayOrder: z.number().optional(),
       }),
     )
@@ -385,6 +670,7 @@ export const adminProductTypeRouter = {
           inventoryBehaviour: data.inventoryBehaviour,
           family: data.family,
           displayOrder: data.displayOrder,
+          isActive: data.isActive,
         })
         .where(eq(productType.id, id))
         .returning();
@@ -440,9 +726,6 @@ export const adminProductTypeRouter = {
             minimumOrderAvailable: input.minimumOrderAvailable,
             minimumOrderDefault: input.minimumOrderDefault,
             minimumOrderQtyDefault: input.minimumOrderQtyDefault,
-            inventoryUnitOptions: input.inventoryUnitOptions,
-            inventoryUnitAvailable: input.inventoryUnitAvailable,
-            defaultInventoryUnit: input.defaultInventoryUnit,
             conversionAvailable: input.conversionAvailable,
             conversionDefault: input.conversionDefault,
             inventoryLooseUnitAvailable: input.inventoryLooseUnitAvailable,
@@ -499,6 +782,17 @@ export const adminProductTypeRouter = {
       if ((categoryCount[0]?.count ?? 0) > 0) {
         throw new ORPCError("CONFLICT", {
           message: `Cannot delete this type — it has ${categoryCount[0]!.count} categories. Remove or reassign them first.`,
+        });
+      }
+
+      const scopedVariant = await db.query.variantOption.findFirst({
+        where: eq(variantOption.typeId, input.id),
+        columns: { id: true },
+      });
+      if (scopedVariant) {
+        throw new ORPCError("CONFLICT", {
+          message:
+            "Cannot delete this type because Variant definitions still reference it. Disable the type instead.",
         });
       }
 

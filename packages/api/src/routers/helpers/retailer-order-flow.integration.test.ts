@@ -48,6 +48,7 @@ test(
       category,
       deliveryGroup,
       deliveryGroupInvoice,
+      emptyPack,
       inventory,
       invoice,
       order,
@@ -184,6 +185,8 @@ test(
           orderMax: "2.00",
           orderIncrement: "1.00",
           isActive: true,
+          exchangeEnabled: true,
+          exchangeCreditAmount: "20.00",
         })
         .returning({ id: productVariant.id });
       assert.ok(variantRow);
@@ -195,7 +198,7 @@ test(
           ownerType: "shop",
           ownerId: shopId,
           variantId: testVariantId,
-                    availableQty: "3.00",
+                    availableQty: "4.00",
           reservedQty: "0.00",
           retailPrice: "100.00",
         })
@@ -250,7 +253,7 @@ test(
                 productId: testProductId,
                 variantId: testVariantId,
                 productName: "concurrent-loss line",
-                                quantity: 3,
+                                quantity: 4,
               },
             ],
           );
@@ -269,7 +272,7 @@ test(
             where: eq(inventory.id, testInventoryId),
           })
         )?.availableQty,
-                "3.00",
+                "4.00",
       );
 
       const addInput = {
@@ -277,6 +280,7 @@ test(
         variantId: testVariantId,
         shopId,
         quantity: 1,
+        cylinderSaleMode: "new",
       };
             await invokeProcedure(
                 customerRouter.addToCart,
@@ -301,7 +305,7 @@ test(
             where: eq(inventory.id, testInventoryId),
           })
         )?.availableQty,
-                "2.00",
+                "3.00",
       );
 
       await invokeProcedure(customerRouter.cancelOrder, consumerContext, {
@@ -313,7 +317,7 @@ test(
             where: eq(inventory.id, testInventoryId),
           })
         )?.availableQty,
-                "3.00",
+                "4.00",
       );
 
             await invokeProcedure(
@@ -336,7 +340,7 @@ test(
             where: eq(inventory.id, testInventoryId),
           })
         )?.availableQty,
-                "3.00",
+                "4.00",
       );
 
             await invokeProcedure(
@@ -532,7 +536,7 @@ test(
             where: eq(inventory.id, testInventoryId),
           })
         )?.availableQty,
-        "1.00",
+        "2.00",
       );
 
       await invokeProcedure(
@@ -638,11 +642,78 @@ test(
       assert.equal(completedPickupJourney.journey.phase, "delivered");
       assert.equal(completedPickupJourney.journey.delivery.otp, null);
 
+      await invokeProcedure(customerRouter.addToCart, pickupConsumerContext, {
+        ...addInput,
+        cylinderSaleMode: "exchange",
+      });
+      const exchangePlacement = await invokeProcedure<{
+        order: { id: number };
+      }>(customerRouter.placeOrder, pickupConsumerContext, {
+        shippingInfo: { ...shippingInfo, name: "Exchange Recipient" },
+        paymentMethod: "cash_on_delivery",
+      });
+      const exchangeOrder = await db.query.order.findFirst({
+        where: eq(order.id, exchangePlacement.order.id),
+        with: { items: true },
+      });
+      const exchangeOrderItem = exchangeOrder?.items[0];
+      assert.equal(exchangeOrderItem?.cylinderSaleMode, "exchange");
+      assert.equal(exchangeOrderItem?.newUnitPrice, "100.00");
+      assert.equal(exchangeOrderItem?.exchangeCreditAmount, "20.00");
+      assert.equal(exchangeOrderItem?.unitPrice, "80.00");
+      assert.equal(exchangeOrderItem?.expectedEmptyPackQty, 1);
+      assert.equal(
+        (
+          await db.query.inventory.findFirst({
+            where: eq(inventory.id, testInventoryId),
+          })
+        )?.reservedQty,
+        "1.00",
+      );
+
+      await invokeProcedure(shopOwnerRouter.confirmIncomingOrder, shopContext, {
+        orderId: exchangePlacement.order.id,
+      });
+      const exchangeInvoice = await invokeProcedure<{
+        invoice: { id: number };
+        completionOtp: string;
+      }>(shopOwnerRouter.createIncomingOrderInvoice, shopContext, {
+        orderId: exchangePlacement.order.id,
+        fulfillmentMode: "self_pickup",
+      });
+      await invokeProcedure(
+        shopOwnerRouter.verifyIncomingSelfPickup,
+        shopContext,
+        {
+          invoiceId: exchangeInvoice.invoice.id,
+          otp: exchangeInvoice.completionOtp,
+          acceptedReturns: [
+            { orderItemId: exchangeOrderItem!.id, quantity: 1 },
+          ],
+        },
+      );
+      const collectedPack = await db.query.emptyPack.findFirst({
+        where: and(
+          eq(emptyPack.invoiceId, exchangeInvoice.invoice.id),
+          eq(emptyPack.orderItemId, exchangeOrderItem!.id),
+        ),
+      });
+      assert.equal(collectedPack?.shopId, shopId);
+      assert.equal(collectedPack?.quantityCollected, 1);
+      assert.equal(collectedPack?.status, "verified");
+      assert.deepEqual(
+        await db.query.inventory.findFirst({
+          where: eq(inventory.id, testInventoryId),
+          columns: { availableQty: true, reservedQty: true },
+        }),
+        { availableQty: "0.00", reservedQty: "0.00" },
+      );
+
     } finally {
       if (inventoryId) {
         await db
           .update(inventory)
-                    .set({ availableQty: "3.00" })
+                    .set({ availableQty: "4.00", reservedQty: "0.00" })
           .where(eq(inventory.id, inventoryId));
       }
       await db.delete(deliveryGroup).where(eq(deliveryGroup.shopId, shopId));

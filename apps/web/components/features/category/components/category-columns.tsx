@@ -2,16 +2,11 @@
 
 import type { Category, SubCategory } from "@bikalpo-project/db/schema";
 import type { ColumnDef } from "@tanstack/react-table";
-import { ArrowUpDown, Eye, Pencil, Trash2 } from "lucide-react";
 import Link from "next/link";
-
-import * as React from "react";
-import { ADMIN_BASE } from "@/lib/routes";
-import DeleteCategoryDialog from "@/components/features/category/components/delete-category-dialog";
-import EditCategoryDialog from "@/components/features/category/components/edit-category-dialog";
-import { Badge } from "@/components/ui/badge";
+import { useMemo } from "react";
+import { ActiveStatusBadge } from "@/components/features/product-setup";
 import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
+import { ADMIN_BASE } from "@/lib/routes";
 
 export interface CategoryWithSubcategories extends Category {
   subCategory: SubCategory[];
@@ -19,120 +14,63 @@ export interface CategoryWithSubcategories extends Category {
 }
 
 export function useCategoryColumns() {
-  return React.useMemo<ColumnDef<CategoryWithSubcategories>[]>(
+  return useMemo<ColumnDef<CategoryWithSubcategories, unknown>[]>(
     () => [
-
       {
-        id: "skuCode",
-        header: () => <div className="text-center">SKU</div>,
+        accessorKey: "skuCode",
+        header: "SKU",
         cell: ({ row }) => (
-          <div className="text-center">
-            <Badge variant="outline" className="font-mono text-xs bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-900/20 dark:text-indigo-400 dark:border-indigo-800">
-              {row.original.skuCode || "—"}
-            </Badge>
-          </div>
+          <span className="font-mono text-xs tabular-nums">
+            {row.original.skuCode || "—"}
+          </span>
         ),
-        size: 70,
+      },
+      {
+        accessorFn: (row) => row.type?.name ?? "",
+        id: "typeName",
+        header: "Type",
+        cell: ({ row }) => (
+          <span className="text-sm">
+            {row.original.type?.name ?? (
+              <span className="text-muted-foreground">Unassigned</span>
+            )}
+          </span>
+        ),
       },
       {
         accessorKey: "name",
-        header: ({ column }) => {
-          return (
-            <div className="flex justify-center">
-              <Button
-                variant="ghost"
-                onClick={() =>
-                  column.toggleSorting(column.getIsSorted() === "asc")
-                }
-              >
-                Name
-                <ArrowUpDown className="ml-2 h-4 w-4" />
-              </Button>
-            </div>
-          );
-        },
+        header: "Category Name",
         cell: ({ row }) => (
-          <div className="text-center font-medium">{row.getValue("name")}</div>
+          <Link
+            className="font-medium hover:text-primary hover:underline"
+            href={`${ADMIN_BASE}/categories/${row.original.id}`}
+          >
+            {row.original.name}
+          </Link>
         ),
       },
       {
-        id: "type",
-        header: () => <div className="text-center">Type</div>,
+        accessorKey: "isActive",
+        header: "Status",
         cell: ({ row }) => (
-          <div className="text-center">
-            {row.original.type ? (
-              <Badge variant="outline">{row.original.type.name}</Badge>
-            ) : (
-              <span className="text-muted-foreground text-sm">—</span>
-            )}
-          </div>
-        ),
-        size: 120,
-      },
-      {
-        accessorKey: "slug",
-        header: () => <div className="text-center">Slug</div>,
-        cell: ({ row }) => (
-          <div className="text-center text-muted-foreground font-mono text-sm">
-            {row.getValue("slug")}
-          </div>
+          <ActiveStatusBadge isActive={row.original.isActive} />
         ),
       },
-
       {
         id: "actions",
-        header: () => <div className="text-center">Actions</div>,
-        enableHiding: false,
-        cell: ({ row }) => <CategoryActions category={row.original} />,
+        header: () => <div className="text-right">Action</div>,
+        enableSorting: false,
+        cell: ({ row }) => (
+          <div className="flex justify-end">
+            <Button asChild className="h-9" size="sm" variant="ghost">
+              <Link href={`${ADMIN_BASE}/categories/${row.original.id}`}>
+                View
+              </Link>
+            </Button>
+          </div>
+        ),
       },
     ],
     [],
-  );
-}
-
-function CategoryActions({ category }: { category: CategoryWithSubcategories }) {
-  const [showEdit, setShowEdit] = React.useState(false);
-  const [showDelete, setShowDelete] = React.useState(false);
-
-  return (
-    <div className="flex items-center justify-center gap-1">
-      <Button variant="ghost" size="icon" className="h-8 w-8" asChild>
-        <Link href={`${ADMIN_BASE}/categories/${category.id}`}>
-          <Eye className="h-4 w-4" />
-          <span className="sr-only">View</span>
-        </Link>
-      </Button>
-
-      <Button
-        variant="ghost"
-        size="icon"
-        className="h-8 w-8"
-        onClick={() => setShowEdit(true)}
-      >
-        <Pencil className="h-4 w-4" />
-        <span className="sr-only">Edit</span>
-      </Button>
-
-      <Button
-        variant="ghost"
-        size="icon"
-        className="h-8 w-8 text-destructive hover:text-destructive"
-        onClick={() => setShowDelete(true)}
-      >
-        <Trash2 className="h-4 w-4" />
-        <span className="sr-only">Delete</span>
-      </Button>
-
-      <EditCategoryDialog
-        category={category}
-        open={showEdit}
-        onOpenChange={setShowEdit}
-      />
-      <DeleteCategoryDialog
-        category={category}
-        open={showDelete}
-        onOpenChange={setShowDelete}
-      />
-    </div>
   );
 }

@@ -10,10 +10,27 @@ import {
   variantOption,
 } from "@bikalpo-project/db/schema";
 import { ORPCError } from "@orpc/server";
-import { and, asc, count, desc, eq, gte, isNull, or, type SQL, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  count,
+  desc,
+  eq,
+  gte,
+  isNull,
+  or,
+  type SQL,
+  sql,
+} from "drizzle-orm";
 import { z } from "zod";
-import { adminProcedure, warehouseProcedure } from "../index";
+import { adminProcedure, catalogRequesterProcedure } from "../index";
 import { nextSkuCode } from "./helpers/generate-sku";
+import {
+  createStructuredVariantOption,
+  prepareStructuredVariantOption,
+  type StructuredVariantOptionInput,
+  structuredVariantOptionInputSchema,
+} from "./helpers/structured-variant-option";
 
 const requestTypeSchema = z.enum(["brand", "variant_option", "core_product"]);
 const requestStatusSchema = z.enum(["pending", "approved", "rejected"]);
@@ -37,15 +54,7 @@ const brandPayloadSchema = z.object({
   displayOrder: z.number().int().min(0).default(0),
 });
 
-const variantPayloadSchema = z.object({
-  name: z.string().min(1).max(100).trim(),
-  unit: z.string().min(1).max(20),
-  size: z.string().max(20).optional().nullable(),
-  variantType: z.enum(["pack", "loose"]).default("pack"),
-  typeId: z.number().int().nullable(),
-  categoryId: z.number().int().nullable(),
-  sortOrder: z.number().int().min(0).default(0),
-});
+const variantPayloadSchema = structuredVariantOptionInputSchema;
 
 const coreProductPayloadSchema = z.object({
   sku: z.string().max(20).optional().nullable(),
@@ -104,22 +113,7 @@ const requestListInput = z.object({
   limit: z.number().int().min(1).max(100).default(50),
 });
 
-const UNITS = [
-  "KG",
-  "ML",
-  "L",
-  "Pc",
-  "Size",
-  "Box",
-  "Carton",
-  "Ton",
-  "Pair",
-  "Unit",
-] as const;
-
-function getDateRangeStart(
-  dateRange?: z.infer<typeof requestDateRangeSchema>,
-) {
+function getDateRangeStart(dateRange?: z.infer<typeof requestDateRangeSchema>) {
   if (!dateRange || dateRange === "all") return null;
 
   const start = new Date();
@@ -146,32 +140,6 @@ function parsePayload(
   if (type === "brand") return brandPayloadSchema.parse(payload);
   if (type === "variant_option") return variantPayloadSchema.parse(payload);
   return coreProductPayloadSchema.parse(payload);
-}
-
-async function assertVariantScope(
-  input: z.infer<typeof variantPayloadSchema>,
-  database = db,
-) {
-  if (input.typeId === null && input.categoryId !== null) {
-    throw new ORPCError("BAD_REQUEST", {
-      message: "Global variants cannot have a category scope",
-    });
-  }
-
-  if (input.categoryId !== null) {
-    const cat = await database.query.category.findFirst({
-      where: eq(category.id, input.categoryId),
-      columns: { id: true, typeId: true },
-    });
-    if (!cat) {
-      throw new ORPCError("BAD_REQUEST", { message: "Category not found" });
-    }
-    if (input.typeId !== null && cat.typeId !== input.typeId) {
-      throw new ORPCError("BAD_REQUEST", {
-        message: "Category does not belong to selected type",
-      });
-    }
-  }
 }
 
 async function assertCoreProductScope(
@@ -237,84 +205,6 @@ async function createBrandFromPayload(
       slug: input.slug,
       logo: input.logo || null,
       displayOrder: input.displayOrder,
-      skuCode,
-    })
-    .returning();
-
-  return created!;
-}
-
-async function createVariantFromPayload(
-  input: z.infer<typeof variantPayloadSchema>,
-  database = db,
-) {
-  await assertVariantScope(input, database);
-
-  const duplicateConditions: SQL[] = [eq(variantOption.name, input.name)];
-  if (input.typeId === null)
-    duplicateConditions.push(isNull(variantOption.typeId));
-  else duplicateConditions.push(eq(variantOption.typeId, input.typeId));
-  if (input.categoryId === null) {
-    duplicateConditions.push(isNull(variantOption.categoryId));
-  } else {
-    duplicateConditions.push(eq(variantOption.categoryId, input.categoryId));
-  }
-
-  const duplicate = await database.query.variantOption.findFirst({
-    where: and(...duplicateConditions),
-    columns: { id: true },
-  });
-  if (duplicate) {
-    throw new ORPCError("CONFLICT", {
-      message: `A variant option named "${input.name}" already exists in this scope`,
-    });
-  }
-
-  if (input.variantType === "loose") {
-    const looseConditions: SQL[] = [eq(variantOption.variantType, "loose")];
-    if (input.typeId === null)
-      looseConditions.push(isNull(variantOption.typeId));
-    else looseConditions.push(eq(variantOption.typeId, input.typeId));
-    if (input.categoryId === null) {
-      looseConditions.push(isNull(variantOption.categoryId));
-    } else {
-      looseConditions.push(eq(variantOption.categoryId, input.categoryId));
-    }
-    const existingLoose = await database.query.variantOption.findFirst({
-      where: and(...looseConditions),
-      columns: { name: true },
-    });
-    if (existingLoose) {
-      throw new ORPCError("BAD_REQUEST", {
-        message: `A loose variant already exists in this scope ("${existingLoose.name}")`,
-      });
-    }
-  }
-
-  const skuFilterCondition =
-    input.typeId === null
-      ? sql`${variantOption.typeId} IS NULL AND ${variantOption.categoryId} IS NULL`
-      : input.categoryId === null
-        ? sql`${variantOption.typeId} = ${input.typeId} AND ${variantOption.categoryId} IS NULL`
-        : sql`${variantOption.typeId} = ${input.typeId} AND ${variantOption.categoryId} = ${input.categoryId}`;
-  const skuCode = await nextSkuCode(
-    variantOption,
-    variantOption.skuCode,
-    2,
-    skuFilterCondition,
-    database,
-  );
-
-  const [created] = await database
-    .insert(variantOption)
-    .values({
-      name: input.name,
-      unit: input.unit,
-      size: input.size || null,
-      variantType: input.variantType,
-      typeId: input.typeId,
-      categoryId: input.categoryId,
-      sortOrder: input.sortOrder,
       skuCode,
     })
     .returning();
@@ -417,7 +307,7 @@ async function approveCatalogRequest(
       input.requestType === "brand"
         ? await createBrandFromPayload(input.payload, database)
         : input.requestType === "variant_option"
-          ? await createVariantFromPayload(input.payload, database)
+          ? await createStructuredVariantOption(input.payload, database)
           : await createCoreProductFromPayload(input.payload, database);
 
     const [updated] = await database
@@ -445,13 +335,19 @@ async function approveCatalogRequest(
   });
 }
 
-export const warehouseCatalogApprovalRouter = {
-  getRequestOptions: warehouseProcedure.handler(async () => {
+export const catalogRequestRouter = {
+  getRequestOptions: catalogRequesterProcedure.handler(async () => {
     const [types, categories, subCategories] = await Promise.all([
       db.query.productType.findMany({
         where: eq(productType.isActive, true),
         orderBy: [asc(productType.displayOrder), asc(productType.name)],
-        columns: { id: true, name: true, slug: true },
+        columns: {
+          id: true,
+          name: true,
+          slug: true,
+          family: true,
+          inventoryBehaviour: true,
+        },
       }),
       db.query.category.findMany({
         where: eq(category.isActive, true),
@@ -465,16 +361,16 @@ export const warehouseCatalogApprovalRouter = {
       }),
     ]);
 
-    return { types, categories, subCategories, units: UNITS };
+    return { types, categories, subCategories };
   }),
 
-  createRequest: warehouseProcedure
+  createRequest: catalogRequesterProcedure
     .input(createRequestInput)
     .handler(async ({ context, input }) => {
       const payload = parsePayload(input.requestType, input.payload);
       if (input.requestType === "variant_option") {
-        await assertVariantScope(
-          payload as z.infer<typeof variantPayloadSchema>,
+        await prepareStructuredVariantOption(
+          payload as StructuredVariantOptionInput,
         );
       }
       if (input.requestType === "core_product") {
@@ -497,9 +393,9 @@ export const warehouseCatalogApprovalRouter = {
         request: created!,
         message: "Request submitted for admin review",
       };
-  }),
+    }),
 
-  getMyRequests: warehouseProcedure
+  getMyRequests: catalogRequesterProcedure
     .input(requestListInput.optional())
     .handler(async ({ context, input }) => {
       const filters: z.infer<typeof requestListInput> = {
@@ -541,7 +437,13 @@ export const adminCatalogApprovalRouter = {
       db.query.productType.findMany({
         where: eq(productType.isActive, true),
         orderBy: [asc(productType.displayOrder), asc(productType.name)],
-        columns: { id: true, name: true, slug: true },
+        columns: {
+          id: true,
+          name: true,
+          slug: true,
+          family: true,
+          inventoryBehaviour: true,
+        },
       }),
       db.query.category.findMany({
         where: eq(category.isActive, true),
@@ -593,7 +495,6 @@ export const adminCatalogApprovalRouter = {
       brands,
       variantOptions,
       coreProducts,
-      units: UNITS,
     };
   }),
 

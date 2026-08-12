@@ -1,31 +1,41 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { Package } from "lucide-react";
-import { AdminCatalogRequests } from "@/components/catalog-approval/admin-catalog-requests";
+import { Plus } from "lucide-react";
+import { useState } from "react";
+import {
+  SetupErrorState,
+  SetupPageHeader,
+  SetupPageShell,
+} from "@/components/features/product-setup";
+import VariantBulkActions from "@/components/features/variant-option/components/variant-bulk-actions";
 import {
   useVariantOptionColumns,
   type VariantOptionRow,
 } from "@/components/features/variant-option/components/variant-option-columns";
+import VariantOptionDialog from "@/components/features/variant-option/components/variant-option-dialog";
 import VariantOptionTable from "@/components/features/variant-option/components/variant-option-table";
+import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { orpc } from "@/utils/orpc";
 
 export default function VariantOptionsPage() {
+  const [showCreate, setShowCreate] = useState(false);
   // Fetch all variant options
-  const { data: variantOptions, isLoading } = useQuery(
+  const variantsQuery = useQuery(
     orpc.adminVariantOption.getAll.queryOptions({ input: {} }),
   );
 
   // Fetch types for filter dropdown
-  const { data: typesData } = useQuery(
+  const typesQuery = useQuery(
     orpc.adminProductType.getAll.queryOptions({ input: {} }),
   );
 
   // Fetch categories for cascade filter
-  const { data: categoriesData } = useQuery(
-    orpc.category.getAll.queryOptions(),
-  );
+  const categoriesQuery = useQuery(orpc.category.getAll.queryOptions());
+  const variantOptions = variantsQuery.data;
+  const typesData = typesQuery.data;
+  const categoriesData = categoriesQuery.data;
 
   const columns = useVariantOptionColumns();
 
@@ -42,41 +52,64 @@ export default function VariantOptionsPage() {
     typeId: c.typeId,
   }));
 
-  if (isLoading) {
+  if (
+    variantsQuery.isLoading ||
+    typesQuery.isLoading ||
+    categoriesQuery.isLoading
+  ) {
     return (
-      <div className="space-y-6">
+      <SetupPageShell className="space-y-6">
         <div className="flex items-center justify-between">
           <Skeleton className="h-8 w-64" />
           <Skeleton className="h-9 w-40" />
         </div>
         <Skeleton className="h-[400px] w-full" />
-      </div>
+      </SetupPageShell>
+    );
+  }
+
+  if (variantsQuery.isError || typesQuery.isError || categoriesQuery.isError) {
+    return (
+      <SetupPageShell>
+        <SetupErrorState
+          onRetry={() => {
+            void variantsQuery.refetch();
+            void typesQuery.refetch();
+            void categoriesQuery.refetch();
+          }}
+        />
+      </SetupPageShell>
     );
   }
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold flex items-center gap-2">
-          <Package className="h-6 w-6" />
-          Variant Setup
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          Define canonical, type-scoped labels and inventory units reused across core products.
-        </p>
-      </div>
+    <SetupPageShell>
+      <SetupPageHeader
+        action={
+          <Button onClick={() => setShowCreate(true)}>
+            <Plus aria-hidden="true" className="size-4" />
+            Create Variant
+          </Button>
+        }
+        count={variantOptions?.length ?? 0}
+        secondaryActions={<VariantBulkActions />}
+        title="Variants"
+      />
+      <VariantOptionDialog
+        mode="create"
+        onOpenChange={setShowCreate}
+        open={showCreate}
+      />
 
       <VariantOptionTable
         columns={columns}
         data={(variantOptions as VariantOptionRow[]) ?? []}
+        emptyAction={
+          <Button onClick={() => setShowCreate(true)}>Create Variant</Button>
+        }
         types={types}
         categories={categories}
       />
-
-      <AdminCatalogRequests
-        requestType="variant_option"
-        title="Variant Requests"
-      />
-    </div>
+    </SetupPageShell>
   );
 }

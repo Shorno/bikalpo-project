@@ -1,41 +1,23 @@
 "use client";
 
-import {
-  buildProductTypeFulfillmentProfile,
-  INVENTORY_BEHAVIOUR_LABELS,
-  INVENTORY_BEHAVIOURS,
-  PRODUCT_TYPE_FAMILIES,
-  PRODUCT_TYPE_FAMILY_LABELS,
-  type ProductTypeFamily,
-} from "@bikalpo-project/db/fulfillment";
 import { useForm } from "@tanstack/react-form";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Loader, Pencil } from "lucide-react";
+import { Pencil } from "lucide-react";
 import * as React from "react";
 import { toast } from "sonner";
-import FulfillmentProfilePreview from "@/components/features/product-type/components/fulfillment-profile-preview";
+import { z } from "zod";
+import { SetupFormDialog } from "@/components/features/product-setup";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
-import { Field, FieldLabel } from "@/components/ui/field";
+import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { generateSlug } from "@/utils/generate-slug";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { orpc } from "@/utils/orpc";
 import type { ProductTypeRow } from "./product-type-columns";
+
+const typeBasicsSchema = z.object({
+  name: z.string().trim().min(1, "Type Name is required"),
+  isActive: z.boolean(),
+});
 
 interface EditTypeDialogProps {
   type: ProductTypeRow;
@@ -44,212 +26,140 @@ interface EditTypeDialogProps {
 export default function EditTypeDialog({ type }: EditTypeDialogProps) {
   const [open, setOpen] = React.useState(false);
   const queryClient = useQueryClient();
-
   const mutation = useMutation({
     mutationFn: (data: {
       id: number;
       name: string;
       slug: string;
       description?: string;
-      inventoryBehaviour: (typeof INVENTORY_BEHAVIOURS)[number];
-      family: ProductTypeFamily;
+      image?: string;
+      inventoryBehaviour: ProductTypeRow["inventoryBehaviour"];
+      family: ProductTypeRow["family"];
+      isActive: boolean;
       displayOrder?: number;
     }) => orpc.adminProductType.update.call(data),
     onSuccess: (result) => {
-      queryClient.invalidateQueries({ queryKey: ["adminProductType"] });
+      void queryClient.invalidateQueries({ queryKey: ["adminProductType"] });
       toast.success(result.message);
       setOpen(false);
     },
     onError: (error) => {
-      toast.error(
-        error.message || "An error occurred while updating the type.",
-      );
+      toast.error(error.message || "Failed to update the Type.");
     },
   });
-
   const form = useForm({
     defaultValues: {
       name: type.name,
-      slug: type.slug,
-      description: type.description || "",
-      inventoryBehaviour: type.inventoryBehaviour,
-      family: type.family,
-      displayOrder: type.displayOrder,
+      isActive: type.isActive,
+    },
+    validators: {
+      onSubmit: typeBasicsSchema as never,
     },
     onSubmit: async ({ value }) => {
       mutation.mutate({
         id: type.id,
-        ...value,
-        slug: value.slug || generateSlug(value.name),
+        name: value.name.trim(),
+        slug: type.slug,
+        description: type.description ?? undefined,
+        image: type.image ?? undefined,
+        inventoryBehaviour: type.inventoryBehaviour,
+        family: type.family,
+        isActive: value.isActive,
+        displayOrder: type.displayOrder,
       });
     },
   });
+  const handleOpenChange = (nextOpen: boolean) => {
+    form.reset({ name: type.name, isActive: type.isActive });
+    setOpen(nextOpen);
+  };
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button variant="ghost" size="sm" className="w-full justify-start">
-          <Pencil className="h-4 w-4 mr-2" />
+    <SetupFormDialog
+      description={`Update ${type.name}.`}
+      formId="edit-type-form"
+      hasUnsavedChanges={() => form.state.isDirty}
+      isSubmitting={mutation.isPending}
+      onOpenChange={handleOpenChange}
+      onSubmit={() => form.handleSubmit()}
+      open={open}
+      submitLabel="Save Changes"
+      title="Edit Type"
+      trigger={
+        <Button variant="outline">
+          <Pencil aria-hidden="true" className="size-4" />
           Edit
         </Button>
-      </DialogTrigger>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>Edit Product Type</DialogTitle>
-          <DialogDescription>
-            Update the details of {type.name}.
-          </DialogDescription>
-        </DialogHeader>
-        <form
-          id="edit-type-form"
-          onSubmit={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            form.handleSubmit();
-          }}
-          className="space-y-4"
-        >
-          {/* Row 1: Name + Slug */}
-          <div className="grid grid-cols-2 gap-4">
-            <form.Field name="name">
-              {(field) => (
-                <Field>
-                  <FieldLabel htmlFor={field.name}>Type Name *</FieldLabel>
-                  <Input
-                    id={field.name}
-                    value={field.state.value}
-                    onChange={(e) => {
-                      field.handleChange(e.target.value);
-                      form.setFieldValue("slug", generateSlug(e.target.value));
-                    }}
-                    placeholder="e.g. Grocery"
-                    autoComplete="off"
-                  />
-                </Field>
-              )}
-            </form.Field>
-
-            <form.Field name="slug">
-              {(field) => (
-                <Field>
-                  <FieldLabel htmlFor={field.name}>Slug</FieldLabel>
-                  <Input
-                    id={field.name}
-                    value={field.state.value}
-                    onChange={(e) => field.handleChange(e.target.value)}
-                    placeholder="auto-generated"
-                    autoComplete="off"
-                  />
-                </Field>
-              )}
-            </form.Field>
-          </div>
-
-          {/* Row 2: Description (full width) */}
-          <form.Field name="description">
-            {(field) => (
-              <Field>
-                <FieldLabel htmlFor={field.name}>Description</FieldLabel>
+      }
+    >
+      <form
+        className="space-y-5"
+        id="edit-type-form"
+        onSubmit={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          form.handleSubmit();
+        }}
+      >
+        <form.Field name="name">
+          {(field) => {
+            const isInvalid =
+              field.state.meta.isTouched && !field.state.meta.isValid;
+            return (
+              <Field data-invalid={isInvalid}>
+                <FieldLabel htmlFor={field.name}>Type Name</FieldLabel>
                 <Input
-                  id={field.name}
-                  value={field.state.value}
-                  onChange={(e) => field.handleChange(e.target.value)}
-                  placeholder="Brief description"
+                  aria-invalid={isInvalid}
                   autoComplete="off"
+                  id={field.name}
+                  name={field.name}
+                  onBlur={field.handleBlur}
+                  onChange={(event) => field.handleChange(event.target.value)}
+                  placeholder="Grocery"
+                  value={field.state.value}
                 />
+                {isInvalid && <FieldError errors={field.state.meta.errors} />}
               </Field>
-            )}
-          </form.Field>
+            );
+          }}
+        </form.Field>
 
-          <div className="grid gap-4 sm:grid-cols-2">
-            <form.Field name="family">
-              {(field) => (
-                <Field>
-                  <FieldLabel htmlFor={field.name}>Product Family</FieldLabel>
-                  <Select
-                    value={field.state.value}
-                    onValueChange={(value) =>
-                      field.handleChange(value as ProductTypeFamily)
-                    }
-                  >
-                    <SelectTrigger id={field.name}>
-                      <SelectValue placeholder="Select product family" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {PRODUCT_TYPE_FAMILIES.map((family) => (
-                        <SelectItem key={family} value={family}>
-                          {PRODUCT_TYPE_FAMILY_LABELS[family]}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </Field>
-              )}
-            </form.Field>
-            <form.Field name="inventoryBehaviour">
-              {(field) => (
-                <Field>
-                  <FieldLabel htmlFor={field.name}>
-                    Inventory Behaviour
-                  </FieldLabel>
-                  <Select
-                    value={field.state.value}
-                    onValueChange={(value) =>
-                      field.handleChange(
-                        value as (typeof INVENTORY_BEHAVIOURS)[number],
-                      )
-                    }
-                  >
-                    <SelectTrigger id={field.name}>
-                      <SelectValue placeholder="Select inventory behaviour" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {INVENTORY_BEHAVIOURS.map((behaviour) => (
-                        <SelectItem key={behaviour} value={behaviour}>
-                          {INVENTORY_BEHAVIOUR_LABELS[behaviour]}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </Field>
-              )}
-            </form.Field>
-          </div>
-
-          <form.Subscribe selector={(state) => state.values}>
-            {(values) => {
-              const profile = buildProductTypeFulfillmentProfile({
-                name: values.name,
-                slug: values.slug || generateSlug(values.name),
-                inventoryBehaviour: values.inventoryBehaviour,
-                family: values.family,
-              });
-
-              return <FulfillmentProfilePreview profile={profile} compact />;
-            }}
-          </form.Subscribe>
-        </form>
-        <DialogFooter>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => setOpen(false)}
-            disabled={mutation.isPending}
-          >
-            Cancel
-          </Button>
-          <Button
-            type="submit"
-            form="edit-type-form"
-            disabled={mutation.isPending}
-          >
-            {mutation.isPending && (
-              <Loader className="mr-2 h-4 w-4 animate-spin" />
-            )}
-            Update Type
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        <form.Field name="isActive">
+          {(field) => (
+            <Field>
+              <FieldLabel>Status</FieldLabel>
+              <RadioGroup
+                className="grid gap-2 sm:grid-cols-2"
+                onValueChange={(value) =>
+                  field.handleChange(value === "active")
+                }
+                value={field.state.value ? "active" : "inactive"}
+              >
+                <label
+                  className="flex min-h-11 cursor-pointer items-center gap-3 rounded-lg border px-4 py-3 hover:bg-muted/30"
+                  htmlFor={`edit-type-${type.id}-active`}
+                >
+                  <RadioGroupItem
+                    id={`edit-type-${type.id}-active`}
+                    value="active"
+                  />
+                  <span className="text-sm font-medium">Active</span>
+                </label>
+                <label
+                  className="flex min-h-11 cursor-pointer items-center gap-3 rounded-lg border px-4 py-3 hover:bg-muted/30"
+                  htmlFor={`edit-type-${type.id}-inactive`}
+                >
+                  <RadioGroupItem
+                    id={`edit-type-${type.id}-inactive`}
+                    value="inactive"
+                  />
+                  <span className="text-sm font-medium">Inactive</span>
+                </label>
+              </RadioGroup>
+            </Field>
+          )}
+        </form.Field>
+      </form>
+    </SetupFormDialog>
   );
 }

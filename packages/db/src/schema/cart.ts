@@ -14,6 +14,10 @@ import { product } from "./product";
 import { productVariant } from "./product-variant";
 
 export const cartModeEnum = pgEnum("cart_mode", ["open_order", "direct"]);
+export const cylinderSaleModeEnum = pgEnum("cylinder_sale_mode", [
+    "new",
+    "exchange",
+]);
 
 export const cart = pgTable(
     "cart",
@@ -58,6 +62,10 @@ export const cartItem = pgTable(
         }),
         quantity: integer("quantity").notNull().default(1),
         price: decimal("price", { precision: 10, scale: 2 }).notNull(), // Price at time of adding
+        /** Consumer choice for an exchange-enabled LPG retailer variant. */
+        cylinderSaleMode: cylinderSaleModeEnum("cylinder_sale_mode")
+            .default("new")
+            .notNull(),
         createdAt: timestamp("created_at").defaultNow().notNull(),
         updatedAt: timestamp("updated_at")
             .defaultNow()
@@ -104,6 +112,7 @@ export type Cart = typeof cart.$inferSelect;
 export type CartItem = typeof cartItem.$inferSelect;
 export type NewCart = typeof cart.$inferInsert;
 export type NewCartItem = typeof cartItem.$inferInsert;
+export type CylinderSaleMode = (typeof cylinderSaleModeEnum.enumValues)[number];
 
 export interface CartWithItems extends Cart {
     items: (CartItem & {

@@ -102,14 +102,11 @@ type ProductResult = {
       massKgPerUnit: number;
       volumeLPerUnit: number;
     };
-    movementSemantics: {
-      family: string;
-      movementKind: "direct" | "loose" | "container";
-      enteredUnit: string;
-      inventoryUnit: string;
+    variantOperations: {
+      operationalUnit: string;
+      receivingMode: "direct" | "pack" | "loose";
       quantityKind: "mass" | "volume" | "count";
       allowsDecimal: boolean;
-      conversionFactor: string;
       referenceMeasurement?: {
         unit: "kg" | "liter";
         perInventoryUnit: string;
@@ -120,26 +117,47 @@ type ProductResult = {
 
 type EntryType = "direct" | "loose" | "pack" | "carton";
 
+const OPERATIONAL_UNIT_LABELS: Record<
+  string,
+  { singular: string; plural: string }
+> = {
+  unit: { singular: "Unit", plural: "Units" },
+  piece: { singular: "Piece", plural: "Pieces" },
+  pair: { singular: "Pair", plural: "Pairs" },
+  cylinder: { singular: "Cylinder", plural: "Cylinders" },
+  pack: { singular: "Pack", plural: "Packs" },
+  packet: { singular: "Packet", plural: "Packets" },
+  pouch: { singular: "Pouch", plural: "Pouches" },
+  bottle: { singular: "Bottle", plural: "Bottles" },
+  jar: { singular: "Jar", plural: "Jars" },
+  can: { singular: "Can", plural: "Cans" },
+  sack: { singular: "Sack", plural: "Sacks" },
+  box: { singular: "Box", plural: "Boxes" },
+  bundle: { singular: "Bundle", plural: "Bundles" },
+  drum: { singular: "Drum", plural: "Drums" },
+};
+
+function getOperationalUnitLabels(unit?: string | null) {
+  const normalized = String(unit || "unit").toLowerCase();
+  return (
+    OPERATIONAL_UNIT_LABELS[normalized] || {
+      singular: normalized,
+      plural: `${normalized}s`,
+    }
+  );
+}
+
 function variantMatchesEntryType(
   variant: ProductResult["variants"][number],
   entryType: EntryType,
 ) {
-  const isLpgCylinder =
-    variant.movementSemantics.family === "lpg" &&
-    variant.movementSemantics.movementKind === "direct" &&
-    variant.movementSemantics.inventoryUnit === "cylinder";
-  if (entryType === "direct") return isLpgCylinder;
-  if (entryType === "loose") return variant.packType === "loose";
-  if (isLpgCylinder) return false;
-  return variant.packType !== "loose";
-}
-
-function isFashionTypeName(typeName?: string | null) {
-  return (
-    String(typeName || "")
-      .trim()
-      .toLowerCase() === "fashion"
-  );
+  if (entryType === "direct") {
+    return variant.variantOperations.receivingMode === "direct";
+  }
+  if (entryType === "loose") {
+    return variant.variantOperations.receivingMode === "loose";
+  }
+  return variant.variantOperations.receivingMode === "pack";
 }
 
 function getVariantMeasure(variant?: ProductResult["variants"][number] | null) {
@@ -422,16 +440,12 @@ export default function AddStockPage() {
       const variant = getRowVariant(row);
       if (!variant || !row.quantity || parseFloat(row.quantity) <= 0) return 0;
       const qty = parseFloat(row.quantity);
-      const isFashionRow = isFashionTypeName(row.product.category?.type?.name);
       if (entryType === "loose") {
         return qty;
       }
       if (entryType === "direct") return qty;
       if (entryType === "carton") {
         return qty * getCartonPacksPerCarton(row);
-      }
-      if (isFashionRow) {
-        return qty;
       }
       return qty * getVariantMeasure(variant).quantityPerPack;
     },
@@ -442,12 +456,11 @@ export default function AddStockPage() {
     (row: TableRow) => {
       const variant = getRowVariant(row);
       if (entryType === "direct")
-        return variant?.movementSemantics.inventoryUnit || "cylinder";
+        return variant?.variantOperations.operationalUnit || "unit";
       if (entryType === "carton")
         return variant?.stockSemantics.operationalUnit || "unit";
       if (entryType === "loose")
         return variant?.stockSemantics.operationalUnit || "unit";
-      if (isFashionTypeName(row.product.category?.type?.name)) return "PCS";
       return getVariantMeasure(variant).quantityUnit;
     },
     [entryType, getRowVariant],
@@ -460,14 +473,21 @@ export default function AddStockPage() {
       if (totalQty <= 0) return "—";
       if (entryType === "direct") {
         const variant = getRowVariant(row);
-        const massPerUnit = Number(
-          variant?.movementSemantics.referenceMeasurement?.perInventoryUnit ||
+        const referencePerUnit = Number(
+          variant?.variantOperations.referenceMeasurement?.perInventoryUnit ||
             0,
         );
-        const cylinders = `${totalQty.toFixed(0)} ${totalQty === 1 ? "cylinder" : "cylinders"}`;
-        return massPerUnit > 0
-          ? `${cylinders} · ${(totalQty * massPerUnit).toFixed(0)} KG`
-          : cylinders;
+        const referenceUnit =
+          variant?.variantOperations.referenceMeasurement?.unit;
+        const labels = getOperationalUnitLabels(
+          variant?.variantOperations.operationalUnit,
+        );
+        const quantity = `${totalQty.toFixed(0)} ${
+          totalQty === 1 ? labels.singular : labels.plural
+        }`;
+        return referencePerUnit > 0 && referenceUnit
+          ? `${quantity} · ${(totalQty * referencePerUnit).toFixed(2).replace(/\.00$/, "")} ${referenceUnit === "kg" ? "KG" : "L"}`
+          : quantity;
       }
       const unit = getRowTotalQtyUnit(row);
       const decimals = unit === "KG" ? 1 : 0;
@@ -529,20 +549,23 @@ export default function AddStockPage() {
     return tableRows.reduce((total, row) => {
       const variant = getRowVariant(row);
       const massPerUnit = Number(
-        variant?.movementSemantics.referenceMeasurement?.perInventoryUnit || 0,
+        variant?.variantOperations.referenceMeasurement?.perInventoryUnit || 0,
       );
       return total + getRowTotalQtyValue(row) * massPerUnit;
     }, 0);
   }, [entryType, getRowTotalQtyValue, getRowVariant, tableRows]);
 
-  const showGenericPackQtyLabel = useMemo(
-    () =>
-      entryType === "pack" &&
-      tableRows.some((row) =>
-        isFashionTypeName(row.product.category?.type?.name),
-      ),
-    [entryType, tableRows],
-  );
+  const selectedOperationalUnitLabels = useMemo(() => {
+    const units = new Set(
+      tableRows.flatMap((row) => {
+        const unit = getRowVariant(row)?.variantOperations.operationalUnit;
+        return unit ? [unit] : [];
+      }),
+    );
+    if (units.size !== 1) return getOperationalUnitLabels("unit");
+    const unit = [...units][0]!;
+    return getOperationalUnitLabels(unit);
+  }, [getRowVariant, tableRows]);
 
   const getCartonCodeRange = useCallback(
     (rowIndex: number) => {
@@ -597,14 +620,6 @@ export default function AddStockPage() {
         toast.error(
           "This product has no assigned brand. Configure its brand before adding stock.",
         );
-        return false;
-      }
-
-      const isFashionProduct = isFashionTypeName(
-        selectedProduct.category?.type?.name,
-      );
-      if (isFashionProduct && entryType !== "pack") {
-        toast.error("Fashion stock should be added through Pack Entry.");
         return false;
       }
 
@@ -912,7 +927,7 @@ export default function AddStockPage() {
                     Direct Entry
                   </p>
                   <p className="text-xs text-muted-foreground">
-                    Count LPG in configured cylinders
+                    Count configured direct units without conversion
                   </p>
                 </div>
               </button>
@@ -1132,13 +1147,11 @@ export default function AddStockPage() {
                           </th>
                         )}
                         <th className="text-center px-3 py-2.5 font-medium text-muted-foreground">
-                          {entryType === "direct"
-                            ? "Qty (Cylinders)"
+                          {entryType === "direct" || entryType === "pack"
+                            ? `Qty (${selectedOperationalUnitLabels.plural})`
                             : entryType === "loose" || entryType === "carton"
                               ? "Qty"
-                              : showGenericPackQtyLabel
-                                ? "Qty"
-                                : "Qty (Pack)"}
+                              : "Qty"}
                         </th>
                         <th className="text-right px-3 py-2.5 font-medium text-muted-foreground">
                           Total Qty
@@ -1148,8 +1161,8 @@ export default function AddStockPage() {
                             ? "Total Purchase Cost"
                             : entryType === "carton"
                               ? "Buying Price/Carton"
-                              : entryType === "direct"
-                                ? "Cost / Cylinder"
+                              : entryType === "direct" || entryType === "pack"
+                                ? `Cost / ${selectedOperationalUnitLabels.singular}`
                                 : "Buying Price/Unit"}
                         </th>
                         <th className="w-10 px-2"></th>
@@ -1601,7 +1614,7 @@ export default function AddStockPage() {
                     </p>
                     {entryType === "direct" && totalReferenceMassKg > 0 && (
                       <p className="mt-1 text-[11px] text-emerald-700/70 dark:text-emerald-300/70">
-                        {totalReferenceMassKg.toFixed(0)} KG LPG reference
+                        {totalReferenceMassKg.toFixed(0)} KG reference
                       </p>
                     )}
                   </div>

@@ -1,39 +1,17 @@
 "use client";
 
+import type { ColumnDef } from "@tanstack/react-table";
+import { parseAsString, useQueryState } from "nuqs";
+import { useMemo } from "react";
 import {
-  type ColumnDef,
-  type ColumnFiltersState,
-  flexRender,
-  getCoreRowModel,
-  getFilteredRowModel,
-  getPaginationRowModel,
-  getSortedRowModel,
-  type SortingState,
-  useReactTable,
-  type VisibilityState,
-} from "@tanstack/react-table";
-import * as React from "react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import type { SubcategoryWithCategory } from "./subcategory-columns";
+  ActiveStatusBadge,
+  SetupEntityTable,
+  SetupToolbar,
+} from "@/components/features/product-setup";
 import NewSubcategoryDialog from "./new-subcategory-dialog";
+import type { SubcategoryWithCategory } from "./subcategory-columns";
 
-interface DataTableProps {
+interface SubcategoryTableProps {
   columns: ColumnDef<SubcategoryWithCategory, unknown>[];
   data: SubcategoryWithCategory[];
   types?: { id: number; name: string }[];
@@ -45,196 +23,140 @@ export default function SubcategoryTable({
   data,
   types = [],
   categories = [],
-}: DataTableProps) {
-  const [sorting, setSorting] = React.useState<SortingState>([]);
-  const [columnFilters, setColumnFilters] = React.useState<ColumnFiltersState>(
-    [],
+}: SubcategoryTableProps) {
+  const [search, setSearch] = useQueryState(
+    "q",
+    parseAsString.withDefault("").withOptions({ clearOnDefault: true }),
   );
-  const [columnVisibility, setColumnVisibility] =
-    React.useState<VisibilityState>({});
-  const [filterValue, setFilterValue] = React.useState("");
-  const [typeFilter, setTypeFilter] = React.useState<string>("all");
-  const [categoryFilter, setCategoryFilter] = React.useState<string>("all");
-  const [statusFilter, setStatusFilter] = React.useState<string>("all");
+  const [type, setType] = useQueryState(
+    "type",
+    parseAsString.withDefault("all").withOptions({ clearOnDefault: true }),
+  );
+  const [category, setCategory] = useQueryState(
+    "category",
+    parseAsString.withDefault("all").withOptions({ clearOnDefault: true }),
+  );
+  const [status, setStatus] = useQueryState(
+    "status",
+    parseAsString.withDefault("all").withOptions({ clearOnDefault: true }),
+  );
 
-  // Client-side filtered data
-  const filteredTableData = React.useMemo(() => {
-    let result = data;
-    if (typeFilter !== "all") {
-      result = result.filter(
-        (sub) => sub.category.typeId === Number(typeFilter),
-      );
-    }
-    if (categoryFilter !== "all") {
-      result = result.filter(
-        (sub) => sub.categoryId === Number(categoryFilter),
-      );
-    }
-    if (statusFilter !== "all") {
-      result = result.filter((sub) =>
-        statusFilter === "active" ? sub.isActive : !sub.isActive,
-      );
-    }
-    return result;
-  }, [data, typeFilter, categoryFilter, statusFilter]);
-
-  // Filter categories based on selected type
-  const filteredCategories = React.useMemo(() => {
-    if (typeFilter === "all") return categories;
-    return categories.filter((c) => c.typeId === Number(typeFilter));
-  }, [categories, typeFilter]);
-
-  const table = useReactTable({
-    data: filteredTableData,
-    columns,
-    onSortingChange: setSorting,
-    onColumnFiltersChange: setColumnFilters,
-    getCoreRowModel: getCoreRowModel(),
-    getPaginationRowModel: getPaginationRowModel(),
-    getSortedRowModel: getSortedRowModel(),
-    getFilteredRowModel: getFilteredRowModel(),
-    onColumnVisibilityChange: setColumnVisibility,
-    state: {
-      sorting,
-      columnFilters,
-      columnVisibility,
-    },
-  });
+  const filteredCategories = useMemo(
+    () =>
+      type === "all"
+        ? categories
+        : categories.filter((item) => item.typeId === Number(type)),
+    [categories, type],
+  );
+  const filteredData = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    return data.filter((item) => {
+      const matchesSearch = !query || item.name.toLowerCase().includes(query);
+      const matchesType =
+        type === "all" || item.category.typeId === Number(type);
+      const matchesCategory =
+        category === "all" || item.categoryId === Number(category);
+      const matchesStatus =
+        status === "all" ||
+        (status === "active" ? item.isActive : !item.isActive);
+      return matchesSearch && matchesType && matchesCategory && matchesStatus;
+    });
+  }, [category, data, search, status, type]);
 
   return (
-    <div className="w-full">
-      {/* Filters */}
-      <div className="flex flex-wrap items-center justify-between py-4 gap-2">
-        <div className="flex items-center gap-2 flex-wrap">
-          <Input
-            placeholder="Filter by name..."
-            value={filterValue}
-            onChange={(event) => {
-              setFilterValue(event.target.value);
-              table.getColumn("name")?.setFilterValue(event.target.value);
-            }}
-            className="w-[200px]"
-          />
-          {types.length > 0 && (
-            <Select
-              value={typeFilter}
-              onValueChange={(v) => {
-                setTypeFilter(v);
-                setCategoryFilter("all");
-              }}
-            >
-              <SelectTrigger className="w-[160px]">
-                <SelectValue placeholder="Type" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Types</SelectItem>
-                {types.map((t) => (
-                  <SelectItem key={t.id} value={String(t.id)}>
-                    {t.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          )}
-          {filteredCategories.length > 0 && (
-            <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-              <SelectTrigger className="w-[180px]">
-                <SelectValue placeholder="Category" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Categories</SelectItem>
-                {filteredCategories.map((c) => (
-                  <SelectItem key={c.id} value={String(c.id)}>
-                    {c.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          )}
-          <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger className="w-[130px]">
-              <SelectValue placeholder="Status" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Status</SelectItem>
-              <SelectItem value="active">Active</SelectItem>
-              <SelectItem value="inactive">Inactive</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-        <NewSubcategoryDialog variant="standalone" categories={categories} />
-      </div>
-
-      {/* Table */}
-      <div className="rounded-lg border shadow-sm overflow-hidden">
-        <Table>
-          <TableHeader>
-            {table.getHeaderGroups().map((headerGroup) => (
-              <TableRow key={headerGroup.id} className="bg-muted/50">
-                {headerGroup.headers.map((header) => (
-                  <TableHead key={header.id} className="font-semibold">
-                    {header.isPlaceholder
-                      ? null
-                      : flexRender(
-                          header.column.columnDef.header,
-                          header.getContext(),
-                        )}
-                  </TableHead>
-                ))}
-              </TableRow>
-            ))}
-          </TableHeader>
-          <TableBody>
-            {table.getRowModel().rows?.length ? (
-              table.getRowModel().rows.map((row) => (
-                <TableRow
-                  key={row.id}
-                  data-state={row.getIsSelected() && "selected"}
-                  className="hover:bg-muted/50 transition-colors"
-                >
-                  {row.getVisibleCells().map((cell) => (
-                    <TableCell key={cell.id} className="py-3">
-                      {flexRender(
-                        cell.column.columnDef.cell,
-                        cell.getContext(),
-                      )}
-                    </TableCell>
-                  ))}
-                </TableRow>
-              ))
-            ) : (
-              <TableRow>
-                <TableCell
-                  colSpan={columns.length}
-                  className="h-24 text-center"
-                >
-                  No subcategories found.
-                </TableCell>
-              </TableRow>
-            )}
-          </TableBody>
-        </Table>
-      </div>
-
-      {/* Pagination */}
-      <div className="flex items-center justify-end space-x-2 py-4">
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => table.previousPage()}
-          disabled={!table.getCanPreviousPage()}
-        >
-          Previous
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => table.nextPage()}
-          disabled={!table.getCanNextPage()}
-        >
-          Next
-        </Button>
-      </div>
+    <div className="space-y-4">
+      <SetupToolbar
+        filterDefinitions={[
+          {
+            key: "type",
+            label: "Type",
+            value: type,
+            onChange: (value) => {
+              void setType(value);
+              void setCategory("all");
+            },
+            options: [
+              { value: "all", label: "All types" },
+              ...types.map((option) => ({
+                value: String(option.id),
+                label: option.name,
+              })),
+            ],
+          },
+          {
+            key: "category",
+            label: "Category",
+            value: category,
+            onChange: (value) => void setCategory(value),
+            options: [
+              { value: "all", label: "All categories" },
+              ...filteredCategories.map((option) => ({
+                value: String(option.id),
+                label: option.name,
+              })),
+            ],
+            widthClassName: "md:w-48",
+          },
+          {
+            key: "status",
+            label: "Status",
+            value: status,
+            onChange: (value) => void setStatus(value),
+            options: [
+              { value: "all", label: "All statuses" },
+              { value: "active", label: "Active" },
+              { value: "inactive", label: "Inactive" },
+            ],
+          },
+        ]}
+        hasActiveFilters={Boolean(
+          search || type !== "all" || category !== "all" || status !== "all",
+        )}
+        onClear={() => {
+          void setSearch("");
+          void setType("all");
+          void setCategory("all");
+          void setStatus("all");
+        }}
+        onSearchChange={(value) => void setSearch(value)}
+        searchPlaceholder="Search Sub Category Name"
+        searchValue={search}
+      />
+      <SetupEntityTable
+        columns={columns}
+        data={filteredData}
+        emptyAction={
+          data.length === 0 &&
+          !search &&
+          type === "all" &&
+          category === "all" &&
+          status === "all" ? (
+            <NewSubcategoryDialog
+              categories={categories}
+              triggerLabel="Create First Sub Category"
+              variant="standalone"
+            />
+          ) : undefined
+        }
+        emptyDescription={
+          search || type !== "all" || category !== "all" || status !== "all"
+            ? "No Sub Categories match the current search and filters."
+            : "Create the first Sub Category below an existing Category."
+        }
+        emptyTitle={
+          search || type !== "all" || category !== "all" || status !== "all"
+            ? "No matching Sub Categories"
+            : "No Sub Category found"
+        }
+        getRowId={(row) => String(row.id)}
+        mobile={{
+          href: (row) => `/dashboard/admin/subcategories/${row.id}`,
+          title: (row) => row.name,
+          description: (row) => row.skuCode ?? "—",
+          meta: (row) => [row.category.name],
+          status: (row) => <ActiveStatusBadge isActive={row.isActive} />,
+        }}
+      />
     </div>
   );
 }

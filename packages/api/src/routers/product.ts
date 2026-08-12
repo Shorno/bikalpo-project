@@ -1,4 +1,5 @@
 import { db, FULFILLMENT_UNIT_CODES } from "@bikalpo-project/db";
+import { validateBrandCreationSubmission } from "@bikalpo-project/db/brand-creation";
 import {
   type AdminProductGenerationTemplateDetails,
   adminProductGenerationTemplate,
@@ -99,7 +100,6 @@ const createProductSchema = z.object({
     .min(1)
     .regex(/^\d+(\.\d{1,2})?$/)
     .default("1"),
-  inventoryUnit: z.enum(FULFILLMENT_UNIT_CODES).default("unit"),
   conversionEnabled: z.boolean().default(false),
   inventoryLooseUnitEnabled: z.boolean().default(false),
   inventoryLooseUnit: z.enum(FULFILLMENT_UNIT_CODES).default("kg"),
@@ -729,6 +729,13 @@ export const productRouter = {
               "Only admin-created core products can generate admin products",
           });
         }
+        const submission = validateBrandCreationSubmission(
+          core.brandCreationMode,
+          brandIds.length,
+        );
+        if (!submission.valid) {
+          throw new ORPCError("BAD_REQUEST", { message: submission.message });
+        }
 
         // Product existence is the single source of truth for "already
         // created". A leftover generation template does not block Add — it is
@@ -815,7 +822,6 @@ export const productRouter = {
           stockTrackingEnabled: productData.stockTrackingEnabled,
           minimumOrderEnabled: productData.minimumOrderEnabled,
           minimumOrderQty: productData.minimumOrderQty,
-          inventoryUnit: productData.inventoryUnit,
           conversionEnabled: productData.conversionEnabled,
           inventoryLooseUnitEnabled: productData.inventoryLooseUnitEnabled,
           inventoryLooseUnit: productData.inventoryLooseUnit,
@@ -919,7 +925,6 @@ export const productRouter = {
               stockTrackingEnabled: templateDetails.stockTrackingEnabled,
               minimumOrderEnabled: templateDetails.minimumOrderEnabled,
               minimumOrderQty: templateDetails.minimumOrderQty,
-              inventoryUnit: templateDetails.inventoryUnit,
               conversionEnabled: templateDetails.conversionEnabled,
               inventoryLooseUnitEnabled:
                 templateDetails.inventoryLooseUnitEnabled,
