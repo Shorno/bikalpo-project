@@ -17,6 +17,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useMyOrders, useProfile } from "@/hooks/use-customer-api";
+import { useToLetPropertyNavigation } from "@/hooks/use-to-let-property-api";
 import { formatPrice } from "@/utils/currency";
 
 function getStatusColor(status: string) {
@@ -40,6 +41,7 @@ function getStatusColor(status: string) {
 export function AccountOverviewClient() {
   const { data: ordersData, isLoading: ordersLoading } = useMyOrders();
   const { data: profileData, isLoading: profileLoading } = useProfile();
+  const propertyNavigation = useToLetPropertyNavigation();
   type CustomerOrder = NonNullable<typeof ordersData>["orders"][number];
 
   const isLoading = ordersLoading || profileLoading;
@@ -126,7 +128,7 @@ export function AccountOverviewClient() {
 
       {/* To-Let Quick Access */}
       <Link
-        href="/account/to-let/properties"
+        href={propertyNavigation.href}
         className="group flex max-w-sm items-center gap-4 rounded-lg border border-gray-200 bg-white p-4 transition-colors hover:border-emerald-200 hover:bg-emerald-50/40"
       >
         <span className="flex size-11 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600">
@@ -134,10 +136,10 @@ export function AccountOverviewClient() {
         </span>
         <span className="min-w-0 flex-1">
           <span className="block font-semibold text-gray-900">
-            My Property for To-let
+            {propertyNavigation.label}
           </span>
           <span className="mt-0.5 block text-sm text-gray-500">
-            View your property and booking space
+            {propertyNavigation.description}
           </span>
         </span>
         <ArrowRight className="size-4 shrink-0 text-gray-400 transition-transform group-hover:translate-x-0.5 group-hover:text-emerald-600" />

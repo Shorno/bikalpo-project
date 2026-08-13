@@ -9,10 +9,13 @@ import {
   useMemo,
   useState,
 } from "react";
+import { cn } from "@/lib/utils";
 
 interface ListingImageCarouselProps {
   imageUrls: string[];
   alt: string;
+  className?: string;
+  sizes?: string;
 }
 
 const AUTO_ADVANCE_MS = 5_000;
@@ -20,6 +23,8 @@ const AUTO_ADVANCE_MS = 5_000;
 export function ListingImageCarousel({
   imageUrls,
   alt,
+  className,
+  sizes = "(max-width: 640px) 100vw, (max-width: 1280px) 50vw, 33vw",
 }: ListingImageCarouselProps) {
   const images = useMemo(
     () =>
@@ -69,7 +74,12 @@ export function ListingImageCarousel({
 
   if (images.length === 0) {
     return (
-      <div className="flex aspect-video items-center justify-center bg-slate-100 text-sm text-slate-500">
+      <div
+        className={cn(
+          "flex aspect-video items-center justify-center bg-slate-100 text-sm text-slate-500",
+          className,
+        )}
+      >
         No photo available
       </div>
     );
@@ -80,7 +90,10 @@ export function ListingImageCarousel({
   return (
     <div
       role="region"
-      className="group relative aspect-video overflow-hidden bg-slate-100"
+      className={cn(
+        "group relative aspect-video overflow-hidden bg-slate-100",
+        className,
+      )}
       aria-roledescription="carousel"
       aria-label={`${alt} photos`}
       onMouseEnter={() => setIsInteractionPaused(true)}
@@ -93,7 +106,7 @@ export function ListingImageCarousel({
         alt={`${alt} photo ${activeIndex + 1} of ${images.length}`}
         fill
         className="object-cover"
-        sizes="(max-width: 640px) 100vw, (max-width: 1280px) 50vw, 33vw"
+        sizes={sizes}
         unoptimized={activeImage.startsWith("http")}
       />
 

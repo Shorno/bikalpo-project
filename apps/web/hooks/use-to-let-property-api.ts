@@ -7,10 +7,33 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { authClient } from "@/lib/auth-client";
 import { orpc } from "@/utils/orpc";
 
-export function useMyToLetProperties() {
-  return useQuery(orpc.toLetProperty.listMine.queryOptions());
+export function useMyToLetProperties(enabled = true) {
+  return useQuery({
+    ...orpc.toLetProperty.listMine.queryOptions(),
+    enabled,
+  });
+}
+
+export function useToLetPropertyNavigation() {
+  const { data: session } = authClient.useSession();
+  const isConsumer = session?.user?.role === "consumer";
+  const propertiesQuery = useMyToLetProperties(isConsumer);
+  const propertyCount = propertiesQuery.data?.properties.length ?? 0;
+  const needsRegistration =
+    isConsumer && propertiesQuery.isSuccess && propertyCount === 0;
+
+  return {
+    href: needsRegistration
+      ? "/account/to-let/properties/new"
+      : "/account/to-let/properties",
+    label: needsRegistration ? "Property Registration" : "My Properties",
+    description: needsRegistration
+      ? "Register your property to start using To-Let"
+      : "View your properties and manage To-Let spaces",
+  };
 }
 
 export function useMyToLetProperty(propertyCode?: string) {
@@ -50,6 +73,21 @@ export function useUpdateToLetProperty() {
         queryKey: orpc.toLetProperty.getMine.key({
           input: { propertyCode: variables.propertyCode },
         }),
+      });
+    },
+    onError: (error) => toast.error(error.message),
+  });
+}
+
+export function useArchiveToLetProperty() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    ...orpc.toLetProperty.archiveProperty.mutationOptions(),
+    onSuccess: () => {
+      toast.success("Property registration deleted");
+      queryClient.invalidateQueries({
+        queryKey: orpc.toLetProperty.listMine.key(),
       });
     },
     onError: (error) => toast.error(error.message),
@@ -141,6 +179,9 @@ function invalidateUnitListingQueries(
       input: { propertyCode: variables.propertyCode },
     }),
   });
+  queryClient.invalidateQueries({
+    queryKey: orpc.toLetProperty.listMine.key(),
+  });
 }
 
 export function useCreateToLetUnitListing() {
@@ -185,6 +226,38 @@ export function usePauseToLetUnitListing() {
     ...orpc.toLetUnitListing.pause.mutationOptions(),
     onSuccess: (_data, variables) => {
       toast.success("Listing unpublished");
+      invalidateUnitListingQueries(queryClient, variables);
+    },
+    onError: (error) => toast.error(error.message),
+  });
+}
+
+export function useMarkToLetUnitRented() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    ...orpc.toLetUnitListing.markRented.mutationOptions(),
+    onSuccess: (_data, variables) => {
+      toast.success("Unit marked as rented");
+      invalidateUnitListingQueries(queryClient, variables);
+      queryClient.invalidateQueries({
+        queryKey: orpc.toLetBooking.listOwnerForUnit.key({
+          input: {
+            propertyCode: variables.propertyCode,
+            unitCode: variables.unitCode,
+          },
+        }),
+      });
+    },
+    onError: (error) => toast.error(error.message),
+  });
+}
+
+export function useReactivateToLetUnit() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    ...orpc.toLetUnitListing.reactivateUnit.mutationOptions(),
+    onSuccess: (_data, variables) => {
+      toast.success("Unit is vacant and ready to re-list");
       invalidateUnitListingQueries(queryClient, variables);
     },
     onError: (error) => toast.error(error.message),

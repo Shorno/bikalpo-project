@@ -44,6 +44,20 @@ export interface ToLetUnitListingView {
   updatedAt: Date | string;
 }
 
+export interface ToLetOwnerListingSummary {
+  listingCode: string;
+  title: string;
+  description: string | null;
+  monthlyRent: number;
+  imageUrls: string[];
+  videoUrl: string | null;
+  visibility: ListingVisibility;
+  status: ListingStatus;
+  viewCount: number;
+  publishedAt: Date | string | null;
+  bookingCount: number;
+}
+
 export interface ToLetUnitView {
   id?: string;
   unitCode: string;
@@ -61,6 +75,7 @@ export interface ToLetUnitView {
   isFurnished: boolean;
   description: string | null;
   imageUrls: string[];
+  currentListing?: ToLetOwnerListingSummary | null;
   createdAt?: Date | string;
   updatedAt?: Date | string;
 }

@@ -12,7 +12,8 @@ export const listingVisibilityOptions = [
   {
     value: "public",
     label: "Public",
-    description: "Visible on To-Let browse pages and the permanent QR page.",
+    description:
+      "Shown on the To-Let landing page, search, map and the permanent QR page.",
   },
   {
     value: "qr_only",

@@ -1,5 +1,6 @@
 "use client";
 
+import { isToLetPublicListingRenewalDue } from "@bikalpo-project/api/routers/helpers/tolet-marketplace-visibility";
 import {
   ArrowLeft,
   ArrowRight,
@@ -7,7 +8,6 @@ import {
   CheckCircle2,
   ExternalLink,
   Eye,
-  Globe2,
   Loader2,
   PauseCircle,
   QrCode,
@@ -35,7 +35,6 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import {
   Select,
   SelectContent,
@@ -323,6 +322,15 @@ function LoadedListingForm({
     initialValues(property, unit, listing),
   );
   const [errors, setErrors] = useState<FieldErrors>({});
+  const isPublicListingRenewalDue = listing
+    ? isToLetPublicListingRenewalDue({
+        listingStatus: listing.status,
+        visibility: listing.visibility,
+        unitStatus: unit.status,
+        publishedAt: listing.publishedAt ? new Date(listing.publishedAt) : null,
+        createdAt: new Date(listing.createdAt),
+      })
+    : false;
 
   const isPending =
     createListing.isPending ||
@@ -428,6 +436,20 @@ function LoadedListingForm({
     }
   };
 
+  const renewVisibility = async () => {
+    if (!listing || !isPublicListingRenewalDue) return;
+    try {
+      await publishListing.mutateAsync({
+        propertyCode: property.propertyCode,
+        unitCode: unit.unitCode,
+        listingCode: listing.listingCode,
+      });
+      router.refresh();
+    } catch {
+      // Mutation hook displays the API error.
+    }
+  };
+
   const liveHref =
     listing?.visibility === "public"
       ? `/to-let/listings/${listing.listingCode}`
@@ -440,9 +462,23 @@ function LoadedListingForm({
         description={`${property.name} · ${unit.name} · ${unit.unitCode}`}
         backHref={`/account/to-let/properties/${property.propertyCode}/units/${unit.unitCode}`}
         action={
-          listing?.status === "active" ? (
+          isPublicListingRenewalDue ? (
+            <Button
+              type="button"
+              onClick={renewVisibility}
+              disabled={isPending}
+              className="bg-emerald-600 hover:bg-emerald-700"
+            >
+              {publishListing.isPending ? (
+                <Loader2 className="animate-spin" />
+              ) : (
+                <Upload />
+              )}
+              Renew visibility
+            </Button>
+          ) : listing?.status === "active" ? (
             <Button variant="outline" asChild>
-              <Link href={liveHref} target="_blank">
+              <Link href={liveHref} target="_blank" prefetch={false}>
                 <ExternalLink /> Open Live Page
               </Link>
             </Button>
@@ -875,45 +911,47 @@ function LoadedListingForm({
 
           <FormSection
             title="Listing visibility"
-            description="Choose how visitors can discover this Unit."
+            description="Choose where this active Listing can be discovered."
           >
-            <RadioGroup
-              value={values.visibility}
-              onValueChange={(value) =>
-                update(
-                  "visibility",
-                  value as ToLetListingFormValues["visibility"],
-                )
-              }
-              className="grid gap-3 sm:grid-cols-2"
-            >
-              {listingVisibilityOptions.map((option) => (
-                <label
-                  key={option.value}
-                  className={cn(
-                    "flex cursor-pointer items-start gap-3 rounded-lg border p-4",
-                    values.visibility === option.value
-                      ? "border-emerald-500 bg-emerald-50"
-                      : "border-gray-200 bg-white",
-                  )}
-                >
-                  <RadioGroupItem value={option.value} className="mt-1" />
-                  <span>
-                    <span className="flex items-center gap-2 font-medium text-gray-900">
-                      {option.value === "public" ? (
-                        <Globe2 className="size-4 text-emerald-600" />
-                      ) : (
-                        <QrCode className="size-4 text-emerald-600" />
+            <div className="grid gap-3 sm:grid-cols-2">
+              {listingVisibilityOptions.map((option) => {
+                const selected = values.visibility === option.value;
+                const Icon = option.value === "public" ? Eye : QrCode;
+                return (
+                  <button
+                    key={option.value}
+                    type="button"
+                    aria-pressed={selected}
+                    onClick={() => update("visibility", option.value)}
+                    className={cn(
+                      "flex items-start gap-3 rounded-lg border p-4 text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600",
+                      selected
+                        ? "border-emerald-500 bg-emerald-50"
+                        : "border-gray-200 bg-white hover:border-emerald-300",
+                    )}
+                  >
+                    <span
+                      className={cn(
+                        "flex size-9 shrink-0 items-center justify-center rounded-lg",
+                        selected
+                          ? "bg-emerald-600 text-white"
+                          : "bg-gray-100 text-gray-500",
                       )}
-                      {option.label}
+                    >
+                      <Icon className="size-4.5" />
                     </span>
-                    <span className="mt-1 block text-xs leading-5 text-gray-500">
-                      {option.description}
+                    <span>
+                      <span className="block font-medium text-gray-900">
+                        {option.label}
+                      </span>
+                      <span className="mt-1 block text-xs leading-5 text-gray-600">
+                        {option.description}
+                      </span>
                     </span>
-                  </span>
-                </label>
-              ))}
-            </RadioGroup>
+                  </button>
+                );
+              })}
+            </div>
             <FieldError message={errors.visibility} />
           </FormSection>
         </div>
@@ -934,10 +972,7 @@ function LoadedListingForm({
                 ["Preferred tenant", humanize(values.preferredTenant)],
                 ["Photos", `${values.imageUrls.length} uploaded`],
                 ["Video", values.videoUrl ? "Added" : "Not added"],
-                [
-                  "Visibility",
-                  values.visibility === "public" ? "Public + QR" : "QR Only",
-                ],
+                ["Visibility", humanize(values.visibility)],
                 ["Contact", `${property.ownerName} · ${property.mobileNumber}`],
               ].map(([label, value]) => (
                 <div key={label} className="rounded-lg bg-gray-50 p-3">
@@ -993,7 +1028,9 @@ function LoadedListingForm({
               <p>
                 {listing?.status === "active"
                   ? "This listing is live. Saving changes updates the live page immediately."
-                  : "Publishing makes the listing live while the Unit remains Vacant. Booking will change Unit status in the next phase."}
+                  : values.visibility === "public"
+                    ? "Publishing adds this Listing to the To-Let landing page, search and map while the Unit remains Vacant."
+                    : "Publishing adds this Listing to the permanent Property QR page while the Unit remains Vacant."}
               </p>
             </div>
           </FormSection>
@@ -1013,7 +1050,7 @@ function LoadedListingForm({
               </div>
               <div className="mt-4 flex flex-wrap gap-2">
                 <Button asChild className="bg-emerald-600 hover:bg-emerald-700">
-                  <Link href={liveHref} target="_blank">
+                  <Link href={liveHref} target="_blank" prefetch={false}>
                     <Eye /> View Listing
                   </Link>
                 </Button>
@@ -1091,8 +1128,9 @@ function LoadedListingForm({
                         Unpublish this listing?
                       </AlertDialogTitle>
                       <AlertDialogDescription>
-                        It will disappear from Public and QR pages. You can edit
-                        and publish it again later.
+                        It will disappear from the To-Let landing/search results
+                        and the Property QR page. You can edit and publish it
+                        again later.
                       </AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter>

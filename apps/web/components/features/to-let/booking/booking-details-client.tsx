@@ -19,9 +19,9 @@ import {
   X,
   XCircle,
 } from "lucide-react";
-import Image from "next/image";
 import Link from "next/link";
 import { type ReactNode, useState } from "react";
+import { PublicListingGallery } from "@/components/features/to-let/public-listing-gallery";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -35,7 +35,9 @@ import {
 } from "@/hooks/use-to-let-booking-api";
 import {
   rentalFromResponse,
+  type ToLetAlertCategory,
   type ToLetRentalContractView,
+  toLetAlertCategoryOptions,
   useAddToLetRentalComment,
   useRequestToLetLeave,
   useToLetRental,
@@ -75,6 +77,38 @@ const statusPresentation: Record<
     detail: "You cancelled this booking request. It remains in your history.",
     className: "border-gray-200 bg-gray-100 text-gray-700",
     icon: XCircle,
+  },
+};
+
+const rentalStatusPresentation: Record<
+  ToLetRentalContractView["status"],
+  {
+    label: string;
+    detail: string;
+    className: string;
+    icon: React.ElementType;
+  }
+> = {
+  active: {
+    label: "Occupied · Contract active",
+    detail:
+      "Your rental contract is active. Rent details and monthly payment records are available below.",
+    className: "border-emerald-200 bg-emerald-50 text-emerald-800",
+    icon: CheckCircle2,
+  },
+  leaving: {
+    label: "Leaving",
+    detail:
+      "Your leave request is scheduled and rental access continues until the contract access end date.",
+    className: "border-blue-200 bg-blue-50 text-blue-800",
+    icon: DoorOpen,
+  },
+  completed: {
+    label: "Completed · Rental history",
+    detail:
+      "This rental has ended. Its contract and verified payment record remain in your rental history.",
+    className: "border-gray-200 bg-gray-100 text-gray-700",
+    icon: CheckCircle2,
   },
 };
 
@@ -220,7 +254,12 @@ function RentItem({
 
 function DetailsLoading() {
   return (
-    <div className="space-y-5">
+    <div
+      className="space-y-5"
+      role="status"
+      aria-label="Loading booking details"
+    >
+      <span className="sr-only">Loading booking details</span>
       <Skeleton className="h-8 w-44" />
       <Skeleton className="h-80 w-full" />
       <Skeleton className="h-72 w-full" />
@@ -405,13 +444,15 @@ export function BookingDetailsClient({ bookingCode }: { bookingCode: string }) {
 
 function BookingDetails({ booking }: { booking: ToLetBookingRequestView }) {
   const snapshot = booking.offerSnapshot;
-  const status = statusPresentation[booking.status];
-  const StatusIcon = status.icon;
   const rentalQuery = useToLetRental(booking.bookingCode);
   const contract = rentalFromResponse(rentalQuery.data);
+  const status = contract
+    ? rentalStatusPresentation[contract.status]
+    : statusPresentation[booking.status];
+  const StatusIcon = status.icon;
   const leave = useRequestToLetLeave();
   const [alert, setAlert] = useState<{
-    preferredCategory: string;
+    preferredCategory: ToLetAlertCategory;
     preferredLocation: string;
     minimumSizeSqFt: number;
     minimumBedrooms: number;
@@ -420,7 +461,7 @@ function BookingDetails({ booking }: { booking: ToLetBookingRequestView }) {
     balconyPreference: "required" | "optional" | "not_required";
     preferredFloor: string;
   }>({
-    preferredCategory: snapshot.unit.unitType,
+    preferredCategory: snapshot.unit.unitType as ToLetAlertCategory,
     preferredLocation: snapshot.property.location,
     minimumSizeSqFt: snapshot.unit.sizeSqFt,
     minimumBedrooms: snapshot.unit.bedrooms,
@@ -471,21 +512,8 @@ function BookingDetails({ booking }: { booking: ToLetBookingRequestView }) {
 
       <section className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
         <div className="grid lg:grid-cols-[minmax(0,1.1fr)_minmax(20rem,0.9fr)]">
-          <div className="relative min-h-72 bg-gray-100 sm:min-h-96">
-            {images[0] ? (
-              <Image
-                src={images[0]}
-                alt={snapshot.title}
-                fill
-                className="object-cover"
-                sizes="(max-width: 1024px) 100vw, 55vw"
-                unoptimized={images[0].startsWith("http")}
-              />
-            ) : (
-              <div className="flex h-full min-h-72 items-center justify-center text-gray-300">
-                <Building2 className="size-12" />
-              </div>
-            )}
+          <div className="bg-gray-50 p-3 sm:p-4">
+            <PublicListingGallery imageUrls={images} alt={snapshot.title} />
           </div>
 
           <div className="flex flex-col justify-between gap-6 p-5 sm:p-6">
@@ -509,7 +537,9 @@ function BookingDetails({ booking }: { booking: ToLetBookingRequestView }) {
                 />
                 <InfoTile
                   label="Monthly rent"
-                  value={formatMoney(snapshot.monthlyRent)}
+                  value={formatMoney(
+                    contract?.monthlyRent ?? snapshot.monthlyRent,
+                  )}
                 />
                 <InfoTile
                   label={
@@ -568,26 +598,6 @@ function BookingDetails({ booking }: { booking: ToLetBookingRequestView }) {
             </div>
           </div>
         </div>
-
-        {images.length > 1 ? (
-          <div className="flex gap-3 overflow-x-auto border-t border-gray-100 p-4">
-            {images.slice(1, 6).map((imageUrl) => (
-              <div
-                key={imageUrl}
-                className="relative h-20 w-28 shrink-0 overflow-hidden rounded-lg bg-gray-100"
-              >
-                <Image
-                  src={imageUrl}
-                  alt=""
-                  fill
-                  className="object-cover"
-                  sizes="112px"
-                  unoptimized={imageUrl.startsWith("http")}
-                />
-              </div>
-            ))}
-          </div>
-        ) : null}
       </section>
 
       {contract ? (
@@ -752,46 +762,43 @@ function BookingDetails({ booking }: { booking: ToLetBookingRequestView }) {
         </div>
         <div className="mt-4 flex items-center gap-3 rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800">
           <LockKeyhole className="size-5 shrink-0" />
-          Payment method: Monthly OTP Verification will activate only after a
-          rental contract is active.
+          {contract
+            ? "Payment method: Monthly OTP Verification. Enter the receiver name and the owner-provided OTP for each rent cycle."
+            : "Payment method: Monthly OTP Verification will activate only after a rental contract is active."}
         </div>
       </Section>
 
-      <Section
-        icon={CalendarDays}
-        eyebrow="Payment history"
-        title="Monthly rent cycles"
-        description="Payment history must stay private until the booking is confirmed and the rental contract becomes active."
-      >
-        <div className="overflow-hidden rounded-lg border border-gray-200">
-          <div className="grid grid-cols-[1fr_1.2fr_1fr_0.8fr] gap-2 bg-gray-50 px-4 py-3 text-xs font-semibold text-gray-500 sm:grid-cols-5">
-            <span>Month</span>
-            <span>Reference</span>
-            <span>Rent</span>
-            <span>OTP</span>
-            <span className="hidden sm:block">Payment</span>
-          </div>
-          {contract ? (
-            contract.payments.map((payment) => (
-              <PaymentRow
-                key={payment.cycleMonth}
-                bookingCode={booking.bookingCode}
-                payment={payment}
-              />
-            ))
-          ) : (
-            <div className="flex flex-col items-center justify-center px-5 py-10 text-center">
-              <LockKeyhole className="size-9 text-gray-300" />
-              <p className="mt-3 font-semibold text-gray-900">
-                Contract activation required
-              </p>
-              <p className="mt-1 max-w-md text-sm leading-6 text-gray-500">
-                No payment record is generated from a Booking Request alone.
-              </p>
+      {contract ? (
+        <Section
+          icon={CalendarDays}
+          eyebrow="Payment history"
+          title="Monthly rent cycles"
+          description="This private history is available because the booking is confirmed and a rental contract has been activated."
+        >
+          <div className="overflow-hidden rounded-lg border border-gray-200">
+            <div className="grid grid-cols-[1fr_1.2fr_1fr_0.8fr] gap-2 bg-gray-50 px-4 py-3 text-xs font-semibold text-gray-500 sm:grid-cols-5">
+              <span>Month</span>
+              <span>Reference</span>
+              <span>Rent</span>
+              <span>OTP</span>
+              <span className="hidden sm:block">Payment</span>
             </div>
-          )}
-        </div>
-      </Section>
+            {contract.payments.length > 0 ? (
+              contract.payments.map((payment) => (
+                <PaymentRow
+                  key={payment.cycleMonth}
+                  bookingCode={booking.bookingCode}
+                  payment={payment}
+                />
+              ))
+            ) : (
+              <p className="px-4 py-8 text-center text-sm text-gray-500">
+                No monthly rent cycle has been generated yet.
+              </p>
+            )}
+          </div>
+        </Section>
+      ) : null}
 
       <Section
         icon={Bell}
@@ -805,16 +812,22 @@ function BookingDetails({ booking }: { booking: ToLetBookingRequestView }) {
         >
           <label className="text-xs font-medium text-gray-700">
             Preferred category
-            <Input
-              className="mt-1"
+            <select
+              className="mt-1 h-9 w-full rounded-md border border-gray-200 bg-white px-3"
               value={alert.preferredCategory}
               onChange={(event) =>
                 setAlert((current) => ({
                   ...current,
-                  preferredCategory: event.target.value,
+                  preferredCategory: event.target.value as ToLetAlertCategory,
                 }))
               }
-            />
+            >
+              {toLetAlertCategoryOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
           </label>
           <label className="text-xs font-medium text-gray-700">
             Preferred location

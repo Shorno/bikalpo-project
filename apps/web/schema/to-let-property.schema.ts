@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-const httpUrl = z.string().trim().pipe(z.httpUrl());
+const httpUrl = z.string().trim().max(2048).pipe(z.httpUrl());
 
 const optionalUrl = z.union([z.literal(""), httpUrl]);
 
@@ -118,7 +118,7 @@ export const propertyBuildingSchema = z.object({
     .number()
     .int("Use a whole number")
     .min(1, "At least one floor is required")
-    .max(300),
+    .max(500),
   declaredTotalUnits: z.coerce
     .number()
     .int("Use a whole number")
@@ -132,7 +132,7 @@ export const propertyBuildingSchema = z.object({
   hasWaterSupply: z.boolean(),
   hasGasConnection: z.boolean(),
   hasElectricity: z.boolean(),
-  description: z.string().trim().max(3000),
+  description: z.string().trim().max(5000),
 });
 
 export const propertyVerificationSchema = z.object({

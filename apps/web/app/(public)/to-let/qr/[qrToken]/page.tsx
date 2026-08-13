@@ -99,11 +99,7 @@ export default async function QrPropertyPage({ params }: QrPropertyPageProps) {
                 <PublicUnitListingCard
                   key={listing.listingCode}
                   listing={listing}
-                  href={
-                    listing.visibility === "public"
-                      ? `/to-let/listings/${listing.listingCode}`
-                      : null
-                  }
+                  href={`/to-let/qr/${qrToken}/listings/${listing.listingCode}`}
                   phone={listing.contact.phone}
                 />
               ))}

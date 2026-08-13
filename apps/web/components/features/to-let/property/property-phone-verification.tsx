@@ -1,11 +1,14 @@
 "use client";
 
 import { CheckCircle2, Loader2, RefreshCw, ShieldCheck } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { authClient } from "@/lib/auth-client";
+import { client } from "@/utils/orpc";
+
+const EMPTY_OTP = ["", "", "", "", "", ""];
 
 function toBangladeshE164(phone: string) {
   const trimmed = phone.trim();
@@ -26,14 +29,18 @@ export function PropertyPhoneVerification({
   verified: boolean;
   onVerified: () => void;
 }) {
-  const [code, setCode] = useState("");
+  const [otpValues, setOtpValues] = useState([...EMPTY_OTP]);
+  const [otpAutoFilling, setOtpAutoFilling] = useState(false);
   const [sent, setSent] = useState(false);
   const [sending, setSending] = useState(false);
   const [verifying, setVerifying] = useState(false);
   const [cooldown, setCooldown] = useState(0);
-  const autoVerifiedPhoneRef = useRef("");
+  const autoFillTimersRef = useRef<number[]>([]);
+  const autoSendAttemptedRef = useRef(false);
   const normalizedPhone = useMemo(() => toBangladeshE164(phone), [phone]);
+  const activePhoneRef = useRef(normalizedPhone);
   const isDevelopment = process.env.NODE_ENV === "development";
+  const code = otpValues.join("");
 
   useEffect(() => {
     if (cooldown <= 0) return;
@@ -45,43 +52,49 @@ export function PropertyPhoneVerification({
   }, [cooldown]);
 
   useEffect(() => {
-    if (
-      !isDevelopment ||
-      verified ||
-      !normalizedPhone ||
-      autoVerifiedPhoneRef.current === normalizedPhone
-    ) {
-      return;
+    activePhoneRef.current = normalizedPhone;
+    for (const timer of autoFillTimersRef.current) {
+      window.clearTimeout(timer);
     }
+    autoFillTimersRef.current = [];
+    setOtpValues([...EMPTY_OTP]);
+    setOtpAutoFilling(false);
+    setSent(false);
+    setCooldown(0);
+    autoSendAttemptedRef.current = false;
 
-    autoVerifiedPhoneRef.current = normalizedPhone;
-    onVerified();
-    toast.success("Phone automatically verified for local development");
-  }, [isDevelopment, normalizedPhone, onVerified, verified]);
+    return () => {
+      for (const timer of autoFillTimersRef.current) {
+        window.clearTimeout(timer);
+      }
+      autoFillTimersRef.current = [];
+    };
+  }, [normalizedPhone]);
 
-  const verifyWithCode = async (otpCode: string, automatic = false) => {
+  const verifyWithCode = async (otpCode: string) => {
     if (!/^\d{6}$/.test(otpCode)) {
       toast.error("Enter the 6-digit verification code");
       return false;
     }
 
+    const requestedPhone = normalizedPhone;
     setVerifying(true);
     try {
       const result = await authClient.phoneNumber.verify({
-        phoneNumber: normalizedPhone,
+        phoneNumber: requestedPhone,
         code: otpCode,
         updatePhoneNumber: true,
       });
+      if (activePhoneRef.current !== requestedPhone) return false;
       if (result.error) {
         toast.error(result.error.message || "Invalid verification code");
         return false;
       }
       onVerified();
-      toast.success(
-        automatic ? "Phone number verified automatically" : "Phone verified",
-      );
+      toast.success("Phone verified");
       return true;
     } catch (error) {
+      if (activePhoneRef.current !== requestedPhone) return false;
       toast.error(
         error instanceof Error ? error.message : "Verification failed",
       );
@@ -91,24 +104,76 @@ export function PropertyPhoneVerification({
     }
   };
 
-  const sendOtp = async () => {
-    if (!/^\+8801\d{9}$/.test(normalizedPhone)) {
-      toast.error("Enter a valid Bangladesh mobile number");
+  const sendOtp = useCallback(async () => {
+    const isValidPhone = isDevelopment
+      ? /^\+\d{5,15}$/.test(normalizedPhone)
+      : /^\+8801\d{9}$/.test(normalizedPhone);
+
+    if (!isValidPhone) {
+      toast.error(
+        isDevelopment
+          ? "Enter a mobile number with at least 5 digits"
+          : "Enter a valid Bangladesh mobile number",
+      );
       return;
     }
 
+    const requestedPhone = normalizedPhone;
     setSending(true);
     try {
       const result = await authClient.phoneNumber.sendOtp({
-        phoneNumber: normalizedPhone,
+        phoneNumber: requestedPhone,
       });
+      if (activePhoneRef.current !== requestedPhone) return;
       if (result.error) {
         toast.error(result.error.message || "Could not send OTP");
         return;
       }
+
+      for (const timer of autoFillTimersRef.current) {
+        window.clearTimeout(timer);
+      }
+      autoFillTimersRef.current = [];
+      setOtpValues([...EMPTY_OTP]);
+      setOtpAutoFilling(false);
       setSent(true);
       setCooldown(45);
       toast.success("Verification code sent");
+
+      if (isDevelopment) {
+        setOtpAutoFilling(true);
+        try {
+          const devOtp = await client.devOtp.get({
+            phoneNumber: requestedPhone,
+          });
+          if (activePhoneRef.current !== requestedPhone) return;
+          const digits = devOtp?.code?.replace(/\D/g, "").slice(0, 6).split("");
+
+          if (digits?.length === 6) {
+            digits.forEach((digit, index) => {
+              const timer = window.setTimeout(
+                () => {
+                  setOtpValues((current) => {
+                    const next = [...current];
+                    next[index] = digit;
+                    return next;
+                  });
+                  if (index === digits.length - 1) {
+                    setOtpAutoFilling(false);
+                  }
+                },
+                150 * (index + 1) + 600,
+              );
+              autoFillTimersRef.current.push(timer);
+            });
+          } else {
+            setOtpAutoFilling(false);
+          }
+        } catch {
+          setOtpAutoFilling(false);
+          // Manual entry remains usable if the local helper is unavailable.
+        }
+      }
     } catch (error) {
       toast.error(
         error instanceof Error ? error.message : "Could not send OTP",
@@ -116,9 +181,18 @@ export function PropertyPhoneVerification({
     } finally {
       setSending(false);
     }
-  };
+  }, [isDevelopment, normalizedPhone]);
 
-  const verifyOtp = () => verifyWithCode(code);
+  useEffect(() => {
+    if (verified || sent || autoSendAttemptedRef.current) return;
+    autoSendAttemptedRef.current = true;
+    void sendOtp();
+  }, [sendOtp, sent, verified]);
+
+  const handleOtpChange = (value: string) => {
+    const digits = value.replace(/\D/g, "").slice(0, 6).split("");
+    setOtpValues(Array.from({ length: 6 }, (_, index) => digits[index] ?? ""));
+  };
 
   if (verified) {
     return (
@@ -127,24 +201,7 @@ export function PropertyPhoneVerification({
         <div>
           <p className="text-sm font-semibold">Phone verified</p>
           <p className="mt-0.5 text-xs text-emerald-700">
-            {isDevelopment
-              ? `Automatically verified for local development as ${normalizedPhone}.`
-              : `Property contact verified as ${normalizedPhone}.`}
-          </p>
-        </div>
-      </div>
-    );
-  }
-
-  if (isDevelopment) {
-    return (
-      <div className="flex items-start gap-3 rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-emerald-800">
-        <Loader2 className="mt-0.5 size-5 shrink-0 animate-spin" />
-        <div>
-          <p className="text-sm font-semibold">Verifying automatically</p>
-          <p className="mt-0.5 text-xs text-emerald-700">
-            Local development skips the OTP. Production will require the 6-digit
-            verification code.
+            Property contact verified as {normalizedPhone}.
           </p>
         </div>
       </div>
@@ -165,53 +222,65 @@ export function PropertyPhoneVerification({
         </div>
       </div>
 
-      {!sent ? (
-        <Button
-          type="button"
-          onClick={sendOtp}
-          disabled={sending}
-          className="mt-4 bg-emerald-600 hover:bg-emerald-700"
-        >
-          {(sending || verifying) && <Loader2 className="animate-spin" />}
-          Send OTP
-        </Button>
-      ) : (
-        <div className="mt-4 space-y-3">
-          <div className="flex flex-col gap-2 sm:flex-row">
-            <Input
-              value={code}
-              onChange={(event) =>
-                setCode(event.target.value.replace(/\D/g, "").slice(0, 6))
-              }
-              inputMode="numeric"
-              autoComplete="one-time-code"
-              placeholder="6-digit OTP"
-              className="h-10 max-w-xs bg-white font-mono tracking-[0.3em]"
-              aria-label="Verification code"
-            />
-            <Button
-              type="button"
-              onClick={() => verifyOtp()}
-              disabled={verifying || code.length !== 6}
-              className="h-10 bg-emerald-600 hover:bg-emerald-700"
-            >
-              {verifying && <Loader2 className="animate-spin" />}
-              Verify OTP
-            </Button>
-          </div>
+      <div className="mt-4 space-y-3">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+          <Input
+            id="property-phone-otp"
+            type="text"
+            inputMode="numeric"
+            maxLength={6}
+            autoComplete="one-time-code"
+            value={code}
+            onChange={(event) => handleOtpChange(event.target.value)}
+            disabled={!sent || otpAutoFilling || verifying}
+            placeholder={sent ? "Enter OTP" : "Sending OTP..."}
+            aria-label="OTP"
+            aria-busy={otpAutoFilling}
+            className={`h-11 max-w-sm bg-white font-mono text-base ${
+              otpAutoFilling
+                ? "animate-pulse border-emerald-300 bg-emerald-50"
+                : code.length === 6
+                  ? "border-emerald-500 bg-emerald-50 text-emerald-700"
+                  : ""
+            }`}
+          />
           <Button
             type="button"
-            variant="ghost"
-            size="sm"
-            onClick={sendOtp}
-            disabled={sending || cooldown > 0}
-            className="px-0 text-gray-600"
+            onClick={() => verifyWithCode(code)}
+            disabled={!sent || verifying || otpAutoFilling || code.length !== 6}
+            className="h-10 bg-emerald-600 hover:bg-emerald-700"
           >
-            <RefreshCw className={sending ? "animate-spin" : ""} />
-            {cooldown > 0 ? `Resend in ${cooldown}s` : "Resend code"}
+            {verifying && <Loader2 className="animate-spin" />}
+            Verify OTP
           </Button>
         </div>
-      )}
+        {isDevelopment && otpAutoFilling && (
+          <p
+            className="text-xs text-emerald-700"
+            role="status"
+            aria-live="polite"
+          >
+            Filling the local development OTP automatically…
+          </p>
+        )}
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          onClick={sendOtp}
+          disabled={sending || cooldown > 0}
+          className="px-0 text-gray-600"
+        >
+          <RefreshCw className={sending ? "animate-spin" : ""} />
+          {sending
+            ? "Sending OTP..."
+            : cooldown > 0
+              ? `Resend in ${cooldown}s`
+              : sent
+                ? "Resend code"
+                : "Send OTP"}
+        </Button>
+      </div>
     </div>
   );
 }

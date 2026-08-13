@@ -1,4 +1,12 @@
+import { ORPCError } from "@orpc/client";
 import { getPublicOrpcClient } from "@/lib/orpc/public-server";
+
+function isNotFoundError(error: unknown) {
+  return (
+    error instanceof ORPCError &&
+    (error.code === "NOT_FOUND" || error.status === 404)
+  );
+}
 
 export interface ProductListFilters {
   category?: string;
@@ -127,13 +135,8 @@ export async function getToLetById(id: number, revalidate = 600) {
 
 export async function listPublicToLetUnitListings(revalidate = 0) {
   const client = getPublicOrpcClient(revalidate);
-
-  try {
-    const result = await client.toLetUnitListing.listPublic();
-    return result.listings ?? [];
-  } catch {
-    return [];
-  }
+  const result = await client.toLetUnitListing.listPublic();
+  return result.listings ?? [];
 }
 
 export async function getPublicToLetUnitListingByCode(
@@ -147,8 +150,9 @@ export async function getPublicToLetUnitListingByCode(
       listingCode,
     });
     return result.listing ?? null;
-  } catch {
-    return null;
+  } catch (error) {
+    if (isNotFoundError(error)) return null;
+    throw error;
   }
 }
 
@@ -157,8 +161,28 @@ export async function getToLetQrProperty(qrToken: string, revalidate = 0) {
 
   try {
     return await client.toLetUnitListing.getQrProperty({ qrToken });
-  } catch {
-    return null;
+  } catch (error) {
+    if (isNotFoundError(error)) return null;
+    throw error;
+  }
+}
+
+export async function getToLetQrUnitListingByCode(
+  qrToken: string,
+  listingCode: string,
+  revalidate = 0,
+) {
+  const client = getPublicOrpcClient(revalidate);
+
+  try {
+    const result = await client.toLetUnitListing.getQrListingByCode({
+      qrToken,
+      listingCode,
+    });
+    return result.listing ?? null;
+  } catch (error) {
+    if (isNotFoundError(error)) return null;
+    throw error;
   }
 }
 

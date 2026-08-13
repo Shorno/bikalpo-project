@@ -5,7 +5,6 @@ import {
   Bath,
   BedDouble,
   Bell,
-  Building2,
   CalendarCheck,
   CheckCircle2,
   Clock3,
@@ -16,9 +15,9 @@ import {
   Ruler,
   XCircle,
 } from "lucide-react";
-import Image from "next/image";
 import Link from "next/link";
 import { useState } from "react";
+import { ListingImageCarousel } from "@/components/features/to-let/listing-image-carousel";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -44,6 +43,8 @@ import {
 } from "@/hooks/use-to-let-booking-api";
 import {
   rentalFromResponse,
+  type ToLetAlertCategory,
+  toLetAlertCategoryOptions,
   useCreateToLetAlert,
   useToLetRental,
 } from "@/hooks/use-to-let-rental-api";
@@ -186,6 +187,13 @@ function BookingCard({
   const snapshot = booking.offerSnapshot;
   const rentalQuery = useToLetRental(booking.bookingCode);
   const contract = rentalFromResponse(rentalQuery.data);
+  const bookingImages = Array.from(
+    new Set(
+      [snapshot.imageUrl, ...(snapshot.unit.imageUrls ?? [])].filter(
+        (value): value is string => Boolean(value?.trim()),
+      ),
+    ),
+  );
   const unitFacts: Array<{ label: string; icon: React.ElementType }> = [];
   if (snapshot.unit.bedrooms > 0) {
     unitFacts.push({
@@ -231,23 +239,12 @@ function BookingCard({
       </div>
 
       <div className="grid md:grid-cols-[13rem_minmax(0,1fr)]">
-        <div className="relative aspect-video bg-gray-100 md:aspect-auto md:min-h-56">
-          {snapshot.imageUrl ? (
-            <Image
-              src={snapshot.imageUrl}
-              alt={snapshot.title}
-              fill
-              className="object-cover"
-              sizes="(max-width: 768px) 100vw, 208px"
-              unoptimized={snapshot.imageUrl.startsWith("http")}
-            />
-          ) : (
-            <div className="flex h-full min-h-44 items-center justify-center text-gray-400">
-              <Building2 className="size-8" aria-hidden="true" />
-              <span className="sr-only">No property photo available</span>
-            </div>
-          )}
-        </div>
+        <ListingImageCarousel
+          imageUrls={bookingImages}
+          alt={snapshot.title}
+          className="md:h-full md:min-h-64 md:aspect-auto"
+          sizes="(max-width: 768px) 100vw, 208px"
+        />
 
         <div className="space-y-4 p-4 sm:p-5">
           <div className="flex flex-wrap items-start justify-between gap-3">
@@ -266,7 +263,9 @@ function BookingCard({
               <p className="text-lg font-bold text-emerald-700">
                 {formatMoney(contract?.monthlyRent ?? snapshot.monthlyRent)}
               </p>
-              <p className="text-xs text-gray-500">requested monthly rent</p>
+              <p className="text-xs text-gray-500">
+                {contract ? "contract monthly rent" : "requested monthly rent"}
+              </p>
             </div>
           </div>
 
@@ -403,7 +402,8 @@ function BookingCard({
 
 function BookingsLoading() {
   return (
-    <div className="space-y-5">
+    <div className="space-y-5" role="status" aria-label="Loading My Bookings">
+      <span className="sr-only">Loading My Bookings</span>
       <div>
         <Skeleton className="h-8 w-56" />
         <Skeleton className="mt-2 h-4 w-80 max-w-full" />
@@ -418,8 +418,17 @@ function BookingsLoading() {
 
 function SetAlertPanel({ onSaved }: { onSaved: () => void }) {
   const createAlert = useCreateToLetAlert();
-  const [form, setForm] = useState({
-    preferredCategory: "Family flat",
+  const [form, setForm] = useState<{
+    preferredCategory: ToLetAlertCategory;
+    preferredLocation: string;
+    minimumSizeSqFt: number;
+    minimumBedrooms: number;
+    minimumBathrooms: number;
+    minimumBalconies: number;
+    balconyPreference: "required" | "optional" | "not_required";
+    preferredFloor: string;
+  }>({
+    preferredCategory: "family_flat",
     preferredLocation: "Dhaka",
     minimumSizeSqFt: 0,
     minimumBedrooms: 0,
@@ -455,17 +464,23 @@ function SetAlertPanel({ onSaved }: { onSaved: () => void }) {
 
       <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <label className="text-xs font-medium text-gray-700">
-          Property category
-          <Input
-            className="mt-1 bg-white"
+          Preferred category
+          <select
+            className="mt-1 h-9 w-full rounded-md border border-gray-200 bg-white px-3"
             value={form.preferredCategory}
             onChange={(event) =>
               setForm((current) => ({
                 ...current,
-                preferredCategory: event.target.value,
+                preferredCategory: event.target.value as ToLetAlertCategory,
               }))
             }
-          />
+          >
+            {toLetAlertCategoryOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
         </label>
         <label className="text-xs font-medium text-gray-700 sm:col-span-2">
           Preferred location
@@ -658,22 +673,24 @@ export function MyBookingsClient() {
       {showAlert ? <SetAlertPanel onSaved={() => setShowAlert(false)} /> : null}
 
       <Tabs defaultValue="all" className="w-full">
-        <TabsList className="grid h-auto w-full grid-cols-5 bg-gray-100 p-1">
-          {tabs.map(({ value, label, icon: Icon }) => (
-            <TabsTrigger
-              key={value}
-              value={value}
-              aria-label={`${label}, ${counts[value]} requests`}
-              className="min-h-10 gap-1 px-1 sm:gap-2 sm:px-2"
-            >
-              <Icon className="size-4" />
-              <span className="hidden md:inline">{label}</span>
-              <span className="rounded-full bg-gray-200 px-1.5 py-0.5 text-[11px] font-semibold text-gray-700">
-                {counts[value]}
-              </span>
-            </TabsTrigger>
-          ))}
-        </TabsList>
+        <div className="overflow-x-auto pb-1">
+          <TabsList className="inline-flex h-auto w-max min-w-full justify-start bg-gray-100 p-1">
+            {tabs.map(({ value, label, icon: Icon }) => (
+              <TabsTrigger
+                key={value}
+                value={value}
+                aria-label={`${label}, ${counts[value]} requests`}
+                className="min-h-10 shrink-0 gap-1.5 px-3 sm:gap-2"
+              >
+                <Icon className="size-4" />
+                <span>{label}</span>
+                <span className="rounded-full bg-gray-200 px-1.5 py-0.5 text-[11px] font-semibold text-gray-700">
+                  {counts[value]}
+                </span>
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </div>
 
         {tabs.map(({ value }) => {
           const filtered = filterBookings(bookings, value);

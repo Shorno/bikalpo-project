@@ -1,6 +1,6 @@
 # RayhanDev Quick Handoff
 
-Last updated: 2026-07-22
+Last updated: 2026-08-06
 
 ## Current status
 
@@ -10,7 +10,7 @@ M4 owner/tenant rental lifecycle are implemented locally.
 Included now:
 
 - Consumer-only property ownership; there is no separate Property Account login or admin approval.
-- Four-step Property Registration with contact OTP, photos, building details, facilities, review, and agreements.
+- Four-step Property Registration with dependent Bangladesh location selection, local draft recovery, contact OTP, photos, direct building-video upload, facilities, review, and agreements.
 - My Properties list, property details, and property edit.
 - Reusable physical Units: create, view, edit, and archive while vacant.
 - Permanent public IDs such as `PR-2026-100001` and `UNT-100001`.
@@ -71,8 +71,8 @@ All `/account` routes require login.
 | --- | --- |
 | `apps/web/components/layout/navbar.tsx` | Existing desktop To-Let navigation entry. |
 | `apps/web/components/layout/mobile-menu.tsx` | Existing mobile To-Let navigation entry. |
-| `apps/web/components/account/account-sidebar.tsx` | Keeps Booking exact-matched and adds a separate My Properties item. |
-| `apps/web/components/shop/account-overview-client.tsx` | Dashboard card links directly to My Properties, not Booking. |
+| `apps/web/components/account/account-sidebar.tsx` | Keeps My Bookings in the Account menu; Property Registration/My Properties is intentionally not duplicated in the sidebar. |
+| `apps/web/components/shop/account-overview-client.tsx` | Dashboard property card uses the same registration-aware destination and never links to Booking. |
 | `apps/web/app/(public)/account/to-let/page.tsx` | Real My Booking To-lets route; remains separate from property management. |
 | `apps/web/app/(auth)/login/client.tsx` | Safely returns Consumers to the requested same-origin page after login. |
 
@@ -98,11 +98,15 @@ All `/account` routes require login.
 | --- | --- |
 | `apps/web/components/features/to-let/property/my-properties-client.tsx` | Loads list/empty/error states. |
 | `apps/web/components/features/to-let/property/property-card.tsx` | Property summary card. |
-| `apps/web/components/features/to-let/property/property-details-client.tsx` | Property, facilities, capacity, QR status, and units view. |
+| `apps/web/components/features/to-let/property/property-details-client.tsx` | Property, facilities, capacity, QR status, units view, and the document-aligned post-registration success/next-step panel. |
 | `apps/web/components/features/to-let/property/property-edit-form.tsx` | Full property edit with phone re-verification and Included/Excluded facility controls. |
-| `apps/web/components/features/to-let/property/property-phone-verification.tsx` | Local development automatically verifies temporary/test numbers without an OTP round-trip; production keeps strict Bangladesh-number validation and manual Better Auth OTP. |
+| `apps/web/components/features/to-let/property/property-phone-verification.tsx` | Shared registration/edit contact verification with the login-style six-box OTP UI. Local development sends a real Better Auth OTP and fills it from the protected dev helper; production keeps manual OTP entry. |
 | `apps/web/components/features/to-let/property/property-qr-card.tsx` | Locally generated permanent QR, download, and open-page actions. |
-| `apps/web/components/features/to-let/property/property-registration-wizard.tsx` | Four registration steps. Step 1 has no image upload; Step 2 uses Included/Excluded facility controls; Step 3 keeps media and phone verification. Front Image is also saved as the cover. |
+| `apps/web/components/features/to-let/property/property-registration-wizard.tsx` | Document-aligned four-step registration with local Save & Continue recovery, manual facility decisions, GPS reverse-geocoding, complete Review/status sections, and first-invalid-step navigation. Step 1 keeps no duplicate photo input; Step 3 Front Image is also the cover. |
+| `apps/web/components/features/to-let/property/property-location-fields.tsx` | Division and dependent District selects plus Barikoi-backed searchable Area/Upazila selection with manual fallback. |
+| `apps/web/components/features/to-let/property/property-video-field.tsx` | Registration video source selector: direct verified upload or an optional public video link, with one source active at a time. |
+| `apps/web/components/VideoUploader.tsx` | Direct signed Cloudinary MP4/WebM/MOV upload with 90-second/100MB client checks, progress, preview, replace, and removal. |
+| `apps/web/constants/bangladesh-locations.ts` | Canonical eight Divisions, 64 Districts, and spelling normalization used by registration/GPS. |
 | `apps/web/components/features/to-let/property/property-ui.tsx` | Shared headers, status badges, loading, and error UI. |
 | `apps/web/components/features/to-let/property/types.ts` | Client view types and labels. |
 | `apps/web/components/features/to-let/property/unit-card.tsx` | Unit summary card with direct safe Remove Unit confirmation for Vacant Units. |
@@ -119,7 +123,8 @@ All `/account` routes require login.
 | `apps/web/hooks/use-to-let-rental-api.ts` | Contract, payment OTP, Leave/Alert, and comment queries/mutations. |
 | `apps/web/hooks/use-to-let-property-api.ts` | Property, Unit, and Listing queries/mutations with cache invalidation. |
 | `apps/web/schema/to-let-listing.schema.ts` | Draft/publish validation and Listing options. |
-| `apps/web/schema/to-let-property.schema.ts` | Client validation aligned with the API; phone format is relaxed only in local development. |
+| `apps/web/schema/to-let-property.schema.ts` | Client validation aligned with API URL, floor, and description limits; phone format is relaxed only in local development. |
+| `apps/web/hooks/use-barikoi-autocomplete.ts` | Existing area search now accepts an optional District/city scope. |
 | `apps/web/lib/public-data.ts` | Public Listing and QR data helpers. |
 | `apps/web/lib/orpc/public-server.ts` | Supports no-store reads for immediate Listing publish/unpublish visibility. |
 | `apps/web/package.json`, `pnpm-lock.yaml` | Adds `qrcode.react` for local QR generation. |
@@ -129,6 +134,7 @@ All `/account` routes require login.
 | File | What changed |
 | --- | --- |
 | `packages/api/src/routers/tolet-property.ts` | Owner Property/Unit API; removing a Vacant Unit closes its Listing, rejects pending requests, preserves history, marks it inactive, and excludes it from active Unit lists/capacity. |
+| `packages/api/src/routers/cloudinary.ts` | Adds fixed-folder signed direct video upload credentials, authoritative format/size/duration finalization, and video-aware deletion. Existing image upload behavior remains compatible. |
 | `packages/api/src/routers/tolet-unit-listing.ts` | Owner Listing lifecycle plus filtered Public and permanent-QR reads. |
 | `packages/api/src/routers/tolet-booking.ts` | Idempotent create/list/cancel plus owner list/accept/reject with ownership and availability checks. |
 | `packages/api/src/routers/tolet-rental.ts` | Contract activation, rent-cycle OTP verification, Leave/Alert, and verified comments. |
@@ -149,8 +155,8 @@ All `/account` routes require login.
 - Another authenticated user receives `404` for an owner-only Property ID.
 - Production requires the Property contact phone to be verified and match the
   authenticated account. Local development auto-verifies the entered number.
-- Images and video URLs accept only HTTP/HTTPS.
-- Property owner deletion is restricted once a property exists, so permanent IDs and QR identity cannot disappear through cascade deletion.
+- Images and stored video URLs accept only HTTP/HTTPS. Property video files upload directly to Cloudinary and are verified server-side before the URL is accepted.
+- Property removal is a soft archive, so permanent IDs, QR identity, and history cannot disappear through cascade deletion.
 - Admin approval is not part of this flow. A future complaint/ban flow may set `status = blocked`.
 - Unit status starts as `VACANT`; Booking acceptance changes it to `BOOKED`, and Contract activation changes it to `OCCUPIED`.
 - Only an active Property with a Vacant Unit can publish.
@@ -191,8 +197,8 @@ All `/account` routes require login.
 - `Rental Agreement image` is intentionally not faked: the current schema has no
   agreement media field. Persisting it later needs a separately reviewed storage
   and authorization design.
-- The public action is named **Request Booking**, not Book Now, because the owner
-  must approve it.
+- Public cards use the document's **Book Now** discovery badge; the actual detail
+  action remains **Request Booking** because the owner must approve it.
 - Request lifecycle is `Pending -> Accepted | Rejected | Cancelled`.
 - Owner acceptance is one locked database transaction so two requests cannot
   book the same Unit.
@@ -244,8 +250,8 @@ Booking glossary:
 - `/to-let` is public discovery; `/account/to-let` remains the private Booking area.
 - Shared Navbar and Footer are reused, so the landing does not duplicate global navigation.
 - Search and rental-type filters use the current Public Listing feed and URL parameters (`q`, `type`).
-- Feed/category numbers are labelled as **shown** counts because the public API currently returns at most 60 rows; sample document numbers are not treated as facts.
-- Only active + Public + Vacant listings appear. Public cards therefore say Available/Available from; they do not display fake Booked or Book Now states.
+- Feed/category numbers are labelled as **shown** counts because the public API currently returns at most 300 rows; sample document numbers are not treated as facts.
+- Active + Public + Vacant listings appear for 30 days from publication. A confirmed online Booking or offline **Mark Rented** starts a fresh 30-day public window in which the same Listing is labelled **Booked** and accepts no new Booking Requests.
 - Radius/nearby search and public reviews remain later phases. Saved Alerts and Booking Requests use real local APIs; the location section uses an interactive Google Maps embed.
 - Legacy To-Let rows remain separate from Property/Unit listings because they do not have the same category, facility, or identity data.
 - Owner CTAs follow the client landing wireframe wording while routing to the existing direct Property registration and Property management flow; no admin-approved Property Account is introduced.
@@ -265,7 +271,7 @@ Booking glossary:
 
 Landing glossary:
 
-- **Public Listing:** an active Listing with `visibility = public`, an active Property, and a Vacant Unit.
+- **Public Listing:** a `visibility = public` Listing on an active Property that is either within its 30-day available publication window or its 30-day confirmed-Booked window.
 - **Shown count:** a count derived only from the current public feed, not a platform-wide total.
 - **QR Only:** a Listing visible through the permanent Property QR page but excluded from public discovery.
 - **Google rental map:** an interactive Google Maps embed centered on an existing Listing coordinate or public address fallback; smart radius/POI search is not live yet.
@@ -315,9 +321,10 @@ Local test records:
   redirects unauthenticated visitors to login.
 - The seven targeted Booking web files pass Biome. Full web TypeScript reports
   zero diagnostics in the Booking files; existing unrelated diagnostics remain.
-- Browser verified that changing a local Property phone to a temporary value
-  auto-verifies immediately, keeps Save enabled, and renders no OTP input. The
-  unsaved browser test value was discarded afterward.
+- The former local Property-phone auto-verify bypass was removed. Registration
+  and Edit now show the same six-box OTP interaction used by Login; development
+  fills the code for the developer, but verification still needs a deliberate
+  **Verify OTP** click.
 - Migration 0042 was verified locally with four lifecycle tables and six
   Listing price-visibility columns. The remote database was not contacted.
 - Rental API and To-Let web target TypeScript checks pass; lifecycle target
@@ -333,9 +340,252 @@ Local test records:
 - The development OTP helper now returns `404` outside development. A real SMS
   provider is still required before enabling production phone verification.
 
+### Property registration removal (2026-08-05)
+
+- Property Details now has an owner-only **Delete Property** action with a
+  confirmation dialog.
+- Deletion is a safe archive (`status = inactive`), not a physical database
+  delete. The permanent Property ID, QR, uploaded media, and rental history are
+  preserved.
+- Vacant units are archived, open Listings are closed, and pending Booking
+  Requests are rejected in one transaction. Booked/occupied properties and
+  active rentals must be completed before deletion.
+- Archived properties disappear from My Properties and public discovery. No
+  database migration was added or run.
+
+### Property registration video link (2026-08-05)
+
+- Step 3 Building Video now lets the owner choose **Upload Video** or **Add
+  Video Link**.
+- Public YouTube, Facebook, Google Drive, and direct video URLs reuse the
+  existing optional `videoUrl` field; no API, schema, or migration change was
+  required.
+- Only one source is active at a time. The current video/link must be removed
+  before switching source, which prevents accidental replacement or orphaned
+  uploads.
+
+### PDF-aligned My To-Let owner view (2026-08-05)
+
+- The Property Details page now follows the supplied **MY TO-LET** order:
+  Property Photo + Property Information, My Property Listing cards, then the
+  permanent QR poster.
+- Property Information includes the permanent ID, owner/contact/location,
+  floors, declared Units, Verified status, Edit Property, and context-aware
+  Create Unit/Manage Units actions.
+- Each owner card keeps the latest Listing photo/title/ID/rent/details/views.
+  Active cards rotate Book Now with that Listing cycle's Booking Request count. Booked/rented
+  cards keep their Listing summary but show Details only.
+- Owner cards now use human floor labels (for example, `1st Floor` and
+  `Ground Floor`), show the Listing ID beside the Unit identity, always show
+  the Unit size in `sq ft`, and fall back to the reusable Unit description when
+  the Listing description is empty.
+- Offline **Mark Rented** closes the active Listing, rejects its pending
+  requests, and marks the Unit Booked in one owner-scoped transaction. Safe
+  Reactivate returns only an offline-booked Unit to Vacant, then **Re-List**
+  creates a new Listing while preserving history.
+- Booking Requests appear only inside Unit Details while the Listing is Active
+  and the Unit is Vacant. Accepting or offline booking removes that section.
+- The owner request inbox is scoped to the Unit's current Active Listing, so
+  requests from an older Listing cycle do not appear after Re-List. When the
+  Unit is Booked/Occupied, the same owner-only endpoint returns only the
+  accepted current tenant record; inactive Units return no request data.
+- Property/Unit Listings support **Public** and **QR Only**. Active Public
+  Listings on an active Property with a Vacant Unit appear on `/to-let` and open
+  through the bare Listing URL. QR Only Listings stay out of discovery and need
+  the matching permanent Property QR token. Both authorized paths support
+  Booking Requests and update the owner view count.
+- Download QR creates a printable branded SVG poster with TO-LET, Property
+  name/location, QR, permanent Property ID, and Bikalpo.com attribution.
+- Existing Property and Listing video-link fields are reused as video/360-tour
+  slides. There is no dedicated 360 media column yet.
+- No database schema change or migration was added or run for this alignment.
+- QA covers Public publish -> immediate `/to-let` discovery -> bare Listing
+  Details -> Booking Request, plus QR Only hidden from discovery/bare URLs and
+  available only through its token-bound QR flow.
+
+The PDF landing/data alignment below supersedes only the temporary QR-only
+restriction above. The legacy To-Let catalog remains a separate module.
+
+### PDF-aligned To-Let landing + Public publish (2026-08-05)
+
+- `/to-let` keeps the supplied PDF section order while matching Bikalpo's shared
+  Navbar, Footer, spacing, colors, cards, and responsive behavior.
+- Curated cards, rental-type counts, marketplace totals, location previews, and
+  map data come from active Public Property -> Unit -> Listing records. The
+  separate legacy catalog is not mixed into this PDF-aligned feed.
+- A Public publish/unpublish is reflected immediately on landing, search, map,
+  bare Listing Details, and Booking Request. QR Only remains excluded and uses
+  the permanent token-bound Property QR path.
+- The database already supported `public | qr_only`; this correction added no
+  schema change and ran no migration.
+
+### PDF-aligned Unit Details page (2026-08-05)
+
+- A Unit card's **Details** button opens the owner route at
+  `/account/to-let/properties/{propertyCode}/units/{unitCode}`.
+- The page follows the supplied Unit Details layout: linked breadcrumb, image
+  slider/thumbnails, ID/rent/status summary, Edit/Share actions, and one long
+  scroll page with Unit Information, Facilities, Rent, Tenant, and Booking
+  History jump buttons.
+- Closed Listing details do not disappear after a Booking is accepted. The page
+  uses the active Listing while Vacant, the accepted immutable offer snapshot
+  while Booked/Occupied, and the latest Listing summary as the offline-booked
+  fallback.
+- Current Tenant uses the accepted Booking contact and real contract dates.
+  `bookingCode` is shown honestly as the Tenant reference because no public
+  `USR-*` identity exists. Monthly payment rows show only real payment data and
+  owner-visible pending OTPs.
+- Rental Agreement Image is shown as an empty state only; persistence is not
+  implemented because there is no reviewed agreement-document field/API yet.
+- No database schema change or migration was added or run.
+
+### Public To-Let Listing Details refresh (2026-08-05)
+
+- `/to-let/listings/{listingCode}` now uses a large 16:9 photo slider with
+  auto-play/pause, previous/next controls, image count, keyboard/swipe support,
+  and a scrollable thumbnail strip. It renders the Listing's existing photos
+  and does not create separate media records.
+- The page now shows the public-safe Listing, Unit, Property, facilities,
+  pricing, availability, location, video, Call, WhatsApp, and Booking Request
+  information already returned by the public API.
+- On mobile the rent and Booking Request panel appears immediately after the
+  gallery; on desktop it stays visible as a sticky side panel.
+- Owner-only tenant identities, payment/OTP history, rental agreements, and
+  private Booking Request lists were intentionally not exposed.
+- No database schema, API route, or migration was added or run.
+
+### Consumer My Bookings / My To-Let refresh (2026-08-05)
+
+- `/account/to-let` remains the consumer page for Booking Requests, confirmed
+  Units, current rentals, and rental history. The owner workflow remains under
+  My Properties.
+- Booking cards now rotate through the immutable photos captured with the
+  Booking offer. Status comes from the Booking until a contract exists, then
+  from the real rental state: Occupied, Leaving, or Completed.
+- `View Details` opens `/account/to-let/bookings/{bookingCode}` with an
+  interactive main image slider and thumbnails, then Overview, Facilities,
+  Rent, Payment History, Leave/Alert, and Comments in one scroll page.
+- An active contract is the final source for tenant-visible rent and status.
+  Payment History is completely hidden before contract activation; after
+  activation the tenant enters the payment receiver and owner-provided monthly
+  OTP. The tenant never receives the current OTP from the API.
+- Mobile Booking filters keep their visible labels in a horizontal strip, and
+  the Account menu collapses above the page instead of pushing the content
+  below the full sidebar. Loading states now announce themselves to assistive
+  technology.
+- Existing Booking -> offer snapshot -> Unit/Property -> rental contract data
+  is reused. No database schema, API route, or migration was added or run.
+
+### 30-day To-Let marketplace visibility (2026-08-05)
+
+- An available Public Listing stays on `/to-let`, public search/map, and its
+  bare Listing Details page for 30 days from `publishedAt`.
+- Accepting an online Booking Request or using offline **Mark Rented** already
+  closes the Listing with `closedAt`. That timestamp starts a fresh 30-day
+  public window with a **Booked** badge.
+- Booked cards keep **View Details** but show no booking conversion action. The
+  Details page also removes **Request Booking**, and the API continues to reject
+  requests unless the Listing is Active and its Unit is Vacant.
+- At the exact 30-day boundary, request-time SQL filtering removes the Listing
+  from normal public discovery and its bare Details URL. No history is deleted,
+  and no cron job or write-on-read process is used.
+- If the Unit becomes Vacant or a newer Listing cycle is created earlier, the
+  old Booked card is suppressed immediately so stale cycles cannot reappear.
+- Permanent Property QR discovery remains available-only. Existing
+  `publishedAt` and `closedAt` fields were reused; no schema migration or
+  database command was added or run.
+
+### Functional To-Let landing controls (2026-08-06)
+
+- Search now safely handles duplicate URL parameters and matches Listing,
+  Property, and Unit IDs in addition to names and locations. Garage and Other
+  are available in the same filter flow as the existing rental types.
+- Listing totals, property/area/view totals, rental-type counts, listing cards,
+  map results, area chips, and Tenant Journey links all use the current search
+  results instead of showing unrelated records.
+- **My Alerts** is a real signed-in saved-search manager. It stores the existing
+  alert preferences and supports list, pause, and resume. Exact duplicates are
+  reused, terminal alerts cannot be reopened, and each user is capped at 50
+  saved records. Automated matching or notification delivery is still a later
+  background-worker phase.
+- The Google Maps section is interactive: selecting a result changes the map
+  focus without opening the Listing, while **View details** remains a separate
+  action. Empty filters no longer leave an unrelated Listing on the map.
+- Landing Listing cards expose only **Call** and **View Details**, matching the
+  supplied landing-page specification. Available and recently Booked cards use
+  the same two-action layout; Booked Listings still do not accept new requests.
+  The Booking journey deep-links to the Details page's request panel.
+- An expired Public Listing cannot receive a normal stale Booking Request. A
+  valid permanent Property QR can still open the active/vacant QR flow, and the
+  owner gets **Renew visibility** after expiry; renewal resets `publishedAt` on
+  the same Listing row, so IDs and history remain intact.
+- Owner and tenant landing CTAs preserve their intended account destination.
+  Verified rental feedback routes to the existing contract-linked My Bookings
+  flow; private comments are not presented as public testimonials.
+- Public API failures now render an unavailable state instead of pretending the
+  marketplace has no listings. No database schema change, migration, or database
+  command was added or run for these landing controls.
+
+### Login-aligned To-Let contact OTP (2026-08-11)
+
+- Property Registration and changed-number Property Edit reuse one phone
+  verification component with one six-digit OTP field, resend cooldown, and an
+  explicit **Verify OTP** action matching the approved Registration layout.
+- In local development, Better Auth still creates the OTP and the protected
+  development helper animates it into the boxes. If auto-fill is unavailable,
+  manual entry continues to work. Production never calls the helper and keeps
+  strict Bangladesh-number validation.
+- Monthly rent/payment OTP is a separate owner-to-tenant proof flow and was not
+  changed. No database schema, API route, migration, or database command was
+  added or run.
+
+### Registration-aware Consumer property navigation (2026-08-11)
+
+- When the Consumer has no non-archived Property, the Dashboard card shows
+  **Property Registration** and opens the registration form.
+- After registration, the existing Property list query is invalidated and the
+  Dashboard card switches to **My Properties**. The registration shortcut disappears;
+  Property management remains separate from My Bookings and is not duplicated
+  in the Account sidebar.
+- Loading/API errors conservatively keep **My Properties** instead of assuming
+  the Consumer has no Property. The shared query is consumer-gated, and no
+  database schema, API route, migration, or database command was changed.
+
+### One-click To-Let Booking Request (2026-08-12)
+
+- **Request Booking** no longer opens a contact/date/message popup. A signed-in
+  Consumer sends the request directly with the name and phone number already in
+  the account session.
+- The desired move-in date is selected automatically as the later of today's
+  Dhaka date and the Listing's **Available From** date. This keeps future-dated
+  availability enforcement intact without asking the Consumer to repeat data.
+- Missing account name/phone, non-Consumer roles, duplicate pending requests,
+  and unavailable Listings still stop safely with feedback. The button shows a
+  sending state, and a successful request links to **My Bookings**.
+- No database schema, migration, or database command was changed or run.
+
+### Specification-aligned Property Registration (2026-08-12)
+
+- The four Registration steps now follow the supplied field order and wording:
+  **Basic**, **Property**, **Verify**, and **Review**.
+- Step 1 contains the approved owner/contact, seven Property Type choices,
+  Bangladesh Division/District/Area, address, landmark, and GPS capture fields.
+  The earlier first-step image field is not used.
+- Step 2 exposes Property Status, empty floor/unit inputs, and explicit **Yes / No**
+  choices for every facility. Nothing is preselected; the owner must answer each
+  facility before continuing.
+- Step 3 uses the required front photo, optional Building Photo, real video upload
+  with the 90-second limit, and the single-field OTP verification flow.
+- Step 4 shows the exact Property summary, available facilities, photo/OTP checks,
+  ready status, and the three required confirmations. The post-registration card
+  shows the permanent Property ID, Verified status, and the approved next actions.
+- Existing Property/API columns are reused. No database schema, migration, or
+  database command was added or run.
+
 ## Later phases
 
-- Optional M2 follow-up: printable branded QR poster, map view, and Listing search/filter.
-- Remaining lifecycle follow-up: offline Mark as Booked, scheduled background
-  finalization/notifications, Alert matching notifications, and guided Re-list.
-- Direct video upload is not built yet; M1 accepts an optional public video URL.
+- Optional media follow-up: a dedicated 360-tour upload/URL field instead of
+  reusing the existing video links.
+- Remaining lifecycle follow-up: scheduled background
+  finalization/notifications and Alert matching notifications.
+- Property Registration now supports direct verified video upload. Property Edit and Listing Edit still use optional public video URLs until the shared uploader is rolled out there.

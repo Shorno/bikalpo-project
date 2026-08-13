@@ -1,3 +1,4 @@
+import { createHmac } from "node:crypto";
 import { db } from "@bikalpo-project/db";
 import {
 	toletBookingRequest,
@@ -11,8 +12,7 @@ import {
 } from "@bikalpo-project/db/schema";
 import { env } from "@bikalpo-project/env/server";
 import { ORPCError } from "@orpc/server";
-import { createHmac } from "node:crypto";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, count, desc, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 
 import { consumerProcedure } from "../index";
@@ -156,7 +156,8 @@ async function contractContext(bookingCode: string, userId: string) {
 
 	if (
 		!row ||
-		(row.contract.tenantUserId !== userId && row.contract.ownerUserId !== userId)
+		(row.contract.tenantUserId !== userId &&
+			row.contract.ownerUserId !== userId)
 	) {
 		throw new ORPCError("NOT_FOUND", { message: "Rental contract not found" });
 	}
@@ -203,9 +204,10 @@ async function rentalDto(bookingCode: string, userId: string) {
 			referenceName: payment.referenceName,
 			status: payment.status,
 			verifiedAt: payment.verifiedAt?.toISOString() ?? null,
-			otp: isOwner && payment.status === "pending"
-				? rentOtp(row.contract.id, payment.cycleMonth)
-				: null,
+			otp:
+				isOwner && payment.status === "pending"
+					? rentOtp(row.contract.id, payment.cycleMonth)
+					: null,
 		})),
 		comments: comments.map((comment) => ({
 			id: comment.id,
@@ -217,8 +219,20 @@ async function rentalDto(bookingCode: string, userId: string) {
 	};
 }
 
+const alertCategorySchema = z.enum([
+	"any",
+	"family_flat",
+	"bachelor_room",
+	"sublet",
+	"shop",
+	"office",
+	"warehouse",
+	"garage",
+	"other",
+]);
+
 const alertFields = {
-	preferredCategory: z.string().trim().min(1).max(50),
+	preferredCategory: alertCategorySchema,
 	preferredLocation: z.string().trim().min(2).max(200),
 	minimumSizeSqFt: z.number().int().min(0).max(1_000_000),
 	minimumBedrooms: z.number().int().min(0).max(100),
@@ -228,7 +242,42 @@ const alertFields = {
 	preferredFloor: z.string().trim().min(1).max(30),
 } as const;
 
+function alertDto(alert: typeof toletRentalAlert.$inferSelect) {
+	return {
+		id: alert.id,
+		preferredCategory: alert.preferredCategory,
+		preferredLocation: alert.preferredLocation,
+		minimumSizeSqFt: alert.minimumSizeSqFt,
+		minimumBedrooms: alert.minimumBedrooms,
+		minimumBathrooms: alert.minimumBathrooms,
+		minimumBalconies: alert.minimumBalconies,
+		balconyPreference: alert.balconyPreference,
+		preferredFloor: alert.preferredFloor,
+		status: alert.status,
+		createdAt: alert.createdAt.toISOString(),
+		updatedAt: alert.updatedAt.toISOString(),
+	};
+}
+
 export const toLetRentalRouter = {
+	listAlerts: consumerProcedure
+		.route({
+			method: "GET",
+			path: "/to-let/alerts",
+			tags: ["To-Let Rental"],
+			summary: "List my saved To-Let alerts",
+		})
+		.handler(async ({ context }) => {
+			const alerts = await db
+				.select()
+				.from(toletRentalAlert)
+				.where(eq(toletRentalAlert.userId, context.session.user.id))
+				.orderBy(desc(toletRentalAlert.createdAt))
+				.limit(50);
+
+			return { alerts: alerts.map(alertDto) };
+		}),
+
 	createAlert: consumerProcedure
 		.route({
 			method: "POST",
@@ -238,11 +287,99 @@ export const toLetRentalRouter = {
 		})
 		.input(z.object(alertFields).strict())
 		.handler(async ({ context, input }) => {
+			const [existingAlert] = await db
+				.select()
+				.from(toletRentalAlert)
+				.where(
+					and(
+						eq(toletRentalAlert.userId, context.session.user.id),
+						inArray(toletRentalAlert.status, ["active", "paused"]),
+						eq(toletRentalAlert.preferredCategory, input.preferredCategory),
+						eq(toletRentalAlert.preferredLocation, input.preferredLocation),
+						eq(toletRentalAlert.minimumSizeSqFt, input.minimumSizeSqFt),
+						eq(toletRentalAlert.minimumBedrooms, input.minimumBedrooms),
+						eq(toletRentalAlert.minimumBathrooms, input.minimumBathrooms),
+						eq(toletRentalAlert.minimumBalconies, input.minimumBalconies),
+						eq(toletRentalAlert.balconyPreference, input.balconyPreference),
+						eq(toletRentalAlert.preferredFloor, input.preferredFloor),
+					),
+				)
+				.limit(1);
+
+			if (existingAlert) {
+				if (existingAlert.status === "paused") {
+					const [resumedAlert] = await db
+						.update(toletRentalAlert)
+						.set({ status: "active", updatedAt: new Date() })
+						.where(
+							and(
+								eq(toletRentalAlert.id, existingAlert.id),
+								eq(toletRentalAlert.userId, context.session.user.id),
+							),
+						)
+						.returning();
+					if (resumedAlert) {
+						return { alert: alertDto(resumedAlert) };
+					}
+				}
+				return { alert: alertDto(existingAlert) };
+			}
+
+			const [savedAlertCount] = await db
+				.select({ value: count() })
+				.from(toletRentalAlert)
+				.where(eq(toletRentalAlert.userId, context.session.user.id));
+			if ((savedAlertCount?.value ?? 0) >= 50) {
+				throw new ORPCError("BAD_REQUEST", {
+					message: "You can keep up to 50 saved To-Let alerts",
+				});
+			}
+
 			const [alert] = await db
 				.insert(toletRentalAlert)
 				.values({ userId: context.session.user.id, ...input })
-				.returning({ id: toletRentalAlert.id, status: toletRentalAlert.status });
-			return { alert };
+				.returning();
+			if (!alert) {
+				throw new ORPCError("INTERNAL_SERVER_ERROR", {
+					message: "Unable to save the To-Let alert",
+				});
+			}
+			return { alert: alertDto(alert) };
+		}),
+
+	updateAlertStatus: consumerProcedure
+		.route({
+			method: "POST",
+			path: "/to-let/alerts/{alertId}/status",
+			tags: ["To-Let Rental"],
+			summary: "Pause or resume one of my saved To-Let alerts",
+		})
+		.input(
+			z
+				.object({
+					alertId: z.uuid("Invalid alert ID"),
+					status: z.enum(["active", "paused"]),
+				})
+				.strict(),
+		)
+		.handler(async ({ context, input }) => {
+			const [alert] = await db
+				.update(toletRentalAlert)
+				.set({ status: input.status, updatedAt: new Date() })
+				.where(
+					and(
+						eq(toletRentalAlert.id, input.alertId),
+						eq(toletRentalAlert.userId, context.session.user.id),
+						inArray(toletRentalAlert.status, ["active", "paused"]),
+					),
+				)
+				.returning();
+
+			if (!alert) {
+				throw new ORPCError("NOT_FOUND", { message: "Alert not found" });
+			}
+
+			return { alert: alertDto(alert) };
 		}),
 
 	activate: consumerProcedure
@@ -427,7 +564,9 @@ export const toLetRentalRouter = {
 					message: "This rent cycle is already paid or unavailable",
 				});
 			}
-			return { payment: { cycleMonth: payment.cycleMonth, status: payment.status } };
+			return {
+				payment: { cycleMonth: payment.cycleMonth, status: payment.status },
+			};
 		}),
 
 	requestLeave: consumerProcedure
@@ -439,7 +578,10 @@ export const toLetRentalRouter = {
 		})
 		.input(
 			z
-				.object({ bookingCode: bookingCodeSchema, alert: z.object(alertFields).strict() })
+				.object({
+					bookingCode: bookingCodeSchema,
+					alert: z.object(alertFields).strict(),
+				})
 				.strict(),
 		)
 		.handler(async ({ context, input }) => {

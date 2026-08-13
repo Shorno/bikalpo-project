@@ -15,6 +15,7 @@ import { and, desc, eq, ne } from "drizzle-orm";
 import { z } from "zod";
 
 import { consumerProcedure } from "../index";
+import { canCreateToLetBookingRequest } from "./helpers/tolet-booking-access";
 
 const propertyCodeSchema = z
 	.string()
@@ -30,6 +31,8 @@ const listingCodeSchema = z
 	.string()
 	.trim()
 	.regex(/^LST-\d{6,10}$/, "Invalid Listing ID");
+
+const qrTokenSchema = z.uuid("Invalid property QR token");
 
 const bookingCodeSchema = z
 	.string()
@@ -84,6 +87,7 @@ const contactPhoneSchema = z
 const createBookingInputSchema = z
 	.object({
 		listingCode: listingCodeSchema,
+		qrToken: qrTokenSchema.optional(),
 		idempotencyKey: z
 			.uuid("Invalid request identifier")
 			.transform((value) => value.toLowerCase()),
@@ -393,7 +397,7 @@ export const toLetBookingRouter = {
 			method: "POST",
 			path: "/to-let/bookings",
 			tags: ["To-Let Booking"],
-			summary: "Request an active public unit listing",
+			summary: "Request an active public or QR-authorized unit listing",
 		})
 		.input(createBookingInputSchema)
 		.handler(async ({ context, input }) => {
@@ -462,12 +466,22 @@ export const toLetBookingRouter = {
 							message: "Listing not found",
 						});
 					}
-					if (
-						row.listing.status !== "active" ||
-						row.listing.visibility !== "public" ||
-						row.unit.status !== "vacant" ||
-						row.property.status !== "active"
-					) {
+					const now = new Date();
+					const canCreateBooking = canCreateToLetBookingRequest(
+						{
+							listingStatus: row.listing.status,
+							unitStatus: row.unit.status,
+							propertyStatus: row.property.status,
+							visibility: row.listing.visibility,
+							publishedAt: row.listing.publishedAt,
+							createdAt: row.listing.createdAt,
+							closedAt: row.listing.closedAt,
+							requestedQrToken: input.qrToken,
+							propertyQrToken: row.property.qrToken,
+						},
+						now,
+					);
+					if (!canCreateBooking) {
 						throw new ORPCError("CONFLICT", {
 							message: "This listing is not available for booking",
 						});
@@ -478,7 +492,7 @@ export const toLetBookingRouter = {
 						});
 					}
 
-					const today = dhakaDateString();
+					const today = dhakaDateString(now);
 					const earliestMoveInDate =
 						row.listing.availableFrom > today
 							? row.listing.availableFrom
@@ -509,7 +523,6 @@ export const toLetBookingRouter = {
 						});
 					}
 
-					const now = new Date();
 					const [created] = await tx
 						.insert(toletBookingRequest)
 						.values({
@@ -692,15 +705,45 @@ export const toLetBookingRouter = {
 			) {
 				throw new ORPCError("NOT_FOUND", { message: "Unit not found" });
 			}
+			if (owned.property.status !== "active") {
+				return { bookings: [] };
+			}
+			const hasRequestInbox = owned.unit.status === "vacant";
+			const hasTenant =
+				owned.unit.status === "booked" || owned.unit.status === "occupied";
+			if (!hasRequestInbox && !hasTenant) {
+				return { bookings: [] };
+			}
+
+			const [relevantListing] = await db
+				.select({ id: toletUnitListing.id })
+				.from(toletUnitListing)
+				.where(
+					and(
+						eq(toletUnitListing.unitId, owned.unit.id),
+						eq(
+							toletUnitListing.status,
+							hasRequestInbox ? "active" : "closed",
+						),
+					),
+				)
+				.orderBy(desc(toletUnitListing.createdAt))
+				.limit(1);
+
+			if (!relevantListing) {
+				return { bookings: [] };
+			}
+			const bookingScope = hasRequestInbox
+				? eq(toletBookingRequest.listingId, relevantListing.id)
+				: and(
+						eq(toletBookingRequest.listingId, relevantListing.id),
+						eq(toletBookingRequest.status, "accepted"),
+					);
 
 			const bookings = await db
 				.select({ booking: toletBookingRequest })
 				.from(toletBookingRequest)
-				.innerJoin(
-					toletUnitListing,
-					eq(toletBookingRequest.listingId, toletUnitListing.id),
-				)
-				.where(eq(toletUnitListing.unitId, owned.unit.id))
+				.where(bookingScope)
 				.orderBy(desc(toletBookingRequest.createdAt))
 				.limit(100);
 
@@ -919,6 +962,21 @@ export const toLetBookingRouter = {
 				if (owned.booking.status !== "pending") {
 					throw new ORPCError("CONFLICT", {
 						message: "Only a pending booking request can be rejected",
+					});
+				}
+				if (owned.property.status !== "active") {
+					throw new ORPCError("CONFLICT", {
+						message: "Only an active property can reject booking requests",
+					});
+				}
+				if (owned.unit.status !== "vacant") {
+					throw new ORPCError("CONFLICT", {
+						message: "Only a vacant unit can reject a booking request",
+					});
+				}
+				if (owned.listing.status !== "active") {
+					throw new ORPCError("CONFLICT", {
+						message: "Only an active listing can reject a booking request",
 					});
 				}
 

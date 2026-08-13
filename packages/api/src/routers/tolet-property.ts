@@ -2,14 +2,16 @@ import { db } from "@bikalpo-project/db";
 import {
 	type ToletProperty,
 	type ToletUnit,
+	type ToletUnitListing,
 	toletBookingRequest,
 	toletProperty,
+	toletRentalContract,
 	toletUnit,
 	toletUnitListing,
 	user,
 } from "@bikalpo-project/db/schema";
 import { ORPCError } from "@orpc/server";
-import { and, asc, count, desc, eq, max, ne } from "drizzle-orm";
+import { and, asc, count, desc, eq, inArray, max, ne } from "drizzle-orm";
 import { z } from "zod";
 
 import { consumerProcedure } from "../index";
@@ -205,6 +207,10 @@ function formatUnitCode(unit: Pick<ToletUnit, "publicNumber">) {
 	return `UNT-${String(unit.publicNumber).padStart(6, "0")}`;
 }
 
+function formatListingCode(listing: Pick<ToletUnitListing, "publicNumber">) {
+	return `LST-${String(listing.publicNumber).padStart(6, "0")}`;
+}
+
 function parsePropertyCode(propertyCode: string) {
 	const match = /^PR-(20\d{2})-(\d{6,10})$/.exec(propertyCode);
 	if (!match?.[1] || !match[2]) {
@@ -248,6 +254,25 @@ function unitDto(unit: ToletUnit) {
 	return {
 		...details,
 		unitCode: formatUnitCode({ publicNumber }),
+	};
+}
+
+function currentListingDto(
+	listing: ToletUnitListing,
+	bookingCount: number,
+) {
+	return {
+		listingCode: formatListingCode(listing),
+		title: listing.title,
+		description: listing.description,
+		monthlyRent: Number(listing.monthlyRent),
+		imageUrls: listing.imageUrls,
+		videoUrl: listing.videoUrl,
+		visibility: listing.visibility,
+		status: listing.status,
+		viewCount: listing.viewCount,
+		publishedAt: listing.publishedAt,
+		bookingCount,
 	};
 }
 
@@ -368,6 +393,11 @@ function assertPropertyIsWritable(property: ToletProperty) {
 			message: "This property is blocked and cannot be changed",
 		});
 	}
+	if (property.status === "inactive") {
+		throw new ORPCError("CONFLICT", {
+			message: "This property registration has been deleted",
+		});
+	}
 }
 
 async function findOwnedUnit(
@@ -411,7 +441,10 @@ export const toLetPropertyRouter = {
 		})
 		.handler(async ({ context }) => {
 			const rows = await db.query.toletProperty.findMany({
-				where: eq(toletProperty.ownerUserId, context.session.user.id),
+				where: and(
+					eq(toletProperty.ownerUserId, context.session.user.id),
+					ne(toletProperty.status, "inactive"),
+				),
 				with: {
 					units: {
 						columns: { id: true, status: true },
@@ -444,6 +477,7 @@ export const toLetPropertyRouter = {
 				where: and(
 					eq(toletProperty.publicNumber, identity.publicNumber),
 					eq(toletProperty.ownerUserId, context.session.user.id),
+					ne(toletProperty.status, "inactive"),
 				),
 				with: {
 					units: {
@@ -459,10 +493,64 @@ export const toLetPropertyRouter = {
 
 			const { units, ...property } = found;
 			const activeUnits = units.filter((unit) => unit.status !== "inactive");
+			const unitIds = activeUnits.map((unit) => unit.id);
+			const listingCandidates =
+				unitIds.length > 0
+					? await db
+							.select()
+							.from(toletUnitListing)
+							.where(inArray(toletUnitListing.unitId, unitIds))
+							.orderBy(desc(toletUnitListing.createdAt))
+					: [];
+			const listingByUnitId = new Map<string, ToletUnitListing>();
+			for (const listing of listingCandidates) {
+				if (
+					listing.status !== "closed" &&
+					!listingByUnitId.has(listing.unitId)
+				) {
+					listingByUnitId.set(listing.unitId, listing);
+				}
+			}
+			for (const listing of listingCandidates) {
+				if (!listingByUnitId.has(listing.unitId)) {
+					listingByUnitId.set(listing.unitId, listing);
+				}
+			}
+			const listingIds = [...listingByUnitId.values()].map(
+				(listing) => listing.id,
+			);
+			const bookingCounts =
+				listingIds.length > 0
+					? await db
+							.select({
+								listingId: toletBookingRequest.listingId,
+								bookingCount: count(),
+							})
+							.from(toletBookingRequest)
+							.where(inArray(toletBookingRequest.listingId, listingIds))
+							.groupBy(toletBookingRequest.listingId)
+					: [];
+			const bookingCountByListingId = new Map(
+				bookingCounts.map((row) => [
+					row.listingId,
+					Number(row.bookingCount),
+				]),
+			);
 			return {
 				property: {
 					...propertyDto(property, activeUnits.length),
-					units: activeUnits.map(unitDto),
+					units: activeUnits.map((unit) => {
+						const listing = listingByUnitId.get(unit.id);
+						return {
+							...unitDto(unit),
+							currentListing: listing
+								? currentListingDto(
+										listing,
+										bookingCountByListingId.get(listing.id) ?? 0,
+									)
+								: null,
+						};
+					}),
 				},
 			};
 		}),
@@ -499,6 +587,152 @@ export const toLetPropertyRouter = {
 			}
 
 			return { property: propertyDto(created, 0) };
+		}),
+
+	archiveProperty: consumerProcedure
+		.route({
+			method: "POST",
+			path: "/to-let/owner/properties/{propertyCode}/archive",
+			tags: ["To-Let Property Owner"],
+			summary: "Remove an owned property registration while preserving history",
+		})
+		.input(z.object({ propertyCode: propertyCodeSchema }).strict())
+		.handler(async ({ context, input }) => {
+			const identity = parsePropertyCode(input.propertyCode);
+			const userId = context.session.user.id;
+
+			return db.transaction(async (tx) => {
+				const [property] = await tx
+					.select()
+					.from(toletProperty)
+					.where(
+						and(
+							eq(toletProperty.publicNumber, identity.publicNumber),
+							eq(toletProperty.ownerUserId, userId),
+						),
+					)
+					.limit(1)
+					.for("update");
+
+				if (
+					!property ||
+					property.createdAt.getFullYear() !== identity.year ||
+					formatPropertyCode(property) !== input.propertyCode
+				) {
+					throw new ORPCError("NOT_FOUND", { message: "Property not found" });
+				}
+				if (property.status === "blocked") {
+					throw new ORPCError("FORBIDDEN", {
+						message: "A blocked property registration cannot be deleted",
+					});
+				}
+				if (property.status === "inactive") {
+					return { success: true as const, propertyCode: input.propertyCode };
+				}
+
+				const units = await tx
+					.select({ id: toletUnit.id, status: toletUnit.status })
+					.from(toletUnit)
+					.where(eq(toletUnit.propertyId, property.id))
+					.for("update");
+				const activeUnits = units.filter((unit) => unit.status !== "inactive");
+				if (activeUnits.some((unit) => unit.status !== "vacant")) {
+					throw new ORPCError("CONFLICT", {
+						message:
+							"This property has a booked or occupied unit. Complete the rental before deleting it.",
+					});
+				}
+
+				const [currentRental] = await tx
+					.select({ id: toletRentalContract.id })
+					.from(toletRentalContract)
+					.where(
+						and(
+							eq(toletRentalContract.propertyId, property.id),
+							ne(toletRentalContract.status, "completed"),
+						),
+					)
+					.limit(1)
+					.for("update");
+				if (currentRental) {
+					throw new ORPCError("CONFLICT", {
+						message:
+							"This property has an active rental. Complete it before deleting the property.",
+					});
+				}
+
+				const propertyUnitIds = units.map((unit) => unit.id);
+				const activeUnitIds = activeUnits.map((unit) => unit.id);
+				const openListings =
+					propertyUnitIds.length > 0
+						? await tx
+								.select({ id: toletUnitListing.id })
+								.from(toletUnitListing)
+								.where(
+									and(
+										inArray(toletUnitListing.unitId, propertyUnitIds),
+										ne(toletUnitListing.status, "closed"),
+									),
+								)
+								.for("update")
+						: [];
+				const listingIds = openListings.map((listing) => listing.id);
+				const now = new Date();
+
+				if (listingIds.length > 0) {
+					await tx
+						.update(toletBookingRequest)
+						.set({
+							status: "rejected",
+							responseNote: "The owner deleted this property registration",
+							respondedAt: now,
+							updatedAt: now,
+						})
+						.where(
+							and(
+								inArray(toletBookingRequest.listingId, listingIds),
+								eq(toletBookingRequest.status, "pending"),
+							),
+						);
+
+					await tx
+						.update(toletUnitListing)
+						.set({ status: "closed", closedAt: now, updatedAt: now })
+						.where(inArray(toletUnitListing.id, listingIds));
+				}
+
+				if (activeUnitIds.length > 0) {
+					await tx
+						.update(toletUnit)
+						.set({ status: "inactive", updatedAt: now })
+						.where(
+							and(
+								eq(toletUnit.propertyId, property.id),
+								inArray(toletUnit.id, activeUnitIds),
+								eq(toletUnit.status, "vacant"),
+							),
+						);
+				}
+
+				const [archived] = await tx
+					.update(toletProperty)
+					.set({ status: "inactive", updatedAt: now })
+					.where(
+						and(
+							eq(toletProperty.id, property.id),
+							eq(toletProperty.ownerUserId, userId),
+							eq(toletProperty.status, "active"),
+						),
+					)
+					.returning({ id: toletProperty.id });
+				if (!archived) {
+					throw new ORPCError("CONFLICT", {
+						message: "The property status changed before it could be deleted",
+					});
+				}
+
+				return { success: true as const, propertyCode: input.propertyCode };
+			});
 		}),
 
 	update: consumerProcedure

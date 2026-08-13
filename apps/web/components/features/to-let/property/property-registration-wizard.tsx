@@ -9,7 +9,7 @@ import {
   LocateFixed,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import ImageUploader from "@/components/ImageUploader";
 import { Button } from "@/components/ui/button";
@@ -24,6 +24,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  normalizeBangladeshDistrict,
+  normalizeBangladeshDivision,
+} from "@/constants/bangladesh-locations";
 import { useCreateToLetProperty } from "@/hooks/use-to-let-property-api";
 import { cn } from "@/lib/utils";
 import {
@@ -36,9 +40,11 @@ import {
   propertyTypes,
   propertyVerificationSchema,
 } from "@/schema/to-let-property.schema";
-import { IncludedExcludedButtons } from "./included-excluded-buttons";
+import { client } from "@/utils/orpc";
+import { PropertyLocationFields } from "./property-location-fields";
 import { PropertyPhoneVerification } from "./property-phone-verification";
 import { PropertyPageHeader } from "./property-ui";
+import { PropertyVideoField } from "./property-video-field";
 
 const steps = [
   { id: 1, label: "Basic" },
@@ -46,6 +52,40 @@ const steps = [
   { id: 3, label: "Verify" },
   { id: 4, label: "Review" },
 ] as const;
+
+const registrationPropertyTypes = propertyTypes.filter(
+  (option) => option.value !== "office",
+);
+
+const registrationFacilities = [
+  { key: "hasParking", label: "Parking Available" },
+  { key: "hasLift", label: "Lift Available" },
+  { key: "hasSecurityGuard", label: "Security Guard" },
+  { key: "hasCctv", label: "CCTV Camera" },
+  { key: "hasGenerator", label: "Generator" },
+  { key: "hasWaterSupply", label: "Water Supply" },
+  { key: "hasGasConnection", label: "Gas Connection" },
+  { key: "hasElectricity", label: "Electricity" },
+] as const;
+
+type RegistrationFacilityKey = (typeof registrationFacilities)[number]["key"];
+
+const initialFacilitySelections: Record<
+  RegistrationFacilityKey,
+  boolean | null
+> = {
+  hasParking: null,
+  hasLift: null,
+  hasSecurityGuard: null,
+  hasCctv: null,
+  hasGenerator: null,
+  hasWaterSupply: null,
+  hasGasConnection: null,
+  hasElectricity: null,
+};
+
+const PROPERTY_REGISTRATION_DRAFT_KEY =
+  "bikalpo:to-let-property-registration:v1";
 
 const initialValues: PropertyRegistrationValues = {
   name: "",
@@ -62,16 +102,16 @@ const initialValues: PropertyRegistrationValues = {
   latitude: "",
   longitude: "",
   buildingType: "",
-  totalFloors: 1,
-  declaredTotalUnits: 1,
+  totalFloors: 0,
+  declaredTotalUnits: 0,
   hasParking: false,
   hasLift: false,
   hasSecurityGuard: false,
   hasCctv: false,
   hasGenerator: false,
-  hasWaterSupply: true,
+  hasWaterSupply: false,
   hasGasConnection: false,
-  hasElectricity: true,
+  hasElectricity: false,
   description: "",
   frontImageUrl: "",
   buildingImageUrl: "",
@@ -82,9 +122,64 @@ const initialValues: PropertyRegistrationValues = {
   propertyPolicyAccepted: false,
 };
 
+function restoreDraftValues(input: unknown): PropertyRegistrationValues | null {
+  if (!input || typeof input !== "object") return null;
+  const restored = { ...initialValues };
+  const candidate = input as Record<string, unknown>;
+  for (const key of Object.keys(initialValues) as Array<
+    keyof PropertyRegistrationValues
+  >) {
+    const value = candidate[key];
+    if (typeof value === typeof initialValues[key]) {
+      Object.assign(restored, { [key]: value });
+    }
+  }
+  if (restored.propertyType === "office") restored.propertyType = "";
+  const normalizedDivision = normalizeBangladeshDivision(restored.division);
+  if (normalizedDivision) {
+    restored.division = normalizedDivision;
+    const normalizedDistrict = normalizeBangladeshDistrict(
+      restored.district,
+      normalizedDivision,
+    );
+    if (normalizedDistrict) restored.district = normalizedDistrict;
+  }
+  return restored;
+}
+
+function restoreFacilitySelections(input: unknown) {
+  const restored = { ...initialFacilitySelections };
+  if (!input || typeof input !== "object") return restored;
+
+  const candidate = input as Record<string, unknown>;
+  for (const { key } of registrationFacilities) {
+    if (typeof candidate[key] === "boolean") {
+      restored[key] = candidate[key];
+    }
+  }
+  return restored;
+}
+
 const propertyBasicWithoutCoverSchema = propertyBasicSchema.omit({
   coverImageUrl: true,
 });
+
+function schemaForStep(step: number) {
+  return step === 1
+    ? propertyBasicWithoutCoverSchema
+    : step === 2
+      ? propertyBuildingSchema
+      : step === 3
+        ? propertyVerificationSchema
+        : propertyReviewSchema;
+}
+
+function optionLabel(
+  options: ReadonlyArray<{ value: string; label: string }>,
+  value: string,
+) {
+  return options.find((option) => option.value === value)?.label ?? value;
+}
 
 type FieldErrors = Record<string, string>;
 
@@ -127,24 +222,56 @@ function Section({
   );
 }
 
-function ToggleField({
+function FacilityRadioField({
   label,
-  checked,
+  value,
+  error,
   onChange,
 }: {
   label: string;
-  checked: boolean;
+  value: boolean | null;
+  error?: string;
   onChange: (value: boolean) => void;
 }) {
+  const fieldName = `property-facility-${label
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")}`;
+
   return (
-    <div className="flex min-h-14 items-center justify-between gap-3 rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-700">
-      <span>{label}</span>
-      <IncludedExcludedButtons
-        label={label}
-        included={checked}
-        onChange={onChange}
-      />
-    </div>
+    <fieldset
+      aria-invalid={Boolean(error)}
+      className={cn(
+        "rounded-lg border px-4 py-3",
+        error ? "border-red-300" : "border-gray-200",
+      )}
+    >
+      <legend className="px-1 text-sm font-medium text-gray-900">
+        {label}
+      </legend>
+      <div className="mt-2 flex items-center gap-6 text-sm text-gray-700">
+        <label className="flex cursor-pointer items-center gap-2">
+          <input
+            type="radio"
+            name={fieldName}
+            checked={value === true}
+            onChange={() => onChange(true)}
+            className="size-4 accent-emerald-600"
+          />
+          Yes
+        </label>
+        <label className="flex cursor-pointer items-center gap-2">
+          <input
+            type="radio"
+            name={fieldName}
+            checked={value === false}
+            onChange={() => onChange(false)}
+            className="size-4 accent-emerald-600"
+          />
+          No
+        </label>
+      </div>
+      <FieldMessage message={error} />
+    </fieldset>
   );
 }
 
@@ -177,9 +304,72 @@ export function PropertyRegistrationWizard() {
   const [completedSteps, setCompletedSteps] = useState<number[]>([]);
   const [values, setValues] =
     useState<PropertyRegistrationValues>(initialValues);
+  const [facilitySelections, setFacilitySelections] = useState(
+    initialFacilitySelections,
+  );
   const [errors, setErrors] = useState<FieldErrors>({});
   const [locating, setLocating] = useState(false);
+  const [draftReady, setDraftReady] = useState(false);
   const headingRef = useRef<HTMLHeadingElement>(null);
+
+  useEffect(() => {
+    try {
+      const stored = window.localStorage.getItem(
+        PROPERTY_REGISTRATION_DRAFT_KEY,
+      );
+      if (!stored) return;
+      const draft = JSON.parse(stored) as {
+        values?: unknown;
+        facilitySelections?: unknown;
+        currentStep?: unknown;
+        completedSteps?: unknown;
+      };
+      const restoredValues = restoreDraftValues(draft.values);
+      if (restoredValues) {
+        setValues(restoredValues);
+        setFacilitySelections(
+          restoreFacilitySelections(draft.facilitySelections),
+        );
+        const restoredStep = Number(draft.currentStep);
+        if (restoredStep >= 1 && restoredStep <= 4) {
+          setCurrentStep(restoredStep);
+        }
+        if (Array.isArray(draft.completedSteps)) {
+          setCompletedSteps(
+            draft.completedSteps.filter(
+              (step): step is number =>
+                Number.isInteger(step) && step >= 1 && step <= 4,
+            ),
+          );
+        }
+        toast.success("Saved property registration restored");
+      }
+    } catch {
+      window.localStorage.removeItem(PROPERTY_REGISTRATION_DRAFT_KEY);
+    } finally {
+      setDraftReady(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!draftReady) return;
+    const changed = (
+      Object.keys(initialValues) as Array<keyof PropertyRegistrationValues>
+    ).some((key) => values[key] !== initialValues[key]);
+    if (!changed && currentStep === 1) {
+      window.localStorage.removeItem(PROPERTY_REGISTRATION_DRAFT_KEY);
+      return;
+    }
+    window.localStorage.setItem(
+      PROPERTY_REGISTRATION_DRAFT_KEY,
+      JSON.stringify({
+        values,
+        facilitySelections,
+        currentStep,
+        completedSteps,
+      }),
+    );
+  }, [completedSteps, currentStep, draftReady, facilitySelections, values]);
 
   const update = <K extends keyof PropertyRegistrationValues>(
     key: K,
@@ -203,6 +393,11 @@ export function PropertyRegistrationWizard() {
     }));
   };
 
+  const selectFacility = (key: RegistrationFacilityKey, value: boolean) => {
+    setFacilitySelections((current) => ({ ...current, [key]: value }));
+    update(key, value);
+  };
+
   const updateFrontImage = (frontImageUrl: string) => {
     setValues((current) => ({
       ...current,
@@ -218,22 +413,30 @@ export function PropertyRegistrationWizard() {
     });
   };
 
-  const schemaForStep =
-    currentStep === 1
-      ? propertyBasicWithoutCoverSchema
-      : currentStep === 2
-        ? propertyBuildingSchema
-        : currentStep === 3
-          ? propertyVerificationSchema
-          : propertyReviewSchema;
+  const errorsForStep = (step: number) => {
+    const result = schemaForStep(step).safeParse(values);
+    const stepErrors = result.success
+      ? {}
+      : errorsFromIssues(result.error.issues);
+
+    if (step === 2) {
+      for (const { key } of registrationFacilities) {
+        if (facilitySelections[key] === null) {
+          stepErrors[key] = "Select Yes or No";
+        }
+      }
+    }
+
+    return stepErrors;
+  };
 
   const validateCurrentStep = () => {
-    const result = schemaForStep.safeParse(values);
-    if (result.success) {
+    const stepErrors = errorsForStep(currentStep);
+    if (Object.keys(stepErrors).length === 0) {
       setErrors({});
       return true;
     }
-    setErrors(errorsFromIssues(result.error.issues));
+    setErrors(stepErrors);
     toast.error("Please review the highlighted fields");
     return false;
   };
@@ -242,6 +445,10 @@ export function PropertyRegistrationWizard() {
     setCurrentStep(step);
     setErrors({});
     window.requestAnimationFrame(() => headingRef.current?.focus());
+  };
+
+  const selectStep = (step: number) => {
+    if (step <= currentStep || validateCurrentStep()) moveToStep(step);
   };
 
   const next = () => {
@@ -259,11 +466,67 @@ export function PropertyRegistrationWizard() {
     }
     setLocating(true);
     navigator.geolocation.getCurrentPosition(
-      (position) => {
-        update("latitude", position.coords.latitude.toFixed(7));
-        update("longitude", position.coords.longitude.toFixed(7));
-        setLocating(false);
-        toast.success("GPS coordinates captured");
+      async (position) => {
+        const latitude = position.coords.latitude;
+        const longitude = position.coords.longitude;
+        if (
+          latitude < 20.5 ||
+          latitude > 26.7 ||
+          longitude < 87.9 ||
+          longitude > 92.7
+        ) {
+          setLocating(false);
+          toast.error("The captured location is outside Bangladesh");
+          return;
+        }
+
+        try {
+          const location = await client.barikoi.reverseGeocode({
+            latitude,
+            longitude,
+          });
+          setValues((current) => {
+            const division = location?.division
+              ? normalizeBangladeshDivision(location.division)
+              : current.division;
+            const district = location?.district
+              ? normalizeBangladeshDistrict(location.district, division)
+              : current.district;
+            return {
+              ...current,
+              latitude: latitude.toFixed(7),
+              longitude: longitude.toFixed(7),
+              division: division || current.division,
+              district: district || current.district,
+              area:
+                location?.sub_district ||
+                location?.thana ||
+                location?.area ||
+                current.area,
+              fullAddress: current.fullAddress || location?.address || "",
+            };
+          });
+          setErrors((current) => {
+            const next = { ...current };
+            for (const key of [
+              "latitude",
+              "longitude",
+              "division",
+              "district",
+              "area",
+            ]) {
+              delete next[key];
+            }
+            return next;
+          });
+          toast.success("GPS location and address captured");
+        } catch {
+          update("latitude", latitude.toFixed(7));
+          update("longitude", longitude.toFixed(7));
+          toast.success("GPS coordinates captured");
+        } finally {
+          setLocating(false);
+        }
       },
       (error) => {
         setLocating(false);
@@ -274,6 +537,16 @@ export function PropertyRegistrationWizard() {
   };
 
   const submit = async () => {
+    for (const step of [1, 2, 3, 4]) {
+      const stepErrors = errorsForStep(step);
+      if (Object.keys(stepErrors).length > 0) {
+        moveToStep(step);
+        setErrors(stepErrors);
+        toast.error(`Please complete Step ${step} before registering`);
+        return;
+      }
+    }
+
     const parsed = propertyRegistrationSchema.safeParse(values);
     if (!parsed.success) {
       setErrors(errorsFromIssues(parsed.error.issues));
@@ -294,6 +567,7 @@ export function PropertyRegistrationWizard() {
         videoUrl: payload.videoUrl || undefined,
       });
       const propertyCode = resultPropertyCode(result);
+      window.localStorage.removeItem(PROPERTY_REGISTRATION_DRAFT_KEY);
       router.push(
         propertyCode
           ? `/account/to-let/properties/${propertyCode}?created=1`
@@ -304,11 +578,17 @@ export function PropertyRegistrationWizard() {
     }
   };
 
+  const reviewFacilities = registrationFacilities
+    .filter(({ key }) => key !== "hasElectricity")
+    .map(({ key, label }) => [label, values[key]] as const);
+  const availableReviewFacilities = reviewFacilities.filter(
+    ([, available]) => available,
+  );
+
   return (
     <div className="space-y-5">
       <PropertyPageHeader
-        title="Register Property"
-        description="Create a permanent property identity and then add reusable units."
+        title="Create Property Management Account"
         backHref="/account/to-let/properties"
       />
 
@@ -326,7 +606,7 @@ export function PropertyRegistrationWizard() {
                 <li key={step.id} className="flex flex-1 items-center">
                   <button
                     type="button"
-                    onClick={() => accessible && moveToStep(step.id)}
+                    onClick={() => accessible && selectStep(step.id)}
                     disabled={!accessible}
                     aria-current={active ? "step" : undefined}
                     className="flex min-w-0 flex-col items-center gap-1.5 disabled:cursor-not-allowed"
@@ -377,329 +657,234 @@ export function PropertyRegistrationWizard() {
               className="mt-1 text-lg font-semibold text-gray-900 outline-none"
             >
               {currentStep === 1
-                ? "Basic information"
+                ? "Basic Information"
                 : currentStep === 2
-                  ? "Property information"
+                  ? "Property Information"
                   : currentStep === 3
-                    ? "Verification"
-                    : "Review registration"}
+                    ? "Verification (Image and Video)"
+                    : "Review Registration"}
             </h2>
           </div>
 
           {currentStep === 1 ? (
-            <div className="space-y-6">
-              <Section
-                title="Property identity"
-                description="Add the property name and type."
-              >
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <div className="space-y-1.5">
-                    <Label htmlFor="property-name">Property Name *</Label>
-                    <Input
-                      id="property-name"
-                      value={values.name}
-                      onChange={(event) => update("name", event.target.value)}
-                      placeholder="e.g. Noor Villa"
-                      aria-invalid={Boolean(errors.name)}
-                    />
-                    <FieldMessage message={errors.name} />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label>Property Type *</Label>
-                    <Select
-                      value={values.propertyType}
-                      onValueChange={(value) => update("propertyType", value)}
-                    >
-                      <SelectTrigger
-                        aria-invalid={Boolean(errors.propertyType)}
-                      >
-                        <SelectValue placeholder="Select property type" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {propertyTypes.map((option) => (
-                          <SelectItem key={option.value} value={option.value}>
-                            {option.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <FieldMessage message={errors.propertyType} />
-                  </div>
-                </div>
-              </Section>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-1.5 sm:col-span-2">
+                <Label htmlFor="property-name">Property Name *</Label>
+                <Input
+                  id="property-name"
+                  value={values.name}
+                  onChange={(event) => update("name", event.target.value)}
+                  placeholder="Enter Property Name"
+                  aria-invalid={Boolean(errors.name)}
+                />
+                <FieldMessage message={errors.name} />
+              </div>
 
-              <Section title="Owner contact">
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <div className="space-y-1.5">
-                    <Label htmlFor="owner-name">Property Owner *</Label>
-                    <Input
-                      id="owner-name"
-                      value={values.ownerName}
-                      onChange={(event) =>
-                        update("ownerName", event.target.value)
-                      }
-                      placeholder="Owner full name"
-                      aria-invalid={Boolean(errors.ownerName)}
-                    />
-                    <FieldMessage message={errors.ownerName} />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="mobile-number">Mobile Number *</Label>
-                    <Input
-                      id="mobile-number"
-                      value={values.mobileNumber}
-                      onChange={(event) => updatePhone(event.target.value)}
-                      placeholder="01XXXXXXXXX"
-                      inputMode="tel"
-                      aria-invalid={Boolean(errors.mobileNumber)}
-                    />
-                    <FieldMessage message={errors.mobileNumber} />
-                  </div>
-                  <div className="space-y-1.5 sm:col-span-2">
-                    <Label htmlFor="property-email">Email Address</Label>
-                    <Input
-                      id="property-email"
-                      type="email"
-                      value={values.email}
-                      onChange={(event) => update("email", event.target.value)}
-                      placeholder="owner@example.com"
-                      aria-invalid={Boolean(errors.email)}
-                    />
-                    <FieldMessage message={errors.email} />
-                  </div>
-                </div>
-              </Section>
+              <div className="space-y-1.5">
+                <Label htmlFor="owner-name">Property Owner *</Label>
+                <Input
+                  id="owner-name"
+                  value={values.ownerName}
+                  onChange={(event) => update("ownerName", event.target.value)}
+                  placeholder="Enter Owner Name"
+                  aria-invalid={Boolean(errors.ownerName)}
+                />
+                <FieldMessage message={errors.ownerName} />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="mobile-number">Mobile Number *</Label>
+                <Input
+                  id="mobile-number"
+                  value={values.mobileNumber}
+                  onChange={(event) => updatePhone(event.target.value)}
+                  placeholder="01XXXXXXXXX"
+                  inputMode="tel"
+                  aria-invalid={Boolean(errors.mobileNumber)}
+                />
+                <FieldMessage message={errors.mobileNumber} />
+              </div>
 
-              <Section
-                title="Property location"
-                description="Enter administrative areas manually; GPS is optional."
-              >
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <div className="space-y-1.5">
-                    <Label htmlFor="division">Division *</Label>
-                    <Input
-                      id="division"
-                      value={values.division}
-                      onChange={(event) =>
-                        update("division", event.target.value)
-                      }
-                      placeholder="Dhaka"
-                      aria-invalid={Boolean(errors.division)}
-                    />
-                    <FieldMessage message={errors.division} />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="district">District *</Label>
-                    <Input
-                      id="district"
-                      value={values.district}
-                      onChange={(event) =>
-                        update("district", event.target.value)
-                      }
-                      placeholder="Dhaka"
-                      aria-invalid={Boolean(errors.district)}
-                    />
-                    <FieldMessage message={errors.district} />
-                  </div>
-                  <div className="space-y-1.5 sm:col-span-2">
-                    <Label htmlFor="area">Area / Upazila *</Label>
-                    <Input
-                      id="area"
-                      value={values.area}
-                      onChange={(event) => update("area", event.target.value)}
-                      placeholder="Mohammadpur"
-                      aria-invalid={Boolean(errors.area)}
-                    />
-                    <FieldMessage message={errors.area} />
-                  </div>
-                  <div className="space-y-1.5 sm:col-span-2">
-                    <Label htmlFor="full-address">Full Address *</Label>
-                    <Textarea
-                      id="full-address"
-                      value={values.fullAddress}
-                      onChange={(event) =>
-                        update("fullAddress", event.target.value)
-                      }
-                      placeholder="House, road, block and neighborhood"
-                      rows={3}
-                      aria-invalid={Boolean(errors.fullAddress)}
-                    />
-                    <FieldMessage message={errors.fullAddress} />
-                  </div>
-                  <div className="space-y-1.5 sm:col-span-2">
-                    <Label htmlFor="landmark">Nearby Landmark</Label>
-                    <Input
-                      id="landmark"
-                      value={values.nearbyLandmark}
-                      onChange={(event) =>
-                        update("nearbyLandmark", event.target.value)
-                      }
-                      placeholder="e.g. Near the bus stand"
-                    />
-                  </div>
-                  <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 sm:col-span-2">
-                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                      <div>
-                        <p className="text-sm font-medium text-gray-900">
-                          GPS coordinates
-                        </p>
-                        <p className="mt-0.5 text-xs text-gray-500">
-                          Optional. Allow browser location access while at the
-                          property.
-                        </p>
-                      </div>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={captureGps}
-                        disabled={locating}
-                      >
-                        {locating ? (
-                          <Loader2 className="animate-spin" />
-                        ) : (
-                          <LocateFixed />
-                        )}
-                        Capture GPS
-                      </Button>
-                    </div>
-                    <div className="mt-3 grid grid-cols-2 gap-3">
-                      <Input
-                        value={values.latitude}
-                        onChange={(event) =>
-                          update("latitude", event.target.value)
-                        }
-                        placeholder="Latitude"
-                        inputMode="decimal"
-                        aria-label="Latitude"
-                      />
-                      <Input
-                        value={values.longitude}
-                        onChange={(event) =>
-                          update("longitude", event.target.value)
-                        }
-                        placeholder="Longitude"
-                        inputMode="decimal"
-                        aria-label="Longitude"
-                      />
-                    </div>
-                  </div>
-                </div>
-              </Section>
+              <div className="space-y-1.5">
+                <Label htmlFor="property-email">Email Address</Label>
+                <Input
+                  id="property-email"
+                  type="email"
+                  value={values.email}
+                  onChange={(event) => update("email", event.target.value)}
+                  placeholder="example@gmail.com"
+                  aria-invalid={Boolean(errors.email)}
+                />
+                <FieldMessage message={errors.email} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Property Type *</Label>
+                <Select
+                  value={values.propertyType}
+                  onValueChange={(value) => update("propertyType", value)}
+                >
+                  <SelectTrigger aria-invalid={Boolean(errors.propertyType)}>
+                    <SelectValue placeholder="Apartment" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {registrationPropertyTypes.map((option) => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <FieldMessage message={errors.propertyType} />
+              </div>
+
+              <div className="sm:col-span-2">
+                <PropertyLocationFields
+                  division={values.division}
+                  district={values.district}
+                  area={values.area}
+                  errors={errors}
+                  onChange={update}
+                />
+              </div>
+
+              <div className="space-y-1.5 sm:col-span-2">
+                <Label htmlFor="full-address">Full Address *</Label>
+                <Input
+                  id="full-address"
+                  value={values.fullAddress}
+                  onChange={(event) =>
+                    update("fullAddress", event.target.value)
+                  }
+                  placeholder="Enter Full Property Address"
+                  aria-invalid={Boolean(errors.fullAddress)}
+                />
+                <FieldMessage message={errors.fullAddress} />
+              </div>
+
+              <div className="space-y-1.5 sm:col-span-2">
+                <Label htmlFor="landmark">Nearby Landmark</Label>
+                <Input
+                  id="landmark"
+                  value={values.nearbyLandmark}
+                  onChange={(event) =>
+                    update("nearbyLandmark", event.target.value)
+                  }
+                  placeholder="Example: Near Metro Station"
+                  aria-invalid={Boolean(errors.nearbyLandmark)}
+                />
+                <FieldMessage message={errors.nearbyLandmark} />
+              </div>
+
+              <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 sm:col-span-2">
+                <p className="text-sm font-medium text-gray-900">
+                  Google Map Location
+                </p>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={captureGps}
+                  disabled={locating}
+                  className="mt-3"
+                >
+                  {locating ? (
+                    <Loader2 className="animate-spin" />
+                  ) : (
+                    <LocateFixed />
+                  )}
+                  Capture GPS Location
+                </Button>
+                {values.latitude && values.longitude ? (
+                  <p className="mt-2 text-xs font-medium text-emerald-700">
+                    GPS location captured
+                  </p>
+                ) : null}
+                <FieldMessage message={errors.latitude ?? errors.longitude} />
+              </div>
             </div>
           ) : null}
 
           {currentStep === 2 ? (
             <div className="space-y-6">
-              <Section title="Building details">
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <div className="space-y-1.5">
-                    <Label>Building Type *</Label>
-                    <Select
-                      value={values.buildingType}
-                      onValueChange={(value) => update("buildingType", value)}
-                    >
-                      <SelectTrigger
-                        aria-invalid={Boolean(errors.buildingType)}
-                      >
-                        <SelectValue placeholder="Select building type" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {buildingTypes.map((option) => (
-                          <SelectItem key={option.value} value={option.value}>
-                            {option.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <FieldMessage message={errors.buildingType} />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="total-floors">Total Floors *</Label>
-                    <Input
-                      id="total-floors"
-                      type="number"
-                      min={1}
-                      value={values.totalFloors}
-                      onChange={(event) =>
-                        update("totalFloors", Number(event.target.value))
-                      }
-                      aria-invalid={Boolean(errors.totalFloors)}
-                    />
-                    <FieldMessage message={errors.totalFloors} />
-                  </div>
-                  <div className="space-y-1.5 sm:col-span-2">
-                    <Label htmlFor="declared-units">
-                      Planned Total Units *
-                    </Label>
-                    <Input
-                      id="declared-units"
-                      type="number"
-                      min={1}
-                      value={values.declaredTotalUnits}
-                      onChange={(event) =>
-                        update("declaredTotalUnits", Number(event.target.value))
-                      }
-                      aria-invalid={Boolean(errors.declaredTotalUnits)}
-                    />
-                    <p className="text-xs text-gray-500">
-                      This is capacity only. Created Unit records are counted
-                      separately.
-                    </p>
-                    <FieldMessage message={errors.declaredTotalUnits} />
-                  </div>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-1.5">
+                  <Label>Building Type *</Label>
+                  <Select
+                    value={values.buildingType}
+                    onValueChange={(value) => update("buildingType", value)}
+                  >
+                    <SelectTrigger aria-invalid={Boolean(errors.buildingType)}>
+                      <SelectValue placeholder="Residential" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {buildingTypes.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <FieldMessage message={errors.buildingType} />
                 </div>
-              </Section>
-
-              <Section
-                title="Property facilities"
-                description="Select building-level facilities available to units."
-              >
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <ToggleField
-                    label="Parking available"
-                    checked={values.hasParking}
-                    onChange={(value) => update("hasParking", value)}
-                  />
-                  <ToggleField
-                    label="Lift available"
-                    checked={values.hasLift}
-                    onChange={(value) => update("hasLift", value)}
-                  />
-                  <ToggleField
-                    label="Security guard"
-                    checked={values.hasSecurityGuard}
-                    onChange={(value) => update("hasSecurityGuard", value)}
-                  />
-                  <ToggleField
-                    label="CCTV camera"
-                    checked={values.hasCctv}
-                    onChange={(value) => update("hasCctv", value)}
-                  />
-                  <ToggleField
-                    label="Generator"
-                    checked={values.hasGenerator}
-                    onChange={(value) => update("hasGenerator", value)}
-                  />
-                  <ToggleField
-                    label="Water supply"
-                    checked={values.hasWaterSupply}
-                    onChange={(value) => update("hasWaterSupply", value)}
-                  />
-                  <ToggleField
-                    label="Gas connection"
-                    checked={values.hasGasConnection}
-                    onChange={(value) => update("hasGasConnection", value)}
-                  />
-                  <ToggleField
-                    label="Electricity"
-                    checked={values.hasElectricity}
-                    onChange={(value) => update("hasElectricity", value)}
-                  />
+                <div className="space-y-1.5">
+                  <Label>Property Status *</Label>
+                  <Select defaultValue="active">
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="active">Active</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
-              </Section>
+                <div className="space-y-1.5">
+                  <Label htmlFor="total-floors">Total Floors *</Label>
+                  <Input
+                    id="total-floors"
+                    type="number"
+                    min={1}
+                    value={values.totalFloors || ""}
+                    placeholder="05"
+                    onChange={(event) =>
+                      update("totalFloors", Number(event.target.value))
+                    }
+                    aria-invalid={Boolean(errors.totalFloors)}
+                  />
+                  <FieldMessage message={errors.totalFloors} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="declared-units">Total Units *</Label>
+                  <Input
+                    id="declared-units"
+                    type="number"
+                    min={1}
+                    value={values.declaredTotalUnits || ""}
+                    placeholder="20"
+                    onChange={(event) =>
+                      update("declaredTotalUnits", Number(event.target.value))
+                    }
+                    aria-invalid={Boolean(errors.declaredTotalUnits)}
+                  />
+                  <FieldMessage message={errors.declaredTotalUnits} />
+                </div>
+              </div>
 
-              <Section title="Description">
+              <div className="grid gap-4 sm:grid-cols-2">
+                {registrationFacilities.map(({ key, label }) => (
+                  <FacilityRadioField
+                    key={key}
+                    label={label}
+                    value={facilitySelections[key]}
+                    error={errors[key]}
+                    onChange={(value) => selectFacility(key, value)}
+                  />
+                ))}
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="property-description">
+                  Property Description
+                </Label>
                 <Textarea
+                  id="property-description"
                   value={values.description}
                   onChange={(event) =>
                     update("description", event.target.value)
@@ -709,63 +894,49 @@ export function PropertyRegistrationWizard() {
                   aria-label="Property description"
                 />
                 <FieldMessage message={errors.description} />
-              </Section>
+              </div>
             </div>
           ) : null}
 
           {currentStep === 3 ? (
             <div className="space-y-6">
-              <Section
-                title="Verification media"
-                description="Photos must be JPG, PNG or WebP. Video upload is not enabled yet."
-              >
-                <div className="grid gap-5 sm:grid-cols-2">
-                  <div className="space-y-1.5">
-                    <Label>Property Front Image *</Label>
-                    <ImageUploader
-                      value={values.frontImageUrl}
-                      onChange={updateFrontImage}
-                      folder="to-let/properties"
-                      className="min-h-44"
-                    />
-                    <FieldMessage
-                      message={errors.frontImageUrl ?? errors.coverImageUrl}
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label>Additional Building Image</Label>
-                    <ImageUploader
-                      value={values.buildingImageUrl}
-                      onChange={(url) => update("buildingImageUrl", url)}
-                      folder="to-let/properties"
-                      className="min-h-44"
-                    />
-                    <FieldMessage message={errors.buildingImageUrl} />
-                  </div>
-                  <div className="space-y-1.5 sm:col-span-2">
-                    <Label htmlFor="video-url">
-                      Building Video URL (optional)
-                    </Label>
-                    <Input
-                      id="video-url"
-                      type="url"
-                      value={values.videoUrl}
-                      onChange={(event) =>
-                        update("videoUrl", event.target.value)
-                      }
-                      placeholder="https://... (up to 90 seconds recommended)"
-                      aria-invalid={Boolean(errors.videoUrl)}
-                    />
-                    <p className="text-xs text-gray-500">
-                      Paste a public video URL. Direct video upload will be
-                      added in a later media upgrade.
-                    </p>
-                    <FieldMessage message={errors.videoUrl} />
-                  </div>
+              <div className="grid gap-5 sm:grid-cols-2">
+                <div className="space-y-1.5">
+                  <Label>Property Front Image *</Label>
+                  <ImageUploader
+                    value={values.frontImageUrl}
+                    onChange={updateFrontImage}
+                    folder="to-let/properties"
+                    className="min-h-44"
+                  />
+                  <FieldMessage
+                    message={errors.frontImageUrl ?? errors.coverImageUrl}
+                  />
                 </div>
-              </Section>
+                <div className="space-y-1.5">
+                  <Label>Building Photo</Label>
+                  <ImageUploader
+                    value={values.buildingImageUrl}
+                    onChange={(url) => update("buildingImageUrl", url)}
+                    folder="to-let/properties"
+                    className="min-h-44"
+                  />
+                  <FieldMessage message={errors.buildingImageUrl} />
+                </div>
+                <div className="space-y-1.5 sm:col-span-2">
+                  <Label>Building Video (90 sec)</Label>
+                  <PropertyVideoField
+                    value={values.videoUrl}
+                    onChange={(url) => update("videoUrl", url)}
+                    disabled={createProperty.isPending}
+                    invalid={Boolean(errors.videoUrl)}
+                    allowLink={false}
+                  />
+                  <FieldMessage message={errors.videoUrl} />
+                </div>
+              </div>
 
-              <Section title="Phone verification">
+              <Section title="Phone Verification">
                 <PropertyPhoneVerification
                   phone={values.mobileNumber}
                   verified={values.phoneVerified}
@@ -782,13 +953,21 @@ export function PropertyRegistrationWizard() {
                 <dl className="divide-y divide-gray-100 rounded-lg border border-gray-200 px-4">
                   {[
                     ["Property Name", values.name],
-                    ["Property Type", values.propertyType],
+                    [
+                      "Property Type",
+                      optionLabel(propertyTypes, values.propertyType),
+                    ],
                     ["Owner", values.ownerName],
-                    ["Mobile", values.mobileNumber],
-                    ["Location", `${values.area}, ${values.district}`],
-                    ["Building Type", values.buildingType],
+                    [
+                      "Location",
+                      `${values.area}, ${values.district}, ${values.division}`,
+                    ],
+                    [
+                      "Building Type",
+                      optionLabel(buildingTypes, values.buildingType),
+                    ],
                     ["Total Floors", String(values.totalFloors)],
-                    ["Planned Units", String(values.declaredTotalUnits)],
+                    ["Total Units", String(values.declaredTotalUnits)],
                   ].map(([label, value]) => (
                     <div
                       key={label}
@@ -801,19 +980,33 @@ export function PropertyRegistrationWizard() {
                 </dl>
               </Section>
 
-              <Section title="Facilities and verification">
+              <Section title="Facilities">
+                {availableReviewFacilities.length > 0 ? (
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {availableReviewFacilities.map(([label]) => (
+                      <div
+                        key={label}
+                        className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800"
+                      >
+                        <span className="flex size-5 items-center justify-center rounded-full border border-emerald-600 bg-emerald-600 text-white">
+                          <Check className="size-3" />
+                        </span>
+                        {label}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-gray-500">
+                    No facilities selected.
+                  </p>
+                )}
+              </Section>
+
+              <Section title="Verification">
                 <div className="grid gap-2 sm:grid-cols-2">
                   {[
-                    ["Parking", values.hasParking],
-                    ["Lift", values.hasLift],
-                    ["Security guard", values.hasSecurityGuard],
-                    ["CCTV", values.hasCctv],
-                    ["Generator", values.hasGenerator],
-                    ["Water supply", values.hasWaterSupply],
-                    ["Gas connection", values.hasGasConnection],
-                    ["Electricity", values.hasElectricity],
-                    ["Front image submitted", Boolean(values.frontImageUrl)],
-                    ["Phone verified", values.phoneVerified],
+                    ["Property Photo Submitted", Boolean(values.frontImageUrl)],
+                    ["OTP Verified", values.phoneVerified],
                   ].map(([label, done]) => (
                     <div
                       key={String(label)}
@@ -824,7 +1017,7 @@ export function PropertyRegistrationWizard() {
                           "flex size-5 items-center justify-center rounded-full border",
                           done
                             ? "border-emerald-600 bg-emerald-600 text-white"
-                            : "border-gray-300 text-transparent",
+                            : "border-gray-300 bg-white text-transparent",
                         )}
                       >
                         <Check className="size-3" />
@@ -835,20 +1028,37 @@ export function PropertyRegistrationWizard() {
                 </div>
               </Section>
 
+              <Section title="Registration status">
+                <div className="flex items-start gap-3 rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-emerald-800">
+                  <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-white">
+                    <Check className="size-4" />
+                  </span>
+                  <div>
+                    <p className="font-semibold">
+                      Ready To Create Property Account
+                    </p>
+                    <p className="mt-0.5 text-sm text-emerald-700">
+                      Review the confirmations below, then register the
+                      property.
+                    </p>
+                  </div>
+                </div>
+              </Section>
+
               <Section title="Confirm registration">
                 <div className="space-y-3">
                   {[
                     {
                       key: "informationConfirmed" as const,
-                      label: "I confirm all property information is correct.",
+                      label: "I confirm all information is correct",
                     },
                     {
                       key: "termsAccepted" as const,
-                      label: "I agree to the Property Terms & Conditions.",
+                      label: "I agree to Property Terms & Conditions",
                     },
                     {
                       key: "propertyPolicyAccepted" as const,
-                      label: "I agree to the Bikalpo Property Policy.",
+                      label: "I agree to Bikalpo Property Policy",
                     },
                   ].map((item) => (
                     <div key={item.key}>
@@ -901,7 +1111,7 @@ export function PropertyRegistrationWizard() {
                   </>
                 ) : (
                   <>
-                    Continue <ArrowRight />
+                    Save &amp; Continue <ArrowRight />
                   </>
                 )}
               </Button>

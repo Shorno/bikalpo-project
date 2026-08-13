@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useRef } from "react";
+import { useCallback, useRef, useState } from "react";
 import { client } from "@/utils/orpc";
 
 export interface BarikoiPlace {
@@ -23,7 +23,7 @@ export function useBarikoiAutocomplete() {
   const [isLoading, setIsLoading] = useState(false);
   const debounceTimer = useRef<NodeJS.Timeout | null>(null);
 
-  const search = useCallback((query: string) => {
+  const search = useCallback((query: string, city?: string) => {
     if (debounceTimer.current) {
       clearTimeout(debounceTimer.current);
     }
@@ -36,7 +36,10 @@ export function useBarikoiAutocomplete() {
     debounceTimer.current = setTimeout(async () => {
       setIsLoading(true);
       try {
-        const places = await client.barikoi.autocomplete({ q: query });
+        const places = await client.barikoi.autocomplete({
+          q: query,
+          city: city || undefined,
+        });
         setSuggestions(places as BarikoiPlace[]);
       } catch (error) {
         console.error("Barikoi autocomplete error:", error);

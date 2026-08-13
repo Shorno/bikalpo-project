@@ -3,8 +3,8 @@ import {
   Bath,
   BedDouble,
   Building2,
+  CalendarDays,
   MapPin,
-  MessageCircle,
   Phone,
   Ruler,
 } from "lucide-react";
@@ -13,6 +13,8 @@ import { ListingImageCarousel } from "./listing-image-carousel";
 
 export interface PublicUnitListing {
   listingCode: string;
+  marketplaceStatus: "available" | "booked";
+  marketplaceVisibleUntil: string | Date | null;
   title: string;
   description: string | null;
   monthlyRent: number | null;
@@ -48,9 +50,13 @@ function humanize(value: string) {
     .join(" ");
 }
 
-function whatsAppPhone(value: string) {
-  const digits = value.replace(/\D/g, "");
-  return digits.startsWith("0") ? `88${digits}` : digits;
+function todayInDhaka() {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Dhaka",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
 }
 
 export function PublicUnitListingCard({
@@ -61,7 +67,8 @@ export function PublicUnitListingCard({
   const detailHref =
     href === undefined ? `/to-let/listings/${listing.listingCode}` : href;
   const contactPhone = phone ?? listing.contact?.phone;
-  const today = new Date().toISOString().slice(0, 10);
+  const isBooked = listing.marketplaceStatus === "booked";
+  const today = todayInDhaka();
   const isAvailableNow = listing.availableFrom <= today;
   const availabilityLabel = isAvailableNow
     ? "Available now"
@@ -76,8 +83,14 @@ export function PublicUnitListingCard({
 
       <div className="flex flex-1 flex-col space-y-3 p-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700">
-            {availabilityLabel}
+          <span
+            className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
+              isBooked
+                ? "bg-amber-50 text-amber-700"
+                : "bg-emerald-50 text-emerald-700"
+            }`}
+          >
+            {isBooked ? "Booked" : "Available"}
           </span>
           <span className="text-xs font-medium text-gray-500">
             {listing.listingCode}
@@ -93,6 +106,10 @@ export function PublicUnitListingCard({
           </h3>
           <p className="mt-1 text-sm text-gray-500">
             {listing.property.name} / {listing.unit.name}
+          </p>
+          <p className="mt-1.5 flex items-center gap-1 text-xs text-gray-500">
+            <CalendarDays className="size-3.5" />
+            {isBooked ? "No new booking requests" : availabilityLabel}
           </p>
         </div>
 
@@ -140,6 +157,7 @@ export function PublicUnitListingCard({
           {contactPhone ? (
             <a
               href={`tel:${contactPhone}`}
+              aria-label={`Call about ${listing.title}`}
               className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50"
             >
               <Phone className="size-3.5" /> Call
@@ -153,19 +171,12 @@ export function PublicUnitListingCard({
           {detailHref ? (
             <Link
               href={detailHref}
+              prefetch={false}
+              aria-label={`View details for ${listing.title}`}
               className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-700"
             >
               View Details <ArrowRight className="size-3.5" />
             </Link>
-          ) : contactPhone ? (
-            <a
-              href={`https://wa.me/${whatsAppPhone(contactPhone)}?text=${encodeURIComponent(`I am interested in ${listing.listingCode}: ${listing.title}`)}`}
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-700"
-            >
-              <MessageCircle className="size-3.5" /> WhatsApp
-            </a>
           ) : (
             <span className="inline-flex items-center justify-center rounded-lg bg-gray-100 px-3 py-2 text-xs font-semibold text-gray-400">
               Details unavailable
