@@ -658,9 +658,9 @@ test(
       });
       const exchangeOrderItem = exchangeOrder?.items[0];
       assert.equal(exchangeOrderItem?.cylinderSaleMode, "exchange");
-      assert.equal(exchangeOrderItem?.newUnitPrice, "100.00");
-      assert.equal(exchangeOrderItem?.exchangeCreditAmount, "20.00");
-      assert.equal(exchangeOrderItem?.unitPrice, "80.00");
+      assert.equal(Number(exchangeOrderItem?.newUnitPrice), 100);
+      assert.equal(Number(exchangeOrderItem?.exchangeCreditAmount), 20);
+      assert.equal(Number(exchangeOrderItem?.unitPrice), 80);
       assert.equal(exchangeOrderItem?.expectedEmptyPackQty, 1);
       assert.equal(
         (
