@@ -2,7 +2,9 @@
 
 import {
   AlertTriangle,
+  CalendarCheck,
   Check,
+  ChevronDown,
   FileQuestion,
   FileText,
   Headphones,
@@ -10,6 +12,7 @@ import {
   Lock,
   LogOut,
   MapPin,
+  Menu,
   Package,
   ReceiptText,
   ShoppingCart,
@@ -18,6 +21,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useCartQuery } from "@/hooks/use-customer-api";
 import { authClient } from "@/lib/auth-client";
@@ -68,6 +72,12 @@ const sidebarItems = [
     badgeKey: "requests",
   },
   {
+    label: "My Bookings",
+    href: "/account/to-let",
+    icon: CalendarCheck,
+    exact: true,
+  },
+  {
     label: "My Cart",
     href: "/checkout",
     icon: ShoppingCart,
@@ -95,6 +105,7 @@ const bottomItems = [
 
 export function AccountSidebar() {
   const pathname = usePathname();
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const { data: cartData } = useCartQuery();
 
   const counts = {
@@ -115,7 +126,35 @@ export function AccountSidebar() {
 
   return (
     <aside className="w-full lg:w-64 shrink-0 py-0">
-      <nav className="bg-white rounded-lg border border-gray-100 overflow-hidden">
+      <Button
+        type="button"
+        variant="outline"
+        className="mb-3 flex h-11 w-full items-center justify-between bg-white lg:hidden"
+        aria-expanded={mobileMenuOpen}
+        aria-controls="account-navigation"
+        onClick={() => setMobileMenuOpen((open) => !open)}
+      >
+        <span className="inline-flex items-center gap-2">
+          <Menu className="size-4" aria-hidden="true" />
+          Account menu
+        </span>
+        <ChevronDown
+          className={cn(
+            "size-4 transition-transform",
+            mobileMenuOpen && "rotate-180",
+          )}
+          aria-hidden="true"
+        />
+      </Button>
+
+      <nav
+        id="account-navigation"
+        className={cn(
+          "overflow-hidden rounded-lg border border-gray-100 bg-white",
+          mobileMenuOpen ? "block" : "hidden",
+          "lg:block",
+        )}
+      >
         <div className="flex flex-col divide-y divide-gray-100">
           {/* Dashboard/Top Items */}
           {sidebarItems.map((item) => {
@@ -141,7 +180,7 @@ export function AccountSidebar() {
                 )}
                 asChild
               >
-                <Link href={item.href}>
+                <Link href={item.href} onClick={() => setMobileMenuOpen(false)}>
                   <div className="flex items-center justify-between w-full">
                     <div className="flex items-center gap-3">
                       <Icon
@@ -185,7 +224,7 @@ export function AccountSidebar() {
                 className="justify-start gap-3 h-12 rounded-none px-4 text-gray-600 hover:bg-gray-50 flex"
                 asChild
               >
-                <Link href={item.href}>
+                <Link href={item.href} onClick={() => setMobileMenuOpen(false)}>
                   <Icon className="h-5 w-5 text-[#7B8B9A]" />
                   <span className="text-[15px]">{item.label}</span>
                 </Link>

@@ -65,6 +65,10 @@ import { stockAdjustmentRouter } from "./stock-adjustment";
 import { stockOverviewRouter } from "./stock-overview";
 import { supplierPaymentRouter } from "./supplier-payment";
 import { adminToLetRouter, toLetRouter } from "./tolet";
+import { toLetBookingRouter } from "./tolet-booking";
+import { toLetPropertyRouter } from "./tolet-property";
+import { toLetRentalRouter } from "./tolet-rental";
+import { toLetUnitListingRouter } from "./tolet-unit-listing";
 import { userComplaintRouter } from "./user-complaint";
 import { userInviteRouter } from "./user-invite";
 import { userTicketRouter } from "./user-ticket";
@@ -129,6 +133,10 @@ export const appRouter = {
   adminLanding: adminLandingRouter,
   landing: landingRouter,
   toLet: toLetRouter,
+  toLetBooking: toLetBookingRouter,
+  toLetProperty: toLetPropertyRouter,
+  toLetRental: toLetRentalRouter,
+  toLetUnitListing: toLetUnitListingRouter,
   adminToLet: adminToLetRouter,
   adminWarehouseAssignment: adminWarehouseAssignmentRouter,
   adminShopCategoryAssignment: adminShopCategoryAssignmentRouter,

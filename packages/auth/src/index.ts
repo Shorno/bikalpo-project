@@ -10,6 +10,7 @@ import { storeOtp } from "./otp-store";
 import { ac, admin as adminRole, consumer, deliveryman, salesman, shop_owner, warehouse } from "./permissions";
 
 const isProduction = env.NODE_ENV === "production";
+const isDevelopment = env.NODE_ENV === "development";
 
 export const auth = betterAuth({
   baseURL: env.BETTER_AUTH_URL,
@@ -40,9 +41,11 @@ export const auth = betterAuth({
     phoneNumber({
       otpLength: 6,
       sendOTP: ({ phoneNumber: phone, code }) => {
-        // Store OTP in shared in-memory map (readable by dev-otp endpoint)
-        storeOtp(phone, code);
-        console.log(`[OTP] Phone: ${phone} → Code: ${code}`);
+        if (isDevelopment) {
+          // Local-only helper. Production must use a real SMS provider.
+          storeOtp(phone, code);
+          console.log(`[OTP] Phone: ${phone} → Code: ${code}`);
+        }
       },
       signUpOnVerification: {
         getTempEmail: (phone) => `${phone.replace(/\+/g, "")}@bikalpo.com`,

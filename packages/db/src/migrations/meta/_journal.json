@@ -323,6 +323,34 @@
       "when": 1786500000000,
       "tag": "0046_flag_invalid_variant_definitions",
       "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1786600000000,
+      "tag": "0047_tolet_property_foundation",
+      "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1786700000000,
+      "tag": "0048_tolet_unit_listing",
+      "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1786800000000,
+      "tag": "0049_tolet_booking_request",
+      "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1786900000000,
+      "tag": "0050_tolet_rental_lifecycle",
+      "breakpoints": true
     }
   ]
 }

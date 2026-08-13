@@ -1,6 +1,6 @@
 "use client";
 
-import { Building2, Eye, LayoutGrid, MapPin, Tags } from "lucide-react";
+import { Building2, Eye, KeyRound, LayoutGrid, MapPin, Tags } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
@@ -18,6 +18,7 @@ const storefrontLinks = [
   { label: "Products", href: "/products", icon: LayoutGrid },
   { label: "Offers", href: "/offers", icon: Tags },
   { label: "Stores", href: "/stores", icon: MapPin },
+  { label: "To-Let", href: "/to-let", icon: KeyRound },
   { label: "For business", href: "/b2b", icon: Building2 },
 ];
 
