@@ -60,6 +60,7 @@ export type StockQuantityGroup = {
 export type StructuredStockVariant = {
   productId: number;
   variantId: number;
+  coreProductId: number | null;
   productName: string;
   brandName: string | null;
   sku: string | null;
@@ -503,6 +504,7 @@ export function buildStructuredStockOverview(
     variants.push({
       productId: row.productId,
       variantId: row.variantId,
+      coreProductId: row.coreProductId,
       productName: row.productName,
       brandName: row.brandName,
       sku: row.sku,

@@ -24,6 +24,7 @@ import { warehouseStorageArea } from "./warehouse-storage-area";
  * - broken: carton has been decomposed back into packs
  * - dispatched: carton has been sent out for delivery
  * - sold: carton has been sold/delivered
+ * - damaged: carton was written off through warehouse damage management
  */
 export const cartonStatusEnum = pgEnum("carton_status", [
     "active",
@@ -31,6 +32,7 @@ export const cartonStatusEnum = pgEnum("carton_status", [
     "broken",
     "dispatched",
     "sold",
+    "damaged",
 ]);
 
 /**

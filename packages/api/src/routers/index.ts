@@ -47,6 +47,7 @@ import { dashboardRouter } from "./dashboard";
 import { deliverymanRouter } from "./deliveryman";
 import { devOtpRouter } from "./dev-otp";
 import { employeeRouter } from "./employee";
+import { emptyPackManagementRouter } from "./empty-pack-management";
 import { expenseRouter } from "./expense";
 import { financeRouter } from "./finance";
 import { inventoryRouter } from "./inventory";
@@ -71,6 +72,7 @@ import { userTicketRouter } from "./user-ticket";
 import { verifiedUserRouter } from "./verified-user";
 import { warehouseRouter } from "./warehouse";
 import { warehouseApplicationRouter } from "./warehouse-application";
+import { warehouseDamageRouter } from "./warehouse-damage";
 import { warehouseDeliveryRouter } from "./warehouse-delivery";
 import { warehouseEmployeeRouter } from "./warehouse-employee";
 import { warehouseEstimateRouter } from "./warehouse-estimate";
@@ -117,6 +119,7 @@ export const appRouter = {
   customer: customerRouter,
   salesman: salesmanRouter,
   deliveryman: deliverymanRouter,
+  emptyPackManagement: emptyPackManagementRouter,
   returns: returnsRouter,
   retailerPos: retailerPosRouter,
   dashboard: dashboardRouter,
@@ -158,6 +161,7 @@ export const appRouter = {
   warehouseEmployee: warehouseEmployeeRouter,
   warehouseEstimate: warehouseEstimateRouter,
   warehouseDelivery: warehouseDeliveryRouter,
+  warehouseDamage: warehouseDamageRouter,
   stockAdjustment: stockAdjustmentRouter,
   warehousePos: warehousePosRouter,
   warehouseSales: warehouseSalesRouter,

@@ -1,6 +1,5 @@
-import { Check, MapPin, Settings2, Weight } from "lucide-react";
-import { useState } from "react";
-import { Button } from "@/components/ui/button";
+import { Boxes, MapPin, Weight } from "lucide-react";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -9,9 +8,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { CartonConfigManagerDialog } from "./carton-config-manager-dialog";
 import { SectionHeader } from "./section-header";
-import type { CartonConfig, CartonItem } from "./types";
+import type { CartonItem } from "./types";
 
 type StorageArea = {
   id: number;
@@ -20,175 +18,103 @@ type StorageArea = {
 
 type CartonConfigurationProps = {
   items: CartonItem[];
-  configs: CartonConfig[];
   areas: StorageArea[];
-  selectedConfigId: number | null;
   storageAreaId: string;
   totalWeightKg: string;
-  onSelectConfig: (configId: number) => void;
+  onPackCountChange: (value: number) => void;
   onStorageAreaChange: (value: string) => void;
 };
 
 export function CartonConfiguration({
   items,
-  configs,
   areas,
-  selectedConfigId,
   storageAreaId,
   totalWeightKg,
-  onSelectConfig,
+  onPackCountChange,
   onStorageAreaChange,
 }: CartonConfigurationProps) {
-  const [managerOpen, setManagerOpen] = useState(false);
-  const activeConfigs = configs.filter((config) => config.isActive);
   const item = items[0];
+  if (!item) return null;
+
+  const overLimit = item.packCount > item.availableStock;
 
   return (
     <div>
-      <div className="flex items-start justify-between gap-4">
-        <SectionHeader
-          title="Carton configuration"
-          description="Choose the approved template that defines this carton."
-        />
-        <Button
-          variant="outline"
-          size="sm"
-          className="gap-2 flex-shrink-0"
-          onClick={() => setManagerOpen(true)}
-        >
-          <Settings2 size={14} /> Manage configurations
-        </Button>
-      </div>
+      <SectionHeader
+        title="Carton contents"
+        description="Enter the quantity for this physical carton. No saved template is required."
+      />
 
-      <div className="space-y-5">
-        {activeConfigs.length > 0 ? (
-          <div className="space-y-3">
-            <Label className="text-sm font-medium text-foreground/80">
-              Carton template
-            </Label>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              {activeConfigs.map((c) => {
-                const sel = selectedConfigId === c.id;
-                return (
-                  <button
-                    key={c.id}
-                    type="button"
-                    className={`text-left p-4 rounded-lg border transition-colors ${
-                      sel
-                        ? "border-foreground bg-foreground/[0.03] ring-1 ring-foreground/10"
-                        : "border-border hover:border-foreground/25 hover:bg-muted/30"
-                    }`}
-                    onClick={() => onSelectConfig(c.id)}
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex items-start gap-3 min-w-0">
-                        <div
-                          className={`w-4 h-4 rounded-full border flex items-center justify-center flex-shrink-0 mt-0.5 ${
-                            sel
-                              ? "bg-foreground border-foreground"
-                              : "border-foreground/30"
-                          }`}
-                        >
-                          {sel && (
-                            <Check size={10} className="text-background" />
-                          )}
-                        </div>
-                        <div className="min-w-0">
-                          <p className="font-medium text-sm text-foreground truncate">
-                            {c.label || `${c.packsPerCarton} Pack Carton`}
-                          </p>
-                          <p className="text-sm text-foreground/55 mt-0.5">
-                            {c.packsPerCarton} ×{" "}
-                            {item?.operationalUnit || "unit"} ·{" "}
-                            {c.cartonWeightKg} KG
-                          </p>
-                        </div>
-                      </div>
-                      <span className="text-sm font-semibold tabular-nums text-foreground flex-shrink-0">
-                        ৳{Number(c.cartonPrice).toLocaleString()}
-                      </span>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
+      <div className="grid grid-cols-1 gap-5 md:grid-cols-3">
+        <div>
+          <div className="mb-2 flex items-center gap-2">
+            <Boxes size={15} className="text-foreground/50" />
+            <Label htmlFor="units-per-carton">Units per carton</Label>
           </div>
-        ) : (
-          <div className="rounded-lg border border-dashed bg-amber-50/40 px-5 py-6 text-center dark:bg-amber-950/10">
-            <p className="text-sm font-medium">
-              This variant has no active carton configuration
-            </p>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Create one before this physical carton can be submitted.
-            </p>
-            <Button
-              size="sm"
-              className="mt-4 gap-2"
-              onClick={() => setManagerOpen(true)}
-            >
-              <Settings2 size={14} /> Create configuration
-            </Button>
+          <div className="relative">
+            <Input
+              id="units-per-carton"
+              type="number"
+              min={1}
+              max={item.availableStock}
+              step={1}
+              value={item.packCount || ""}
+              onChange={(event) =>
+                onPackCountChange(
+                  Math.max(0, Math.floor(Number(event.target.value) || 0)),
+                )
+              }
+              placeholder="Enter quantity"
+              className={overLimit ? "border-red-500 pr-20" : "pr-20"}
+            />
+            <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
+              {item.operationalUnit}
+            </span>
           </div>
-        )}
+          <p
+            className={`mt-1.5 text-xs ${overLimit ? "text-red-600" : "text-muted-foreground"}`}
+          >
+            {overLimit
+              ? `Only ${item.availableStock} units are ready for carton packing.`
+              : `${item.availableStock} units ready for packing`}
+          </p>
+        </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div>
-            <div className="flex items-center gap-2 mb-3">
-              <Weight size={16} className="text-foreground/50" />
-              <Label className="text-sm font-medium text-foreground/80">
-                Carton weight
-              </Label>
-              <span className="text-[11px] font-medium text-foreground/45 uppercase tracking-wide">
-                Auto
-              </span>
-            </div>
-            <p className="text-2xl font-semibold tabular-nums text-foreground">
-              {totalWeightKg} KG
-            </p>
-            <p className="text-sm text-foreground/55 mt-1.5">
-              {items.map((i) => `${i.weightKg}KG × ${i.packCount}`).join(" + ")}{" "}
-              = {totalWeightKg} KG
-            </p>
+        <div>
+          <div className="mb-2 flex items-center gap-2">
+            <Weight size={15} className="text-foreground/50" />
+            <Label>Carton weight</Label>
           </div>
+          <div className="flex h-10 items-center rounded-md border bg-muted/30 px-3 text-sm font-semibold tabular-nums text-foreground">
+            {totalWeightKg} KG
+          </div>
+          <p className="mt-1.5 text-xs text-muted-foreground">
+            Calculated from variant weight × units
+          </p>
+        </div>
 
-          <div>
-            <div className="flex items-center gap-2 mb-3">
-              <MapPin size={16} className="text-foreground/50" />
-              <Label
-                htmlFor="storage-area"
-                className="text-sm font-medium text-foreground/80"
-              >
-                Storage location
-              </Label>
-              <span className="text-[11px] font-medium text-foreground/45 uppercase tracking-wide">
-                Optional
-              </span>
-            </div>
-            <Select value={storageAreaId} onValueChange={onStorageAreaChange}>
-              <SelectTrigger id="storage-area" className="h-10 text-sm">
-                <SelectValue placeholder="Select storage area" />
-              </SelectTrigger>
-              <SelectContent>
-                {areas.map((a) => (
-                  <SelectItem key={a.id} value={String(a.id)}>
-                    {a.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+        <div>
+          <div className="mb-2 flex items-center gap-2">
+            <MapPin size={15} className="text-foreground/50" />
+            <Label htmlFor="storage-area">Storage location</Label>
           </div>
+          <Select value={storageAreaId} onValueChange={onStorageAreaChange}>
+            <SelectTrigger id="storage-area" className="h-10 text-sm">
+              <SelectValue placeholder="Optional" />
+            </SelectTrigger>
+            <SelectContent>
+              {areas.map((area) => (
+                <SelectItem key={area.id} value={String(area.id)}>
+                  {area.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <p className="mt-1.5 text-xs text-muted-foreground">
+            Shelf or warehouse area
+          </p>
         </div>
       </div>
-
-      {item && (
-        <CartonConfigManagerDialog
-          open={managerOpen}
-          onOpenChange={setManagerOpen}
-          variantId={item.variantId}
-          operationalUnit={item.operationalUnit}
-          configs={configs}
-        />
-      )}
     </div>
   );
 }

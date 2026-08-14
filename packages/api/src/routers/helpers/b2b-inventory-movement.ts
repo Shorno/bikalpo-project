@@ -7,6 +7,7 @@ import { resolveVariantOperations } from "@bikalpo-project/db/variant-definition
 import {
   carton,
   inventory,
+  order,
   orderItem,
   productVariant,
 } from "@bikalpo-project/db/schema";
@@ -528,6 +529,54 @@ export async function releaseB2bOrderReservations(
         );
     }
   }
+}
+
+/** Permanently removes a completed B2B sale from the seller's reserved stock. */
+export async function consumeB2bOrderReservations(
+  tx: any,
+  input: { warehouseId: string; orderId: number },
+) {
+  const claimed = await tx
+    .update(order)
+    .set({ sellerStockConsumedAt: new Date() })
+    .where(
+      and(
+        eq(order.id, input.orderId),
+        eq(order.warehouseId, input.warehouseId),
+        sql`${order.sellerStockConsumedAt} IS NULL`,
+      ),
+    )
+    .returning({ id: order.id });
+  if (claimed.length === 0) return false;
+
+  const items = await tx.query.orderItem.findMany({
+    where: eq(orderItem.orderId, input.orderId),
+  });
+  for (const item of items) {
+    if (!item.variantId) continue;
+    const quantity = Number(
+      item.inventoryQty ?? item.modifiedQty ?? item.quantity,
+    );
+    if (!Number.isFinite(quantity) || quantity <= 0) continue;
+    const consumed = await tx
+      .update(inventory)
+      .set({
+        reservedQty: sql`${inventory.reservedQty}::numeric - ${quantity}`,
+      })
+      .where(
+        and(
+          eq(inventory.ownerType, "warehouse"),
+          eq(inventory.ownerId, input.warehouseId),
+          eq(inventory.variantId, item.variantId),
+          sql`${inventory.reservedQty}::numeric >= ${quantity}`,
+        ),
+      )
+      .returning({ id: inventory.id });
+    if (consumed.length === 0) {
+      throw new Error(`Reserved stock mismatch for order item ${item.id}`);
+    }
+  }
+  return true;
 }
 
 export async function markOrderCartonsDispatched(tx: any, orderIds: number[]) {

@@ -49,14 +49,25 @@ import {
 import { z } from "zod";
 
 import { publicProcedure, warehouseProcedure } from "../index";
+import {
+	ISO_DATE_PATTERN,
+	validateWarehouseStockTracking,
+	WarehouseExpiryValidationError,
+} from "../services/warehouse-expiry";
+import {
+	allocateCurrentStockLots,
+	unitCostFromStockEntry,
+} from "../services/warehouse-stock-lots";
 import { ensureWarehouseBuyerTargetVariant } from "./helpers/b2b-buyer-target";
 import { convertB2bOrderToRetailInventory } from "./helpers/b2b-conversion";
 import {
 	markOrderCartonsDispatched,
+	consumeB2bOrderReservations,
 	releaseB2bOrderReservations,
 	reserveB2bOrderItemsAtApproval,
 } from "./helpers/b2b-inventory-movement";
 import { getCartonInventoryUnits } from "./helpers/carton-units";
+import { creditWarehouseExchangeOrder } from "./helpers/empty-pack-stock";
 import { completeSelfPickupInvoice } from "./helpers/self-pickup";
 import { buildCanonicalOrderFlow } from "./helpers/order-lifecycle";
 import {
@@ -4382,6 +4393,15 @@ const orderQueries = {
 								.set({ deliveredQty: item.modifiedQty ?? item.quantity })
 								.where(eq(orderItem.id, item.id));
 						}
+						await consumeB2bOrderReservations(tx, {
+							warehouseId: userId,
+							orderId: existingOrder.id,
+						});
+						await creditWarehouseExchangeOrder(tx, {
+							warehouseId: userId,
+							orderId: existingOrder.id,
+							actorId: userId,
+						});
 					}
 
 					const updated = await tx
@@ -4609,6 +4629,15 @@ const orderQueries = {
 				if (allFullyDelivered) {
 					updateData.status = "delivered";
 					updateData.deliveredAt = new Date();
+					await consumeB2bOrderReservations(tx, {
+						warehouseId: userId,
+						orderId: existingOrder.id,
+					});
+					await creditWarehouseExchangeOrder(tx, {
+						warehouseId: userId,
+						orderId: existingOrder.id,
+						actorId: userId,
+					});
 				}
 
 				await tx
@@ -6827,6 +6856,29 @@ const warehouseTemplateDetailsSchema = z.object({
 	visibility: z.enum(["public", "private"]).default("private"),
 });
 
+function assertWarehouseExpiryConfiguration(
+	details: z.infer<typeof warehouseTemplateDetailsSchema>,
+) {
+	if (details.expiryEnabled && details.trackingType !== "batch") {
+		throw new ORPCError("BAD_REQUEST", {
+			message: "Expiry tracking requires batch tracking to be enabled",
+		});
+	}
+}
+
+function validateStockTrackingOrThrow(
+	input: Parameters<typeof validateWarehouseStockTracking>[0],
+) {
+	try {
+		return validateWarehouseStockTracking(input);
+	} catch (error) {
+		if (error instanceof WarehouseExpiryValidationError) {
+			throw new ORPCError("BAD_REQUEST", { message: error.message });
+		}
+		throw error;
+	}
+}
+
 const configureWarehouseCoreSchema = z.object({
 	coreProductId: z.number().int().positive(),
 	expectedVersion: z.number().int().positive().optional().nullable(),
@@ -6981,6 +7033,7 @@ const warehouseProductCreation = {
 		.input(updateWarehouseProductSchema)
 		.handler(async ({ context, input }) => {
 			const warehouseId = context.session.user.id;
+			assertWarehouseExpiryConfiguration(input.details);
 			const keys = input.variants.map(warehouseVariantKey);
 			if (new Set(keys).size !== keys.length) {
 				throw new ORPCError("BAD_REQUEST", {
@@ -7404,6 +7457,7 @@ const warehouseProductCreation = {
 		.input(configureWarehouseCoreSchema)
 		.handler(async ({ context, input }) => {
 			const warehouseId = context.session.user.id;
+			assertWarehouseExpiryConfiguration(input.details);
 			const brandIds = input.brands.map((brand) => brand.brandId);
 			if (new Set(brandIds).size !== brandIds.length) {
 				throw new ORPCError("BAD_REQUEST", {
@@ -8052,6 +8106,10 @@ import {
 	carton,
 } from "@bikalpo-project/db/schema";
 
+const warehouseStockDateSchema = z
+	.string()
+	.regex(ISO_DATE_PATTERN, "Use a valid YYYY-MM-DD date");
+
 const stockEntryQueries = {
 	/**
 	 * Search warehouse's own products with variants (for the Add Stock product picker).
@@ -8269,8 +8327,8 @@ const stockEntryQueries = {
 									"Purchase unit cost must be greater than 0",
 								),
 							batchNo: z.string().trim().max(100).optional(),
-							manufactureDate: z.string().optional(),
-							expiryDate: z.string().optional(),
+							manufactureDate: warehouseStockDateSchema.optional(),
+							expiryDate: warehouseStockDateSchema.optional(),
 						}),
 					)
 					.min(1),
@@ -8348,10 +8406,12 @@ const stockEntryQueries = {
 						product: {
 							columns: {
 								id: true,
+								name: true,
 								creatorSource: true,
 								createdById: true,
 								createdByWarehouseId: true,
 								trackingType: true,
+								expiryEnabled: true,
 							},
 						},
 					},
@@ -8375,20 +8435,14 @@ const stockEntryQueries = {
 						message: "Serial-tracked units require the asset receiving flow",
 					});
 				}
-				if (variant.product.trackingType === "batch" && !line.batchNo) {
-					throw new ORPCError("BAD_REQUEST", {
-						message: "Batch-tracked variants require a batch number",
-					});
-				}
-				if (
-					variant.product.trackingType === "none" &&
-					(line.batchNo || line.manufactureDate || line.expiryDate)
-				) {
-					throw new ORPCError("BAD_REQUEST", {
-						message:
-							"Batch metadata is only accepted when batch tracking is configured",
-					});
-				}
+				const tracking = validateStockTrackingOrThrow({
+					productName: variant.product.name,
+					trackingType: variant.product.trackingType,
+					expiryEnabled: variant.product.expiryEnabled,
+					batchNo: line.batchNo,
+					manufactureDate: line.manufactureDate,
+					expiryDate: line.expiryDate,
+				});
 
 				const operations = resolveVariantOperations(
 					variant.sourceVariantOption,
@@ -8404,6 +8458,9 @@ const stockEntryQueries = {
 
 				validatedLines.push({
 					...line,
+					batchNo: tracking.batchNo ?? undefined,
+					manufactureDate: tracking.manufactureDate ?? undefined,
+					expiryDate: tracking.expiryDate ?? undefined,
 					purchaseUnitCost: Number(line.purchaseUnitCost),
 					operationalUnit: operations.operationalUnit,
 					...(operations.referenceMeasurement
@@ -8521,8 +8578,8 @@ const stockEntryQueries = {
 				}),
 				reference: z.string().optional(),
 				batchNo: z.string().optional(),
-				expiryDate: z.string().optional(),
-				manufactureDate: z.string().optional(),
+				expiryDate: warehouseStockDateSchema.optional(),
+				manufactureDate: warehouseStockDateSchema.optional(),
 				storageAreaId: z.number().int().optional(),
 				shelfRack: z.string().optional(),
 				note: z.string().optional(),
@@ -8548,9 +8605,12 @@ const stockEntryQueries = {
 					product: {
 						columns: {
 							id: true,
+							name: true,
 							creatorSource: true,
 							createdById: true,
 							createdByWarehouseId: true,
+							trackingType: true,
+							expiryEnabled: true,
 						},
 					},
 				},
@@ -8573,6 +8633,19 @@ const stockEntryQueries = {
 					message: "Stock can only be added to an active generated variant",
 				});
 			}
+			if (variant.product.trackingType === "serial") {
+				throw new ORPCError("BAD_REQUEST", {
+					message: "Serial-tracked units require the asset receiving flow",
+				});
+			}
+			const tracking = validateStockTrackingOrThrow({
+				productName: variant.product.name,
+				trackingType: variant.product.trackingType,
+				expiryEnabled: variant.product.expiryEnabled,
+				batchNo: input.batchNo,
+				manufactureDate: input.manufactureDate,
+				expiryDate: input.expiryDate,
+			});
 			const operations = resolveVariantOperations(variant.sourceVariantOption);
 			if (operations.receivingMode === "direct") {
 				throw new ORPCError("BAD_REQUEST", {
@@ -8712,9 +8785,9 @@ const stockEntryQueries = {
 						purchasePrice: price.toFixed(2),
 						totalCost: totalCost.toFixed(2),
 						reference: input.reference || null,
-						batchNo: input.batchNo || null,
-						expiryDate: input.expiryDate || null,
-						manufactureDate: input.manufactureDate || null,
+						batchNo: tracking.batchNo,
+						expiryDate: tracking.expiryDate,
+						manufactureDate: tracking.manufactureDate,
 						storageAreaId: input.storageAreaId || null,
 						shelfRack: input.shelfRack || null,
 						note: input.note || null,
@@ -10029,7 +10102,21 @@ const cartonQueries = {
 	createCarton: warehouseProcedure
 		.input(
 			z.object({
-				cartonConfigId: z.number().int(),
+				// Existing callers may still use a saved template. The normal page
+				// sends the physical carton composition directly.
+				cartonConfigId: z.number().int().optional(),
+				variantId: z.number().int().optional(),
+				packsPerCarton: z.number().int().min(1).optional(),
+				cartonPrice: z
+					.string()
+					.trim()
+					.refine((value) => value !== "" && Number(value) >= 0)
+					.optional(),
+				deliveryCost: z
+					.string()
+					.trim()
+					.refine((value) => value !== "" && Number(value) >= 0)
+					.optional(),
 				storageAreaId: z.number().int().optional(),
 				note: z.string().optional(),
 				overrideCartonPrice: z.string().optional(),
@@ -10040,32 +10127,46 @@ const cartonQueries = {
 		.handler(async ({ context, input }) => {
 			const userId = context.session.user.id;
 
-			// The configuration is the only composition source. Variant, quantity,
-			// weight and default pricing are always resolved from it on the server.
-			const config = await db.query.cartonConfig.findFirst({
-				where: and(
-					eq(cartonConfig.id, input.cartonConfigId),
-					eq(cartonConfig.isActive, true),
-				),
-				with: {
-					variant: {
+			const config = input.cartonConfigId
+				? await db.query.cartonConfig.findFirst({
+						where: and(
+							eq(cartonConfig.id, input.cartonConfigId),
+							eq(cartonConfig.isActive, true),
+						),
 						with: {
-							product: { columns: { createdByWarehouseId: true } },
-							sourceVariantOption: true,
+							variant: {
+								with: {
+									product: { columns: { createdByWarehouseId: true } },
+									sourceVariantOption: true,
+								},
+							},
 						},
-					},
-				},
-			});
-			if (!config || !config.variant) {
+					})
+				: null;
+			if (input.cartonConfigId && (!config || !config.variant)) {
 				throw new ORPCError("NOT_FOUND", {
 					message: "Active carton configuration not found",
 				});
 			}
-			const variant = config.variant;
+			const variant =
+				config?.variant ??
+				(input.variantId
+					? await db.query.productVariant.findFirst({
+							where: eq(productVariant.id, input.variantId),
+							with: {
+								product: { columns: { createdByWarehouseId: true } },
+								sourceVariantOption: true,
+							},
+						})
+					: null);
+			if (!variant) {
+				throw new ORPCError("BAD_REQUEST", {
+					message: "Select a product variant for this carton",
+				});
+			}
 			if ((variant.product as any)?.createdByWarehouseId !== userId) {
 				throw new ORPCError("FORBIDDEN", {
-					message:
-						"This carton configuration does not belong to your warehouse",
+					message: "This product variant does not belong to your warehouse",
 				});
 			}
 			if (!variant.sourceVariantOption) {
@@ -10078,25 +10179,45 @@ const cartonQueries = {
 				"loose"
 			) {
 				throw new ORPCError("BAD_REQUEST", {
-					message: "Raw loose inventory cannot be placed directly in a carton",
+					message: "Loose inventory cannot be placed directly inside a carton",
 				});
 			}
 
 			const hasPriceOverride = input.overrideCartonPrice !== undefined;
 			const hasDeliveryOverride = input.overrideDeliveryCost !== undefined;
-			if ((hasPriceOverride || hasDeliveryOverride) && !input.overrideReason) {
+			if (
+				config &&
+				(hasPriceOverride || hasDeliveryOverride) &&
+				!input.overrideReason
+			) {
 				throw new ORPCError("BAD_REQUEST", {
 					message: "An override reason is required for pricing exceptions",
 				});
 			}
-			const packCount = config.packsPerCarton;
+			const packCount = config?.packsPerCarton ?? input.packsPerCarton;
+			if (!packCount || packCount <= 0) {
+				throw new ORPCError("BAD_REQUEST", {
+					message: "Enter the number of units inside this carton",
+				});
+			}
+			const resolvedCartonPrice = config
+				? (input.overrideCartonPrice ?? config.cartonPrice)
+				: input.cartonPrice;
+			if (resolvedCartonPrice === undefined) {
+				throw new ORPCError("BAD_REQUEST", {
+					message: "Enter the carton selling price",
+				});
+			}
+			const resolvedDeliveryCost = config
+				? (input.overrideDeliveryCost ?? config.deliveryCostPerCarton)
+				: (input.deliveryCost ?? null);
 
 			// Check inventory has enough unpacked stock.
 			const inv = await db.query.inventory.findFirst({
 				where: and(
 					eq(inventory.ownerType, "warehouse"),
 					eq(inventory.ownerId, userId),
-					eq(inventory.variantId, config.variantId),
+					eq(inventory.variantId, variant.id),
 				),
 			});
 
@@ -10116,7 +10237,9 @@ const cartonQueries = {
 				});
 			}
 
-			const totalWeightKg = config.cartonWeightKg;
+			const totalWeightKg = (packCount * Number(variant.weightKg || 0)).toFixed(
+				2,
+			);
 
 			// 5. Generate carton ID: CTN-YYYY-NNNNNN
 			const year = new Date().getFullYear();
@@ -10159,20 +10282,19 @@ const cartonQueries = {
 					.values({
 						cartonId: cartonIdStr,
 						warehouseId: userId,
-						cartonConfigId: config.id,
-						variantId: config.variantId,
+						cartonConfigId: config?.id ?? null,
+						variantId: variant.id,
 						totalPacks: packCount,
 						totalWeightKg,
 						status: "active",
 						barcode: cartonIdStr,
 						storageAreaId: input.storageAreaId || null,
 						note: input.note || null,
-						cartonPrice: input.overrideCartonPrice ?? config.cartonPrice,
-						deliveryCostPerUnit:
-							input.overrideDeliveryCost ?? config.deliveryCostPerCarton,
-						cartonPriceOverridden: hasPriceOverride,
-						deliveryCostOverridden: hasDeliveryOverride,
-						overrideReason: input.overrideReason || null,
+						cartonPrice: resolvedCartonPrice,
+						deliveryCostPerUnit: resolvedDeliveryCost,
+						cartonPriceOverridden: !!config && hasPriceOverride,
+						deliveryCostOverridden: !!config && hasDeliveryOverride,
+						overrideReason: config ? input.overrideReason || null : null,
 					})
 					.returning();
 
@@ -11181,7 +11303,9 @@ const expiryQueries = {
 	getExpiredProducts: warehouseProcedure
 		.input(
 			z.object({
-				status: z.enum(["all", "expired", "nearExpiry"]).default("all"),
+				status: z
+					.enum(["all", "expired", "nearExpiry", "tracked"])
+					.default("all"),
 				categoryId: z.number().optional(),
 				supplierId: z.number().optional(),
 				search: z.string().optional(),
@@ -11234,6 +11358,37 @@ const expiryQueries = {
 				const product = entry.variant?.product;
 				return product && product.expiryEnabled === true;
 			});
+			const expiryVariantIds = Array.from(
+				new Set(expiryEntries.map((entry) => entry.variantId)),
+			);
+			const [inventoryRows, allReceiptRows] = expiryVariantIds.length
+				? await Promise.all([
+						db.query.inventory.findMany({
+							where: and(
+								eq(inventory.ownerType, "warehouse"),
+								eq(inventory.ownerId, userId),
+								inArray(inventory.variantId, expiryVariantIds),
+							),
+							columns: { variantId: true, availableQty: true },
+						}),
+						db
+							.select()
+							.from(stockEntry)
+							.where(
+								and(
+									eq(stockEntry.warehouseId, userId),
+									inArray(stockEntry.variantId, expiryVariantIds),
+								),
+							)
+							.orderBy(desc(stockEntry.createdAt), desc(stockEntry.id)),
+					])
+				: [[], []];
+			const { availableByStockEntry } = allocateCurrentStockLots(
+				allReceiptRows,
+				new Map(
+					inventoryRows.map((row) => [row.variantId, Number(row.availableQty)]),
+				),
+			);
 
 			type ExpiryStatus = "expired" | "nearExpiry" | "safe";
 
@@ -11275,6 +11430,10 @@ const expiryQueries = {
 			for (const entry of expiryEntries) {
 				const variant = entry.variant;
 				if (!variant || !variant.product) continue;
+				const remainingQuantity = availableByStockEntry.get(entry.id) ?? 0;
+				if (remainingQuantity <= 0) continue;
+				const remainingValue =
+					remainingQuantity * unitCostFromStockEntry(entry);
 
 				const product = variant.product;
 				const expiryDate = new Date(entry.expiryDate!);
@@ -11313,11 +11472,11 @@ const expiryQueries = {
 					batchNo: entry.batchNo || `B-${entry.id}`,
 					expiryDate: entry.expiryDate!,
 					manufactureDate: entry.manufactureDate || null,
-					quantity: entry.quantity,
-					quantityUnit: entry.quantityUnit,
+					quantity: remainingQuantity.toFixed(2),
+					quantityUnit: entry.inventoryUnit,
 					convertedQtyPacks: entry.convertedQtyPacks,
-					purchasePrice: entry.purchasePrice,
-					totalCost: entry.totalCost,
+					purchasePrice: unitCostFromStockEntry(entry).toFixed(2),
+					totalCost: remainingValue.toFixed(2),
 					entryType: entry.entryType,
 					reference: entry.reference || null,
 					note: entry.note || null,
@@ -11338,7 +11497,8 @@ const expiryQueries = {
 					storageAreaName: entry.storageArea?.name || null,
 					expiryStatus,
 					daysUntilExpiry,
-					lossValue: expiryStatus === "expired" ? entry.totalCost : "0",
+					lossValue:
+						expiryStatus === "expired" ? remainingValue.toFixed(2) : "0",
 				});
 			}
 
@@ -11350,7 +11510,7 @@ const expiryQueries = {
 				filtered = filtered.filter(
 					(item) => item.expiryStatus === "nearExpiry",
 				);
-			} else {
+			} else if (input.status === "all") {
 				filtered = filtered.filter((item) => item.expiryStatus !== "safe");
 			}
 
@@ -11384,19 +11544,19 @@ const expiryQueries = {
 				return left.daysUntilExpiry - right.daysUntilExpiry;
 			});
 
-			const totalExpiredBatches = items.filter(
+			const totalExpiredBatches = filtered.filter(
 				(item) => item.expiryStatus === "expired",
 			).length;
-			const totalNearExpiryBatches = items.filter(
+			const totalNearExpiryBatches = filtered.filter(
 				(item) => item.expiryStatus === "nearExpiry",
 			).length;
-			const totalExpiredQty = items
+			const totalExpiredQty = filtered
 				.filter((item) => item.expiryStatus === "expired")
 				.reduce((sumValue, item) => sumValue + Number(item.quantity), 0);
-			const totalLossValue = items
+			const totalLossValue = filtered
 				.filter((item) => item.expiryStatus === "expired")
 				.reduce((sumValue, item) => sumValue + Number(item.totalCost), 0);
-			const totalNearExpiryQty = items
+			const totalNearExpiryQty = filtered
 				.filter((item) => item.expiryStatus === "nearExpiry")
 				.reduce((sumValue, item) => sumValue + Number(item.quantity), 0);
 
@@ -11409,7 +11569,7 @@ const expiryQueries = {
 					lossValue: number;
 				}
 			>();
-			for (const item of items.filter((row) => row.expiryStatus !== "safe")) {
+			for (const item of filtered) {
 				const existing = categoryMap.get(item.categoryName) || {
 					name: item.categoryName,
 					expiredQty: 0,
@@ -11420,7 +11580,7 @@ const expiryQueries = {
 				if (item.expiryStatus === "expired") {
 					existing.expiredQty += Number(item.quantity);
 					existing.lossValue += Number(item.totalCost);
-				} else {
+				} else if (item.expiryStatus === "nearExpiry") {
 					existing.nearExpiryQty += Number(item.quantity);
 				}
 
@@ -11436,7 +11596,7 @@ const expiryQueries = {
 				}
 			}
 
-			const alerts = items
+			const alerts = filtered
 				.filter(
 					(item) =>
 						item.expiryStatus === "expired" && Number(item.quantity) > 0,
@@ -11451,7 +11611,7 @@ const expiryQueries = {
 					lossValue: item.totalCost,
 				}));
 
-			const urgentNearExpiry = items
+			const urgentNearExpiry = filtered
 				.filter(
 					(item) =>
 						item.expiryStatus === "nearExpiry" && item.daysUntilExpiry <= 7,
@@ -11468,6 +11628,7 @@ const expiryQueries = {
 			return {
 				items: filtered,
 				stats: {
+					totalTrackedBatches: filtered.length,
 					totalExpiredBatches,
 					totalNearExpiryBatches,
 					totalExpiredQty,

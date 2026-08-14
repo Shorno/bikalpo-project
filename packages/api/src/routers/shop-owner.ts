@@ -6300,6 +6300,7 @@ const warehouseOrderQueries = {
                             supplyMode: warehouseOrderModeSchema.optional(),
                             fulfillmentMode: warehouseOrderModeSchema.optional(),
                             targetVariantId: z.number().optional().nullable(),
+                            cylinderSaleMode: z.enum(["new", "exchange"]).default("new"),
                         }),
                     )
                     .min(1),
@@ -6369,6 +6370,9 @@ const warehouseOrderQueries = {
                 inventoryUnit: string | null;
                 conversionFactor: string | null;
                 inventoryQty: string | null;
+                cylinderSaleMode: "new" | "exchange";
+                newUnitPrice: string;
+                exchangeCreditAmount: string;
             }[] = [];
 
             for (const item of input.items) {
@@ -6563,6 +6567,21 @@ const warehouseOrderQueries = {
                     );
                 }
 
+                const newUnitPrice = unitPrice;
+                const cylinderSaleMode = item.cylinderSaleMode;
+                const exchangeCreditAmount =
+                    cylinderSaleMode === "exchange"
+                        ? Number(inv.variant?.exchangeCreditAmount ?? 0)
+                        : 0;
+                if (
+                    cylinderSaleMode === "exchange" &&
+                    (!inv.variant?.exchangeEnabled || !inv.variant?.product?.isReturnablePack)
+                ) {
+                    throw new ORPCError("BAD_REQUEST", {
+                        message: `${inv.variant?.product?.name || "This product"} is not configured for cylinder exchange`,
+                    });
+                }
+                unitPrice = Math.max(0, Number(newUnitPrice) - exchangeCreditAmount).toFixed(2);
                 const totalPrice = (Number(unitPrice) * item.quantity).toFixed(2);
 
                 // Validate targetVariantId only when the fulfillment strategy needs it.
@@ -6630,6 +6649,9 @@ const warehouseOrderQueries = {
                     inventoryUnit: preparedMovement.movement.inventoryUnit,
                     conversionFactor: preparedMovement.movement.conversionFactor.toFixed(4),
                     inventoryQty: preparedMovement.movement.sourceInventoryQty.toFixed(2),
+                    cylinderSaleMode,
+                    newUnitPrice,
+                    exchangeCreditAmount: exchangeCreditAmount.toFixed(2),
                 });
             }
 
@@ -6682,6 +6704,11 @@ const warehouseOrderQueries = {
                         quantity: item.quantity,
                         unitPrice: item.unitPrice,
                         totalPrice: item.totalPrice,
+                        cylinderSaleMode: item.cylinderSaleMode,
+                        newUnitPrice: item.newUnitPrice,
+                        exchangeCreditAmount: item.exchangeCreditAmount,
+                        expectedEmptyPackQty:
+                            item.cylinderSaleMode === "exchange" ? item.quantity : 0,
                         supplyMode: item.supplyMode,
                         targetVariantId: buyerTarget.targetVariantId,
                         conversionStatus: "pending",
@@ -7539,6 +7566,8 @@ const warehouseConnectionEndpoints = {
                     variantPackType: productVariant.packType,
                     variantInnerPackSizeKg: productVariant.innerPackSizeKg,
                     variantPackCountInside: productVariant.packCountInside,
+                    variantExchangeEnabled: productVariant.exchangeEnabled,
+                    variantExchangeCreditAmount: productVariant.exchangeCreditAmount,
                     sourceVariantOptionId: productVariant.sourceVariantOptionId,
                     sourceOptionName: variantOption.name,
                     sourceOptionUnit: variantOption.unit,
@@ -7654,6 +7683,8 @@ const warehouseConnectionEndpoints = {
                             color: item.variantColor,
                             size: item.variantSize,
                             variantOperations,
+                            exchangeEnabled: item.variantExchangeEnabled,
+                            exchangeCreditAmount: item.variantExchangeCreditAmount,
                         },
                     },
                 ];

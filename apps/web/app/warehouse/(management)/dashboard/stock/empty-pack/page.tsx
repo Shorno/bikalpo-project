@@ -1,5 +1,5 @@
 import { EmptyPackManagement } from "@/components/features/stock/empty-pack-management";
 
-export default function RetailerEmptyPackPage() {
+export default function WarehouseEmptyPackPage() {
   return <EmptyPackManagement />;
 }
