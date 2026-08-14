@@ -23,6 +23,10 @@ import {
 } from "drizzle-orm";
 import { z } from "zod";
 import { warehouseProcedure } from "../index";
+import {
+  allocateCurrentStockLots,
+  unitCostFromStockEntry,
+} from "../services/warehouse-stock-lots";
 
 const damageTypeSchema = z.enum(["physical", "expired", "lost"]);
 const damageModeSchema = z.enum(["loose", "pack", "carton", "direct"]);
@@ -190,21 +194,6 @@ function money(value: number) {
   return Math.round((value + Number.EPSILON) * 100) / 100;
 }
 
-function unitCostFromStockEntry(
-  entry?: {
-    inventoryDelta: string;
-    totalCost: string;
-    purchasePrice: string;
-  } | null,
-) {
-  if (!entry) return 0;
-  const inventoryDelta = toNumber(entry.inventoryDelta);
-  const totalCost = toNumber(entry.totalCost);
-  return inventoryDelta > 0 && totalCost >= 0
-    ? totalCost / inventoryDelta
-    : toNumber(entry.purchasePrice);
-}
-
 function variantLabel(input: {
   unitLabel: string;
   color?: string | null;
@@ -309,43 +298,6 @@ async function nextEntryNumber() {
     });
   }
   return `DMG-W-${sequence.padStart(6, "0")}`;
-}
-
-function allocateCurrentStockLots(
-  rows: (typeof stockEntry.$inferSelect)[],
-  availableByVariant: Map<number, number>,
-) {
-  const remainingByVariant = new Map(availableByVariant);
-  const availableByStockEntry = new Map<number, number>();
-  const costsByVariant = new Map<
-    number,
-    { quantity: number; totalCost: number; weightedUnitCost: number }
-  >();
-
-  // Stock entries are supplied newest-first. Allocating today's balance from
-  // newest receipts models FIFO consumption and accounts for every aggregate
-  // outflow already reflected by inventory, even when legacy movements did not
-  // record a purchase-batch FK.
-  for (const row of rows) {
-    const received = Math.max(0, toNumber(row.inventoryDelta));
-    const remaining = Math.max(0, remainingByVariant.get(row.variantId) ?? 0);
-    const allocated = Math.min(received, remaining);
-    availableByStockEntry.set(row.id, allocated);
-    if (allocated <= 0) continue;
-
-    const current = costsByVariant.get(row.variantId) ?? {
-      quantity: 0,
-      totalCost: 0,
-      weightedUnitCost: 0,
-    };
-    current.quantity += allocated;
-    current.totalCost += allocated * unitCostFromStockEntry(row);
-    current.weightedUnitCost = current.totalCost / current.quantity;
-    costsByVariant.set(row.variantId, current);
-    remainingByVariant.set(row.variantId, remaining - allocated);
-  }
-
-  return { availableByStockEntry, costsByVariant };
 }
 
 async function stockCostSnapshots(warehouseId: string, variantIds: number[]) {

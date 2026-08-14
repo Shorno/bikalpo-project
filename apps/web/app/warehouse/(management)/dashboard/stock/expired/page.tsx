@@ -325,7 +325,7 @@ function BatchDetail({ item }: { item: ExpiryItem }) {
 
 export default function ExpiredProductsPage() {
   const [statusFilter, setStatusFilter] = useState<
-    "all" | "expired" | "nearExpiry"
+    "all" | "expired" | "nearExpiry" | "tracked"
   >("all");
   const [categoryId, setCategoryId] = useState<number | undefined>();
   const [supplierId, setSupplierId] = useState<number | undefined>();
@@ -364,6 +364,7 @@ export default function ExpiredProductsPage() {
 
   const items: ExpiryItem[] = data?.items ?? [];
   const stats = data?.stats ?? {
+    totalTrackedBatches: 0,
     totalExpiredBatches: 0,
     totalNearExpiryBatches: 0,
     totalExpiredQty: 0,
@@ -512,7 +513,7 @@ export default function ExpiredProductsPage() {
         />
         <StatCard
           label="Total Tracked"
-          value={stats.totalExpiredBatches + stats.totalNearExpiryBatches}
+          value={stats.totalTrackedBatches}
           sub="batches with expiry"
           icon={Package}
           color="blue"
@@ -547,7 +548,9 @@ export default function ExpiredProductsPage() {
             <Select
               value={statusFilter}
               onValueChange={(value) =>
-                setStatusFilter(value as "all" | "expired" | "nearExpiry")
+                setStatusFilter(
+                  value as "all" | "expired" | "nearExpiry" | "tracked",
+                )
               }
             >
               <SelectTrigger>
@@ -555,6 +558,7 @@ export default function ExpiredProductsPage() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All (Expired + Near)</SelectItem>
+                <SelectItem value="tracked">All Tracked Batches</SelectItem>
                 <SelectItem value="expired">Expired Only</SelectItem>
                 <SelectItem value="nearExpiry">Near Expiry Only</SelectItem>
               </SelectContent>
@@ -646,12 +650,16 @@ export default function ExpiredProductsPage() {
               Clear Filters
             </Button>
           )}
-          <Link
-            href="/warehouse/dashboard/stock/list"
-            className="mt-3 text-sm font-medium text-emerald-600 underline"
-          >
-            View Stock List
-          </Link>
+          <div className="mt-5 flex flex-wrap justify-center gap-2">
+            <Button asChild size="sm">
+              <Link href="/warehouse/dashboard/stock/add">Add dated stock</Link>
+            </Button>
+            <Button asChild size="sm" variant="outline">
+              <Link href="/warehouse/dashboard/catalog">
+                Configure expiry tracking
+              </Link>
+            </Button>
+          </div>
         </div>
       ) : (
         <div className="space-y-4">

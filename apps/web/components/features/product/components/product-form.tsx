@@ -203,9 +203,12 @@ function getRuleDefaultsFromSettings(
   const normalized = normalizeRuleSettings(settings);
 
   return {
-    trackingType: normalized.trackingAvailable
-      ? normalized.defaultTrackingType
-      : "none",
+    trackingType:
+      normalized.expiryAvailable && normalized.expiryDefault
+        ? "batch"
+        : normalized.trackingAvailable
+          ? normalized.defaultTrackingType
+          : "none",
     expiryEnabled: normalized.expiryAvailable && normalized.expiryDefault,
     damageControlEnabled:
       normalized.damageAvailable && normalized.damageDefault,
@@ -518,6 +521,8 @@ export default function ProductForm({
     createMutation.isPending ||
     updateMutation.isPending ||
     isLoadingLockedCoreProduct;
+  const initialExpiryEnabled =
+    (product as any)?.expiryEnabled ?? activeRuleDefaults.expiryEnabled;
 
   const form = useForm({
     defaultValues: {
@@ -550,10 +555,10 @@ export default function ProductForm({
         (product as any)?.coreProductId ?? initialCoreProductIdForCreate,
       shortDescription: (product as any)?.shortDescription ?? "",
       videoUrl: (product as any)?.videoUrl ?? "",
-      trackingType:
-        (product as any)?.trackingType ?? activeRuleDefaults.trackingType,
-      expiryEnabled:
-        (product as any)?.expiryEnabled ?? activeRuleDefaults.expiryEnabled,
+      trackingType: initialExpiryEnabled
+        ? "batch"
+        : ((product as any)?.trackingType ?? activeRuleDefaults.trackingType),
+      expiryEnabled: initialExpiryEnabled,
       damageControlEnabled:
         (product as any)?.damageControlEnabled ??
         activeRuleDefaults.damageControlEnabled,
@@ -1469,9 +1474,12 @@ export default function ProductForm({
                         >
                           <Select
                             value={field.state.value}
-                            onValueChange={(value) =>
-                              field.handleChange(value as any)
-                            }
+                            onValueChange={(value) => {
+                              field.handleChange(value as any);
+                              if (value !== "batch") {
+                                form.setFieldValue("expiryEnabled", false);
+                              }
+                            }}
                           >
                             <SelectTrigger className="h-9 w-full">
                               <SelectValue />
@@ -1520,7 +1528,12 @@ export default function ProductForm({
                           <Switch
                             aria-label="Expiry tracking"
                             checked={field.state.value}
-                            onCheckedChange={field.handleChange}
+                            onCheckedChange={(checked) => {
+                              field.handleChange(checked);
+                              if (checked) {
+                                form.setFieldValue("trackingType", "batch");
+                              }
+                            }}
                           />
                         </RuleControlRow>
                       )}
