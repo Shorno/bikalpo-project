@@ -10049,7 +10049,21 @@ const cartonQueries = {
 	createCarton: warehouseProcedure
 		.input(
 			z.object({
-				cartonConfigId: z.number().int(),
+				// Existing callers may still use a saved template. The normal page
+				// sends the physical carton composition directly.
+				cartonConfigId: z.number().int().optional(),
+				variantId: z.number().int().optional(),
+				packsPerCarton: z.number().int().min(1).optional(),
+				cartonPrice: z
+					.string()
+					.trim()
+					.refine((value) => value !== "" && Number(value) >= 0)
+					.optional(),
+				deliveryCost: z
+					.string()
+					.trim()
+					.refine((value) => value !== "" && Number(value) >= 0)
+					.optional(),
 				storageAreaId: z.number().int().optional(),
 				note: z.string().optional(),
 				overrideCartonPrice: z.string().optional(),
@@ -10060,32 +10074,46 @@ const cartonQueries = {
 		.handler(async ({ context, input }) => {
 			const userId = context.session.user.id;
 
-			// The configuration is the only composition source. Variant, quantity,
-			// weight and default pricing are always resolved from it on the server.
-			const config = await db.query.cartonConfig.findFirst({
-				where: and(
-					eq(cartonConfig.id, input.cartonConfigId),
-					eq(cartonConfig.isActive, true),
-				),
-				with: {
-					variant: {
+			const config = input.cartonConfigId
+				? await db.query.cartonConfig.findFirst({
+						where: and(
+							eq(cartonConfig.id, input.cartonConfigId),
+							eq(cartonConfig.isActive, true),
+						),
 						with: {
-							product: { columns: { createdByWarehouseId: true } },
-							sourceVariantOption: true,
+							variant: {
+								with: {
+									product: { columns: { createdByWarehouseId: true } },
+									sourceVariantOption: true,
+								},
+							},
 						},
-					},
-				},
-			});
-			if (!config || !config.variant) {
+					})
+				: null;
+			if (input.cartonConfigId && (!config || !config.variant)) {
 				throw new ORPCError("NOT_FOUND", {
 					message: "Active carton configuration not found",
 				});
 			}
-			const variant = config.variant;
+			const variant =
+				config?.variant ??
+				(input.variantId
+					? await db.query.productVariant.findFirst({
+							where: eq(productVariant.id, input.variantId),
+							with: {
+								product: { columns: { createdByWarehouseId: true } },
+								sourceVariantOption: true,
+							},
+						})
+					: null);
+			if (!variant) {
+				throw new ORPCError("BAD_REQUEST", {
+					message: "Select a product variant for this carton",
+				});
+			}
 			if ((variant.product as any)?.createdByWarehouseId !== userId) {
 				throw new ORPCError("FORBIDDEN", {
-					message:
-						"This carton configuration does not belong to your warehouse",
+					message: "This product variant does not belong to your warehouse",
 				});
 			}
 			if (!variant.sourceVariantOption) {
@@ -10098,25 +10126,45 @@ const cartonQueries = {
 				"loose"
 			) {
 				throw new ORPCError("BAD_REQUEST", {
-					message: "Raw loose inventory cannot be placed directly in a carton",
+					message: "Loose inventory cannot be placed directly inside a carton",
 				});
 			}
 
 			const hasPriceOverride = input.overrideCartonPrice !== undefined;
 			const hasDeliveryOverride = input.overrideDeliveryCost !== undefined;
-			if ((hasPriceOverride || hasDeliveryOverride) && !input.overrideReason) {
+			if (
+				config &&
+				(hasPriceOverride || hasDeliveryOverride) &&
+				!input.overrideReason
+			) {
 				throw new ORPCError("BAD_REQUEST", {
 					message: "An override reason is required for pricing exceptions",
 				});
 			}
-			const packCount = config.packsPerCarton;
+			const packCount = config?.packsPerCarton ?? input.packsPerCarton;
+			if (!packCount || packCount <= 0) {
+				throw new ORPCError("BAD_REQUEST", {
+					message: "Enter the number of units inside this carton",
+				});
+			}
+			const resolvedCartonPrice = config
+				? (input.overrideCartonPrice ?? config.cartonPrice)
+				: input.cartonPrice;
+			if (resolvedCartonPrice === undefined) {
+				throw new ORPCError("BAD_REQUEST", {
+					message: "Enter the carton selling price",
+				});
+			}
+			const resolvedDeliveryCost = config
+				? (input.overrideDeliveryCost ?? config.deliveryCostPerCarton)
+				: (input.deliveryCost ?? null);
 
 			// Check inventory has enough unpacked stock.
 			const inv = await db.query.inventory.findFirst({
 				where: and(
 					eq(inventory.ownerType, "warehouse"),
 					eq(inventory.ownerId, userId),
-					eq(inventory.variantId, config.variantId),
+					eq(inventory.variantId, variant.id),
 				),
 			});
 
@@ -10136,7 +10184,9 @@ const cartonQueries = {
 				});
 			}
 
-			const totalWeightKg = config.cartonWeightKg;
+			const totalWeightKg = (packCount * Number(variant.weightKg || 0)).toFixed(
+				2,
+			);
 
 			// 5. Generate carton ID: CTN-YYYY-NNNNNN
 			const year = new Date().getFullYear();
@@ -10179,20 +10229,19 @@ const cartonQueries = {
 					.values({
 						cartonId: cartonIdStr,
 						warehouseId: userId,
-						cartonConfigId: config.id,
-						variantId: config.variantId,
+						cartonConfigId: config?.id ?? null,
+						variantId: variant.id,
 						totalPacks: packCount,
 						totalWeightKg,
 						status: "active",
 						barcode: cartonIdStr,
 						storageAreaId: input.storageAreaId || null,
 						note: input.note || null,
-						cartonPrice: input.overrideCartonPrice ?? config.cartonPrice,
-						deliveryCostPerUnit:
-							input.overrideDeliveryCost ?? config.deliveryCostPerCarton,
-						cartonPriceOverridden: hasPriceOverride,
-						deliveryCostOverridden: hasDeliveryOverride,
-						overrideReason: input.overrideReason || null,
+						cartonPrice: resolvedCartonPrice,
+						deliveryCostPerUnit: resolvedDeliveryCost,
+						cartonPriceOverridden: !!config && hasPriceOverride,
+						deliveryCostOverridden: !!config && hasDeliveryOverride,
+						overrideReason: config ? input.overrideReason || null : null,
 					})
 					.returning();
 
