@@ -72,6 +72,7 @@ export * from "./variant-option";
 export * from "./wallet";
 export * from "./warehouse-application";
 export * from "./warehouse-category-assignment";
+export * from "./warehouse-damage";
 export * from "./warehouse-pos";
 export * from "./warehouse-storage-area";
 export * from "./warehouse-variant-alias";

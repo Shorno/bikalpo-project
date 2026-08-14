@@ -264,17 +264,17 @@ function BatchDetail({ item }: { item: ExpiryItem }) {
         </p>
         <div className="flex flex-wrap gap-2">
           <Button
+            asChild
             variant="outline"
             size="sm"
             className="h-8 gap-1.5 border-red-200 text-xs text-red-600 hover:bg-red-50 hover:text-red-700"
-            onClick={(event) => {
-              event.stopPropagation();
-              toast.info(`Mark as Damaged - Batch ${item.batchNo}`, {
-                description: "This action will be available soon",
-              });
-            }}
           >
-            <X size={13} /> Mark as Damaged
+            <Link
+              href={`/warehouse/dashboard/damage/create?type=expired&stockEntryId=${item.stockEntryId}`}
+              onClick={(event) => event.stopPropagation()}
+            >
+              <X size={13} /> Mark as Damaged
+            </Link>
           </Button>
           <Button
             variant="outline"
@@ -855,16 +855,16 @@ export default function ExpiredProductsPage() {
 
             <div className="flex items-center gap-2">
               <Button
+                asChild
                 variant="ghost"
                 size="sm"
                 className="h-8 gap-1.5 text-xs text-red-300 hover:bg-red-500/20 hover:text-red-200"
-                onClick={() => {
-                  toast.info(`Mark ${selectedCount} batch(es) as damaged`, {
-                    description: "Bulk damage workflow coming soon",
-                  });
-                }}
               >
-                <X size={13} /> Mark Damaged
+                <Link
+                  href={`/warehouse/dashboard/damage/create?type=expired&stockEntryIds=${Array.from(selectedIds).join(",")}`}
+                >
+                  <X size={13} /> Mark Damaged
+                </Link>
               </Button>
               <Button
                 variant="ghost"

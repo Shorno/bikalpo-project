@@ -330,6 +330,41 @@
       "when": 1786600000000,
       "tag": "0047_empty_pack_stock_ledger",
       "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1786700000000,
+      "tag": "0048_warehouse_damage_management",
+      "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1786800000000,
+      "tag": "0049_warehouse_damage_audit",
+      "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1786900000000,
+      "tag": "0050_retain_warehouse_damage_audit",
+      "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "7",
+      "when": 1787000000000,
+      "tag": "0051_warehouse_damage_drafts",
+      "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "7",
+      "when": 1787100000000,
+      "tag": "0052_warehouse_damage_item_timestamps",
+      "breakpoints": true
     }
   ]
 }

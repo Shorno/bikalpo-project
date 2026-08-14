@@ -72,6 +72,7 @@ import { userTicketRouter } from "./user-ticket";
 import { verifiedUserRouter } from "./verified-user";
 import { warehouseRouter } from "./warehouse";
 import { warehouseApplicationRouter } from "./warehouse-application";
+import { warehouseDamageRouter } from "./warehouse-damage";
 import { warehouseDeliveryRouter } from "./warehouse-delivery";
 import { warehouseEmployeeRouter } from "./warehouse-employee";
 import { warehouseEstimateRouter } from "./warehouse-estimate";
@@ -160,6 +161,7 @@ export const appRouter = {
   warehouseEmployee: warehouseEmployeeRouter,
   warehouseEstimate: warehouseEstimateRouter,
   warehouseDelivery: warehouseDeliveryRouter,
+  warehouseDamage: warehouseDamageRouter,
   stockAdjustment: stockAdjustmentRouter,
   warehousePos: warehousePosRouter,
   warehouseSales: warehouseSalesRouter,
