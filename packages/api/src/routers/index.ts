@@ -47,6 +47,7 @@ import { dashboardRouter } from "./dashboard";
 import { deliverymanRouter } from "./deliveryman";
 import { devOtpRouter } from "./dev-otp";
 import { employeeRouter } from "./employee";
+import { emptyPackManagementRouter } from "./empty-pack-management";
 import { expenseRouter } from "./expense";
 import { financeRouter } from "./finance";
 import { inventoryRouter } from "./inventory";
@@ -117,6 +118,7 @@ export const appRouter = {
   customer: customerRouter,
   salesman: salesmanRouter,
   deliveryman: deliverymanRouter,
+  emptyPackManagement: emptyPackManagementRouter,
   returns: returnsRouter,
   retailerPos: retailerPosRouter,
   dashboard: dashboardRouter,

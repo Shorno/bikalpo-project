@@ -53,10 +53,12 @@ import { ensureWarehouseBuyerTargetVariant } from "./helpers/b2b-buyer-target";
 import { convertB2bOrderToRetailInventory } from "./helpers/b2b-conversion";
 import {
 	markOrderCartonsDispatched,
+	consumeB2bOrderReservations,
 	releaseB2bOrderReservations,
 	reserveB2bOrderItemsAtApproval,
 } from "./helpers/b2b-inventory-movement";
 import { getCartonInventoryUnits } from "./helpers/carton-units";
+import { creditWarehouseExchangeOrder } from "./helpers/empty-pack-stock";
 import { completeSelfPickupInvoice } from "./helpers/self-pickup";
 import { buildCanonicalOrderFlow } from "./helpers/order-lifecycle";
 import {
@@ -4382,6 +4384,15 @@ const orderQueries = {
 								.set({ deliveredQty: item.modifiedQty ?? item.quantity })
 								.where(eq(orderItem.id, item.id));
 						}
+						await consumeB2bOrderReservations(tx, {
+							warehouseId: userId,
+							orderId: existingOrder.id,
+						});
+						await creditWarehouseExchangeOrder(tx, {
+							warehouseId: userId,
+							orderId: existingOrder.id,
+							actorId: userId,
+						});
 					}
 
 					const updated = await tx
@@ -4609,6 +4620,15 @@ const orderQueries = {
 				if (allFullyDelivered) {
 					updateData.status = "delivered";
 					updateData.deliveredAt = new Date();
+					await consumeB2bOrderReservations(tx, {
+						warehouseId: userId,
+						orderId: existingOrder.id,
+					});
+					await creditWarehouseExchangeOrder(tx, {
+						warehouseId: userId,
+						orderId: existingOrder.id,
+						actorId: userId,
+					});
 				}
 
 				await tx

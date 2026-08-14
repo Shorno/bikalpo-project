@@ -9,6 +9,7 @@ import { ORPCError } from "@orpc/server";
 import { and, eq, sql } from "drizzle-orm";
 import { settleRetailerCylinderReturns } from "../../services/retailer-cylinder-sale";
 import { fulfillmentInvoiceOwnerCondition } from "./fulfillment-owner";
+import { creditExchangeEmptyPack } from "./empty-pack-stock";
 import {
   consumeRetailerOrderStock,
   createRetailerOrderStockWriter,
@@ -80,7 +81,10 @@ export async function settleRetailerCylinderHandoff(
       exchangeLines.map((item) => ({
         orderItemId: item.id,
         expectedEmptyPackQty: item.expectedEmptyPackQty,
-        acceptedEmptyPackQty: acceptedByOrderItem.get(item.id) ?? 0,
+        // The lightweight flow treats an Exchange selection as a completed
+        // one-for-one handoff unless a caller explicitly records otherwise.
+        acceptedEmptyPackQty:
+          acceptedByOrderItem.get(item.id) ?? item.expectedEmptyPackQty,
         exchangeCreditAmount: item.exchangeCreditAmount,
       })),
     );
@@ -124,6 +128,15 @@ export async function settleRetailerCylinderHandoff(
         verifiedAt: new Date(),
         depositAmount: source.exchangeCreditAmount,
         notes: "Accepted exact-match empty cylinder at consumer handoff",
+      });
+      await creditExchangeEmptyPack(tx, {
+        ownerType: "shop",
+        ownerId: input.shopId,
+        orderId: invoiceRecord.order.id,
+        orderItemId: source.id,
+        variantId: source.variantId,
+        quantity: line.collectedEmptyPackQty,
+        actorId: input.actorId,
       });
     }
   }
