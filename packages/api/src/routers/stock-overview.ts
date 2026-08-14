@@ -11,10 +11,13 @@ import { db } from "@bikalpo-project/db";
 import { PRODUCT_TYPE_FAMILIES } from "@bikalpo-project/db/fulfillment";
 import {
     brand,
+    carton,
     cartonConfig,
     category,
     coreProductIdentity,
     inventory,
+    order,
+    orderItem,
     product,
     productType,
     productVariant,
@@ -23,7 +26,16 @@ import {
     warehouseVariantAlias,
 } from "@bikalpo-project/db/schema";
 import { ORPCError } from "@orpc/server";
-import { and, eq, inArray, isNotNull, or, type SQL, sql } from "drizzle-orm";
+import {
+    and,
+    eq,
+    gte,
+    inArray,
+    isNotNull,
+    or,
+    type SQL,
+    sql,
+} from "drizzle-orm";
 import { z } from "zod";
 
 import { protectedProcedure } from "../index";
@@ -235,7 +247,14 @@ export async function loadStructuredStockSnapshot(
                         },
                         with: {
                             brand: { columns: { id: true, name: true } },
-                            coreProduct: { columns: { id: true } },
+                            coreProduct: {
+                                columns: {
+                                    id: true,
+                                    name: true,
+                                    sku: true,
+                                    image: true,
+                                },
+                            },
                             category: {
                                 columns: { id: true, name: true },
                                 with: {
@@ -406,6 +425,153 @@ export const stockOverviewRouter = {
             };
         }),
 
+    /**
+     * Low-stock products grouped at core identity level. The page threshold is
+     * intentionally applied to every exact variant, including variants that do
+     * not yet have a saved reorder level.
+     */
+    getLowStockProducts: protectedProcedure
+        .input(
+            z.object({
+                ownerType: z.enum(["warehouse", "shop", "super_seller"]),
+                threshold: z.number().int().min(1).max(1000).default(10),
+                search: z.string().trim().max(100).optional(),
+            }),
+        )
+        .handler(async ({ context, input }) => {
+            const ownerId = context.session.user.id;
+            const snapshot = await loadStructuredStockSnapshot(input.ownerType, ownerId);
+
+            const rowsByIdentity = new Map<string, typeof snapshot.variants>();
+            for (const variant of snapshot.variants) {
+                const key = variant.coreProductId ? `core-${variant.coreProductId}` : `product-${variant.productId}`;
+                const rows = rowsByIdentity.get(key) ?? [];
+                rows.push(variant);
+                rowsByIdentity.set(key, rows);
+            }
+
+            const coreIds = [
+                ...new Set(
+                    snapshot.variants.flatMap((variant) => (variant.coreProductId ? [variant.coreProductId] : [])),
+                ),
+            ];
+            const coreRows = coreIds.length
+                ? await db.query.coreProductIdentity.findMany({
+                      where: inArray(coreProductIdentity.id, coreIds),
+                      columns: { id: true, name: true, sku: true, image: true },
+                  })
+                : [];
+            const coreById = new Map(coreRows.map((row) => [row.id, row]));
+
+            const groups = Array.from(rowsByIdentity.entries()).flatMap(([key, variants]) => {
+                const first = variants[0];
+                if (!first) return [];
+                const lowVariants = variants.filter((variant) => variant.available <= input.threshold);
+                if (lowVariants.length === 0) return [];
+
+                const core = first.coreProductId ? coreById.get(first.coreProductId) : null;
+                const name = core?.name ?? first.productName;
+                const sku = core?.sku ?? first.localSku ?? first.globalSku ?? first.sku ?? `PRD-${first.productId}`;
+                const searchable = [
+                    name,
+                    sku,
+                    ...variants.flatMap((variant) => [
+                        variant.productName,
+                        variant.brandName,
+                        variant.localSku,
+                        variant.globalSku,
+                        variant.sku,
+                        variant.canonicalLabel,
+                        variant.displayAlias,
+                    ]),
+                ]
+                    .filter(Boolean)
+                    .join(" ")
+                    .toLocaleLowerCase();
+                if (input.search && !searchable.includes(input.search.toLocaleLowerCase())) {
+                    return [];
+                }
+
+                return [
+                    {
+                        key,
+                        target: first.coreProductId
+                            ? {
+                                  kind: "core" as const,
+                                  id: first.coreProductId,
+                              }
+                            : {
+                                  kind: "product" as const,
+                                  id: first.productId,
+                              },
+                        name,
+                        sku,
+                        image: core?.image ?? null,
+                        productIds: [...new Set(variants.map((v) => v.productId))],
+                        variantIds: variants.map((v) => v.variantId),
+                        variants,
+                        lowVariantCount: lowVariants.length,
+                        criticalVariantCount: lowVariants.filter(
+                            (variant) => variant.available <= input.threshold * 0.5,
+                        ).length,
+                    },
+                ];
+            });
+
+            const allVariantIds = groups.flatMap((group) => group.variantIds);
+            const thirtyDaysAgo = new Date();
+            thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+            const orderCountRows = allVariantIds.length
+                ? await db
+                      .select({
+                          variantId: orderItem.variantId,
+                          orderId: order.id,
+                      })
+                      .from(orderItem)
+                      .innerJoin(order, eq(orderItem.orderId, order.id))
+                      .where(
+                          and(
+                              eq(order.warehouseId, ownerId),
+                              inArray(orderItem.variantId, allVariantIds),
+                              gte(order.createdAt, thirtyDaysAgo),
+                              sql`${order.status} <> 'cancelled'`,
+                          ),
+                      )
+                : [];
+            const orderIdsByVariant = new Map<number, Set<number>>();
+            for (const row of orderCountRows) {
+                if (row.variantId === null) continue;
+                const ids = orderIdsByVariant.get(row.variantId) ?? new Set<number>();
+                ids.add(row.orderId);
+                orderIdsByVariant.set(row.variantId, ids);
+            }
+
+            const items = groups
+                .map((group) => {
+                    return {
+                        ...group,
+                        orderCountLast30Days: new Set(
+                            group.variantIds.flatMap((id) => [
+                                ...(orderIdsByVariant.get(id) ?? []),
+                            ]),
+                        ).size,
+                    };
+                })
+                .sort((a, b) => b.criticalVariantCount - a.criticalVariantCount || a.name.localeCompare(b.name));
+
+            return {
+                threshold: input.threshold,
+                summary: {
+                    products: items.length,
+                    variants: items.reduce((sum, item) => sum + item.lowVariantCount, 0),
+                    critical: items.reduce((sum, item) => sum + item.criticalVariantCount, 0),
+                },
+                items,
+            };
+        }),
+
+    /**
     /**
      * Target-scoped stock detail resolved exclusively from Admin Variant Setup.
      * Warehouse-owned variants remain visible at zero stock; other owner types
@@ -1012,7 +1178,13 @@ export const stockOverviewRouter = {
             if (input.search) {
                 const term = `%${input.search}%`;
                 conditions.push(
-                    sql`(${product.name} ILIKE ${term} OR ${product.sku} ILIKE ${term} OR ${coreProductIdentity.name} ILIKE ${term} OR ${coreProductIdentity.sku} ILIKE ${term})`,
+                    sql`(${product.name} ILIKE ${term} OR ${product.sku} ILIKE ${term} OR ${coreProductIdentity.name} ILIKE ${term} OR ${coreProductIdentity.sku} ILIKE ${term} OR EXISTS (
+                        SELECT 1
+                        FROM ${carton}
+                        WHERE ${carton.variantId} = ${productVariant.id}
+                            AND ${carton.warehouseId} = ${ownerId}
+                            AND (${carton.barcode} ILIKE ${term} OR ${carton.cartonId} ILIKE ${term})
+                    ))`,
                 );
             }
 
