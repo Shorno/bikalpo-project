@@ -123,14 +123,6 @@ export async function syncOrderFromDeliveredInvoice(
 
     if (
         fullyDelivered &&
-        options.markReceived &&
-        deliveredInvoice.order.orderType === "b2b"
-    ) {
-        await convertB2bOrderToRetailInventory(tx, deliveredInvoice.orderId);
-    }
-
-    if (
-        fullyDelivered &&
         deliveredInvoice.order.orderType === "b2b" &&
         deliveredInvoice.order.warehouseId
     ) {
@@ -142,6 +134,14 @@ export async function syncOrderFromDeliveredInvoice(
             warehouseId: deliveredInvoice.order.warehouseId,
             orderId: deliveredInvoice.orderId,
         });
+    }
+
+    if (
+        fullyDelivered &&
+        options.markReceived &&
+        deliveredInvoice.order.orderType === "b2b"
+    ) {
+        await convertB2bOrderToRetailInventory(tx, deliveredInvoice.orderId);
     }
 
     if (
