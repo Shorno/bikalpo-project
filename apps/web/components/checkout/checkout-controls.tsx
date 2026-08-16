@@ -50,7 +50,11 @@ export function DeliveryModeSelector({
   ];
 
   return (
-    <div className="grid grid-cols-2 gap-3" role="radiogroup" aria-label="Delivery method">
+    <div
+      className="grid grid-cols-2 gap-3"
+      role="radiogroup"
+      aria-label="Delivery method"
+    >
       {options.map((option) => {
         const Icon = option.icon;
         const selected = option.value === value;
@@ -72,7 +76,9 @@ export function DeliveryModeSelector({
           >
             <Icon className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
             <span className="min-w-0">
-              <span className="block text-sm font-semibold">{option.label}</span>
+              <span className="block text-sm font-semibold">
+                {option.label}
+              </span>
               <span className="mt-0.5 block text-xs leading-4 text-slate-500">
                 {option.description}
               </span>
@@ -120,19 +126,35 @@ export function PromotionCodeControl({
           />
         </div>
         {appliedCode ? (
-          <Button type="button" variant="outline" onClick={onClear} aria-label="Remove promotion">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={onClear}
+            aria-label="Remove promotion"
+          >
             <X aria-hidden="true" />
             Remove
           </Button>
         ) : (
-          <Button type="button" variant="outline" onClick={onApply} disabled={!value.trim() || isApplying}>
-            {isApplying ? <Clock3 className="animate-spin" aria-hidden="true" /> : <Check aria-hidden="true" />}
+          <Button
+            type="button"
+            variant="outline"
+            onClick={onApply}
+            disabled={!value.trim() || isApplying}
+          >
+            {isApplying ? (
+              <Clock3 className="animate-spin" aria-hidden="true" />
+            ) : (
+              <Check aria-hidden="true" />
+            )}
             Apply
           </Button>
         )}
       </div>
       {appliedCode ? (
-        <p className="text-xs font-medium text-emerald-700">{appliedCode} applied</p>
+        <p className="text-xs font-medium text-emerald-700">
+          {appliedCode} applied
+        </p>
       ) : error ? (
         <p className="text-xs font-medium text-red-600">{error}</p>
       ) : null}
@@ -164,7 +186,9 @@ export function InvoiceContactFields({
           id="invoice-phone"
           type="tel"
           value={value.phone}
-          onChange={(event) => onChange({ ...value, phone: event.target.value })}
+          onChange={(event) =>
+            onChange({ ...value, phone: event.target.value })
+          }
           required
         />
       </div>
@@ -174,7 +198,9 @@ export function InvoiceContactFields({
           id="invoice-email"
           type="email"
           value={value.email}
-          onChange={(event) => onChange({ ...value, email: event.target.value })}
+          onChange={(event) =>
+            onChange({ ...value, email: event.target.value })
+          }
           placeholder="Optional"
         />
       </div>
@@ -207,7 +233,11 @@ export function PaymentPlanSelector({
 
   return (
     <div className="space-y-3">
-      <div className="grid gap-2 sm:grid-cols-3" role="radiogroup" aria-label="Payment plan">
+      <div
+        className="grid gap-2 sm:grid-cols-3"
+        role="radiogroup"
+        aria-label="Payment plan"
+      >
         {options.map((option) => {
           const Icon = option.icon;
           const selected = option.value === value;

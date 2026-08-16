@@ -221,6 +221,19 @@ function CheckoutLineItem({
                 </span>
               </Label>
             </RadioGroup>
+            {item.cylinderSale.mode === "exchange" && (
+              <div className="mt-2 border-t border-emerald-200 pt-2 text-xs text-emerald-900">
+                <p className="font-semibold">Empty cylinder information</p>
+                <div className="mt-1 grid grid-cols-2 gap-x-3 gap-y-1 text-emerald-800">
+                  <span>Variant</span>
+                  <span className="text-right font-medium">{item.size}</span>
+                  <span>Expected quantity</span>
+                  <span className="text-right font-medium tabular-nums">
+                    {item.quantity}
+                  </span>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -284,13 +297,27 @@ function CheckoutSummaryBody({
             : "border-slate-200 bg-slate-50",
         )}
       >
-        <div className={cn("space-y-2.5 text-sm", quoteLoading && "animate-pulse opacity-60")}>
+        <div
+          className={cn(
+            "space-y-2.5 text-sm",
+            quoteLoading && "animate-pulse opacity-60",
+          )}
+        >
           {summaryRows ? (
             summaryRows.map(([label, amount, subtract]) => (
-              <div key={String(label)} className="flex items-center justify-between gap-4">
+              <div
+                key={String(label)}
+                className="flex items-center justify-between gap-4"
+              >
                 <span className="text-slate-600">{label}</span>
-                <span className={cn("font-medium tabular-nums", subtract ? "text-emerald-700" : "text-slate-900")}>
-                  {subtract ? "-" : ""}{formatCheckoutPrice(Number(amount))}
+                <span
+                  className={cn(
+                    "font-medium tabular-nums",
+                    subtract ? "text-emerald-700" : "text-slate-900",
+                  )}
+                >
+                  {subtract ? "-" : ""}
+                  {formatCheckoutPrice(Number(amount))}
                 </span>
               </div>
             ))
@@ -309,11 +336,15 @@ function CheckoutSummaryBody({
           <div className="mt-3 space-y-1 border-t border-slate-200 pt-3 text-xs">
             <div className="flex justify-between gap-4 text-slate-600">
               <span>Pay now</span>
-              <span className="font-semibold tabular-nums text-slate-900">{formatCheckoutPrice(quote.initialPaymentAmount)}</span>
+              <span className="font-semibold tabular-nums text-slate-900">
+                {formatCheckoutPrice(quote.initialPaymentAmount)}
+              </span>
             </div>
             <div className="flex justify-between gap-4 text-slate-600">
               <span>Remaining after payment</span>
-              <span className="font-semibold tabular-nums text-slate-900">{formatCheckoutPrice(quote.projectedDueAfterPayment)}</span>
+              <span className="font-semibold tabular-nums text-slate-900">
+                {formatCheckoutPrice(quote.projectedDueAfterPayment)}
+              </span>
             </div>
           </div>
         )}
@@ -391,8 +422,7 @@ function CheckoutSummaryBody({
 export function CheckoutSummary(props: CheckoutSummaryProps) {
   const total = props.isOpenOrder
     ? props.totalPrice
-    : (props.quote?.totals.grandTotal ??
-      props.totalPrice + props.shippingCost);
+    : (props.quote?.totals.grandTotal ?? props.totalPrice + props.shippingCost);
 
   if (props.presentation === "compact") {
     return (
