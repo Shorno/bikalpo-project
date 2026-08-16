@@ -24,6 +24,8 @@ import {
 	cartonConfig,
 	category,
 	complaint,
+	checkoutPromotion,
+	checkoutPromotionRedemption,
 	coreProductIdentity,
 	customerAssignment,
 	damageEntry,
@@ -40,6 +42,7 @@ import {
 	openOrderBidItem,
 	order,
 	orderItem,
+	payment,
 	product,
 	productIdentityRequest,
 	productPackRule,
@@ -74,6 +77,7 @@ import {
 	gte,
 	ilike,
 	inArray,
+	isNull,
 	lte,
 	min,
 	or,
@@ -84,7 +88,13 @@ import {
 import { z } from "zod";
 
 import { publicProcedure, shopOwnerProcedure } from "../index";
+import { assertCheckoutQuoteMatches } from "../services/checkout-quote";
 import { resolveRetailerOfferLinePrice } from "../services/open-order-domain";
+import {
+	buildWholesaleCheckoutQuote,
+	getWholesalePaymentDueAt,
+	wholesaleCheckoutSubmissionSchema,
+} from "../services/wholesale-checkout";
 import {
 	recalculateOffersForInventory,
 	reconcileOpenOrder,
@@ -7082,10 +7092,26 @@ const warehouseOrderQueries = {
 				paymentMethod: z
 					.enum(["cash_on_delivery", "bkash", "nagad", "bank_transfer", "card"])
 					.default("cash_on_delivery"),
+				checkout: wholesaleCheckoutSubmissionSchema.optional(),
 			}),
 		)
 		.handler(async ({ context, input }) => {
 			const userId = context.session.user.id;
+			if (input.checkout?.idempotencyKey) {
+				const existingOrder = await db.query.order.findFirst({
+					where: and(
+						eq(order.userId, userId),
+						eq(order.checkoutIdempotencyKey, input.checkout.idempotencyKey),
+					),
+				});
+				if (existingOrder) {
+					return {
+						success: true,
+						order: existingOrder,
+						message: `Order ${existingOrder.orderNumber} was already placed`,
+					};
+				}
+			}
 
 			// 1. Find warehouse
 			const warehouseUser = await db
@@ -7438,7 +7464,50 @@ const warehouseOrderQueries = {
 				(sum, item) => sum + Number(item.totalPrice),
 				0,
 			);
-			const total = subtotal; // No shipping cost for B2B
+			const checkoutSelection = input.checkout ?? {
+				deliveryMode: "courier" as const,
+				paymentPlan:
+					input.paymentMethod === "cash_on_delivery"
+						? ("pay_later" as const)
+						: ("pay_now" as const),
+			};
+			if (
+				input.paymentMethod === "cash_on_delivery" &&
+				checkoutSelection.paymentPlan !== "pay_later"
+			) {
+				throw new ORPCError("BAD_REQUEST", {
+					message: "Cash on delivery can only be used with pay later",
+				});
+			}
+			let checkoutResult: Awaited<ReturnType<typeof buildWholesaleCheckoutQuote>>;
+			try {
+				checkoutResult = await buildWholesaleCheckoutQuote({
+					sellerId: warehouseId,
+					lines: validatedItems.map((item) => ({
+						key: `${item.variantId}:${item.supplyMode}:${item.targetVariantId ?? "none"}`,
+						quantity: item.quantity,
+						unitPrice: Number(item.unitPrice),
+					})),
+					selection: checkoutSelection,
+				});
+				assertCheckoutQuoteMatches({
+					expectedVersion: input.checkout?.quoteVersion,
+					expectedExpiresAt: input.checkout?.quoteExpiresAt,
+					quote: checkoutResult.quote,
+				});
+			} catch (error) {
+				throw new ORPCError("CONFLICT", {
+					message:
+						error instanceof Error
+							? error.message
+							: "Checkout totals could not be confirmed",
+				});
+			}
+			const { quote, configuration, promotion } = checkoutResult;
+			const paymentDueAt = getWholesalePaymentDueAt({
+				paymentPlan: quote.paymentPlan,
+				creditDays: configuration.wholesaleCreditDays,
+			});
 
 			// 4. Generate order number
 			const orderNumber = `WO-${Date.now()}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
@@ -7455,18 +7524,92 @@ const warehouseOrderQueries = {
 						orderSource: "direct",
 						warehouseId,
 						subtotal: subtotal.toFixed(2),
-						total: total.toFixed(2),
+						shippingCost: (
+							quote.totals.deliveryFee + quote.totals.shippingFee
+						).toFixed(2),
+						discount: quote.totals.totalDiscount.toFixed(2),
+						productDiscount: quote.totals.productDiscount.toFixed(2),
+						couponDiscount: quote.totals.couponDiscount.toFixed(2),
+						rewardDiscount: quote.totals.rewardDiscount.toFixed(2),
+						taxAmount: quote.totals.taxAmount.toFixed(2),
+						deliveryFee: quote.totals.deliveryFee.toFixed(2),
+						shippingFee: quote.totals.shippingFee.toFixed(2),
+						total: quote.totals.grandTotal.toFixed(2),
+						paidAmount: "0.00",
+						dueAmount: quote.totals.grandTotal.toFixed(2),
+						promotionCode: quote.promotionCode,
 						status: "pending",
 						paymentStatus: "pending",
 						paymentMethod: input.paymentMethod,
+						paymentPlan: quote.paymentPlan,
+						paymentDueAt,
+						creditDays: configuration.wholesaleCreditDays,
+						deliveryMode: quote.deliveryMode,
+						checkoutQuoteVersion: quote.version,
+						checkoutQuoteExpiresAt: new Date(quote.expiresAt),
+						checkoutIdempotencyKey: input.checkout?.idempotencyKey,
 						shippingName: input.shippingName,
 						shippingPhone: input.shippingPhone,
 						shippingAddress: input.shippingAddress,
 						shippingCity: input.shippingCity,
 						shippingArea: input.shippingArea || null,
+						invoiceName:
+							input.checkout?.invoiceContact?.name ?? input.shippingName,
+						invoicePhone:
+							input.checkout?.invoiceContact?.phone ?? input.shippingPhone,
+						invoiceEmail: input.checkout?.invoiceContact?.email || null,
 						customerNote: input.customerNote || null,
 					})
 					.returning();
+
+				if (promotion && quote.promotionCode) {
+					const consumed = await tx
+						.update(checkoutPromotion)
+						.set({
+							usedCount: sql`${checkoutPromotion.usedCount} + 1`,
+							updatedAt: new Date(),
+						})
+						.where(
+							and(
+								eq(checkoutPromotion.id, promotion.id),
+								eq(checkoutPromotion.isActive, true),
+								or(
+									isNull(checkoutPromotion.usageLimit),
+									sql`${checkoutPromotion.usedCount} < ${checkoutPromotion.usageLimit}`,
+								),
+							),
+						)
+						.returning({ id: checkoutPromotion.id });
+					if (consumed.length !== 1) {
+						throw new ORPCError("CONFLICT", {
+							message: "The promotion is no longer available",
+						});
+					}
+					await tx.insert(checkoutPromotionRedemption).values({
+						promotionId: promotion.id,
+						orderId: newOrder!.id,
+						userId,
+						codeSnapshot: quote.promotionCode,
+						discountAmount: quote.totals.couponDiscount.toFixed(2),
+						metadata: JSON.stringify({ audience: "wholesale" }),
+					});
+				}
+
+				if (quote.initialPaymentAmount > 0) {
+					await tx.insert(payment).values({
+						orderId: newOrder!.id,
+						idempotencyKey: input.checkout?.idempotencyKey
+							? `${input.checkout.idempotencyKey}:initial`
+							: undefined,
+						paymentMethod: input.paymentMethod,
+						paymentProvider:
+							input.paymentMethod === "bank_transfer"
+								? "manual_bank"
+								: "sslcommerz",
+						status: "pending",
+						amount: quote.initialPaymentAmount.toFixed(2),
+					});
+				}
 
 				// Create order items
 				for (const item of validatedItems) {
@@ -7527,6 +7670,11 @@ const warehouseOrderQueries = {
 			return {
 				success: true,
 				order: result,
+				quoteVersion: quote.version,
+				grandTotal: quote.totals.grandTotal,
+				amountToPay: quote.initialPaymentAmount,
+				projectedDueAfterPayment: quote.projectedDueAfterPayment,
+				paymentRequired: quote.initialPaymentAmount > 0,
 				message: `Order ${orderNumber} placed successfully to ${warehouseUser[0]!.warehouseName || warehouseUser[0]!.name}`,
 			};
 		}),
