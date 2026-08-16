@@ -50,13 +50,30 @@ export async function generateInvoiceFromOrder(orderId: number) {
             orderId: orderData.id,
             customerId: orderData.userId,
             invoiceType: "main",
-            paymentStatus: "unpaid",
+            paymentStatus:
+                Number(orderData.dueAmount) <= 0 ? "collected" : "unpaid",
             deliveryStatus: "not_assigned",
             subtotal: orderData.subtotal,
             discountAmount: orderData.discount,
-            deliveryCharge: orderData.shippingCost,
-            taxAmount: "0",
+            productDiscount: orderData.productDiscount,
+            couponDiscount: orderData.couponDiscount,
+            rewardDiscount: orderData.rewardDiscount,
+            deliveryCharge: orderData.deliveryFee,
+            shippingCharge:
+                Number(orderData.deliveryFee) + Number(orderData.shippingFee) > 0
+                    ? orderData.shippingFee
+                    : orderData.shippingCost,
+            taxAmount: orderData.taxAmount,
             grandTotal: orderData.total,
+            paidAmount: orderData.paidAmount,
+            dueAmount: orderData.dueAmount,
+            returnAmount: orderData.returnAmount,
+            promotionCode: orderData.promotionCode,
+            paymentPlan: orderData.paymentPlan,
+            paymentDueAt: orderData.paymentDueAt,
+            billedName: orderData.invoiceName ?? orderData.shippingName,
+            billedPhone: orderData.invoicePhone ?? orderData.shippingPhone,
+            billedEmail: orderData.invoiceEmail ?? orderData.shippingEmail,
             customerNotes: orderData.customerNote,
         } satisfies NewInvoice)
         .returning();

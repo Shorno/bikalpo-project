@@ -12,7 +12,7 @@ import {
     varchar,
 } from "drizzle-orm/pg-core";
 import { user } from "./auth-schema";
-import { order, orderItem } from "./order";
+import { order, orderItem, orderPaymentPlanEnum } from "./order";
 import { product } from "./product";
 import { productVariant } from "./product-variant";
 
@@ -135,6 +135,16 @@ export const invoice = pgTable(
         returnAmount: decimal("return_amount", { precision: 10, scale: 2 })
             .default("0")
             .notNull(),
+        promotionCode: varchar("promotion_code", { length: 40 }),
+        paymentPlan: orderPaymentPlanEnum("payment_plan")
+            .default("pay_later")
+            .notNull(),
+        paymentDueAt: timestamp("payment_due_at"),
+
+        // Immutable billing contact copied from the checkout order.
+        billedName: text("billed_name"),
+        billedPhone: text("billed_phone"),
+        billedEmail: text("billed_email"),
 
         /** Additional amount due when an Exchange unit becomes New at handoff. */
         handoffBalance: decimal("handoff_balance", { precision: 10, scale: 2 })

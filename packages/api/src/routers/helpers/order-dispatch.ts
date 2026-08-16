@@ -171,6 +171,103 @@ export function calculateDispatchInvoiceCharges(input: {
 	};
 }
 
+export function calculateDispatchInvoiceSnapshot(input: {
+	subtotal: number;
+	approvedSubtotal: number;
+	fullyInvoiced: boolean;
+	hasExistingInvoices: boolean;
+	fulfillmentMode?: DispatchFulfillmentMode;
+	orderTotals: {
+		discount: number;
+		productDiscount: number;
+		couponDiscount: number;
+		rewardDiscount: number;
+		taxAmount: number;
+		deliveryFee: number;
+		shippingFee: number;
+		paidAmount: number;
+		returnAmount: number;
+	};
+	allocated: {
+		discount: number;
+		productDiscount: number;
+		couponDiscount: number;
+		rewardDiscount: number;
+		taxAmount: number;
+		paidAmount: number;
+		returnAmount: number;
+	};
+}) {
+	const allocateProportionally = (total: number, allocated: number) => {
+		const remaining = Math.max(0, total - allocated);
+		if (input.fullyInvoiced) return remaining;
+		if (input.approvedSubtotal <= 0) return 0;
+		return Math.min(
+			remaining,
+			Math.round((total * input.subtotal * 100) / input.approvedSubtotal) /
+				100,
+		);
+	};
+	const discountAmount = allocateProportionally(
+		input.orderTotals.discount,
+		input.allocated.discount,
+	);
+	const productDiscount = allocateProportionally(
+		input.orderTotals.productDiscount,
+		input.allocated.productDiscount,
+	);
+	const couponDiscount = allocateProportionally(
+		input.orderTotals.couponDiscount,
+		input.allocated.couponDiscount,
+	);
+	const rewardDiscount = allocateProportionally(
+		input.orderTotals.rewardDiscount,
+		input.allocated.rewardDiscount,
+	);
+	const taxAmount = allocateProportionally(
+		input.orderTotals.taxAmount,
+		input.allocated.taxAmount,
+	);
+	const deliveryCharge =
+		input.fulfillmentMode === "self_pickup" || input.hasExistingInvoices
+			? 0
+			: input.orderTotals.deliveryFee;
+	const shippingCharge =
+		input.fulfillmentMode === "self_pickup" || input.hasExistingInvoices
+			? 0
+			: input.orderTotals.shippingFee;
+	const grandTotal = Math.max(
+		0,
+		input.subtotal -
+			discountAmount +
+			taxAmount +
+			deliveryCharge +
+			shippingCharge,
+	);
+	const paidAmount = Math.min(
+		grandTotal,
+		Math.max(0, input.orderTotals.paidAmount - input.allocated.paidAmount),
+	);
+	const returnAmount = Math.min(
+		Math.max(0, grandTotal - paidAmount),
+		Math.max(0, input.orderTotals.returnAmount - input.allocated.returnAmount),
+	);
+
+	return {
+		discountAmount,
+		productDiscount,
+		couponDiscount,
+		rewardDiscount,
+		taxAmount,
+		deliveryCharge,
+		shippingCharge,
+		grandTotal,
+		paidAmount,
+		returnAmount,
+		dueAmount: Math.max(0, grandTotal - paidAmount - returnAmount),
+	};
+}
+
 async function generateInvoiceNumber(tx: DbTransaction) {
 	await tx.execute(sql`SELECT pg_advisory_xact_lock(872401)`);
 	const year = new Date().getFullYear();
@@ -371,22 +468,50 @@ export async function createDispatchInvoiceForOrder(input: {
 			0,
 		);
 		const approvedSubtotal = Number(existingOrder.subtotal);
-		const approvedDiscount = Number(existingOrder.discount);
-		const allocatedDiscount = existingInvoices.reduce(
-			(total, row) => total + Number(row.discountAmount),
-			0,
-		);
-		const { discountAmount, deliveryCharge, grandTotal } =
-			calculateDispatchInvoiceCharges({
-				subtotal,
-				approvedSubtotal,
-				approvedDiscount,
-				allocatedDiscount,
-				shippingCost: Number(existingOrder.shippingCost),
-				hasExistingInvoices: existingInvoices.length > 0,
-				fullyInvoiced,
-				fulfillmentMode: input.fulfillmentMode,
-			});
+		const deliveryFee = Number(existingOrder.deliveryFee);
+		let shippingFee = Number(existingOrder.shippingFee);
+		if (deliveryFee === 0 && shippingFee === 0) {
+			shippingFee = Number(existingOrder.shippingCost);
+		}
+		const invoiceSnapshot = calculateDispatchInvoiceSnapshot({
+			subtotal,
+			approvedSubtotal,
+			fullyInvoiced,
+			hasExistingInvoices: existingInvoices.length > 0,
+			fulfillmentMode: input.fulfillmentMode,
+			orderTotals: {
+				discount: Number(existingOrder.discount),
+				productDiscount: Number(existingOrder.productDiscount),
+				couponDiscount: Number(existingOrder.couponDiscount),
+				rewardDiscount: Number(existingOrder.rewardDiscount),
+				taxAmount: Number(existingOrder.taxAmount),
+				deliveryFee,
+				shippingFee,
+				paidAmount: Number(existingOrder.paidAmount),
+				returnAmount: Number(existingOrder.returnAmount),
+			},
+			allocated: existingInvoices.reduce(
+				(totals, row) => ({
+					discount: totals.discount + Number(row.discountAmount),
+					productDiscount:
+						totals.productDiscount + Number(row.productDiscount),
+					couponDiscount: totals.couponDiscount + Number(row.couponDiscount),
+					rewardDiscount: totals.rewardDiscount + Number(row.rewardDiscount),
+					taxAmount: totals.taxAmount + Number(row.taxAmount),
+					paidAmount: totals.paidAmount + Number(row.paidAmount),
+					returnAmount: totals.returnAmount + Number(row.returnAmount),
+				}),
+				{
+					discount: 0,
+					productDiscount: 0,
+					couponDiscount: 0,
+					rewardDiscount: 0,
+					taxAmount: 0,
+					paidAmount: 0,
+					returnAmount: 0,
+				},
+			),
+		});
 		const mainInvoice = existingInvoices.find(
 			(row) => row.invoiceType === "main",
 		);
@@ -408,13 +533,27 @@ export async function createDispatchInvoiceForOrder(input: {
 					invoiceType === "split" ? (mainInvoice?.id ?? null) : null,
 				splitSequence,
 				invoiceType,
-				paymentStatus: "unpaid",
+				paymentStatus:
+					invoiceSnapshot.dueAmount <= 0 ? "collected" : "unpaid",
 				deliveryStatus: "not_assigned",
 				subtotal: money(subtotal),
-				discountAmount: money(discountAmount),
-				deliveryCharge: money(deliveryCharge),
-				taxAmount: "0.00",
-				grandTotal: money(grandTotal),
+				discountAmount: money(invoiceSnapshot.discountAmount),
+				productDiscount: money(invoiceSnapshot.productDiscount),
+				couponDiscount: money(invoiceSnapshot.couponDiscount),
+				rewardDiscount: money(invoiceSnapshot.rewardDiscount),
+				deliveryCharge: money(invoiceSnapshot.deliveryCharge),
+				shippingCharge: money(invoiceSnapshot.shippingCharge),
+				taxAmount: money(invoiceSnapshot.taxAmount),
+				grandTotal: money(invoiceSnapshot.grandTotal),
+				paidAmount: money(invoiceSnapshot.paidAmount),
+				dueAmount: money(invoiceSnapshot.dueAmount),
+				returnAmount: money(invoiceSnapshot.returnAmount),
+				promotionCode: existingOrder.promotionCode,
+				paymentPlan: existingOrder.paymentPlan,
+				paymentDueAt: existingOrder.paymentDueAt,
+				billedName: existingOrder.invoiceName ?? existingOrder.shippingName,
+				billedPhone: existingOrder.invoicePhone ?? existingOrder.shippingPhone,
+				billedEmail: existingOrder.invoiceEmail ?? existingOrder.shippingEmail,
 				customerNotes: existingOrder.customerNote,
 				adminNotes: existingOrder.adminNote,
 			})
