@@ -107,9 +107,11 @@ import {
   estimateOrderAcceptSchema,
 } from "./helpers/estimate-order-conversion";
 import {
+  anyListedVariantAllowsExchange,
   getReferenceProductEffectivePrice,
   getReferenceSellerKey,
   isOpenOrderReferenceSelectionEligible,
+  referenceProductCanExchange,
   sortReferenceProducts,
 } from "./helpers/reference-product-catalog";
 import {
@@ -1428,6 +1430,7 @@ const queries = {
           variants: {
             columns: {
               catalogVariantId: true,
+              exchangeEnabled: true,
               id: true,
               isActive: true,
               price: true,
@@ -1493,6 +1496,7 @@ const queries = {
 
         return {
           ...productData,
+          canExchange: referenceProductCanExchange(referenceProduct),
           price: effectivePrice,
           reviewStats: reviewStatsMap[referenceProduct.id] || {
             averageRating: 0,
@@ -1660,7 +1664,12 @@ const queries = {
             },
             images: true,
             variants: {
-              columns: { id: true, price: true, isActive: true },
+              columns: {
+                exchangeEnabled: true,
+                id: true,
+                isActive: true,
+                price: true,
+              },
             },
           },
           orderBy: getOrderBy(),
@@ -1742,6 +1751,7 @@ const queries = {
 
         return {
           ...productData,
+          canExchange: anyListedVariantAllowsExchange(p.variants),
           price: effectivePrice,
           reviewStats: reviewStatsMap[p.id] || {
             averageRating: 0,
@@ -1981,7 +1991,12 @@ const queries = {
                 columns: { id: true, name: true, slug: true, logo: true },
               },
               variants: {
-                columns: { id: true, price: true, isActive: true },
+                columns: {
+                  exchangeEnabled: true,
+                  id: true,
+                  isActive: true,
+                  price: true,
+                },
               },
             },
             limit: prodLimit,
@@ -2053,6 +2068,7 @@ const queries = {
             const { variants: _variants, ...productData } = p;
             return {
               ...productData,
+              canExchange: anyListedVariantAllowsExchange(p.variants),
               price: effectivePrice,
               reviewStats: reviewStatsMap[p.id] || {
                 averageRating: 0,

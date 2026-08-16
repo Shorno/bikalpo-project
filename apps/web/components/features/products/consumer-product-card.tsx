@@ -4,6 +4,7 @@ import { ArrowRight, Package, Star } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { useState } from "react";
+import { CylinderTypePreview } from "@/components/features/products/cylinder-type-radios";
 import { withCustomerStorefrontPreview } from "@/lib/customer-storefront-preview";
 
 interface ConsumerProductCardProps {
@@ -15,6 +16,7 @@ interface ConsumerProductCardProps {
     image: string;
     size?: string | null;
     inStock?: boolean;
+    canExchange?: boolean | null;
     category?: { name?: string; slug?: string } | null;
     brand?: { name?: string; slug?: string; logo?: string | null } | null;
     reviewStats?: { averageRating: number; totalReviews: number } | null;
@@ -88,6 +90,12 @@ export function ConsumerProductCard({
         <h3 className="mt-1.5 line-clamp-2 text-sm font-semibold leading-5 text-foreground sm:text-[15px]">
           {product.name}
         </h3>
+
+        {product.canExchange ? (
+          <div className="mt-3">
+            <CylinderTypePreview />
+          </div>
+        ) : null}
 
         <div className="mt-4 flex items-end justify-between gap-3">
           <div>

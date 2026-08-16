@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  anyListedVariantAllowsExchange,
   getReferenceProductEffectivePrice,
   getReferenceSellerKey,
   isOpenOrderReferenceSelectionEligible,
+  referenceProductCanExchange,
   sortReferenceProducts,
 } from "./reference-product-catalog";
 
@@ -260,5 +262,72 @@ test("sorts reference products by configured price, name, and recency", () => {
   assert.deepEqual(
     sortReferenceProducts(products, "newest").map((product) => product.name),
     ["Bashundhara", "Fresh", "Omera"],
+  );
+});
+
+test("public cards show Type when any listed variant allows exchange", () => {
+  assert.equal(anyListedVariantAllowsExchange([]), false);
+  assert.equal(
+    anyListedVariantAllowsExchange([
+      { isActive: true, exchangeEnabled: false },
+      { isActive: false, exchangeEnabled: true },
+    ]),
+    false,
+  );
+  assert.equal(
+    anyListedVariantAllowsExchange([
+      { isActive: true, exchangeEnabled: false },
+      { isActive: true, exchangeEnabled: true },
+    ]),
+    true,
+  );
+});
+
+test("reference products only count eligible catalog variants for exchange", () => {
+  const product = {
+    brandId: 16,
+    coreProductId: 1,
+    creatorSource: "admin",
+    id: 2,
+    price: "1900.00",
+    scheduledAt: null,
+    status: "active",
+    visibility: "public",
+  } as const;
+  const eligibleVariant = {
+    catalogVariant: {
+      brandId: 16,
+      configurationState: "configured",
+      coreProductId: 1,
+      isActive: true,
+    },
+    catalogVariantId: 5,
+    exchangeEnabled: true,
+    isActive: true,
+    price: "1500.00",
+    productId: 2,
+    visibilityRole: "all",
+  } as const;
+
+  assert.equal(
+    referenceProductCanExchange({
+      ...product,
+      variants: [{ ...eligibleVariant, exchangeEnabled: false }],
+    }),
+    false,
+  );
+  assert.equal(
+    referenceProductCanExchange({
+      ...product,
+      variants: [eligibleVariant],
+    }),
+    true,
+  );
+  assert.equal(
+    referenceProductCanExchange({
+      ...product,
+      variants: [{ ...eligibleVariant, productId: 9 }],
+    }),
+    false,
   );
 });
