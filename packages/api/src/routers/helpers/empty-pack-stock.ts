@@ -9,6 +9,15 @@ import { and, eq, sql } from "drizzle-orm";
 type DbTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
 type EmptyPackOwnerType = "shop" | "warehouse";
 
+export function warehouseExchangeEmptyCreditQty(line: {
+  cylinderSaleMode?: string | null;
+  modifiedQty?: number | null;
+  quantity: number;
+}) {
+  if (line.cylinderSaleMode !== "exchange") return 0;
+  return line.modifiedQty ?? line.quantity;
+}
+
 /**
  * Adds the empty cylinder received for an Exchange exactly once per order line.
  * The filled cylinder is handled by the normal inventory reservation/consume flow.
@@ -87,7 +96,7 @@ export async function creditWarehouseExchangeOrder(
       orderId: input.orderId,
       orderItemId: line.id,
       variantId: line.variantId,
-      quantity: line.modifiedQty ?? line.quantity,
+      quantity: warehouseExchangeEmptyCreditQty(line),
       actorId: input.actorId,
     });
   }

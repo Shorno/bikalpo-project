@@ -408,6 +408,51 @@ function mergeModes(
   return dedupeModes([...overrideModes, ...familyModes]);
 }
 
+export function isLpgProductTypeFamily(
+  input: Pick<
+    ProductTypeFulfillmentInput,
+    "family" | "slug" | "name" | "inventoryBehaviour"
+  > = {},
+): boolean {
+  return inferProductTypeFamily(input) === "lpg";
+}
+
+/** Warehouse LPG + Returnable pack is the enable switch for New/Exchange. */
+export function shouldEnableWarehouseCylinderExchange(input: {
+  isReturnablePack?: boolean | null;
+  family?: ProductTypeFamily | string | null;
+  name?: string | null;
+  slug?: string | null;
+}): boolean {
+  if (!input.isReturnablePack) return false;
+  return isLpgProductTypeFamily({
+    family: (input.family as ProductTypeFamily | null) ?? undefined,
+    name: input.name,
+    slug: input.slug,
+  });
+}
+
+/**
+ * Retailer can pick Exchange when Returnable pack is on and the listing is LPG,
+ * or when the warehouse variant already has exchangeEnabled.
+ */
+export function isWarehouseCylinderExchangeAvailable(input: {
+  isReturnablePack?: boolean | null;
+  family?: ProductTypeFamily | string | null;
+  name?: string | null;
+  slug?: string | null;
+  exchangeEnabled?: boolean | null;
+}): boolean {
+  if (!input.isReturnablePack) return false;
+  return (
+    isLpgProductTypeFamily({
+      family: (input.family as ProductTypeFamily | null) ?? undefined,
+      name: input.name,
+      slug: input.slug,
+    }) || Boolean(input.exchangeEnabled)
+  );
+}
+
 export function inferProductTypeFamily(
   input: Pick<ProductTypeFulfillmentInput, "family" | "slug" | "name" | "inventoryBehaviour">,
 ): ProductTypeFamily {

@@ -16,6 +16,7 @@ import {
     buildProductTypeFulfillmentProfile,
     FULFILLMENT_MODE_LABELS,
     FULFILLMENT_MODES,
+    isWarehouseCylinderExchangeAvailable,
 } from "@bikalpo-project/db/fulfillment";
 import {
     area,
@@ -6575,7 +6576,13 @@ const warehouseOrderQueries = {
                         : 0;
                 if (
                     cylinderSaleMode === "exchange" &&
-                    (!inv.variant?.exchangeEnabled || !inv.variant?.product?.isReturnablePack)
+                    !isWarehouseCylinderExchangeAvailable({
+                        isReturnablePack: inv.variant?.product?.isReturnablePack,
+                        family: inv.variant?.product?.category?.type?.family,
+                        name: inv.variant?.product?.category?.type?.name,
+                        slug: inv.variant?.product?.category?.type?.slug,
+                        exchangeEnabled: inv.variant?.exchangeEnabled,
+                    })
                 ) {
                     throw new ORPCError("BAD_REQUEST", {
                         message: `${inv.variant?.product?.name || "This product"} is not configured for cylinder exchange`,

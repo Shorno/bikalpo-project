@@ -21,6 +21,7 @@ export interface WarehouseProductVariantOption {
   packType?: string;
   fulfillmentMode?: FulfillmentMode;
   targetVariantId?: number | null;
+  canExchange?: boolean;
 }
 
 export interface WarehouseProduct {
@@ -40,6 +41,7 @@ export interface WarehouseProduct {
   stockStatus: "high" | "medium" | "low";
   variants: WarehouseProductVariantOption[];
   selectedVariant?: WarehouseProductVariantOption;
+  canExchange?: boolean;
 }
 
 interface WarehouseProductCardProps {

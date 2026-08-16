@@ -7,7 +7,12 @@
  * - Mutations (warehouse role only — update order status)
  */
 
-import { buildProductTypeFulfillmentProfile, db } from "@bikalpo-project/db";
+import {
+	buildProductTypeFulfillmentProfile,
+	db,
+	isWarehouseCylinderExchangeAvailable,
+	shouldEnableWarehouseCylinderExchange,
+} from "@bikalpo-project/db";
 import {
 	countAddableBrands,
 	shouldDeactivateOmittedBrands,
@@ -68,6 +73,7 @@ import {
 } from "./helpers/b2b-inventory-movement";
 import { getCartonInventoryUnits } from "./helpers/carton-units";
 import { creditWarehouseExchangeOrder } from "./helpers/empty-pack-stock";
+import { syncWarehouseCylinderExchange } from "./helpers/warehouse-cylinder-exchange";
 import { completeSelfPickupInvoice } from "./helpers/self-pickup";
 import { buildCanonicalOrderFlow } from "./helpers/order-lifecycle";
 import {
@@ -349,6 +355,13 @@ const storefrontQueries = {
 							retailPrice: inv.retailPrice,
 							fulfillmentMode: profile.defaultMode,
 							targetVariantId: inv.variant?.linkedRetailVariantId ?? null,
+							canExchange: isWarehouseCylinderExchangeAvailable({
+								isReturnablePack: inv.variant?.product?.isReturnablePack,
+								family: productType?.family,
+								name: productType?.name,
+								slug: productType?.slug,
+								exchangeEnabled: inv.variant?.exchangeEnabled,
+							}),
 							variant: inv.variant,
 						};
 					}),
@@ -7053,7 +7066,14 @@ const warehouseProductCreation = {
 					),
 					with: {
 						brand: true,
-						category: { columns: { typeId: true } },
+						category: {
+							columns: { typeId: true },
+							with: {
+								type: {
+									columns: { family: true, name: true, slug: true },
+								},
+							},
+						},
 						variants: true,
 					},
 				});
@@ -7290,6 +7310,15 @@ const warehouseProductCreation = {
 						})),
 					);
 				}
+				await syncWarehouseCylinderExchange(tx, {
+					productId: existing.id,
+					enabled: shouldEnableWarehouseCylinderExchange({
+						isReturnablePack: input.details.isReturnablePack,
+						family: existing.category?.type?.family,
+						name: existing.category?.type?.name,
+						slug: existing.category?.type?.slug,
+					}),
+				});
 				await linkProductVariantsToCatalog(tx, existing.id);
 				return { productId: existing.id };
 			});
@@ -7724,12 +7753,15 @@ const warehouseProductCreation = {
 						}
 						created.push(inserted.id);
 					} else {
-						if (targetProduct.status !== "active") {
-							await tx
-								.update(productTable)
-								.set({ status: "active" })
-								.where(eq(productTable.id, targetProduct.id));
-						}
+						await tx
+							.update(productTable)
+							.set({
+								status: "active",
+								isReturnablePack: input.details.isReturnablePack,
+								defaultPackDepositAmount:
+									input.details.defaultPackDepositAmount,
+							})
+							.where(eq(productTable.id, targetProduct.id));
 						updated.push(targetProduct.id);
 					}
 
@@ -7957,6 +7989,15 @@ const warehouseProductCreation = {
 					});
 
 				for (const productId of new Set([...created, ...updated])) {
+					await syncWarehouseCylinderExchange(tx, {
+						productId,
+						enabled: shouldEnableWarehouseCylinderExchange({
+							isReturnablePack: input.details.isReturnablePack,
+							family: core.category?.type?.family,
+							name: core.category?.type?.name,
+							slug: core.category?.type?.slug,
+						}),
+					});
 					await linkProductVariantsToCatalog(tx, productId);
 				}
 

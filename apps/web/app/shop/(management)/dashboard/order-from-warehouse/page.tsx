@@ -5,7 +5,10 @@ import type {
   InventoryBehaviour,
   ProductTypeFulfillmentProfile,
 } from "@bikalpo-project/db/fulfillment";
-import { INVENTORY_BEHAVIOUR_LABELS } from "@bikalpo-project/db/fulfillment";
+import {
+  INVENTORY_BEHAVIOUR_LABELS,
+  isWarehouseCylinderExchangeAvailable,
+} from "@bikalpo-project/db/fulfillment";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertCircle,
@@ -29,6 +32,7 @@ import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
+import { CylinderSaleModeToggle } from "@/components/features/warehouse/cylinder-sale-mode-toggle";
 import {
   getDefaultWarehouseOrderMode,
   getFulfillmentFamilyLabel,
@@ -393,8 +397,13 @@ function VariantModal({
   const newUnitPrice = usesContainerStock
     ? Number(selectedCarton?.cartonPrice || rawPrice)
     : rawPrice;
-  const canExchange =
-    product.type.isReturnablePack && selected.variant.exchangeEnabled;
+  const canExchange = isWarehouseCylinderExchangeAvailable({
+    isReturnablePack: product.type.isReturnablePack,
+    family: product.fulfillmentProfile.family,
+    name: product.type.name,
+    slug: product.type.slug,
+    exchangeEnabled: selected.variant.exchangeEnabled,
+  });
   const exchangeCredit = canExchange
     ? Number(selected.variant.exchangeCreditAmount || 0)
     : 0;
@@ -671,32 +680,10 @@ function VariantModal({
 
           {/* Price & Stock */}
           {canExchange && (
-            <div>
-              <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
-                Cylinder Sale
-              </h3>
-              <div className="grid grid-cols-2 gap-2">
-                {(["new", "exchange"] as const).map((mode) => (
-                  <button
-                    key={mode}
-                    type="button"
-                    onClick={() => setCylinderSaleMode(mode)}
-                    className={`rounded-xl border px-3 py-2.5 text-left transition-colors ${
-                      cylinderSaleMode === mode
-                        ? "border-teal-500 bg-teal-50 text-teal-800"
-                        : "border-gray-200 bg-white text-gray-600 hover:border-teal-300"
-                    }`}
-                  >
-                    <span className="block text-xs font-bold capitalize">{mode}</span>
-                    <span className="block text-[10px] mt-0.5">
-                      {mode === "new"
-                        ? "No empty cylinder returned"
-                        : `Return 1 empty · save ৳${exchangeCredit.toLocaleString()}`}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            </div>
+            <CylinderSaleModeToggle
+              value={cylinderSaleMode}
+              onChange={setCylinderSaleMode}
+            />
           )}
 
           <div className="flex items-center justify-between">

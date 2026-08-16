@@ -21,6 +21,7 @@ import { useParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { WarehouseProductGrid } from "@/components/features/warehouse/warehouse-product-grid";
+import { CylinderSaleModeToggle } from "@/components/features/warehouse/cylinder-sale-mode-toggle";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -208,6 +209,11 @@ export default function WarehouseStorefrontPage() {
         fulfillmentMode: item.selectedVariant?.fulfillmentMode,
         supplyMode: item.selectedVariant?.fulfillmentMode,
         targetVariantId: item.selectedVariant?.targetVariantId ?? null,
+        canExchange: Boolean(
+          isRetailerBuyer &&
+            (item.canExchange || item.selectedVariant?.canExchange),
+        ),
+        cylinderSaleMode: "new" as const,
       };
       saveCart([...cart, newItem]);
       toast.success(`Added ${item.name} to cart`);
@@ -270,6 +276,7 @@ export default function WarehouseStorefrontPage() {
         fulfillmentMode?: FulfillmentMode;
         supplyMode?: FulfillmentMode;
         targetVariantId?: number | null;
+        cylinderSaleMode?: "new" | "exchange";
       }[];
       shippingName: string;
       shippingPhone: string;
@@ -354,6 +361,7 @@ export default function WarehouseStorefrontPage() {
         fulfillmentMode: i.fulfillmentMode,
         supplyMode: i.supplyMode,
         targetVariantId: i.targetVariantId,
+        cylinderSaleMode: isRetailerBuyer ? i.cylinderSaleMode ?? "new" : undefined,
       })),
       shippingName,
       shippingPhone,
@@ -510,6 +518,22 @@ export default function WarehouseStorefrontPage() {
               <p className="text-[10px] text-zinc-400 mt-0.5">
                 {item.unitLabel} {item.sku ? ` · ${item.sku}` : ""}
               </p>
+              {gridMode === "retailer" && item.canExchange && (
+                <div className="mt-2">
+                  <CylinderSaleModeToggle
+                    value={item.cylinderSaleMode === "exchange" ? "exchange" : "new"}
+                    onChange={(mode) =>
+                      saveCart(
+                        cart.map((row) =>
+                          row.variantId === item.variantId
+                            ? { ...row, cylinderSaleMode: mode }
+                            : row,
+                        ),
+                      )
+                    }
+                  />
+                </div>
+              )}
               <div className="flex items-center justify-between mt-2.5 gap-2">
                 <div className="flex items-center border border-zinc-200 rounded-md bg-white p-0.5">
                   <button

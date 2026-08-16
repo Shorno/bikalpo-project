@@ -59,6 +59,7 @@ function mapApiProduct(item: any): WarehouseProduct {
         packType: rowVariant?.packType || rowUnit,
         fulfillmentMode: row.fulfillmentMode,
         targetVariantId: row.targetVariantId,
+        canExchange: Boolean(row.canExchange),
       };
     },
   );
@@ -90,6 +91,7 @@ function mapApiProduct(item: any): WarehouseProduct {
     stockStatus,
     variants,
     selectedVariant,
+    canExchange: variants.some((row) => row.canExchange),
   };
 }
 
@@ -360,6 +362,9 @@ export function WarehouseProductGrid({
       weightKg: selectedVariant.weightKg || 0,
       innerPackSizeKg: selectedVariant.innerPackSizeKg || 0,
       packType: selectedVariant.packType || selectedVariant.unit,
+      canExchange:
+        mode === "retailer" &&
+        Boolean(selectedVariant.canExchange || cardProduct.canExchange),
     });
     setOrderOpen(true);
   };

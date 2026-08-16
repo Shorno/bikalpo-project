@@ -7,6 +7,7 @@ import {
 import {
   FULFILLMENT_UNITS,
   type FulfillmentUnitCode,
+  isLpgProductTypeFamily,
 } from "@bikalpo-project/db/fulfillment";
 import { useForm } from "@tanstack/react-form";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -177,6 +178,11 @@ export default function CoreProductConfigForm({
     | undefined;
   const core = configuration?.core;
   const isSingleMode = core?.brandCreationMode === "single";
+  const isLpgFamily = isLpgProductTypeFamily({
+    family: core?.category?.type?.family,
+    name: core?.category?.type?.name,
+    slug: core?.category?.type?.slug,
+  });
   const existingBrands: ExistingBrandProduct[] = configuration?.brands ?? [];
   const allBrands =
     adapter?.brands ??
@@ -1540,29 +1546,37 @@ function SharedTemplateEditor({
           <form.Field name="template.isReturnablePack">
             {(enabled: any) => (
               <TemplateRuleRow
-                label="Returnable pack"
-                description="Apply a default refundable deposit."
+                label={
+                  isLpgFamily ? "Empty cylinder return" : "Returnable pack"
+                }
+                description={
+                  isLpgFamily
+                    ? "Buyers can choose New or Exchange"
+                    : "Apply a default refundable deposit."
+                }
               >
                 <div className="flex w-full items-center justify-end gap-3">
                   <Switch
                     checked={enabled.state.value}
                     onCheckedChange={enabled.handleChange}
                   />
-                  <form.Field name="template.defaultPackDepositAmount">
-                    {(deposit: any) => (
-                      <Input
-                        className="h-9 flex-1 text-right"
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        disabled={!enabled.state.value}
-                        value={deposit.state.value}
-                        onChange={(event) =>
-                          deposit.handleChange(event.target.value)
-                        }
-                      />
-                    )}
-                  </form.Field>
+                  {!(isLpgFamily && adapter) && (
+                    <form.Field name="template.defaultPackDepositAmount">
+                      {(deposit: any) => (
+                        <Input
+                          className="h-9 flex-1 text-right"
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          disabled={!enabled.state.value}
+                          value={deposit.state.value}
+                          onChange={(event) =>
+                            deposit.handleChange(event.target.value)
+                          }
+                        />
+                      )}
+                    </form.Field>
+                  )}
                 </div>
               </TemplateRuleRow>
             )}
