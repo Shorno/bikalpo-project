@@ -12,6 +12,7 @@ export * from "./catalog-variant";
 export * from "./catalog-approval-request";
 export * from "./category";
 export * from "./checkout-promotion";
+export * from "./checkout-setting";
 export * from "./combo-offer";
 export * from "./complaint";
 export * from "./core-product";
