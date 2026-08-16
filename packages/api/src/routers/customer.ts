@@ -19,6 +19,7 @@ import {
   cartItem,
   category,
   checkoutPromotion,
+  checkoutPromotionRedemption,
   checkoutSetting,
   comboOffer,
   coreProductIdentity,
@@ -83,6 +84,7 @@ import {
   findSellersNearPoint,
 } from "../services/location-service";
 import {
+  assertCheckoutQuoteMatches,
   buildCheckoutQuote,
   normalizePromotionCode,
   type CheckoutPromotionRecord,
@@ -180,6 +182,19 @@ const checkoutSelectionSchema = z.object({
   paymentPlan: z.enum(["pay_now", "partial", "pay_later"]).default("pay_later"),
   partialAmount: z.coerce.number().positive().optional(),
   promotionCode: z.string().trim().max(40).optional(),
+});
+
+const checkoutSubmissionSchema = checkoutSelectionSchema.extend({
+  quoteVersion: z.string().min(10).max(80).optional(),
+  quoteExpiresAt: z.coerce.date().optional(),
+  idempotencyKey: z.string().trim().min(8).max(100).optional(),
+  invoiceContact: z
+    .object({
+      name: z.string().trim().min(1).max(150),
+      phone: z.string().trim().min(5).max(30),
+      email: z.string().trim().email().optional().or(z.literal("")),
+    })
+    .optional(),
 });
 
 async function loadConsumerOrderJourney(orderData: typeof order.$inferSelect) {
@@ -4550,10 +4565,27 @@ const mutations = {
         paymentMethod: z
           .enum(["cash_on_delivery", "bkash", "nagad", "bank_transfer", "card"])
           .default("cash_on_delivery"),
+        checkout: checkoutSubmissionSchema.optional(),
       }),
     )
     .handler(async ({ context, input }) => {
       const userId = context.session.user.id;
+
+      if (input.checkout?.idempotencyKey) {
+        const existingOrder = await db.query.order.findFirst({
+          where: and(
+            eq(order.userId, userId),
+            eq(
+              order.checkoutIdempotencyKey,
+              input.checkout.idempotencyKey,
+            ),
+          ),
+          columns: { id: true, orderNumber: true },
+        });
+        if (existingOrder) {
+          return { success: true, order: existingOrder, idempotent: true };
+        }
+      }
 
       // Check for active order
       const activeOrder = await db.query.order.findFirst({
@@ -4646,6 +4678,7 @@ const mutations = {
 
       // Validate stock & build order items
       const orderItems: Array<{
+        cartItemId: number;
         productId: number;
         variantId: number | null;
         shopId: string | null;
@@ -4665,7 +4698,6 @@ const mutations = {
         expectedEmptyPackQty: number;
       }> = [];
 
-      let subtotal = 0;
       let totalWeightKg = 0;
 
       for (const item of userCart.items) {
@@ -4788,14 +4820,13 @@ const mutations = {
         }
         const effectiveUnitPrice = cylinderSale.effectiveUnitPrice;
         const itemTotal = Number(cylinderSale.lineTotal);
-        subtotal += itemTotal;
-
         const weightPerUnit = item.variant
           ? Number(item.variant.weightKg)
           : parseWeightFromSize(item.product.size);
         totalWeightKg += weightPerUnit * item.quantity;
 
         orderItems.push({
+          cartItemId: item.id,
           productId: item.productId,
           variantId: item.variantId ?? null,
           shopId: item.shopId ?? null,
@@ -4824,11 +4855,72 @@ const mutations = {
         });
       }
 
-      const shippingCost = await calculateDeliveryCost(
-        totalWeightKg,
-        input.shippingInfo.area,
-      );
-      const total = subtotal + shippingCost;
+      const checkoutSelection = {
+        deliveryMode: input.checkout?.deliveryMode ?? ("courier" as const),
+        paymentPlan:
+          input.checkout?.paymentPlan ??
+          (input.paymentMethod === "cash_on_delivery"
+            ? ("pay_later" as const)
+            : ("pay_now" as const)),
+        partialAmount: input.checkout?.partialAmount,
+      };
+      const sellerId = userCart.directShopId ?? "bikalpo-platform";
+      const [configuration, promotion, calculatedDeliveryFee] =
+        await Promise.all([
+          getSellerCheckoutConfiguration(sellerId),
+          getCheckoutPromotionRecord({
+            sellerId,
+            code: input.checkout?.promotionCode,
+          }),
+          checkoutSelection.deliveryMode === "courier"
+            ? calculateDeliveryCost(totalWeightKg, input.shippingInfo.area)
+            : Promise.resolve(0),
+        ]);
+      if (
+        (checkoutSelection.deliveryMode === "self_pickup" &&
+          !configuration.allowSelfPickup) ||
+        (checkoutSelection.deliveryMode === "courier" &&
+          !configuration.allowCourier)
+      ) {
+        throw new ORPCError("BAD_REQUEST", {
+          message: "The selected delivery method is not available",
+        });
+      }
+      let checkoutQuote: ReturnType<typeof buildCheckoutQuote>;
+      try {
+        checkoutQuote = buildCheckoutQuote({
+          audience: "retail",
+          sellerId,
+          lines: orderItems.map((item) => ({
+            key: `${item.cartItemId}:${item.variantId ?? "base"}:${item.cylinderSaleMode}`,
+            quantity: item.quantity,
+            unitPrice: Number(item.unitPrice),
+          })),
+          deliveryMode: checkoutSelection.deliveryMode,
+          paymentPlan: checkoutSelection.paymentPlan,
+          partialAmount: checkoutSelection.partialAmount,
+          allowRetailDeposits: configuration.allowRetailDeposits,
+          deliveryFee: calculatedDeliveryFee,
+          shippingFee: configuration.defaultShippingFee,
+          taxPercentage: configuration.taxPercentage,
+          promotion,
+        });
+        assertCheckoutQuoteMatches({
+          expectedVersion: input.checkout?.quoteVersion,
+          expectedExpiresAt: input.checkout?.quoteExpiresAt,
+          quote: checkoutQuote,
+        });
+      } catch (error) {
+        throw new ORPCError("CONFLICT", {
+          message:
+            error instanceof Error
+              ? error.message
+              : "Checkout totals could not be confirmed",
+        });
+      }
+      const shippingCost =
+        checkoutQuote.totals.deliveryFee + checkoutQuote.totals.shippingFee;
+      const total = checkoutQuote.totals.grandTotal;
 
       // Compute area fields from consumer location
       const consumerLat = input.shippingInfo.lat
@@ -4877,13 +4969,29 @@ const mutations = {
             userId,
             orderType,
             shopId: b2cShopId,
-            subtotal: subtotal.toFixed(2),
+            subtotal: checkoutQuote.totals.itemsTotal.toFixed(2),
             shippingCost: shippingCost.toFixed(2),
-            discount: "0",
+            discount: checkoutQuote.totals.totalDiscount.toFixed(2),
             total: total.toFixed(2),
+            productDiscount:
+              checkoutQuote.totals.productDiscount.toFixed(2),
+            couponDiscount: checkoutQuote.totals.couponDiscount.toFixed(2),
+            rewardDiscount: checkoutQuote.totals.rewardDiscount.toFixed(2),
+            taxAmount: checkoutQuote.totals.taxAmount.toFixed(2),
+            deliveryFee: checkoutQuote.totals.deliveryFee.toFixed(2),
+            shippingFee: checkoutQuote.totals.shippingFee.toFixed(2),
+            paidAmount: "0.00",
+            dueAmount: checkoutQuote.totals.grandTotal.toFixed(2),
+            returnAmount: "0.00",
+            promotionCode: checkoutQuote.promotionCode,
             status: "pending",
             paymentStatus: "pending",
             paymentMethod: input.paymentMethod,
+            paymentPlan: checkoutQuote.paymentPlan,
+            deliveryMode: checkoutQuote.deliveryMode,
+            checkoutQuoteVersion: checkoutQuote.version,
+            checkoutQuoteExpiresAt: new Date(checkoutQuote.expiresAt),
+            checkoutIdempotencyKey: input.checkout?.idempotencyKey,
             shippingName: input.shippingInfo.name,
             shippingPhone: input.shippingInfo.phone,
             shippingEmail: input.shippingInfo.email,
@@ -4891,6 +4999,12 @@ const mutations = {
             shippingCity: input.shippingInfo.city,
             shippingArea: input.shippingInfo.area,
             shippingPostalCode: input.shippingInfo.postalCode,
+            invoiceName:
+              input.checkout?.invoiceContact?.name ?? input.shippingInfo.name,
+            invoicePhone:
+              input.checkout?.invoiceContact?.phone ?? input.shippingInfo.phone,
+            invoiceEmail:
+              input.checkout?.invoiceContact?.email || input.shippingInfo.email,
             customerNote: input.shippingInfo.customerNote,
             // Populate area fields from consumer location
             ...(areaFields.consumerAreaId && {
@@ -4929,6 +5043,58 @@ const mutations = {
             expectedEmptyPackQty: oi.expectedEmptyPackQty,
           })),
         );
+
+        if (promotion) {
+          const consumedPromotion = await tx
+            .update(checkoutPromotion)
+            .set({
+              usedCount: sql`${checkoutPromotion.usedCount} + 1`,
+              updatedAt: new Date(),
+            })
+            .where(
+              and(
+                eq(checkoutPromotion.id, promotion.id),
+                eq(checkoutPromotion.isActive, true),
+                or(
+                  isNull(checkoutPromotion.usageLimit),
+                  sql`${checkoutPromotion.usedCount} < ${checkoutPromotion.usageLimit}`,
+                ),
+              ),
+            )
+            .returning({ id: checkoutPromotion.id });
+          if (consumedPromotion.length !== 1) {
+            throw new ORPCError("CONFLICT", {
+              message: "The promotion is no longer available",
+            });
+          }
+          await tx.insert(checkoutPromotionRedemption).values({
+            promotionId: promotion.id,
+            orderId: newOrder!.id,
+            userId,
+            codeSnapshot: checkoutQuote.promotionCode!,
+            discountAmount:
+              checkoutQuote.totals.couponDiscount.toFixed(2),
+            metadata: JSON.stringify({ audience: "retail" }),
+          });
+        }
+
+        if (checkoutQuote.initialPaymentAmount > 0) {
+          await tx.insert(payment).values({
+            orderId: newOrder!.id,
+            idempotencyKey: input.checkout?.idempotencyKey
+              ? `${input.checkout.idempotencyKey}:initial`
+              : undefined,
+            paymentMethod: input.paymentMethod,
+            paymentProvider:
+              input.paymentMethod === "bank_transfer"
+                ? "manual_bank"
+                : input.paymentMethod === "cash_on_delivery"
+                  ? "delivery"
+                  : "sslcommerz",
+            status: "pending",
+            amount: checkoutQuote.initialPaymentAmount.toFixed(2),
+          });
+        }
 
         // Deduct from the validated cart source. Every retailer line goes
         // through the exact shop/product/variant writer in this transaction.
@@ -4970,6 +5136,13 @@ const mutations = {
       return {
         success: true,
         order: { id: result.id, orderNumber: result.orderNumber },
+        checkout: {
+          quoteVersion: checkoutQuote.version,
+          grandTotal: checkoutQuote.totals.grandTotal,
+          amountToPay: checkoutQuote.initialPaymentAmount,
+          projectedDueAfterPayment: checkoutQuote.projectedDueAfterPayment,
+          paymentRequired: checkoutQuote.initialPaymentAmount > 0,
+        },
       };
     }),
 

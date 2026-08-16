@@ -148,6 +148,11 @@ export function buildCheckoutQuote(input: {
 		itemsTotal - productDiscount,
 		promotion,
 	);
+	if (promotion && promotion.value > 0 && couponDiscount === 0) {
+		throw new Error(
+			`This promotion requires a minimum order of ${promotion.minimumSubtotal ?? 0}`,
+		);
+	}
 	const deliveryFee =
 		input.deliveryMode === "self_pickup" ? 0 : (input.deliveryFee ?? 0);
 	const shippingFee =
