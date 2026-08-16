@@ -447,9 +447,9 @@ export default function ProductForm({
     !activeCoreProduct;
   const activeTypeId =
     (activeCoreProduct as any)?.category?.typeId ?? selectedTypeId;
-  const activeProductType = productTypes.find(
-    (type: any) => type.id === activeTypeId,
-  );
+  const activeProductType =
+    productTypes.find((type: any) => type.id === activeTypeId) ??
+    (usesExternalEditAdapter ? productTypes[0] : undefined);
   const activeFulfillmentProfile = activeProductType?.fulfillmentProfile as
     | ProductTypeFulfillmentProfile
     | undefined;
@@ -911,12 +911,16 @@ export default function ProductForm({
       label: FULFILLMENT_UNITS[code]?.label ?? code,
     }),
   );
-  const returnableRuleLabel = isLpgRules
+  const returnableRuleLabel = useProductLevelCylinderReturn
     ? "Empty cylinder return"
-    : "Empty pack return";
-  const returnableRuleDescription = isLpgRules
+    : isLpgRules
+      ? "Empty cylinder return"
+      : "Empty pack return";
+  const returnableRuleDescription = useProductLevelCylinderReturn
     ? "Buyers can choose New or Exchange"
-    : "Require returnable packaging such as jars, drums, or packs";
+    : isLpgRules
+      ? "Buyers can choose New or Exchange"
+      : "Require returnable packaging such as jars, drums, or packs";
   const depositLabel = isLpgRules
     ? "Exchange Value (BDT)"
     : "Deposit Amount (BDT)";
@@ -1681,10 +1685,9 @@ export default function ProductForm({
                     </form.Field>
                   )}
 
-                  {(useProductLevelCylinderReturn
-                    ? isLpgRules || activeRuleSettings.returnablePackAvailable
-                    : activeRuleSettings.returnablePackAvailable &&
-                      !isLpgRules) && (
+                  {(useProductLevelCylinderReturn ||
+                    (activeRuleSettings.returnablePackAvailable &&
+                      !isLpgRules)) && (
                       <form.Field name="isReturnablePack">
                         {(returnableField) => (
                           <RuleControlRow
@@ -1697,7 +1700,7 @@ export default function ProductForm({
                                 checked={returnableField.state.value}
                                 onCheckedChange={returnableField.handleChange}
                               />
-                              {!(useProductLevelCylinderReturn && isLpgRules) && (
+                              {!useProductLevelCylinderReturn && (
                                 <form.Field name="defaultPackDepositAmount">
                                   {(depositField) => (
                                     <Input

@@ -5,7 +5,10 @@ import {
   creditRetailerExchangeOrder,
   warehouseExchangeEmptyCreditQty,
 } from "./empty-pack-stock";
-import { syncWarehouseCylinderExchange } from "./warehouse-cylinder-exchange";
+import {
+  syncWarehouseCylinderExchange,
+  warehouseVariantAllowsCylinderExchange,
+} from "./warehouse-cylinder-exchange";
 
 test("syncWarehouseCylinderExchange writes exchangeEnabled onto every variant", async () => {
   const calls: Array<{ values: { exchangeEnabled: boolean } }> = [];
@@ -30,6 +33,19 @@ test("syncWarehouseCylinderExchange writes exchangeEnabled onto every variant", 
 
   assert.equal(calls[0]?.values.exchangeEnabled, true);
   assert.equal(calls[1]?.values.exchangeEnabled, false);
+});
+
+test("warehouse storefront exchange follows the selected variant flag only", () => {
+  assert.equal(
+    warehouseVariantAllowsCylinderExchange({ exchangeEnabled: true }),
+    true,
+  );
+  assert.equal(
+    warehouseVariantAllowsCylinderExchange({ exchangeEnabled: false }),
+    false,
+  );
+  assert.equal(warehouseVariantAllowsCylinderExchange({}), false);
+  assert.equal(warehouseVariantAllowsCylinderExchange(null), false);
 });
 
 test("creditExchangeEmptyPack skips missing variants and non-positive quantities", async () => {

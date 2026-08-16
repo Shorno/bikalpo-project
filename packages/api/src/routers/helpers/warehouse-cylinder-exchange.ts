@@ -14,3 +14,10 @@ export async function syncWarehouseCylinderExchange(
     .set({ exchangeEnabled: input.enabled })
     .where(eq(productVariant.productId, input.productId));
 }
+
+/** Mystore Type: Exchange/New follows the selected variant flag only. */
+export function warehouseVariantAllowsCylinderExchange(
+  variant: { exchangeEnabled?: boolean | null } | null | undefined,
+) {
+  return Boolean(variant?.exchangeEnabled);
+}

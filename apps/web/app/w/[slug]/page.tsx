@@ -20,8 +20,13 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { WarehouseProductGrid } from "@/components/features/warehouse/warehouse-product-grid";
 import { CylinderSaleModeToggle } from "@/components/features/warehouse/cylinder-sale-mode-toggle";
+import { WarehouseProductGrid } from "@/components/features/warehouse/warehouse-product-grid";
+import {
+  type WarehouseCylinderSaleMode,
+  WarehouseProductCardSkeleton,
+  warehouseCartLineKey,
+} from "@/components/features/warehouse/warehouse-product-card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -59,42 +64,10 @@ const CITIES = [
   "Narayanganj",
 ];
 
-function ProductCardSkeleton() {
-  return (
-    <div className="flex flex-col bg-white rounded-xl border border-zinc-200 overflow-hidden h-full">
-      {/* Image Skeleton */}
-      <div className="aspect-[4/3] bg-zinc-50 relative border-b border-zinc-100 overflow-hidden shrink-0">
-        <Skeleton className="w-full h-full rounded-none" />
-      </div>
-
-      {/* Info details */}
-      <div className="flex flex-1 flex-col p-4">
-        <div>
-          <Skeleton className="h-3 w-14 mb-2" />
-          <Skeleton className="h-4 w-5/6 mb-1.5" />
-          <Skeleton className="h-4 w-2/3" />
-        </div>
-
-        {/* Variant chips */}
-        <div className="mt-3 flex gap-1.5">
-          <Skeleton className="h-7 w-14 rounded-md" />
-          <Skeleton className="h-7 w-14 rounded-md" />
-        </div>
-
-        {/* Price + MOQ */}
-        <div className="mt-3 pt-3 border-t border-zinc-100 flex items-end justify-between">
-          <Skeleton className="h-6 w-24" />
-          <Skeleton className="h-4 w-16" />
-        </div>
-
-        {/* Actions */}
-        <div className="mt-4 flex gap-2">
-          <Skeleton className="flex-1 h-9 rounded-lg" />
-          <Skeleton className="h-9 w-20 rounded-lg" />
-        </div>
-      </div>
-    </div>
-  );
+function cartItemMode(item: {
+  cylinderSaleMode?: WarehouseCylinderSaleMode | string | null;
+}): WarehouseCylinderSaleMode {
+  return item.cylinderSaleMode === "exchange" ? "exchange" : "new";
 }
 
 export default function WarehouseStorefrontPage() {
@@ -174,23 +147,33 @@ export default function WarehouseStorefrontPage() {
     }
   };
 
-  // Cart mutators
+  // Cart mutators. New and Exchange of the same variant are separate lines.
   const addToCart = (item: any) => {
-    const existing = cart.find(
-      (i) =>
-        i.variantId === item.selectedVariant?.variantId ||
-        i.variantId === item.id,
-    );
     const availableQty = Number(item.availableQty || 0);
     const moq = Number(item.moq || 1);
     const variantId = item.selectedVariant?.variantId || item.id;
     const inventoryId = item.inventoryId || item.id;
+    const canExchange = Boolean(
+      isRetailerBuyer &&
+        (item.canExchange || item.selectedVariant?.canExchange),
+    );
+    const cylinderSaleMode: WarehouseCylinderSaleMode = canExchange
+      ? item.cylinderSaleMode === "new"
+        ? "new"
+        : "exchange"
+      : "new";
+    const lineKey = warehouseCartLineKey(variantId, cylinderSaleMode);
+    const existing = cart.find(
+      (i) => warehouseCartLineKey(i.variantId, i.cylinderSaleMode) === lineKey,
+    );
 
     if (existing) {
       const nextQty = Math.min(availableQty, existing.quantity + 1);
       saveCart(
         cart.map((i) =>
-          i.variantId === variantId ? { ...i, quantity: nextQty } : i,
+          warehouseCartLineKey(i.variantId, i.cylinderSaleMode) === lineKey
+            ? { ...i, quantity: nextQty }
+            : i,
         ),
       );
       toast.success(`Updated ${item.name} quantity to ${nextQty}`);
@@ -209,22 +192,25 @@ export default function WarehouseStorefrontPage() {
         fulfillmentMode: item.selectedVariant?.fulfillmentMode,
         supplyMode: item.selectedVariant?.fulfillmentMode,
         targetVariantId: item.selectedVariant?.targetVariantId ?? null,
-        canExchange: Boolean(
-          isRetailerBuyer &&
-            (item.canExchange || item.selectedVariant?.canExchange),
-        ),
-        cylinderSaleMode: "new" as const,
+        canExchange,
+        cylinderSaleMode,
       };
       saveCart([...cart, newItem]);
       toast.success(`Added ${item.name} to cart`);
     }
   };
 
-  const updateQuantity = (variantId: number, delta: number) => {
+  const updateQuantity = (
+    variantId: number,
+    delta: number,
+    cylinderSaleMode: WarehouseCylinderSaleMode = "new",
+  ) => {
+    const lineKey = warehouseCartLineKey(variantId, cylinderSaleMode);
     saveCart(
       cart
         .map((i) => {
-          if (i.variantId !== variantId) return i;
+          if (warehouseCartLineKey(i.variantId, i.cylinderSaleMode) !== lineKey)
+            return i;
           const availableQty = Number(i.availableQty || 0);
           const nextQty = Math.max(
             0,
@@ -236,8 +222,17 @@ export default function WarehouseStorefrontPage() {
     );
   };
 
-  const removeFromCart = (variantId: number) => {
-    saveCart(cart.filter((i) => i.variantId !== variantId));
+  const removeFromCart = (
+    variantId: number,
+    cylinderSaleMode: WarehouseCylinderSaleMode = "new",
+  ) => {
+    const lineKey = warehouseCartLineKey(variantId, cylinderSaleMode);
+    saveCart(
+      cart.filter(
+        (i) =>
+          warehouseCartLineKey(i.variantId, i.cylinderSaleMode) !== lineKey,
+      ),
+    );
   };
 
   const clearCart = () => {
@@ -455,9 +450,9 @@ export default function WarehouseStorefrontPage() {
         </div>
 
         <div className="container mx-auto px-4 pb-16">
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
-            {Array.from({ length: 12 }).map((_, i) => (
-              <ProductCardSkeleton key={i} />
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+            {Array.from({ length: 8 }).map((_, i) => (
+              <WarehouseProductCardSkeleton key={i} />
             ))}
           </div>
         </div>
@@ -500,7 +495,7 @@ export default function WarehouseStorefrontPage() {
       <div className="space-y-3 max-h-[300px] overflow-y-auto pr-1 thin-scrollbar">
         {cart.map((item) => (
           <div
-            key={item.variantId}
+            key={warehouseCartLineKey(item.variantId, item.cylinderSaleMode)}
             className="flex gap-3 p-3 rounded-lg border border-zinc-100 bg-white/50 hover:bg-white hover:shadow-sm transition-all duration-200"
           >
             <div className="flex-1 min-w-0">
@@ -509,7 +504,9 @@ export default function WarehouseStorefrontPage() {
                   {item.productName}
                 </p>
                 <button
-                  onClick={() => removeFromCart(item.variantId)}
+                  onClick={() =>
+                    removeFromCart(item.variantId, cartItemMode(item))
+                  }
                   className="text-zinc-400 hover:text-red-500 p-0.5 shrink-0"
                 >
                   <Trash2 className="w-3.5 h-3.5" />
@@ -521,23 +518,67 @@ export default function WarehouseStorefrontPage() {
               {gridMode === "retailer" && item.canExchange && (
                 <div className="mt-2">
                   <CylinderSaleModeToggle
-                    value={item.cylinderSaleMode === "exchange" ? "exchange" : "new"}
-                    onChange={(mode) =>
+                    value={cartItemMode(item)}
+                    onChange={(mode) => {
+                      const fromMode = cartItemMode(item);
+                      if (mode === fromMode) return;
+                      const fromKey = warehouseCartLineKey(
+                        item.variantId,
+                        fromMode,
+                      );
+                      const toKey = warehouseCartLineKey(item.variantId, mode);
+                      const sibling = cart.find(
+                        (row) =>
+                          warehouseCartLineKey(
+                            row.variantId,
+                            row.cylinderSaleMode,
+                          ) === toKey,
+                      );
+                      if (sibling) {
+                        const mergedQty = Math.min(
+                          sibling.availableQty,
+                          sibling.quantity + item.quantity,
+                        );
+                        saveCart(
+                          cart
+                            .filter(
+                              (row) =>
+                                warehouseCartLineKey(
+                                  row.variantId,
+                                  row.cylinderSaleMode,
+                                ) !== fromKey,
+                            )
+                            .map((row) =>
+                              warehouseCartLineKey(
+                                row.variantId,
+                                row.cylinderSaleMode,
+                              ) === toKey
+                                ? { ...row, quantity: mergedQty }
+                                : row,
+                            ),
+                        );
+                        return;
+                      }
                       saveCart(
                         cart.map((row) =>
-                          row.variantId === item.variantId
+                          warehouseCartLineKey(
+                            row.variantId,
+                            row.cylinderSaleMode,
+                          ) === fromKey
                             ? { ...row, cylinderSaleMode: mode }
                             : row,
                         ),
-                      )
-                    }
+                      );
+                    }}
                   />
                 </div>
               )}
               <div className="flex items-center justify-between mt-2.5 gap-2">
                 <div className="flex items-center border border-zinc-200 rounded-md bg-white p-0.5">
                   <button
-                    onClick={() => updateQuantity(item.variantId, -1)}
+                    onClick={() =>
+                      updateQuantity(item.variantId, -1, cartItemMode(item))
+                    }
                     className="h-6 w-6 flex items-center justify-center text-zinc-500 hover:bg-zinc-50 rounded"
                   >
                     <Minus className="w-3 h-3" />
@@ -546,7 +587,9 @@ export default function WarehouseStorefrontPage() {
                     {item.quantity}
                   </span>
                   <button
-                    onClick={() => updateQuantity(item.variantId, 1)}
+                    onClick={() =>
+                      updateQuantity(item.variantId, 1, cartItemMode(item))
+                    }
                     className="h-6 w-6 flex items-center justify-center text-zinc-500 hover:bg-zinc-50 rounded"
                   >
                     <Plus className="w-3 h-3" />

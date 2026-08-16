@@ -10,7 +10,6 @@
 import {
 	buildProductTypeFulfillmentProfile,
 	db,
-	isWarehouseCylinderExchangeAvailable,
 	shouldEnableWarehouseCylinderExchange,
 } from "@bikalpo-project/db";
 import {
@@ -73,7 +72,10 @@ import {
 } from "./helpers/b2b-inventory-movement";
 import { getCartonInventoryUnits } from "./helpers/carton-units";
 import { creditWarehouseExchangeOrder } from "./helpers/empty-pack-stock";
-import { syncWarehouseCylinderExchange } from "./helpers/warehouse-cylinder-exchange";
+import {
+	syncWarehouseCylinderExchange,
+	warehouseVariantAllowsCylinderExchange,
+} from "./helpers/warehouse-cylinder-exchange";
 import { completeSelfPickupInvoice } from "./helpers/self-pickup";
 import { buildCanonicalOrderFlow } from "./helpers/order-lifecycle";
 import {
@@ -355,13 +357,9 @@ const storefrontQueries = {
 							retailPrice: inv.retailPrice,
 							fulfillmentMode: profile.defaultMode,
 							targetVariantId: inv.variant?.linkedRetailVariantId ?? null,
-							canExchange: isWarehouseCylinderExchangeAvailable({
-								isReturnablePack: inv.variant?.product?.isReturnablePack,
-								family: productType?.family,
-								name: productType?.name,
-								slug: productType?.slug,
-								exchangeEnabled: inv.variant?.exchangeEnabled,
-							}),
+							canExchange: warehouseVariantAllowsCylinderExchange(
+								inv.variant,
+							),
 							variant: inv.variant,
 						};
 					}),
@@ -6835,6 +6833,8 @@ import {
 const warehouseConfiguredVariantSchema = z.object({
 	variantOptionId: z.number().int().positive(),
 	color: z.string().trim().min(1).max(50).optional().nullable(),
+	exchangeEnabled: z.boolean().default(false),
+	exchangeCreditAmount: z.string().default("0"),
 });
 
 const warehouseTemplateDetailsSchema = z.object({
@@ -6929,6 +6929,15 @@ function warehouseVariantKey(input: {
 	return `${input.variantOptionId}:${String(input.color || "")
 		.trim()
 		.toLowerCase()}`;
+}
+
+function warehouseExchangeCreditAmount(input: {
+	exchangeEnabled?: boolean;
+	exchangeCreditAmount?: string;
+}) {
+	if (!input.exchangeEnabled) return "0.00";
+	const amount = Number(input.exchangeCreditAmount || 0);
+	return Number.isFinite(amount) && amount >= 0 ? amount.toFixed(2) : "0.00";
 }
 
 function warehouseTemplateDetails(
@@ -7192,6 +7201,8 @@ const warehouseProductCreation = {
 								packType: resolved.packType,
 								packWeightKg: resolved.weightKg || null,
 								sellUnit: resolved.label,
+								exchangeEnabled: Boolean(row.exchangeEnabled),
+								exchangeCreditAmount: warehouseExchangeCreditAmount(row),
 							})
 							.where(eq(productVariant.id, currentRow.id));
 						if (currentRow.sourceVariantPriceId) {
@@ -7260,6 +7271,8 @@ const warehouseProductCreation = {
 							reorderLevel: 0,
 							sortOrder,
 							isActive: true,
+							exchangeEnabled: Boolean(row.exchangeEnabled),
+							exchangeCreditAmount: warehouseExchangeCreditAmount(row),
 						})
 						.returning();
 					await tx.insert(inventory).values({
@@ -7272,6 +7285,9 @@ const warehouseProductCreation = {
 					sortOrder++;
 				}
 
+				const anyExchangeEnabled = input.variants.some(
+					(row) => row.exchangeEnabled,
+				);
 				await tx
 					.update(productTable)
 					.set({
@@ -7291,7 +7307,7 @@ const warehouseProductCreation = {
 						conversionEnabled: input.details.conversionEnabled,
 						inventoryLooseUnitEnabled: input.details.inventoryLooseUnitEnabled,
 						inventoryLooseUnit: input.details.inventoryLooseUnit,
-						isReturnablePack: input.details.isReturnablePack,
+						isReturnablePack: anyExchangeEnabled,
 						defaultPackDepositAmount: input.details.defaultPackDepositAmount,
 						allowedPackBrands: input.details.allowedPackBrands,
 						allowedPackSizes: input.details.allowedPackSizes,
@@ -7310,15 +7326,6 @@ const warehouseProductCreation = {
 						})),
 					);
 				}
-				await syncWarehouseCylinderExchange(tx, {
-					productId: existing.id,
-					enabled: shouldEnableWarehouseCylinderExchange({
-						isReturnablePack: input.details.isReturnablePack,
-						family: existing.category?.type?.family,
-						name: existing.category?.type?.name,
-						slug: existing.category?.type?.slug,
-					}),
-				});
 				await linkProductVariantsToCatalog(tx, existing.id);
 				return { productId: existing.id };
 			});

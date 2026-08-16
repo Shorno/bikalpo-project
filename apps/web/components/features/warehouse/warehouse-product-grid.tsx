@@ -7,7 +7,9 @@ import { createPortal } from "react-dom";
 import { Button } from "@/components/ui/button";
 import { WarehouseOrderDialog } from "./warehouse-order-dialog";
 import {
+  CylinderTypeRadios,
   shortVariantLabel,
+  type WarehouseCylinderSaleMode,
   type WarehouseProduct,
   WarehouseProductCard,
   WarehouseProductCardSkeleton,
@@ -133,6 +135,8 @@ function ProductDetailModal({
   const [selectedVariantId, setSelectedVariantId] = useState(
     product.selectedVariant?.variantId ?? product.variants[0]?.variantId,
   );
+  const [cylinderSaleMode, setCylinderSaleMode] =
+    useState<WarehouseCylinderSaleMode>("exchange");
   const selectedVariant =
     product.variants.find((v) => v.variantId === selectedVariantId) ??
     product.selectedVariant ??
@@ -151,6 +155,14 @@ function ProductDetailModal({
         selectedVariant,
       }
     : product;
+  const listingCanExchange = Boolean(
+    selectedVariant?.canExchange ?? product.canExchange,
+  );
+  const previewCylinderSaleMode: WarehouseCylinderSaleMode = listingCanExchange
+    ? cylinderSaleMode
+    : "new";
+  const effectiveCylinderSaleMode: WarehouseCylinderSaleMode =
+    mode === "retailer" ? previewCylinderSaleMode : "new";
   const stock = getStockLabel(product.stockStatus);
 
   return createPortal(
@@ -217,11 +229,11 @@ function ProductDetailModal({
             </span>
           </div>
 
-          {/* Variant selection */}
+          {/* Size selection */}
           {product.variants.length > 1 && (
             <div className="mb-6">
               <span className="block mb-2 text-xs font-medium text-zinc-500">
-                Select type
+                Size
               </span>
               <div className="flex flex-wrap gap-2">
                 {product.variants.map((variant) => {
@@ -243,6 +255,16 @@ function ProductDetailModal({
                   );
                 })}
               </div>
+            </div>
+          )}
+
+          {listingCanExchange && (
+            <div className="mb-6">
+              <CylinderTypeRadios
+                size="modal"
+                value={previewCylinderSaleMode}
+                onChange={setCylinderSaleMode}
+              />
             </div>
           )}
 
@@ -283,12 +305,16 @@ function ProductDetailModal({
                     : "bg-emerald-600 hover:bg-emerald-700"
                 }`}
                 onClick={() => {
-                  onAddToCart?.(displayProduct);
+                  onAddToCart?.({
+                    ...displayProduct,
+                    canExchange: listingCanExchange,
+                    cylinderSaleMode: effectiveCylinderSaleMode,
+                  });
                   onClose();
                 }}
               >
                 <ShoppingCart className="w-4 h-4" />
-                Add to Cart
+                Buy Now
               </Button>
             ) : (
               <Button className="flex-1 h-11 bg-zinc-900 hover:bg-zinc-800 text-white font-medium gap-2 rounded-lg transition-colors shadow-none">
@@ -324,8 +350,12 @@ interface WarehouseProductGridProps {
   onPageChange?: (page: number) => void;
   mode?: "default" | "retailer" | "w2w" | "view-only";
   cart?: any[];
-  onAddToCart?: (product: any) => void;
-  onUpdateQuantity?: (variantId: number, delta: number) => void;
+  onAddToCart?: (product: WarehouseProduct) => void;
+  onUpdateQuantity?: (
+    variantId: number,
+    delta: number,
+    cylinderSaleMode?: WarehouseCylinderSaleMode,
+  ) => void;
 }
 
 export function WarehouseProductGrid({
@@ -372,8 +402,8 @@ export function WarehouseProductGrid({
   if (isLoading) {
     return (
       <section className="container mx-auto px-4 py-6">
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
-          {Array.from({ length: 10 }).map((_, i) => (
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+          {Array.from({ length: 8 }).map((_, i) => (
             <WarehouseProductCardSkeleton key={i} />
           ))}
         </div>
@@ -406,7 +436,7 @@ export function WarehouseProductGrid({
             {products.length} items available
           </span>
         </div>
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
           {products.map((product) => (
             <WarehouseProductCard
               key={product.id}

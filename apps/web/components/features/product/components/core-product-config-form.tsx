@@ -7,7 +7,6 @@ import {
 import {
   FULFILLMENT_UNITS,
   type FulfillmentUnitCode,
-  isLpgProductTypeFamily,
 } from "@bikalpo-project/db/fulfillment";
 import { useForm } from "@tanstack/react-form";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -178,11 +177,6 @@ export default function CoreProductConfigForm({
     | undefined;
   const core = configuration?.core;
   const isSingleMode = core?.brandCreationMode === "single";
-  const isLpgFamily = isLpgProductTypeFamily({
-    family: core?.category?.type?.family,
-    name: core?.category?.type?.name,
-    slug: core?.category?.type?.slug,
-  });
   const existingBrands: ExistingBrandProduct[] = configuration?.brands ?? [];
   const allBrands =
     adapter?.brands ??
@@ -847,6 +841,7 @@ export default function CoreProductConfigForm({
                     <SharedTemplateEditor
                       form={form}
                       defaults={defaultValues.template}
+                      hideDeposit={Boolean(adapter)}
                     />
                   </div>
 
@@ -1356,9 +1351,11 @@ function mergeTemplateDetails(
 function SharedTemplateEditor({
   form,
   defaults,
+  hideDeposit = false,
 }: {
   form: any;
   defaults: CoreProductConfigValues["template"];
+  hideDeposit?: boolean;
 }) {
   const units = Object.values(FULFILLMENT_UNITS);
 
@@ -1546,21 +1543,15 @@ function SharedTemplateEditor({
           <form.Field name="template.isReturnablePack">
             {(enabled: any) => (
               <TemplateRuleRow
-                label={
-                  isLpgFamily ? "Empty cylinder return" : "Returnable pack"
-                }
-                description={
-                  isLpgFamily
-                    ? "Buyers can choose New or Exchange"
-                    : "Apply a default refundable deposit."
-                }
+                label="Empty cylinder return"
+                description="Buyers can choose New or Exchange"
               >
                 <div className="flex w-full items-center justify-end gap-3">
                   <Switch
                     checked={enabled.state.value}
                     onCheckedChange={enabled.handleChange}
                   />
-                  {!(isLpgFamily && adapter) && (
+                  {!hideDeposit && (
                     <form.Field name="template.defaultPackDepositAmount">
                       {(deposit: any) => (
                         <Input
