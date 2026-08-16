@@ -39,6 +39,7 @@ import {
   usePlaceWarehouseOrder,
   useWarehouseCatalog,
 } from "@/hooks/use-shop-owner-api";
+import { authClient } from "@/lib/auth-client";
 import { orpc } from "@/utils/orpc";
 
 /* ─── Types ─── */
@@ -1020,6 +1021,7 @@ export default function OrderFromWarehousePage() {
   const queryClient = useQueryClient();
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { data: sessionData } = authClient.useSession();
   const deepLinkedWarehouseSlug = searchParams.get("warehouse");
   const [step, setStep] = useState<
     "connect" | "browse" | "checkout" | "success"
@@ -1127,6 +1129,29 @@ export default function OrderFromWarehousePage() {
 
   function removeFromCart(itemKey: string) {
     setCart((prev) => prev.filter((c) => getCartItemKey(c) !== itemKey));
+  }
+
+  function openSharedCheckout() {
+    if (!selectedSlug || !sessionData?.user?.id || cart.length === 0) return;
+    const checkoutCart = cart.map((item) => ({
+      variantId: item.variantId,
+      productName: item.productName,
+      image: item.productImage,
+      sku: "",
+      unitLabel: item.unitLabel,
+      price: item.retailPrice,
+      availableQty: item.quantity,
+      quantity: item.quantity,
+      fulfillmentMode: item.fulfillmentMode,
+      supplyMode: item.supplyMode,
+      targetVariantId: item.targetVariantId ?? null,
+    }));
+    localStorage.setItem(
+      `retailer-warehouse-cart:${sessionData.user.id}:${selectedSlug}`,
+      JSON.stringify(checkoutCart),
+    );
+    const baseUrl = window.location.origin.replace("shop.", "");
+    window.location.href = `${baseUrl}/w/${selectedSlug}?checkout=1`;
   }
 
   const cartTotal = cart.reduce(
@@ -1337,7 +1362,7 @@ export default function OrderFromWarehousePage() {
             </div>
             {cart.length > 0 && (
               <button
-                onClick={() => setStep("checkout")}
+                onClick={openSharedCheckout}
                 className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
               >
                 <ShoppingCart size={16} /> <span>{cartItemCount} items</span>
@@ -1475,7 +1500,7 @@ export default function OrderFromWarehousePage() {
                       </span>
                     </div>
                     <button
-                      onClick={() => setStep("checkout")}
+                      onClick={openSharedCheckout}
                       className="w-full mt-3 py-2.5 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 flex items-center justify-center gap-2"
                     >
                       <ShoppingCart size={14} /> Checkout

@@ -17,7 +17,7 @@ import {
   Warehouse,
 } from "lucide-react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
@@ -105,6 +105,7 @@ function ProductCardSkeleton() {
 
 export default function WarehouseStorefrontPage() {
   const { slug } = useParams<{ slug: string }>();
+  const searchParams = useSearchParams();
   const queryClient = useQueryClient();
 
   const [search, setSearch] = useState("");
@@ -171,6 +172,12 @@ export default function WarehouseStorefrontPage() {
       }
     }
   }, [cartKey, sessionData?.user?.id, hasCartAccess]);
+
+  useEffect(() => {
+    if (searchParams.get("checkout") === "1" && cart.length > 0) {
+      setIsCartOpen(true);
+    }
+  }, [cart.length, searchParams]);
 
   // Save cart state
   const saveCart = (newCart: any[]) => {
