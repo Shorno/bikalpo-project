@@ -21,6 +21,7 @@ import { useParams } from "next/navigation";
 import { type ElementType, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { OrderFlowStepper } from "@/components/features/orders/order-flow-stepper";
+import { getRetailerOrderItemCylinderSaleLabel } from "@/components/features/orders/retailer-order-fulfillment";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 import { orpc } from "@/utils/orpc";
@@ -449,6 +450,8 @@ export default function OrderManagementDetailPage() {
                 const available = Number(item.stock?.availableQty ?? 0);
                 const isLow = available < item.quantity;
                 const isReduced = qty < item.quantity;
+                const cylinderSaleLabel =
+                  getRetailerOrderItemCylinderSaleLabel(item);
 
                 return (
                   <tr
@@ -470,11 +473,13 @@ export default function OrderManagementDetailPage() {
                       <div className="font-medium text-foreground">
                         {item.productName}
                       </div>
-                      {item.productSize && (
+                      {item.productSize || cylinderSaleLabel ? (
                         <div className="text-xs text-muted-foreground">
-                          {item.productSize}
+                          {[item.productSize, cylinderSaleLabel]
+                            .filter(Boolean)
+                            .join(" · ")}
                         </div>
-                      )}
+                      ) : null}
                     </td>
                     <td className="px-5 py-3 text-right tabular-nums">
                       {item.quantity} {item.variant?.unitLabel || ""}
