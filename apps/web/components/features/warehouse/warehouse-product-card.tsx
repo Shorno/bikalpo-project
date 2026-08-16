@@ -4,10 +4,16 @@ import type { FulfillmentMode } from "@bikalpo-project/db/fulfillment";
 import { Eye, Minus, Package, Plus, ShoppingCart, Star } from "lucide-react";
 import Image from "next/image";
 import { useState } from "react";
+import {
+  type CylinderSaleMode,
+  CylinderTypeRadios,
+  shortVariantLabel,
+} from "@/components/features/products/cylinder-type-radios";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 
-export type WarehouseCylinderSaleMode = "new" | "exchange";
+export type WarehouseCylinderSaleMode = CylinderSaleMode;
+export { CylinderTypeRadios, shortVariantLabel };
 
 export function warehouseCartLineKey(
   variantId: number,
@@ -68,38 +74,6 @@ interface WarehouseProductCardProps {
   ) => void;
 }
 
-/**
- * Compact display label for a variant chip: drops words already present in the
- * product name (e.g. "Cylinder") and removes redundant duplicate tokens so
- * "45 KG Cylinder · 45" reads as "45 KG". Display-only — cart keys off variantId.
- */
-export function shortVariantLabel(label: string, productName: string): string {
-  const nameWords = new Set(
-    productName.toLowerCase().split(/\s+/).filter(Boolean),
-  );
-  const parts = label
-    .split("·")
-    .map((part) =>
-      part
-        .trim()
-        .split(/\s+/)
-        .filter((word) => !nameWords.has(word.toLowerCase()))
-        .join(" ")
-        .trim(),
-    )
-    .filter(Boolean);
-  const deduped = parts.filter(
-    (part, i) =>
-      !parts.some(
-        (other, j) =>
-          j !== i &&
-          other.length > part.length &&
-          other.toLowerCase().includes(part.toLowerCase()),
-      ),
-  );
-  return deduped.join(" · ").trim() || label;
-}
-
 function getStockDot(status: "high" | "medium" | "low") {
   switch (status) {
     case "high":
@@ -109,51 +83,6 @@ function getStockDot(status: "high" | "medium" | "low") {
     case "low":
       return "bg-red-500";
   }
-}
-
-export function CylinderTypeRadios({
-  value,
-  onChange,
-  size = "card",
-}: {
-  value: WarehouseCylinderSaleMode;
-  onChange: (mode: WarehouseCylinderSaleMode) => void;
-  size?: "card" | "modal";
-}) {
-  const labelClass =
-    size === "modal"
-      ? "block mb-2 text-xs font-medium text-zinc-500"
-      : "mb-1.5 block text-[11px] font-medium text-zinc-400";
-  const buttonClass = (active: boolean) =>
-    size === "modal"
-      ? `h-9 px-3.5 inline-flex items-center rounded-lg border text-sm font-medium transition-colors ${
-          active
-            ? "bg-zinc-900 text-white border-zinc-900"
-            : "border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50"
-        }`
-      : `h-7 rounded-md border px-2.5 text-xs font-medium transition-colors ${
-          active
-            ? "border-zinc-900 bg-zinc-900 text-white"
-            : "border-zinc-200 bg-white text-zinc-600 hover:border-zinc-300 hover:bg-zinc-50"
-        }`;
-
-  return (
-    <div>
-      <span className={labelClass}>Type</span>
-      <div className="flex flex-wrap gap-1.5">
-        {(["exchange", "new"] as const).map((mode) => (
-          <button
-            key={mode}
-            type="button"
-            onClick={() => onChange(mode)}
-            className={buttonClass(value === mode)}
-          >
-            {mode === "exchange" ? "Exchange" : "New"}
-          </button>
-        ))}
-      </div>
-    </div>
-  );
 }
 
 export function WarehouseProductCard({

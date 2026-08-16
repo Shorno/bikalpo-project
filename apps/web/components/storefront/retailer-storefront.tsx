@@ -10,6 +10,7 @@ import {
   Package,
   RotateCcw,
   ShoppingCart,
+  Star,
   Store,
   Truck,
   X,
@@ -17,6 +18,11 @@ import {
 import Image from "next/image";
 import Link from "next/link";
 import { useState } from "react";
+import {
+  type CylinderSaleMode,
+  CylinderTypeRadios,
+  shortVariantLabel,
+} from "@/components/features/products/cylinder-type-radios";
 import { Button } from "@/components/ui/button";
 import {
   Sheet,
@@ -50,6 +56,9 @@ export interface StorefrontProduct {
   lowestRetailPrice: number;
   variantCount: number;
   totalAvailableQty: number;
+  averageRating?: number;
+  totalReviews?: number;
+  soldOrderCount?: number;
   variants: Array<{
     variantId: number;
     sku: string | null;
@@ -58,7 +67,16 @@ export interface StorefrontProduct {
     basePrice: string | null;
     retailPrice: string;
     availableQty: string;
+    sortOrder?: number;
+    exchangeEnabled?: boolean;
+    exchangeCreditAmount?: string | number;
+    canExchange?: boolean;
   }>;
+}
+
+export interface StorefrontAddSelection {
+  variantId: number;
+  cylinderSaleMode: CylinderSaleMode;
 }
 
 interface StoreHeaderProps {
@@ -403,7 +421,10 @@ interface ProductCardProps {
   shopSlug: string;
   previewMode: boolean;
   isAdding: boolean;
-  onQuickAdd: (product: StorefrontProduct) => void;
+  onQuickAdd: (
+    product: StorefrontProduct,
+    selection: StorefrontAddSelection,
+  ) => void;
 }
 
 export function StorefrontProductCard({
@@ -413,6 +434,21 @@ export function StorefrontProductCard({
   isAdding,
   onQuickAdd,
 }: ProductCardProps) {
+  const [selectedVariantId, setSelectedVariantId] = useState(
+    product.variants[0]?.variantId,
+  );
+  const [cylinderSaleMode, setCylinderSaleMode] =
+    useState<CylinderSaleMode>("exchange");
+  const selectedVariant =
+    product.variants.find(
+      (variant) => variant.variantId === selectedVariantId,
+    ) ?? product.variants[0];
+  const listingCanExchange = Boolean(
+    selectedVariant?.canExchange ?? selectedVariant?.exchangeEnabled,
+  );
+  const effectiveCylinderSaleMode: CylinderSaleMode = listingCanExchange
+    ? cylinderSaleMode
+    : "new";
   const image = product.images?.[0]?.imageUrl || product.image;
   const detailHref = getRetailerProductHref({
     shopSlug,
@@ -422,7 +458,30 @@ export function StorefrontProductCard({
   const categoryContext = [product.category?.name, product.subCategory?.name]
     .filter(Boolean)
     .join(" / ");
-  const unitLabel = product.variants[0]?.unitLabel;
+  const unitLabel = selectedVariant?.unitLabel;
+  const selectedPrice = Number(
+    selectedVariant?.retailPrice ?? product.lowestRetailPrice,
+  );
+  const selectedAvailableQty = Number(
+    selectedVariant?.availableQty ?? product.totalAvailableQty,
+  );
+  const totalReviews = product.totalReviews ?? 0;
+  const soldOrderCount = product.soldOrderCount ?? 0;
+  const averageRating = product.averageRating ?? 0;
+  const showRatings = totalReviews > 0;
+  const showSold = soldOrderCount > 0;
+
+  const handleSizeChange = (variantId: number) => {
+    const nextVariant = product.variants.find(
+      (variant) => variant.variantId === variantId,
+    );
+    setSelectedVariantId(variantId);
+    setCylinderSaleMode(
+      nextVariant?.canExchange || nextVariant?.exchangeEnabled
+        ? "exchange"
+        : "new",
+    );
+  };
 
   return (
     <article className="group flex min-w-0 flex-col overflow-hidden rounded-lg border bg-white transition-colors hover:border-slate-400 focus-within:border-primary">
@@ -455,60 +514,123 @@ export function StorefrontProductCard({
           </h2>
         </Link>
 
-        <div className="mt-4">
-          <p className="text-[11px] text-slate-500">From</p>
+        {(showRatings || showSold) && (
+          <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-slate-500">
+            {showRatings && (
+              <span className="inline-flex items-center gap-1">
+                <Star className="size-3 fill-amber-400 text-amber-400" />
+                <span className="font-medium tabular-nums text-slate-700">
+                  {averageRating.toFixed(1)}
+                </span>
+                <span className="text-slate-400">
+                  ({totalReviews.toLocaleString("en-BD")})
+                </span>
+              </span>
+            )}
+            {showSold && (
+              <span className="tabular-nums">
+                Sold {soldOrderCount.toLocaleString("en-BD")}{" "}
+                {soldOrderCount === 1 ? "order" : "orders"}
+              </span>
+            )}
+          </div>
+        )}
+
+        <div className="mt-3">
           <p className="font-mono text-lg font-semibold tabular-nums text-slate-950">
-            ৳{Number(product.lowestRetailPrice).toLocaleString("en-BD")}
+            ৳{selectedPrice.toLocaleString("en-BD")}
+            {unitLabel ? (
+              <span className="ml-1 font-sans text-xs font-normal text-slate-500">
+                / {shortVariantLabel(unitLabel, product.name)}
+              </span>
+            ) : null}
           </p>
-          {unitLabel && (
-            <p className="mt-0.5 truncate text-xs text-slate-500">
-              {unitLabel}
-            </p>
-          )}
         </div>
 
-        <dl className="mt-4 grid grid-cols-2 gap-2 border-y py-3 text-xs">
-          <div>
-            <dt className="text-slate-500">Variants</dt>
-            <dd className="mt-0.5 font-mono font-medium tabular-nums text-slate-800">
-              {product.variantCount}
-            </dd>
+        {product.variants.length > 1 && (
+          <div className="mt-3">
+            <span className="mb-1.5 block text-[11px] font-medium text-slate-400">
+              Size
+            </span>
+            <div className="flex flex-wrap gap-1.5">
+              {product.variants.map((variant) => {
+                const active = variant.variantId === selectedVariant?.variantId;
+                const label =
+                  variant.quantitySelectorLabel ||
+                  variant.unitLabel ||
+                  variant.sku ||
+                  `Size ${variant.variantId}`;
+                return (
+                  <button
+                    key={variant.variantId}
+                    type="button"
+                    onClick={() => handleSizeChange(variant.variantId)}
+                    className={cn(
+                      "h-7 rounded-md border px-2.5 text-xs font-medium transition-colors",
+                      active
+                        ? "border-slate-950 bg-slate-950 text-white"
+                        : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50",
+                    )}
+                  >
+                    {shortVariantLabel(label, product.name)}
+                  </button>
+                );
+              })}
+            </div>
           </div>
-          <div className="border-l pl-3">
-            <dt className="text-slate-500">Available</dt>
-            <dd className="mt-0.5 font-mono font-medium tabular-nums text-slate-800">
-              {Number(product.totalAvailableQty).toLocaleString("en-BD")}
-            </dd>
-          </div>
-        </dl>
+        )}
 
-        <div className="mt-4">
+        {listingCanExchange && (
+          <div className="mt-3">
+            <CylinderTypeRadios
+              value={effectiveCylinderSaleMode}
+              onChange={setCylinderSaleMode}
+            />
+          </div>
+        )}
+
+        <p className="mt-3 text-xs text-slate-500">
+          Available{" "}
+          <span className="font-mono tabular-nums text-slate-700">
+            {selectedAvailableQty.toLocaleString("en-BD")}
+          </span>
+        </p>
+
+        <div className="mt-auto flex items-center gap-2 pt-4">
           {previewMode ? (
-            <Button asChild variant="outline" className="h-11 w-full">
-              <Link href={detailHref}>
-                <Eye className="size-4" aria-hidden="true" />
-                View product
-              </Link>
-            </Button>
-          ) : product.variantCount === 1 ? (
             <Button
               type="button"
-              className="h-11 w-full"
-              disabled={isAdding}
-              onClick={() => onQuickAdd(product)}
-              aria-label={`Add ${product.name} to cart`}
+              className="h-9 flex-1 text-xs"
+              disabled
+              aria-label="Add to cart unavailable in preview"
             >
-              <ShoppingCart className="size-4" aria-hidden="true" />
-              {isAdding ? "Adding…" : "Add to cart"}
+              <ShoppingCart className="size-3.5" aria-hidden="true" />
+              Add to cart
             </Button>
           ) : (
-            <Button asChild variant="outline" className="h-11 w-full">
-              <Link href={detailHref}>
-                Choose options
-                <ChevronRight className="size-4" aria-hidden="true" />
-              </Link>
+            <Button
+              type="button"
+              className="h-9 flex-1 text-xs"
+              disabled={isAdding || !selectedVariant}
+              onClick={() => {
+                if (!selectedVariant) return;
+                onQuickAdd(product, {
+                  variantId: selectedVariant.variantId,
+                  cylinderSaleMode: effectiveCylinderSaleMode,
+                });
+              }}
+              aria-label={`Add ${product.name} to cart`}
+            >
+              <ShoppingCart className="size-3.5" aria-hidden="true" />
+              {isAdding ? "Adding…" : "Add to cart"}
             </Button>
           )}
+          <Button asChild variant="outline" className="h-9 px-3 text-xs">
+            <Link href={detailHref}>
+              <Eye className="size-3.5" aria-hidden="true" />
+              Details
+            </Link>
+          </Button>
         </div>
       </div>
     </article>

@@ -9,6 +9,7 @@ import { ProductPagination } from "@/components/features/products/product-pagina
 import { CustomerPreviewBanner } from "@/components/storefront/customer-preview-banner";
 import {
   ActiveFilterSummary,
+  type StorefrontAddSelection,
   StorefrontCategorySidebar,
   StorefrontEmptyState,
   StorefrontMobileFilters,
@@ -155,17 +156,19 @@ export default function ShopStorePage({
     });
   };
 
-  const handleQuickAdd = async (product: StorefrontProduct) => {
-    if (previewMode || product.variantCount !== 1 || !data?.shop) return;
-    const variant = product.variants[0];
-    if (!variant) return;
+  const handleQuickAdd = async (
+    product: StorefrontProduct,
+    selection: StorefrontAddSelection,
+  ) => {
+    if (previewMode || !data?.shop) return;
 
     setQuickAddingProductId(product.id);
     try {
       await addRetailerProductToCart(addItem, {
         productId: product.id,
-        variantId: variant.variantId,
+        variantId: selection.variantId,
         shopId: data.shop.id,
+        cylinderSaleMode: selection.cylinderSaleMode,
       });
     } finally {
       setQuickAddingProductId(null);

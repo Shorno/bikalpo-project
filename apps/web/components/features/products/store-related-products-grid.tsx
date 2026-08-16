@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import {
+  type StorefrontAddSelection,
   type StorefrontProduct,
   StorefrontProductCard,
 } from "@/components/storefront/retailer-storefront";
@@ -24,16 +25,19 @@ export function StoreRelatedProductsGrid({
   const { addItem } = useCart();
   const [addingProductId, setAddingProductId] = useState<number | null>(null);
 
-  const handleQuickAdd = async (product: StorefrontProduct) => {
-    const variant = product.variants[0];
-    if (previewMode || product.variantCount !== 1 || !variant) return;
+  const handleQuickAdd = async (
+    product: StorefrontProduct,
+    selection: StorefrontAddSelection,
+  ) => {
+    if (previewMode) return;
 
     setAddingProductId(product.id);
     try {
       await addRetailerProductToCart(addItem, {
         productId: product.id,
-        variantId: variant.variantId,
+        variantId: selection.variantId,
         shopId,
+        cylinderSaleMode: selection.cylinderSaleMode,
       });
     } finally {
       setAddingProductId(null);
@@ -46,7 +50,7 @@ export function StoreRelatedProductsGrid({
         <StorefrontProductCard
           key={product.id}
           product={product}
-          storeSlug={storeSlug}
+          shopSlug={storeSlug}
           previewMode={previewMode}
           isAdding={addingProductId === product.id}
           onQuickAdd={handleQuickAdd}

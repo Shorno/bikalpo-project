@@ -64,6 +64,7 @@ import {
   isNotNull,
   isNull,
   lte,
+  ne,
   or,
   type SQL,
   sql,
@@ -837,6 +838,38 @@ async function getReferenceReviewStatsMap(productIds: number[]) {
   }
 
   return reviewStatsMap;
+}
+
+async function getShopProductSoldOrderCountMap(
+  shopId: string,
+  productIds: number[],
+) {
+  const soldOrderCountMap: Record<number, number> = {};
+
+  if (productIds.length === 0) return soldOrderCountMap;
+
+  const soldRows = await db
+    .select({
+      productId: orderItem.productId,
+      totalOrders: sql<number>`COUNT(DISTINCT ${order.id})::int`,
+    })
+    .from(orderItem)
+    .innerJoin(order, eq(orderItem.orderId, order.id))
+    .where(
+      and(
+        eq(order.shopId, shopId),
+        eq(order.orderType, "b2c"),
+        ne(order.status, "cancelled"),
+        inArray(orderItem.productId, productIds),
+      ),
+    )
+    .groupBy(orderItem.productId);
+
+  for (const row of soldRows) {
+    soldOrderCountMap[row.productId] = Number(row.totalOrders) || 0;
+  }
+
+  return soldOrderCountMap;
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -3476,6 +3509,9 @@ const queries = {
               quantitySelectorLabel: true,
               price: true,
               isActive: true,
+              sortOrder: true,
+              exchangeEnabled: true,
+              exchangeCreditAmount: true,
             },
             with: {
               product: {
@@ -3536,17 +3572,25 @@ const queries = {
           basePrice: inv.variant?.price,
           retailPrice: inv.retailPrice,
           availableQty: inv.availableQty,
+          sortOrder: inv.variant?.sortOrder ?? 0,
+          exchangeEnabled: Boolean(inv.variant?.exchangeEnabled),
+          exchangeCreditAmount: inv.variant?.exchangeCreditAmount ?? "0",
+          canExchange: Boolean(inv.variant?.exchangeEnabled),
         });
       }
 
       const completeCatalog = Array.from(productMap.values()).map((product) => {
-        const variants = product.variants as Array<{
-          retailPrice: string | number;
-          availableQty: string | number;
-        }>;
+        const variants = (
+          product.variants as Array<{
+            retailPrice: string | number;
+            availableQty: string | number;
+            sortOrder?: number | null;
+          }>
+        ).sort((left, right) => (left.sortOrder ?? 0) - (right.sortOrder ?? 0));
 
         return {
           ...product,
+          variants,
           lowestRetailPrice: Math.min(
             ...variants.map((variant) => Number(variant.retailPrice)),
           ),
@@ -3572,10 +3616,24 @@ const queries = {
       const totalPages = Math.ceil(totalCount / input.limit);
       const safePage = totalPages > 0 ? Math.min(input.page, totalPages) : 1;
       const offset = (safePage - 1) * input.limit;
+      const pageProducts = filteredProducts.slice(offset, offset + input.limit);
+      const pageProductIds = pageProducts.map((product) => Number(product.id));
+      const [reviewStatsMap, soldOrderCountMap] = await Promise.all([
+        getReferenceReviewStatsMap(pageProductIds),
+        getShopProductSoldOrderCountMap(shopData.id, pageProductIds),
+      ]);
 
       return {
         shop: shopData,
-        products: filteredProducts.slice(offset, offset + input.limit),
+        products: pageProducts.map((product) => {
+          const reviewStats = reviewStatsMap[product.id];
+          return {
+            ...product,
+            averageRating: reviewStats?.averageRating ?? 0,
+            totalReviews: reviewStats?.totalReviews ?? 0,
+            soldOrderCount: soldOrderCountMap[product.id] ?? 0,
+          };
+        }),
         facets,
         catalogProductCount: completeCatalog.length,
         pagination: {

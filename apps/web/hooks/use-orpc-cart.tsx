@@ -74,6 +74,7 @@ export interface CartContextType {
     variantId?: number,
     shopId?: string,
     purchaseMode?: "open_order" | "direct",
+    cylinderSaleMode?: "new" | "exchange",
   ) => Promise<void>;
   removeItem: (cartItemId: number) => Promise<void>;
   updateQuantity: (cartItemId: number, quantity: number) => Promise<void>;
@@ -135,6 +136,7 @@ export function OrpcCartProvider({ children }: { children: ReactNode }) {
     variantId?: number,
     shopId?: string,
     purchaseMode?: "open_order" | "direct",
+    cylinderSaleMode?: "new" | "exchange",
   ) => {
     if (!session) {
       showLoginModal();
@@ -148,6 +150,7 @@ export function OrpcCartProvider({ children }: { children: ReactNode }) {
       purchaseMode:
         purchaseMode ??
         (shopId ? ("direct" as const) : ("open_order" as const)),
+      ...(cylinderSaleMode ? { cylinderSaleMode } : {}),
     };
     try {
       await addToCartMutation.mutateAsync({ ...request, replaceCart: false });
