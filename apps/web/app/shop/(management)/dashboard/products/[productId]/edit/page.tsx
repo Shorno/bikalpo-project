@@ -69,6 +69,7 @@ export default function RetailerProductEditPage() {
         variantOptions: data.options.variantOptions,
         productType: retailerProduct.category?.type,
         publishOnSave: true,
+        productLevelCylinderReturn: true,
         onUpdate: async (payload: any) => {
           const variants = (payload.variantPrices ?? []).map((row: any) => ({
             variantOptionId: row.variantOptionId,

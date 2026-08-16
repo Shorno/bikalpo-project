@@ -1,3 +1,4 @@
+import { isWarehouseCylinderExchangeAvailable } from "@bikalpo-project/db/fulfillment";
 import type {
   ProductFeatureGroup,
   QuantitySelectorOption,
@@ -27,7 +28,16 @@ interface StoreProduct {
   features: ProductFeatureGroup[] | null;
   creatorSource: string | null;
   createdById: string | null;
-  category: { name: string; slug: string } | null;
+  isReturnablePack?: boolean | null;
+  category: {
+    name: string;
+    slug: string;
+    type?: {
+      family?: string | null;
+      name?: string | null;
+      slug?: string | null;
+    } | null;
+  } | null;
   subCategory: { name: string; slug: string } | null;
   brand: { id: number; name: string; slug: string } | null;
   images: Array<{ imageUrl: string }>;
@@ -90,7 +100,13 @@ export function buildStoreProductDetail({
     .map((variant) => {
       const availableQty = toFiniteNumber(variant.inventory?.availableQty);
       const retailPrice = toFiniteNumber(variant.inventory?.retailPrice);
-      const exchangeEnabled = Boolean(variant.exchangeEnabled);
+      const exchangeEnabled = isWarehouseCylinderExchangeAvailable({
+        isReturnablePack: product.isReturnablePack,
+        family: product.category?.type?.family,
+        name: product.category?.type?.name,
+        slug: product.category?.type?.slug,
+        exchangeEnabled: variant.exchangeEnabled,
+      });
       const exchangeCreditAmount = exchangeEnabled
         ? Math.min(
             retailPrice,

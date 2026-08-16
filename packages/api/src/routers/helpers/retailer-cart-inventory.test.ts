@@ -6,6 +6,7 @@ import {
   getCustomerOrderLineDecision,
   getRetailerCartDecision,
   isSameCustomerCartSnapshot,
+  retailerCylinderExchangeAvailable,
   resolveCustomerCartSource,
 } from "./retailer-cart-inventory";
 
@@ -22,6 +23,12 @@ const inventorySnapshot = {
   orderMin: "1.00",
   orderMax: null,
   orderIncrement: "1.00",
+  exchangeEnabled: false,
+  exchangeCreditAmount: "0",
+  isReturnablePack: false,
+  typeFamily: null,
+  typeName: null,
+  typeSlug: null,
 };
 
 test("resolves one retailer as the cart and order source", () => {
@@ -274,5 +281,28 @@ test("enforces the selected retailer variant's minimum and increment", () => {
       },
     ),
     { ok: false, reason: "invalid_quantity", availableQuantity: 8 },
+  );
+});
+
+test("Exchange is available for returnable LPG even if the variant flag is stale", () => {
+  assert.equal(
+    retailerCylinderExchangeAvailable({
+      ...inventorySnapshot,
+      isReturnablePack: true,
+      typeFamily: "lpg",
+      typeName: "LPG",
+      typeSlug: "lpg",
+      exchangeEnabled: false,
+    }),
+    true,
+  );
+  assert.equal(
+    retailerCylinderExchangeAvailable({
+      ...inventorySnapshot,
+      isReturnablePack: false,
+      typeFamily: "lpg",
+      exchangeEnabled: true,
+    }),
+    false,
   );
 });

@@ -9,6 +9,7 @@
  */
 
 import { db } from "@bikalpo-project/db";
+import { isWarehouseCylinderExchangeAvailable } from "@bikalpo-project/db/fulfillment";
 import {
   address,
   announcement,
@@ -36,6 +37,7 @@ import {
   payment,
   product,
   productReview,
+  productType,
   productVariant,
   sellerAreaMapping,
   subCategory,
@@ -114,6 +116,7 @@ import {
   getCustomerOrderLineDecision,
   getRetailerCartDecision,
   isSameCustomerCartSnapshot,
+  retailerCylinderExchangeAvailable,
   type RetailerCartInventorySnapshot,
   resolveCustomerCartSource,
 } from "./helpers/retailer-cart-inventory";
@@ -274,10 +277,16 @@ async function getRetailerCartInventorySnapshots(
       orderIncrement: productVariant.orderIncrement,
       exchangeEnabled: productVariant.exchangeEnabled,
       exchangeCreditAmount: productVariant.exchangeCreditAmount,
+      isReturnablePack: product.isReturnablePack,
+      typeFamily: productType.family,
+      typeName: productType.name,
+      typeSlug: productType.slug,
     })
     .from(inventory)
     .innerJoin(productVariant, eq(productVariant.id, inventory.variantId))
     .innerJoin(product, eq(product.id, productVariant.productId))
+    .leftJoin(category, eq(category.id, product.categoryId))
+    .leftJoin(productType, eq(productType.id, category.typeId))
     .innerJoin(user, eq(user.id, inventory.ownerId))
     .where(
       and(
@@ -294,7 +303,15 @@ async function getRetailerCartInventorySnapshots(
   );
   for (const row of rows) {
     const key = getRetailerCartInventoryKey(row);
-    if (requestedKeys.has(key)) snapshots.set(key, row);
+    if (requestedKeys.has(key)) {
+      snapshots.set(key, {
+        ...row,
+        isReturnablePack: Boolean(row.isReturnablePack),
+        typeFamily: row.typeFamily ?? null,
+        typeName: row.typeName ?? null,
+        typeSlug: row.typeSlug ?? null,
+      });
+    }
   }
 
   return snapshots;
@@ -2374,7 +2391,7 @@ const queries = {
             ? Number(retailerDecision.retailPrice)
             : Number(item.price);
         const exchangeEnabled = Boolean(
-          item.shopId && variant?.exchangeEnabled,
+          item.shopId && retailerCylinderExchangeAvailable(retailerInventory),
         );
         const exchangeCreditAmount = exchangeEnabled
           ? Number(variant?.exchangeCreditAmount ?? 0)
@@ -3616,7 +3633,12 @@ const queries = {
           ...getWebViewProductConditions(),
         ),
         with: {
-          category: { columns: { name: true, slug: true } },
+          category: {
+            columns: { name: true, slug: true },
+            with: {
+              type: { columns: { family: true, name: true, slug: true } },
+            },
+          },
           subCategory: { columns: { name: true, slug: true } },
           brand: { columns: { id: true, name: true, slug: true } },
           images: { columns: { imageUrl: true } },
@@ -3895,6 +3917,14 @@ const mutations = {
 
       const productData = await db.query.product.findFirst({
         where: eq(product.id, input.productId),
+        with: {
+          category: {
+            columns: { slug: true },
+            with: {
+              type: { columns: { family: true, name: true, slug: true } },
+            },
+          },
+        },
       });
       if (!productData)
         throw new ORPCError("NOT_FOUND", { message: "Product not found" });
@@ -3976,10 +4006,21 @@ const mutations = {
         }
       }
 
+      const cylinderExchangeAvailable =
+        purchaseMode === "direct"
+          ? isWarehouseCylinderExchangeAvailable({
+              isReturnablePack: productData.isReturnablePack,
+              family: productData.category?.type?.family,
+              name: productData.category?.type?.name,
+              slug: productData.category?.type?.slug,
+              exchangeEnabled: directVariantConfig?.exchangeEnabled,
+            })
+          : false;
+
       const cylinderSaleMode =
         purchaseMode === "direct"
           ? (input.cylinderSaleMode ??
-            (directVariantConfig?.exchangeEnabled ? "exchange" : "new"))
+            (cylinderExchangeAvailable ? "exchange" : "new"))
           : "new";
 
       let itemPrice = productData.price;
@@ -4089,7 +4130,7 @@ const mutations = {
           try {
             itemPrice = resolveRetailerCylinderSale({
               newUnitPrice: decision.retailPrice,
-              exchangeEnabled: directVariantConfig?.exchangeEnabled ?? false,
+              exchangeEnabled: cylinderExchangeAvailable,
               exchangeCreditAmount:
                 directVariantConfig?.exchangeCreditAmount ?? "0",
               requestedMode: cylinderSaleMode,
@@ -4222,7 +4263,7 @@ const mutations = {
           try {
             retailerPrice = resolveRetailerCylinderSale({
               newUnitPrice: decision.retailPrice,
-              exchangeEnabled: snapshot?.exchangeEnabled ?? false,
+              exchangeEnabled: retailerCylinderExchangeAvailable(snapshot),
               exchangeCreditAmount: snapshot?.exchangeCreditAmount ?? "0",
               requestedMode: cylinderSaleMode,
               quantity: input.quantity,
@@ -4550,7 +4591,8 @@ const mutations = {
           try {
             cylinderSale = resolveRetailerCylinderSale({
               newUnitPrice: stockDecision.retailPrice,
-              exchangeEnabled: retailerInventory?.exchangeEnabled ?? false,
+              exchangeEnabled:
+                retailerCylinderExchangeAvailable(retailerInventory),
               exchangeCreditAmount:
                 retailerInventory?.exchangeCreditAmount ?? "0",
               requestedMode: item.cylinderSaleMode,

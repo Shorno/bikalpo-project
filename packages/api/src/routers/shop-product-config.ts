@@ -3,6 +3,7 @@ import {
   shouldDeactivateOmittedBrands,
   validateBrandCreationSubmission,
 } from "@bikalpo-project/db/brand-creation";
+import { shouldEnableWarehouseCylinderExchange } from "@bikalpo-project/db/fulfillment";
 import {
   adminProductGenerationTemplate,
   brand,
@@ -25,6 +26,7 @@ import {
   linkProductVariantsToCatalog,
   resolveConcreteVariantForConfig,
 } from "./helpers/sync-generated-variants";
+import { syncWarehouseCylinderExchange } from "./helpers/warehouse-cylinder-exchange";
 
 const configuredVariantSchema = z.object({
   variantOptionId: z.number().int().positive(),
@@ -565,16 +567,6 @@ export const shopProductConfigEndpoints = {
               "Empty cylinder exchange is only available for LPG products",
           });
         }
-        if (
-          requestedExchangeVariants.some(
-            (variant) => Number(variant.exchangeCreditAmount) <= 0,
-          )
-        ) {
-          throw new ORPCError("BAD_REQUEST", {
-            message:
-              "Exchange Credit must be greater than zero when Exchange is enabled",
-          });
-        }
         const existingTemplate =
           await tx.query.shopProductGenerationTemplate.findFirst({
             where: and(
@@ -807,6 +799,19 @@ export const shopProductConfigEndpoints = {
             },
           });
 
+        const cylinderExchangeEnabled = shouldEnableWarehouseCylinderExchange({
+          isReturnablePack: input.details.isReturnablePack,
+          family: core.category?.type?.family,
+          name: core.category?.type?.name,
+          slug: core.category?.type?.slug,
+        });
+        for (const productId of new Set([...created, ...updated])) {
+          await syncWarehouseCylinderExchange(tx, {
+            productId,
+            enabled: cylinderExchangeEnabled,
+          });
+        }
+
         return { created, updated, deactivated };
       });
     }),
@@ -878,7 +883,9 @@ export const shopProductConfigEndpoints = {
             brand: true,
             category: {
               columns: { typeId: true },
-              with: { type: { columns: { family: true } } },
+              with: {
+                type: { columns: { family: true, name: true, slug: true } },
+              },
             },
             coreProduct: true,
             variants: true,
@@ -896,17 +903,6 @@ export const shopProductConfigEndpoints = {
           throw new ORPCError("BAD_REQUEST", {
             message:
               "Empty cylinder exchange is only available for LPG products",
-          });
-        }
-        if (
-          input.variants.some(
-            (row) =>
-              row.exchangeEnabled && Number(row.exchangeCreditAmount) <= 0,
-          )
-        ) {
-          throw new ORPCError("BAD_REQUEST", {
-            message:
-              "Exchange Credit must be greater than zero when Exchange is enabled",
           });
         }
         const optionMap = await loadScopedOptions(
@@ -962,6 +958,15 @@ export const shopProductConfigEndpoints = {
             })),
           );
         }
+        await syncWarehouseCylinderExchange(tx, {
+          productId: existing.id,
+          enabled: shouldEnableWarehouseCylinderExchange({
+            isReturnablePack: input.details.isReturnablePack,
+            family: existing.category?.type?.family,
+            name: existing.category?.type?.name,
+            slug: existing.category?.type?.slug,
+          }),
+        });
         return { productId: existing.id };
       });
     }),

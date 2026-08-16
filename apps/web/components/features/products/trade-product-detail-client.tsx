@@ -232,9 +232,10 @@ export function ProductDetailClient({
           <p className="font-semibold">Exchange or buy New at checkout</p>
           <p className="mt-1 leading-5 text-emerald-800">
             Exchange is selected by default. Return one exact-match empty
-            cylinder per unit and save ৳
-            {selected.cylinderSale.exchangeCreditAmount.toLocaleString("en-BD")}{" "}
-            each.
+            cylinder per unit
+            {selected.cylinderSale.exchangeCreditAmount > 0
+              ? ` and save ৳${selected.cylinderSale.exchangeCreditAmount.toLocaleString("en-BD")} each.`
+              : "."}
           </p>
         </div>
       )}

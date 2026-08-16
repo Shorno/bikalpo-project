@@ -83,6 +83,36 @@ export async function creditWarehouseExchangeOrder(
   tx: DbTransaction,
   input: { warehouseId: string; orderId: number; actorId?: string | null },
 ) {
+  await creditOwnerExchangeOrder(tx, {
+    ownerType: "warehouse",
+    ownerId: input.warehouseId,
+    orderId: input.orderId,
+    actorId: input.actorId,
+  });
+}
+
+/** Credits every Exchange line once after a B2C order is completely delivered. */
+export async function creditRetailerExchangeOrder(
+  tx: DbTransaction,
+  input: { shopId: string; orderId: number; actorId?: string | null },
+) {
+  await creditOwnerExchangeOrder(tx, {
+    ownerType: "shop",
+    ownerId: input.shopId,
+    orderId: input.orderId,
+    actorId: input.actorId,
+  });
+}
+
+async function creditOwnerExchangeOrder(
+  tx: DbTransaction,
+  input: {
+    ownerType: EmptyPackOwnerType;
+    ownerId: string;
+    orderId: number;
+    actorId?: string | null;
+  },
+) {
   const lines = await tx.query.orderItem.findMany({
     where: and(
       eq(orderItem.orderId, input.orderId),
@@ -91,8 +121,8 @@ export async function creditWarehouseExchangeOrder(
   });
   for (const line of lines) {
     await creditExchangeEmptyPack(tx, {
-      ownerType: "warehouse",
-      ownerId: input.warehouseId,
+      ownerType: input.ownerType,
+      ownerId: input.ownerId,
       orderId: input.orderId,
       orderItemId: line.id,
       variantId: line.variantId,

@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { syncWarehouseCylinderExchange } from "./warehouse-cylinder-exchange";
 import {
   creditExchangeEmptyPack,
+  creditRetailerExchangeOrder,
   warehouseExchangeEmptyCreditQty,
 } from "./empty-pack-stock";
+import { syncWarehouseCylinderExchange } from "./warehouse-cylinder-exchange";
 
 test("syncWarehouseCylinderExchange writes exchangeEnabled onto every variant", async () => {
   const calls: Array<{ values: { exchangeEnabled: boolean } }> = [];
@@ -87,4 +88,65 @@ test("New sales do not credit empty pack and Exchange credits delivered quantity
     }),
     4,
   );
+});
+
+test("creditRetailerExchangeOrder credits shop empty stock for Exchange lines", async () => {
+  const movementInserts: Array<{
+    ownerType: string;
+    ownerId: string;
+    quantity: number;
+    orderItemId: number;
+  }> = [];
+  const tx = {
+    query: {
+      orderItem: {
+        findMany: async () => [
+          {
+            id: 21,
+            variantId: 8,
+            cylinderSaleMode: "exchange",
+            quantity: 3,
+            modifiedQty: 3,
+          },
+        ],
+      },
+    },
+    insert: () => ({
+      values: (values: {
+        ownerType?: string;
+        ownerId?: string;
+        quantity?: number;
+        orderItemId?: number;
+      }) => {
+        if (values.ownerType && values.orderItemId) {
+          movementInserts.push({
+            ownerType: values.ownerType,
+            ownerId: values.ownerId!,
+            quantity: values.quantity!,
+            orderItemId: values.orderItemId,
+          });
+        }
+        return {
+          onConflictDoNothing: () => ({
+            returning: async () => [{ id: 1 }],
+          }),
+          onConflictDoUpdate: async () => undefined,
+        };
+      },
+    }),
+  };
+
+  await creditRetailerExchangeOrder(tx as never, {
+    shopId: "shop-1",
+    orderId: 99,
+  });
+
+  assert.deepEqual(movementInserts, [
+    {
+      ownerType: "shop",
+      ownerId: "shop-1",
+      quantity: 3,
+      orderItemId: 21,
+    },
+  ]);
 });

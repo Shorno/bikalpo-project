@@ -49,6 +49,8 @@ test(
       deliveryGroup,
       deliveryGroupInvoice,
       emptyPack,
+      emptyPackMovement,
+      emptyPackStock,
       inventory,
       invoice,
       order,
@@ -160,6 +162,7 @@ test(
           inStock: false,
           status: "active",
           visibility: "public",
+          isReturnablePack: true,
           creatorSource: "shop",
           createdById: shopId,
         })
@@ -708,6 +711,69 @@ test(
         }),
         { availableQty: "0.00", reservedQty: "0.00" },
       );
+      const [creditedEmptyStock] = await db
+        .select({ availableQty: emptyPackStock.availableQty })
+        .from(emptyPackStock)
+        .where(
+          and(
+            eq(emptyPackStock.ownerType, "shop"),
+            eq(emptyPackStock.ownerId, shopId),
+            eq(emptyPackStock.variantId, testVariantId),
+          ),
+        );
+      assert.equal(creditedEmptyStock?.availableQty, 1);
+
+      await db
+        .update(inventory)
+        .set({ availableQty: "1.00", reservedQty: "0.00" })
+        .where(eq(inventory.id, testInventoryId));
+      await invokeProcedure(customerRouter.addToCart, pickupConsumerContext, {
+        ...addInput,
+        cylinderSaleMode: "exchange",
+      });
+      const unpaidEmptyPlacement = await invokeProcedure<{
+        order: { id: number };
+      }>(customerRouter.placeOrder, pickupConsumerContext, {
+        shippingInfo: { ...shippingInfo, name: "Zero-return Exchange" },
+        paymentMethod: "cash_on_delivery",
+      });
+      await invokeProcedure(shopOwnerRouter.confirmIncomingOrder, shopContext, {
+        orderId: unpaidEmptyPlacement.order.id,
+      });
+      const unpaidEmptyInvoice = await invokeProcedure<{
+        invoice: { id: number };
+        completionOtp: string;
+      }>(shopOwnerRouter.createIncomingOrderInvoice, shopContext, {
+        orderId: unpaidEmptyPlacement.order.id,
+        fulfillmentMode: "self_pickup",
+      });
+      const unpaidEmptyOrder = await db.query.order.findFirst({
+        where: eq(order.id, unpaidEmptyPlacement.order.id),
+        with: { items: true },
+      });
+      await invokeProcedure(
+        shopOwnerRouter.verifyIncomingSelfPickup,
+        shopContext,
+        {
+          invoiceId: unpaidEmptyInvoice.invoice.id,
+          otp: unpaidEmptyInvoice.completionOtp,
+          acceptedReturns: [
+            { orderItemId: unpaidEmptyOrder!.items[0]!.id, quantity: 0 },
+          ],
+          handoffBalancePaid: true,
+        },
+      );
+      const [emptyStockAfterZeroReturn] = await db
+        .select({ availableQty: emptyPackStock.availableQty })
+        .from(emptyPackStock)
+        .where(
+          and(
+            eq(emptyPackStock.ownerType, "shop"),
+            eq(emptyPackStock.ownerId, shopId),
+            eq(emptyPackStock.variantId, testVariantId),
+          ),
+        );
+      assert.equal(emptyStockAfterZeroReturn?.availableQty, 2);
 
     } finally {
       if (inventoryId) {
@@ -717,6 +783,10 @@ test(
           .where(eq(inventory.id, inventoryId));
       }
       await db.delete(deliveryGroup).where(eq(deliveryGroup.shopId, shopId));
+      await db
+        .delete(emptyPackMovement)
+        .where(eq(emptyPackMovement.ownerId, shopId));
+      await db.delete(emptyPackStock).where(eq(emptyPackStock.ownerId, shopId));
       await db.delete(invoice).where(eq(invoice.customerId, consumerId));
             await db.delete(invoice).where(eq(invoice.customerId, secondConsumerId));
       await db.delete(invoice).where(eq(invoice.customerId, pickupConsumerId));
