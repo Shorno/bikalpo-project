@@ -920,6 +920,9 @@ export const shopProductConfigEndpoints = {
           optionMap,
           details: input.details,
         });
+        const anyExchangeEnabled = input.variants.some(
+          (row) => row.exchangeEnabled,
+        );
         await tx
           .update(product)
           .set({
@@ -939,7 +942,7 @@ export const shopProductConfigEndpoints = {
             conversionEnabled: input.details.conversionEnabled,
             inventoryLooseUnitEnabled: input.details.inventoryLooseUnitEnabled,
             inventoryLooseUnit: input.details.inventoryLooseUnit,
-            isReturnablePack: input.details.isReturnablePack,
+            isReturnablePack: anyExchangeEnabled,
             defaultPackDepositAmount: input.details.defaultPackDepositAmount,
             allowedPackBrands: input.details.allowedPackBrands,
             allowedPackSizes: input.details.allowedPackSizes,
@@ -958,15 +961,6 @@ export const shopProductConfigEndpoints = {
             })),
           );
         }
-        await syncWarehouseCylinderExchange(tx, {
-          productId: existing.id,
-          enabled: shouldEnableWarehouseCylinderExchange({
-            isReturnablePack: input.details.isReturnablePack,
-            family: existing.category?.type?.family,
-            name: existing.category?.type?.name,
-            slug: existing.category?.type?.slug,
-          }),
-        });
         return { productId: existing.id };
       });
     }),

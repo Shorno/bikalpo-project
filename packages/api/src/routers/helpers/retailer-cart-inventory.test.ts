@@ -284,7 +284,7 @@ test("enforces the selected retailer variant's minimum and increment", () => {
   );
 });
 
-test("Exchange is available for returnable LPG even if the variant flag is stale", () => {
+test("Exchange follows the exact retailer variant flag", () => {
   assert.equal(
     retailerCylinderExchangeAvailable({
       ...inventorySnapshot,
@@ -294,7 +294,7 @@ test("Exchange is available for returnable LPG even if the variant flag is stale
       typeSlug: "lpg",
       exchangeEnabled: false,
     }),
-    true,
+    false,
   );
   assert.equal(
     retailerCylinderExchangeAvailable({
@@ -303,6 +303,6 @@ test("Exchange is available for returnable LPG even if the variant flag is stale
       typeFamily: "lpg",
       exchangeEnabled: true,
     }),
-    false,
+    true,
   );
 });

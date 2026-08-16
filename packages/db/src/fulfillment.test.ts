@@ -61,7 +61,7 @@ test("warehouse Returnable pack on LPG enables New/Exchange", () => {
       family: "lpg",
       exchangeEnabled: false,
     }),
-    true,
+    false,
   );
   assert.equal(
     isWarehouseCylinderExchangeAvailable({
@@ -77,6 +77,6 @@ test("warehouse Returnable pack on LPG enables New/Exchange", () => {
       family: "lpg",
       exchangeEnabled: true,
     }),
-    false,
+    true,
   );
 });

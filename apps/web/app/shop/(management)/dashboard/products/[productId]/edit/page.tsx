@@ -69,13 +69,15 @@ export default function RetailerProductEditPage() {
         variantOptions: data.options.variantOptions,
         productType: retailerProduct.category?.type,
         publishOnSave: true,
-        productLevelCylinderReturn: true,
         onUpdate: async (payload: any) => {
           const variants = (payload.variantPrices ?? []).map((row: any) => ({
             variantOptionId: row.variantOptionId,
-            exchangeEnabled: row.exchangeEnabled ?? false,
+            exchangeEnabled: Boolean(row.exchangeEnabled),
             exchangeCreditAmount: String(row.exchangeCreditAmount || "0"),
           }));
+          const anyExchangeEnabled = variants.some(
+            (row: { exchangeEnabled: boolean }) => row.exchangeEnabled,
+          );
           return (orpc.shopOwner as any).updateShopOwnedProduct.call({
             productId,
             details: {
@@ -96,7 +98,7 @@ export default function RetailerProductEditPage() {
               conversionEnabled: payload.conversionEnabled,
               inventoryLooseUnitEnabled: payload.inventoryLooseUnitEnabled,
               inventoryLooseUnit: payload.inventoryLooseUnit,
-              isReturnablePack: payload.isReturnablePack,
+              isReturnablePack: anyExchangeEnabled,
               defaultPackDepositAmount: String(
                 payload.defaultPackDepositAmount || "0",
               ),

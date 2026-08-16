@@ -249,7 +249,6 @@ interface ProductFormProps {
     onUpdate: (payload: any) => Promise<unknown>;
     onUpdated?: () => void | Promise<void>;
     publishOnSave?: boolean;
-    productLevelCylinderReturn?: boolean;
   };
 }
 
@@ -267,9 +266,6 @@ export default function ProductForm({
   const listHref =
     editAdapter?.backHref ?? backHref ?? "/dashboard/admin/products";
   const usesExternalEditAdapter = Boolean(editAdapter && isEdit);
-  const useProductLevelCylinderReturn = Boolean(
-    editAdapter?.productLevelCylinderReturn,
-  );
   const initialCoreProductIdForCreate =
     !isEdit && initialCoreProductId && Number.isFinite(initialCoreProductId)
       ? initialCoreProductId
@@ -621,7 +617,6 @@ export default function ProductForm({
       }
       if (
         isLpgRules &&
-        !useProductLevelCylinderReturn &&
         brandConfigs.some((config) =>
           config.selectedVariantIds.some((variantOptionId) => {
             const settings = config.variantSettings[variantOptionId];
@@ -911,16 +906,12 @@ export default function ProductForm({
       label: FULFILLMENT_UNITS[code]?.label ?? code,
     }),
   );
-  const returnableRuleLabel = useProductLevelCylinderReturn
+  const returnableRuleLabel = isLpgRules
     ? "Empty cylinder return"
-    : isLpgRules
-      ? "Empty cylinder return"
-      : "Empty pack return";
-  const returnableRuleDescription = useProductLevelCylinderReturn
+    : "Empty pack return";
+  const returnableRuleDescription = isLpgRules
     ? "Buyers can choose New or Exchange"
-    : isLpgRules
-      ? "Buyers can choose New or Exchange"
-      : "Require returnable packaging such as jars, drums, or packs";
+    : "Require returnable packaging such as jars, drums, or packs";
   const depositLabel = isLpgRules
     ? "Exchange Value (BDT)"
     : "Deposit Amount (BDT)";
@@ -1285,9 +1276,7 @@ export default function ProductForm({
                         onSetVariants={(voIds) =>
                           handleSetVariants(bc.brandId, voIds)
                         }
-                        showCylinderExchange={
-                          isLpgRules && !useProductLevelCylinderReturn
-                        }
+                        showCylinderExchange={isLpgRules}
                         onExchangeChange={(voId, changes) =>
                           handleVariantExchangeChange(bc.brandId, voId, changes)
                         }
@@ -1322,9 +1311,7 @@ export default function ProductForm({
                           onSetVariants={(voIds) =>
                             handleSetVariants(bc.brandId, voIds)
                           }
-                          showCylinderExchange={
-                          isLpgRules && !useProductLevelCylinderReturn
-                        }
+                          showCylinderExchange={isLpgRules}
                           onExchangeChange={(voId, changes) =>
                             handleVariantExchangeChange(
                               bc.brandId,
@@ -1685,9 +1672,8 @@ export default function ProductForm({
                     </form.Field>
                   )}
 
-                  {(useProductLevelCylinderReturn ||
-                    (activeRuleSettings.returnablePackAvailable &&
-                      !isLpgRules)) && (
+                  {activeRuleSettings.returnablePackAvailable &&
+                    !isLpgRules && (
                       <form.Field name="isReturnablePack">
                         {(returnableField) => (
                           <RuleControlRow
@@ -1700,26 +1686,24 @@ export default function ProductForm({
                                 checked={returnableField.state.value}
                                 onCheckedChange={returnableField.handleChange}
                               />
-                              {!useProductLevelCylinderReturn && (
-                                <form.Field name="defaultPackDepositAmount">
-                                  {(depositField) => (
-                                    <Input
-                                      aria-label={depositLabel}
-                                      className="h-9 flex-1 text-right"
-                                      disabled={!returnableField.state.value}
-                                      min="0"
-                                      onChange={(event) =>
-                                        depositField.handleChange(
-                                          event.target.value,
-                                        )
-                                      }
-                                      step="0.01"
-                                      type="number"
-                                      value={depositField.state.value}
-                                    />
-                                  )}
-                                </form.Field>
-                              )}
+                              <form.Field name="defaultPackDepositAmount">
+                                {(depositField) => (
+                                  <Input
+                                    aria-label={depositLabel}
+                                    className="h-9 flex-1 text-right"
+                                    disabled={!returnableField.state.value}
+                                    min="0"
+                                    onChange={(event) =>
+                                      depositField.handleChange(
+                                        event.target.value,
+                                      )
+                                    }
+                                    step="0.01"
+                                    type="number"
+                                    value={depositField.state.value}
+                                  />
+                                )}
+                              </form.Field>
                             </div>
                           </RuleControlRow>
                         )}

@@ -433,8 +433,8 @@ export function shouldEnableWarehouseCylinderExchange(input: {
 }
 
 /**
- * Retailer can pick Exchange when Returnable pack is on and the listing is LPG,
- * or when the warehouse variant already has exchangeEnabled.
+ * Buyer can pick Exchange when this exact variant has exchangeEnabled.
+ * Product-level Returnable pack is derived from any enabled variant on save.
  */
 export function isWarehouseCylinderExchangeAvailable(input: {
   isReturnablePack?: boolean | null;
@@ -443,14 +443,7 @@ export function isWarehouseCylinderExchangeAvailable(input: {
   slug?: string | null;
   exchangeEnabled?: boolean | null;
 }): boolean {
-  if (!input.isReturnablePack) return false;
-  return (
-    isLpgProductTypeFamily({
-      family: (input.family as ProductTypeFamily | null) ?? undefined,
-      name: input.name,
-      slug: input.slug,
-    }) || Boolean(input.exchangeEnabled)
-  );
+  return Boolean(input.exchangeEnabled);
 }
 
 export function inferProductTypeFamily(

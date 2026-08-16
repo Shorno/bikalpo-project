@@ -206,13 +206,13 @@ test("store details expose per-variant cylinder sale choices", () => {
     defaultMode: "exchange",
   });
   assert.deepEqual(result.product.variants[1]?.cylinderSale, {
-    exchangeEnabled: true,
+    exchangeEnabled: false,
     exchangeCreditAmount: 0,
-    defaultMode: "exchange",
+    defaultMode: "new",
   });
 });
 
-test("store details hide Exchange when Empty cylinder return is off", () => {
+test("store details hide Exchange when this variant is not enabled", () => {
   const result = buildStoreProductDetail({
     shop: {
       id: "shop-lpg",
@@ -237,7 +237,7 @@ test("store details hide Exchange when Empty cylinder return is off", () => {
       features: [],
       creatorSource: "shop",
       createdById: "shop-lpg",
-      isReturnablePack: false,
+      isReturnablePack: true,
       category: {
         name: "LPG",
         slug: "lpg",
@@ -267,7 +267,7 @@ test("store details hide Exchange when Empty cylinder return is off", () => {
         variantType: "retail",
         packType: "unit",
         isActive: true,
-        exchangeEnabled: true,
+        exchangeEnabled: false,
         exchangeCreditAmount: "300",
         inventory: { availableQty: "10", retailPrice: "1500" },
       },
