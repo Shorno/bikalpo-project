@@ -104,13 +104,37 @@ export const invoice = pgTable(
         discountAmount: decimal("discount_amount", { precision: 10, scale: 2 })
             .default("0")
             .notNull(),
+        productDiscount: decimal("product_discount", {
+            precision: 10,
+            scale: 2,
+        }).default("0").notNull(),
+        couponDiscount: decimal("coupon_discount", {
+            precision: 10,
+            scale: 2,
+        }).default("0").notNull(),
+        rewardDiscount: decimal("reward_discount", {
+            precision: 10,
+            scale: 2,
+        }).default("0").notNull(),
         deliveryCharge: decimal("delivery_charge", { precision: 10, scale: 2 })
+            .default("0")
+            .notNull(),
+        shippingCharge: decimal("shipping_charge", { precision: 10, scale: 2 })
             .default("0")
             .notNull(),
         taxAmount: decimal("tax_amount", { precision: 10, scale: 2 })
             .default("0")
             .notNull(),
         grandTotal: decimal("grand_total", { precision: 10, scale: 2 }).notNull(),
+        paidAmount: decimal("paid_amount", { precision: 10, scale: 2 })
+            .default("0")
+            .notNull(),
+        dueAmount: decimal("due_amount", { precision: 10, scale: 2 })
+            .default("0")
+            .notNull(),
+        returnAmount: decimal("return_amount", { precision: 10, scale: 2 })
+            .default("0")
+            .notNull(),
 
         /** Additional amount due when an Exchange unit becomes New at handoff. */
         handoffBalance: decimal("handoff_balance", { precision: 10, scale: 2 })

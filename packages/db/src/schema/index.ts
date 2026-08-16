@@ -46,6 +46,7 @@ export * from "./order";
 export * from "./order-return";
 export * from "./payee";
 export * from "./payment";
+export * from "./payment-allocation";
 export * from "./product";
 export * from "./product-identity-request";
 export * from "./product-pack-rules";
