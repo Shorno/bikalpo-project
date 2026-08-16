@@ -5,6 +5,7 @@ import {
 	assertCheckoutQuoteMatches,
 	buildCheckoutQuote,
 	normalizePromotionCode,
+	type CheckoutPromotionRecord,
 } from "./checkout-quote";
 
 const now = new Date("2026-08-16T10:00:00.000Z");
@@ -81,7 +82,7 @@ test("seller promotions produce coupon snapshots", () => {
 });
 
 test("expired, exhausted, and foreign promotions are rejected", () => {
-	const promotion = {
+	const promotion: CheckoutPromotionRecord = {
 		id: 1,
 		ownerId: "shop-1",
 		code: "SAVE10",
@@ -90,7 +91,7 @@ test("expired, exhausted, and foreign promotions are rejected", () => {
 		type: "fixed" as const,
 		value: 10,
 	};
-	const build = (overrides: Partial<typeof promotion>) =>
+	const build = (overrides: Partial<CheckoutPromotionRecord>) =>
 		buildCheckoutQuote({
 			audience: "retail",
 			sellerId: "shop-1",

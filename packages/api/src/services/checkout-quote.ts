@@ -5,6 +5,7 @@ import {
 	calculateCheckoutTotals,
 	calculatePromotionDiscount,
 	resolveInitialPayment,
+	roundMoney,
 	type CheckoutAudience,
 	type CheckoutDeliveryMode,
 	type CheckoutPaymentPlan,
@@ -103,6 +104,7 @@ export function buildCheckoutQuote(input: {
 	deliveryFee?: number;
 	shippingFee?: number;
 	taxAmount?: number;
+	taxPercentage?: number;
 	rewardDiscount?: number;
 	promotion?: CheckoutPromotionRecord | null;
 	now?: Date;
@@ -150,12 +152,22 @@ export function buildCheckoutQuote(input: {
 		input.deliveryMode === "self_pickup" ? 0 : (input.deliveryFee ?? 0);
 	const shippingFee =
 		input.deliveryMode === "self_pickup" ? 0 : (input.shippingFee ?? 0);
+	const taxBase = Math.max(
+		0,
+		itemsTotal -
+			productDiscount -
+			couponDiscount -
+			(input.rewardDiscount ?? 0),
+	);
+	const taxAmount =
+		input.taxAmount ??
+		roundMoney(taxBase * Math.max(0, input.taxPercentage ?? 0) / 100);
 	const totals = calculateCheckoutTotals({
 		itemsTotal,
 		productDiscount,
 		couponDiscount,
 		rewardDiscount: input.rewardDiscount,
-		taxAmount: input.taxAmount,
+		taxAmount,
 		deliveryFee,
 		shippingFee,
 	});
