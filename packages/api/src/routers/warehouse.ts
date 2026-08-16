@@ -21,6 +21,7 @@ import {
 import {
 	checkoutPromotion,
 	checkoutPromotionRedemption,
+	checkoutSetting,
 	deliveryGroup,
 	deliveryGroupInvoice,
 	estimate,
@@ -56,6 +57,7 @@ import { assertCheckoutQuoteMatches } from "../services/checkout-quote";
 import {
 	buildWholesaleCheckoutQuote,
 	getWholesalePaymentDueAt,
+	wholesaleCheckoutSelectionSchema,
 	wholesaleCheckoutSubmissionSchema,
 } from "../services/wholesale-checkout";
 import { localDateStamp } from "../utils/date";
@@ -143,20 +145,81 @@ const storefrontQueries = {
 			const warehouse = warehouseUser[0]!;
 
 			// Count products in this warehouse's inventory
-			const [productCount] = await db
-				.select({ count: count() })
-				.from(inventory)
-				.where(
-					and(
-						eq(inventory.ownerType, "warehouse"),
-						eq(inventory.ownerId, warehouse.id),
+			const [[productCount], checkoutConfiguration] = await Promise.all([
+				db
+					.select({ count: count() })
+					.from(inventory)
+					.where(
+						and(
+							eq(inventory.ownerType, "warehouse"),
+							eq(inventory.ownerId, warehouse.id),
+						),
 					),
-				);
+				db.query.checkoutSetting.findFirst({
+					where: eq(checkoutSetting.ownerId, warehouse.id),
+				}),
+			]);
 
 			return {
 				...warehouse,
 				productCount: productCount?.count || 0,
+				checkoutConfiguration: {
+					allowSelfPickup: checkoutConfiguration?.allowSelfPickup ?? true,
+					allowCourier: checkoutConfiguration?.allowCourier ?? true,
+					defaultShippingFee: Number(
+						checkoutConfiguration?.defaultShippingFee ?? 0,
+					),
+					taxPercentage: Number(checkoutConfiguration?.taxPercentage ?? 0),
+					wholesaleCreditDays:
+						checkoutConfiguration?.wholesaleCreditDays ?? 0,
+				},
 			};
+		}),
+
+	getStorefrontCheckoutQuote: publicProcedure
+		.route({
+			method: "POST",
+			path: "/warehouse/storefront/{slug}/checkout-quote",
+			tags: ["Warehouse Storefront"],
+			summary: "Price a warehouse storefront checkout",
+		})
+		.input(
+			wholesaleCheckoutSelectionSchema.extend({
+				slug: z.string().min(1),
+				lines: z
+					.array(
+						z.object({
+							key: z.string().min(1),
+							quantity: z.number().positive(),
+							unitPrice: z.number().nonnegative(),
+						}),
+					)
+					.min(1),
+			}),
+		)
+		.handler(async ({ input }) => {
+			const warehouse = await db.query.user.findFirst({
+				where: and(eq(user.warehouseSlug, input.slug), eq(user.role, "warehouse")),
+				columns: { id: true },
+			});
+			if (!warehouse) {
+				throw new ORPCError("NOT_FOUND", { message: "Warehouse not found" });
+			}
+			try {
+				const { quote, configuration } = await buildWholesaleCheckoutQuote({
+					sellerId: warehouse.id,
+					lines: input.lines,
+					selection: input,
+				});
+				return { quote, configuration };
+			} catch (error) {
+				throw new ORPCError("BAD_REQUEST", {
+					message:
+						error instanceof Error
+							? error.message
+							: "Unable to calculate checkout totals",
+				});
+			}
 		}),
 
 	/**

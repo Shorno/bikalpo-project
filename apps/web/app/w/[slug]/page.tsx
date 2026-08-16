@@ -18,8 +18,15 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
+import {
+  type CheckoutInvoiceContact,
+  DeliveryModeSelector,
+  InvoiceContactFields,
+  PaymentPlanSelector,
+  PromotionCodeControl,
+} from "@/components/checkout/checkout-controls";
 import { WarehouseProductGrid } from "@/components/features/warehouse/warehouse-product-grid";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -248,6 +255,21 @@ export default function WarehouseStorefrontPage() {
   const [paymentMethod, setPaymentMethod] = useState<
     "cash_on_delivery" | "bkash" | "nagad" | "bank_transfer" | "card"
   >("cash_on_delivery");
+  const [deliveryMode, setDeliveryMode] = useState<"self_pickup" | "courier">(
+    "courier",
+  );
+  const [paymentPlan, setPaymentPlan] = useState<
+    "pay_now" | "partial" | "pay_later"
+  >("pay_later");
+  const [partialAmount, setPartialAmount] = useState("");
+  const [promotionInput, setPromotionInput] = useState("");
+  const [promotionCode, setPromotionCode] = useState<string | null>(null);
+  const [invoiceContact, setInvoiceContact] = useState<CheckoutInvoiceContact>({
+    name: "",
+    phone: "",
+    email: "",
+  });
+  const checkoutIdempotencyKey = useRef<string | null>(null);
 
   // Prefill details from session
   useEffect(() => {
@@ -256,6 +278,11 @@ export default function WarehouseStorefrontPage() {
       setShippingName(u.shopName || u.warehouseName || u.name || "");
       setShippingPhone(u.phoneNumber || u.phone || "");
       setShippingAddress(u.shopAddress || u.warehouseAddress || "");
+      setInvoiceContact({
+        name: u.shopName || u.warehouseName || u.name || "",
+        phone: u.phoneNumber || u.phone || "",
+        email: u.email || "",
+      });
     }
   }, [sessionData]);
 
@@ -283,6 +310,16 @@ export default function WarehouseStorefrontPage() {
         | "nagad"
         | "bank_transfer"
         | "card";
+      checkout: {
+        deliveryMode: "self_pickup" | "courier";
+        paymentPlan: "pay_now" | "partial" | "pay_later";
+        partialAmount?: number;
+        promotionCode?: string;
+        quoteVersion: string;
+        quoteExpiresAt: Date;
+        idempotencyKey: string;
+        invoiceContact: CheckoutInvoiceContact;
+      };
     }) => {
       const { warehouseKey, ...orderInput } = input;
 
@@ -295,6 +332,7 @@ export default function WarehouseStorefrontPage() {
     },
     onSuccess: (result) => {
       toast.success(result.message || "Order placed successfully!");
+      checkoutIdempotencyKey.current = null;
       clearCart();
       setIsCartOpen(false);
 
@@ -346,6 +384,22 @@ export default function WarehouseStorefrontPage() {
       toast.error("Your cart is empty");
       return;
     }
+    if (!checkoutQuote || checkoutQuoteQuery.isFetching) {
+      toast.error("Wait for the supplier totals to finish updating");
+      return;
+    }
+    if (!invoiceContact.name.trim() || !invoiceContact.phone.trim()) {
+      toast.error("Invoice name and phone are required");
+      return;
+    }
+    if (
+      paymentPlan === "partial" &&
+      (!Number(partialAmount) || Number(partialAmount) >= checkoutGrandTotal)
+    ) {
+      toast.error("Enter a partial payment below the order total");
+      return;
+    }
+    checkoutIdempotencyKey.current ??= crypto.randomUUID();
     orderMutation.mutate({
       warehouseKey: slug,
       items: cart.map((i) => ({
@@ -362,6 +416,17 @@ export default function WarehouseStorefrontPage() {
       shippingArea: shippingArea || undefined,
       customerNote: customerNote || undefined,
       paymentMethod,
+      checkout: {
+        deliveryMode,
+        paymentPlan,
+        partialAmount:
+          paymentPlan === "partial" ? Number(partialAmount) : undefined,
+        promotionCode: promotionCode || undefined,
+        quoteVersion: checkoutQuote.version,
+        quoteExpiresAt: new Date(checkoutQuote.expiresAt),
+        idempotencyKey: checkoutIdempotencyKey.current,
+        invoiceContact,
+      },
     });
   };
 
@@ -406,6 +471,46 @@ export default function WarehouseStorefrontPage() {
   const cartCount = useMemo(() => {
     return cart.reduce((sum, item) => sum + item.quantity, 0);
   }, [cart]);
+
+  const checkoutQuoteQuery = useQuery({
+    ...orpc.warehouse.getStorefrontCheckoutQuote.queryOptions({
+      input: {
+        slug,
+        lines: cart.map((item) => ({
+          key: isRetailerBuyer
+            ? `${item.variantId}:${item.supplyMode || item.fulfillmentMode || "direct"}:${item.targetVariantId ?? "none"}`
+            : `${item.variantId}:direct:none`,
+          quantity: item.quantity,
+          unitPrice: Number(item.price),
+        })),
+        deliveryMode,
+        paymentPlan,
+        partialAmount:
+          paymentPlan === "partial" && Number(partialAmount) > 0
+            ? Number(partialAmount)
+            : undefined,
+        promotionCode: promotionCode || undefined,
+      },
+    }),
+    enabled:
+      hasCartAccess &&
+      cart.length > 0 &&
+      (paymentPlan !== "partial" || Number(partialAmount) > 0),
+  });
+  const checkoutQuote = checkoutQuoteQuery.data?.quote;
+
+  useEffect(() => {
+    const configuration = warehouse?.checkoutConfiguration;
+    if (!configuration) return;
+    if (deliveryMode === "courier" && !configuration.allowCourier) {
+      setDeliveryMode("self_pickup");
+    } else if (
+      deliveryMode === "self_pickup" &&
+      !configuration.allowSelfPickup
+    ) {
+      setDeliveryMode("courier");
+    }
+  }, [deliveryMode, warehouse]);
 
   if (
     warehouseLoading ||
@@ -474,6 +579,32 @@ export default function WarehouseStorefrontPage() {
   const categories = categoriesData?.categories || [];
   const products = productsData?.products || [];
   const pagination = productsData?.pagination;
+  const checkoutConfiguration = warehouse.checkoutConfiguration;
+  const checkoutTax =
+    checkoutQuote?.totals.taxAmount ??
+    Math.round(cartTotal * checkoutConfiguration.taxPercentage) / 100;
+  const checkoutShipping =
+    checkoutQuote?.totals.shippingFee ??
+    (deliveryMode === "courier" ? checkoutConfiguration.defaultShippingFee : 0);
+  const checkoutDiscount = checkoutQuote?.totals.totalDiscount ?? 0;
+  const checkoutGrandTotal =
+    checkoutQuote?.totals.grandTotal ??
+    cartTotal - checkoutDiscount + checkoutTax + checkoutShipping;
+  const checkoutPayment =
+    checkoutQuote?.initialPaymentAmount ??
+    (paymentPlan === "pay_now"
+      ? checkoutGrandTotal
+      : paymentPlan === "partial"
+        ? Number(partialAmount || 0)
+        : 0);
+
+  const updatePaymentPlan = (value: "pay_now" | "partial" | "pay_later") => {
+    setPaymentPlan(value);
+    if (value === "pay_later") setPaymentMethod("cash_on_delivery");
+    if (value !== "pay_later" && paymentMethod === "cash_on_delivery") {
+      setPaymentMethod("bank_transfer");
+    }
+  };
 
   const renderCartItems = () => {
     if (cart.length === 0) {
@@ -542,6 +673,18 @@ export default function WarehouseStorefrontPage() {
   const renderCheckoutForm = () => {
     return (
       <div className="space-y-4 pt-4 border-t border-zinc-200">
+        <div className="space-y-2">
+          <Label className="text-xs font-bold text-zinc-600">
+            Delivery Method
+          </Label>
+          <DeliveryModeSelector
+            value={deliveryMode}
+            onChange={setDeliveryMode}
+            allowSelfPickup={checkoutConfiguration.allowSelfPickup}
+            allowCourier={checkoutConfiguration.allowCourier}
+          />
+        </div>
+
         <h3 className="text-xs font-bold text-zinc-800 uppercase tracking-widest flex items-center gap-1.5">
           <MapPin className="w-4 h-4 text-emerald-600" />
           Receiving Details
@@ -646,6 +789,27 @@ export default function WarehouseStorefrontPage() {
           </div>
         </div>
 
+        <div className="space-y-2">
+          <Label className="text-xs font-bold text-zinc-600">
+            Payment Terms
+          </Label>
+          <PaymentPlanSelector
+            value={paymentPlan}
+            onChange={updatePaymentPlan}
+            allowPartial
+            partialAmount={partialAmount}
+            onPartialAmountChange={setPartialAmount}
+            grandTotal={checkoutGrandTotal}
+          />
+          {paymentPlan === "pay_later" &&
+            checkoutConfiguration.wholesaleCreditDays > 0 && (
+              <p className="text-xs text-zinc-500">
+                Payment is due within{" "}
+                {checkoutConfiguration.wholesaleCreditDays} days.
+              </p>
+            )}
+        </div>
+
         <div className="space-y-1.5">
           <Label
             htmlFor="paymentMethod"
@@ -655,7 +819,11 @@ export default function WarehouseStorefrontPage() {
           </Label>
           <Select
             value={paymentMethod}
-            onValueChange={(v) => setPaymentMethod(v as any)}
+            onValueChange={(value) => {
+              const method = value as typeof paymentMethod;
+              setPaymentMethod(method);
+              if (method === "cash_on_delivery") setPaymentPlan("pay_later");
+            }}
           >
             <SelectTrigger
               id="paymentMethod"
@@ -664,7 +832,11 @@ export default function WarehouseStorefrontPage() {
               <SelectValue placeholder="Select payment method" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="cash_on_delivery" className="text-xs">
+              <SelectItem
+                value="cash_on_delivery"
+                className="text-xs"
+                disabled={paymentPlan !== "pay_later"}
+              >
                 Cash on delivery
               </SelectItem>
               <SelectItem value="bkash" className="text-xs">
@@ -681,6 +853,36 @@ export default function WarehouseStorefrontPage() {
               </SelectItem>
             </SelectContent>
           </Select>
+        </div>
+
+        <PromotionCodeControl
+          value={promotionInput}
+          appliedCode={checkoutQuote?.promotionCode}
+          error={
+            checkoutQuoteQuery.error instanceof Error
+              ? checkoutQuoteQuery.error.message
+              : null
+          }
+          isApplying={checkoutQuoteQuery.isFetching}
+          onChange={(value) => {
+            setPromotionInput(value);
+            setPromotionCode(null);
+          }}
+          onApply={() => setPromotionCode(promotionInput.trim().toUpperCase())}
+          onClear={() => {
+            setPromotionCode(null);
+            setPromotionInput("");
+          }}
+        />
+
+        <div className="space-y-2">
+          <Label className="text-xs font-bold text-zinc-600">
+            Invoice Contact
+          </Label>
+          <InvoiceContactFields
+            value={invoiceContact}
+            onChange={setInvoiceContact}
+          />
         </div>
 
         <div className="space-y-1.5">
@@ -937,6 +1139,34 @@ export default function WarehouseStorefrontPage() {
                         ৳ {cartTotal.toLocaleString()}
                       </span>
                     </div>
+                    {checkoutDiscount > 0 && (
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="text-zinc-500 font-semibold">
+                          Discount
+                        </span>
+                        <span className="font-bold text-emerald-700 font-mono">
+                          -৳ {checkoutDiscount.toLocaleString()}
+                        </span>
+                      </div>
+                    )}
+                    {checkoutTax > 0 && (
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="text-zinc-500 font-semibold">Tax</span>
+                        <span className="font-bold text-zinc-900 font-mono">
+                          ৳ {checkoutTax.toLocaleString()}
+                        </span>
+                      </div>
+                    )}
+                    {checkoutShipping > 0 && (
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="text-zinc-500 font-semibold">
+                          Shipping
+                        </span>
+                        <span className="font-bold text-zinc-900 font-mono">
+                          ৳ {checkoutShipping.toLocaleString()}
+                        </span>
+                      </div>
+                    )}
                     <div className="flex items-center justify-between text-xs pt-1.5 border-t">
                       <span className="text-zinc-500 font-semibold">
                         Order Total
@@ -948,7 +1178,25 @@ export default function WarehouseStorefrontPage() {
                             : "text-emerald-600"
                         }`}
                       >
-                        ৳ {cartTotal.toLocaleString()}
+                        ৳ {checkoutGrandTotal.toLocaleString()}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-zinc-500 font-semibold">
+                        Pay now
+                      </span>
+                      <span className="font-bold text-emerald-700 font-mono">
+                        ৳ {checkoutPayment.toLocaleString()}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between text-xs">
+                      <span className="text-zinc-500 font-semibold">Due</span>
+                      <span className="font-bold text-amber-700 font-mono">
+                        ৳{" "}
+                        {Math.max(
+                          0,
+                          checkoutGrandTotal - checkoutPayment,
+                        ).toLocaleString()}
                       </span>
                     </div>
                   </div>
@@ -960,7 +1208,11 @@ export default function WarehouseStorefrontPage() {
                         ? "bg-blue-600 hover:bg-blue-700"
                         : "bg-emerald-600 hover:bg-emerald-700"
                     }`}
-                    disabled={orderMutation.isPending}
+                    disabled={
+                      orderMutation.isPending ||
+                      checkoutQuoteQuery.isFetching ||
+                      !checkoutQuote
+                    }
                     onClick={handlePlaceOrder}
                   >
                     {orderMutation.isPending ? (
