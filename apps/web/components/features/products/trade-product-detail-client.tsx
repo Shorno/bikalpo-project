@@ -124,6 +124,9 @@ export function ProductDetailClient({
   const [cylinderSaleMode, setCylinderSaleMode] = useState<CylinderSaleMode>(
     sorted[0]?.cylinderSale?.defaultMode ?? "new",
   );
+  const [selectedQuantity, setSelectedQuantity] = useState(
+    Math.max(1, Number(sorted[0]?.orderMin) || 1),
+  );
 
   // Seller selection state
   const [selectedSeller, setSelectedSeller] = useState<{
@@ -203,6 +206,7 @@ export function ProductDetailClient({
                   onClick={() => {
                     setSelectedId(v.id);
                     setCylinderSaleMode(v.cylinderSale?.defaultMode ?? "new");
+                    setSelectedQuantity(Math.max(1, Number(v.orderMin) || 1));
                   }}
                   className={cn(
                     "relative px-4 py-2.5 rounded-lg border-2 text-sm font-medium transition-all",
@@ -254,6 +258,7 @@ export function ProductDetailClient({
               value={cylinderSaleMode}
               onChange={setCylinderSaleMode}
               hint
+              quantity={selectedQuantity}
             />
           ) : (
             <CylinderTypePreview exchangeAvailable={false} />
@@ -307,6 +312,7 @@ export function ProductDetailClient({
         </div>
       ) : (
         <ProductActions
+          key={selected?.id ?? "product-actions"}
           product={{
             id: product.id,
             name: product.name,
@@ -324,6 +330,7 @@ export function ProductDetailClient({
           cylinderSaleMode={
             purchaseMode === "open_order" ? cylinderSaleMode : undefined
           }
+          onQuantityChange={setSelectedQuantity}
           variant={purchaseMode === "open_order" ? "emerald" : "default"}
           orderMin={selected?.orderMin ? Number(selected.orderMin) : undefined}
           orderMax={selected?.orderMax ? Number(selected.orderMax) : undefined}

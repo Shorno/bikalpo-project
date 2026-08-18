@@ -39,13 +39,16 @@ export function CylinderTypeRadios({
   onChange,
   size = "card",
   hint = false,
+  quantity = 1,
 }: {
   value: CylinderSaleMode;
   onChange: (mode: CylinderSaleMode) => void;
   size?: "card" | "modal";
   hint?: boolean;
+  quantity?: number;
 }) {
   const isModal = size === "modal";
+  const returnQuantity = Math.max(1, Math.floor(quantity));
 
   return (
     <div>
@@ -89,7 +92,9 @@ export function CylinderTypeRadios({
         <p className="mt-1.5 text-[11px] leading-4 text-zinc-500">
           {value === "new"
             ? "No empty cylinder returned"
-            : "Return 1 empty cylinder"}
+            : `Return ${returnQuantity} empty cylinder${
+                returnQuantity === 1 ? "" : "s"
+              }`}
         </p>
       ) : null}
     </div>
@@ -118,7 +123,9 @@ export function CylinderTypePreview({
       </span>
       <div
         aria-label="Available cylinder sale types"
-        className="inline-grid grid-cols-2 rounded-md border border-zinc-200 bg-zinc-100 p-px"
+        className={`inline-grid rounded-md border border-zinc-200 bg-zinc-100 p-px ${
+          exchangeAvailable ? "grid-cols-2" : "grid-cols-1"
+        }`}
         role="list"
       >
         {(
@@ -131,11 +138,11 @@ export function CylinderTypePreview({
             <span
               className={`inline-flex items-center justify-center rounded-[5px] px-2.5 font-medium ${
                 isModal ? "h-7 text-xs" : "h-6 text-[11px]"
-              } bg-white text-zinc-700`}
+              } whitespace-nowrap bg-white text-zinc-700`}
               key={mode}
               role="listitem"
             >
-              {mode === "exchange" ? "Exchange available" : "New"}
+              {mode === "exchange" ? "Exchange" : "New"}
             </span>
           );
         })}

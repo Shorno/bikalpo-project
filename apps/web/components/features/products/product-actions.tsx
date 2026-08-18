@@ -26,6 +26,7 @@ interface ProductActionsProps {
   shopId?: string;
   purchaseMode?: "open_order" | "direct";
   cylinderSaleMode?: "new" | "exchange";
+  onQuantityChange?: (quantity: number) => void;
 }
 
 export function ProductActions({
@@ -40,6 +41,7 @@ export function ProductActions({
   shopId,
   purchaseMode = shopId ? "direct" : "open_order",
   cylinderSaleMode,
+  onQuantityChange,
 }: ProductActionsProps) {
   const effectiveMin = Math.max(1, orderMin);
   const effectiveMax =
@@ -59,6 +61,7 @@ export function ProductActions({
     const next = quantity + step;
     if (next <= effectiveMax) {
       setQuantity(next);
+      onQuantityChange?.(next);
     }
   };
 
@@ -66,6 +69,7 @@ export function ProductActions({
     const next = quantity - step;
     if (next >= effectiveMin) {
       setQuantity(next);
+      onQuantityChange?.(next);
     }
   };
 
@@ -103,6 +107,7 @@ export function ProductActions({
               className="h-10 w-10 rounded-r-none"
               onClick={handleDecrement}
               disabled={quantity <= 1 || isAdding}
+              aria-label="Decrease quantity"
             >
               <Minus className="h-4 w-4" />
             </Button>
@@ -113,6 +118,7 @@ export function ProductActions({
               className="h-10 w-10 rounded-l-none"
               onClick={handleIncrement}
               disabled={quantity >= effectiveMax || isAdding}
+              aria-label="Increase quantity"
             >
               <Plus className="h-4 w-4" />
             </Button>
