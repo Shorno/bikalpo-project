@@ -30,6 +30,7 @@ interface ProductDetailsViewProps {
   purchaseMode: "open_order" | "direct";
   directShopId?: string;
   previewMode?: boolean;
+  actionSlot?: ReactNode;
   relatedProducts?: ReactNode;
 }
 
@@ -41,6 +42,7 @@ export function ProductDetailsView({
   purchaseMode,
   directShopId,
   previewMode = false,
+  actionSlot,
   relatedProducts,
 }: ProductDetailsViewProps) {
   const allImages = [product.image, ...product.images];
@@ -112,26 +114,28 @@ export function ProductDetailsView({
                 </h1>
               </div>
 
-              <ProductDetailClient
-                product={{
-                  id: product.id,
-                  name: product.name,
-                  price: product.price,
-                  image: product.image,
-                  size: product.size,
-                  inStock: product.inStock,
-                  stockQuantity: product.stockQuantity,
-                }}
-                variants={variants}
-                categoryName={product.category.name}
-                brandName={product.brand?.name}
-                subCategoryName={product.subCategory?.name}
-                productSize={product.size}
-                features={product.features}
-                previewMode={previewMode}
-                purchaseMode={purchaseMode}
-                directShopId={directShopId}
-              />
+              {actionSlot ?? (
+                <ProductDetailClient
+                  product={{
+                    id: product.id,
+                    name: product.name,
+                    price: product.price,
+                    image: product.image,
+                    size: product.size,
+                    inStock: product.inStock,
+                    stockQuantity: product.stockQuantity,
+                  }}
+                  variants={variants}
+                  categoryName={product.category.name}
+                  brandName={product.brand?.name}
+                  subCategoryName={product.subCategory?.name}
+                  productSize={product.size}
+                  features={product.features}
+                  previewMode={previewMode}
+                  purchaseMode={purchaseMode}
+                  directShopId={directShopId}
+                />
+              )}
 
               <div className="mt-8 border-t pt-6">
                 <div className="grid grid-cols-2 gap-4">

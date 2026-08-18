@@ -1,11 +1,21 @@
 "use client";
 
 import type { FulfillmentMode } from "@bikalpo-project/db/fulfillment";
-import { Eye, Minus, Package, Plus, ShoppingCart } from "lucide-react";
+import { Eye, Minus, Package, Plus, ShoppingCart, Star } from "lucide-react";
 import Image from "next/image";
+import Link from "next/link";
 import { useState } from "react";
+import {
+  type CylinderSaleMode,
+  CylinderTypeRadios,
+  shortVariantLabel,
+} from "@/components/features/products/cylinder-type-radios";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { warehouseCartLineKey } from "@/lib/warehouse-storefront-cart";
+
+export type WarehouseCylinderSaleMode = CylinderSaleMode;
+export { CylinderTypeRadios, shortVariantLabel, warehouseCartLineKey };
 
 export interface WarehouseProductVariantOption {
   inventoryId: number;
@@ -21,11 +31,14 @@ export interface WarehouseProductVariantOption {
   packType?: string;
   fulfillmentMode?: FulfillmentMode;
   targetVariantId?: number | null;
+  canExchange?: boolean;
 }
 
 export interface WarehouseProduct {
   id: number;
   name: string;
+  slug?: string | null;
+  categorySlug?: string | null;
   brand: string;
   sku?: string | null;
   image: string;
@@ -40,48 +53,22 @@ export interface WarehouseProduct {
   stockStatus: "high" | "medium" | "low";
   variants: WarehouseProductVariantOption[];
   selectedVariant?: WarehouseProductVariantOption;
+  canExchange?: boolean;
+  cylinderSaleMode?: WarehouseCylinderSaleMode;
 }
 
 interface WarehouseProductCardProps {
   product: WarehouseProduct;
-  onViewDetails?: (product: WarehouseProduct) => void;
+  detailHref?: string;
   onBuyNow?: (product: WarehouseProduct) => void;
   mode?: "default" | "retailer" | "w2w" | "view-only";
   cart?: any[];
   onAddToCart?: (product: WarehouseProduct) => void;
-  onUpdateQuantity?: (variantId: number, delta: number) => void;
-}
-
-/**
- * Compact display label for a variant chip: drops words already present in the
- * product name (e.g. "Cylinder") and removes redundant duplicate tokens so
- * "45 KG Cylinder · 45" reads as "45 KG". Display-only — cart keys off variantId.
- */
-export function shortVariantLabel(label: string, productName: string): string {
-  const nameWords = new Set(
-    productName.toLowerCase().split(/\s+/).filter(Boolean),
-  );
-  const parts = label
-    .split("·")
-    .map((part) =>
-      part
-        .trim()
-        .split(/\s+/)
-        .filter((word) => !nameWords.has(word.toLowerCase()))
-        .join(" ")
-        .trim(),
-    )
-    .filter(Boolean);
-  const deduped = parts.filter(
-    (part, i) =>
-      !parts.some(
-        (other, j) =>
-          j !== i &&
-          other.length > part.length &&
-          other.toLowerCase().includes(part.toLowerCase()),
-      ),
-  );
-  return deduped.join(" · ").trim() || label;
+  onUpdateQuantity?: (
+    variantId: number,
+    delta: number,
+    cylinderSaleMode?: WarehouseCylinderSaleMode,
+  ) => void;
 }
 
 function getStockDot(status: "high" | "medium" | "low") {
@@ -97,7 +84,7 @@ function getStockDot(status: "high" | "medium" | "low") {
 
 export function WarehouseProductCard({
   product,
-  onViewDetails,
+  detailHref,
   onBuyNow,
   mode = "default",
   cart = [],
@@ -108,6 +95,8 @@ export function WarehouseProductCard({
   const [selectedVariantId, setSelectedVariantId] = useState(
     product.selectedVariant?.variantId ?? product.variants[0]?.variantId,
   );
+  const [cylinderSaleMode, setCylinderSaleMode] =
+    useState<WarehouseCylinderSaleMode>("exchange");
   const selectedVariant =
     product.variants.find(
       (variant) => variant.variantId === selectedVariantId,
@@ -128,18 +117,50 @@ export function WarehouseProductCard({
         selectedVariant,
       }
     : product;
-
-  const inCart = cart?.find(
-    (i) =>
-      i.variantId ===
-      (displayProduct.selectedVariant?.variantId || displayProduct.id),
+  const listingCanExchange = Boolean(
+    selectedVariant?.canExchange ?? product.canExchange,
   );
+  const previewCylinderSaleMode: WarehouseCylinderSaleMode = listingCanExchange
+    ? cylinderSaleMode
+    : "new";
+  const effectiveCylinderSaleMode: WarehouseCylinderSaleMode =
+    mode === "retailer" ? previewCylinderSaleMode : "new";
+  const variantId =
+    displayProduct.selectedVariant?.variantId || displayProduct.id;
+  const inCart = cart?.find(
+    (item) =>
+      warehouseCartLineKey(item.variantId, item.cylinderSaleMode) ===
+      warehouseCartLineKey(variantId, effectiveCylinderSaleMode),
+  );
+  const hasRatings = product.rating > 0 || product.reviewCount > 0;
+  const productForCart: WarehouseProduct = {
+    ...displayProduct,
+    canExchange: listingCanExchange,
+    cylinderSaleMode: effectiveCylinderSaleMode,
+  };
 
   return (
     <div className="group flex flex-col bg-white rounded-xl border border-zinc-200 overflow-hidden hover:border-zinc-300 hover:shadow-sm transition-all duration-200">
       {/* Product Image */}
       <div className="relative aspect-[4/3] bg-zinc-50 border-b border-zinc-100 overflow-hidden shrink-0">
-        {!imageError && product.image ? (
+        {detailHref ? (
+          <Link href={detailHref} className="block size-full">
+            {!imageError && product.image ? (
+              <Image
+                src={product.image}
+                alt={product.name}
+                fill
+                className="object-cover group-hover:scale-[1.02] transition-transform duration-300"
+                onError={() => setImageError(true)}
+                unoptimized={product.image.startsWith("http")}
+              />
+            ) : (
+              <div className="flex size-full items-center justify-center bg-zinc-50">
+                <Package className="w-12 h-12 text-zinc-300" />
+              </div>
+            )}
+          </Link>
+        ) : !imageError && product.image ? (
           <Image
             src={product.image}
             alt={product.name}
@@ -167,16 +188,24 @@ export function WarehouseProductCard({
 
       {/* Product Info */}
       <div className="flex flex-1 flex-col p-4">
-        {/* Brand + name */}
+        {/* Brand + title */}
         <div>
           {product.brand && (
             <span className="block text-[11px] font-medium text-zinc-400">
               {product.brand}
             </span>
           )}
-          <h3 className="mt-0.5 text-sm font-semibold text-zinc-900 leading-snug line-clamp-2 min-h-[40px]">
-            {product.name}
-          </h3>
+          {detailHref ? (
+            <Link href={detailHref} className="block">
+              <h3 className="mt-0.5 text-sm font-semibold text-zinc-900 leading-snug line-clamp-2 min-h-[40px] transition-colors hover:text-blue-700">
+                {product.name}
+              </h3>
+            </Link>
+          ) : (
+            <h3 className="mt-0.5 text-sm font-semibold text-zinc-900 leading-snug line-clamp-2 min-h-[40px]">
+              {product.name}
+            </h3>
+          )}
           {displayProduct.sku && (
             <span className="mt-1 block text-[11px] text-zinc-400">
               SKU {displayProduct.sku}
@@ -184,11 +213,47 @@ export function WarehouseProductCard({
           )}
         </div>
 
-        {/* Variant selector */}
+        {hasRatings && (
+          <div className="mt-1.5 flex items-center gap-1 text-[11px] text-zinc-500">
+            <Star className="h-3 w-3 fill-amber-400 text-amber-400" />
+            <span className="font-medium tabular-nums text-zinc-700">
+              {product.rating.toFixed(1)}
+            </span>
+            {product.reviewCount > 0 && (
+              <span className="text-zinc-400">
+                ({product.reviewCount.toLocaleString()} orders)
+              </span>
+            )}
+          </div>
+        )}
+
+        {/* Price + MOQ */}
+        <div className="mt-3 pt-3 border-t border-zinc-100 flex items-end justify-between gap-3">
+          <div className="min-w-0">
+            <span className="block text-[11px] text-zinc-400">Price</span>
+            <div className="mt-0.5 flex items-baseline gap-1">
+              <span className="text-lg font-semibold text-zinc-900 tabular-nums whitespace-nowrap">
+                ৳ {displayProduct.pricePerUnit}
+              </span>
+              <span className="text-[11px] text-zinc-400 whitespace-nowrap">
+                / {shortVariantLabel(displayProduct.unit, product.name)}
+              </span>
+            </div>
+          </div>
+          <div className="shrink-0 text-right">
+            <span className="block text-[11px] text-zinc-400">MOQ</span>
+            <span className="mt-0.5 block text-xs font-medium text-zinc-700 tabular-nums whitespace-nowrap">
+              {displayProduct.moq}{" "}
+              {shortVariantLabel(displayProduct.moqUnit, product.name)}
+            </span>
+          </div>
+        </div>
+
+        {/* Size — existing variant chips */}
         {product.variants.length > 1 && (
           <div className="mt-3">
             <span className="mb-1.5 block text-[11px] font-medium text-zinc-400">
-              Type
+              Size
             </span>
             <div className="flex flex-wrap gap-1.5">
               {product.variants.map((variant) => {
@@ -212,30 +277,17 @@ export function WarehouseProductCard({
           </div>
         )}
 
-        {/* Price + MOQ */}
-        <div className="mt-3 pt-3 border-t border-zinc-100 flex items-end justify-between gap-3">
-          <div className="min-w-0">
-            <span className="block text-[11px] text-zinc-400">Price</span>
-            <div className="mt-0.5 flex items-baseline gap-1">
-              <span className="text-lg font-semibold text-zinc-900 tabular-nums whitespace-nowrap">
-                ৳ {displayProduct.pricePerUnit}
-              </span>
-              <span className="text-[11px] text-zinc-400 whitespace-nowrap">
-                / {shortVariantLabel(displayProduct.unit, product.name)}
-              </span>
-            </div>
+        {listingCanExchange && (
+          <div className="mt-3">
+            <CylinderTypeRadios
+              value={previewCylinderSaleMode}
+              onChange={setCylinderSaleMode}
+            />
           </div>
-          <div className="shrink-0 text-right">
-            <span className="block text-[11px] text-zinc-400">Min. order</span>
-            <span className="mt-0.5 block text-xs font-medium text-zinc-700 tabular-nums whitespace-nowrap">
-              {displayProduct.moq}{" "}
-              {shortVariantLabel(displayProduct.moqUnit, product.name)}
-            </span>
-          </div>
-        </div>
+        )}
 
         {/* Actions */}
-        <div className="mt-4">
+        <div className="mt-auto pt-4">
           {mode === "view-only" ? (
             <div className="flex gap-2">
               <Button
@@ -250,10 +302,19 @@ export function WarehouseProductCard({
                 variant="outline"
                 size="sm"
                 className="h-9 px-3 text-xs font-medium border-zinc-200 text-zinc-700 hover:bg-zinc-50 hover:text-zinc-900 gap-1.5 rounded-lg transition-colors"
-                onClick={() => onViewDetails?.(displayProduct)}
+                asChild={Boolean(detailHref)}
               >
-                <Eye className="w-3.5 h-3.5" />
-                Details
+                {detailHref ? (
+                  <Link href={detailHref}>
+                    <Eye className="w-3.5 h-3.5" />
+                    Details
+                  </Link>
+                ) : (
+                  <>
+                    <Eye className="w-3.5 h-3.5" />
+                    Details
+                  </>
+                )}
               </Button>
             </div>
           ) : mode === "w2w" || mode === "retailer" ? (
@@ -268,9 +329,9 @@ export function WarehouseProductCard({
                     onClick={(e) => {
                       e.stopPropagation();
                       onUpdateQuantity?.(
-                        displayProduct.selectedVariant?.variantId ||
-                          displayProduct.id,
+                        variantId,
                         -1,
+                        effectiveCylinderSaleMode,
                       );
                     }}
                   >
@@ -287,9 +348,9 @@ export function WarehouseProductCard({
                     onClick={(e) => {
                       e.stopPropagation();
                       onUpdateQuantity?.(
-                        displayProduct.selectedVariant?.variantId ||
-                          displayProduct.id,
+                        variantId,
                         1,
+                        effectiveCylinderSaleMode,
                       );
                     }}
                   >
@@ -306,24 +367,30 @@ export function WarehouseProductCard({
                   }`}
                   onClick={(e) => {
                     e.stopPropagation();
-                    onAddToCart?.(displayProduct);
+                    onAddToCart?.(productForCart);
                   }}
                 >
-                  <Plus className="w-3.5 h-3.5" />
-                  Add to Cart
+                  <ShoppingCart className="w-3.5 h-3.5" />
+                  Buy Now
                 </Button>
               )}
               <Button
                 variant="outline"
                 size="sm"
                 className="h-9 px-3 text-xs font-medium border-zinc-200 text-zinc-700 hover:bg-zinc-50 hover:text-zinc-900 gap-1.5 rounded-lg transition-colors"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onViewDetails?.(displayProduct);
-                }}
+                asChild={Boolean(detailHref)}
               >
-                <Eye className="w-3.5 h-3.5" />
-                Details
+                {detailHref ? (
+                  <Link href={detailHref}>
+                    <Eye className="w-3.5 h-3.5" />
+                    Details
+                  </Link>
+                ) : (
+                  <>
+                    <Eye className="w-3.5 h-3.5" />
+                    Details
+                  </>
+                )}
               </Button>
             </div>
           ) : (
@@ -340,10 +407,19 @@ export function WarehouseProductCard({
                 variant="outline"
                 size="sm"
                 className="h-9 px-3 text-xs font-medium border-zinc-200 text-zinc-700 hover:bg-zinc-50 hover:text-zinc-900 gap-1.5 rounded-lg transition-colors"
-                onClick={() => onViewDetails?.(displayProduct)}
+                asChild={Boolean(detailHref)}
               >
-                <Eye className="w-3.5 h-3.5" />
-                Details
+                {detailHref ? (
+                  <Link href={detailHref}>
+                    <Eye className="w-3.5 h-3.5" />
+                    Details
+                  </Link>
+                ) : (
+                  <>
+                    <Eye className="w-3.5 h-3.5" />
+                    Details
+                  </>
+                )}
               </Button>
             </div>
           )}
@@ -366,19 +442,31 @@ export function WarehouseProductCardSkeleton() {
         <div>
           <Skeleton className="h-3 w-14 mb-2" />
           <Skeleton className="h-4 w-5/6 mb-1.5" />
-          <Skeleton className="h-4 w-2/3" />
-        </div>
-
-        {/* Variant chips */}
-        <div className="mt-3 flex gap-1.5">
-          <Skeleton className="h-7 w-14 rounded-md" />
-          <Skeleton className="h-7 w-14 rounded-md" />
+          <Skeleton className="h-3 w-24" />
         </div>
 
         {/* Price + MOQ */}
         <div className="mt-3 pt-3 border-t border-zinc-100 flex items-end justify-between">
           <Skeleton className="h-6 w-24" />
           <Skeleton className="h-4 w-16" />
+        </div>
+
+        {/* Size chips */}
+        <div className="mt-3">
+          <Skeleton className="h-3 w-8 mb-1.5" />
+          <div className="flex gap-1.5">
+            <Skeleton className="h-7 w-14 rounded-md" />
+            <Skeleton className="h-7 w-14 rounded-md" />
+          </div>
+        </div>
+
+        {/* Type chips */}
+        <div className="mt-3">
+          <Skeleton className="h-3 w-8 mb-1.5" />
+          <div className="flex gap-1.5">
+            <Skeleton className="h-7 w-[4.5rem] rounded-md" />
+            <Skeleton className="h-7 w-12 rounded-md" />
+          </div>
         </div>
 
         {/* Actions */}

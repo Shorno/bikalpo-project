@@ -27,6 +27,7 @@ import { OrderFlowStepper } from "@/components/features/orders/order-flow-steppe
 import {
   formatRetailerOrderItemQuantity,
   getRetailerOrderFulfillmentSummary,
+  getRetailerOrderItemCylinderSaleLabel,
   getRetailerOrderItemEffectiveQty,
   getRetailerOrderItemOrderedQty,
   getRetailerOrderItemReceivedQty,
@@ -491,12 +492,7 @@ function OrderItems({
                     <ProductIdentity item={item} />
                   </td>
                   <td className="px-3 py-3">
-                    <Badge
-                      variant="outline"
-                      className="rounded-md font-normal text-muted-foreground"
-                    >
-                      {item.supplyModeLabel || formatLabel(item.supplyMode)}
-                    </Badge>
+                    <FulfillmentBadges item={item} />
                   </td>
                   <td className="px-3 py-3 text-right font-mono text-xs tabular-nums text-muted-foreground">
                     {formatRetailerOrderItemQuantity(item.quantity, item)}
@@ -574,12 +570,7 @@ function OrderItems({
             <article key={item.id} className="p-4">
               <div className="flex items-start justify-between gap-3">
                 <ProductIdentity item={item} />
-                <Badge
-                  variant="outline"
-                  className="shrink-0 rounded-md font-normal text-muted-foreground"
-                >
-                  {item.supplyModeLabel || formatLabel(item.supplyMode)}
-                </Badge>
+                <FulfillmentBadges item={item} align="end" />
               </div>
 
               <dl className="mt-4 grid grid-cols-2 gap-x-5 gap-y-3 sm:grid-cols-5">
@@ -663,6 +654,45 @@ function ProductIdentity({ item }: { item: any }) {
           {item.productSize ? ` · ${item.productSize}` : ""}
         </p>
       </div>
+    </div>
+  );
+}
+
+function FulfillmentBadges({
+  item,
+  align = "start",
+}: {
+  item: any;
+  align?: "start" | "end";
+}) {
+  const cylinderSaleLabel = getRetailerOrderItemCylinderSaleLabel(item);
+
+  return (
+    <div
+      className={cn(
+        "flex flex-col gap-1",
+        align === "end" ? "items-end" : "items-start",
+      )}
+    >
+      <Badge
+        variant="outline"
+        className="rounded-md font-normal text-muted-foreground"
+      >
+        {item.supplyModeLabel || formatLabel(item.supplyMode)}
+      </Badge>
+      {cylinderSaleLabel ? (
+        <Badge
+          variant="outline"
+          className={cn(
+            "rounded-md font-medium",
+            cylinderSaleLabel === "Exchange"
+              ? "border-zinc-900 bg-zinc-900 text-white"
+              : "border-zinc-200 bg-white text-zinc-700",
+          )}
+        >
+          {cylinderSaleLabel}
+        </Badge>
+      ) : null}
     </div>
   );
 }

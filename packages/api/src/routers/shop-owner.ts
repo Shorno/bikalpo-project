@@ -69,6 +69,7 @@ import { z } from "zod";
 
 import { publicProcedure, shopOwnerProcedure } from "../index";
 import { resolveRetailerOfferLinePrice } from "../services/open-order-domain";
+import { resolveRetailerCylinderSale } from "../services/retailer-cylinder-sale";
 import {
     recalculateOffersForInventory,
     reconcileOpenOrder,
@@ -100,6 +101,7 @@ import {
     type StructuredBrandStockSourceRow,
     type StructuredStockVariant,
 } from "./helpers/structured-stock-overview";
+import { warehouseVariantAllowsCylinderExchange } from "./helpers/warehouse-cylinder-exchange";
 import { resolveWarehouseOrderMode } from "./helpers/warehouse-order-fulfillment";
 import { shopProductConfigEndpoints } from "./shop-product-config";
 
@@ -6575,7 +6577,7 @@ const warehouseOrderQueries = {
                         : 0;
                 if (
                     cylinderSaleMode === "exchange" &&
-                    (!inv.variant?.exchangeEnabled || !inv.variant?.product?.isReturnablePack)
+                    !warehouseVariantAllowsCylinderExchange(inv.variant)
                 ) {
                     throw new ORPCError("BAD_REQUEST", {
                         message: `${inv.variant?.product?.name || "This product"} is not configured for cylinder exchange`,
@@ -6906,14 +6908,22 @@ const openOrderEndpoints = {
                             productImage: orderItem.productImage,
                             productSize: orderItem.productSize,
                             quantity: orderItem.quantity,
+                            cylinderSaleMode: orderItem.cylinderSaleMode,
                             referencePrice: openOrderBidItem.platformPrice,
                             currentStorePrice: inventory.retailPrice,
                             offerUnitPrice: openOrderBidItem.sellerPrice,
+                            offerNewUnitPrice: openOrderBidItem.sellerNewPrice,
+                            offerExchangeCreditAmount:
+                                openOrderBidItem.exchangeCreditAmount,
+                            exchangeEnabled: productVariant.exchangeEnabled,
+                            currentExchangeCreditAmount:
+                                productVariant.exchangeCreditAmount,
                             inventoryId: inventory.id,
                         })
                         .from(openOrderBidItem)
                         .innerJoin(orderItem, eq(orderItem.id, openOrderBidItem.orderItemId))
                         .innerJoin(inventory, eq(inventory.id, openOrderBidItem.inventoryId))
+                        .innerJoin(productVariant, eq(productVariant.id, inventory.variantId))
                         .where(eq(openOrderBidItem.bidId, offer.bidId));
                     return {
                         ...offer,
@@ -6932,8 +6942,28 @@ const openOrderEndpoints = {
                         items: items.map((item) => {
                             const currentStorePrice = Number(item.currentStorePrice ?? 0);
                             const offerUnitPrice = item.offerUnitPrice == null ? null : Number(item.offerUnitPrice);
+                            let selectionValid = true;
+                            let liveCylinderSale: ReturnType<typeof resolveRetailerCylinderSale>;
+                            try {
+                                liveCylinderSale = resolveRetailerCylinderSale({
+                                    newUnitPrice: currentStorePrice,
+                                    exchangeEnabled: Boolean(item.exchangeEnabled),
+                                    exchangeCreditAmount: item.currentExchangeCreditAmount ?? "0",
+                                    requestedMode: item.cylinderSaleMode,
+                                    quantity: item.quantity,
+                                });
+                            } catch {
+                                selectionValid = false;
+                                liveCylinderSale = resolveRetailerCylinderSale({
+                                    newUnitPrice: currentStorePrice,
+                                    exchangeEnabled: false,
+                                    exchangeCreditAmount: "0",
+                                    requestedMode: "new",
+                                    quantity: item.quantity,
+                                });
+                            }
                             const resolvedPrice = resolveRetailerOfferLinePrice({
-                                currentStorePrice,
+                                currentStorePrice: Number(liveCylinderSale.effectiveUnitPrice),
                                 offerUnitPrice,
                                 offerDeadline: offer.offerDeadline ?? new Date(0),
                                 priceFrozenAt: offer.priceFrozenAt,
@@ -6942,9 +6972,19 @@ const openOrderEndpoints = {
                                 ...item,
                                 referencePrice: Number(item.referencePrice),
                                 currentStorePrice,
+                                currentEffectivePrice: Number(liveCylinderSale.effectiveUnitPrice),
+                                currentExchangeCreditAmount: Number(liveCylinderSale.exchangeCreditAmount),
+                                offerNewUnitPrice:
+                                    item.offerNewUnitPrice == null
+                                        ? null
+                                        : Number(item.offerNewUnitPrice),
+                                offerExchangeCreditAmount: Number(
+                                    item.offerExchangeCreditAmount ?? 0,
+                                ),
                                 offerUnitPrice,
                                 retailerPrice: resolvedPrice.displayPrice,
                                 priceSource: resolvedPrice.source,
+                                selectionValid,
                                 pricingUrl: `/shop/dashboard/pricing?inventoryId=${item.inventoryId}`,
                             };
                         }),

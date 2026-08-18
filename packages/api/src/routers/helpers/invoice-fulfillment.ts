@@ -2,7 +2,10 @@ import { invoice, order, orderItem } from "@bikalpo-project/db/schema";
 import { eq } from "drizzle-orm";
 import { convertB2bOrderToRetailInventory } from "./b2b-conversion";
 import { consumeB2bOrderReservations } from "./b2b-inventory-movement";
-import { creditWarehouseExchangeOrder } from "./empty-pack-stock";
+import {
+    creditRetailerExchangeOrder,
+    creditWarehouseExchangeOrder,
+} from "./empty-pack-stock";
 
 type Executor = any;
 
@@ -120,14 +123,6 @@ export async function syncOrderFromDeliveredInvoice(
 
     if (
         fullyDelivered &&
-        options.markReceived &&
-        deliveredInvoice.order.orderType === "b2b"
-    ) {
-        await convertB2bOrderToRetailInventory(tx, deliveredInvoice.orderId);
-    }
-
-    if (
-        fullyDelivered &&
         deliveredInvoice.order.orderType === "b2b" &&
         deliveredInvoice.order.warehouseId
     ) {
@@ -137,6 +132,25 @@ export async function syncOrderFromDeliveredInvoice(
         });
         await creditWarehouseExchangeOrder(tx, {
             warehouseId: deliveredInvoice.order.warehouseId,
+            orderId: deliveredInvoice.orderId,
+        });
+    }
+
+    if (
+        fullyDelivered &&
+        options.markReceived &&
+        deliveredInvoice.order.orderType === "b2b"
+    ) {
+        await convertB2bOrderToRetailInventory(tx, deliveredInvoice.orderId);
+    }
+
+    if (
+        fullyDelivered &&
+        deliveredInvoice.order.orderType === "b2c" &&
+        deliveredInvoice.order.shopId
+    ) {
+        await creditRetailerExchangeOrder(tx, {
+            shopId: deliveredInvoice.order.shopId,
             orderId: deliveredInvoice.orderId,
         });
     }

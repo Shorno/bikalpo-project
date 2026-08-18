@@ -45,6 +45,13 @@ import {
     ensureWarehouseBuyerTargetVariant,
 } from "./b2b-buyer-target";
 
+/** Seller reserved stock is owned by consumeB2bOrderReservations once it has run. */
+export function shouldDeductWarehouseSellerStock(order: {
+    sellerStockConsumedAt?: Date | string | null;
+}) {
+    return !order.sellerStockConsumedAt;
+}
+
 /**
  * Convert B2B order items to retail inventory upon confirmed receipt.
  * Must be called inside the receipt transaction.
@@ -55,7 +62,13 @@ export async function convertB2bOrderToRetailInventory(tx: any, orderId: number)
     // 1. Load the order to check if it's B2B and determine source warehouse
     const orderData = await tx.query.order.findFirst({
         where: eq(order.id, orderId),
-        columns: { id: true, userId: true, orderType: true, warehouseId: true },
+        columns: {
+            id: true,
+            userId: true,
+            orderType: true,
+            warehouseId: true,
+            sellerStockConsumedAt: true,
+        },
     });
 
     if (!orderData || orderData.orderType !== "b2b") {
@@ -100,6 +113,7 @@ export async function convertB2bOrderToRetailInventory(tx: any, orderId: number)
             buyerWarehouseId: orderData.userId,
             supplierWarehouseId: sourceOwnerId,
             items,
+            deductSellerStock: shouldDeductWarehouseSellerStock(orderData),
         });
         return;
     }
@@ -502,7 +516,11 @@ export async function convertB2bOrderToRetailInventory(tx: any, orderId: number)
             ),
         });
 
-        if (sourceInv) {
+        if (shouldDeductWarehouseSellerStock(orderData)) {
+            if (!sourceInv) {
+                throw new Error(`Warehouse inventory was not found for variant ${tradeVariant.id}`);
+            }
+
             // retailQty already accounts for all modes:
             //   - pack carton:  orderedQty × packsPerCarton (e.g. 1 × 20 = 20 packs)
             //   - loose carton: orderedQty × cartonWeightKg (e.g. 1 × 50 = 50 KG)
@@ -612,8 +630,6 @@ export async function convertB2bOrderToRetailInventory(tx: any, orderId: number)
                     cartonsToConsume--;
                 }
             }
-        } else {
-            throw new Error(`Warehouse inventory was not found for variant ${tradeVariant.id}`);
         }
 
         // ─── B. Upsert shop owner's RETAIL inventory ───
@@ -660,6 +676,7 @@ async function transferB2bOrderToWarehouseInventory(
         buyerWarehouseId: string;
         supplierWarehouseId: string;
         items: any[];
+        deductSellerStock: boolean;
     },
 ) {
     console.log(
@@ -771,36 +788,38 @@ async function transferB2bOrderToWarehouseInventory(
             ),
         });
 
-        if (!sourceInv) {
-            throw new Error(`Supplier inventory is missing for variant ${item.variantId}`);
-        }
+        if (input.deductSellerStock) {
+            if (!sourceInv) {
+                throw new Error(`Supplier inventory is missing for variant ${item.variantId}`);
+            }
 
-        const released = await tx
-            .update(inventory)
-            .set({
-                reservedQty: sql`${inventory.reservedQty}::numeric - ${sourceInventoryQty}`,
-                updatedAt: new Date(),
-            })
-            .where(and(eq(inventory.id, sourceInv.id), sql`${inventory.reservedQty}::numeric >= ${sourceInventoryQty}`))
-            .returning({ id: inventory.id });
-        if (released.length === 0) {
-            throw new Error(`Reserved stock changed for variant ${item.variantId}`);
-        }
+            const released = await tx
+                .update(inventory)
+                .set({
+                    reservedQty: sql`${inventory.reservedQty}::numeric - ${sourceInventoryQty}`,
+                    updatedAt: new Date(),
+                })
+                .where(and(eq(inventory.id, sourceInv.id), sql`${inventory.reservedQty}::numeric >= ${sourceInventoryQty}`))
+                .returning({ id: inventory.id });
+            if (released.length === 0) {
+                throw new Error(`Reserved stock changed for variant ${item.variantId}`);
+            }
 
-        const allocatedCartons = await tx.query.carton.findMany({
-            where: and(eq(carton.reservedForOrderItemId, item.id), inArray(carton.status, ["reserved", "dispatched"])),
-            columns: { id: true },
-        });
-        if (allocatedCartons.length > 0) {
-            await tx
-                .update(carton)
-                .set({ status: "sold" })
-                .where(
-                    inArray(
-                        carton.id,
-                        allocatedCartons.map((row: { id: number }) => row.id),
-                    ),
-                );
+            const allocatedCartons = await tx.query.carton.findMany({
+                where: and(eq(carton.reservedForOrderItemId, item.id), inArray(carton.status, ["reserved", "dispatched"])),
+                columns: { id: true },
+            });
+            if (allocatedCartons.length > 0) {
+                await tx
+                    .update(carton)
+                    .set({ status: "sold" })
+                    .where(
+                        inArray(
+                            carton.id,
+                            allocatedCartons.map((row: { id: number }) => row.id),
+                        ),
+                    );
+            }
         }
 
         const buyerInv = await tx.query.inventory.findFirst({
@@ -820,7 +839,7 @@ async function transferB2bOrderToWarehouseInventory(
                 })
                 .where(eq(inventory.id, buyerInv.id));
         } else if (targetInventoryQty > 0) {
-            const initialPrice = sourceInv.retailPrice
+            const initialPrice = sourceInv?.retailPrice
                 ? String(sourceInv.retailPrice)
                 : item.unitPrice
                   ? String(item.unitPrice)

@@ -365,6 +365,13 @@
       "when": 1787100000000,
       "tag": "0052_warehouse_damage_item_timestamps",
       "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "7",
+      "when": 1787200000000,
+      "tag": "0053_open_order_exchange_offer_snapshots",
+      "breakpoints": true
     }
   ]
 }

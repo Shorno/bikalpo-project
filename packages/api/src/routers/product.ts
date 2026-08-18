@@ -38,6 +38,8 @@ import { z } from "zod";
 import { adminProcedure, publicProcedure } from "../index";
 import { generateSku } from "./helpers/generate-sku";
 import {
+  applyGeneratedVariantExchangeSettings,
+  attachExchangeSettingsToVariantPrices,
   buildAutoVariantRows,
   linkProductVariantsToCatalog,
   syncBrandVariantPrices,
@@ -119,6 +121,12 @@ const createProductSchema = z.object({
         consumerPrice: z
           .string()
           .regex(/^\d+(\.\d{1,2})?$/)
+          .default("0"),
+        exchangeEnabled: z.boolean().optional().default(false),
+        exchangeCreditAmount: z
+          .string()
+          .regex(/^\d+(\.\d{1,2})?$/)
+          .optional()
           .default("0"),
       }),
     )
@@ -635,6 +643,14 @@ export const productRouter = {
               variantOption: true,
             },
           },
+          variants: {
+            columns: {
+              brandId: true,
+              exchangeCreditAmount: true,
+              exchangeEnabled: true,
+              sourceVariantOptionId: true,
+            },
+          },
         },
       });
 
@@ -642,7 +658,7 @@ export const productRouter = {
         throw new ORPCError("NOT_FOUND", { message: "Product not found" });
       }
 
-      return { product: foundProduct };
+      return { product: attachExchangeSettingsToVariantPrices(foundProduct) };
     }),
 
   /**
@@ -962,6 +978,11 @@ export const productRouter = {
             })),
             settings: newProduct,
           });
+          await applyGeneratedVariantExchangeSettings(
+            tx,
+            newProduct.id,
+            variantsByBrand.get(brandId)!,
+          );
           createdProducts.push(newProduct);
         }
 
@@ -1156,6 +1177,7 @@ export const productRouter = {
           })),
           settings: updatedProduct,
         });
+        await applyGeneratedVariantExchangeSettings(db, id, variantPrices);
       }
 
       // Standalone products retain the legacy replace behavior.
@@ -1213,6 +1235,7 @@ export const productRouter = {
         }
 
         await linkProductVariantsToCatalog(db, id);
+        await applyGeneratedVariantExchangeSettings(db, id, variantPrices);
       }
 
       return { product: updatedProduct };
@@ -1357,6 +1380,14 @@ export const productRouter = {
               variantOption: true,
             },
           },
+          variants: {
+            columns: {
+              brandId: true,
+              exchangeCreditAmount: true,
+              exchangeEnabled: true,
+              sourceVariantOptionId: true,
+            },
+          },
         },
       });
 
@@ -1364,7 +1395,7 @@ export const productRouter = {
         throw new ORPCError("NOT_FOUND", { message: "Product not found" });
       }
 
-      return { product: foundProduct };
+      return { product: attachExchangeSettingsToVariantPrices(foundProduct) };
     }),
 
   /**

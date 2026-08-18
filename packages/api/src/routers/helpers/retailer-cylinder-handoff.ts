@@ -9,7 +9,6 @@ import { ORPCError } from "@orpc/server";
 import { and, eq, sql } from "drizzle-orm";
 import { settleRetailerCylinderReturns } from "../../services/retailer-cylinder-sale";
 import { fulfillmentInvoiceOwnerCondition } from "./fulfillment-owner";
-import { creditExchangeEmptyPack } from "./empty-pack-stock";
 import {
   consumeRetailerOrderStock,
   createRetailerOrderStockWriter,
@@ -128,15 +127,6 @@ export async function settleRetailerCylinderHandoff(
         verifiedAt: new Date(),
         depositAmount: source.exchangeCreditAmount,
         notes: "Accepted exact-match empty cylinder at consumer handoff",
-      });
-      await creditExchangeEmptyPack(tx, {
-        ownerType: "shop",
-        ownerId: input.shopId,
-        orderId: invoiceRecord.order.id,
-        orderItemId: source.id,
-        variantId: source.variantId,
-        quantity: line.collectedEmptyPackQty,
-        actorId: input.actorId,
       });
     }
   }

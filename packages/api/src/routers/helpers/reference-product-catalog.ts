@@ -6,8 +6,11 @@ export type ReferenceCatalogVariant = {
     isActive?: boolean | null;
   } | null;
   catalogVariantId?: number | null;
+  exchangeEnabled?: boolean | null;
+  exchangeCreditAmount?: string | number | null;
   isActive?: boolean | null;
   price: string | number;
+  productId?: number | null;
   sourceVariantPriceId?: number | null;
   variantType?: string | null;
   visibilityRole?: string | null;
@@ -43,6 +46,7 @@ export type OpenOrderReferenceVariant = {
     isActive?: boolean | null;
   } | null;
   catalogVariantId?: number | null;
+  exchangeEnabled?: boolean | null;
   isActive?: boolean | null;
   productId?: number | null;
   variantType?: string | null;
@@ -100,6 +104,61 @@ function isCanonicalReferenceVariant(
     variant.catalogVariant?.isActive === true &&
     variant.catalogVariant.configurationState === "configured"
   );
+}
+
+export function anyListedVariantAllowsExchange(
+  variants:
+    | Array<{ exchangeEnabled?: boolean | null; isActive?: boolean | null }>
+    | null
+    | undefined,
+): boolean {
+  return (variants ?? []).some(
+    (variant) => variant.isActive !== false && Boolean(variant.exchangeEnabled),
+  );
+}
+
+export function referenceProductCanExchange(
+  product: ReferenceCatalogPriceSource,
+): boolean {
+  return (product.variants ?? []).some((variant) => {
+    const listed =
+      product.creatorSource === "admin"
+        ? isOpenOrderReferenceSelectionEligible({ product, variant })
+        : isCanonicalReferenceVariant(variant);
+    return listed && Boolean(variant.exchangeEnabled);
+  });
+}
+
+export function getReferenceCylinderPricing(
+  product: ReferenceCatalogPriceSource,
+) {
+  const listedVariants = (product.variants ?? []).filter((variant) =>
+    product.creatorSource === "admin"
+      ? isOpenOrderReferenceSelectionEligible({ product, variant })
+      : isCanonicalReferenceVariant(variant),
+  );
+  const newPrices = listedVariants
+    .map((variant) => asNumber(variant.price))
+    .filter((price) => price > 0);
+  const exchangePrices = listedVariants
+    .filter((variant) => Boolean(variant.exchangeEnabled))
+    .map((variant) =>
+      Math.max(
+        0,
+        asNumber(variant.price) - asNumber(variant.exchangeCreditAmount),
+      ),
+    );
+
+  return {
+    supportsNew: listedVariants.length > 0,
+    exchangeAvailable: exchangePrices.length > 0,
+    newFrom:
+      newPrices.length > 0
+        ? Math.min(...newPrices)
+        : getReferenceProductEffectivePrice(product),
+    exchangeFrom:
+      exchangePrices.length > 0 ? Math.min(...exchangePrices) : null,
+  };
 }
 
 export function getReferenceProductEffectivePrice(

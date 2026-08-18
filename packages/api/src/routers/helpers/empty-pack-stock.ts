@@ -9,6 +9,15 @@ import { and, eq, sql } from "drizzle-orm";
 type DbTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
 type EmptyPackOwnerType = "shop" | "warehouse";
 
+export function warehouseExchangeEmptyCreditQty(line: {
+  cylinderSaleMode?: string | null;
+  modifiedQty?: number | null;
+  quantity: number;
+}) {
+  if (line.cylinderSaleMode !== "exchange") return 0;
+  return line.modifiedQty ?? line.quantity;
+}
+
 /**
  * Adds the empty cylinder received for an Exchange exactly once per order line.
  * The filled cylinder is handled by the normal inventory reservation/consume flow.
@@ -74,6 +83,36 @@ export async function creditWarehouseExchangeOrder(
   tx: DbTransaction,
   input: { warehouseId: string; orderId: number; actorId?: string | null },
 ) {
+  await creditOwnerExchangeOrder(tx, {
+    ownerType: "warehouse",
+    ownerId: input.warehouseId,
+    orderId: input.orderId,
+    actorId: input.actorId,
+  });
+}
+
+/** Credits every Exchange line once after a B2C order is completely delivered. */
+export async function creditRetailerExchangeOrder(
+  tx: DbTransaction,
+  input: { shopId: string; orderId: number; actorId?: string | null },
+) {
+  await creditOwnerExchangeOrder(tx, {
+    ownerType: "shop",
+    ownerId: input.shopId,
+    orderId: input.orderId,
+    actorId: input.actorId,
+  });
+}
+
+async function creditOwnerExchangeOrder(
+  tx: DbTransaction,
+  input: {
+    ownerType: EmptyPackOwnerType;
+    ownerId: string;
+    orderId: number;
+    actorId?: string | null;
+  },
+) {
   const lines = await tx.query.orderItem.findMany({
     where: and(
       eq(orderItem.orderId, input.orderId),
@@ -82,12 +121,12 @@ export async function creditWarehouseExchangeOrder(
   });
   for (const line of lines) {
     await creditExchangeEmptyPack(tx, {
-      ownerType: "warehouse",
-      ownerId: input.warehouseId,
+      ownerType: input.ownerType,
+      ownerId: input.ownerId,
       orderId: input.orderId,
       orderItemId: line.id,
       variantId: line.variantId,
-      quantity: line.modifiedQty ?? line.quantity,
+      quantity: warehouseExchangeEmptyCreditQty(line),
       actorId: input.actorId,
     });
   }

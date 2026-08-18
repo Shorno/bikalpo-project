@@ -443,9 +443,9 @@ export default function ProductForm({
     !activeCoreProduct;
   const activeTypeId =
     (activeCoreProduct as any)?.category?.typeId ?? selectedTypeId;
-  const activeProductType = productTypes.find(
-    (type: any) => type.id === activeTypeId,
-  );
+  const activeProductType =
+    productTypes.find((type: any) => type.id === activeTypeId) ??
+    (usesExternalEditAdapter ? productTypes[0] : undefined);
   const activeFulfillmentProfile = activeProductType?.fulfillmentProfile as
     | ProductTypeFulfillmentProfile
     | undefined;
@@ -907,10 +907,10 @@ export default function ProductForm({
     }),
   );
   const returnableRuleLabel = isLpgRules
-    ? "Empty cylinder exchange"
+    ? "Empty cylinder return"
     : "Empty pack return";
   const returnableRuleDescription = isLpgRules
-    ? "Require empty cylinder exchange for refill-style sales"
+    ? "Buyers can choose New or Exchange"
     : "Require returnable packaging such as jars, drums, or packs";
   const depositLabel = isLpgRules
     ? "Exchange Value (BDT)"

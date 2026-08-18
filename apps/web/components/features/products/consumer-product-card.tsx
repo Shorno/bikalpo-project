@@ -4,6 +4,7 @@ import { ArrowRight, Package, Star } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { useState } from "react";
+import { CylinderTypePreview } from "@/components/features/products/cylinder-type-radios";
 import { withCustomerStorefrontPreview } from "@/lib/customer-storefront-preview";
 
 interface ConsumerProductCardProps {
@@ -15,6 +16,11 @@ interface ConsumerProductCardProps {
     image: string;
     size?: string | null;
     inStock?: boolean;
+    canExchange?: boolean | null;
+    cylinderSale?: {
+      supportsNew: boolean;
+      exchangeAvailable: boolean;
+    } | null;
     category?: { name?: string; slug?: string } | null;
     brand?: { name?: string; slug?: string; logo?: string | null } | null;
     reviewStats?: { averageRating: number; totalReviews: number } | null;
@@ -89,10 +95,22 @@ export function ConsumerProductCard({
           {product.name}
         </h3>
 
+        {product.cylinderSale?.supportsNew ? (
+          <div className="mt-3">
+            <CylinderTypePreview
+              exchangeAvailable={product.cylinderSale.exchangeAvailable}
+            />
+          </div>
+        ) : null}
+
         <div className="mt-4 flex items-end justify-between gap-3">
           <div>
             <p className="text-[10px] font-medium text-muted-foreground">
-              {price > 0 ? "Reference price" : "Price"}
+              {price > 0
+                ? product.cylinderSale
+                  ? "New reference from"
+                  : "Reference price"
+                : "Price"}
             </p>
             <p className="mt-0.5 text-lg font-bold tracking-[-0.02em] tabular-nums text-foreground sm:text-xl">
               {price > 0

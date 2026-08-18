@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildProductTypeFulfillmentProfile } from "./fulfillment";
+import {
+  buildProductTypeFulfillmentProfile,
+  isWarehouseCylinderExchangeAvailable,
+  shouldEnableWarehouseCylinderExchange,
+} from "./fulfillment";
 
 test("explicit LPG family cannot inherit generic fixed-pack modes", () => {
   const profile = buildProductTypeFulfillmentProfile({
@@ -27,4 +31,52 @@ test("legacy LPG names still infer the LPG family during migration", () => {
 
   assert.equal(profile.family, "lpg");
   assert.deepEqual(profile.supportedModes, ["cylinder"]);
+});
+
+test("warehouse Returnable pack on LPG enables New/Exchange", () => {
+  assert.equal(
+    shouldEnableWarehouseCylinderExchange({
+      isReturnablePack: true,
+      family: "lpg",
+    }),
+    true,
+  );
+  assert.equal(
+    shouldEnableWarehouseCylinderExchange({
+      isReturnablePack: false,
+      family: "lpg",
+    }),
+    false,
+  );
+  assert.equal(
+    shouldEnableWarehouseCylinderExchange({
+      isReturnablePack: true,
+      family: "grocery",
+    }),
+    false,
+  );
+  assert.equal(
+    isWarehouseCylinderExchangeAvailable({
+      isReturnablePack: true,
+      family: "lpg",
+      exchangeEnabled: false,
+    }),
+    false,
+  );
+  assert.equal(
+    isWarehouseCylinderExchangeAvailable({
+      isReturnablePack: true,
+      family: "grocery",
+      exchangeEnabled: true,
+    }),
+    true,
+  );
+  assert.equal(
+    isWarehouseCylinderExchangeAvailable({
+      isReturnablePack: false,
+      family: "lpg",
+      exchangeEnabled: true,
+    }),
+    true,
+  );
 });
