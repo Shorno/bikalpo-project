@@ -7,6 +7,7 @@ export type ReferenceCatalogVariant = {
   } | null;
   catalogVariantId?: number | null;
   exchangeEnabled?: boolean | null;
+  exchangeCreditAmount?: string | number | null;
   isActive?: boolean | null;
   price: string | number;
   productId?: number | null;
@@ -126,6 +127,38 @@ export function referenceProductCanExchange(
         : isCanonicalReferenceVariant(variant);
     return listed && Boolean(variant.exchangeEnabled);
   });
+}
+
+export function getReferenceCylinderPricing(
+  product: ReferenceCatalogPriceSource,
+) {
+  const listedVariants = (product.variants ?? []).filter((variant) =>
+    product.creatorSource === "admin"
+      ? isOpenOrderReferenceSelectionEligible({ product, variant })
+      : isCanonicalReferenceVariant(variant),
+  );
+  const newPrices = listedVariants
+    .map((variant) => asNumber(variant.price))
+    .filter((price) => price > 0);
+  const exchangePrices = listedVariants
+    .filter((variant) => Boolean(variant.exchangeEnabled))
+    .map((variant) =>
+      Math.max(
+        0,
+        asNumber(variant.price) - asNumber(variant.exchangeCreditAmount),
+      ),
+    );
+
+  return {
+    supportsNew: listedVariants.length > 0,
+    exchangeAvailable: exchangePrices.length > 0,
+    newFrom:
+      newPrices.length > 0
+        ? Math.min(...newPrices)
+        : getReferenceProductEffectivePrice(product),
+    exchangeFrom:
+      exchangePrices.length > 0 ? Math.min(...exchangePrices) : null,
+  };
 }
 
 export function getReferenceProductEffectivePrice(

@@ -25,6 +25,7 @@ interface ProductActionsProps {
   brandName?: string;
   shopId?: string;
   purchaseMode?: "open_order" | "direct";
+  cylinderSaleMode?: "new" | "exchange";
 }
 
 export function ProductActions({
@@ -38,6 +39,7 @@ export function ProductActions({
   brandName,
   shopId,
   purchaseMode = shopId ? "direct" : "open_order",
+  cylinderSaleMode,
 }: ProductActionsProps) {
   const effectiveMin = Math.max(1, orderMin);
   const effectiveMax =
@@ -70,7 +72,14 @@ export function ProductActions({
   const handleAddToCart = async () => {
     setIsAdding(true);
     try {
-      await addItem(product.id, quantity, variantId, shopId, purchaseMode);
+      await addItem(
+        product.id,
+        quantity,
+        variantId,
+        shopId,
+        purchaseMode,
+        cylinderSaleMode,
+      );
     } finally {
       setIsAdding(false);
     }

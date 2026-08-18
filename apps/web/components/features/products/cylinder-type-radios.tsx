@@ -97,10 +97,10 @@ export function CylinderTypeRadios({
 }
 
 export function CylinderTypePreview({
-  highlighted = "exchange",
+  exchangeAvailable = true,
   size = "card",
 }: {
-  highlighted?: CylinderSaleMode;
+  exchangeAvailable?: boolean;
   size?: "card" | "modal";
 }) {
   const isModal = size === "modal";
@@ -119,17 +119,23 @@ export function CylinderTypePreview({
       <div
         aria-label="Available cylinder sale types"
         className="inline-grid grid-cols-2 rounded-md border border-zinc-200 bg-zinc-100 p-px"
+        role="list"
       >
-        {(["exchange", "new"] as const).map((mode) => {
-          const selected = highlighted === mode;
+        {(
+          [
+            "new",
+            ...(exchangeAvailable ? (["exchange"] as const) : []),
+          ] as const
+        ).map((mode) => {
           return (
             <span
               className={`inline-flex items-center justify-center rounded-[5px] px-2.5 font-medium ${
                 isModal ? "h-7 text-xs" : "h-6 text-[11px]"
-              } ${selected ? "bg-zinc-900 text-white" : "text-zinc-500"}`}
+              } bg-white text-zinc-700`}
               key={mode}
+              role="listitem"
             >
-              {mode === "exchange" ? "Exchange" : "New"}
+              {mode === "exchange" ? "Exchange available" : "New"}
             </span>
           );
         })}

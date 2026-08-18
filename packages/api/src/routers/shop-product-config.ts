@@ -21,6 +21,7 @@ import { ORPCError } from "@orpc/server";
 import { and, count, eq, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
 import { shopOwnerProcedure } from "../index";
+import { recalculateOffersForShopProduct } from "../services/open-order-matching";
 import {
   isConcreteVariantOption,
   linkProductVariantsToCatalog,
@@ -535,7 +536,7 @@ export const shopProductConfigEndpoints = {
         }
       }
 
-      return db.transaction(async (tx) => {
+      const result = await db.transaction(async (tx) => {
         const core = await tx.query.coreProductIdentity.findFirst({
           where: and(
             eq(coreProductIdentity.id, input.coreProductId),
@@ -814,6 +815,25 @@ export const shopProductConfigEndpoints = {
 
         return { created, updated, deactivated };
       });
+      const recalculatedOrderIds = new Set<number>();
+      for (const productId of [...result.updated, ...result.deactivated]) {
+        for (const orderId of await recalculateOffersForShopProduct(
+          productId,
+          shopId,
+        )) {
+          recalculatedOrderIds.add(orderId);
+        }
+      }
+      for (const orderId of recalculatedOrderIds) {
+        context.realtime.emitToOrder(orderId, "open-order:offer-updated", {
+          orderId,
+          reason: "retailer_exchange_configuration_changed",
+        });
+      }
+      return {
+        ...result,
+        recalculatedOpenOrders: recalculatedOrderIds.size,
+      };
     }),
 
   getShopOwnedProductForEdit: shopOwnerProcedure
@@ -872,7 +892,7 @@ export const shopProductConfigEndpoints = {
           message: "A variant can only be selected once",
         });
       }
-      return db.transaction(async (tx) => {
+      const result = await db.transaction(async (tx) => {
         const existing = await tx.query.product.findFirst({
           where: and(
             eq(product.id, input.productId),
@@ -963,5 +983,19 @@ export const shopProductConfigEndpoints = {
         }
         return { productId: existing.id };
       });
+      const recalculatedOrderIds = await recalculateOffersForShopProduct(
+        result.productId,
+        shopId,
+      );
+      for (const orderId of recalculatedOrderIds) {
+        context.realtime.emitToOrder(orderId, "open-order:offer-updated", {
+          orderId,
+          reason: "retailer_exchange_configuration_changed",
+        });
+      }
+      return {
+        ...result,
+        recalculatedOpenOrders: recalculatedOrderIds.length,
+      };
     }),
 };
