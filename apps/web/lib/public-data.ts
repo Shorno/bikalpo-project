@@ -172,6 +172,23 @@ export async function getStoreProductDetail(
   }
 }
 
+export async function getWarehouseProductDetail(
+  warehouseSlug: string,
+  productSlug: string,
+  revalidate = 0,
+) {
+  const client = getPublicOrpcClient(revalidate);
+
+  try {
+    return await client.warehouse.getStorefrontProductDetails({
+      slug: warehouseSlug,
+      productSlug,
+    });
+  } catch {
+    return null;
+  }
+}
+
 export async function getStoreCatalog(
   shopSlug: string,
   options: {

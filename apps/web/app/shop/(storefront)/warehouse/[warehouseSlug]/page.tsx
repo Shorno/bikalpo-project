@@ -1,15 +1,15 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useParams, useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
-import { WarehouseInfoHeader } from "@/components/features/warehouse/warehouse-info-header";
-import { WarehousePromotionBanner } from "@/components/features/warehouse/warehouse-promotion-banner";
+import { useParams, useSearchParams } from "next/navigation";
+import { useEffect, useState } from "react";
 import { WarehouseCategoryList } from "@/components/features/warehouse/warehouse-category-list";
-import { WarehouseProductGrid } from "@/components/features/warehouse/warehouse-product-grid";
 import { WarehouseDealsSection } from "@/components/features/warehouse/warehouse-deals-section";
 import { WarehouseInfoFooter } from "@/components/features/warehouse/warehouse-info-footer";
+import { WarehouseInfoHeader } from "@/components/features/warehouse/warehouse-info-header";
 import { WarehouseProductCardSkeleton } from "@/components/features/warehouse/warehouse-product-card";
+import { WarehouseProductGrid } from "@/components/features/warehouse/warehouse-product-grid";
+import { WarehousePromotionBanner } from "@/components/features/warehouse/warehouse-promotion-banner";
 import { Skeleton } from "@/components/ui/skeleton";
 import { client } from "@/utils/orpc";
 
@@ -119,7 +119,9 @@ export default function WarehouseLandingPage() {
       <div className="min-h-screen bg-[#f8f9fa] flex items-center justify-center">
         <div className="text-center space-y-3">
           <p className="text-xl font-semibold">Warehouse not found</p>
-          <p className="text-muted-foreground">The warehouse "{slug}" does not exist.</p>
+          <p className="text-muted-foreground">
+            The warehouse "{slug}" does not exist.
+          </p>
         </div>
       </div>
     );
@@ -127,7 +129,8 @@ export default function WarehouseLandingPage() {
 
   const categories = categoriesData?.categories || [];
   const products = productsData?.products || [];
-  const totalProducts = productsData?.pagination?.totalCount ?? Number(warehouse.productCount) ?? 0;
+  const totalProducts =
+    productsData?.pagination?.totalCount ?? Number(warehouse.productCount) ?? 0;
 
   return (
     <div className="min-h-screen bg-[#f8f9fa]">
@@ -154,6 +157,7 @@ export default function WarehouseLandingPage() {
         products={products}
         isLoading={productsLoading}
         warehouseSlug={slug}
+        detailBasePath={`/warehouse/${encodeURIComponent(slug)}/products`}
         pagination={productsData?.pagination}
         onPageChange={setPage}
       />

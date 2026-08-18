@@ -21,12 +21,11 @@ import { useParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { CylinderSaleModeToggle } from "@/components/features/warehouse/cylinder-sale-mode-toggle";
-import { WarehouseProductGrid } from "@/components/features/warehouse/warehouse-product-grid";
 import {
   type WarehouseCylinderSaleMode,
   WarehouseProductCardSkeleton,
-  warehouseCartLineKey,
 } from "@/components/features/warehouse/warehouse-product-card";
+import { WarehouseProductGrid } from "@/components/features/warehouse/warehouse-product-grid";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -48,6 +47,16 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { authClient } from "@/lib/auth-client";
+import {
+  getWarehouseStorefrontCartKey,
+  mergeWarehouseStorefrontCart,
+  readWarehouseStorefrontCart,
+  removeWarehouseStorefrontCartItem,
+  updateWarehouseStorefrontCartQuantity,
+  type WarehouseStorefrontCartItem,
+  warehouseCartLineKey,
+  writeWarehouseStorefrontCart,
+} from "@/lib/warehouse-storefront-cart";
 import { orpc } from "@/utils/orpc";
 
 const CITIES = [
@@ -112,39 +121,24 @@ export default function WarehouseStorefrontPage() {
   const hasCartAccess = gridMode === "w2w" || gridMode === "retailer";
 
   // Cart key in local storage
-  const cartKey = `${
-    gridMode === "retailer"
-      ? "retailer-warehouse-cart"
-      : "warehouse-supplier-cart"
-  }:${sessionData?.user?.id}:${slug}`;
-  const [cart, setCart] = useState<any[]>([]);
+  const cartKey = hasCartAccess
+    ? getWarehouseStorefrontCartKey(
+        gridMode as "retailer" | "w2w",
+        sessionData?.user?.id,
+        slug,
+      )
+    : null;
+  const [cart, setCart] = useState<WarehouseStorefrontCartItem[]>([]);
 
   // Load cart state
   useEffect(() => {
-    if (
-      typeof window !== "undefined" &&
-      sessionData?.user?.id &&
-      hasCartAccess
-    ) {
-      const stored = localStorage.getItem(cartKey);
-      if (stored) {
-        try {
-          setCart(JSON.parse(stored));
-        } catch (e) {
-          console.error(e);
-        }
-      } else {
-        setCart([]);
-      }
-    }
-  }, [cartKey, sessionData?.user?.id, hasCartAccess]);
+    setCart(readWarehouseStorefrontCart(cartKey));
+  }, [cartKey]);
 
   // Save cart state
-  const saveCart = (newCart: any[]) => {
+  const saveCart = (newCart: WarehouseStorefrontCartItem[]) => {
     setCart(newCart);
-    if (typeof window !== "undefined") {
-      localStorage.setItem(cartKey, JSON.stringify(newCart));
-    }
+    writeWarehouseStorefrontCart(cartKey, newCart);
   };
 
   // Cart mutators. New and Exchange of the same variant are separate lines.
@@ -162,42 +156,41 @@ export default function WarehouseStorefrontPage() {
         ? "new"
         : "exchange"
       : "new";
-    const lineKey = warehouseCartLineKey(variantId, cylinderSaleMode);
+    const cartItem: Omit<WarehouseStorefrontCartItem, "quantity"> = {
+      variantId,
+      inventoryId,
+      productName: item.name,
+      image: item.image || "",
+      sku: item.sku || "",
+      unitLabel: item.unit || "Unit",
+      price: item.pricePerUnit || "0",
+      availableQty,
+      fulfillmentMode: item.selectedVariant?.fulfillmentMode,
+      supplyMode: item.selectedVariant?.fulfillmentMode,
+      targetVariantId: item.selectedVariant?.targetVariantId ?? null,
+      canExchange,
+      cylinderSaleMode,
+    };
     const existing = cart.find(
-      (i) => warehouseCartLineKey(i.variantId, i.cylinderSaleMode) === lineKey,
+      (entry) =>
+        warehouseCartLineKey(entry.variantId, entry.cylinderSaleMode) ===
+        warehouseCartLineKey(variantId, cylinderSaleMode),
     );
-
-    if (existing) {
-      const nextQty = Math.min(availableQty, existing.quantity + 1);
-      saveCart(
-        cart.map((i) =>
-          warehouseCartLineKey(i.variantId, i.cylinderSaleMode) === lineKey
-            ? { ...i, quantity: nextQty }
-            : i,
-        ),
-      );
-      toast.success(`Updated ${item.name} quantity to ${nextQty}`);
-    } else {
-      const qty = Math.min(availableQty, moq);
-      const newItem = {
-        variantId,
-        inventoryId,
-        productName: item.name,
-        image: item.image || "",
-        sku: item.sku || "",
-        unitLabel: item.unit || "Unit",
-        price: item.pricePerUnit || "0",
-        availableQty,
-        quantity: qty,
-        fulfillmentMode: item.selectedVariant?.fulfillmentMode,
-        supplyMode: item.selectedVariant?.fulfillmentMode,
-        targetVariantId: item.selectedVariant?.targetVariantId ?? null,
-        canExchange,
-        cylinderSaleMode,
-      };
-      saveCart([...cart, newItem]);
-      toast.success(`Added ${item.name} to cart`);
-    }
+    const nextCart = mergeWarehouseStorefrontCart(cart, cartItem, moq, 1);
+    saveCart(nextCart);
+    toast.success(
+      existing
+        ? `Updated ${item.name} quantity to ${
+            nextCart.find(
+              (entry) =>
+                warehouseCartLineKey(
+                  entry.variantId,
+                  entry.cylinderSaleMode,
+                ) === warehouseCartLineKey(variantId, cylinderSaleMode),
+            )?.quantity
+          }`
+        : `Added ${item.name} to cart`,
+    );
   };
 
   const updateQuantity = (
@@ -205,20 +198,13 @@ export default function WarehouseStorefrontPage() {
     delta: number,
     cylinderSaleMode: WarehouseCylinderSaleMode = "new",
   ) => {
-    const lineKey = warehouseCartLineKey(variantId, cylinderSaleMode);
     saveCart(
-      cart
-        .map((i) => {
-          if (warehouseCartLineKey(i.variantId, i.cylinderSaleMode) !== lineKey)
-            return i;
-          const availableQty = Number(i.availableQty || 0);
-          const nextQty = Math.max(
-            0,
-            Math.min(availableQty, i.quantity + delta),
-          );
-          return { ...i, quantity: nextQty };
-        })
-        .filter((i) => i.quantity > 0),
+      updateWarehouseStorefrontCartQuantity(
+        cart,
+        variantId,
+        delta,
+        cylinderSaleMode,
+      ),
     );
   };
 
@@ -226,12 +212,8 @@ export default function WarehouseStorefrontPage() {
     variantId: number,
     cylinderSaleMode: WarehouseCylinderSaleMode = "new",
   ) => {
-    const lineKey = warehouseCartLineKey(variantId, cylinderSaleMode);
     saveCart(
-      cart.filter(
-        (i) =>
-          warehouseCartLineKey(i.variantId, i.cylinderSaleMode) !== lineKey,
-      ),
+      removeWarehouseStorefrontCartItem(cart, variantId, cylinderSaleMode),
     );
   };
 
@@ -356,7 +338,9 @@ export default function WarehouseStorefrontPage() {
         fulfillmentMode: i.fulfillmentMode,
         supplyMode: i.supplyMode,
         targetVariantId: i.targetVariantId,
-        cylinderSaleMode: isRetailerBuyer ? i.cylinderSaleMode ?? "new" : undefined,
+        cylinderSaleMode: isRetailerBuyer
+          ? (i.cylinderSaleMode ?? "new")
+          : undefined,
       })),
       shippingName,
       shippingPhone,
@@ -915,6 +899,7 @@ export default function WarehouseStorefrontPage() {
             products={products}
             isLoading={productsLoading}
             warehouseSlug={slug}
+            detailBasePath={`/w/${encodeURIComponent(slug)}/products`}
             pagination={pagination}
             onPageChange={setPage}
             mode={gridMode}

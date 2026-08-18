@@ -29,6 +29,7 @@ import {
 	invoice,
 	order,
 	orderItem,
+	product,
 	shopWarehouseConnection,
 	user,
 	warehouseWarehouseConnection,
@@ -249,14 +250,9 @@ const storefrontQueries = {
 									category: {
 										columns: { name: true, slug: true },
 										with: {
-											type: {
-												columns: {
-													family: true,
-													name: true,
-													slug: true,
-													inventoryBehaviour: true,
-												},
-											},
+									type: {
+									columns: { family: true, name: true, slug: true },
+								},
 										},
 									},
 									subCategory: { columns: { name: true, slug: true } },
@@ -399,6 +395,218 @@ const storefrontQueries = {
 					limit,
 					totalCount,
 					totalPages: Math.ceil(totalCount / limit),
+				},
+			};
+		}),
+
+	/**
+	 * Get one warehouse-owned product with the warehouse's live inventory,
+	 * prices, and order metadata (public).
+	 */
+	getStorefrontProductDetails: publicProcedure
+		.route({
+			method: "GET",
+			path: "/warehouse/storefront/{slug}/products/{productSlug}",
+			tags: ["Warehouse Storefront"],
+			summary: "Get a warehouse storefront product detail",
+		})
+		.input(
+			z.object({
+				slug: z.string(),
+				productSlug: z.string().trim().min(1),
+			}),
+		)
+		.handler(async ({ input }) => {
+			const warehouseUser = await db
+				.select({
+					id: user.id,
+					name: user.name,
+					warehouseName: user.warehouseName,
+					warehouseSlug: user.warehouseSlug,
+					warehouseAddress: user.warehouseAddress,
+					image: user.image,
+				})
+				.from(user)
+				.where(
+					and(eq(user.warehouseSlug, input.slug), eq(user.role, "warehouse")),
+				)
+				.limit(1);
+
+			if (warehouseUser.length === 0) {
+				throw new ORPCError("NOT_FOUND", { message: "Warehouse not found" });
+			}
+
+			const warehouse = warehouseUser[0]!;
+			const foundProduct = await db.query.product.findFirst({
+				where: eq(product.slug, input.productSlug),
+				with: {
+					category: {
+						columns: { name: true, slug: true },
+						with: {
+							type: {
+								columns: {
+									family: true,
+									name: true,
+									slug: true,
+									inventoryBehaviour: true,
+								},
+							},
+						},
+					},
+					subCategory: { columns: { name: true, slug: true } },
+					brand: { columns: { id: true, name: true, slug: true, logo: true } },
+					images: { columns: { imageUrl: true } },
+					variants: {
+						with: {
+							brand: {
+								columns: { id: true, name: true, slug: true, logo: true },
+							},
+							catalogVariant: {
+								columns: { id: true, globalSku: true },
+							},
+						},
+					},
+				},
+			});
+
+			if (!foundProduct || !foundProduct.category) {
+				throw new ORPCError("NOT_FOUND", {
+					message: "Warehouse product not found",
+				});
+			}
+
+			const variantIds = foundProduct.variants.map((variant) => variant.id);
+			const inventoryRows =
+				variantIds.length > 0
+					? await db.query.inventory.findMany({
+							where: and(
+								eq(inventory.ownerType, "warehouse"),
+								eq(inventory.ownerId, warehouse.id),
+								inArray(inventory.variantId, variantIds),
+								sql`CAST(${inventory.availableQty} AS numeric) > 0`,
+							),
+							columns: {
+								id: true,
+								variantId: true,
+								availableQty: true,
+								retailPrice: true,
+							},
+						})
+					: [];
+			const inventoryByVariantId = new Map(
+				inventoryRows.map((row) => [row.variantId, row]),
+			);
+
+			const variants = foundProduct.variants
+				.map((variant) => {
+					const inventoryRow = inventoryByVariantId.get(variant.id);
+					if (!inventoryRow || variant.isActive === false) return null;
+
+					const availableQty = Number(inventoryRow.availableQty) || 0;
+					const retailPrice = Number(inventoryRow.retailPrice ?? variant.price) || 0;
+					const productType = foundProduct.category?.type;
+					const fulfillmentProfile = buildProductTypeFulfillmentProfile({
+						family: productType?.family,
+						name: productType?.name,
+						slug: productType?.slug,
+						inventoryBehaviour: productType?.inventoryBehaviour,
+						trackingType: foundProduct.trackingType,
+						isReturnablePack: foundProduct.isReturnablePack,
+					});
+					const canExchange = warehouseVariantAllowsCylinderExchange(variant);
+					const exchangeCreditAmount = canExchange
+						? Math.min(
+								retailPrice,
+								Math.max(0, Number(variant.exchangeCreditAmount) || 0),
+							)
+						: 0;
+
+					return {
+						id: variant.id,
+						inventoryId: inventoryRow.id,
+						sku: variant.sku,
+						globalSku: variant.catalogVariant?.globalSku ?? null,
+						unitLabel: variant.unitLabel,
+						quantitySelectorLabel: variant.quantitySelectorLabel,
+						price: retailPrice,
+						weightKg: variant.weightKg,
+						packagingType: variant.packagingType,
+						origin: variant.origin,
+						shelfLife: variant.shelfLife,
+						orderMin: variant.orderMin,
+						orderMax: variant.orderMax,
+						orderIncrement: variant.orderIncrement,
+						orderUnit: variant.orderUnit,
+						quantitySelectorOptions: variant.quantitySelectorOptions,
+						sortOrder: variant.sortOrder,
+						stockQuantity: availableQty,
+						availableQty,
+						retailPrice,
+						variantType: variant.variantType,
+						packType: variant.packType,
+						color: variant.color,
+						size: variant.size,
+						isActive: variant.isActive,
+						fulfillmentMode: fulfillmentProfile.defaultMode,
+						targetVariantId: variant.linkedRetailVariantId ?? null,
+						canExchange,
+						cylinderSale: {
+							exchangeEnabled: canExchange,
+							exchangeCreditAmount,
+							defaultMode: canExchange ? "exchange" : "new",
+						},
+					};
+				})
+				.filter((variant): variant is NonNullable<typeof variant> => variant !== null)
+				.sort(
+					(left, right) =>
+						(left.sortOrder ?? 0) - (right.sortOrder ?? 0) || left.id - right.id,
+					);
+
+			if (variants.length === 0) {
+				throw new ORPCError("NOT_FOUND", {
+					message: "Warehouse product is not currently available",
+				});
+			}
+
+			const totalAvailableQty = variants.reduce(
+				(total, variant) => total + variant.availableQty,
+				0,
+			);
+
+			return {
+				warehouse,
+				product: {
+					id: foundProduct.id,
+					name: foundProduct.name,
+					slug: foundProduct.slug,
+					description: foundProduct.description,
+					shortDescription: foundProduct.shortDescription,
+					size: foundProduct.size,
+					image: foundProduct.image,
+					images: foundProduct.images.map((image) => image.imageUrl),
+					features: foundProduct.features,
+					inStock: totalAvailableQty > 0,
+					stockQuantity: totalAvailableQty,
+					lowestPrice: Math.min(...variants.map((variant) => variant.retailPrice)),
+					category: {
+						name: foundProduct.category.name,
+						slug: foundProduct.category.slug,
+					},
+					subCategory: foundProduct.subCategory
+						? {
+								name: foundProduct.subCategory.name,
+								slug: foundProduct.subCategory.slug,
+							}
+						: null,
+					brand: foundProduct.brand
+						? {
+								id: foundProduct.brand.id,
+								name: foundProduct.brand.name,
+								slug: foundProduct.brand.slug,
+							}
+						: null,
+					variants,
 				},
 			};
 		}),

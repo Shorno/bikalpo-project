@@ -3,6 +3,7 @@
 import type { FulfillmentMode } from "@bikalpo-project/db/fulfillment";
 import { Eye, Minus, Package, Plus, ShoppingCart, Star } from "lucide-react";
 import Image from "next/image";
+import Link from "next/link";
 import { useState } from "react";
 import {
   type CylinderSaleMode,
@@ -11,16 +12,10 @@ import {
 } from "@/components/features/products/cylinder-type-radios";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { warehouseCartLineKey } from "@/lib/warehouse-storefront-cart";
 
 export type WarehouseCylinderSaleMode = CylinderSaleMode;
-export { CylinderTypeRadios, shortVariantLabel };
-
-export function warehouseCartLineKey(
-  variantId: number,
-  cylinderSaleMode?: WarehouseCylinderSaleMode | string | null,
-) {
-  return `${variantId}:${cylinderSaleMode ?? "new"}`;
-}
+export { CylinderTypeRadios, shortVariantLabel, warehouseCartLineKey };
 
 export interface WarehouseProductVariantOption {
   inventoryId: number;
@@ -42,6 +37,8 @@ export interface WarehouseProductVariantOption {
 export interface WarehouseProduct {
   id: number;
   name: string;
+  slug?: string | null;
+  categorySlug?: string | null;
   brand: string;
   sku?: string | null;
   image: string;
@@ -62,7 +59,7 @@ export interface WarehouseProduct {
 
 interface WarehouseProductCardProps {
   product: WarehouseProduct;
-  onViewDetails?: (product: WarehouseProduct) => void;
+  detailHref?: string;
   onBuyNow?: (product: WarehouseProduct) => void;
   mode?: "default" | "retailer" | "w2w" | "view-only";
   cart?: any[];
@@ -87,7 +84,7 @@ function getStockDot(status: "high" | "medium" | "low") {
 
 export function WarehouseProductCard({
   product,
-  onViewDetails,
+  detailHref,
   onBuyNow,
   mode = "default",
   cart = [],
@@ -146,7 +143,24 @@ export function WarehouseProductCard({
     <div className="group flex flex-col bg-white rounded-xl border border-zinc-200 overflow-hidden hover:border-zinc-300 hover:shadow-sm transition-all duration-200">
       {/* Product Image */}
       <div className="relative aspect-[4/3] bg-zinc-50 border-b border-zinc-100 overflow-hidden shrink-0">
-        {!imageError && product.image ? (
+        {detailHref ? (
+          <Link href={detailHref} className="block size-full">
+            {!imageError && product.image ? (
+              <Image
+                src={product.image}
+                alt={product.name}
+                fill
+                className="object-cover group-hover:scale-[1.02] transition-transform duration-300"
+                onError={() => setImageError(true)}
+                unoptimized={product.image.startsWith("http")}
+              />
+            ) : (
+              <div className="flex size-full items-center justify-center bg-zinc-50">
+                <Package className="w-12 h-12 text-zinc-300" />
+              </div>
+            )}
+          </Link>
+        ) : !imageError && product.image ? (
           <Image
             src={product.image}
             alt={product.name}
@@ -181,9 +195,17 @@ export function WarehouseProductCard({
               {product.brand}
             </span>
           )}
-          <h3 className="mt-0.5 text-sm font-semibold text-zinc-900 leading-snug line-clamp-2 min-h-[40px]">
-            {product.name}
-          </h3>
+          {detailHref ? (
+            <Link href={detailHref} className="block">
+              <h3 className="mt-0.5 text-sm font-semibold text-zinc-900 leading-snug line-clamp-2 min-h-[40px] transition-colors hover:text-blue-700">
+                {product.name}
+              </h3>
+            </Link>
+          ) : (
+            <h3 className="mt-0.5 text-sm font-semibold text-zinc-900 leading-snug line-clamp-2 min-h-[40px]">
+              {product.name}
+            </h3>
+          )}
           {displayProduct.sku && (
             <span className="mt-1 block text-[11px] text-zinc-400">
               SKU {displayProduct.sku}
@@ -280,10 +302,19 @@ export function WarehouseProductCard({
                 variant="outline"
                 size="sm"
                 className="h-9 px-3 text-xs font-medium border-zinc-200 text-zinc-700 hover:bg-zinc-50 hover:text-zinc-900 gap-1.5 rounded-lg transition-colors"
-                onClick={() => onViewDetails?.(displayProduct)}
+                asChild={Boolean(detailHref)}
               >
-                <Eye className="w-3.5 h-3.5" />
-                Details
+                {detailHref ? (
+                  <Link href={detailHref}>
+                    <Eye className="w-3.5 h-3.5" />
+                    Details
+                  </Link>
+                ) : (
+                  <>
+                    <Eye className="w-3.5 h-3.5" />
+                    Details
+                  </>
+                )}
               </Button>
             </div>
           ) : mode === "w2w" || mode === "retailer" ? (
@@ -297,7 +328,11 @@ export function WarehouseProductCard({
                     className="h-7 w-7 rounded-md"
                     onClick={(e) => {
                       e.stopPropagation();
-                      onUpdateQuantity?.(variantId, -1, effectiveCylinderSaleMode);
+                      onUpdateQuantity?.(
+                        variantId,
+                        -1,
+                        effectiveCylinderSaleMode,
+                      );
                     }}
                   >
                     <Minus className="h-3 w-3" />
@@ -312,7 +347,11 @@ export function WarehouseProductCard({
                     className="h-7 w-7 rounded-md"
                     onClick={(e) => {
                       e.stopPropagation();
-                      onUpdateQuantity?.(variantId, 1, effectiveCylinderSaleMode);
+                      onUpdateQuantity?.(
+                        variantId,
+                        1,
+                        effectiveCylinderSaleMode,
+                      );
                     }}
                   >
                     <Plus className="h-3 w-3" />
@@ -339,13 +378,19 @@ export function WarehouseProductCard({
                 variant="outline"
                 size="sm"
                 className="h-9 px-3 text-xs font-medium border-zinc-200 text-zinc-700 hover:bg-zinc-50 hover:text-zinc-900 gap-1.5 rounded-lg transition-colors"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onViewDetails?.(displayProduct);
-                }}
+                asChild={Boolean(detailHref)}
               >
-                <Eye className="w-3.5 h-3.5" />
-                Details
+                {detailHref ? (
+                  <Link href={detailHref}>
+                    <Eye className="w-3.5 h-3.5" />
+                    Details
+                  </Link>
+                ) : (
+                  <>
+                    <Eye className="w-3.5 h-3.5" />
+                    Details
+                  </>
+                )}
               </Button>
             </div>
           ) : (
@@ -362,10 +407,19 @@ export function WarehouseProductCard({
                 variant="outline"
                 size="sm"
                 className="h-9 px-3 text-xs font-medium border-zinc-200 text-zinc-700 hover:bg-zinc-50 hover:text-zinc-900 gap-1.5 rounded-lg transition-colors"
-                onClick={() => onViewDetails?.(displayProduct)}
+                asChild={Boolean(detailHref)}
               >
-                <Eye className="w-3.5 h-3.5" />
-                Details
+                {detailHref ? (
+                  <Link href={detailHref}>
+                    <Eye className="w-3.5 h-3.5" />
+                    Details
+                  </Link>
+                ) : (
+                  <>
+                    <Eye className="w-3.5 h-3.5" />
+                    Details
+                  </>
+                )}
               </Button>
             </div>
           )}
