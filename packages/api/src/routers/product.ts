@@ -645,6 +645,9 @@ export const productRouter = {
           },
           variants: {
             columns: {
+              id: true,
+              unitLabel: true,
+              variantType: true,
               brandId: true,
               exchangeCreditAmount: true,
               exchangeEnabled: true,
@@ -1382,6 +1385,9 @@ export const productRouter = {
           },
           variants: {
             columns: {
+              id: true,
+              unitLabel: true,
+              variantType: true,
               brandId: true,
               exchangeCreditAmount: true,
               exchangeEnabled: true,
