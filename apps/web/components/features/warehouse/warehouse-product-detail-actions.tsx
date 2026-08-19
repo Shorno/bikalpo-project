@@ -185,7 +185,9 @@ export function WarehouseProductDetailActions({
       image: product.image,
       sku: selectedVariant.sku ?? "",
       unitLabel:
-        selectedVariant.unitLabel || selectedVariant.quantitySelectorLabel,
+        selectedVariant.unitLabel ||
+        selectedVariant.quantitySelectorLabel ||
+        "Unit",
       price: String(selectedVariant.retailPrice),
       availableQty,
       fulfillmentMode: selectedVariant.fulfillmentMode,
