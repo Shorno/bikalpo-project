@@ -108,12 +108,16 @@ export function CartProvider({ children }: { children: ReactNode }) {
   ) => {
     setIsLoading(true);
     try {
+      const cylinderSaleMode =
+        purchaseMode === "standard" ? undefined : purchaseMode;
+
       const result = await orpc.customer.addToCart.call({
         productId,
         quantity,
         variantId,
         shopId,
-        purchaseMode,
+        purchaseMode: shopId ? "direct" : "open_order",
+        cylinderSaleMode,
       });
       await refreshCart();
       toast.success(result.message || "Item added to cart");
