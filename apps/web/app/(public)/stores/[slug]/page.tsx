@@ -61,11 +61,18 @@ export default function ShopStorePage({
   const sort = getSafeSort(searchParams.get("sort"));
   const page = getSafePage(searchParams.get("page"));
   const [searchInput, setSearchInput] = useState(query);
-  const [quickAddingProductId, setQuickAddingProductId] = useState<
-    number | null
-  >(null);
+  const [quickAddingProductIds, setQuickAddingProductIds] = useState<
+    ReadonlySet<number>
+  >(() => new Set());
+  const [pendingCartItemIds, setPendingCartItemIds] = useState<
+    ReadonlySet<number>
+  >(() => new Set());
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const { addItem } = useCart();
+  const {
+    addItem,
+    items: cartItems,
+    updateQuantity,
+  } = useCart();
 
   const updateUrl = useCallback(
     (
@@ -162,7 +169,9 @@ export default function ShopStorePage({
   ) => {
     if (previewMode || !data?.shop) return;
 
-    setQuickAddingProductId(product.id);
+    setQuickAddingProductIds((current) =>
+      new Set(current).add(product.id),
+    );
     try {
       await addRetailerProductToCart(addItem, {
         productId: product.id,
@@ -171,7 +180,27 @@ export default function ShopStorePage({
         cylinderSaleMode: selection.cylinderSaleMode,
       });
     } finally {
-      setQuickAddingProductId(null);
+      setQuickAddingProductIds((current) => {
+        const next = new Set(current);
+        next.delete(product.id);
+        return next;
+      });
+    }
+  };
+
+  const handleQuantityUpdate = async (
+    cartItemId: number,
+    quantity: number,
+  ) => {
+    setPendingCartItemIds((current) => new Set(current).add(cartItemId));
+    try {
+      await updateQuantity(cartItemId, quantity);
+    } finally {
+      setPendingCartItemIds((current) => {
+        const next = new Set(current);
+        next.delete(cartItemId);
+        return next;
+      });
     }
   };
 
@@ -357,9 +386,13 @@ export default function ShopStorePage({
                         key={product.id}
                         product={product}
                         shopSlug={shop.shopSlug || slug}
+                        shopId={data.shop.id}
                         previewMode={previewMode}
-                        isAdding={quickAddingProductId === product.id}
+                        isAdding={quickAddingProductIds.has(product.id)}
+                        cartItems={cartItems}
                         onQuickAdd={handleQuickAdd}
+                        pendingCartItemIds={pendingCartItemIds}
+                        onUpdateQuantity={handleQuantityUpdate}
                       />
                     ))}
                   </div>

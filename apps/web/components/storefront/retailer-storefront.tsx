@@ -7,7 +7,9 @@ import {
   Eye,
   Filter,
   MapPin,
+  Minus,
   Package,
+  Plus,
   RotateCcw,
   ShoppingCart,
   Star,
@@ -18,6 +20,7 @@ import {
 import Image from "next/image";
 import Link from "next/link";
 import { useState } from "react";
+import type { CartItem } from "@/hooks/use-orpc-cart";
 import {
   type CylinderSaleMode,
   CylinderTypeRadios,
@@ -419,20 +422,28 @@ export function StorefrontMobileFilters({
 interface ProductCardProps {
   product: StorefrontProduct;
   shopSlug: string;
+  shopId?: string | null;
   previewMode: boolean;
   isAdding: boolean;
+  cartItems?: CartItem[];
+  pendingCartItemIds?: ReadonlySet<number>;
   onQuickAdd: (
     product: StorefrontProduct,
     selection: StorefrontAddSelection,
   ) => void;
+  onUpdateQuantity?: (cartItemId: number, quantity: number) => Promise<void>;
 }
 
 export function StorefrontProductCard({
   product,
   shopSlug,
+  shopId,
   previewMode,
   isAdding,
+  cartItems = [],
+  pendingCartItemIds,
   onQuickAdd,
+  onUpdateQuantity,
 }: ProductCardProps) {
   const [selectedVariantId, setSelectedVariantId] = useState(
     product.variants[0]?.variantId,
@@ -476,6 +487,19 @@ export function StorefrontProductCard({
   const selectedAvailableQty = Number(
     selectedVariant?.availableQty ?? product.totalAvailableQty,
   );
+  const cartItem =
+    shopId && selectedVariant
+      ? cartItems.find(
+          (item) =>
+            item.productId === product.id &&
+            item.variantId === selectedVariant.variantId &&
+            item.shopId === shopId &&
+            (item.cylinderSale?.mode ?? "new") === effectiveCylinderSaleMode,
+        )
+      : undefined;
+  const isUpdating = cartItem
+    ? pendingCartItemIds?.has(cartItem.id) === true
+    : false;
   const totalReviews = product.totalReviews ?? 0;
   const soldOrderCount = product.soldOrderCount ?? 0;
   const averageRating = product.averageRating ?? 0;
@@ -626,11 +650,56 @@ export function StorefrontProductCard({
               <ShoppingCart className="size-3.5" aria-hidden="true" />
               Add to cart
             </Button>
+          ) : cartItem && onUpdateQuantity ? (
+            <div
+              className="flex h-9 flex-1 items-center justify-between rounded-md border border-slate-200 bg-white px-1"
+              role="group"
+              aria-label={`Quantity for ${product.name}`}
+            >
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="size-7 rounded-md text-slate-600 hover:bg-slate-50 hover:text-slate-950"
+                onClick={() =>
+                  void onUpdateQuantity(cartItem.id, cartItem.quantity - 1)
+                }
+                disabled={isUpdating}
+                aria-label={`Decrease ${product.name} quantity`}
+              >
+                <Minus className="size-3.5" aria-hidden="true" />
+              </Button>
+              <span
+                className="min-w-8 text-center font-mono text-sm font-semibold tabular-nums text-slate-950"
+                aria-live="polite"
+              >
+                {cartItem.quantity}
+              </span>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                className="size-7 rounded-md text-slate-600 hover:bg-slate-50 hover:text-slate-950"
+                onClick={() =>
+                  void onUpdateQuantity(cartItem.id, cartItem.quantity + 1)
+                }
+                disabled={
+                  isUpdating || cartItem.quantity >= selectedAvailableQty
+                }
+                aria-label={`Increase ${product.name} quantity`}
+              >
+                <Plus className="size-3.5" aria-hidden="true" />
+              </Button>
+            </div>
           ) : (
             <Button
               type="button"
               className="h-9 flex-1 text-xs"
-              disabled={isAdding || !selectedVariant}
+              disabled={
+                isAdding ||
+                !selectedVariant ||
+                selectedAvailableQty <= 0
+              }
               onClick={() => {
                 if (!selectedVariant) return;
                 onQuickAdd(product, {
