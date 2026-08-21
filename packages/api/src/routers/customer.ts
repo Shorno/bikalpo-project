@@ -5146,16 +5146,18 @@ const mutations = {
     })
     .input(
       z.object({
-        productId: z.number(),
-        rating: z.number().min(1).max(5),
-        title: z.string().optional(),
-        comment: z.string().min(1),
+        productId: z.number().int().positive(),
+        rating: z.number().int().min(1).max(5),
+        title: z.string().trim().max(100).optional(),
+        comment: z.string().trim().min(1).max(1000),
       }),
     )
     .handler(async ({ context, input }) => {
       const userId = context.session.user.id;
 
-      // Check if user ordered this product
+      // A purchase is no longer required to review. We still record whether
+      // the reviewer has an order for the product so verified-purchase labels
+      // remain accurate for both consumers and retailers.
       const ordered = await db
         .select({ orderId: order.id })
         .from(order)
@@ -5168,23 +5170,6 @@ const mutations = {
         )
         .limit(1);
 
-      if (ordered.length === 0)
-        throw new ORPCError("FORBIDDEN", {
-          message: "You can only review products you ordered",
-        });
-
-      // Check duplicate
-      const existing = await db.query.productReview.findFirst({
-        where: and(
-          eq(productReview.productId, input.productId),
-          eq(productReview.userId, userId),
-        ),
-      });
-      if (existing)
-        throw new ORPCError("CONFLICT", {
-          message: "You have already reviewed this product",
-        });
-
       const [review] = await db
         .insert(productReview)
         .values({
@@ -5193,9 +5178,51 @@ const mutations = {
           rating: input.rating,
           title: input.title || null,
           comment: input.comment,
-          isVerifiedPurchase: true,
+          isVerifiedPurchase: ordered.length > 0,
         })
         .returning();
+
+      return { success: true, review };
+    }),
+
+  /** Update one of the current user's product reviews */
+  updateReview: protectedProcedure
+    .route({
+      method: "PATCH",
+      path: "/customer/reviews/{reviewId}",
+      tags: ["Customer"],
+      summary: "Update product review",
+    })
+    .input(
+      z.object({
+        reviewId: z.number().int().positive(),
+        rating: z.number().int().min(1).max(5),
+        title: z.string().trim().max(100).optional(),
+        comment: z.string().trim().min(1).max(1000),
+      }),
+    )
+    .handler(async ({ context, input }) => {
+      const [review] = await db
+        .update(productReview)
+        .set({
+          rating: input.rating,
+          title: input.title || null,
+          comment: input.comment,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(productReview.id, input.reviewId),
+            eq(productReview.userId, context.session.user.id),
+          ),
+        )
+        .returning();
+
+      if (!review) {
+        throw new ORPCError("NOT_FOUND", {
+          message: "Review not found or you do not have permission to update it",
+        });
+      }
 
       return { success: true, review };
     }),

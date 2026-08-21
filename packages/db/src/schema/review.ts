@@ -7,7 +7,6 @@ import {
     serial,
     text,
     timestamp,
-    unique,
     varchar,
 } from "drizzle-orm/pg-core";
 import { user } from "./auth-schema";
@@ -26,7 +25,7 @@ export const productReview = pgTable(
         rating: integer("rating").notNull(), // 1-5
         title: varchar("title", { length: 100 }),
         comment: text("comment").notNull(),
-        isVerifiedPurchase: boolean("is_verified_purchase").default(true).notNull(),
+        isVerifiedPurchase: boolean("is_verified_purchase").default(false).notNull(),
         createdAt: timestamp("created_at").defaultNow().notNull(),
         updatedAt: timestamp("updated_at")
             .defaultNow()
@@ -36,7 +35,6 @@ export const productReview = pgTable(
     (table) => [
         index("review_productId_idx").on(table.productId),
         index("review_userId_idx").on(table.userId),
-        unique("review_product_user_unique").on(table.productId, table.userId),
     ],
 );
 

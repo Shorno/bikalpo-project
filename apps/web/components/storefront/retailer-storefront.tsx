@@ -455,6 +455,17 @@ export function StorefrontProductCard({
     productSlug: product.slug,
     previewMode,
   });
+  const shouldHideCategoryContext = [
+    product.category?.name,
+    product.category?.slug,
+    product.subCategory?.name,
+    product.subCategory?.slug,
+  ]
+    .filter((value): value is string => Boolean(value))
+    .some((value) => {
+      const normalized = value.toLowerCase().replace(/[_-]+/g, " ").trim();
+      return normalized === "lpg" || normalized === "industrial lpg";
+    });
   const categoryContext = [product.category?.name, product.subCategory?.name]
     .filter(Boolean)
     .join(" / ");
@@ -505,10 +516,18 @@ export function StorefrontProductCard({
       </Link>
 
       <div className="flex flex-1 flex-col p-4">
-        <p className="min-h-4 truncate text-[11px] font-medium uppercase tracking-[0.06em] text-slate-500">
-          {categoryContext || "Retail product"}
-        </p>
-        <Link href={detailHref} className="mt-1.5 focus-visible:outline-none">
+        {!shouldHideCategoryContext && (
+          <p className="min-h-4 truncate text-[11px] font-medium uppercase tracking-[0.06em] text-slate-500">
+            {categoryContext || "Retail product"}
+          </p>
+        )}
+        <Link
+          href={detailHref}
+          className={cn(
+            "focus-visible:outline-none",
+            shouldHideCategoryContext ? "mt-0" : "mt-1.5",
+          )}
+        >
           <h2 className="line-clamp-2 min-h-10 text-sm font-semibold leading-5 text-slate-950 transition-colors hover:text-primary group-focus-within:text-primary">
             {product.name}
           </h2>
