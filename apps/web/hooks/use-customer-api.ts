@@ -274,6 +274,23 @@ export function useCreateReview() {
   });
 }
 
+/** Update one of the current user's reviews */
+export function useUpdateReview(productId: number) {
+  const qc = useQueryClient();
+  return useMutation({
+    ...orpc.customer.updateReview.mutationOptions(),
+    onSuccess: () => {
+      toast.success("Review updated!");
+      qc.invalidateQueries({
+        queryKey: orpc.customer.getProductReviews.key({
+          input: { productId },
+        }),
+      });
+    },
+    onError: (err) => toast.error(err.message),
+  });
+}
+
 /** Add address */
 export function useAddAddress() {
   const qc = useQueryClient();
