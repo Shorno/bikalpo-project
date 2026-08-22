@@ -53,6 +53,7 @@ import {
 } from "drizzle-orm";
 import { z } from "zod";
 import { publicProcedure, warehouseProcedure } from "../index";
+import { assertCheckoutPaymentSelectionAllowed } from "../services/checkout-domain";
 import { assertCheckoutQuoteMatches } from "../services/checkout-quote";
 import {
 	appendOrderPurchaseEvent,
@@ -1402,6 +1403,7 @@ const warehouseSupplierConnectionQueries = {
 				customerNote: z.string().optional(),
 				paymentMethod: z
 					.enum(["cash_on_delivery", "bkash", "nagad", "bank_transfer", "card"])
+					.nullable()
 					.default("cash_on_delivery"),
 				checkout: wholesaleCheckoutSubmissionSchema.optional(),
 			}),
@@ -1504,16 +1506,22 @@ const warehouseSupplierConnectionQueries = {
 			const checkoutSelection = input.checkout ?? {
 				deliveryMode: "courier" as const,
 				paymentPlan:
+					input.paymentMethod === null ||
 					input.paymentMethod === "cash_on_delivery"
 						? ("pay_later" as const)
 						: ("pay_now" as const),
 			};
-			if (
-				input.paymentMethod === "cash_on_delivery" &&
-				checkoutSelection.paymentPlan !== "pay_later"
-			) {
+			try {
+				assertCheckoutPaymentSelectionAllowed({
+					paymentMethod: input.paymentMethod,
+					paymentPlan: checkoutSelection.paymentPlan,
+				});
+			} catch (error) {
 				throw new ORPCError("BAD_REQUEST", {
-					message: "Cash on delivery can only be used with pay later",
+					message:
+						error instanceof Error
+							? error.message
+							: "The payment selection is invalid",
 				});
 			}
 			let checkoutResult: Awaited<ReturnType<typeof buildWholesaleCheckoutQuote>>;
@@ -1638,6 +1646,11 @@ const warehouseSupplierConnectionQueries = {
 				}
 
 				if (quote.initialPaymentAmount > 0) {
+					if (!input.paymentMethod) {
+						throw new ORPCError("BAD_REQUEST", {
+							message: "Select a method before making a payment",
+						});
+					}
 					const [pendingPayment] = await tx.insert(payment).values({
 						orderId: newOrder!.id,
 						idempotencyKey: input.checkout?.idempotencyKey

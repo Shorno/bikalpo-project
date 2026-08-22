@@ -22,6 +22,7 @@ import {
   Smartphone,
   Trash2,
   Warehouse,
+  X,
 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
@@ -271,8 +272,8 @@ export default function WarehouseStorefrontPage() {
   const [shippingArea, setShippingArea] = useState("");
   const [customerNote, setCustomerNote] = useState("");
   const [paymentMethod, setPaymentMethod] = useState<
-    "cash_on_delivery" | "bkash" | "nagad" | "bank_transfer" | "card"
-  >("cash_on_delivery");
+    "cash_on_delivery" | "bkash" | "nagad" | "bank_transfer" | "card" | null
+  >(null);
   const [deliveryMode, setDeliveryMode] = useState<"self_pickup" | "courier">(
     "courier",
   );
@@ -327,7 +328,8 @@ export default function WarehouseStorefrontPage() {
         | "bkash"
         | "nagad"
         | "bank_transfer"
-        | "card";
+        | "card"
+        | null;
       checkout: {
         deliveryMode: "self_pickup" | "courier";
         paymentPlan: "pay_now" | "partial" | "pay_later";
@@ -633,11 +635,19 @@ export default function WarehouseStorefrontPage() {
   };
 
   const paymentChannel =
-    paymentMethod === "cash_on_delivery"
-      ? "cod"
-      : paymentMethod === "bank_transfer"
-        ? "bank"
-        : "online";
+    paymentMethod === null
+      ? "none"
+      : paymentMethod === "cash_on_delivery"
+        ? "cod"
+        : paymentMethod === "bank_transfer"
+          ? "bank"
+          : "online";
+
+  const clearPaymentMethod = () => {
+    setPaymentMethod(null);
+    setPaymentPlan("pay_later");
+    setPartialAmount("");
+  };
 
   const selectPaymentChannel = (channel: "cod" | "online" | "bank") => {
     if (channel === "cod") {
@@ -1067,7 +1077,7 @@ export default function WarehouseStorefrontPage() {
             Payment Method *
           </Label>
           <Select
-            value={paymentMethod}
+            value={paymentMethod ?? undefined}
             onValueChange={(value) => {
               const method = value as typeof paymentMethod;
               setPaymentMethod(method);
@@ -1524,26 +1534,43 @@ export default function WarehouseStorefrontPage() {
                   disabled={checkoutQuoteQuery.isFetching || !checkoutQuote}
                   className="mt-6 h-11 w-full gap-2 bg-blue-600 text-sm font-semibold text-white hover:bg-blue-700"
                 >
-                  Proceed to Pay
+                  Continue to Payment
                   <ArrowRight className="h-4 w-4" />
                 </Button>
               </aside>
             </div>
           ) : (
             <div className="space-y-5">
-              <div className="flex items-start gap-3 border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-                <BadgeCheck className="mt-0.5 h-4 w-4 shrink-0 text-amber-700" />
-                <p>
-                  Collect your payment voucher and keep it with the invoice for
-                  payment verification and available purchase savings.
-                </p>
-              </div>
+              {(paymentChannel === "online" || paymentChannel === "bank") && (
+                <div className="flex items-start gap-3 border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                  <BadgeCheck className="mt-0.5 h-4 w-4 shrink-0 text-amber-700" />
+                  <p>
+                    Collect your payment voucher and keep it with the invoice
+                    for payment verification and available purchase savings.
+                  </p>
+                </div>
+              )}
 
               <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_23rem]">
                 <section className="border border-zinc-200 bg-white p-5 sm:p-7">
-                  <h2 className="text-base font-bold text-zinc-950">
-                    Select Payment Method
-                  </h2>
+                  <div className="flex items-center justify-between gap-3">
+                    <h2 className="text-base font-bold text-zinc-950">
+                      Select Payment Method
+                    </h2>
+                    {paymentChannel !== "none" && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        onClick={clearPaymentMethod}
+                        aria-label="Clear payment method"
+                        title="Clear payment method"
+                        className="h-8 w-8 text-zinc-500"
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    )}
+                  </div>
                   <div
                     className="mt-5 grid gap-3 sm:grid-cols-3"
                     role="radiogroup"
@@ -1602,7 +1629,7 @@ export default function WarehouseStorefrontPage() {
                     <div className="mt-6 space-y-2">
                       <Label htmlFor="online-provider">Online provider</Label>
                       <Select
-                        value={paymentMethod}
+                        value={paymentMethod ?? undefined}
                         onValueChange={(value) =>
                           setPaymentMethod(value as typeof paymentMethod)
                         }
@@ -1671,7 +1698,9 @@ export default function WarehouseStorefrontPage() {
                       )}
                       {paymentChannel === "cod"
                         ? "Confirm COD Order"
-                        : "Pay & Place Order"}
+                        : paymentChannel === "none"
+                          ? "Place Order"
+                          : "Pay & Place Order"}
                     </Button>
                     <Button
                       type="button"

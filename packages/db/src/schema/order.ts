@@ -177,7 +177,7 @@ export const order = pgTable(
         // Status
         status: orderStatusEnum("status").default("pending").notNull(),
         paymentStatus: paymentStatusEnum("payment_status").default("pending").notNull(),
-        paymentMethod: paymentMethodEnum("payment_method").default("cash_on_delivery").notNull(),
+        paymentMethod: paymentMethodEnum("payment_method").default("cash_on_delivery"),
         paymentPlan: orderPaymentPlanEnum("payment_plan")
             .default("pay_later")
             .notNull(),

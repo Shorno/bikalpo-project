@@ -2,6 +2,13 @@ export type CheckoutDeliveryMode = "self_pickup" | "courier";
 
 export type CheckoutPaymentPlan = "pay_now" | "partial" | "pay_later";
 
+export type CheckoutPaymentMethod =
+	| "cash_on_delivery"
+	| "bkash"
+	| "nagad"
+	| "bank_transfer"
+	| "card";
+
 export type CheckoutPaymentStatus =
 	| "pending"
 	| "partial"
@@ -219,5 +226,20 @@ export function assertCheckoutPaymentPlanAllowed(input: {
 		!input.allowRetailDeposits
 	) {
 		throw new Error("Partial payment is not enabled for this retailer");
+	}
+}
+
+export function assertCheckoutPaymentSelectionAllowed(input: {
+	paymentMethod: CheckoutPaymentMethod | null;
+	paymentPlan: CheckoutPaymentPlan;
+}) {
+	if (input.paymentMethod === null && input.paymentPlan !== "pay_later") {
+		throw new Error("An order without a payment method must remain unpaid");
+	}
+	if (
+		input.paymentMethod === "cash_on_delivery" &&
+		input.paymentPlan !== "pay_later"
+	) {
+		throw new Error("Cash on delivery can only be used with pay later");
 	}
 }

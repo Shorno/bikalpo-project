@@ -716,7 +716,11 @@ export default function WarehouseSupplierOrderDetailPage() {
               <Info label="Supplier" value={order.supplierWarehouseName} />
               <Info
                 label="Payment"
-                value={String(order.paymentMethod).replaceAll("_", " ")}
+                value={
+                  order.paymentMethod
+                    ? order.paymentMethod.replaceAll("_", " ")
+                    : "Not selected"
+                }
               />
               <Info label="Status" value={statusLabel} />
               {summaryRiderName ? <Info label="Rider" value={summaryRiderName} /> : null}

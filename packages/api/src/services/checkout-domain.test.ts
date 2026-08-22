@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
 	assertCheckoutPaymentPlanAllowed,
+	assertCheckoutPaymentSelectionAllowed,
 	calculateCheckoutTotals,
 	calculatePromotionDiscount,
 	deriveCheckoutPaymentStatus,
@@ -101,6 +102,49 @@ test("payment plans resolve full, partial, and later settlement", () => {
 	assert.equal(
 		resolveInitialPayment({ grandTotal: 2_284, paymentPlan: "pay_later" }),
 		0,
+	);
+});
+
+test("payment method selection supports COD, online, bank, and true unpaid cases", () => {
+	assert.doesNotThrow(() =>
+		assertCheckoutPaymentSelectionAllowed({
+			paymentMethod: "cash_on_delivery",
+			paymentPlan: "pay_later",
+		}),
+	);
+	assert.doesNotThrow(() =>
+		assertCheckoutPaymentSelectionAllowed({
+			paymentMethod: null,
+			paymentPlan: "pay_later",
+		}),
+	);
+	assert.doesNotThrow(() =>
+		assertCheckoutPaymentSelectionAllowed({
+			paymentMethod: "bkash",
+			paymentPlan: "pay_now",
+		}),
+	);
+	assert.doesNotThrow(() =>
+		assertCheckoutPaymentSelectionAllowed({
+			paymentMethod: "bank_transfer",
+			paymentPlan: "pay_now",
+		}),
+	);
+	assert.throws(
+		() =>
+			assertCheckoutPaymentSelectionAllowed({
+				paymentMethod: null,
+				paymentPlan: "pay_now",
+			}),
+		/must remain unpaid/i,
+	);
+	assert.throws(
+		() =>
+			assertCheckoutPaymentSelectionAllowed({
+				paymentMethod: "cash_on_delivery",
+				paymentPlan: "pay_now",
+			}),
+		/only be used with pay later/i,
 	);
 });
 
