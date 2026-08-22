@@ -233,6 +233,7 @@ export const ACCOUNTING_TRANSACTION_TYPES = [
   "supplier_advance_payment",
   "purchase_receipt",
   "supplier_advance_applied",
+  "supplier_advance_refunded",
   "supplier_payment",
   "purchase_return_due",
   "purchase_return_paid",
@@ -301,6 +302,11 @@ export const ACCOUNTING_TRANSACTION_TYPE_METADATA: Record<
     label: "Supplier Advance Applied",
     phase: "balance_sheet_only",
     sortOrder: 74,
+  },
+  supplier_advance_refunded: {
+    label: "Supplier Advance Refunded",
+    phase: "balance_sheet_only",
+    sortOrder: 75,
   },
   supplier_payment: {
     label: "Supplier Payment",
@@ -496,6 +502,14 @@ export const ACCOUNTING_POSTING_RULES: Record<
       { accountCode: "1103-supplier-advance", amountField: "amount", side: "credit" },
     ],
     transactionType: "supplier_advance_applied",
+  },
+  supplier_advance_refunded: {
+    description: "Refunded supplier advance restores cash and clears the advance.",
+    lines: [
+      { accountCode: "1001-cash-on-hand", amountField: "amount", side: "debit" },
+      { accountCode: "1103-supplier-advance", amountField: "amount", side: "credit" },
+    ],
+    transactionType: "supplier_advance_refunded",
   },
   supplier_payment: {
     description: "Cash or bank payment settles a supplier payable.",

@@ -12,6 +12,7 @@ export type PurchaseAccountingTransaction =
   | "supplier_advance_payment"
   | "purchase_receipt"
   | "supplier_advance_applied"
+  | "supplier_advance_refunded"
   | "supplier_payment"
   | "purchase_return_due"
   | "purchase_return_paid"

@@ -2272,6 +2272,43 @@ const mutations = {
 						items: existingOrder.items,
 					});
 				}
+
+				await appendOrderPurchaseEvent(tx, {
+					actorId: userId,
+					category: "purchase",
+					description: "Purchase cancelled before product receipt",
+					eventType: "cancelled",
+					fromState: existingOrder.status,
+					idempotencyKey: `order:${input.orderId}:cancelled`,
+					orderId: input.orderId,
+					ownerId: userId,
+					reference: existingOrder.orderNumber,
+					toState: "cancelled",
+				});
+				const refundablePayments = await tx.query.payment.findMany({
+					where: and(
+						eq(payment.orderId, input.orderId),
+						eq(payment.status, "completed"),
+					),
+				});
+				for (const paid of refundablePayments) {
+					await tx
+						.update(payment)
+						.set({ status: "refund_pending" })
+						.where(eq(payment.id, paid.id));
+					await appendOrderPurchaseEvent(tx, {
+						actorId: userId,
+						amount: Number(paid.amount) - Number(paid.refundedAmount),
+						category: "payment",
+						description: "Refund initiated after purchase cancellation",
+						eventType: "refund_requested",
+						idempotencyKey: `payment:${paid.id}:refund-requested`,
+						orderId: input.orderId,
+						ownerId: userId,
+						reference: existingOrder.orderNumber,
+						toState: "refund_pending",
+					});
+				}
 			});
 
 			return {

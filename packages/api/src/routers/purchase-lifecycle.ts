@@ -231,4 +231,183 @@ export const purchaseLifecycleRouter = {
         success: true,
       };
     }),
+
+  requestRefund: protectedProcedure
+    .route({
+      method: "POST",
+      path: "/purchase-lifecycle/refunds/request",
+      tags: ["Purchase Lifecycle"],
+      summary: "Request a purchase payment refund",
+    })
+    .input(
+      z.object({
+        paymentId: z.number().int().positive(),
+        reason: z.string().min(3).max(500),
+      }),
+    )
+    .handler(async ({ context, input }) => {
+      const ownerId = context.session.user.id;
+      const paid = await db.query.payment.findFirst({
+        where: eq(payment.id, input.paymentId),
+        with: { order: true },
+      });
+      if (!paid || paid.order.userId !== ownerId || paid.order.orderType !== "b2b") {
+        throw new ORPCError("NOT_FOUND", { message: "Purchase payment not found" });
+      }
+      if (!["cancelled", "returned"].includes(paid.order.status)) {
+        throw new ORPCError("BAD_REQUEST", {
+          message: "Cancel or return the purchase before requesting a refund",
+        });
+      }
+      if (!['completed', 'partially_refunded'].includes(paid.status)) {
+        throw new ORPCError("BAD_REQUEST", {
+          message: "Only completed purchase payments can be refunded",
+        });
+      }
+
+      await db.transaction(async (tx) => {
+        await tx
+          .update(payment)
+          .set({ status: "refund_pending" })
+          .where(eq(payment.id, paid.id));
+        await appendOrderPurchaseEvent(tx, {
+          actorId: ownerId,
+          amount: Number(paid.amount) - Number(paid.refundedAmount),
+          category: "payment",
+          description: input.reason,
+          eventType: "refund_requested",
+          fromState: paid.status,
+          idempotencyKey: `payment:${paid.id}:refund-requested`,
+          orderId: paid.orderId,
+          ownerId,
+          reference: paid.referenceNo ?? paid.order.orderNumber,
+          toState: "refund_pending",
+        });
+      });
+
+      return { status: "refund_pending" as const, success: true };
+    }),
+
+  completeRefund: protectedProcedure
+    .route({
+      method: "POST",
+      path: "/purchase-lifecycle/refunds/complete",
+      tags: ["Purchase Lifecycle"],
+      summary: "Complete a purchase payment refund",
+    })
+    .input(
+      z.object({
+        amount: z.number().positive(),
+        idempotencyKey: z.string().min(8).max(100),
+        paymentAccountId: z.number().int().positive(),
+        paymentId: z.number().int().positive(),
+        referenceNo: z.string().max(180).optional(),
+        transactionId: z.string().max(255).optional(),
+      }),
+    )
+    .handler(async ({ context, input }) => {
+      const ownerId = context.session.user.id;
+      const ownerType = ownerTypeForRole(context.session.user.role);
+      const paid = await db.query.payment.findFirst({
+        where: eq(payment.id, input.paymentId),
+        with: { order: true },
+      });
+      if (!paid || paid.order.userId !== ownerId || paid.order.orderType !== "b2b") {
+        throw new ORPCError("NOT_FOUND", { message: "Purchase payment not found" });
+      }
+      if (paid.status !== "refund_pending") {
+        throw new ORPCError("BAD_REQUEST", {
+          message: "The purchase payment is not awaiting a refund",
+        });
+      }
+      const refundable = Number(paid.amount) - Number(paid.refundedAmount);
+      if (input.amount > refundable + 0.001) {
+        throw new ORPCError("BAD_REQUEST", {
+          message: `Refund exceeds the refundable amount of Tk${refundable.toFixed(2)}`,
+        });
+      }
+
+      await ensureDefaultFinancePaymentAccounts({ ownerId, ownerType });
+      const refundedAt = new Date();
+      const refundedAmount = Number(paid.refundedAmount) + input.amount;
+      const fullyRefunded = refundedAmount >= Number(paid.amount) - 0.001;
+
+      const result = await db.transaction(async (tx) => {
+        const [refund] = await tx
+          .insert(payment)
+          .values({
+            amount: input.amount.toFixed(2),
+            completedAt: refundedAt,
+            entryType: "refund",
+            idempotencyKey: input.idempotencyKey,
+            orderId: paid.orderId,
+            paymentAccountId: input.paymentAccountId,
+            paymentMethod: paid.paymentMethod,
+            paymentProvider: paid.paymentProvider,
+            purchasePurpose: paid.purchasePurpose,
+            purchaseTiming: paid.purchaseTiming,
+            referenceNo: input.referenceNo ?? paid.referenceNo,
+            relatedPaymentId: paid.id,
+            status: "completed",
+            transactionId: input.transactionId ?? null,
+            verifiedAt: refundedAt,
+          })
+          .returning({ id: payment.id });
+
+        await postPurchaseJournal(tx, {
+          actorId: ownerId,
+          amount: input.amount,
+          idempotencyKey: `purchase-refund:${refund!.id}:completed`,
+          memo: `Purchase refund for ${paid.order.orderNumber}`,
+          ownerId,
+          ownerType,
+          paymentAccountId: input.paymentAccountId,
+          sourceId: String(refund!.id),
+          sourceType: "payment",
+          transactionDate: localDateString(refundedAt),
+          transactionType:
+            paid.purchasePurpose === "supplier_advance"
+              ? "supplier_advance_refunded"
+              : "supplier_refund_received",
+        });
+
+        await tx
+          .update(payment)
+          .set({
+            refundedAmount: refundedAmount.toFixed(2),
+            status: fullyRefunded ? "refunded" : "partially_refunded",
+          })
+          .where(eq(payment.id, paid.id));
+        await tx
+          .update(order)
+          .set({
+            paymentStatus: fullyRefunded ? "refunded" : "partially_refunded",
+            returnAmount: (
+              Number(paid.order.returnAmount) + input.amount
+            ).toFixed(2),
+          })
+          .where(eq(order.id, paid.orderId));
+        await appendOrderPurchaseEvent(tx, {
+          actorId: ownerId,
+          amount: input.amount,
+          category: "payment",
+          description: "Purchase refund completed",
+          eventType: "refund_completed",
+          fromState: "refund_pending",
+          idempotencyKey: `payment:${paid.id}:refund:${refund!.id}:completed`,
+          orderId: paid.orderId,
+          ownerId,
+          reference: input.referenceNo ?? paid.order.orderNumber,
+          toState: fullyRefunded ? "refunded" : "partially_refunded",
+        });
+
+        return refund!;
+      });
+
+      return {
+        paymentStatus: fullyRefunded ? "refunded" : "partially_refunded",
+        refundId: result.id,
+        success: true,
+      };
+    }),
 };

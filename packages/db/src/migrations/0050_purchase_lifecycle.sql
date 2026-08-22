@@ -60,6 +60,7 @@ ALTER TYPE "journal_source_type" ADD VALUE IF NOT EXISTS 'purchase_return';
 --> statement-breakpoint
 ALTER TYPE "journal_transaction_type" ADD VALUE IF NOT EXISTS 'purchase_receipt';
 ALTER TYPE "journal_transaction_type" ADD VALUE IF NOT EXISTS 'supplier_advance_applied';
+ALTER TYPE "journal_transaction_type" ADD VALUE IF NOT EXISTS 'supplier_advance_refunded';
 ALTER TYPE "journal_transaction_type" ADD VALUE IF NOT EXISTS 'supplier_payment';
 ALTER TYPE "journal_transaction_type" ADD VALUE IF NOT EXISTS 'purchase_return_due';
 ALTER TYPE "journal_transaction_type" ADD VALUE IF NOT EXISTS 'purchase_return_paid';
