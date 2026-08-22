@@ -1069,6 +1069,11 @@ export default function CustomerCheckoutPage() {
                       grandTotal={
                         checkoutQuote?.totals.grandTotal ?? totalPrice
                       }
+                      labels={{
+                        pay_now: "Full Payment",
+                        partial: "Partial Payment",
+                        pay_later: "Not Paid / Due",
+                      }}
                     />
                     <div className="border-t border-slate-100 pt-6">
                       <RadioGroup
@@ -1078,8 +1083,6 @@ export default function CustomerCheckoutPage() {
                           setPaymentMethod(method);
                           if (method === "cash_on_delivery") {
                             setPaymentPlan("pay_later");
-                          } else if (paymentPlan === "pay_later") {
-                            setPaymentPlan("pay_now");
                           }
                         }}
                         className="grid gap-3"
