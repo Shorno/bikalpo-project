@@ -79,7 +79,7 @@ export async function recognizePlatformPurchaseReceipt(
         ),
       })
     : [];
-  const inventoryByVariant = new Map(
+  const inventoryByVariant = new Map<number, any>(
     inventoryRows.map((row: any) => [row.variantId, row]),
   );
 

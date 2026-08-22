@@ -1,13 +1,26 @@
 import { db } from "@bikalpo-project/db";
 import { ensureDefaultFinancePaymentAccounts } from "@bikalpo-project/db/accounting-seed";
-import { order, payment } from "@bikalpo-project/db/schema";
+import {
+  inventoryMovement,
+  journalEntry,
+  journalLine,
+  order,
+  payment,
+  purchaseEvent,
+  user,
+} from "@bikalpo-project/db/schema";
 import { ORPCError } from "@orpc/server";
-import { and, eq } from "drizzle-orm";
+import { and, count, desc, eq, gte, ilike, inArray, isNotNull, lte } from "drizzle-orm";
 import { z } from "zod";
 import { protectedProcedure } from "../index";
 import { postPurchaseJournal } from "../services/purchase-accounting";
 import { appendOrderPurchaseEvent } from "../services/purchase-history";
 import { classifyPurchasePayment } from "../services/purchase-lifecycle";
+import {
+  deriveFinancialStatus,
+  derivePaymentAggregateStatus,
+  derivePurchaseStatus,
+} from "../services/purchase-lifecycle";
 import { localDateString } from "../utils/date";
 
 function ownerTypeForRole(role?: string | null) {
@@ -19,6 +32,260 @@ function ownerTypeForRole(role?: string | null) {
 }
 
 export const purchaseLifecycleRouter = {
+  getHistory: protectedProcedure
+    .route({
+      method: "POST",
+      path: "/purchase-lifecycle/history",
+      tags: ["Purchase Lifecycle"],
+      summary: "List platform purchase history",
+    })
+    .input(
+      z.object({
+        dateFrom: z.string().optional(),
+        dateTo: z.string().optional(),
+        limit: z.number().int().min(1).max(100).default(20),
+        page: z.number().int().min(1).default(1),
+        search: z.string().max(120).optional(),
+        status: z
+          .enum([
+            "submitted",
+            "accepted",
+            "partially_received",
+            "received",
+            "cancelled",
+            "returned",
+          ])
+          .optional(),
+      }),
+    )
+    .handler(async ({ context, input }) => {
+      const ownerId = context.session.user.id;
+      ownerTypeForRole(context.session.user.role);
+      const conditions: any[] = [
+        eq(order.userId, ownerId),
+        eq(order.orderType, "b2b"),
+      ];
+      if (input.search?.trim()) {
+        conditions.push(ilike(order.orderNumber, `%${input.search.trim()}%`));
+      }
+      if (input.dateFrom) conditions.push(gte(order.createdAt, new Date(input.dateFrom)));
+      if (input.dateTo) {
+        const end = new Date(`${input.dateTo}T23:59:59.999`);
+        conditions.push(lte(order.createdAt, end));
+      }
+      if (input.status === "cancelled" || input.status === "returned") {
+        conditions.push(eq(order.status, input.status));
+      } else if (input.status === "received") {
+        conditions.push(isNotNull(order.receivedAt));
+      } else if (input.status === "submitted") {
+        conditions.push(eq(order.status, "pending"));
+      } else if (input.status === "accepted") {
+        conditions.push(
+          inArray(order.status, [
+            "approved",
+            "confirmed",
+            "processing",
+            "ready_for_dispatch",
+            "partially_invoiced",
+            "invoiced",
+            "delivered",
+          ]),
+        );
+      }
+
+      const where = and(...conditions);
+      const countRows = await db.select({ total: count() }).from(order).where(where);
+      const total = countRows[0]?.total ?? 0;
+      const rows = await db.query.order.findMany({
+        where,
+        with: { items: true },
+        orderBy: [desc(order.createdAt)],
+        limit: input.limit,
+        offset: (input.page - 1) * input.limit,
+      });
+      const orderIds = rows.map((row) => row.id);
+      const warehouseIds = rows
+        .map((row) => row.warehouseId)
+        .filter((id): id is string => Boolean(id));
+      const [sellers, payments, movements, events] = await Promise.all([
+        warehouseIds.length
+          ? db.query.user.findMany({ where: inArray(user.id, warehouseIds) })
+          : [],
+        orderIds.length
+          ? db.query.payment.findMany({ where: inArray(payment.orderId, orderIds) })
+          : [],
+        orderIds.length
+          ? db.query.inventoryMovement.findMany({
+              where: inArray(inventoryMovement.orderId, orderIds),
+            })
+          : [],
+        orderIds.length
+          ? db.query.purchaseEvent.findMany({
+              where: inArray(purchaseEvent.orderId, orderIds),
+            })
+          : [],
+      ]);
+      const sellerById = new Map(sellers.map((seller) => [seller.id, seller]));
+
+      return {
+        pagination: {
+          limit: input.limit,
+          page: input.page,
+          pages: Math.max(1, Math.ceil(Number(total ?? 0) / input.limit)),
+          total: Number(total ?? 0),
+        },
+        purchases: rows.map((row) => {
+          const rowPayments = payments.filter((item) => item.orderId === row.id);
+          const rowMovements = movements.filter((item) => item.orderId === row.id);
+          const rowEvents = events.filter((item) => item.orderId === row.id);
+          const expectedQty = row.items.reduce(
+            (sum, item) => sum + Number(item.modifiedQty ?? item.quantity),
+            0,
+          );
+          const receivedQty = row.items.reduce(
+            (sum, item) => sum + Number(item.receivedQty ?? 0),
+            0,
+          );
+          const recognizedAmount = rowMovements.reduce(
+            (sum, item) => sum + Number(item.totalCost ?? 0),
+            0,
+          );
+          const advances = rowPayments
+            .filter(
+              (item) =>
+                item.entryType === "payment" &&
+                item.status === "completed" &&
+                item.purchasePurpose === "supplier_advance",
+            )
+            .reduce((sum, item) => sum + Number(item.amount), 0);
+          const advanceApplied = rowEvents
+            .filter((item) => item.eventType === "advance_applied")
+            .reduce((sum, item) => sum + Number(item.amount ?? 0), 0);
+          const settlements = rowPayments
+            .filter(
+              (item) =>
+                item.entryType === "payment" &&
+                item.status === "completed" &&
+                item.purchasePurpose === "payable_settlement",
+            )
+            .reduce((sum, item) => sum + Number(item.amount), 0);
+          const refundedAmount = rowPayments
+            .filter((item) => item.entryType === "refund" && item.status === "completed")
+            .reduce((sum, item) => sum + Number(item.amount), 0);
+          const seller = row.warehouseId ? sellerById.get(row.warehouseId) : null;
+
+          return {
+            createdAt: row.createdAt,
+            dueAmount: row.dueAmount,
+            financialStatus: deriveFinancialStatus({
+              advanceBalance: Math.max(0, advances - advanceApplied),
+              payableBalance: Math.max(
+                0,
+                recognizedAmount - advanceApplied - settlements,
+              ),
+              recognizedAmount,
+              refundedAmount,
+              refundPending: rowPayments.some(
+                (item) => item.status === "refund_pending",
+              ),
+            }),
+            id: row.id,
+            inventoryStatus:
+              recognizedAmount <= 0
+                ? "not_recognized"
+                : receivedQty < expectedQty
+                  ? "partially_received"
+                  : "recognized",
+            itemCount: row.items.length,
+            orderNumber: row.orderNumber,
+            paidAmount: row.paidAmount,
+            paymentMethod: row.paymentMethod,
+            paymentStatus: derivePaymentAggregateStatus({
+              paidAmount: Number(row.paidAmount),
+              purchaseTotal: Number(row.total),
+              refundedAmount,
+              refundPending: rowPayments.some(
+                (item) => item.status === "refund_pending",
+              ),
+            }),
+            purchaseStatus: derivePurchaseStatus({
+              expectedQty,
+              orderStatus: row.status,
+              receivedAt: row.receivedAt,
+              receivedQty,
+            }),
+            receivedAt: row.receivedAt,
+            sellerName:
+              seller?.warehouseName ?? seller?.shopName ?? seller?.name ?? "Supplier",
+            total: row.total,
+          };
+        }),
+      };
+    }),
+
+  getDetail: protectedProcedure
+    .route({
+      method: "GET",
+      path: "/purchase-lifecycle/history/{orderId}",
+      tags: ["Purchase Lifecycle"],
+      summary: "Get permanent purchase histories",
+    })
+    .input(z.object({ orderId: z.number().int().positive() }))
+    .handler(async ({ context, input }) => {
+      const ownerId = context.session.user.id;
+      ownerTypeForRole(context.session.user.role);
+      const purchaseOrder = await db.query.order.findFirst({
+        where: and(
+          eq(order.id, input.orderId),
+          eq(order.userId, ownerId),
+          eq(order.orderType, "b2b"),
+        ),
+        with: { items: true },
+      });
+      if (!purchaseOrder) {
+        throw new ORPCError("NOT_FOUND", { message: "Purchase order not found" });
+      }
+
+      const [events, payments, movements, journals] = await Promise.all([
+        db.query.purchaseEvent.findMany({
+          where: eq(purchaseEvent.orderId, input.orderId),
+          orderBy: [desc(purchaseEvent.occurredAt)],
+        }),
+        db.query.payment.findMany({
+          where: eq(payment.orderId, input.orderId),
+          orderBy: [desc(payment.createdAt)],
+        }),
+        db.query.inventoryMovement.findMany({
+          where: eq(inventoryMovement.orderId, input.orderId),
+          orderBy: [desc(inventoryMovement.occurredAt)],
+        }),
+        db.query.journalEntry.findMany({
+          where: and(
+            eq(journalEntry.ownerId, ownerId),
+            ilike(journalEntry.memo, `%${purchaseOrder.orderNumber}%`),
+          ),
+          orderBy: [desc(journalEntry.postedAt)],
+        }),
+      ]);
+      const journalIds = journals.map((entry) => entry.id);
+      const lines = journalIds.length
+        ? await db.query.journalLine.findMany({
+            where: inArray(journalLine.journalEntryId, journalIds),
+          })
+        : [];
+
+      return {
+        accountingHistory: journals.map((entry) => ({
+          ...entry,
+          lines: lines.filter((line) => line.journalEntryId === entry.id),
+        })),
+        inventoryHistory: movements,
+        order: purchaseOrder,
+        paymentHistory: payments,
+        purchaseHistory: events,
+      };
+    }),
+
   completePayment: protectedProcedure
     .route({
       method: "POST",
