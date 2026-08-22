@@ -215,7 +215,6 @@ export function PaymentPlanSelector({
   partialAmount,
   onPartialAmountChange,
   grandTotal,
-  labels,
 }: {
   value: "pay_now" | "partial" | "pay_later";
   onChange: (value: "pay_now" | "partial" | "pay_later") => void;
@@ -223,28 +222,13 @@ export function PaymentPlanSelector({
   partialAmount: string;
   onPartialAmountChange: (value: string) => void;
   grandTotal: number;
-  labels?: Partial<Record<"pay_now" | "partial" | "pay_later", string>>;
 }) {
   const options = [
-    {
-      value: "pay_now" as const,
-      label: labels?.pay_now ?? "Pay now",
-      icon: WalletCards,
-    },
+    { value: "pay_now" as const, label: "Pay now", icon: WalletCards },
     ...(allowPartial
-      ? [
-          {
-            value: "partial" as const,
-            label: labels?.partial ?? "Partial",
-            icon: Banknote,
-          },
-        ]
+      ? [{ value: "partial" as const, label: "Partial", icon: Banknote }]
       : []),
-    {
-      value: "pay_later" as const,
-      label: labels?.pay_later ?? "Pay later",
-      icon: Clock3,
-    },
+    { value: "pay_later" as const, label: "Pay later", icon: Clock3 },
   ];
 
   return (

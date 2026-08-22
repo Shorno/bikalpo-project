@@ -626,6 +626,7 @@ export default function WarehouseStorefrontPage() {
 
   const updatePaymentPlan = (value: "pay_now" | "partial" | "pay_later") => {
     setPaymentPlan(value);
+    if (value === "pay_later") setPaymentMethod("cash_on_delivery");
     if (value !== "pay_later" && paymentMethod === "cash_on_delivery") {
       setPaymentMethod("bank_transfer");
     }
@@ -647,6 +648,7 @@ export default function WarehouseStorefrontPage() {
     }
 
     setPaymentMethod(channel === "bank" ? "bank_transfer" : "bkash");
+    if (paymentPlan === "pay_later") setPaymentPlan("pay_now");
   };
 
   const proceedToPayment = () => {
@@ -1617,23 +1619,6 @@ export default function WarehouseStorefrontPage() {
                     </div>
                   )}
 
-                  <div className="mt-6 space-y-2">
-                    <Label className="font-semibold">Payment Status</Label>
-                    <PaymentPlanSelector
-                      value={paymentPlan}
-                      onChange={updatePaymentPlan}
-                      allowPartial
-                      partialAmount={partialAmount}
-                      onPartialAmountChange={setPartialAmount}
-                      grandTotal={checkoutGrandTotal}
-                      labels={{
-                        pay_now: "Full Payment",
-                        partial: "Partial Payment",
-                        pay_later: "Not Paid / Due",
-                      }}
-                    />
-                  </div>
-
                   {paymentChannel === "cod" && (
                     <div className="mt-6 border border-zinc-200 bg-zinc-50 p-4 text-sm text-zinc-600">
                       The full order amount will remain due and will be
@@ -1666,7 +1651,7 @@ export default function WarehouseStorefrontPage() {
                     </p>
                   </div>
                   <div className="space-y-5 p-5">
-                    {renderDocumentTotals(true)}
+                    {renderDocumentTotals()}
                     <Button
                       type="button"
                       className="h-11 w-full gap-2 bg-blue-600 text-sm font-semibold text-white hover:bg-blue-700"
@@ -1684,13 +1669,9 @@ export default function WarehouseStorefrontPage() {
                       ) : (
                         <CreditCard className="h-4 w-4" />
                       )}
-                      {paymentPlan === "pay_later"
-                        ? paymentChannel === "cod"
-                          ? "Confirm COD Order"
-                          : "Place Unpaid Order"
-                        : checkoutPayment < checkoutGrandTotal
-                          ? "Pay Deposit & Place Order"
-                          : "Pay & Place Order"}
+                      {paymentChannel === "cod"
+                        ? "Confirm COD Order"
+                        : "Pay & Place Order"}
                     </Button>
                     <Button
                       type="button"
