@@ -91,6 +91,10 @@ import { publicProcedure, shopOwnerProcedure } from "../index";
 import { assertCheckoutQuoteMatches } from "../services/checkout-quote";
 import { resolveRetailerOfferLinePrice } from "../services/open-order-domain";
 import {
+	appendOrderPurchaseEvent,
+	recordPurchaseSubmission,
+} from "../services/purchase-history";
+import {
 	buildWholesaleCheckoutQuote,
 	getWholesalePaymentDueAt,
 	wholesaleCheckoutSubmissionSchema,
@@ -7562,6 +7566,15 @@ const warehouseOrderQueries = {
 					})
 					.returning();
 
+				await recordPurchaseSubmission(tx, {
+					actorId: userId,
+					idempotencyPrefix:
+						input.checkout?.idempotencyKey ?? `order:${newOrder!.id}`,
+					orderId: newOrder!.id,
+					orderNumber,
+					ownerId: userId,
+				});
+
 				if (promotion && quote.promotionCode) {
 					const consumed = await tx
 						.update(checkoutPromotion)
@@ -7596,7 +7609,7 @@ const warehouseOrderQueries = {
 				}
 
 				if (quote.initialPaymentAmount > 0) {
-					await tx.insert(payment).values({
+					const [pendingPayment] = await tx.insert(payment).values({
 						orderId: newOrder!.id,
 						idempotencyKey: input.checkout?.idempotencyKey
 							? `${input.checkout.idempotencyKey}:initial`
@@ -7608,6 +7621,21 @@ const warehouseOrderQueries = {
 								: "sslcommerz",
 						status: "pending",
 						amount: quote.initialPaymentAmount.toFixed(2),
+						purchasePurpose: "supplier_advance",
+						purchaseTiming: "before_receipt",
+					}).returning({ id: payment.id });
+
+					await appendOrderPurchaseEvent(tx, {
+						actorId: userId,
+						amount: quote.initialPaymentAmount,
+						category: "payment",
+						description: "Initial purchase payment started",
+						eventType: "payment_initiated",
+						idempotencyKey: `${input.checkout?.idempotencyKey ?? `order:${newOrder!.id}`}:payment:${pendingPayment!.id}:initiated`,
+						orderId: newOrder!.id,
+						ownerId: userId,
+						reference: orderNumber,
+						toState: "pending",
 					});
 				}
 
