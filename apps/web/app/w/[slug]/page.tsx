@@ -4,6 +4,7 @@ import type { FulfillmentMode } from "@bikalpo-project/db/fulfillment";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertCircle,
+  ArrowLeft,
   ArrowRight,
   BadgeCheck,
   Loader2,
@@ -107,6 +108,7 @@ export default function WarehouseStorefrontPage() {
   const { slug } = useParams<{ slug: string }>();
   const searchParams = useSearchParams();
   const queryClient = useQueryClient();
+  const isCheckoutMode = searchParams.get("checkout") === "1";
 
   const [search, setSearch] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
@@ -152,32 +154,29 @@ export default function WarehouseStorefrontPage() {
       : "warehouse-supplier-cart"
   }:${sessionData?.user?.id}:${slug}`;
   const [cart, setCart] = useState<any[]>([]);
+  const [isCartHydrated, setIsCartHydrated] = useState(false);
 
   // Load cart state
   useEffect(() => {
-    if (
-      typeof window !== "undefined" &&
-      sessionData?.user?.id &&
-      hasCartAccess
-    ) {
+    if (typeof window === "undefined" || sessionPending) return;
+
+    if (sessionData?.user?.id && hasCartAccess) {
       const stored = localStorage.getItem(cartKey);
       if (stored) {
         try {
           setCart(JSON.parse(stored));
         } catch (e) {
           console.error(e);
+          setCart([]);
         }
       } else {
         setCart([]);
       }
+    } else {
+      setCart([]);
     }
-  }, [cartKey, sessionData?.user?.id, hasCartAccess]);
-
-  useEffect(() => {
-    if (searchParams.get("checkout") === "1" && cart.length > 0) {
-      setIsCartOpen(true);
-    }
-  }, [cart.length, searchParams]);
+    setIsCartHydrated(true);
+  }, [cartKey, sessionData?.user?.id, sessionPending, hasCartAccess]);
 
   // Save cart state
   const saveCart = (newCart: any[]) => {
@@ -911,6 +910,184 @@ export default function WarehouseStorefrontPage() {
     );
   };
 
+  const renderOrderTotals = () => (
+    <div className="space-y-2.5 text-sm">
+      <div className="flex items-center justify-between gap-4">
+        <span className="text-zinc-500">Subtotal</span>
+        <span className="font-semibold tabular-nums text-zinc-900">
+          ৳ {cartTotal.toLocaleString()}
+        </span>
+      </div>
+      {checkoutDiscount > 0 && (
+        <div className="flex items-center justify-between gap-4">
+          <span className="text-zinc-500">Discount</span>
+          <span className="font-semibold tabular-nums text-emerald-700">
+            -৳ {checkoutDiscount.toLocaleString()}
+          </span>
+        </div>
+      )}
+      {checkoutTax > 0 && (
+        <div className="flex items-center justify-between gap-4">
+          <span className="text-zinc-500">Tax</span>
+          <span className="font-semibold tabular-nums text-zinc-900">
+            ৳ {checkoutTax.toLocaleString()}
+          </span>
+        </div>
+      )}
+      {checkoutShipping > 0 && (
+        <div className="flex items-center justify-between gap-4">
+          <span className="text-zinc-500">Shipping</span>
+          <span className="font-semibold tabular-nums text-zinc-900">
+            ৳ {checkoutShipping.toLocaleString()}
+          </span>
+        </div>
+      )}
+      <div className="flex items-center justify-between gap-4 border-t border-zinc-200 pt-3">
+        <span className="font-semibold text-zinc-900">Order Total</span>
+        <span
+          className={`text-lg font-bold tabular-nums ${
+            gridMode === "retailer" ? "text-blue-700" : "text-emerald-700"
+          }`}
+        >
+          ৳ {checkoutGrandTotal.toLocaleString()}
+        </span>
+      </div>
+      <div className="flex items-center justify-between gap-4">
+        <span className="text-zinc-500">Pay now</span>
+        <span className="font-semibold tabular-nums text-emerald-700">
+          ৳ {checkoutPayment.toLocaleString()}
+        </span>
+      </div>
+      <div className="flex items-center justify-between gap-4">
+        <span className="text-zinc-500">Due</span>
+        <span className="font-semibold tabular-nums text-amber-700">
+          ৳ {Math.max(0, checkoutGrandTotal - checkoutPayment).toLocaleString()}
+        </span>
+      </div>
+    </div>
+  );
+
+  if (isCheckoutMode) {
+    const storefrontHref = `/w/${encodeURIComponent(slug)}`;
+
+    return (
+      <div className="min-h-screen bg-zinc-50">
+        <header className="border-b border-zinc-200 bg-white">
+          <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-4 sm:px-6">
+            <div className="flex min-w-0 items-center gap-3">
+              <Button asChild variant="outline" size="icon" className="shrink-0">
+                <Link href={storefrontHref} aria-label="Continue shopping">
+                  <ArrowLeft className="h-4 w-4" />
+                </Link>
+              </Button>
+              <div className="min-w-0">
+                <h1 className="text-xl font-bold text-zinc-950 sm:text-2xl">
+                  Checkout
+                </h1>
+                <p className="truncate text-xs text-zinc-500 sm:text-sm">
+                  Ordering from {warehouse.warehouseName || warehouse.name}
+                </p>
+              </div>
+            </div>
+            <Badge variant="outline" className="shrink-0 tabular-nums">
+              {cartCount} {cartCount === 1 ? "item" : "items"}
+            </Badge>
+          </div>
+        </header>
+
+        <main className="mx-auto max-w-6xl px-4 py-6 sm:px-6 sm:py-8">
+          {!isCartHydrated ? (
+            <div className="flex min-h-[55vh] items-center justify-center border border-zinc-200 bg-white">
+              <div className="flex items-center gap-2 text-sm text-zinc-500">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Loading checkout...
+              </div>
+            </div>
+          ) : cart.length === 0 ? (
+            <div className="flex min-h-[55vh] flex-col items-center justify-center border border-dashed border-zinc-300 bg-white px-6 text-center">
+              <ShoppingCart className="mb-3 h-10 w-10 text-zinc-300" />
+              <h2 className="text-lg font-semibold text-zinc-900">
+                Your checkout is empty
+              </h2>
+              <p className="mt-1 max-w-sm text-sm text-zinc-500">
+                Return to the supplier catalog and add products before checking
+                out.
+              </p>
+              <Button asChild className="mt-5 gap-2">
+                <Link href={storefrontHref}>
+                  <ArrowLeft className="h-4 w-4" />
+                  Browse products
+                </Link>
+              </Button>
+            </div>
+          ) : (
+            <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]">
+              <section className="border border-zinc-200 bg-white">
+                <div className="border-b border-zinc-200 px-5 py-4 sm:px-6">
+                  <h2 className="text-base font-semibold text-zinc-900">
+                    Delivery and payment
+                  </h2>
+                  <p className="mt-1 text-xs text-zinc-500">
+                    Confirm the receiving details and payment terms for this
+                    order.
+                  </p>
+                </div>
+                <div className="px-5 pb-6 sm:px-6">
+                  {renderCheckoutForm()}
+                </div>
+              </section>
+
+              <aside className="order-first border border-zinc-200 bg-white lg:sticky lg:top-6 lg:order-last">
+                <div className="flex items-center justify-between gap-3 border-b border-zinc-200 px-5 py-4">
+                  <h2 className="flex items-center gap-2 text-base font-semibold text-zinc-900">
+                    <ShoppingCart className="h-4 w-4" />
+                    Order summary
+                  </h2>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={clearCart}
+                    className="h-8 text-xs text-zinc-500 hover:text-red-600"
+                  >
+                    Clear
+                  </Button>
+                </div>
+                <div className="space-y-5 p-5">
+                  {renderCartItems()}
+                  {renderOrderTotals()}
+                  <Button
+                    type="button"
+                    className={`h-11 w-full gap-2 text-sm font-semibold text-white ${
+                      gridMode === "retailer"
+                        ? "bg-blue-600 hover:bg-blue-700"
+                        : "bg-emerald-600 hover:bg-emerald-700"
+                    }`}
+                    disabled={
+                      orderMutation.isPending ||
+                      checkoutQuoteQuery.isFetching ||
+                      !checkoutQuote
+                    }
+                    onClick={handlePlaceOrder}
+                  >
+                    {orderMutation.isPending ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <ArrowRight className="h-4 w-4" />
+                    )}
+                    {gridMode === "retailer"
+                      ? "Place Order"
+                      : "Place Supplier Order"}
+                  </Button>
+                </div>
+              </aside>
+            </div>
+          )}
+        </main>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-zinc-50/50">
       {/* Warehouse Header */}
@@ -1137,76 +1314,7 @@ export default function WarehouseStorefrontPage() {
               {/* Sticky Drawer Footer with Totals and Order Placement CTA */}
               {cart.length > 0 && (
                 <div className="p-4 border-t border-zinc-200 bg-white flex-shrink-0 space-y-3 shadow-[0_-4px_12px_rgba(0,0,0,0.03)]">
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="text-zinc-500 font-semibold">
-                        Subtotal
-                      </span>
-                      <span className="font-bold text-zinc-900 font-mono">
-                        ৳ {cartTotal.toLocaleString()}
-                      </span>
-                    </div>
-                    {checkoutDiscount > 0 && (
-                      <div className="flex items-center justify-between text-xs">
-                        <span className="text-zinc-500 font-semibold">
-                          Discount
-                        </span>
-                        <span className="font-bold text-emerald-700 font-mono">
-                          -৳ {checkoutDiscount.toLocaleString()}
-                        </span>
-                      </div>
-                    )}
-                    {checkoutTax > 0 && (
-                      <div className="flex items-center justify-between text-xs">
-                        <span className="text-zinc-500 font-semibold">Tax</span>
-                        <span className="font-bold text-zinc-900 font-mono">
-                          ৳ {checkoutTax.toLocaleString()}
-                        </span>
-                      </div>
-                    )}
-                    {checkoutShipping > 0 && (
-                      <div className="flex items-center justify-between text-xs">
-                        <span className="text-zinc-500 font-semibold">
-                          Shipping
-                        </span>
-                        <span className="font-bold text-zinc-900 font-mono">
-                          ৳ {checkoutShipping.toLocaleString()}
-                        </span>
-                      </div>
-                    )}
-                    <div className="flex items-center justify-between text-xs pt-1.5 border-t">
-                      <span className="text-zinc-500 font-semibold">
-                        Order Total
-                      </span>
-                      <span
-                        className={`font-extrabold text-sm font-mono ${
-                          gridMode === "retailer"
-                            ? "text-blue-600"
-                            : "text-emerald-600"
-                        }`}
-                      >
-                        ৳ {checkoutGrandTotal.toLocaleString()}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="text-zinc-500 font-semibold">
-                        Pay now
-                      </span>
-                      <span className="font-bold text-emerald-700 font-mono">
-                        ৳ {checkoutPayment.toLocaleString()}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="text-zinc-500 font-semibold">Due</span>
-                      <span className="font-bold text-amber-700 font-mono">
-                        ৳{" "}
-                        {Math.max(
-                          0,
-                          checkoutGrandTotal - checkoutPayment,
-                        ).toLocaleString()}
-                      </span>
-                    </div>
-                  </div>
+                  {renderOrderTotals()}
 
                   <Button
                     type="button"
