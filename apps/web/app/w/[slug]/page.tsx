@@ -844,15 +844,17 @@ export default function WarehouseStorefrontPage() {
       </div>
       {showSettlement && (
         <>
-          <div className="flex items-center justify-between gap-4">
-            <span className="text-zinc-600">Pay now</span>
-            <span className="font-semibold tabular-nums text-emerald-700">
-              ৳ {checkoutPayment.toLocaleString()}
-            </span>
-          </div>
-          <div className="flex items-center justify-between gap-4">
-            <span className="text-zinc-600">Due Amount</span>
-            <span className="font-semibold tabular-nums text-amber-700">
+          {checkoutPayment > 0 && (
+            <div className="flex items-center justify-between gap-4">
+              <span className="text-zinc-600">Pay now</span>
+              <span className="font-semibold tabular-nums text-emerald-700">
+                ৳ {checkoutPayment.toLocaleString()}
+              </span>
+            </div>
+          )}
+          <div className="flex items-center justify-between gap-4 border-t border-zinc-100 pt-2.5">
+            <span className="font-semibold text-zinc-700">Due Amount</span>
+            <span className="font-bold tabular-nums text-amber-700">
               ৳{" "}
               {Math.max(
                 0,
@@ -1678,7 +1680,7 @@ export default function WarehouseStorefrontPage() {
                     </p>
                   </div>
                   <div className="space-y-5 p-5">
-                    {renderDocumentTotals()}
+                    {renderDocumentTotals(true)}
                     <Button
                       type="button"
                       className="h-11 w-full gap-2 bg-blue-600 text-sm font-semibold text-white hover:bg-blue-700"
