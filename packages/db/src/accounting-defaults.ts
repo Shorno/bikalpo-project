@@ -312,6 +312,18 @@ export const DEFAULT_FINANCE_ACCOUNT_SEEDS: DefaultFinanceAccountSeed[] = [
     openingBalance: "0.00",
     sortOrder: 110,
   },
+  {
+    accountType: "asset",
+    balanceSheetLine: "supplier_refund_receivable",
+    categoryCode: "asset-current",
+    code: "1104-supplier-refund-receivable",
+    description: "Approved purchase returns awaiting a cash or bank refund.",
+    isPaymentAccount: false,
+    name: "Supplier Refund Receivable",
+    normalBalance: "debit",
+    openingBalance: "0.00",
+    sortOrder: 115,
+  },
   ...(
     [
       ["1201-product-inventory", "Product Inventory"],

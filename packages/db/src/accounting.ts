@@ -89,6 +89,7 @@ export const BALANCE_SHEET_LINES = [
   "other_current_assets",
   "fixed_assets",
   "supplier_advance",
+  "supplier_refund_receivable",
   "accounts_payable",
   "customer_advance",
   "loan_payable",
@@ -185,6 +186,11 @@ export const BALANCE_SHEET_LINE_METADATA: Record<
     label: "Supplier Advance",
     sortOrder: 60,
   },
+  supplier_refund_receivable: {
+    accountType: "asset",
+    label: "Supplier Refund Receivable",
+    sortOrder: 65,
+  },
   accounts_payable: {
     accountType: "liability",
     label: "Accounts Payable",
@@ -225,6 +231,12 @@ export const ACCOUNTING_TRANSACTION_TYPES = [
   "product_purchase_cash",
   "product_purchase_due",
   "supplier_advance_payment",
+  "purchase_receipt",
+  "supplier_advance_applied",
+  "supplier_payment",
+  "purchase_return_due",
+  "purchase_return_paid",
+  "supplier_refund_received",
   "product_sale_cash",
   "product_sale_due",
   "customer_advance_payment",
@@ -267,18 +279,48 @@ export const ACCOUNTING_TRANSACTION_TYPE_METADATA: Record<
   },
   product_purchase_cash: {
     label: "Product Purchase - Cash",
-    phase: "profit_and_balance",
+    phase: "balance_sheet_only",
     sortOrder: 50,
   },
   product_purchase_due: {
     label: "Product Purchase - Due",
-    phase: "profit_and_balance",
+    phase: "balance_sheet_only",
     sortOrder: 60,
   },
   supplier_advance_payment: {
     label: "Supplier Advance Payment",
     phase: "balance_sheet_only",
     sortOrder: 70,
+  },
+  purchase_receipt: {
+    label: "Purchase Receipt",
+    phase: "balance_sheet_only",
+    sortOrder: 72,
+  },
+  supplier_advance_applied: {
+    label: "Supplier Advance Applied",
+    phase: "balance_sheet_only",
+    sortOrder: 74,
+  },
+  supplier_payment: {
+    label: "Supplier Payment",
+    phase: "balance_sheet_only",
+    sortOrder: 76,
+  },
+  purchase_return_due: {
+    label: "Purchase Return - Due",
+    phase: "balance_sheet_only",
+    sortOrder: 78,
+  },
+  purchase_return_paid: {
+    label: "Purchase Return - Paid",
+    phase: "balance_sheet_only",
+    sortOrder: 79,
+  },
+  supplier_refund_received: {
+    label: "Supplier Refund Received",
+    phase: "balance_sheet_only",
+    sortOrder: 80,
   },
   product_sale_cash: {
     label: "Product Sale - Cash",
@@ -392,10 +434,10 @@ export const ACCOUNTING_POSTING_RULES: Record<
     transactionType: "loan_received",
   },
   product_purchase_cash: {
-    description: "Cash product purchase recorded as product purchase cost.",
+    description: "Cash product purchase increases inventory.",
     lines: [
       {
-        accountCode: "5001-product-purchase-cost",
+        accountCode: "1003-inventory",
         amountField: "amount",
         side: "debit",
       },
@@ -408,10 +450,10 @@ export const ACCOUNTING_POSTING_RULES: Record<
     transactionType: "product_purchase_cash",
   },
   product_purchase_due: {
-    description: "Due product purchase creates supplier payable.",
+    description: "Due product purchase increases inventory and supplier payable.",
     lines: [
       {
-        accountCode: "5001-product-purchase-cost",
+        accountCode: "1003-inventory",
         amountField: "amount",
         side: "debit",
       },
@@ -438,6 +480,54 @@ export const ACCOUNTING_POSTING_RULES: Record<
       },
     ],
     transactionType: "supplier_advance_payment",
+  },
+  purchase_receipt: {
+    description: "Received products create inventory and supplier payable.",
+    lines: [
+      { accountCode: "1003-inventory", amountField: "amount", side: "debit" },
+      { accountCode: "2001-accounts-payable", amountField: "amount", side: "credit" },
+    ],
+    transactionType: "purchase_receipt",
+  },
+  supplier_advance_applied: {
+    description: "Supplier advance is applied against a recognized payable.",
+    lines: [
+      { accountCode: "2001-accounts-payable", amountField: "amount", side: "debit" },
+      { accountCode: "1103-supplier-advance", amountField: "amount", side: "credit" },
+    ],
+    transactionType: "supplier_advance_applied",
+  },
+  supplier_payment: {
+    description: "Cash or bank payment settles a supplier payable.",
+    lines: [
+      { accountCode: "2001-accounts-payable", amountField: "amount", side: "debit" },
+      { accountCode: "1001-cash-on-hand", amountField: "amount", side: "credit" },
+    ],
+    transactionType: "supplier_payment",
+  },
+  purchase_return_due: {
+    description: "Returning unpaid stock reduces supplier payable and inventory.",
+    lines: [
+      { accountCode: "2001-accounts-payable", amountField: "amount", side: "debit" },
+      { accountCode: "1003-inventory", amountField: "amount", side: "credit" },
+    ],
+    transactionType: "purchase_return_due",
+  },
+  purchase_return_paid: {
+    description: "Returning paid stock creates a receivable from the supplier.",
+    lines: [
+      { accountCode: "1104-supplier-refund-receivable", amountField: "amount", side: "debit" },
+      { accountCode: "1003-inventory", amountField: "amount", side: "credit" },
+    ],
+    transactionType: "purchase_return_paid",
+  },
+  supplier_refund_received: {
+    description: "Supplier refund receipt clears the supplier refund receivable.",
+    lines: [
+      { accountCode: "1001-cash-on-hand", amountField: "amount", side: "debit" },
+      { accountCode: "1104-supplier-refund-receivable", amountField: "amount", side: "credit" },
+    ],
+    transactionType: "supplier_refund_received",
   },
   product_sale_cash: {
     description: "Cash sale records revenue and releases sold inventory cost.",
