@@ -180,6 +180,12 @@ export function proxy(request: NextRequest) {
       return NextResponse.next();
     }
 
+    // Keep warehouse checkout handoffs on the shop origin so browser cart
+    // storage remains available when the shared storefront opens.
+    if (pathname.startsWith("/w/")) {
+      return NextResponse.next();
+    }
+
     // Allow apply-business and application-status routes (they live at root, not under /shop)
     if (pathname === "/apply-business" || pathname === "/application-status") {
       if (!token) {

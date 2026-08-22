@@ -1150,8 +1150,7 @@ export default function OrderFromWarehousePage() {
       `retailer-warehouse-cart:${sessionData.user.id}:${selectedSlug}`,
       JSON.stringify(checkoutCart),
     );
-    const baseUrl = window.location.origin.replace("shop.", "");
-    window.location.href = `${baseUrl}/w/${selectedSlug}?checkout=1`;
+    window.location.href = `/w/${encodeURIComponent(selectedSlug)}?checkout=1`;
   }
 
   const cartTotal = cart.reduce(
