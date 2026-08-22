@@ -18,6 +18,7 @@ import { adminItemRequestRouter } from "./admin-item-request";
 import { adminLandingRouter } from "./admin-landing";
 import { adminMarketingRouter } from "./admin-marketing";
 import { adminOfferRouter } from "./admin-offer";
+import { adminOfferTemplateRouter } from "./admin-offer-template";
 import { adminOrderRouter } from "./admin-order";
 import { adminProductConfigRouter } from "./admin-product-config";
 import { adminProductTypeRouter } from "./admin-product-type";
@@ -93,6 +94,7 @@ export const appRouter = {
   adminCoreProduct: adminCoreProductRouter,
   adminProductConfig: adminProductConfigRouter,
   adminOffer: adminOfferRouter,
+  adminOfferTemplate: adminOfferTemplateRouter,
   adminProductType: adminProductTypeRouter,
   adminVariantOption: adminVariantOptionRouter,
   adminEmployeeReport: adminEmployeeReportRouter,

@@ -597,9 +597,17 @@ export const productRouter = {
             with: { brand: true },
             columns: {
               id: true,
+              sku: true,
+              price: true,
               variantType: true,
               brandId: true,
               unitLabel: true,
+              sellUnit: true,
+              packType: true,
+              weightKg: true,
+              color: true,
+              size: true,
+              isActive: true,
             },
           },
           variantPrices: {
