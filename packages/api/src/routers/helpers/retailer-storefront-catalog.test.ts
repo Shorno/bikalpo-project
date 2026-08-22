@@ -113,6 +113,16 @@ test("applies hierarchical filters and every catalog sort", () => {
     }).map((product) => product.id),
     [2, 1, 3],
   );
+  assert.deepEqual(
+    filterAndSortRetailerStorefrontProducts(
+      products.map((product) => ({
+        ...product,
+        soldOrderCount: product.id === 1 ? 12 : product.id === 3 ? 4 : 0,
+      })),
+      { sort: "popular" },
+    ).map((product) => product.id),
+    [1, 3, 2],
+  );
 });
 
 test("isolates a retailer's sellable variants from other shops and unavailable rows", () => {

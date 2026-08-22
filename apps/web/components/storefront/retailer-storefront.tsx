@@ -1,20 +1,22 @@
 "use client";
 
 import {
-  ArrowLeft,
-  CheckCircle2,
+  ChevronLeft,
   ChevronRight,
   Eye,
   Filter,
   MapPin,
+  Megaphone,
   Minus,
   Package,
+  Phone,
   Plus,
   RotateCcw,
+  ShoppingBag,
   ShoppingCart,
   Star,
   Store,
-  Truck,
+  Users,
   X,
 } from "lucide-react";
 import Image from "next/image";
@@ -38,7 +40,6 @@ import {
 } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { CartItem } from "@/hooks/use-orpc-cart";
-import { withCustomerStorefrontPreview } from "@/lib/customer-storefront-preview";
 import { getRetailerProductHref } from "@/lib/retailer-storefront-url";
 import { cn } from "@/lib/utils";
 
@@ -90,78 +91,75 @@ interface StoreHeaderProps {
     shopAddress: string | null;
     businessType: string | null;
     image: string | null;
+    phoneNumber: string | null;
   };
   productCount: number;
-  previewMode: boolean;
+  stats: {
+    averageRating: number;
+    totalReviews: number;
+    totalOrders: number;
+    totalCustomers: number;
+  };
 }
 
-export function StoreHeader({
-  shop,
-  productCount,
-  previewMode,
-}: StoreHeaderProps) {
+export function StoreHeader({ shop, productCount, stats }: StoreHeaderProps) {
   const displayName = shop.shopName || shop.name;
+  const metrics = [
+    stats.totalReviews > 0
+      ? {
+          icon: Star,
+          value: stats.averageRating.toFixed(1),
+          label: `${stats.totalReviews.toLocaleString("en-BD")} reviews`,
+        }
+      : null,
+    stats.totalOrders > 0
+      ? {
+          icon: ShoppingBag,
+          value: stats.totalOrders.toLocaleString("en-BD"),
+          label: stats.totalOrders === 1 ? "order" : "orders",
+        }
+      : null,
+    stats.totalCustomers > 0
+      ? {
+          icon: Users,
+          value: stats.totalCustomers.toLocaleString("en-BD"),
+          label: stats.totalCustomers === 1 ? "customer" : "customers",
+        }
+      : null,
+    {
+      icon: Package,
+      value: productCount.toLocaleString("en-BD"),
+      label: productCount === 1 ? "product" : "products",
+    },
+  ].filter(Boolean) as Array<{
+    icon: typeof Star;
+    value: string;
+    label: string;
+  }>;
 
   return (
-    <header className="border-b bg-slate-50/70">
-      <div className="container mx-auto px-4 py-5 md:py-6">
-        <nav
-          aria-label="Breadcrumb"
-          className="mb-4 flex items-center gap-1.5 text-xs text-muted-foreground"
-        >
-          <Link href="/" className="hover:text-foreground">
-            Home
-          </Link>
-          <ChevronRight className="size-3" aria-hidden="true" />
-          <Link
-            href={withCustomerStorefrontPreview("/stores", previewMode)}
-            className="hover:text-foreground"
-          >
-            Stores
-          </Link>
-          <ChevronRight className="size-3" aria-hidden="true" />
-          <span
-            className="max-w-48 truncate text-foreground"
-            aria-current="page"
-          >
-            {displayName}
-          </span>
-        </nav>
-
-        <div className="flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
-          <div className="flex min-w-0 items-start gap-4">
+    <header className="border-b bg-white">
+      <div className="container mx-auto px-4 py-6 md:py-8">
+        <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
+          <div className="flex min-w-0 items-start gap-4 md:gap-5">
             {shop.image ? (
               <Image
                 src={shop.image}
                 alt=""
-                width={64}
-                height={64}
-                className="size-14 shrink-0 rounded-lg border bg-white object-cover md:size-16"
+                width={80}
+                height={80}
+                className="size-16 shrink-0 rounded-lg border bg-slate-50 object-cover md:size-20"
               />
             ) : (
-              <div className="flex size-14 shrink-0 items-center justify-center rounded-lg border bg-white md:size-16">
-                <Store className="size-6 text-primary" aria-hidden="true" />
+              <div className="flex size-16 shrink-0 items-center justify-center rounded-lg border bg-slate-50 md:size-20">
+                <Store className="size-7 text-primary" aria-hidden="true" />
               </div>
             )}
 
             <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2">
-                <h1 className="truncate text-xl font-semibold tracking-tight text-slate-950 md:text-2xl">
-                  {displayName}
-                </h1>
-                <span className="inline-flex h-6 items-center gap-1 rounded-md border border-blue-200 bg-blue-50 px-2 text-[11px] font-medium text-blue-800">
-                  <CheckCircle2 className="size-3.5" aria-hidden="true" />
-                  Verified retailer
-                </span>
-              </div>
-              <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-muted-foreground">
-                <span className="capitalize">
-                  {shop.businessType || "Retail"} business
-                </span>
-                <span className="font-mono tabular-nums">
-                  {productCount} {productCount === 1 ? "product" : "products"}
-                </span>
-              </div>
+              <h1 className="truncate text-2xl font-bold tracking-tight text-slate-950 md:text-3xl">
+                {displayName}
+              </h1>
               {shop.shopAddress && (
                 <p className="mt-2 flex max-w-3xl items-start gap-1.5 text-sm leading-5 text-slate-600">
                   <MapPin
@@ -171,28 +169,140 @@ export function StoreHeader({
                   <span>{shop.shopAddress}</span>
                 </p>
               )}
+              {shop.businessType && (
+                <p className="mt-1 text-xs capitalize text-slate-500">
+                  {shop.businessType} store
+                </p>
+              )}
             </div>
           </div>
 
-          <div className="flex shrink-0 flex-wrap items-center gap-2">
-            {shop.shopAddress && (
-              <span className="inline-flex h-9 items-center gap-2 rounded-lg border bg-white px-3 text-xs text-slate-600">
-                <Truck className="size-4 text-primary" aria-hidden="true" />
-                Delivery from this location
-              </span>
-            )}
-            <Button asChild variant="outline" className="h-9 bg-white">
-              <Link
-                href={withCustomerStorefrontPreview("/stores", previewMode)}
-              >
-                <ArrowLeft className="size-4" aria-hidden="true" />
-                All stores
-              </Link>
+          {shop.phoneNumber && (
+            <Button asChild variant="outline" className="h-10 bg-white">
+              <a href={`tel:${shop.phoneNumber}`}>
+                <Phone className="size-4" aria-hidden="true" />
+                Contact store
+              </a>
             </Button>
-          </div>
+          )}
+        </div>
+
+        <div className="mt-6 grid grid-cols-2 border-y sm:flex sm:flex-wrap">
+          {metrics.map(({ icon: Icon, value, label }) => (
+            <div
+              key={label}
+              className="flex min-h-16 items-center gap-3 border-r px-3 first:pl-0 last:border-r-0 sm:min-w-40 sm:px-5"
+            >
+              <Icon
+                className="size-4 shrink-0 text-primary"
+                aria-hidden="true"
+              />
+              <div className="min-w-0">
+                <p className="font-mono text-sm font-semibold tabular-nums text-slate-950">
+                  {value}
+                </p>
+                <p className="truncate text-xs text-slate-500">{label}</p>
+              </div>
+            </div>
+          ))}
         </div>
       </div>
     </header>
+  );
+}
+
+export interface StorefrontOffer {
+  id: number;
+  name: string;
+  summary: string;
+}
+
+export function StorefrontOfferBanner({
+  offers,
+}: {
+  offers: StorefrontOffer[];
+}) {
+  const [activeIndex, setActiveIndex] = useState(0);
+  if (offers.length === 0) return null;
+
+  const activeOffer = offers[Math.min(activeIndex, offers.length - 1)];
+  if (!activeOffer) return null;
+
+  return (
+    <section aria-label="Store offers" className="border-b bg-blue-50">
+      <div className="container mx-auto px-4 py-5 md:py-6">
+        <div className="flex flex-col gap-4 rounded-lg border border-blue-200 bg-white p-4 md:flex-row md:items-center md:justify-between md:p-5">
+          <div className="flex min-w-0 items-start gap-3">
+            <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+              <Megaphone className="size-5" aria-hidden="true" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-primary">
+                Today&apos;s special offer
+              </p>
+              <h2 className="mt-1 text-base font-semibold text-slate-950 md:text-lg">
+                {activeOffer.name}
+              </h2>
+              {activeOffer.summary && (
+                <p className="mt-1 text-sm text-slate-600">
+                  {activeOffer.summary}
+                </p>
+              )}
+            </div>
+          </div>
+
+          {offers.length > 1 && (
+            <div className="flex shrink-0 items-center gap-3">
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                className="size-9 bg-white"
+                onClick={() =>
+                  setActiveIndex((current) =>
+                    current === 0 ? offers.length - 1 : current - 1,
+                  )
+                }
+                aria-label="Previous offer"
+              >
+                <ChevronLeft className="size-4" aria-hidden="true" />
+              </Button>
+              <div
+                className="flex items-center gap-1.5"
+                role="group"
+                aria-label={`${activeIndex + 1} of ${offers.length}`}
+              >
+                {offers.map((offer, index) => (
+                  <button
+                    key={offer.id}
+                    type="button"
+                    onClick={() => setActiveIndex(index)}
+                    className={cn(
+                      "size-2 rounded-full transition-colors",
+                      index === activeIndex ? "bg-primary" : "bg-slate-300",
+                    )}
+                    aria-label={`Show offer ${index + 1}`}
+                    aria-current={index === activeIndex ? "true" : undefined}
+                  />
+                ))}
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                className="size-9 bg-white"
+                onClick={() =>
+                  setActiveIndex((current) => (current + 1) % offers.length)
+                }
+                aria-label="Next offer"
+              >
+                <ChevronRight className="size-4" aria-hidden="true" />
+              </Button>
+            </div>
+          )}
+        </div>
+      </div>
+    </section>
   );
 }
 

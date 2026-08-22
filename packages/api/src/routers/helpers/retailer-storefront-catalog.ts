@@ -2,6 +2,7 @@ import { isSellableRetailerInventory } from "./retailer-inventory-sellability";
 
 export const retailerStorefrontSortValues = [
   "recommended",
+  "popular",
   "newest",
   "price_asc",
   "price_desc",
@@ -21,6 +22,7 @@ export interface RetailerStorefrontProduct {
   slug: string;
   createdAt: Date | string;
   lowestRetailPrice: number;
+  soldOrderCount?: number;
   category?: { name: string; slug: string } | null;
   subCategory?: { name: string; slug: string } | null;
   variants: RetailerStorefrontVariant[];
@@ -157,6 +159,12 @@ export function filterAndSortRetailerStorefrontProducts<
 
   return filtered.sort((a, b) => {
     switch (options.sort) {
+      case "popular":
+        return (
+          (b.soldOrderCount ?? 0) - (a.soldOrderCount ?? 0) ||
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime() ||
+          a.name.localeCompare(b.name)
+        );
       case "price_asc":
         return (
           a.lowestRetailPrice - b.lowestRetailPrice ||
