@@ -1,6 +1,6 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   BookOpen,
   Box,
@@ -12,7 +12,8 @@ import {
   PackageCheck,
   Search,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -23,6 +24,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -121,13 +123,113 @@ function DetailDialog({
   orderId: number | null;
   onOpenChange: (open: boolean) => void;
 }) {
+  const queryClient = useQueryClient();
   const [tab, setTab] = useState<HistoryTab>("purchase");
+  const [paymentAccountId, setPaymentAccountId] = useState("");
+  const [paymentAmount, setPaymentAmount] = useState("");
+  const [paymentReference, setPaymentReference] = useState("");
   const detailQuery = useQuery({
     enabled: orderId !== null,
     queryFn: () => orpc.purchaseLifecycle.getDetail.call({ orderId: orderId! }),
     queryKey: ["purchase-lifecycle-detail", orderId],
   });
   const detail = detailQuery.data as any;
+  const accountsQuery = useQuery({
+    enabled: orderId !== null && tab === "payment",
+    queryFn: () => orpc.finance.getPaymentAccounts.call({}),
+    queryKey: ["purchase-payment-accounts", orderId],
+  });
+  const paymentAccounts = accountsQuery.data?.paymentAccounts ?? [];
+  const pendingPayment = detail?.paymentHistory?.find(
+    (row: any) => row.entryType === "payment" && row.status === "pending",
+  );
+  const refundPending = detail?.paymentHistory?.find(
+    (row: any) =>
+      row.entryType === "payment" && row.status === "refund_pending",
+  );
+  const dueAmount = Number(detail?.order?.dueAmount ?? 0);
+  const canPay =
+    dueAmount > 0 &&
+    !["cancelled", "returned"].includes(detail?.order?.status ?? "");
+
+  useEffect(() => {
+    if (!detail?.order) return;
+    const nextAmount = pendingPayment
+      ? Number(pendingPayment.amount)
+      : Number(detail.order.dueAmount ?? 0);
+    setPaymentAmount(nextAmount > 0 ? String(nextAmount) : "");
+  }, [detail?.order, pendingPayment]);
+
+  useEffect(() => {
+    if (!paymentAccountId && paymentAccounts[0]) {
+      setPaymentAccountId(paymentAccounts[0].id);
+    }
+  }, [paymentAccountId, paymentAccounts]);
+
+  const refreshPurchase = async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({
+        queryKey: ["purchase-lifecycle-detail", orderId],
+      }),
+      queryClient.invalidateQueries({
+        queryKey: ["purchase-lifecycle-history"],
+      }),
+      queryClient.invalidateQueries({
+        queryKey: ["purchase-payment-accounts"],
+      }),
+    ]);
+  };
+  const completePayment = useMutation({
+    mutationFn: async () => {
+      const account = paymentAccounts.find(
+        (row) => row.id === paymentAccountId,
+      );
+      if (!account) throw new Error("Select a Cash or Bank account");
+      const amount = Number(paymentAmount);
+      if (!Number.isFinite(amount) || amount <= 0) {
+        throw new Error("Enter a payment amount greater than zero");
+      }
+      return orpc.purchaseLifecycle.completePayment.call({
+        amount,
+        idempotencyKey: crypto.randomUUID(),
+        orderId: orderId!,
+        paymentAccountId: Number(account.id),
+        paymentId: pendingPayment?.id,
+        paymentMethod: account.type === "cash" ? "cash" : "bank",
+        referenceNo: paymentReference.trim() || undefined,
+      });
+    },
+    onError: (error: Error) => toast.error(error.message),
+    onSuccess: async () => {
+      toast.success("Purchase payment completed");
+      setPaymentReference("");
+      await refreshPurchase();
+    },
+  });
+  const completeRefund = useMutation({
+    mutationFn: async () => {
+      const account = paymentAccounts.find(
+        (row) => row.id === paymentAccountId,
+      );
+      if (!account) throw new Error("Select a Cash or Bank account");
+      const amount =
+        Number(refundPending.amount) -
+        Number(refundPending.refundedAmount ?? 0);
+      return orpc.purchaseLifecycle.completeRefund.call({
+        amount,
+        idempotencyKey: crypto.randomUUID(),
+        paymentAccountId: Number(account.id),
+        paymentId: refundPending.id,
+        referenceNo: paymentReference.trim() || undefined,
+      });
+    },
+    onError: (error: Error) => toast.error(error.message),
+    onSuccess: async () => {
+      toast.success("Purchase refund completed");
+      setPaymentReference("");
+      await refreshPurchase();
+    },
+  });
 
   return (
     <Dialog open={orderId !== null} onOpenChange={onOpenChange}>
@@ -188,42 +290,128 @@ function DetailDialog({
               <EmptyHistory message="No purchase events have been recorded." />
             )
           ) : tab === "payment" ? (
-            detail.paymentHistory.length ? (
-              <div className="overflow-x-auto border">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Date</TableHead>
-                      <TableHead>Purpose</TableHead>
-                      <TableHead>Method</TableHead>
-                      <TableHead>Reference</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead className="text-right">Amount</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {detail.paymentHistory.map((payment: any) => (
-                      <TableRow key={payment.id}>
-                        <TableCell>{dateTime(payment.createdAt)}</TableCell>
-                        <TableCell>{label(payment.purchasePurpose)}</TableCell>
-                        <TableCell>{label(payment.method)}</TableCell>
-                        <TableCell>
-                          {payment.referenceNo ?? payment.transactionId ?? "-"}
-                        </TableCell>
-                        <TableCell>
-                          <StatusBadge value={payment.status} />
-                        </TableCell>
-                        <TableCell className="text-right font-semibold">
-                          {money(payment.amount)}
-                        </TableCell>
+            <div className="space-y-4">
+              {canPay || refundPending ? (
+                <section className="grid gap-4 border bg-muted/20 p-4 lg:grid-cols-[1fr_1fr_1fr_auto] lg:items-end">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="purchase-payment-amount">Amount</Label>
+                    <Input
+                      disabled={Boolean(refundPending)}
+                      id="purchase-payment-amount"
+                      inputMode="decimal"
+                      max={
+                        pendingPayment
+                          ? Number(pendingPayment.amount)
+                          : dueAmount
+                      }
+                      onChange={(event) => setPaymentAmount(event.target.value)}
+                      type="number"
+                      value={
+                        refundPending
+                          ? String(
+                              Number(refundPending.amount) -
+                                Number(refundPending.refundedAmount ?? 0),
+                            )
+                          : paymentAmount
+                      }
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>Cash or Bank account</Label>
+                    <Select
+                      onValueChange={setPaymentAccountId}
+                      value={paymentAccountId}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select account" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {paymentAccounts.map((account) => (
+                          <SelectItem key={account.id} value={account.id}>
+                            {account.name} ({money(account.balance)})
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="purchase-payment-reference">
+                      Reference
+                    </Label>
+                    <Input
+                      id="purchase-payment-reference"
+                      onChange={(event) =>
+                        setPaymentReference(event.target.value)
+                      }
+                      placeholder="Optional reference"
+                      value={paymentReference}
+                    />
+                  </div>
+                  {refundPending ? (
+                    <Button
+                      disabled={completeRefund.isPending || !paymentAccountId}
+                      onClick={() => completeRefund.mutate()}
+                    >
+                      {completeRefund.isPending ? (
+                        <Loader2 className="size-4 animate-spin" />
+                      ) : null}
+                      Complete Refund
+                    </Button>
+                  ) : (
+                    <Button
+                      disabled={completePayment.isPending || !paymentAccountId}
+                      onClick={() => completePayment.mutate()}
+                    >
+                      {completePayment.isPending ? (
+                        <Loader2 className="size-4 animate-spin" />
+                      ) : null}
+                      {pendingPayment ? "Complete Payment" : "Pay Due"}
+                    </Button>
+                  )}
+                </section>
+              ) : null}
+
+              {detail.paymentHistory.length ? (
+                <div className="overflow-x-auto border">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Date</TableHead>
+                        <TableHead>Purpose</TableHead>
+                        <TableHead>Method</TableHead>
+                        <TableHead>Reference</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead className="text-right">Amount</TableHead>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            ) : (
-              <EmptyHistory message="No payment has been recorded for this purchase." />
-            )
+                    </TableHeader>
+                    <TableBody>
+                      {detail.paymentHistory.map((payment: any) => (
+                        <TableRow key={payment.id}>
+                          <TableCell>{dateTime(payment.createdAt)}</TableCell>
+                          <TableCell>
+                            {label(payment.purchasePurpose)}
+                          </TableCell>
+                          <TableCell>{label(payment.method)}</TableCell>
+                          <TableCell>
+                            {payment.referenceNo ??
+                              payment.transactionId ??
+                              "-"}
+                          </TableCell>
+                          <TableCell>
+                            <StatusBadge value={payment.status} />
+                          </TableCell>
+                          <TableCell className="text-right font-semibold">
+                            {money(payment.amount)}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              ) : (
+                <EmptyHistory message="No payment has been recorded for this purchase." />
+              )}
+            </div>
           ) : tab === "inventory" ? (
             detail.inventoryHistory.length ? (
               <div className="overflow-x-auto border">

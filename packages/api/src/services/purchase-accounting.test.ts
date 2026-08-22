@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildPurchasePosting } from "./purchase-accounting";
+import {
+  buildPurchasePosting,
+  calculatePurchaseAccountBalanceDelta,
+} from "./purchase-accounting";
 
 const scenarios = [
   ["supplier_advance_payment", "1103-supplier-advance", "1001-cash-on-hand"],
@@ -39,5 +42,32 @@ test("rejects zero and negative purchase postings", () => {
   assert.throws(
     () => buildPurchasePosting({ amount: 0, transactionType: "purchase_receipt" }),
     /greater than zero/,
+  );
+});
+
+test("applies journal lines using each account normal balance", () => {
+  assert.equal(
+    calculatePurchaseAccountBalanceDelta({
+      credit: 0,
+      debit: 2284,
+      normalBalance: "debit",
+    }),
+    2284,
+  );
+  assert.equal(
+    calculatePurchaseAccountBalanceDelta({
+      credit: 2284,
+      debit: 0,
+      normalBalance: "credit",
+    }),
+    2284,
+  );
+  assert.equal(
+    calculatePurchaseAccountBalanceDelta({
+      credit: 2284,
+      debit: 0,
+      normalBalance: "debit",
+    }),
+    -2284,
   );
 });

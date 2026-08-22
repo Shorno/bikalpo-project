@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { ACCOUNTING_TRANSACTION_TYPE_METADATA } from "@bikalpo-project/db/accounting";
 import { buildPurchasePosting } from "./purchase-accounting";
 import {
   allocateReceiptLandedCost,
@@ -141,4 +142,24 @@ test("payment and financial status are independent from purchase status", () => 
     }),
     "refund_pending",
   );
+});
+
+test("purchase lifecycle postings remain outside profit and loss", () => {
+  const transactionTypes = [
+    "supplier_advance_payment",
+    "purchase_receipt",
+    "supplier_advance_applied",
+    "supplier_advance_refunded",
+    "supplier_payment",
+    "purchase_return_due",
+    "purchase_return_paid",
+    "supplier_refund_received",
+  ] as const;
+
+  for (const transactionType of transactionTypes) {
+    assert.equal(
+      ACCOUNTING_TRANSACTION_TYPE_METADATA[transactionType].phase,
+      "balance_sheet_only",
+    );
+  }
 });

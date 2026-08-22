@@ -8,7 +8,6 @@ import {
   financialLedger,
   invoice,
   order,
-  purchase,
   warehouseDueCollection,
   warehousePosSale,
 } from "@bikalpo-project/db/schema";
@@ -20,11 +19,6 @@ import { protectedProcedure } from "../index";
 
 const ACTIVE_SALE_STATUSES = new Set(["confirmed", "processing", "delivered"]);
 const PAID_INVOICE_STATUSES = new Set(["collected", "settled"]);
-const PAYABLE_ORDER_STATUSES = new Set([
-  "confirmed",
-  "processing",
-  "delivered",
-]);
 
 function toNumber(value: number | string | null | undefined) {
   if (typeof value === "number") {
@@ -58,17 +52,6 @@ function isOrderPaid(
   return (
     orderPaymentStatus === "paid" ||
     PAID_INVOICE_STATUSES.has(invoicePaymentStatus || "")
-  );
-}
-
-function isPayableOrder(
-  status: string | null | undefined,
-  orderPaymentStatus: string | null | undefined,
-  invoicePaymentStatus: string | null | undefined,
-) {
-  return (
-    PAYABLE_ORDER_STATUSES.has(status || "") &&
-    !isOrderPaid(orderPaymentStatus, invoicePaymentStatus)
   );
 }
 
@@ -139,10 +122,6 @@ export const balanceSheetRouter = {
       const startDateTime = new Date(`${startDate}T00:00:00.000`);
       const asOfEnd = new Date(`${endDate}T23:59:59.999`);
       const isCashBasis = input.reportType === "cash";
-      const manualPurchaseEntryTypes = isCashBasis
-        ? (["purchase_cash"] as const)
-        : (["purchase_cash", "purchase_credit"] as const);
-
       await ensureDefaultFinancePaymentAccounts({ ownerId, ownerType });
       const cashBankRows = await db
         .select({
@@ -215,6 +194,32 @@ export const balanceSheetRouter = {
         }))
         .filter((row) => row.amount !== 0);
       const supplierAdvance = currentSupplierAdvanceRows.reduce(
+        (sum, row) => sum + row.amount,
+        0,
+      );
+
+      const supplierRefundRows = await db
+        .select({
+          amount: financeAccount.currentBalance,
+          label: financeAccount.name,
+        })
+        .from(financeAccount)
+        .where(
+          and(
+            eq(financeAccount.ownerId, ownerId),
+            eq(financeAccount.ownerType, ownerType),
+            eq(financeAccount.accountType, "asset"),
+            eq(financeAccount.balanceSheetLine, "supplier_refund_receivable"),
+          ),
+        )
+        .orderBy(asc(financeAccount.sortOrder), asc(financeAccount.name));
+      const currentSupplierRefundRows = supplierRefundRows
+        .map((row) => ({
+          amount: toNumber(row.amount),
+          label: row.label,
+        }))
+        .filter((row) => row.amount !== 0);
+      const supplierRefundReceivable = currentSupplierRefundRows.reduce(
         (sum, row) => sum + row.amount,
         0,
       );
@@ -402,23 +407,6 @@ export const balanceSheetRouter = {
         0,
       );
 
-      const manualProductPurchaseRows = await db
-        .select({ total: financialLedger.amount })
-        .from(financialLedger)
-        .where(
-          and(
-            eq(financialLedger.ownerId, ownerId),
-            eq(financialLedger.ownerType, ownerType),
-            inArray(financialLedger.entryType, manualPurchaseEntryTypes),
-            eq(financialLedger.referenceType, "adjustment"),
-            gte(financialLedger.createdAt, startDateTime),
-            lte(financialLedger.createdAt, asOfEnd),
-          ),
-        );
-      const manualProductPurchase = manualProductPurchaseRows.reduce(
-        (sum, row) => sum + toNumber(row.total),
-        0,
-      );
       const manualProductSaleRows = await db
         .select({
           balanceBefore: financialLedger.balanceBefore,
@@ -502,13 +490,12 @@ export const balanceSheetRouter = {
       );
 
       let revenue = 0;
-      let expenseTotal = expenses + manualProductPurchase;
+      let expenseTotal = expenses;
       let receivable = 0;
       let payable = 0;
 
       if (role === "warehouse") {
-        const [orderRows, purchaseRows, supplierPaymentRows, posRows] =
-          await Promise.all([
+        const [orderRows, posRows] = await Promise.all([
             db
               .select({
                 total: order.total,
@@ -530,32 +517,6 @@ export const balanceSheetRouter = {
                   eq(order.orderType, "b2b"),
                   gte(order.createdAt, startDateTime),
                   lte(order.createdAt, asOfEnd),
-                ),
-              ),
-            db
-              .select({
-                total: purchase.total,
-                paymentType: purchase.paymentType,
-              })
-              .from(purchase)
-              .where(
-                and(
-                  eq(purchase.warehouseId, ownerId),
-                  eq(purchase.status, "received"),
-                  gte(purchase.purchaseDate, startDate),
-                  lte(purchase.purchaseDate, endDate),
-                ),
-              ),
-            db
-              .select({ amount: financialLedger.amount })
-              .from(financialLedger)
-              .where(
-                and(
-                  eq(financialLedger.ownerId, ownerId),
-                  eq(financialLedger.ownerType, "warehouse"),
-                  eq(financialLedger.referenceType, "supplier_payment"),
-                  gte(financialLedger.createdAt, startDateTime),
-                  lte(financialLedger.createdAt, asOfEnd),
                 ),
               ),
             db
@@ -681,76 +642,30 @@ export const balanceSheetRouter = {
         revenue = orderRevenue + posRevenue;
         receivable = isCashBasis ? 0 : invoiceDue + posDue;
 
-        const purchaseExpense = purchaseRows.reduce((sum, row) => {
-          if (isCashBasis && row.paymentType !== "cash") {
-            return sum;
-          }
-          return sum + toNumber(row.total);
-        }, 0);
-        expenseTotal += purchaseExpense;
-
-        const creditPurchases = purchaseRows.reduce(
-          (sum, row) =>
-            sum + (row.paymentType === "credit" ? toNumber(row.total) : 0),
-          0,
-        );
-        const supplierPayments = supplierPaymentRows.reduce(
-          (sum, row) => sum + toNumber(row.amount),
-          0,
-        );
-        payable = isCashBasis
-          ? 0
-          : Math.max(0, creditPurchases - supplierPayments);
       } else {
-        const [salesRows, purchaseOrderRows] = await Promise.all([
-          db
-            .select({
-              total: order.total,
-              status: order.status,
-              paymentStatus: order.paymentStatus,
-              invoicePaymentStatus: invoice.paymentStatus,
-            })
-            .from(order)
-            .leftJoin(
-              invoice,
-              and(
-                eq(invoice.orderId, order.id),
-                eq(invoice.invoiceType, "main"),
-              ),
-            )
-            .where(
-              and(
-                eq(order.shopId, ownerId),
-                eq(order.orderType, "b2c"),
-                gte(order.createdAt, startDateTime),
-                lte(order.createdAt, asOfEnd),
-              ),
+        const salesRows = await db
+          .select({
+            total: order.total,
+            status: order.status,
+            paymentStatus: order.paymentStatus,
+            invoicePaymentStatus: invoice.paymentStatus,
+          })
+          .from(order)
+          .leftJoin(
+            invoice,
+            and(
+              eq(invoice.orderId, order.id),
+              eq(invoice.invoiceType, "main"),
             ),
-          db
-            .select({
-              total: order.total,
-              status: order.status,
-              paymentStatus: order.paymentStatus,
-              invoicePaymentStatus: invoice.paymentStatus,
-            })
-            .from(order)
-            .leftJoin(
-              invoice,
-              and(
-                eq(invoice.orderId, order.id),
-                eq(invoice.invoiceType, "main"),
-              ),
-            )
-            .where(
-              and(
-                eq(order.userId, ownerId),
-                eq(order.orderType, "b2b"),
-                isNotNull(order.warehouseId),
-                gte(order.createdAt, startDateTime),
-                lte(order.createdAt, asOfEnd),
-              ),
+          )
+          .where(
+            and(
+              eq(order.shopId, ownerId),
+              eq(order.orderType, "b2c"),
+              gte(order.createdAt, startDateTime),
+              lte(order.createdAt, asOfEnd),
             ),
-        ]);
+          );
 
         revenue = salesRows.reduce((sum, row) => {
           if (!withinActiveSales(row.status)) {
@@ -777,34 +692,6 @@ export const balanceSheetRouter = {
               return sum + toNumber(row.total);
             }, 0);
 
-        const purchaseExpense = purchaseOrderRows.reduce((sum, row) => {
-          if (!withinActiveSales(row.status)) {
-            return sum;
-          }
-          if (
-            isCashBasis &&
-            !isOrderPaid(row.paymentStatus, row.invoicePaymentStatus)
-          ) {
-            return sum;
-          }
-          return sum + toNumber(row.total);
-        }, 0);
-        expenseTotal += purchaseExpense;
-
-        payable = isCashBasis
-          ? 0
-          : purchaseOrderRows.reduce((sum, row) => {
-              if (
-                !isPayableOrder(
-                  row.status,
-                  row.paymentStatus,
-                  row.invoicePaymentStatus,
-                )
-              ) {
-                return sum;
-              }
-              return sum + toNumber(row.total);
-            }, 0);
       }
 
       payable += manualAccountsPayable;
@@ -819,7 +706,12 @@ export const balanceSheetRouter = {
         0,
       );
       const totalAssets =
-        cashAndBank + receivable + supplierAdvance + inventory + fixedAssets;
+        cashAndBank +
+        receivable +
+        supplierAdvance +
+        supplierRefundReceivable +
+        inventory +
+        fixedAssets;
       const totalLiabilities = payable + customerAdvance + loanPayable;
       const netAssets = totalAssets - totalLiabilities;
       const openingBalanceEquity = netAssets - currentEquity - retainedEarnings;
@@ -857,6 +749,7 @@ export const balanceSheetRouter = {
           inventory: toMoney(inventory),
           receivable: toMoney(receivable),
           supplierAdvance: toMoney(supplierAdvance),
+          supplierRefundReceivable: toMoney(supplierRefundReceivable),
           customerAdvance: toMoney(customerAdvance),
           payable: toMoney(payable),
           netAssets: toMoney(netAssets),
@@ -922,8 +815,12 @@ export const balanceSheetRouter = {
                     label: "Accounts Receivable",
                     amount: toMoney(receivable),
                   },
+                  ...currentSupplierRefundRows.map((row) => ({
+                    label: row.label,
+                    amount: toMoney(row.amount),
+                  })),
                 ],
-                total: toMoney(receivable),
+                total: toMoney(receivable + supplierRefundReceivable),
                 totalLabel: "Total Other Current Assets",
               },
               {

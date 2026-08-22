@@ -24,6 +24,16 @@ export type PurchasePostingLine = {
   debit: number;
 };
 
+export function calculatePurchaseAccountBalanceDelta(input: {
+  credit: number;
+  debit: number;
+  normalBalance: "credit" | "debit";
+}) {
+  return input.normalBalance === "debit"
+    ? input.debit - input.credit
+    : input.credit - input.debit;
+}
+
 function toMoney(value: number) {
   return (Math.round((value + Number.EPSILON) * 100) / 100).toFixed(2);
 }
@@ -156,6 +166,21 @@ export async function postPurchaseJournal(
     if (updated.length === 0) {
       throw new Error(`${paymentAccount.name} has insufficient balance`);
     }
+  }
+
+  for (const line of resolvedLines) {
+    const delta = calculatePurchaseAccountBalanceDelta({
+      credit: line.credit,
+      debit: line.debit,
+      normalBalance: line.account.normalBalance,
+    });
+    await tx
+      .update(financeAccount)
+      .set({
+        currentBalance: sql`${financeAccount.currentBalance}::numeric + ${delta}`,
+        updatedAt: new Date(),
+      })
+      .where(eq(financeAccount.id, line.account.id));
   }
 
   const [created] = await tx
