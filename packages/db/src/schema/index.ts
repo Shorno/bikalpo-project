@@ -33,6 +33,7 @@ export * from "./finance-category";
 export * from "./finance-payment-account";
 export * from "./financial-ledger";
 export * from "./inventory";
+export * from "./inventory-movement";
 export * from "./invite";
 export * from "./invoice";
 export * from "./item-request";
