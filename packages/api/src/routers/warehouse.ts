@@ -58,6 +58,7 @@ import {
 	appendOrderPurchaseEvent,
 	recordPurchaseSubmission,
 } from "../services/purchase-history";
+import { recognizePlatformPurchaseReceipt } from "../services/purchase-receipt";
 import {
 	buildWholesaleCheckoutQuote,
 	getWholesalePaymentDueAt,
@@ -5265,10 +5266,11 @@ const orderQueries = {
 				return { itemId: item.id, receivedQty };
 			});
 
+			const receivedAt = new Date();
 			await db.transaction(async (tx) => {
 				const claimed = await tx
 					.update(order)
-					.set({ receivedAt: new Date() })
+					.set({ receivedAt })
 					.where(
 						and(
 							eq(order.id, input.orderId),
@@ -5292,6 +5294,13 @@ const orderQueries = {
 				}
 
 				await convertB2bOrderToRetailInventory(tx, input.orderId);
+				await recognizePlatformPurchaseReceipt(tx, {
+					actorId: userId,
+					orderId: input.orderId,
+					ownerId: userId,
+					ownerType: "warehouse",
+					receivedAt,
+				});
 			});
 
 			return {
