@@ -38,6 +38,26 @@ test("New keeps the listed price and does not expect an empty cylinder", () => {
   assert.equal(result.lineTotal, "3000.00");
 });
 
+test("Exchange with zero credit is allowed when enabled", () => {
+  assert.deepEqual(
+    resolveRetailerCylinderSale({
+      newUnitPrice: "1500",
+      exchangeEnabled: true,
+      exchangeCreditAmount: "0",
+      requestedMode: "exchange",
+      quantity: 1,
+    }),
+    {
+      mode: "exchange",
+      newUnitPrice: "1500.00",
+      exchangeCreditAmount: "0.00",
+      effectiveUnitPrice: "1500.00",
+      expectedEmptyPackQty: 1,
+      lineTotal: "1500.00",
+    },
+  );
+});
+
 test("Exchange is rejected when the exact retailer variant is not enabled", () => {
   assert.throws(
     () =>

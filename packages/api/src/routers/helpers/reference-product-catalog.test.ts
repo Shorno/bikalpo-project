@@ -1,9 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  anyListedVariantAllowsExchange,
+  getReferenceCylinderPricing,
   getReferenceProductEffectivePrice,
   getReferenceSellerKey,
   isOpenOrderReferenceSelectionEligible,
+  referenceProductCanExchange,
   sortReferenceProducts,
 } from "./reference-product-catalog";
 
@@ -261,4 +264,121 @@ test("sorts reference products by configured price, name, and recency", () => {
     sortReferenceProducts(products, "newest").map((product) => product.name),
     ["Bashundhara", "Fresh", "Omera"],
   );
+});
+
+test("public cards show Type when any listed variant allows exchange", () => {
+  assert.equal(anyListedVariantAllowsExchange([]), false);
+  assert.equal(
+    anyListedVariantAllowsExchange([
+      { isActive: true, exchangeEnabled: false },
+      { isActive: false, exchangeEnabled: true },
+    ]),
+    false,
+  );
+  assert.equal(
+    anyListedVariantAllowsExchange([
+      { isActive: true, exchangeEnabled: false },
+      { isActive: true, exchangeEnabled: true },
+    ]),
+    true,
+  );
+});
+
+test("reference products only count eligible catalog variants for exchange", () => {
+  const product = {
+    brandId: 16,
+    coreProductId: 1,
+    creatorSource: "admin",
+    id: 2,
+    price: "1900.00",
+    scheduledAt: null,
+    status: "active",
+    visibility: "public",
+  } as const;
+  const eligibleVariant = {
+    catalogVariant: {
+      brandId: 16,
+      configurationState: "configured",
+      coreProductId: 1,
+      isActive: true,
+    },
+    catalogVariantId: 5,
+    exchangeEnabled: true,
+    isActive: true,
+    price: "1500.00",
+    productId: 2,
+    visibilityRole: "all",
+  } as const;
+
+  assert.equal(
+    referenceProductCanExchange({
+      ...product,
+      variants: [{ ...eligibleVariant, exchangeEnabled: false }],
+    }),
+    false,
+  );
+  assert.equal(
+    referenceProductCanExchange({
+      ...product,
+      variants: [eligibleVariant],
+    }),
+    true,
+  );
+  assert.equal(
+    referenceProductCanExchange({
+      ...product,
+      variants: [{ ...eligibleVariant, productId: 9 }],
+    }),
+    false,
+  );
+});
+
+test("reference cylinder pricing exposes New and Exchange from prices", () => {
+  const product = {
+    brandId: 16,
+    coreProductId: 1,
+    creatorSource: "admin",
+    id: 2,
+    price: "1900.00",
+    scheduledAt: null,
+    status: "active",
+    visibility: "public",
+    variants: [
+      {
+        catalogVariant: {
+          brandId: 16,
+          configurationState: "configured",
+          coreProductId: 1,
+          isActive: true,
+        },
+        catalogVariantId: 5,
+        exchangeEnabled: true,
+        exchangeCreditAmount: "300",
+        isActive: true,
+        price: "1500",
+        productId: 2,
+      },
+      {
+        catalogVariant: {
+          brandId: 16,
+          configurationState: "configured",
+          coreProductId: 1,
+          isActive: true,
+        },
+        catalogVariantId: 6,
+        exchangeEnabled: false,
+        exchangeCreditAmount: "0",
+        isActive: true,
+        price: "1200",
+        productId: 2,
+      },
+    ],
+  } as const;
+
+  assert.deepEqual(getReferenceCylinderPricing(product), {
+    supportsNew: true,
+    exchangeAvailable: true,
+    newFrom: 1200,
+    exchangeFrom: 1200,
+  });
 });

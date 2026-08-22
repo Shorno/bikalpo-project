@@ -234,6 +234,7 @@ export function usePlaceWarehouseOrder() {
         fulfillmentMode?: FulfillmentMode;
         supplyMode?: FulfillmentMode;
         targetVariantId?: number | null;
+        cylinderSaleMode?: "new" | "exchange";
       }>;
       shippingName: string;
       shippingPhone: string;

@@ -60,6 +60,75 @@ export function getGeneratedVariantOrderMin(productData: {
     : productData.minimumOrderQty || "1";
 }
 
+export async function applyGeneratedVariantExchangeSettings(
+  client: DbClient,
+  productId: number,
+  variants: Array<{
+    exchangeCreditAmount?: string | null;
+    exchangeEnabled?: boolean | null;
+    variantOptionId: number;
+  }>,
+) {
+  for (const variant of variants) {
+    const enabled = Boolean(variant.exchangeEnabled);
+    await client
+      .update(productVariant)
+      .set({
+        exchangeEnabled: enabled,
+        exchangeCreditAmount: enabled
+          ? variant.exchangeCreditAmount || "0.00"
+          : "0.00",
+      })
+      .where(
+        and(
+          eq(productVariant.productId, productId),
+          eq(productVariant.sourceVariantOptionId, variant.variantOptionId),
+        ),
+      );
+  }
+}
+
+export function attachExchangeSettingsToVariantPrices<
+  T extends {
+    variantPrices?: Array<{
+      brandId?: number | null;
+      variantOptionId: number;
+    }> | null;
+    variants?: Array<{
+      brandId?: number | null;
+      exchangeCreditAmount?: string | number | null;
+      exchangeEnabled?: boolean | null;
+      sourceVariantOptionId?: number | null;
+    }> | null;
+  },
+>(product: T) {
+  const byKey = new Map<
+    string,
+    NonNullable<NonNullable<T["variants"]>[number]>
+  >();
+  for (const variant of product.variants ?? []) {
+    if (variant.sourceVariantOptionId == null) continue;
+    byKey.set(
+      `${variant.brandId ?? "none"}:${variant.sourceVariantOptionId}`,
+      variant,
+    );
+  }
+
+  return {
+    ...product,
+    variantPrices: (product.variantPrices ?? []).map((price) => {
+      const match = byKey.get(
+        `${price.brandId ?? "none"}:${price.variantOptionId}`,
+      );
+      return {
+        ...price,
+        exchangeCreditAmount: String(match?.exchangeCreditAmount ?? "0"),
+        exchangeEnabled: Boolean(match?.exchangeEnabled),
+      };
+    }),
+  };
+}
+
 /** Additive dual-write bridge for generated owner variants. */
 export async function linkProductVariantsToCatalog(
   client: DbClient,

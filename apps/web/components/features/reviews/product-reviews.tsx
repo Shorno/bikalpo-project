@@ -1,6 +1,9 @@
+"use client";
+
 import { Star } from "lucide-react";
-import { checkAuth } from "@/utils/auth";
-import { client } from "@/utils/orpc";
+import { Skeleton } from "@/components/ui/skeleton";
+import { useProductReviews } from "@/hooks/use-customer-api";
+import { authClient } from "@/lib/auth-client";
 import { ReviewCard } from "./review-card";
 import { ReviewFormWrapper } from "./review-form-wrapper";
 import { StarRating } from "./star-rating";
@@ -11,27 +14,31 @@ interface ProductReviewsProps {
   readOnly?: boolean;
 }
 
-export async function ProductReviews({
+export function ProductReviews({
   productId,
   variant = "default",
   readOnly = false,
 }: ProductReviewsProps) {
-  const [reviewData, session] = await Promise.all([
-    client.customer.getProductReviews({ productId }),
-    checkAuth(),
-  ]);
+  const { data: reviewData, isLoading } = useProductReviews(productId);
+  const { data: session, isPending: isSessionPending } =
+    authClient.useSession();
 
-  const reviews = reviewData.reviews;
-  const stats = reviewData.stats;
+  if (isLoading) {
+    return (
+      <div className="mt-12 rounded-lg bg-white p-6 shadow-sm lg:p-8">
+        <Skeleton className="mb-6 h-8 w-48" />
+        <Skeleton className="h-24 w-full" />
+      </div>
+    );
+  }
+
+  const reviews = reviewData?.reviews ?? [];
+  const stats = reviewData?.stats ?? { averageRating: 0, totalReviews: 0 };
   const isLoggedIn = !!session?.user;
   const userId = session?.user?.id;
   const isEmerald = variant === "emerald";
 
-  const userHasReviewed = userId
-    ? reviews.some((r) => r.userId === userId)
-    : false;
-
-  const canReview = !readOnly && isLoggedIn && !userHasReviewed;
+  const canReview = !readOnly && isLoggedIn;
 
   return (
     <div className="mt-12 bg-white rounded-lg shadow-sm p-6 lg:p-8">
@@ -70,17 +77,11 @@ export async function ProductReviews({
           </div>
         )}
 
-        {!readOnly && !isLoggedIn && (
+        {!readOnly && !isSessionPending && !isLoggedIn && (
           <div
             className={`${isEmerald ? "bg-emerald-50 text-emerald-700" : "bg-blue-50 text-blue-700"} px-4 py-3 rounded-lg mb-6 text-sm`}
           >
             Please log in to leave a review.
-          </div>
-        )}
-
-        {!readOnly && isLoggedIn && userHasReviewed && (
-          <div className="bg-green-50 text-green-700 px-4 py-3 rounded-lg mb-6 text-sm">
-            Thank you! You have already reviewed this product.
           </div>
         )}
       </div>
@@ -97,7 +98,11 @@ export async function ProductReviews({
           </div>
         ) : (
           reviews.map((review) => (
-            <ReviewCard key={review.id} review={review} />
+            <ReviewCard
+              key={review.id}
+              review={review}
+              canEdit={!readOnly && review.userId === userId}
+            />
           ))
         )}
       </div>

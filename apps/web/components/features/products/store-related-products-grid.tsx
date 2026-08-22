@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import {
+  type StorefrontAddSelection,
   type StorefrontProduct,
   StorefrontProductCard,
 } from "@/components/storefront/retailer-storefront";
@@ -21,22 +22,50 @@ export function StoreRelatedProductsGrid({
   shopId,
   previewMode,
 }: StoreRelatedProductsGridProps) {
-  const { addItem } = useCart();
-  const [addingProductId, setAddingProductId] = useState<number | null>(null);
+  const { addItem, items: cartItems, updateQuantity } = useCart();
+  const [addingProductIds, setAddingProductIds] = useState<ReadonlySet<number>>(
+    () => new Set(),
+  );
+  const [pendingCartItemIds, setPendingCartItemIds] = useState<
+    ReadonlySet<number>
+  >(() => new Set());
 
-  const handleQuickAdd = async (product: StorefrontProduct) => {
-    const variant = product.variants[0];
-    if (previewMode || product.variantCount !== 1 || !variant) return;
+  const handleQuickAdd = async (
+    product: StorefrontProduct,
+    selection: StorefrontAddSelection,
+  ) => {
+    if (previewMode) return;
 
-    setAddingProductId(product.id);
+    setAddingProductIds((current) => new Set(current).add(product.id));
     try {
       await addRetailerProductToCart(addItem, {
         productId: product.id,
-        variantId: variant.variantId,
+        variantId: selection.variantId,
         shopId,
+        cylinderSaleMode: selection.cylinderSaleMode,
       });
     } finally {
-      setAddingProductId(null);
+      setAddingProductIds((current) => {
+        const next = new Set(current);
+        next.delete(product.id);
+        return next;
+      });
+    }
+  };
+
+  const handleQuantityUpdate = async (
+    cartItemId: number,
+    quantity: number,
+  ) => {
+    setPendingCartItemIds((current) => new Set(current).add(cartItemId));
+    try {
+      await updateQuantity(cartItemId, quantity);
+    } finally {
+      setPendingCartItemIds((current) => {
+        const next = new Set(current);
+        next.delete(cartItemId);
+        return next;
+      });
     }
   };
 
@@ -46,10 +75,14 @@ export function StoreRelatedProductsGrid({
         <StorefrontProductCard
           key={product.id}
           product={product}
-          storeSlug={storeSlug}
+          shopSlug={storeSlug}
+          shopId={shopId}
           previewMode={previewMode}
-          isAdding={addingProductId === product.id}
+          isAdding={addingProductIds.has(product.id)}
+          cartItems={cartItems}
           onQuickAdd={handleQuickAdd}
+          pendingCartItemIds={pendingCartItemIds}
+          onUpdateQuantity={handleQuantityUpdate}
         />
       ))}
     </div>

@@ -26,7 +26,8 @@ export async function completeSelfPickupInvoice(input: {
     paymentStatus: SelfPickupPaymentStatus;
     markOrderPaid: boolean;
 } & RetailerCylinderHandoffInput) {
-    return db.transaction(async (tx) => {
+    try {
+        return await db.transaction(async (tx) => {
         await tx.execute(sql`SELECT pg_advisory_xact_lock(${input.invoiceId})`);
 
         const existingInvoice = await tx.query.invoice.findFirst({
@@ -120,5 +121,14 @@ export async function completeSelfPickupInvoice(input: {
             cylinderSettlement,
             message: "Self pickup completed successfully",
         };
-    });
+        });
+    } catch (error) {
+        if (error instanceof ORPCError) throw error;
+        throw new ORPCError("BAD_REQUEST", {
+            message:
+                error instanceof Error
+                    ? error.message
+                    : "Unable to complete self pickup",
+        });
+    }
 }

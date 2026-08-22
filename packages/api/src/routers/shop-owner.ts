@@ -69,6 +69,7 @@ import { z } from "zod";
 
 import { publicProcedure, shopOwnerProcedure } from "../index";
 import { resolveRetailerOfferLinePrice } from "../services/open-order-domain";
+import { resolveRetailerCylinderSale } from "../services/retailer-cylinder-sale";
 import {
     recalculateOffersForInventory,
     reconcileOpenOrder,
@@ -100,6 +101,7 @@ import {
     type StructuredBrandStockSourceRow,
     type StructuredStockVariant,
 } from "./helpers/structured-stock-overview";
+import { warehouseVariantAllowsCylinderExchange } from "./helpers/warehouse-cylinder-exchange";
 import { resolveWarehouseOrderMode } from "./helpers/warehouse-order-fulfillment";
 import { shopProductConfigEndpoints } from "./shop-product-config";
 
@@ -6300,6 +6302,7 @@ const warehouseOrderQueries = {
                             supplyMode: warehouseOrderModeSchema.optional(),
                             fulfillmentMode: warehouseOrderModeSchema.optional(),
                             targetVariantId: z.number().optional().nullable(),
+                            cylinderSaleMode: z.enum(["new", "exchange"]).default("new"),
                         }),
                     )
                     .min(1),
@@ -6369,6 +6372,9 @@ const warehouseOrderQueries = {
                 inventoryUnit: string | null;
                 conversionFactor: string | null;
                 inventoryQty: string | null;
+                cylinderSaleMode: "new" | "exchange";
+                newUnitPrice: string;
+                exchangeCreditAmount: string;
             }[] = [];
 
             for (const item of input.items) {
@@ -6563,6 +6569,21 @@ const warehouseOrderQueries = {
                     );
                 }
 
+                const newUnitPrice = unitPrice;
+                const cylinderSaleMode = item.cylinderSaleMode;
+                const exchangeCreditAmount =
+                    cylinderSaleMode === "exchange"
+                        ? Number(inv.variant?.exchangeCreditAmount ?? 0)
+                        : 0;
+                if (
+                    cylinderSaleMode === "exchange" &&
+                    !warehouseVariantAllowsCylinderExchange(inv.variant)
+                ) {
+                    throw new ORPCError("BAD_REQUEST", {
+                        message: `${inv.variant?.product?.name || "This product"} is not configured for cylinder exchange`,
+                    });
+                }
+                unitPrice = Math.max(0, Number(newUnitPrice) - exchangeCreditAmount).toFixed(2);
                 const totalPrice = (Number(unitPrice) * item.quantity).toFixed(2);
 
                 // Validate targetVariantId only when the fulfillment strategy needs it.
@@ -6630,6 +6651,9 @@ const warehouseOrderQueries = {
                     inventoryUnit: preparedMovement.movement.inventoryUnit,
                     conversionFactor: preparedMovement.movement.conversionFactor.toFixed(4),
                     inventoryQty: preparedMovement.movement.sourceInventoryQty.toFixed(2),
+                    cylinderSaleMode,
+                    newUnitPrice,
+                    exchangeCreditAmount: exchangeCreditAmount.toFixed(2),
                 });
             }
 
@@ -6682,6 +6706,11 @@ const warehouseOrderQueries = {
                         quantity: item.quantity,
                         unitPrice: item.unitPrice,
                         totalPrice: item.totalPrice,
+                        cylinderSaleMode: item.cylinderSaleMode,
+                        newUnitPrice: item.newUnitPrice,
+                        exchangeCreditAmount: item.exchangeCreditAmount,
+                        expectedEmptyPackQty:
+                            item.cylinderSaleMode === "exchange" ? item.quantity : 0,
                         supplyMode: item.supplyMode,
                         targetVariantId: buyerTarget.targetVariantId,
                         conversionStatus: "pending",
@@ -6879,14 +6908,22 @@ const openOrderEndpoints = {
                             productImage: orderItem.productImage,
                             productSize: orderItem.productSize,
                             quantity: orderItem.quantity,
+                            cylinderSaleMode: orderItem.cylinderSaleMode,
                             referencePrice: openOrderBidItem.platformPrice,
                             currentStorePrice: inventory.retailPrice,
                             offerUnitPrice: openOrderBidItem.sellerPrice,
+                            offerNewUnitPrice: openOrderBidItem.sellerNewPrice,
+                            offerExchangeCreditAmount:
+                                openOrderBidItem.exchangeCreditAmount,
+                            exchangeEnabled: productVariant.exchangeEnabled,
+                            currentExchangeCreditAmount:
+                                productVariant.exchangeCreditAmount,
                             inventoryId: inventory.id,
                         })
                         .from(openOrderBidItem)
                         .innerJoin(orderItem, eq(orderItem.id, openOrderBidItem.orderItemId))
                         .innerJoin(inventory, eq(inventory.id, openOrderBidItem.inventoryId))
+                        .innerJoin(productVariant, eq(productVariant.id, inventory.variantId))
                         .where(eq(openOrderBidItem.bidId, offer.bidId));
                     return {
                         ...offer,
@@ -6905,8 +6942,28 @@ const openOrderEndpoints = {
                         items: items.map((item) => {
                             const currentStorePrice = Number(item.currentStorePrice ?? 0);
                             const offerUnitPrice = item.offerUnitPrice == null ? null : Number(item.offerUnitPrice);
+                            let selectionValid = true;
+                            let liveCylinderSale: ReturnType<typeof resolveRetailerCylinderSale>;
+                            try {
+                                liveCylinderSale = resolveRetailerCylinderSale({
+                                    newUnitPrice: currentStorePrice,
+                                    exchangeEnabled: Boolean(item.exchangeEnabled),
+                                    exchangeCreditAmount: item.currentExchangeCreditAmount ?? "0",
+                                    requestedMode: item.cylinderSaleMode,
+                                    quantity: item.quantity,
+                                });
+                            } catch {
+                                selectionValid = false;
+                                liveCylinderSale = resolveRetailerCylinderSale({
+                                    newUnitPrice: currentStorePrice,
+                                    exchangeEnabled: false,
+                                    exchangeCreditAmount: "0",
+                                    requestedMode: "new",
+                                    quantity: item.quantity,
+                                });
+                            }
                             const resolvedPrice = resolveRetailerOfferLinePrice({
-                                currentStorePrice,
+                                currentStorePrice: Number(liveCylinderSale.effectiveUnitPrice),
                                 offerUnitPrice,
                                 offerDeadline: offer.offerDeadline ?? new Date(0),
                                 priceFrozenAt: offer.priceFrozenAt,
@@ -6915,9 +6972,19 @@ const openOrderEndpoints = {
                                 ...item,
                                 referencePrice: Number(item.referencePrice),
                                 currentStorePrice,
+                                currentEffectivePrice: Number(liveCylinderSale.effectiveUnitPrice),
+                                currentExchangeCreditAmount: Number(liveCylinderSale.exchangeCreditAmount),
+                                offerNewUnitPrice:
+                                    item.offerNewUnitPrice == null
+                                        ? null
+                                        : Number(item.offerNewUnitPrice),
+                                offerExchangeCreditAmount: Number(
+                                    item.offerExchangeCreditAmount ?? 0,
+                                ),
                                 offerUnitPrice,
                                 retailerPrice: resolvedPrice.displayPrice,
                                 priceSource: resolvedPrice.source,
+                                selectionValid,
                                 pricingUrl: `/shop/dashboard/pricing?inventoryId=${item.inventoryId}`,
                             };
                         }),
@@ -7539,6 +7606,8 @@ const warehouseConnectionEndpoints = {
                     variantPackType: productVariant.packType,
                     variantInnerPackSizeKg: productVariant.innerPackSizeKg,
                     variantPackCountInside: productVariant.packCountInside,
+                    variantExchangeEnabled: productVariant.exchangeEnabled,
+                    variantExchangeCreditAmount: productVariant.exchangeCreditAmount,
                     sourceVariantOptionId: productVariant.sourceVariantOptionId,
                     sourceOptionName: variantOption.name,
                     sourceOptionUnit: variantOption.unit,
@@ -7654,6 +7723,8 @@ const warehouseConnectionEndpoints = {
                             color: item.variantColor,
                             size: item.variantSize,
                             variantOperations,
+                            exchangeEnabled: item.variantExchangeEnabled,
+                            exchangeCreditAmount: item.variantExchangeCreditAmount,
                         },
                     },
                 ];

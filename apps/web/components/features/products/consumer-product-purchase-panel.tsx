@@ -659,7 +659,12 @@ export function ConsumerProductPurchasePanel({
             orderIncrement={selectedRow.orderIncrement ?? undefined}
             categoryName={product.category?.name ?? undefined}
             brandName={selectedRow.brandName ?? undefined}
-            purchaseMode={purchaseMode}
+            purchaseMode="open_order"
+            cylinderSaleMode={
+              purchaseMode === "new" || purchaseMode === "exchange"
+                ? purchaseMode
+                : undefined
+            }
           />
         ) : (
           <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">

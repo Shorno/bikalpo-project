@@ -10,6 +10,8 @@
     "dev": "turbo dev",
     "build": "turbo build",
     "check-types": "turbo check-types",
+    "check-types:web": "turbo check-types --filter=web...",
+    "build:web": "turbo build --filter=web...",
     "dev:native": "turbo -F native dev",
     "dev:web": "turbo -F web dev",
     "dev:server": "turbo -F server dev",

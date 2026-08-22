@@ -10,6 +10,7 @@ export type RetailerOrderItemFulfillmentLike = {
   receivedQty?: number | null;
   supplyMode?: string | null;
   supplyModeLabel?: string | null;
+  cylinderSaleMode?: string | null;
 };
 
 export type RetailerOrderReviewState = "pending" | "reviewed" | "not_approved";
@@ -57,6 +58,18 @@ export function getRetailerOrderItemModeLabel(
   item: RetailerOrderItemFulfillmentLike,
 ) {
   return item.supplyModeLabel || resolveModeLabel(item.supplyMode);
+}
+
+export function getRetailerOrderItemCylinderSaleLabel(
+  item: Pick<
+    RetailerOrderItemFulfillmentLike,
+    "supplyMode" | "cylinderSaleMode"
+  >,
+) {
+  if (item.supplyMode !== "cylinder" && item.cylinderSaleMode !== "exchange") {
+    return null;
+  }
+  return item.cylinderSaleMode === "exchange" ? "Exchange" : "New";
 }
 
 export function getRetailerOrderReviewState(

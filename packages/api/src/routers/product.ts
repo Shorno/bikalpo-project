@@ -38,6 +38,8 @@ import { z } from "zod";
 import { adminProcedure, publicProcedure } from "../index";
 import { generateSku } from "./helpers/generate-sku";
 import {
+  applyGeneratedVariantExchangeSettings,
+  attachExchangeSettingsToVariantPrices,
   buildAutoVariantRows,
   linkProductVariantsToCatalog,
   syncBrandVariantPrices,
@@ -119,6 +121,12 @@ const createProductSchema = z.object({
         consumerPrice: z
           .string()
           .regex(/^\d+(\.\d{1,2})?$/)
+          .default("0"),
+        exchangeEnabled: z.boolean().optional().default(false),
+        exchangeCreditAmount: z
+          .string()
+          .regex(/^\d+(\.\d{1,2})?$/)
+          .optional()
           .default("0"),
       }),
     )
@@ -589,9 +597,18 @@ export const productRouter = {
             with: { brand: true },
             columns: {
               id: true,
+              sku: true,
+              catalogVariantId: true,
+              price: true,
               variantType: true,
               brandId: true,
               unitLabel: true,
+              sellUnit: true,
+              packType: true,
+              weightKg: true,
+              color: true,
+              size: true,
+              isActive: true,
             },
           },
           variantPrices: {
@@ -635,6 +652,17 @@ export const productRouter = {
               variantOption: true,
             },
           },
+          variants: {
+            columns: {
+              id: true,
+              unitLabel: true,
+              variantType: true,
+              brandId: true,
+              exchangeCreditAmount: true,
+              exchangeEnabled: true,
+              sourceVariantOptionId: true,
+            },
+          },
         },
       });
 
@@ -642,7 +670,7 @@ export const productRouter = {
         throw new ORPCError("NOT_FOUND", { message: "Product not found" });
       }
 
-      return { product: foundProduct };
+      return { product: attachExchangeSettingsToVariantPrices(foundProduct) };
     }),
 
   /**
@@ -962,6 +990,11 @@ export const productRouter = {
             })),
             settings: newProduct,
           });
+          await applyGeneratedVariantExchangeSettings(
+            tx,
+            newProduct.id,
+            variantsByBrand.get(brandId)!,
+          );
           createdProducts.push(newProduct);
         }
 
@@ -1012,8 +1045,7 @@ export const productRouter = {
       // Core-managed products keep their core identity and brand fixed.
       // Their own variant set remains editable without affecting siblings.
       const isCoreManaged =
-        existing.coreProductId !== null &&
-        existing.creatorSource === "admin";
+        existing.coreProductId !== null && existing.creatorSource === "admin";
       const brandIds = isCoreManaged ? undefined : inputBrandIds;
       if (isCoreManaged && !existing.brandId) {
         throw new ORPCError("BAD_REQUEST", {
@@ -1156,6 +1188,7 @@ export const productRouter = {
           })),
           settings: updatedProduct,
         });
+        await applyGeneratedVariantExchangeSettings(db, id, variantPrices);
       }
 
       // Standalone products retain the legacy replace behavior.
@@ -1213,6 +1246,7 @@ export const productRouter = {
         }
 
         await linkProductVariantsToCatalog(db, id);
+        await applyGeneratedVariantExchangeSettings(db, id, variantPrices);
       }
 
       return { product: updatedProduct };
@@ -1357,6 +1391,17 @@ export const productRouter = {
               variantOption: true,
             },
           },
+          variants: {
+            columns: {
+              id: true,
+              unitLabel: true,
+              variantType: true,
+              brandId: true,
+              exchangeCreditAmount: true,
+              exchangeEnabled: true,
+              sourceVariantOptionId: true,
+            },
+          },
         },
       });
 
@@ -1364,7 +1409,7 @@ export const productRouter = {
         throw new ORPCError("NOT_FOUND", { message: "Product not found" });
       }
 
-      return { product: foundProduct };
+      return { product: attachExchangeSettingsToVariantPrices(foundProduct) };
     }),
 
   /**
@@ -1653,5 +1698,4 @@ export const productRouter = {
       ];
       return { csv: lines.join("\n") };
     }),
-
 };

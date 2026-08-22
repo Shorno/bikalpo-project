@@ -5,7 +5,10 @@ import type {
   InventoryBehaviour,
   ProductTypeFulfillmentProfile,
 } from "@bikalpo-project/db/fulfillment";
-import { INVENTORY_BEHAVIOUR_LABELS } from "@bikalpo-project/db/fulfillment";
+import {
+  INVENTORY_BEHAVIOUR_LABELS,
+  isWarehouseCylinderExchangeAvailable,
+} from "@bikalpo-project/db/fulfillment";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertCircle,
@@ -29,6 +32,7 @@ import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
+import { CylinderSaleModeToggle } from "@/components/features/warehouse/cylinder-sale-mode-toggle";
 import {
   getDefaultWarehouseOrderMode,
   getFulfillmentFamilyLabel,
@@ -59,6 +63,8 @@ type CartItem = {
   targetVariantId?: number | null;
   targetVariantLabel?: string | null;
   familyLabel?: string;
+  cylinderSaleMode: "new" | "exchange";
+  exchangeCreditAmount: number;
 };
 
 type CartonOption = {
@@ -98,6 +104,8 @@ type VariantItem = {
         perInventoryUnit: string;
       };
     };
+    exchangeEnabled: boolean;
+    exchangeCreditAmount: string | null;
   };
 };
 
@@ -158,8 +166,9 @@ function getCartItemKey(item: {
   variantId: number;
   fulfillmentMode: FulfillmentMode;
   targetVariantId?: number | null;
+  cylinderSaleMode?: "new" | "exchange";
 }) {
-  return `${item.variantId}:${item.fulfillmentMode}:${item.targetVariantId ?? "none"}`;
+  return `${item.variantId}:${item.fulfillmentMode}:${item.targetVariantId ?? "none"}:${item.cylinderSaleMode ?? "new"}`;
 }
 
 function buildWarehouseOrderUrl(warehouseSlug?: string | null) {
@@ -303,6 +312,7 @@ function VariantModal({
   const [selectedMode, setSelectedMode] = useState<FulfillmentMode>(
     product.fulfillmentProfile.defaultMode,
   );
+  const [cylinderSaleMode, setCylinderSaleMode] = useState<"new" | "exchange">("new");
 
   // ── Group variants by brand ──
   const brandGroups = (() => {
@@ -351,6 +361,7 @@ function VariantModal({
     variantId: selected.variantId,
     fulfillmentMode: selectedModeOption?.mode ?? profile.defaultMode,
     targetVariantId: selectedTargetVariantId,
+    cylinderSaleMode,
   });
   const inCart = cart.find((c) => getCartItemKey(c) === selectedCartKey);
 
@@ -383,9 +394,23 @@ function VariantModal({
 
   // For loose: price is the base variant price (per weightKg unit, e.g. per 10KG)
   // For carton: calculate per-carton price from variant price
-  const perUnitPrice = usesContainerStock
+  const newUnitPrice = usesContainerStock
     ? Number(selectedCarton?.cartonPrice || rawPrice)
     : rawPrice;
+  const canExchange = isWarehouseCylinderExchangeAvailable({
+    isReturnablePack: product.type.isReturnablePack,
+    family: product.fulfillmentProfile.family,
+    name: product.type.name,
+    slug: product.type.slug,
+    exchangeEnabled: selected.variant.exchangeEnabled,
+  });
+  const exchangeCredit = canExchange
+    ? Number(selected.variant.exchangeCreditAmount || 0)
+    : 0;
+  const perUnitPrice =
+    cylinderSaleMode === "exchange"
+      ? Math.max(0, newUnitPrice - exchangeCredit)
+      : newUnitPrice;
 
   // Get variants for the currently selected brand
   const currentBrandGroup = brandGroups.find(
@@ -413,6 +438,7 @@ function VariantModal({
 
   useEffect(() => {
     setSelectedMode(getDefaultWarehouseOrderMode(profile, selected));
+    setCylinderSaleMode("new");
   }, [profile, selected]);
 
   return (
@@ -653,6 +679,13 @@ function VariantModal({
           </div>
 
           {/* Price & Stock */}
+          {canExchange && (
+            <CylinderSaleModeToggle
+              value={cylinderSaleMode}
+              onChange={setCylinderSaleMode}
+            />
+          )}
+
           <div className="flex items-center justify-between">
             <div>
               <div className="text-xl font-bold text-gray-900">
@@ -983,6 +1016,8 @@ function VariantModal({
                           ? selected.variant.unitLabel
                           : null,
                         familyLabel,
+                        cylinderSaleMode,
+                        exchangeCreditAmount: exchangeCredit,
                       });
                       onClose();
                     }}
@@ -1579,6 +1614,9 @@ export default function OrderFromWarehousePage() {
                     </span>
                     <span className="text-[10px] text-gray-400">
                       {item.modeLabel} • {item.unitLabel} × {item.quantity}
+                      {item.exchangeCreditAmount > 0 && (
+                        <> • <span className="capitalize">{item.cylinderSaleMode}</span></>
+                      )}
                     </span>
                     {item.targetVariantLabel && (
                       <span className="block text-[10px] text-blue-500">
@@ -1634,6 +1672,7 @@ export default function OrderFromWarehousePage() {
                       fulfillmentMode: c.fulfillmentMode,
                       supplyMode: c.supplyMode,
                       targetVariantId: c.targetVariantId,
+                      cylinderSaleMode: c.cylinderSaleMode,
                     })),
                     shippingName,
                     shippingPhone,

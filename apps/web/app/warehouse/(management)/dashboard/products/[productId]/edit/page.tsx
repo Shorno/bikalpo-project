@@ -36,7 +36,20 @@ export default function WarehouseProductEditPage() {
     );
   }
 
-  const product = data.product as any;
+  const rawProduct = data.product as any;
+  const product = {
+    ...rawProduct,
+    variantPrices: (rawProduct.variantPrices ?? []).map((price: any) => {
+      const variant = (rawProduct.variants ?? []).find(
+        (row: any) => row.sourceVariantOptionId === price.variantOptionId,
+      );
+      return {
+        ...price,
+        exchangeEnabled: variant?.exchangeEnabled ?? false,
+        exchangeCreditAmount: variant?.exchangeCreditAmount ?? "0",
+      };
+    }),
+  };
   const coreProduct = {
     ...product.coreProduct,
     categoryId: product.categoryId,
@@ -56,7 +69,12 @@ export default function WarehouseProductEditPage() {
         onUpdate: async (payload: any) => {
           const variants = (payload.variantPrices ?? []).map((row: any) => ({
             variantOptionId: row.variantOptionId,
+            exchangeEnabled: Boolean(row.exchangeEnabled),
+            exchangeCreditAmount: String(row.exchangeCreditAmount || "0"),
           }));
+          const anyExchangeEnabled = variants.some(
+            (row: { exchangeEnabled: boolean }) => row.exchangeEnabled,
+          );
           return (orpc.warehouse as any).updateWarehouseProduct.call({
             productId,
             details: {
@@ -77,7 +95,7 @@ export default function WarehouseProductEditPage() {
               conversionEnabled: payload.conversionEnabled,
               inventoryLooseUnitEnabled: payload.inventoryLooseUnitEnabled,
               inventoryLooseUnit: payload.inventoryLooseUnit,
-              isReturnablePack: payload.isReturnablePack,
+              isReturnablePack: anyExchangeEnabled,
               defaultPackDepositAmount: String(
                 payload.defaultPackDepositAmount || "0",
               ),

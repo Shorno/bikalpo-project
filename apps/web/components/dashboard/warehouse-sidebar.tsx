@@ -87,9 +87,12 @@ const warehouseNavGroups: NavGroup[] = [
         items: [
           { title: "Stock Overview", url: `${WH}/stock` },
           { title: "Stock", url: `${WH}/stock/list` },
+          { title: "Low Stock", url: `${WH}/stock/low` },
+          { title: "Empty Pack", url: `${WH}/stock/empty-pack` },
           { title: "Brands", url: `${WH}/stock/brands` },
           { title: "Carton Tracking", url: `${WH}/carton-tracking` },
           { title: "Expired Products", url: `${WH}/stock/expired` },
+          { title: "Damage", url: `${WH}/damage` },
           { title: "Stock Adjustment", url: `${WH}/stock-adjustment` },
           { title: "Unit/Carton Inventory", url: `${WH}/stock/unit-carton` },
           { title: "Add Stock", url: `${WH}/stock/add` },

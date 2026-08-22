@@ -328,28 +328,91 @@
       "idx": 47,
       "version": "7",
       "when": 1786600000000,
-      "tag": "0047_tolet_property_foundation",
+      "tag": "0047_empty_pack_stock_ledger",
       "breakpoints": true
     },
     {
       "idx": 48,
       "version": "7",
       "when": 1786700000000,
-      "tag": "0048_tolet_unit_listing",
+      "tag": "0048_warehouse_damage_management",
       "breakpoints": true
     },
     {
       "idx": 49,
       "version": "7",
       "when": 1786800000000,
-      "tag": "0049_tolet_booking_request",
+      "tag": "0049_warehouse_damage_audit",
       "breakpoints": true
     },
     {
       "idx": 50,
       "version": "7",
       "when": 1786900000000,
-      "tag": "0050_tolet_rental_lifecycle",
+      "tag": "0050_retain_warehouse_damage_audit",
+      "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "7",
+      "when": 1787000000000,
+      "tag": "0051_warehouse_damage_drafts",
+      "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "7",
+      "when": 1787100000000,
+      "tag": "0052_warehouse_damage_item_timestamps",
+      "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "7",
+      "when": 1787200000000,
+      "tag": "0053_open_order_exchange_offer_snapshots",
+      "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "7",
+      "when": 1787300000000,
+      "tag": "0054_product_review_multiple_entries",
+      "breakpoints": true
+    },
+    {
+      "idx": 55,
+      "version": "7",
+      "when": 1787392800000,
+      "tag": "0055_retailer_offer_management",
+      "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "7",
+      "when": 1787400000000,
+      "tag": "0056_tolet_property_foundation",
+      "breakpoints": true
+    },
+    {
+      "idx": 57,
+      "version": "7",
+      "when": 1787500000000,
+      "tag": "0057_tolet_unit_listing",
+      "breakpoints": true
+    },
+    {
+      "idx": 58,
+      "version": "7",
+      "when": 1787600000000,
+      "tag": "0058_tolet_booking_request",
+      "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "7",
+      "when": 1787700000000,
+      "tag": "0059_tolet_rental_lifecycle",
       "breakpoints": true
     }
   ]

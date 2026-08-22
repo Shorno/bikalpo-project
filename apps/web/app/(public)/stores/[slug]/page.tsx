@@ -9,6 +9,7 @@ import { ProductPagination } from "@/components/features/products/product-pagina
 import { CustomerPreviewBanner } from "@/components/storefront/customer-preview-banner";
 import {
   ActiveFilterSummary,
+  type StorefrontAddSelection,
   StorefrontCategorySidebar,
   StorefrontEmptyState,
   StorefrontMobileFilters,
@@ -60,11 +61,18 @@ export default function ShopStorePage({
   const sort = getSafeSort(searchParams.get("sort"));
   const page = getSafePage(searchParams.get("page"));
   const [searchInput, setSearchInput] = useState(query);
-  const [quickAddingProductId, setQuickAddingProductId] = useState<
-    number | null
-  >(null);
+  const [quickAddingProductIds, setQuickAddingProductIds] = useState<
+    ReadonlySet<number>
+  >(() => new Set());
+  const [pendingCartItemIds, setPendingCartItemIds] = useState<
+    ReadonlySet<number>
+  >(() => new Set());
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const { addItem } = useCart();
+  const {
+    addItem,
+    items: cartItems,
+    updateQuantity,
+  } = useCart();
 
   const updateUrl = useCallback(
     (
@@ -155,20 +163,44 @@ export default function ShopStorePage({
     });
   };
 
-  const handleQuickAdd = async (product: StorefrontProduct) => {
-    if (previewMode || product.variantCount !== 1 || !data?.shop) return;
-    const variant = product.variants[0];
-    if (!variant) return;
+  const handleQuickAdd = async (
+    product: StorefrontProduct,
+    selection: StorefrontAddSelection,
+  ) => {
+    if (previewMode || !data?.shop) return;
 
-    setQuickAddingProductId(product.id);
+    setQuickAddingProductIds((current) =>
+      new Set(current).add(product.id),
+    );
     try {
       await addRetailerProductToCart(addItem, {
         productId: product.id,
-        variantId: variant.variantId,
+        variantId: selection.variantId,
         shopId: data.shop.id,
+        cylinderSaleMode: selection.cylinderSaleMode,
       });
     } finally {
-      setQuickAddingProductId(null);
+      setQuickAddingProductIds((current) => {
+        const next = new Set(current);
+        next.delete(product.id);
+        return next;
+      });
+    }
+  };
+
+  const handleQuantityUpdate = async (
+    cartItemId: number,
+    quantity: number,
+  ) => {
+    setPendingCartItemIds((current) => new Set(current).add(cartItemId));
+    try {
+      await updateQuantity(cartItemId, quantity);
+    } finally {
+      setPendingCartItemIds((current) => {
+        const next = new Set(current);
+        next.delete(cartItemId);
+        return next;
+      });
     }
   };
 
@@ -354,9 +386,13 @@ export default function ShopStorePage({
                         key={product.id}
                         product={product}
                         shopSlug={shop.shopSlug || slug}
+                        shopId={data.shop.id}
                         previewMode={previewMode}
-                        isAdding={quickAddingProductId === product.id}
+                        isAdding={quickAddingProductIds.has(product.id)}
+                        cartItems={cartItems}
                         onQuickAdd={handleQuickAdd}
+                        pendingCartItemIds={pendingCartItemIds}
+                        onUpdateQuantity={handleQuantityUpdate}
                       />
                     ))}
                   </div>
