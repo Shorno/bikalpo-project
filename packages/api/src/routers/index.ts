@@ -18,6 +18,7 @@ import { adminItemRequestRouter } from "./admin-item-request";
 import { adminLandingRouter } from "./admin-landing";
 import { adminMarketingRouter } from "./admin-marketing";
 import { adminOfferRouter } from "./admin-offer";
+import { adminOfferTemplateRouter } from "./admin-offer-template";
 import { adminOrderRouter } from "./admin-order";
 import { adminProductConfigRouter } from "./admin-product-config";
 import { adminProductTypeRouter } from "./admin-product-type";
@@ -58,6 +59,7 @@ import { productRouter } from "./product";
 import { profitLossRouter } from "./profit-loss";
 import { purchaseRouter } from "./purchase";
 import { retailerPosRouter } from "./retailer-pos";
+import { retailerOfferRouter } from "./retailer-offer";
 import { returnsRouter } from "./returns";
 import { salesmanRouter } from "./salesman";
 import { sellerApplicationRouter } from "./seller-application";
@@ -93,6 +95,7 @@ export const appRouter = {
   adminCoreProduct: adminCoreProductRouter,
   adminProductConfig: adminProductConfigRouter,
   adminOffer: adminOfferRouter,
+  adminOfferTemplate: adminOfferTemplateRouter,
   adminProductType: adminProductTypeRouter,
   adminVariantOption: adminVariantOptionRouter,
   adminEmployeeReport: adminEmployeeReportRouter,
@@ -122,6 +125,7 @@ export const appRouter = {
   emptyPackManagement: emptyPackManagementRouter,
   returns: returnsRouter,
   retailerPos: retailerPosRouter,
+  retailerOffer: retailerOfferRouter,
   dashboard: dashboardRouter,
 
   verifiedUser: verifiedUserRouter,

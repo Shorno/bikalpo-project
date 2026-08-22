@@ -3,6 +3,7 @@ import {
   inventory,
   invoice,
   order,
+  retailerOfferApplication,
   warehousePosCart as posCart,
   warehousePosCustomer as posCustomer,
   warehousePosPayment as posPayment,
@@ -42,6 +43,7 @@ import {
   posCartOwnerCondition,
   resolveOwnerPosSaleLines,
 } from "../services/owner-pos-store";
+import { evaluateRetailerOffer } from "../services/retailer-offer-engine";
 
 const adjustmentSchema = z.object({
   mode: z.enum(["fixed", "percentage"]),
@@ -645,11 +647,38 @@ export const retailerPosRouter = {
       }
       const lines = await resolveOwnerPosSaleLines(owner, input.items);
       assertExpectedPrices(input.items, lines);
-      const totals = calculateRetailerCheckout({
+      const manualTotals = calculateRetailerCheckout({
         lines,
         discount: input.discount,
         tax: input.tax,
         tenderedAmount: input.tenderedAmount,
+      });
+      const automaticOffer = await evaluateRetailerOffer({
+        shopId: owner.id,
+        lines,
+        customerKey: `pos:${customer.id}`,
+      });
+      const appliedOffer =
+        automaticOffer && automaticOffer.discountAmount >= manualTotals.discount
+          ? automaticOffer
+          : null;
+      const checkoutDiscount = appliedOffer
+        ? { mode: "fixed" as const, value: appliedOffer.discountAmount }
+        : input.discount;
+      const offerTotals = calculateRetailerCheckout({
+        lines,
+        discount: checkoutDiscount,
+        tax: input.tax,
+      });
+      const effectiveTenderedAmount =
+        appliedOffer && input.paymentMethod !== "cash"
+          ? Math.min(input.tenderedAmount, offerTotals.total)
+          : input.tenderedAmount;
+      const totals = calculateRetailerCheckout({
+        lines,
+        discount: checkoutDiscount,
+        tax: input.tax,
+        tenderedAmount: effectiveTenderedAmount,
       });
       try {
         validatePosDueCustomer(customer, totals);
@@ -690,7 +719,7 @@ export const retailerPosRouter = {
           }
         }
 
-        const discount = adjustmentOrDefault(input.discount);
+        const discount = adjustmentOrDefault(checkoutDiscount);
         const tax = adjustmentOrDefault(input.tax);
         const [created] = await tx.insert(posSale).values({
           ...ownerColumns(owner),
@@ -711,7 +740,7 @@ export const retailerPosRouter = {
           total: money(totals.total),
           paid: money(totals.paid),
           due: money(totals.due),
-          tenderedAmount: money(input.tenderedAmount),
+          tenderedAmount: money(effectiveTenderedAmount),
           changeAmount: money(totals.change),
           paymentMethod: totals.paid === 0 ? "due" : input.paymentMethod,
           note: input.note || null,
@@ -732,6 +761,16 @@ export const retailerPosRouter = {
           unitPrice: money(line.unitPrice),
           lineTotal: money(line.lineTotal),
         })));
+        if (appliedOffer) {
+          await tx.insert(retailerOfferApplication).values({
+            retailerOfferId: appliedOffer.offerId,
+            shopId: owner.id,
+            posSaleId: created.id,
+            customerKey: `pos:${customer.id}`,
+            discountAmount: money(appliedOffer.discountAmount),
+            salesAmount: money(appliedOffer.salesAmount),
+          });
+        }
         if (totals.paid > 0) {
           await tx.insert(posPayment).values({
             saleId: created.id,
@@ -739,7 +778,7 @@ export const retailerPosRouter = {
             idempotencyKey: `checkout:${input.checkoutRequestId}`,
             paymentMethod: input.paymentMethod,
             amount: money(totals.paid),
-            tenderedAmount: money(input.tenderedAmount),
+            tenderedAmount: money(effectiveTenderedAmount),
             transactionRef: input.transactionRef || null,
             createdById: owner.id,
           });
@@ -759,6 +798,7 @@ export const retailerPosRouter = {
         invoiceNo: result.sale.invoiceNo,
         duplicate: result.duplicate,
         totals,
+        appliedOffer,
       };
     }),
 
@@ -1024,6 +1064,9 @@ export const retailerPosRouter = {
           voidedById: shopId,
           voidedAt: new Date(),
         }).where(eq(posSale.id, sale.id));
+        await tx
+          .delete(retailerOfferApplication)
+          .where(eq(retailerOfferApplication.posSaleId, sale.id));
         return { success: true, duplicate: false };
       });
     }),
