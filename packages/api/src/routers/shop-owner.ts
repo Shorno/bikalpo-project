@@ -94,6 +94,7 @@ import {
 	appendOrderPurchaseEvent,
 	recordPurchaseSubmission,
 } from "../services/purchase-history";
+import { recognizePlatformPurchaseReceipt } from "../services/purchase-receipt";
 import {
 	buildWholesaleCheckoutQuote,
 	getWholesalePaymentDueAt,
@@ -2163,11 +2164,12 @@ const mutations = {
 				return { itemId: item.id, receivedQty };
 			});
 
+			const receivedAt = new Date();
 			await db.transaction(async (tx) => {
 				const claimed = await tx
 					.update(order)
 					.set({
-						receivedAt: new Date(),
+						receivedAt,
 					})
 					.where(
 						and(
@@ -2193,6 +2195,13 @@ const mutations = {
 
 				// Inventory transfer and delivery status are one atomic movement.
 				await convertB2bOrderToRetailInventory(tx, input.orderId);
+				await recognizePlatformPurchaseReceipt(tx, {
+					actorId: userId,
+					orderId: input.orderId,
+					ownerId: userId,
+					ownerType: "shop",
+					receivedAt,
+				});
 			});
 
 			return {
