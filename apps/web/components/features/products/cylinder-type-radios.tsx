@@ -1,5 +1,8 @@
 "use client";
 
+import { useId } from "react";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+
 export type CylinderSaleMode = "new" | "exchange";
 
 /**
@@ -38,17 +41,70 @@ export function CylinderTypeRadios({
   value,
   onChange,
   size = "card",
+  appearance = "segmented",
   hint = false,
   quantity = 1,
 }: {
   value: CylinderSaleMode;
   onChange: (mode: CylinderSaleMode) => void;
   size?: "card" | "modal";
+  appearance?: "segmented" | "radio";
   hint?: boolean;
   quantity?: number;
 }) {
   const isModal = size === "modal";
   const returnQuantity = Math.max(1, Math.floor(quantity));
+  const labelId = `${useId()}-label`;
+
+  const hintText =
+    value === "new"
+      ? "No empty cylinder returned"
+      : `Return ${returnQuantity} empty cylinder${
+          returnQuantity === 1 ? "" : "s"
+        }`;
+
+  if (appearance === "radio") {
+    return (
+      <div>
+        <span
+          className={
+            isModal
+              ? "mb-2 block text-xs font-medium text-zinc-500"
+              : "mb-1.5 block text-[11px] font-medium text-zinc-400"
+          }
+          id={labelId}
+        >
+          Type
+        </span>
+        <RadioGroup
+          aria-labelledby={labelId}
+          className="flex w-auto flex-wrap gap-x-4 gap-y-2"
+          onValueChange={(mode) => onChange(mode as CylinderSaleMode)}
+          value={value}
+        >
+          {(["exchange", "new"] as const).map((mode) => {
+            const optionId = `${labelId}-${mode}`;
+
+            return (
+              <label
+                className="inline-flex cursor-pointer items-center gap-2 text-xs font-medium text-zinc-700"
+                htmlFor={optionId}
+                key={mode}
+              >
+                <RadioGroupItem id={optionId} value={mode} />
+                <span>{mode === "exchange" ? "Exchange" : "New"}</span>
+              </label>
+            );
+          })}
+        </RadioGroup>
+        {hint ? (
+          <p className="mt-1.5 text-[11px] leading-4 text-zinc-500">
+            {hintText}
+          </p>
+        ) : null}
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -89,13 +145,7 @@ export function CylinderTypeRadios({
         })}
       </div>
       {hint ? (
-        <p className="mt-1.5 text-[11px] leading-4 text-zinc-500">
-          {value === "new"
-            ? "No empty cylinder returned"
-            : `Return ${returnQuantity} empty cylinder${
-                returnQuantity === 1 ? "" : "s"
-              }`}
-        </p>
+        <p className="mt-1.5 text-[11px] leading-4 text-zinc-500">{hintText}</p>
       ) : null}
     </div>
   );

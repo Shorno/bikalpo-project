@@ -20,13 +20,13 @@ import {
 import Image from "next/image";
 import Link from "next/link";
 import { useState } from "react";
-import type { CartItem } from "@/hooks/use-orpc-cart";
 import {
   type CylinderSaleMode,
   CylinderTypeRadios,
   shortVariantLabel,
 } from "@/components/features/products/cylinder-type-radios";
 import { Button } from "@/components/ui/button";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import {
   Sheet,
   SheetContent,
@@ -37,6 +37,7 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
+import type { CartItem } from "@/hooks/use-orpc-cart";
 import { withCustomerStorefrontPreview } from "@/lib/customer-storefront-preview";
 import { getRetailerProductHref } from "@/lib/retailer-storefront-url";
 import { cn } from "@/lib/utils";
@@ -592,40 +593,47 @@ export function StorefrontProductCard({
 
         {product.variants.length > 1 && (
           <div className="mt-3">
-            <span className="mb-1.5 block text-[11px] font-medium text-slate-400">
+            <span
+              className="mb-1.5 block text-[11px] font-medium text-slate-400"
+              id={`product-${product.id}-size-label`}
+            >
               Size
             </span>
-            <div className="flex flex-wrap gap-1.5">
+            <RadioGroup
+              aria-labelledby={`product-${product.id}-size-label`}
+              className="flex w-auto flex-wrap gap-x-4 gap-y-2"
+              onValueChange={(variantId) => handleSizeChange(Number(variantId))}
+              value={String(selectedVariant?.variantId ?? "")}
+            >
               {product.variants.map((variant) => {
-                const active = variant.variantId === selectedVariant?.variantId;
                 const label =
                   variant.quantitySelectorLabel ||
                   variant.unitLabel ||
                   variant.sku ||
                   `Size ${variant.variantId}`;
+                const optionId = `product-${product.id}-size-${variant.variantId}`;
                 return (
-                  <button
+                  <label
+                    className="inline-flex cursor-pointer items-center gap-2 text-xs font-medium text-slate-700"
+                    htmlFor={optionId}
                     key={variant.variantId}
-                    type="button"
-                    onClick={() => handleSizeChange(variant.variantId)}
-                    className={cn(
-                      "h-7 rounded-md border px-2.5 text-xs font-medium transition-colors",
-                      active
-                        ? "border-slate-950 bg-slate-950 text-white"
-                        : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50",
-                    )}
                   >
-                    {shortVariantLabel(label, product.name)}
-                  </button>
+                    <RadioGroupItem
+                      id={optionId}
+                      value={String(variant.variantId)}
+                    />
+                    <span>{shortVariantLabel(label, product.name)}</span>
+                  </label>
                 );
               })}
-            </div>
+            </RadioGroup>
           </div>
         )}
 
         {listingCanExchange && (
           <div className="mt-3">
             <CylinderTypeRadios
+              appearance="radio"
               value={effectiveCylinderSaleMode}
               onChange={setCylinderSaleMode}
             />
@@ -696,9 +704,7 @@ export function StorefrontProductCard({
               type="button"
               className="h-9 flex-1 text-xs"
               disabled={
-                isAdding ||
-                !selectedVariant ||
-                selectedAvailableQty <= 0
+                isAdding || !selectedVariant || selectedAvailableQty <= 0
               }
               onClick={() => {
                 if (!selectedVariant) return;
