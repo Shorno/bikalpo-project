@@ -1079,7 +1079,7 @@ export default function WarehouseStorefrontPage() {
             Payment Method *
           </Label>
           <Select
-            value={paymentMethod ?? undefined}
+            value={paymentMethod ?? ""}
             onValueChange={(value) => {
               const method = value as typeof paymentMethod;
               setPaymentMethod(method);
@@ -1631,7 +1631,7 @@ export default function WarehouseStorefrontPage() {
                     <div className="mt-6 space-y-2">
                       <Label htmlFor="online-provider">Online provider</Label>
                       <Select
-                        value={paymentMethod ?? undefined}
+                        value={paymentMethod ?? ""}
                         onValueChange={(value) =>
                           setPaymentMethod(value as typeof paymentMethod)
                         }

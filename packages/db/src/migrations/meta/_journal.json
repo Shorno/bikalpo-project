@@ -372,6 +372,13 @@
       "when": 1787400000000,
       "tag": "0053_allow_unselected_order_payment_method",
       "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "7",
+      "when": 1787403600000,
+      "tag": "0054_repair_purchase_lifecycle",
+      "breakpoints": true
     }
   ]
 }
