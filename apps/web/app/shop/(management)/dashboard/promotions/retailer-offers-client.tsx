@@ -3,12 +3,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertTriangle,
-  ArrowLeft,
   CalendarDays,
   Check,
   Eye,
   Loader2,
   Megaphone,
+  Package,
   Pause,
   Plus,
   Search,
@@ -26,6 +26,13 @@ import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import {
   Sheet,
@@ -47,6 +54,21 @@ type OfferCustomer = {
   linkedUserId: string | null;
   name: string;
   phone: string | null;
+};
+
+type TemplateProduct = {
+  productId: number;
+  variantId?: number;
+  catalogVariantId?: number | null;
+  ownerVariantId?: number | null;
+  available?: boolean;
+  name: string;
+  variantName?: string;
+  brandName?: string;
+  sku?: string | null;
+  category: string;
+  regularPrice: string;
+  quantity: number;
 };
 
 type OfferForm = {
@@ -84,8 +106,8 @@ type CreationOptions = {
     maximumLimit: number | null;
     startDate: Date | null;
     endDate: Date | null;
-    buyProducts: Array<{ quantity: number }>;
-    getProducts: Array<{ quantity: number }>;
+    buyProducts: TemplateProduct[];
+    getProducts: TemplateProduct[];
     expectedOrders: number;
   }>;
   variants: Array<{
@@ -109,6 +131,7 @@ type OfferDetail = {
   id: number;
   code: string;
   templateId: number;
+  offerType: OfferType;
   name: string;
   product: string;
   typeLabel: string;
@@ -335,7 +358,10 @@ export function RetailerOffersClient() {
     setForm({
       templateId: detail.templateId,
       name: detail.name,
-      applyTo: detail.applyTo as ApplyTo,
+      applyTo:
+        detail.offerType === "buy_x_get_y"
+          ? "all_products"
+          : (detail.applyTo as ApplyTo),
       productId: detail.productId,
       variantId: detail.variantId,
       categoryId: detail.categoryId,
@@ -357,173 +383,178 @@ export function RetailerOffersClient() {
     setCreating(true);
   };
 
-  if (creating) {
-    return (
-      <OfferCreation
-        form={form}
-        setForm={setForm}
-        options={optionsQuery.data as CreationOptions | undefined}
-        customers={customersQuery.data?.customers ?? []}
-        loading={optionsQuery.isLoading}
-        saving={saveMutation.isPending}
-        editing={editingId !== null}
-        onSave={() => saveMutation.mutate()}
-        onCancel={() => {
-          setCreating(false);
-          setEditingId(null);
-          setForm(initialForm());
-        }}
-      />
-    );
-  }
-
   const data = dashboardQuery.data;
   return (
-    <div className="space-y-6 pb-10">
-      <header className="flex flex-wrap items-end justify-between gap-4 border-b border-zinc-200 pb-5">
-        <div>
-          <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.16em] text-blue-700">
-            <Store className="h-3.5 w-3.5" /> Store: {data?.shop.name ?? "—"}
-          </div>
-          <h1 className="text-3xl font-extrabold tracking-tight text-zinc-950">
-            My Offers (Store / Warehouse)
-          </h1>
-          <p className="mt-1 text-sm text-zinc-500">
-            Showing: {data?.showing ?? "All Offers"}
-          </p>
-        </div>
-        <Button onClick={openCreate} className="bg-blue-700 hover:bg-blue-800">
-          <Plus className="mr-2 h-4 w-4" /> Create Offer
-        </Button>
-      </header>
-
-      <section className="border-b border-zinc-200 pb-6">
-        <SectionLabel icon={Search}>Search &amp; Filter</SectionLabel>
-        <div className="mt-4 grid gap-5 xl:grid-cols-[minmax(260px,1.2fr)_1fr_1fr_1fr]">
-          <div>
-            <FieldLabel>Search</FieldLabel>
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
-              <Input
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                placeholder="Offer Name / Product"
-                className="pl-9"
-              />
+    <div className="space-y-5 pb-10">
+      <header className="overflow-hidden rounded-xl border bg-card">
+        <div className="flex flex-col justify-between gap-4 p-5 sm:flex-row sm:items-center">
+          <div className="flex items-start gap-3.5">
+            <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary ring-1 ring-inset ring-primary/15">
+              <Megaphone className="size-5" aria-hidden="true" />
+            </span>
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <h1 className="text-lg font-semibold tracking-tight">
+                  My offers
+                </h1>
+                <Badge variant="outline" className="gap-1.5 font-normal">
+                  <Store className="size-3" /> {data?.shop.name ?? "Store"}
+                </Badge>
+              </div>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Showing {data?.showing ?? "All Offers"}
+              </p>
             </div>
           </div>
-          <FilterGroup
-            label="Status"
-            options={STATUS_OPTIONS}
-            value={status}
-            onChange={setStatus}
-          />
-          <FilterGroup
-            label="Type"
-            options={TYPE_OPTIONS}
-            value={type}
-            onChange={setType}
-          />
-          <FilterGroup
-            label="Date Range"
-            options={DATE_OPTIONS}
-            value={dateRange}
-            onChange={(value) =>
-              setDateRange(value === dateRange ? null : value)
-            }
-          />
+          <Button onClick={openCreate} className="shrink-0 gap-2">
+            <Plus className="size-4" /> Create offer
+          </Button>
         </div>
-      </section>
-
-      <section>
-        <SectionLabel icon={Tag}>KPI Overview</SectionLabel>
-        <div className="mt-4 grid grid-cols-2 border-l border-t border-zinc-200 lg:grid-cols-4">
+        <div className="grid grid-cols-2 border-t bg-muted/20 [&>*:nth-child(-n+2)]:border-b [&>*:nth-child(2n)]:border-r-0 md:grid-cols-4 md:[&>*]:border-b-0 md:[&>*:nth-child(2n)]:border-r md:[&>*:last-child]:border-r-0">
           <Metric label="Total Offers" value={data?.kpis.total ?? 0} />
           <Metric label="Active" value={data?.kpis.active ?? 0} />
           <Metric label="Scheduled" value={data?.kpis.scheduled ?? 0} />
           <Metric label="Expired" value={data?.kpis.expired ?? 0} />
         </div>
-      </section>
+      </header>
 
-      <section>
-        <SectionLabel icon={Megaphone}>Offer List</SectionLabel>
-        <div className="mt-4 overflow-hidden rounded-lg border border-zinc-200 bg-white">
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[980px] text-sm">
-              <thead className="border-b border-zinc-200 bg-zinc-50 text-left text-xs uppercase tracking-wider text-zinc-500">
-                <tr>
-                  {[
-                    "Offer ID",
-                    "Offer Name",
-                    "Product",
-                    "Type",
-                    "Discount",
-                    "Validity",
-                    "Status",
-                    "Action",
-                  ].map((label) => (
-                    <th key={label} className="px-4 py-3 font-semibold">
-                      {label}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-zinc-100">
-                {dashboardQuery.isLoading ? (
-                  <tr>
-                    <td colSpan={8} className="py-16 text-center">
-                      <Loader2 className="mx-auto h-6 w-6 animate-spin text-blue-700" />
-                    </td>
-                  </tr>
-                ) : !data?.offers.length ? (
-                  <tr>
-                    <td colSpan={8} className="py-16 text-center text-zinc-500">
-                      No offers found.
-                    </td>
-                  </tr>
-                ) : (
-                  data.offers.map((offer) => (
-                    <tr key={offer.id} className="hover:bg-zinc-50/80">
-                      <td className="px-4 py-4 font-mono text-xs text-zinc-600">
-                        {offer.code}
-                      </td>
-                      <td className="px-4 py-4 font-semibold text-zinc-950">
-                        {offer.name}
-                      </td>
-                      <td className="max-w-[220px] truncate px-4 py-4 text-zinc-600">
-                        {offer.product}
-                      </td>
-                      <td className="px-4 py-4">{offer.typeLabel}</td>
-                      <td className="px-4 py-4 font-mono font-semibold tabular-nums">
-                        {offer.discount}
-                      </td>
-                      <td className="whitespace-nowrap px-4 py-4 font-mono text-xs tabular-nums">
-                        {shortDate(offer.startDate)}–{shortDate(offer.endDate)}
-                      </td>
-                      <td className="px-4 py-4">
-                        <StatusBadge status={offer.status} />
-                      </td>
-                      <td className="px-4 py-4">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => setSelectedId(offer.id)}
-                        >
-                          View
-                        </Button>
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
+      <section className="overflow-hidden rounded-xl border bg-card">
+        <div className="border-b p-4">
+          <div className="mb-3 flex items-center gap-2 text-sm font-semibold">
+            <Search className="size-4 text-muted-foreground" />
+            Search &amp; filter
           </div>
+          <div className="grid gap-4 xl:grid-cols-[minmax(18rem,1.25fr)_1fr_1fr_1fr]">
+            <div>
+              <FieldLabel>Offer name or product</FieldLabel>
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  placeholder="Search offers…"
+                  className="pl-9"
+                />
+              </div>
+            </div>
+            <FilterGroup
+              label="Status"
+              options={STATUS_OPTIONS}
+              value={status}
+              onChange={setStatus}
+            />
+            <FilterGroup
+              label="Type"
+              options={TYPE_OPTIONS}
+              value={type}
+              onChange={setType}
+            />
+            <FilterGroup
+              label="Date range"
+              options={DATE_OPTIONS}
+              value={dateRange}
+              onChange={(value) =>
+                setDateRange(value === dateRange ? null : value)
+              }
+            />
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between border-b px-4 py-3">
+          <div>
+            <h2 className="text-sm font-semibold">Offer list</h2>
+            <p className="text-xs text-muted-foreground">
+              Store and warehouse offers
+            </p>
+          </div>
+          <span className="font-mono text-xs tabular-nums text-muted-foreground">
+            {data?.offers.length ?? 0} result
+            {data?.offers.length === 1 ? "" : "s"}
+          </span>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[980px] text-sm">
+            <thead className="border-b bg-muted/30 text-left text-xs text-muted-foreground">
+              <tr>
+                {[
+                  "Offer ID",
+                  "Offer Name",
+                  "Product",
+                  "Type",
+                  "Discount",
+                  "Validity",
+                  "Status",
+                  "Action",
+                ].map((label) => (
+                  <th key={label} className="px-4 py-3 font-medium">
+                    {label}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y">
+              {dashboardQuery.isLoading ? (
+                <tr>
+                  <td colSpan={8} className="py-16 text-center">
+                    <Loader2 className="mx-auto size-6 animate-spin text-primary" />
+                  </td>
+                </tr>
+              ) : !data?.offers.length ? (
+                <tr>
+                  <td colSpan={8} className="py-20 text-center">
+                    <span className="mx-auto mb-3 flex size-11 items-center justify-center rounded-xl border bg-muted/30 text-muted-foreground">
+                      <Megaphone className="size-5" />
+                    </span>
+                    <div className="text-sm font-semibold">No offers found</div>
+                  </td>
+                </tr>
+              ) : (
+                data.offers.map((offer) => (
+                  <tr
+                    key={offer.id}
+                    className="transition-colors hover:bg-muted/20"
+                  >
+                    <td className="px-4 py-4 font-mono text-xs text-muted-foreground">
+                      {offer.code}
+                    </td>
+                    <td className="px-4 py-4">
+                      <div className="font-medium">{offer.name}</div>
+                    </td>
+                    <td className="max-w-[220px] truncate px-4 py-4 text-muted-foreground">
+                      {offer.product}
+                    </td>
+                    <td className="px-4 py-4">{offer.typeLabel}</td>
+                    <td className="px-4 py-4 font-mono font-semibold tabular-nums">
+                      {offer.discount}
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-4 font-mono text-xs tabular-nums">
+                      {shortDate(offer.startDate)}–{shortDate(offer.endDate)}
+                    </td>
+                    <td className="px-4 py-4">
+                      <StatusBadge status={offer.status} />
+                    </td>
+                    <td className="px-4 py-4">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setSelectedId(offer.id)}
+                      >
+                        View
+                      </Button>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
         </div>
       </section>
 
-      <section>
-        <SectionLabel icon={AlertTriangle}>Alerts</SectionLabel>
-        <div className="mt-4 divide-y divide-zinc-200 rounded-lg border border-zinc-200 bg-white">
+      <section className="overflow-hidden rounded-xl border bg-card">
+        <div className="flex items-center gap-2 border-b px-4 py-3 text-sm font-semibold">
+          <AlertTriangle className="size-4 text-muted-foreground" /> Alerts
+        </div>
+        <div className="grid divide-y sm:grid-cols-3 sm:divide-x sm:divide-y-0">
           <AlertRow
             count={data?.alerts.expiringToday ?? 0}
             label="Offers expiring today"
@@ -550,28 +581,29 @@ export function RetailerOffersClient() {
           selectedId && actionMutation.mutate({ id: selectedId, action })
         }
       />
-    </div>
-  );
-}
-
-function SectionLabel({
-  icon: Icon,
-  children,
-}: {
-  icon: typeof Search;
-  children: ReactNode;
-}) {
-  return (
-    <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-[0.16em] text-zinc-500">
-      <Icon className="h-4 w-4 text-blue-700" />
-      {children}
+      <OfferCreation
+        open={creating}
+        form={form}
+        setForm={setForm}
+        options={optionsQuery.data as CreationOptions | undefined}
+        customers={customersQuery.data?.customers ?? []}
+        loading={optionsQuery.isLoading}
+        saving={saveMutation.isPending}
+        editing={editingId !== null}
+        onSave={() => saveMutation.mutate()}
+        onCancel={() => {
+          setCreating(false);
+          setEditingId(null);
+          setForm(initialForm());
+        }}
+      />
     </div>
   );
 }
 
 function FieldLabel({ children }: { children: ReactNode }) {
   return (
-    <label className="mb-2 block text-xs font-semibold text-zinc-700">
+    <label className="mb-1.5 block text-xs font-medium text-foreground">
       {children}
     </label>
   );
@@ -597,11 +629,12 @@ function FilterGroup<T extends string>({
             type="button"
             key={option.value}
             onClick={() => onChange(option.value)}
+            aria-pressed={value === option.value}
             className={cn(
-              "rounded-md border px-2.5 py-2 text-xs font-semibold transition-colors",
+              "rounded-md border px-2.5 py-1.5 text-xs font-medium transition-colors",
               value === option.value
-                ? "border-blue-700 bg-blue-700 text-white"
-                : "border-zinc-200 bg-white text-zinc-600 hover:border-zinc-400",
+                ? "border-primary bg-primary text-primary-foreground"
+                : "border-border bg-background text-muted-foreground hover:border-foreground/25 hover:text-foreground",
             )}
           >
             {option.label}
@@ -614,11 +647,9 @@ function FilterGroup<T extends string>({
 
 function Metric({ label, value }: { label: string; value: number }) {
   return (
-    <div className="border-b border-r border-zinc-200 bg-white px-5 py-5">
-      <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
-        {label}
-      </div>
-      <div className="mt-2 font-mono text-3xl font-bold tabular-nums text-zinc-950">
+    <div className="border-r px-5 py-4">
+      <div className="text-xs text-muted-foreground">{label}</div>
+      <div className="mt-1 font-mono text-2xl font-semibold tabular-nums">
         {value}
       </div>
     </div>
@@ -642,15 +673,16 @@ function StatusBadge({ status }: { status: string }) {
 function AlertRow({ count, label }: { count: number; label: string }) {
   return (
     <div className="flex items-center gap-3 px-4 py-3">
-      <span className="flex h-7 min-w-7 items-center justify-center rounded-md bg-zinc-100 px-2 font-mono text-xs font-bold tabular-nums">
+      <span className="flex h-7 min-w-7 items-center justify-center rounded-md bg-muted px-2 font-mono text-xs font-semibold tabular-nums">
         {count}
       </span>
-      <span className="text-sm text-zinc-700">{label}</span>
+      <span className="text-sm text-muted-foreground">{label}</span>
     </div>
   );
 }
 
 function OfferCreation({
+  open,
   form,
   setForm,
   options,
@@ -661,6 +693,7 @@ function OfferCreation({
   onSave,
   onCancel,
 }: {
+  open: boolean;
   form: OfferForm;
   setForm: Dispatch<SetStateAction<OfferForm>>;
   options: CreationOptions | undefined;
@@ -693,8 +726,28 @@ function OfferCreation({
   const category = options?.categories.find(
     (item) => item.id === form.categoryId,
   );
-  const productLabel =
-    form.applyTo === "all_products"
+  const isBuyXGetY = template?.type === "buy_x_get_y";
+  const unavailableTemplateProducts = isBuyXGetY
+    ? [...template.buyProducts, ...template.getProducts].filter(
+        (item) => !item.available,
+      )
+    : [];
+  const comboSummary = isBuyXGetY
+    ? `${template.buyProducts
+        .map(
+          (item) =>
+            `${item.brandName ? `${item.brandName} ` : ""}${item.variantName || item.name} ×${item.quantity}`,
+        )
+        .join(" + ")} → ${template.getProducts
+        .map(
+          (item) =>
+            `${item.brandName ? `${item.brandName} ` : ""}${item.variantName || item.name} ×${item.quantity}`,
+        )
+        .join(" + ")}`
+    : "";
+  const productLabel = isBuyXGetY
+    ? comboSummary
+    : form.applyTo === "all_products"
       ? "All Products"
       : form.applyTo === "category"
         ? (category?.name ?? "Select category")
@@ -721,6 +774,11 @@ function OfferCreation({
       ...current,
       templateId: id,
       name: current.name || selected.name,
+      applyTo:
+        selected.type === "buy_x_get_y" ? "all_products" : current.applyTo,
+      productId: selected.type === "buy_x_get_y" ? null : current.productId,
+      variantId: selected.type === "buy_x_get_y" ? null : current.variantId,
+      categoryId: selected.type === "buy_x_get_y" ? null : current.categoryId,
       discountValue:
         selected.benefitType === "free_product"
           ? ""
@@ -734,454 +792,505 @@ function OfferCreation({
     }));
   };
 
-  if (loading)
-    return (
-      <div className="flex min-h-[420px] items-center justify-center">
-        <Loader2 className="h-7 w-7 animate-spin text-blue-700" />
-      </div>
-    );
-
   return (
-    <div className="pb-28">
-      <header className="mb-2 flex flex-wrap items-end justify-between gap-4 border-b border-zinc-200 pb-5">
-        <div>
-          <button
-            type="button"
-            onClick={onCancel}
-            className="mb-3 flex items-center gap-1 text-xs font-semibold text-zinc-500 hover:text-zinc-950"
-          >
-            <ArrowLeft className="h-3.5 w-3.5" /> My Offers
-          </button>
-          <h1 className="text-3xl font-extrabold tracking-tight text-zinc-950">
-            Create Offer (From Template)
-          </h1>
-          <div className="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-sm text-zinc-500">
-            <span>
-              Store:{" "}
-              <strong className="text-zinc-800">
-                {options?.shop.name ?? "—"}
-              </strong>
+    <Dialog
+      open={open}
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen && !saving) onCancel();
+      }}
+    >
+      <DialogContent
+        showCloseButton={!saving}
+        className="flex max-h-[94vh] grid-rows-none flex-col gap-0 overflow-hidden p-0 sm:max-w-5xl"
+      >
+        <DialogHeader className="shrink-0 border-b px-5 py-4 pr-14">
+          <div className="flex items-center gap-3">
+            <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary ring-1 ring-inset ring-primary/15">
+              <Tag className="size-4.5" aria-hidden="true" />
             </span>
-            <span>
-              Mode:{" "}
-              <strong className="text-zinc-800">
-                Template Based Offer Creation
-              </strong>
-            </span>
-          </div>
-        </div>
-      </header>
-
-      <div className="divide-y divide-zinc-200">
-        <FormStep number="01" title="Select Offer Template">
-          <div className="overflow-hidden rounded-lg border border-zinc-200">
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[680px] text-sm">
-                <thead className="border-b border-zinc-200 bg-zinc-50 text-left text-xs uppercase tracking-wider text-zinc-500">
-                  <tr>
-                    {["Template Name", "Type", "Description", "Action"].map(
-                      (label) => (
-                        <th key={label} className="px-4 py-3 font-semibold">
-                          {label}
-                        </th>
-                      ),
-                    )}
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-zinc-100">
-                  {options?.templates.map((item) => (
-                    <tr
-                      key={item.id}
-                      className={cn(
-                        item.id === form.templateId && "bg-blue-50/70",
-                      )}
-                    >
-                      <td className="px-4 py-3 font-semibold">{item.name}</td>
-                      <td className="px-4 py-3">{item.typeLabel}</td>
-                      <td className="px-4 py-3 text-zinc-500">
-                        {item.description}
-                      </td>
-                      <td className="px-4 py-3">
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant={
-                            item.id === form.templateId ? "default" : "outline"
-                          }
-                          className={cn(
-                            item.id === form.templateId &&
-                              "bg-blue-700 hover:bg-blue-800",
-                          )}
-                          onClick={() => selectTemplate(item.id)}
-                          disabled={editing}
-                        >
-                          {item.id === form.templateId ? (
-                            <>
-                              <Check className="mr-1 h-3.5 w-3.5" /> Selected
-                            </>
-                          ) : (
-                            "Select"
-                          )}
-                        </Button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div>
+              <DialogTitle className="text-lg">
+                {editing ? "Edit offer" : "Create offer from template"}
+              </DialogTitle>
+              <DialogDescription className="mt-0.5 text-xs">
+                {options?.shop.name ?? "Store"} · Template Based Offer Creation
+              </DialogDescription>
             </div>
           </div>
-          <div className="mt-3 text-sm text-zinc-600">
-            Selected:{" "}
-            <strong className="text-zinc-950">{template?.name ?? "—"}</strong>
-          </div>
-        </FormStep>
+        </DialogHeader>
 
-        <FormStep number="02" title="Select Product / Category">
-          <FieldLabel>Apply Offer To</FieldLabel>
-          <ChoiceRow
-            options={[
-              { value: "product", label: "Specific Product" },
-              { value: "category", label: "Category" },
-              { value: "all_products", label: "All Products" },
-            ]}
-            value={form.applyTo}
-            onChange={(applyTo) =>
-              setForm((current) => ({
-                ...current,
-                applyTo: applyTo as ApplyTo,
-              }))
-            }
-          />
-          {form.applyTo === "product" && (
-            <div className="mt-5">
-              <FieldLabel>Select Product</FieldLabel>
-              <select
-                value={selectedProductId ?? ""}
-                onChange={(event) =>
-                  setForm((current) => ({
-                    ...current,
-                    productId: event.target.value
-                      ? Number(event.target.value)
-                      : null,
-                    variantId: null,
-                  }))
+        <div className="thin-scrollbar flex-1 overflow-y-auto bg-background px-5 sm:px-7">
+          {loading ? (
+            <div className="flex min-h-[420px] items-center justify-center">
+              <Loader2 className="size-7 animate-spin text-primary" />
+            </div>
+          ) : (
+            <div className="mx-auto max-w-3xl divide-y">
+              <FormStep number="01" title="Select Offer Template">
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[640px] border-y text-sm">
+                    <thead className="border-b bg-muted/30 text-left text-xs text-muted-foreground">
+                      <tr>
+                        {["Template Name", "Type", "Description", "Action"].map(
+                          (label) => (
+                            <th
+                              key={label}
+                              className={cn(
+                                "px-3 py-2.5 font-medium",
+                                label === "Action" && "text-right",
+                              )}
+                            >
+                              {label}
+                            </th>
+                          ),
+                        )}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y">
+                      {options?.templates.map((item) => (
+                        <tr
+                          key={item.id}
+                          className={cn(
+                            "transition-colors hover:bg-muted/20",
+                            item.id === form.templateId && "bg-primary/5",
+                          )}
+                        >
+                          <td className="px-3 py-3 font-medium">{item.name}</td>
+                          <td className="px-3 py-3">{item.typeLabel}</td>
+                          <td className="max-w-md px-3 py-3 text-muted-foreground">
+                            {item.description}
+                          </td>
+                          <td className="px-3 py-3 text-right">
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant={
+                                item.id === form.templateId
+                                  ? "default"
+                                  : "outline"
+                              }
+                              onClick={() => selectTemplate(item.id)}
+                              disabled={editing}
+                            >
+                              {item.id === form.templateId ? (
+                                <>
+                                  <Check className="mr-1 h-3.5 w-3.5" />{" "}
+                                  Selected
+                                </>
+                              ) : (
+                                "Select"
+                              )}
+                            </Button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="mt-3 text-sm text-muted-foreground">
+                  Selected:{" "}
+                  <strong className="text-foreground">
+                    {template?.name ?? "—"}
+                  </strong>
+                </div>
+              </FormStep>
+
+              <FormStep
+                number="02"
+                title={
+                  isBuyXGetY
+                    ? "Buy & Get Products"
+                    : "Select Product / Category"
                 }
-                className="h-10 w-full rounded-md border border-zinc-200 bg-white px-3 text-sm focus:border-blue-700 focus:outline-none"
               >
-                <option value="">Select product</option>
-                {products.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.name}
-                  </option>
-                ))}
-              </select>
-              <div className="mt-4">
-                <FieldLabel>Variant</FieldLabel>
-                <select
-                  value={form.variantId ?? ""}
-                  onChange={(event) =>
+                {isBuyXGetY ? (
+                  <div className="space-y-6">
+                    <TemplateProductTable
+                      title="Buy products"
+                      products={template.buyProducts}
+                    />
+                    <TemplateProductTable
+                      title="Get products"
+                      products={template.getProducts}
+                    />
+                    {unavailableTemplateProducts.length > 0 ? (
+                      <p className="text-sm text-destructive">
+                        {unavailableTemplateProducts.length} required variant
+                        {unavailableTemplateProducts.length === 1
+                          ? " is"
+                          : "s are"}{" "}
+                        not carried by this store. You can save a draft, but the
+                        offer cannot be activated.
+                      </p>
+                    ) : null}
+                  </div>
+                ) : (
+                  <>
+                    <FieldLabel>Apply Offer To</FieldLabel>
+                    <ChoiceRow
+                      options={[
+                        { value: "product", label: "Specific Product" },
+                        { value: "category", label: "Category" },
+                        { value: "all_products", label: "All Products" },
+                      ]}
+                      value={form.applyTo}
+                      onChange={(applyTo) =>
+                        setForm((current) => ({
+                          ...current,
+                          applyTo: applyTo as ApplyTo,
+                        }))
+                      }
+                    />
+                    {form.applyTo === "product" && (
+                      <div className="mt-5">
+                        <FieldLabel>Select Product</FieldLabel>
+                        <select
+                          aria-label="Select product"
+                          value={selectedProductId ?? ""}
+                          onChange={(event) =>
+                            setForm((current) => ({
+                              ...current,
+                              productId: event.target.value
+                                ? Number(event.target.value)
+                                : null,
+                              variantId: null,
+                            }))
+                          }
+                          className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+                        >
+                          <option value="">Select product</option>
+                          {products.map((item) => (
+                            <option key={item.id} value={item.id}>
+                              {item.name}
+                            </option>
+                          ))}
+                        </select>
+                        <div className="mt-4">
+                          <FieldLabel>Variant</FieldLabel>
+                          <select
+                            aria-label="Select variant"
+                            value={form.variantId ?? ""}
+                            onChange={(event) =>
+                              setForm((current) => ({
+                                ...current,
+                                variantId: event.target.value
+                                  ? Number(event.target.value)
+                                  : null,
+                              }))
+                            }
+                            disabled={!selectedProductId}
+                            className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:bg-muted/40 disabled:opacity-60"
+                          >
+                            <option value="">Select variant</option>
+                            {productVariants.map((item) => (
+                              <option key={item.id} value={item.id}>
+                                {item.variantName} — {item.sku ?? "No SKU"}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+                    )}
+                    {form.applyTo === "category" && (
+                      <div className="mt-5">
+                        <FieldLabel>Category</FieldLabel>
+                        <select
+                          aria-label="Select category"
+                          value={form.categoryId ?? ""}
+                          onChange={(event) =>
+                            setForm((current) => ({
+                              ...current,
+                              categoryId: event.target.value
+                                ? Number(event.target.value)
+                                : null,
+                            }))
+                          }
+                          className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+                        >
+                          <option value="">Select category</option>
+                          {options?.categories.map((item) => (
+                            <option key={item.id} value={item.id}>
+                              {item.name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+                  </>
+                )}
+              </FormStep>
+
+              <FormStep number="03" title="Configure Offer Details">
+                <div className="space-y-4">
+                  <FormInput
+                    label="Offer Name"
+                    value={form.name}
+                    onChange={(name) =>
+                      setForm((current) => ({ ...current, name }))
+                    }
+                  />
+                  <FormInput
+                    label="Discount Type"
+                    value={template?.typeLabel ?? ""}
+                    disabled
+                  />
+                  <FormInput
+                    label="Discount Value"
+                    type="number"
+                    value={form.discountValue}
+                    placeholder={
+                      template?.benefitType === "free_product" ? "Free" : "0"
+                    }
+                    disabled={template?.benefitType === "free_product"}
+                    onChange={(discountValue) =>
+                      setForm((current) => ({ ...current, discountValue }))
+                    }
+                  />
+                  <FormInput
+                    label={
+                      isBuyXGetY
+                        ? "Buy Quantity (Template)"
+                        : "Minimum Quantity"
+                    }
+                    type="number"
+                    value={form.minimumQuantity}
+                    disabled={isBuyXGetY}
+                    onChange={(minimumQuantity) =>
+                      setForm((current) => ({ ...current, minimumQuantity }))
+                    }
+                  />
+                  <FormInput
+                    label="Maximum Limit (Optional)"
+                    type="number"
+                    value={form.maximumLimit}
+                    onChange={(maximumLimit) =>
+                      setForm((current) => ({ ...current, maximumLimit }))
+                    }
+                  />
+                </div>
+              </FormStep>
+
+              <FormStep number="04" title="Set Validity">
+                <div className="space-y-4">
+                  <FormInput
+                    label="Start Date"
+                    type="date"
+                    value={form.startDate}
+                    onChange={(startDate) =>
+                      setForm((current) => ({ ...current, startDate }))
+                    }
+                  />
+                  <FormInput
+                    label="End Date"
+                    type="date"
+                    value={form.endDate}
+                    onChange={(endDate) =>
+                      setForm((current) => ({ ...current, endDate }))
+                    }
+                  />
+                </div>
+                <div className="mt-5">
+                  <FieldLabel>Time (Optional)</FieldLabel>
+                  <ChoiceRow
+                    options={[
+                      { value: "all", label: "All Day" },
+                      { value: "custom", label: "Custom Time" },
+                    ]}
+                    value={form.allDay ? "all" : "custom"}
+                    onChange={(value) =>
+                      setForm((current) => ({
+                        ...current,
+                        allDay: value === "all",
+                      }))
+                    }
+                  />
+                </div>
+                {!form.allDay && (
+                  <div className="mt-4 space-y-4">
+                    <FormInput
+                      label="Start Time"
+                      type="time"
+                      value={form.startTime}
+                      onChange={(startTime) =>
+                        setForm((current) => ({ ...current, startTime }))
+                      }
+                    />
+                    <FormInput
+                      label="End Time"
+                      type="time"
+                      value={form.endTime}
+                      onChange={(endTime) =>
+                        setForm((current) => ({ ...current, endTime }))
+                      }
+                    />
+                  </div>
+                )}
+              </FormStep>
+
+              <FormStep number="05" title="Target Settings">
+                <FieldLabel>Apply To</FieldLabel>
+                <ChoiceRow
+                  options={[
+                    { value: "all_customers", label: "All Customers" },
+                    {
+                      value: "specific_customers",
+                      label: "Specific Customers",
+                    },
+                    { value: "area", label: "Area Based" },
+                  ]}
+                  value={form.targetType}
+                  onChange={(targetType) =>
                     setForm((current) => ({
                       ...current,
-                      variantId: event.target.value
-                        ? Number(event.target.value)
-                        : null,
+                      targetType: targetType as TargetType,
                     }))
                   }
-                  disabled={!selectedProductId}
-                  className="h-10 w-full rounded-md border border-zinc-200 bg-white px-3 text-sm focus:border-blue-700 focus:outline-none disabled:bg-zinc-50"
-                >
-                  <option value="">Select variant</option>
-                  {productVariants.map((item) => (
-                    <option key={item.id} value={item.id}>
-                      {item.variantName} — {item.sku ?? "No SKU"}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-          )}
-          {form.applyTo === "category" && (
-            <div className="mt-5">
-              <FieldLabel>Category</FieldLabel>
-              <select
-                value={form.categoryId ?? ""}
-                onChange={(event) =>
-                  setForm((current) => ({
-                    ...current,
-                    categoryId: event.target.value
-                      ? Number(event.target.value)
-                      : null,
-                  }))
-                }
-                className="h-10 w-full rounded-md border border-zinc-200 bg-white px-3 text-sm focus:border-blue-700 focus:outline-none"
-              >
-                <option value="">Select category</option>
-                {options?.categories.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
-        </FormStep>
-
-        <FormStep number="03" title="Configure Offer Details">
-          <div className="grid gap-4 md:grid-cols-2">
-            <FormInput
-              label="Offer Name"
-              value={form.name}
-              onChange={(name) => setForm((current) => ({ ...current, name }))}
-            />
-            <FormInput
-              label="Discount Type"
-              value={template?.typeLabel ?? ""}
-              disabled
-            />
-            <FormInput
-              label="Discount Value"
-              type="number"
-              value={form.discountValue}
-              placeholder={
-                template?.benefitType === "free_product" ? "Free" : "0"
-              }
-              disabled={template?.benefitType === "free_product"}
-              onChange={(discountValue) =>
-                setForm((current) => ({ ...current, discountValue }))
-              }
-            />
-            <FormInput
-              label="Minimum Quantity"
-              type="number"
-              value={form.minimumQuantity}
-              onChange={(minimumQuantity) =>
-                setForm((current) => ({ ...current, minimumQuantity }))
-              }
-            />
-            <FormInput
-              label="Maximum Limit (Optional)"
-              type="number"
-              value={form.maximumLimit}
-              onChange={(maximumLimit) =>
-                setForm((current) => ({ ...current, maximumLimit }))
-              }
-            />
-          </div>
-        </FormStep>
-
-        <FormStep number="04" title="Set Validity">
-          <div className="grid gap-4 md:grid-cols-2">
-            <FormInput
-              label="Start Date"
-              type="date"
-              value={form.startDate}
-              onChange={(startDate) =>
-                setForm((current) => ({ ...current, startDate }))
-              }
-            />
-            <FormInput
-              label="End Date"
-              type="date"
-              value={form.endDate}
-              onChange={(endDate) =>
-                setForm((current) => ({ ...current, endDate }))
-              }
-            />
-          </div>
-          <div className="mt-5">
-            <FieldLabel>Time (Optional)</FieldLabel>
-            <ChoiceRow
-              options={[
-                { value: "all", label: "All Day" },
-                { value: "custom", label: "Custom Time" },
-              ]}
-              value={form.allDay ? "all" : "custom"}
-              onChange={(value) =>
-                setForm((current) => ({ ...current, allDay: value === "all" }))
-              }
-            />
-          </div>
-          {!form.allDay && (
-            <div className="mt-4 grid gap-4 md:grid-cols-2">
-              <FormInput
-                label="Start Time"
-                type="time"
-                value={form.startTime}
-                onChange={(startTime) =>
-                  setForm((current) => ({ ...current, startTime }))
-                }
-              />
-              <FormInput
-                label="End Time"
-                type="time"
-                value={form.endTime}
-                onChange={(endTime) =>
-                  setForm((current) => ({ ...current, endTime }))
-                }
-              />
-            </div>
-          )}
-        </FormStep>
-
-        <FormStep number="05" title="Target Settings">
-          <FieldLabel>Apply To</FieldLabel>
-          <ChoiceRow
-            options={[
-              { value: "all_customers", label: "All Customers" },
-              { value: "specific_customers", label: "Specific Customers" },
-              { value: "area", label: "Area Based" },
-            ]}
-            value={form.targetType}
-            onChange={(targetType) =>
-              setForm((current) => ({
-                ...current,
-                targetType: targetType as TargetType,
-              }))
-            }
-          />
-          {form.targetType === "specific_customers" && (
-            <div className="mt-5">
-              <FieldLabel>Specific Customers</FieldLabel>
-              <div className="max-h-52 divide-y divide-zinc-100 overflow-y-auto rounded-lg border border-zinc-200">
-                {customers.map((customer) => (
-                  <CheckRow
-                    key={customer.key}
-                    checked={customerTargetKeys(customer).some((key) =>
-                      form.targetCustomerKeys.includes(key),
-                    )}
-                    label={customer.name}
-                    detail={customer.phone ?? ""}
-                    onChange={() =>
-                      setForm((current) => ({
-                        ...current,
-                        targetCustomerKeys: toggleCustomerTargets(
-                          current.targetCustomerKeys,
-                          customer,
-                        ),
-                      }))
-                    }
-                  />
-                ))}
-              </div>
-            </div>
-          )}
-          {form.targetType === "area" && (
-            <div className="mt-5">
-              <FieldLabel>Area</FieldLabel>
-              <div className="max-h-52 divide-y divide-zinc-100 overflow-y-auto rounded-lg border border-zinc-200">
-                {options?.areas.map((area) => (
-                  <CheckRow
-                    key={area.id}
-                    checked={form.targetAreaIds.includes(area.id)}
-                    label={area.name}
-                    onChange={() =>
-                      setForm((current) => ({
-                        ...current,
-                        targetAreaIds: toggleValue(
-                          current.targetAreaIds,
-                          area.id,
-                        ),
-                      }))
-                    }
-                  />
-                ))}
-              </div>
-            </div>
-          )}
-        </FormStep>
-
-        <FormStep number="06" title="Preview (Auto Generated)">
-          <div className="grid gap-8 md:grid-cols-2">
-            <div>
-              <FieldLabel>Offer Summary</FieldLabel>
-              <div className="space-y-2 text-sm">
-                <SummaryLine label={productLabel} value={discountLabel} />
-                <SummaryLine
-                  label="Minimum Purchase"
-                  value={`${form.minimumQuantity || 0} Pack`}
                 />
-                <SummaryLine
-                  label="Valid"
-                  value={`${shortDate(new Date(`${form.startDate}T00:00:00`))} – ${shortDate(new Date(`${form.endDate}T00:00:00`))}`}
+                {form.targetType === "specific_customers" && (
+                  <div className="mt-5">
+                    <FieldLabel>Specific Customers</FieldLabel>
+                    <div className="max-h-52 divide-y overflow-y-auto rounded-lg border">
+                      {customers.map((customer) => (
+                        <CheckRow
+                          key={customer.key}
+                          checked={customerTargetKeys(customer).some((key) =>
+                            form.targetCustomerKeys.includes(key),
+                          )}
+                          label={customer.name}
+                          detail={customer.phone ?? ""}
+                          onChange={() =>
+                            setForm((current) => ({
+                              ...current,
+                              targetCustomerKeys: toggleCustomerTargets(
+                                current.targetCustomerKeys,
+                                customer,
+                              ),
+                            }))
+                          }
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {form.targetType === "area" && (
+                  <div className="mt-5">
+                    <FieldLabel>Area</FieldLabel>
+                    <div className="max-h-52 divide-y overflow-y-auto rounded-lg border">
+                      {options?.areas.map((area) => (
+                        <CheckRow
+                          key={area.id}
+                          checked={form.targetAreaIds.includes(area.id)}
+                          label={area.name}
+                          onChange={() =>
+                            setForm((current) => ({
+                              ...current,
+                              targetAreaIds: toggleValue(
+                                current.targetAreaIds,
+                                area.id,
+                              ),
+                            }))
+                          }
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </FormStep>
+
+              <FormStep number="06" title="Preview (Auto Generated)">
+                <div className="space-y-6">
+                  <div>
+                    <FieldLabel>Offer Summary</FieldLabel>
+                    <div className="space-y-2 text-sm">
+                      <SummaryLine label={productLabel} value={discountLabel} />
+                      <SummaryLine
+                        label="Minimum Purchase"
+                        value={`${form.minimumQuantity || 0} Pack`}
+                      />
+                      <SummaryLine
+                        label="Valid"
+                        value={`${shortDate(new Date(`${form.startDate}T00:00:00`))} – ${shortDate(new Date(`${form.endDate}T00:00:00`))}`}
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <FieldLabel>Estimated Impact</FieldLabel>
+                    <div className="space-y-2 text-sm">
+                      <SummaryLine
+                        label="Avg Discount"
+                        value={`৳ ${money(averageDiscount)} / Pack`}
+                      />
+                      <SummaryLine
+                        label="Expected Orders"
+                        value={`${template?.expectedOrders ?? 0}+`}
+                      />
+                    </div>
+                  </div>
+                </div>
+              </FormStep>
+
+              <FormStep number="07" title="Activate Offer">
+                <FieldLabel>Status</FieldLabel>
+                <ChoiceRow
+                  options={[
+                    { value: "activate", label: "Activate Now" },
+                    { value: "draft", label: "Save as Draft" },
+                  ]}
+                  value={form.activation}
+                  onChange={(activation) =>
+                    setForm((current) => ({
+                      ...current,
+                      activation: activation as Activation,
+                    }))
+                  }
                 />
-              </div>
+              </FormStep>
             </div>
-            <div>
-              <FieldLabel>Estimated Impact</FieldLabel>
-              <div className="space-y-2 text-sm">
-                <SummaryLine
-                  label="Avg Discount"
-                  value={`৳ ${money(averageDiscount)} / Pack`}
-                />
-                <SummaryLine
-                  label="Expected Orders"
-                  value={`${template?.expectedOrders ?? 0}+`}
-                />
-              </div>
-            </div>
-          </div>
-        </FormStep>
-
-        <FormStep number="07" title="Activate Offer">
-          <FieldLabel>Status</FieldLabel>
-          <ChoiceRow
-            options={[
-              { value: "activate", label: "Activate Now" },
-              { value: "draft", label: "Save as Draft" },
-            ]}
-            value={form.activation}
-            onChange={(activation) =>
-              setForm((current) => ({
-                ...current,
-                activation: activation as Activation,
-              }))
-            }
-          />
-        </FormStep>
-
-        <section className="grid gap-5 py-7 lg:grid-cols-[13rem_minmax(0,1fr)]">
-          <h2 className="text-sm font-bold text-zinc-950">System Rules</h2>
-          <ul className="space-y-2 text-sm text-zinc-700">
-            <li>Template structure cannot be changed</li>
-            <li>Only allowed fields editable</li>
-            <li>Offer auto applies in POS / Orders</li>
-            <li>Expired offers auto deactivate</li>
-          </ul>
-        </section>
-      </div>
-
-      <div className="fixed inset-x-0 bottom-0 z-30 border-t border-zinc-200 bg-white/95 px-4 py-3 backdrop-blur-sm">
-        <div className="mx-auto flex max-w-[1500px] flex-wrap justify-end gap-2">
-          <Button type="button" variant="outline" onClick={onCancel}>
-            Cancel
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() =>
-              document
-                .getElementById("offer-step-06")
-                ?.scrollIntoView({ behavior: "smooth" })
-            }
-          >
-            <Eye className="mr-2 h-4 w-4" /> Preview
-          </Button>
-          <Button
-            type="button"
-            onClick={onSave}
-            disabled={saving}
-            className="bg-blue-700 hover:bg-blue-800"
-          >
-            {saving ? (
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            ) : (
-              <Check className="mr-2 h-4 w-4" />
-            )}
-            Save Offer
-          </Button>
+          )}
         </div>
-      </div>
-    </div>
+
+        <div className="shrink-0 border-t bg-background px-5 py-3">
+          <div className="mx-auto flex max-w-3xl flex-wrap justify-end gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={onCancel}
+              disabled={saving}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={loading || saving}
+              onClick={() =>
+                document
+                  .getElementById("offer-step-06")
+                  ?.scrollIntoView({ behavior: "smooth" })
+              }
+            >
+              <Eye className="mr-2 h-4 w-4" /> Preview
+            </Button>
+            <Button
+              type="button"
+              onClick={onSave}
+              disabled={
+                saving ||
+                (form.activation === "activate" &&
+                  unavailableTemplateProducts.length > 0)
+              }
+            >
+              {saving ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Check className="mr-2 h-4 w-4" />
+              )}
+              Save Offer
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -1195,18 +1304,71 @@ function FormStep({
   children: ReactNode;
 }) {
   return (
-    <section
-      id={`offer-step-${number}`}
-      className="grid gap-5 py-7 lg:grid-cols-[13rem_minmax(0,1fr)]"
-    >
+    <section id={`offer-step-${number}`} className="space-y-4 py-6">
       <div className="flex items-start gap-3">
-        <span className="font-mono text-xs font-bold text-blue-700">
+        <span className="font-mono text-xs font-semibold text-primary">
           {number}
         </span>
-        <h2 className="text-sm font-bold text-zinc-950">{title}</h2>
+        <h2 className="text-sm font-semibold">{title}</h2>
       </div>
       <div className="min-w-0">{children}</div>
     </section>
+  );
+}
+
+function TemplateProductTable({
+  title,
+  products,
+}: {
+  title: string;
+  products: TemplateProduct[];
+}) {
+  return (
+    <div>
+      <h3 className="mb-2 text-xs font-medium">{title}</h3>
+      <div className="border-y">
+        {products.map((product, index) => {
+          const available = product.available === true;
+          return (
+            <div
+              key={`${product.variantId ?? product.productId}-${index}`}
+              className="grid gap-3 border-b px-1 py-3 last:border-b-0 sm:grid-cols-[minmax(0,1fr)_5rem_7rem] sm:items-center"
+            >
+              <div className="flex min-w-0 items-center gap-3">
+                <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
+                  <Package className="size-4" aria-hidden="true" />
+                </span>
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium">
+                    {[product.brandName, product.variantName || product.name]
+                      .filter(Boolean)
+                      .join(" · ")}
+                  </p>
+                  <p className="truncate text-xs text-muted-foreground">
+                    {product.variantName ? `${product.name} · ` : ""}
+                    {product.sku || product.category}
+                  </p>
+                </div>
+              </div>
+              <div className="font-mono text-sm tabular-nums sm:text-center">
+                ×{product.quantity}
+              </div>
+              <Badge
+                variant="outline"
+                className={cn(
+                  "w-fit justify-self-start sm:justify-self-end",
+                  available
+                    ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                    : "border-red-200 bg-red-50 text-red-700",
+                )}
+              >
+                {available ? "Available" : "Unavailable"}
+              </Badge>
+            </div>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
@@ -1220,25 +1382,26 @@ function ChoiceRow({
   onChange: (value: string) => void;
 }) {
   return (
-    <div className="flex flex-wrap gap-2">
+    <div className="flex flex-wrap gap-2" role="radiogroup">
       {options.map((option) => (
         <button
           type="button"
           key={option.value}
           onClick={() => onChange(option.value)}
+          aria-pressed={value === option.value}
           className={cn(
             "flex items-center gap-2 rounded-md border px-3 py-2 text-sm font-semibold",
             value === option.value
-              ? "border-blue-700 bg-blue-50 text-blue-800"
-              : "border-zinc-200 bg-white text-zinc-700 hover:border-zinc-400",
+              ? "border-primary bg-primary/5 text-primary ring-1 ring-primary/20"
+              : "border-border bg-background text-muted-foreground hover:border-foreground/25 hover:text-foreground",
           )}
         >
           <span
             className={cn(
               "h-3.5 w-3.5 rounded-full border",
               value === option.value
-                ? "border-[4px] border-blue-700"
-                : "border-zinc-300",
+                ? "border-[4px] border-primary"
+                : "border-border",
             )}
           />
           {option.label}
@@ -1289,26 +1452,26 @@ function CheckRow({
   onChange: () => void;
 }) {
   return (
-    <label className="flex cursor-pointer items-center gap-3 px-3 py-2.5 hover:bg-zinc-50">
+    <label className="flex cursor-pointer items-center gap-3 px-3 py-2.5 hover:bg-muted/40">
       <input
         type="checkbox"
         checked={checked}
         onChange={onChange}
-        className="h-4 w-4 accent-blue-700"
+        className="size-4 accent-primary"
       />
-      <span className="flex-1 text-sm font-medium text-zinc-800">{label}</span>
-      {detail && <span className="text-xs text-zinc-500">{detail}</span>}
+      <span className="flex-1 text-sm font-medium">{label}</span>
+      {detail && (
+        <span className="text-xs text-muted-foreground">{detail}</span>
+      )}
     </label>
   );
 }
 
 function SummaryLine({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex items-center justify-between gap-4 border-b border-zinc-100 py-2">
-      <span className="text-zinc-600">{label}</span>
-      <strong className="font-mono text-right text-zinc-950 tabular-nums">
-        {value}
-      </strong>
+    <div className="flex items-center justify-between gap-4 border-b py-2">
+      <span className="text-muted-foreground">{label}</span>
+      <strong className="font-mono text-right tabular-nums">{value}</strong>
     </div>
   );
 }
@@ -1354,12 +1517,12 @@ function OfferDetailSheet({
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent className="w-full overflow-y-auto sm:max-w-2xl">
-        <SheetHeader className="border-b border-zinc-200">
+        <SheetHeader className="border-b">
           <SheetTitle>Offer Details</SheetTitle>
           <SheetDescription>{detail?.code ?? ""}</SheetDescription>
         </SheetHeader>
         {loading ? (
-          <Loader2 className="mx-auto mt-24 h-7 w-7 animate-spin text-blue-700" />
+          <Loader2 className="mx-auto mt-24 size-7 animate-spin text-primary" />
         ) : (
           detail && (
             <div className="space-y-7 p-5">
@@ -1447,8 +1610,8 @@ function DetailSection({
 }) {
   return (
     <section>
-      <div className="mb-3 flex items-center gap-2 text-xs font-bold uppercase tracking-[0.14em] text-zinc-500">
-        <CalendarDays className="h-3.5 w-3.5 text-blue-700" />
+      <div className="mb-3 flex items-center gap-2 text-xs font-medium text-muted-foreground">
+        <CalendarDays className="size-3.5 text-primary" />
         {title}
       </div>
       {children}
@@ -1462,11 +1625,11 @@ function DetailGrid({
   rows: Array<{ label: string; value: string }>;
 }) {
   return (
-    <dl className="grid gap-px overflow-hidden rounded-lg border border-zinc-200 bg-zinc-200 sm:grid-cols-2">
+    <dl className="grid gap-px overflow-hidden rounded-lg border bg-border sm:grid-cols-2">
       {rows.map((row) => (
-        <div key={row.label} className="bg-white p-4">
-          <dt className="text-xs text-zinc-500">{row.label}</dt>
-          <dd className="mt-1 font-semibold text-zinc-950">{row.value}</dd>
+        <div key={row.label} className="bg-background p-4">
+          <dt className="text-xs text-muted-foreground">{row.label}</dt>
+          <dd className="mt-1 font-semibold">{row.value}</dd>
         </div>
       ))}
     </dl>

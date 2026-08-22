@@ -598,6 +598,7 @@ export const productRouter = {
             columns: {
               id: true,
               sku: true,
+              catalogVariantId: true,
               price: true,
               variantType: true,
               brandId: true,
@@ -1044,8 +1045,7 @@ export const productRouter = {
       // Core-managed products keep their core identity and brand fixed.
       // Their own variant set remains editable without affecting siblings.
       const isCoreManaged =
-        existing.coreProductId !== null &&
-        existing.creatorSource === "admin";
+        existing.coreProductId !== null && existing.creatorSource === "admin";
       const brandIds = isCoreManaged ? undefined : inputBrandIds;
       if (isCoreManaged && !existing.brandId) {
         throw new ORPCError("BAD_REQUEST", {
@@ -1698,5 +1698,4 @@ export const productRouter = {
       ];
       return { csv: lines.join("\n") };
     }),
-
 };

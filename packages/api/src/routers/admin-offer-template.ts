@@ -9,6 +9,7 @@ import { adminProcedure } from "../index";
 const templateProductSchema = z.object({
   productId: z.number().int().positive(),
   variantId: z.number().int().positive().optional(),
+  catalogVariantId: z.number().int().positive().optional(),
   name: z.string().min(1),
   variantName: z.string().min(1).optional(),
   brandName: z.string().min(1).optional(),

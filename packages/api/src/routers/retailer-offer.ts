@@ -1,7 +1,9 @@
 import { db } from "@bikalpo-project/db";
 import {
   area,
+  type OfferTemplateProduct,
   offerTemplate,
+  productVariant,
   retailerOffer,
   retailerOfferApplication,
   sellerAreaMapping,
@@ -12,6 +14,7 @@ import { z } from "zod";
 
 import { shopOwnerProcedure } from "../index";
 import { getOwnerPosCatalog } from "../services/owner-pos-store";
+import { resolveTemplateProductIdentities } from "../services/retailer-offer-variant-identity";
 
 const statusSchema = z.enum(["active", "scheduled", "expired", "draft"]);
 const typeSchema = z.enum(["percentage", "flat", "buy_x_get_y"]);
@@ -214,6 +217,21 @@ function discountSummary(offer: typeof retailerOffer.$inferSelect) {
 }
 
 function productSummary(offer: typeof retailerOffer.$inferSelect) {
+  if (offer.offerType === "buy_x_get_y") {
+    const buy = offer.templateSnapshot.buyProducts
+      .map(
+        (product) =>
+          `${product.brandName ? `${product.brandName} ` : ""}${product.variantName || product.name} ×${product.quantity}`,
+      )
+      .join(" + ");
+    const get = offer.templateSnapshot.getProducts
+      .map(
+        (product) =>
+          `${product.brandName ? `${product.brandName} ` : ""}${product.variantName || product.name} ×${product.quantity}`,
+      )
+      .join(" + ");
+    return `${buy} → ${get}`;
+  }
   if (offer.applyTo === "all_products") return "All Products";
   if (offer.applyTo === "category") return offer.categoryName ?? "Category";
   return [offer.productName, offer.variantName].filter(Boolean).join(" · ");
@@ -248,10 +266,89 @@ async function refreshTemplateUsage(templateId: number) {
     .where(eq(offerTemplate.id, templateId));
 }
 
+type ComboProduct = OfferTemplateProduct;
+
+type ResolvedComboProduct = ComboProduct & {
+  catalogVariantId: number | null;
+  ownerVariantId: number | null;
+  available: boolean;
+};
+
+async function resolveComboProductsForOwner(
+  shopId: string,
+  comboProducts: ComboProduct[],
+) {
+  const sourceVariantIds = [
+    ...new Set(
+      comboProducts
+        .map((product) => product.variantId)
+        .filter((id): id is number => id != null),
+    ),
+  ];
+  const [catalog, sourceVariants] = await Promise.all([
+    getOwnerPosCatalog({ kind: "shop", id: shopId }),
+    sourceVariantIds.length > 0
+      ? db
+          .select({
+            variantId: productVariant.id,
+            catalogVariantId: productVariant.catalogVariantId,
+          })
+          .from(productVariant)
+          .where(inArray(productVariant.id, sourceVariantIds))
+      : [],
+  ]);
+  return resolveTemplateProductIdentities(
+    comboProducts,
+    sourceVariants,
+    catalog,
+  );
+}
+
+function assertComboProductsAvailable(comboProducts: ResolvedComboProduct[]) {
+  const unavailable = comboProducts.filter((product) => !product.available);
+  if (unavailable.length > 0) {
+    throw new ORPCError("BAD_REQUEST", {
+      message: `This store does not carry the required variant${unavailable.length === 1 ? "" : "s"}: ${unavailable
+        .map((product) => product.variantName || product.name)
+        .join(", ")}`,
+    });
+  }
+}
+
+function snapshotComboProducts(comboProducts: ResolvedComboProduct[]) {
+  return comboProducts.map(
+    ({
+      ownerVariantId: _ownerVariantId,
+      available: _available,
+      ...product
+    }) => ({
+      ...product,
+      catalogVariantId: product.catalogVariantId ?? undefined,
+    }),
+  );
+}
+
 async function resolveSelection(
   shopId: string,
   input: z.infer<typeof editableOfferSchema>,
+  offerType?: SupportedType,
+  comboProducts: ResolvedComboProduct[] = [],
+  validateComboAvailability = true,
 ) {
+  if (offerType === "buy_x_get_y") {
+    if (validateComboAvailability) {
+      assertComboProductsAvailable(comboProducts);
+    }
+    return {
+      applyTo: "all_products" as const,
+      productId: null,
+      variantId: null,
+      productName: null,
+      variantName: null,
+      categoryId: null,
+      categoryName: null,
+    };
+  }
   const catalog = await getOwnerPosCatalog({ kind: "shop", id: shopId });
   if (input.applyTo === "product") {
     const variant = catalog.find((row) => row.variantId === input.variantId);
@@ -367,6 +464,29 @@ export const retailerOfferRouter = {
       const historicalOrders = new Map(
         history.map((item) => [item.templateId, item.orders]),
       );
+      const templateVariantIds = [
+        ...new Set(
+          templates
+            .flatMap((template) => [
+              ...template.buyProducts,
+              ...template.getProducts,
+            ])
+            .map((product) => product.variantId)
+            .filter((id): id is number => id != null),
+        ),
+      ];
+      const sourceVariants =
+        templateVariantIds.length > 0
+          ? await db
+              .select({
+                variantId: productVariant.id,
+                catalogVariantId: productVariant.catalogVariantId,
+              })
+              .from(productVariant)
+              .where(inArray(productVariant.id, templateVariantIds))
+          : [];
+      const resolveProducts = (products: ComboProduct[]) =>
+        resolveTemplateProductIdentities(products, sourceVariants, catalog);
 
       const eligibleTemplates = templates
         .filter(availableInRetailStore)
@@ -384,8 +504,8 @@ export const retailerOfferRouter = {
           benefitType: template.benefitType,
           benefitValue: template.benefitValue,
           comboRule: template.comboRule,
-          buyProducts: template.buyProducts,
-          getProducts: template.getProducts,
+          buyProducts: resolveProducts(template.buyProducts),
+          getProducts: resolveProducts(template.getProducts),
           minimumQuantity:
             template.buyProducts.reduce(
               (sum, product) => sum + product.quantity,
@@ -414,6 +534,7 @@ export const retailerOfferRouter = {
         templates: eligibleTemplates,
         variants: catalog.map((row) => ({
           id: row.variantId,
+          catalogVariantId: row.catalogVariantId,
           productId: row.productId,
           productName: row.productName,
           brandName: row.brandName,
@@ -629,7 +750,27 @@ export const retailerOfferRouter = {
         });
       }
       assertDiscountValue(offerType, input.discountValue);
-      const selection = await resolveSelection(shopId, input);
+      const resolvedComboProducts =
+        offerType === "buy_x_get_y"
+          ? await resolveComboProductsForOwner(shopId, [
+              ...template.buyProducts,
+              ...template.getProducts,
+            ])
+          : [];
+      const resolvedBuyProducts = resolvedComboProducts.slice(
+        0,
+        template.buyProducts.length,
+      );
+      const resolvedGetProducts = resolvedComboProducts.slice(
+        template.buyProducts.length,
+      );
+      const selection = await resolveSelection(
+        shopId,
+        input,
+        offerType,
+        resolvedComboProducts,
+        input.activation === "activate",
+      );
       const now = new Date();
       const status =
         input.activation === "draft"
@@ -649,10 +790,17 @@ export const retailerOfferRouter = {
             description: template.description,
             type: template.type,
             comboRule: template.comboRule,
-            buyProducts: template.buyProducts,
-            getProducts: template.getProducts,
+            buyProducts:
+              offerType === "buy_x_get_y"
+                ? snapshotComboProducts(resolvedBuyProducts)
+                : template.buyProducts,
+            getProducts:
+              offerType === "buy_x_get_y"
+                ? snapshotComboProducts(resolvedGetProducts)
+                : template.getProducts,
             benefitType: template.benefitType,
             benefitValue: template.benefitValue,
+            maxUsePerOrder: template.maxUsePerOrder,
           },
           offerType,
           discountType:
@@ -703,7 +851,20 @@ export const retailerOfferRouter = {
         existing.offerType as SupportedType,
         input.data.discountValue,
       );
-      const selection = await resolveSelection(shopId, input.data);
+      const resolvedComboProducts =
+        existing.offerType === "buy_x_get_y"
+          ? await resolveComboProductsForOwner(shopId, [
+              ...existing.templateSnapshot.buyProducts,
+              ...existing.templateSnapshot.getProducts,
+            ])
+          : [];
+      const selection = await resolveSelection(
+        shopId,
+        input.data,
+        existing.offerType as SupportedType,
+        resolvedComboProducts,
+        existing.status !== "draft",
+      );
       const [updated] = await db
         .update(retailerOffer)
         .set({
@@ -752,6 +913,14 @@ export const retailerOfferRouter = {
         throw new ORPCError("BAD_REQUEST", {
           message: "An expired offer cannot be activated",
         });
+      }
+      if (input.action === "activate" && existing.offerType === "buy_x_get_y") {
+        assertComboProductsAvailable(
+          await resolveComboProductsForOwner(shopId, [
+            ...existing.templateSnapshot.buyProducts,
+            ...existing.templateSnapshot.getProducts,
+          ]),
+        );
       }
       const now = new Date();
       const status =

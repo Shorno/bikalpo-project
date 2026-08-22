@@ -32,6 +32,7 @@ export type RetailerOfferTemplateSnapshot = {
   getProducts: OfferTemplateProduct[];
   benefitType: string;
   benefitValue: string | null;
+  maxUsePerOrder?: number;
 };
 
 /**

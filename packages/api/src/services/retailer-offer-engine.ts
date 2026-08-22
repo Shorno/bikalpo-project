@@ -1,11 +1,14 @@
 import { db } from "@bikalpo-project/db";
 import {
+  productVariant,
   retailerOffer,
   retailerOfferApplication,
 } from "@bikalpo-project/db/schema";
 import { and, eq, inArray, sql } from "drizzle-orm";
 
 import { getOwnerPosCatalog } from "./owner-pos-store";
+import { calculateBuyXGetYDiscount } from "./retailer-buy-x-get-y";
+import { resolveTemplateProductIdentities } from "./retailer-offer-variant-identity";
 
 export type OfferBasketLine = {
   variantId: number;
@@ -87,6 +90,27 @@ export async function evaluateRetailerOffer(input: {
   const categoryByVariant = new Map(
     catalog.map((row) => [row.variantId, row.categoryId]),
   );
+  const templateVariantIds = [
+    ...new Set(
+      offers
+        .flatMap((offer) => [
+          ...offer.templateSnapshot.buyProducts,
+          ...offer.templateSnapshot.getProducts,
+        ])
+        .map((product) => product.variantId)
+        .filter((id): id is number => id != null),
+    ),
+  ];
+  const sourceVariants =
+    templateVariantIds.length > 0
+      ? await db
+          .select({
+            variantId: productVariant.id,
+            catalogVariantId: productVariant.catalogVariantId,
+          })
+          .from(productVariant)
+          .where(inArray(productVariant.id, templateVariantIds))
+      : [];
   const useCount = new Map(usage.map((row) => [row.offerId, row.count]));
   const candidates: AppliedRetailerOffer[] = [];
 
@@ -114,6 +138,50 @@ export async function evaluateRetailerOffer(input: {
       continue;
     }
 
+    if (offer.offerType === "buy_x_get_y") {
+      const resolvedProducts = resolveTemplateProductIdentities(
+        [
+          ...offer.templateSnapshot.buyProducts,
+          ...offer.templateSnapshot.getProducts,
+        ],
+        sourceVariants,
+        catalog,
+      );
+      const resolvedBuyProducts = resolvedProducts
+        .slice(0, offer.templateSnapshot.buyProducts.length)
+        .map((product) => ({
+          ...product,
+          variantId: product.ownerVariantId ?? undefined,
+        }));
+      const resolvedGetProducts = resolvedProducts
+        .slice(offer.templateSnapshot.buyProducts.length)
+        .map((product) => ({
+          ...product,
+          variantId: product.ownerVariantId ?? undefined,
+        }));
+      const result = calculateBuyXGetYDiscount({
+        lines: input.lines,
+        buyProducts: resolvedBuyProducts,
+        getProducts: resolvedGetProducts,
+        benefitType: offer.discountType as
+          | "free_product"
+          | "percentage_discount"
+          | "fixed_price",
+        benefitValue:
+          offer.discountValue == null ? null : Number(offer.discountValue),
+        maxApplications: offer.templateSnapshot.maxUsePerOrder,
+      });
+      if (!result) continue;
+      candidates.push({
+        offerId: offer.id,
+        code: offer.code,
+        name: offer.name,
+        discountAmount: result.discountAmount,
+        salesAmount: result.salesAmount,
+      });
+      continue;
+    }
+
     const qualifying = input.lines.filter((line) => {
       if (offer.applyTo === "all_products") return true;
       if (offer.applyTo === "product") {
@@ -136,29 +204,6 @@ export async function evaluateRetailerOffer(input: {
         salesAmount * Math.min(Number(offer.discountValue ?? 0), 100) * 0.01;
     } else if (offer.offerType === "flat") {
       discountAmount = Math.min(Number(offer.discountValue ?? 0), salesAmount);
-    } else {
-      const buyQuantity = Math.max(Number(offer.minimumQuantity), 1);
-      const getQuantity = Math.max(
-        offer.templateSnapshot.getProducts.reduce(
-          (sum, product) => sum + product.quantity,
-          0,
-        ),
-        1,
-      );
-      const applications = Math.max(Math.floor(quantity / buyQuantity), 1);
-      const lowestPrice = Math.min(...qualifying.map((line) => line.unitPrice));
-      const freeValue = lowestPrice * getQuantity * applications;
-      if (offer.discountType === "percentage_discount") {
-        discountAmount =
-          freeValue * Math.min(Number(offer.discountValue ?? 0), 100) * 0.01;
-      } else if (offer.discountType === "fixed_price") {
-        discountAmount = Math.max(
-          freeValue - Number(offer.discountValue ?? 0) * getQuantity,
-          0,
-        );
-      } else {
-        discountAmount = freeValue;
-      }
     }
     discountAmount = roundMoney(Math.min(discountAmount, salesAmount));
     if (discountAmount <= 0) continue;

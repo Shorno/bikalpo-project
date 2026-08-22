@@ -14,6 +14,7 @@ import {
 export type OfferTemplateProduct = {
   productId: number;
   variantId?: number;
+  catalogVariantId?: number;
   name: string;
   variantName?: string;
   brandName?: string;

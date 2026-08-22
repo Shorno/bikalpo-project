@@ -53,6 +53,7 @@ import { client } from "@/utils/orpc";
 
 type CatalogVariant = {
   id: number;
+  catalogVariantId: number | null;
   sku: string | null;
   price: string | number;
   unitLabel: string;
@@ -1214,6 +1215,7 @@ function ProductSlot({
     onChange({
       productId: product.id,
       variantId: variant.id,
+      catalogVariantId: variant.catalogVariantId ?? undefined,
       name: product.name,
       variantName: variantName || `Variant ${variant.id}`,
       brandName: variant.brand?.name ?? product.brand?.name ?? undefined,
