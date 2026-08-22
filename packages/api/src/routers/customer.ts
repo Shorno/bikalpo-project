@@ -39,6 +39,7 @@ import {
   productReview,
   productType,
   productVariant,
+  retailerOfferApplication,
   sellerAreaMapping,
   subCategory,
   supportTicket,
@@ -100,6 +101,7 @@ import {
   SELECTION_WINDOW_SECONDS,
 } from "../services/open-order-matching";
 import { resolveRetailerCylinderSale } from "../services/retailer-cylinder-sale";
+import { evaluateRetailerOffer } from "../services/retailer-offer-engine";
 import { buildStoreProductDetail } from "../services/retailer-store-product-detail";
 import { buildConsumerOrderJourney } from "./helpers/consumer-order-journey";
 import {
@@ -4912,8 +4914,6 @@ const mutations = {
         totalWeightKg,
         input.shippingInfo.area,
       );
-      const total = subtotal + shippingCost;
-
       // Compute area fields from consumer location
       const consumerLat = input.shippingInfo.lat
         ? parseFloat(input.shippingInfo.lat)
@@ -4922,6 +4922,29 @@ const mutations = {
         ? parseFloat(input.shippingInfo.lng)
         : null;
       const areaFields = await computeOrderAreaFields(consumerLat, consumerLng);
+      const appliedRetailerOffer =
+        cartSource.kind === "retailer"
+          ? await evaluateRetailerOffer({
+              shopId: cartSource.shopId,
+              lines: orderItems
+                .filter(
+                  (item): item is typeof item & { variantId: number } =>
+                    item.variantId != null,
+                )
+                .map((item) => ({
+                  variantId: item.variantId,
+                  productId: item.productId,
+                  quantity: item.quantity,
+                  unitPrice: Number(item.unitPrice),
+                  lineTotal: Number(item.totalPrice),
+                })),
+              customerKey: `consumer:${userId}`,
+              areaId:
+                areaFields.matchedAreaId ?? areaFields.consumerAreaId ?? null,
+            })
+          : null;
+      const offerDiscount = appliedRetailerOffer?.discountAmount ?? 0;
+      const total = Math.max(subtotal + shippingCost - offerDiscount, 0);
 
       // Transaction: create order, deduct stock, clear cart
       const result = await db.transaction(async (tx) => {
@@ -4963,7 +4986,7 @@ const mutations = {
             shopId: b2cShopId,
             subtotal: subtotal.toFixed(2),
             shippingCost: shippingCost.toFixed(2),
-            discount: "0",
+            discount: offerDiscount.toFixed(2),
             total: total.toFixed(2),
             status: "pending",
             paymentStatus: "pending",
@@ -5013,6 +5036,16 @@ const mutations = {
             expectedEmptyPackQty: oi.expectedEmptyPackQty,
           })),
         );
+        if (appliedRetailerOffer && b2cShopId) {
+          await tx.insert(retailerOfferApplication).values({
+            retailerOfferId: appliedRetailerOffer.offerId,
+            shopId: b2cShopId,
+            orderId: newOrder!.id,
+            customerKey: `consumer:${userId}`,
+            discountAmount: appliedRetailerOffer.discountAmount.toFixed(2),
+            salesAmount: appliedRetailerOffer.salesAmount.toFixed(2),
+          });
+        }
 
         // Deduct from the validated cart source. Every retailer line goes
         // through the exact shop/product/variant writer in this transaction.
@@ -5102,6 +5135,9 @@ const mutations = {
             message: "Order was already updated by another request",
           });
         }
+        await tx
+          .delete(retailerOfferApplication)
+          .where(eq(retailerOfferApplication.orderId, input.orderId));
 
         // Restore the same source that was persisted on the order.
         if (orderData.shopId) {

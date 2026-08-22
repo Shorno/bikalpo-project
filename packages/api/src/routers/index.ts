@@ -59,6 +59,7 @@ import { productRouter } from "./product";
 import { profitLossRouter } from "./profit-loss";
 import { purchaseRouter } from "./purchase";
 import { retailerPosRouter } from "./retailer-pos";
+import { retailerOfferRouter } from "./retailer-offer";
 import { returnsRouter } from "./returns";
 import { salesmanRouter } from "./salesman";
 import { sellerApplicationRouter } from "./seller-application";
@@ -124,6 +125,7 @@ export const appRouter = {
   emptyPackManagement: emptyPackManagementRouter,
   returns: returnsRouter,
   retailerPos: retailerPosRouter,
+  retailerOffer: retailerOfferRouter,
   dashboard: dashboardRouter,
 
   verifiedUser: verifiedUserRouter,

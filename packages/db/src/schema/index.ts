@@ -53,6 +53,7 @@ export * from "./product-type";
 export * from "./product-type-rule-setting";
 export * from "./product-variant";
 export * from "./purchase";
+export * from "./retailer-offer";
 export * from "./review";
 export * from "./reward";
 export * from "./sales-model";
