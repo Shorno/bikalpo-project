@@ -5,12 +5,24 @@ import {
   journalEntry,
   journalLine,
   order,
+  orderItem,
   payment,
   purchaseEvent,
   user,
 } from "@bikalpo-project/db/schema";
 import { ORPCError } from "@orpc/server";
-import { and, count, desc, eq, gte, ilike, inArray, isNotNull, lte } from "drizzle-orm";
+import {
+  and,
+  count,
+  desc,
+  eq,
+  gte,
+  ilike,
+  inArray,
+  isNotNull,
+  lte,
+  sql,
+} from "drizzle-orm";
 import { z } from "zod";
 import { protectedProcedure } from "../index";
 import { postPurchaseJournal } from "../services/purchase-accounting";
@@ -77,6 +89,15 @@ export const purchaseLifecycleRouter = {
         conditions.push(eq(order.status, input.status));
       } else if (input.status === "received") {
         conditions.push(isNotNull(order.receivedAt));
+      } else if (input.status === "partially_received") {
+        conditions.push(sql`exists (
+          select 1
+          from ${orderItem}
+          where ${orderItem.orderId} = ${order.id}
+            and coalesce(${orderItem.receivedQty}, 0) > 0
+            and coalesce(${orderItem.receivedQty}, 0) <
+              coalesce(${orderItem.modifiedQty}, ${orderItem.quantity})
+        )`);
       } else if (input.status === "submitted") {
         conditions.push(eq(order.status, "pending"));
       } else if (input.status === "accepted") {
