@@ -6,6 +6,7 @@ import {
   Clock3,
   Eye,
   Filter,
+  Heart,
   MapPin,
   Megaphone,
   Minus,
@@ -104,9 +105,23 @@ interface StoreHeaderProps {
     totalOrders: number;
     totalCustomers: number;
   };
+  followerCount: number;
+  isFollowing: boolean;
+  canFollow: boolean;
+  isFollowPending: boolean;
+  onToggleFollow: () => void;
 }
 
-export function StoreHeader({ shop, productCount, stats }: StoreHeaderProps) {
+export function StoreHeader({
+  shop,
+  productCount,
+  stats,
+  followerCount,
+  isFollowing,
+  canFollow,
+  isFollowPending,
+  onToggleFollow,
+}: StoreHeaderProps) {
   const displayName = shop.shopName || shop.name;
   const logo = shop.shopLogo || shop.image;
   const metrics = [
@@ -131,6 +146,11 @@ export function StoreHeader({ shop, productCount, stats }: StoreHeaderProps) {
           label: stats.totalCustomers === 1 ? "customer" : "customers",
         }
       : null,
+    {
+      icon: Heart,
+      value: followerCount.toLocaleString("en-BD"),
+      label: followerCount === 1 ? "follower" : "followers",
+    },
     {
       icon: Package,
       value: productCount.toLocaleString("en-BD"),
@@ -194,13 +214,37 @@ export function StoreHeader({ shop, productCount, stats }: StoreHeaderProps) {
             </div>
           </div>
 
-          {shop.phoneNumber && (
-            <Button asChild variant="outline" className="h-10 bg-white">
-              <a href={`tel:${shop.phoneNumber}`}>
-                <Phone className="size-4" aria-hidden="true" />
-                Contact store
-              </a>
-            </Button>
+          {(canFollow || shop.phoneNumber) && (
+            <div className="flex flex-wrap items-center gap-2">
+              {canFollow && (
+                <Button
+                  type="button"
+                  variant={isFollowing ? "outline" : "default"}
+                  className={cn("h-10", isFollowing && "bg-white")}
+                  aria-pressed={isFollowing}
+                  disabled={isFollowPending}
+                  onClick={onToggleFollow}
+                >
+                  <Heart
+                    className={cn("size-4", isFollowing && "fill-current")}
+                    aria-hidden="true"
+                  />
+                  {isFollowPending
+                    ? "Updating…"
+                    : isFollowing
+                      ? "Following"
+                      : "Follow"}
+                </Button>
+              )}
+              {shop.phoneNumber && (
+                <Button asChild variant="outline" className="h-10 bg-white">
+                  <a href={`tel:${shop.phoneNumber}`}>
+                    <Phone className="size-4" aria-hidden="true" />
+                    Contact store
+                  </a>
+                </Button>
+              )}
+            </div>
           )}
         </div>
 

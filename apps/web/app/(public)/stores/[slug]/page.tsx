@@ -1,10 +1,11 @@
 "use client";
 
-import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQuery } from "@tanstack/react-query";
 import { AlertCircle } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { use, useCallback, useEffect, useState } from "react";
+import { toast } from "sonner";
 import { ProductPagination } from "@/components/features/products/product-pagination";
 import { CustomerPreviewBanner } from "@/components/storefront/customer-preview-banner";
 import {
@@ -18,6 +19,7 @@ import {
 } from "@/components/storefront/retailer-storefront";
 import { Button } from "@/components/ui/button";
 import { useCart } from "@/hooks/use-orpc-cart";
+import { authClient } from "@/lib/auth-client";
 import { isCustomerStorefrontPreview } from "@/lib/customer-storefront-preview";
 import { addRetailerProductToCart } from "@/lib/retailer-quick-add";
 import { orpc } from "@/utils/orpc";
@@ -64,7 +66,15 @@ export default function ShopStorePage({
   const [pendingCartItemIds, setPendingCartItemIds] = useState<
     ReadonlySet<number>
   >(() => new Set());
+  const [followOverride, setFollowOverride] = useState<{
+    followerCount: number;
+    isFollowing: boolean;
+  } | null>(null);
+  const { data: session } = authClient.useSession();
   const { addItem, items: cartItems, updateQuantity } = useCart();
+  const followMutation = useMutation(
+    orpc.customer.setShopFollow.mutationOptions(),
+  );
 
   const updateUrl = useCallback(
     (
@@ -167,6 +177,44 @@ export default function ShopStorePage({
     }
   };
 
+  const handleToggleFollow = async () => {
+    if (
+      !data?.shop ||
+      session?.user.role !== "consumer" ||
+      followMutation.isPending
+    ) {
+      return;
+    }
+
+    const previous = followOverride ?? data.followState;
+    const next = {
+      isFollowing: !previous.isFollowing,
+      followerCount: Math.max(
+        0,
+        previous.followerCount + (previous.isFollowing ? -1 : 1),
+      ),
+    };
+    setFollowOverride(next);
+
+    try {
+      const result = await followMutation.mutateAsync({
+        shopId: data.shop.id,
+        follow: next.isFollowing,
+      });
+      setFollowOverride({
+        followerCount: result.followerCount,
+        isFollowing: result.isFollowing,
+      });
+    } catch (error) {
+      setFollowOverride(previous);
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Could not update your shop follow",
+      );
+    }
+  };
+
   if (isLoading && !data) return <StorefrontSkeleton />;
 
   if (isError || !data?.shop) {
@@ -203,6 +251,7 @@ export default function ShopStorePage({
 
   const { shop, facets, pagination, catalogProductCount } = data;
   const products = data.products as StorefrontProduct[];
+  const followState = followOverride ?? data.followState;
   const selectedCategory = facets.find((facet) => facet.slug === category);
   const hasCatalogFilters = !!(query || category || subcategory);
 
@@ -213,6 +262,11 @@ export default function ShopStorePage({
         shop={shop}
         productCount={catalogProductCount}
         stats={data.storeStats}
+        followerCount={followState.followerCount}
+        isFollowing={followState.isFollowing}
+        canFollow={!previewMode && session?.user.role === "consumer"}
+        isFollowPending={followMutation.isPending}
+        onToggleFollow={() => void handleToggleFollow()}
       />
       <StorefrontOfferBanner offers={data.activeOffers} />
 
