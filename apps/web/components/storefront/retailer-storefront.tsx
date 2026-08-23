@@ -3,6 +3,7 @@
 import {
   ChevronLeft,
   ChevronRight,
+  Clock3,
   Eye,
   Filter,
   MapPin,
@@ -91,6 +92,9 @@ interface StoreHeaderProps {
     shopAddress: string | null;
     businessType: string | null;
     image: string | null;
+    shopLogo: string | null;
+    shopOpeningTime: string | null;
+    shopClosingTime: string | null;
     phoneNumber: string | null;
   };
   productCount: number;
@@ -104,6 +108,7 @@ interface StoreHeaderProps {
 
 export function StoreHeader({ shop, productCount, stats }: StoreHeaderProps) {
   const displayName = shop.shopName || shop.name;
+  const logo = shop.shopLogo || shop.image;
   const metrics = [
     stats.totalReviews > 0
       ? {
@@ -142,10 +147,10 @@ export function StoreHeader({ shop, productCount, stats }: StoreHeaderProps) {
       <div className="container mx-auto px-4 py-6 md:py-8">
         <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
           <div className="flex min-w-0 items-start gap-4 md:gap-5">
-            {shop.image ? (
+            {logo ? (
               <Image
-                src={shop.image}
-                alt=""
+                src={logo}
+                alt={`${displayName} logo`}
                 width={80}
                 height={80}
                 className="size-16 shrink-0 rounded-lg border bg-slate-50 object-cover md:size-20"
@@ -172,6 +177,18 @@ export function StoreHeader({ shop, productCount, stats }: StoreHeaderProps) {
               {shop.businessType && (
                 <p className="mt-1 text-xs capitalize text-slate-500">
                   {shop.businessType} store
+                </p>
+              )}
+              {shop.shopOpeningTime && shop.shopClosingTime && (
+                <p className="mt-2 flex items-center gap-1.5 text-sm text-slate-600">
+                  <Clock3
+                    className="size-4 shrink-0 text-slate-400"
+                    aria-hidden="true"
+                  />
+                  <span>
+                    Open {formatStoreTime(shop.shopOpeningTime)}–
+                    {formatStoreTime(shop.shopClosingTime)}
+                  </span>
                 </p>
               )}
             </div>
@@ -209,6 +226,13 @@ export function StoreHeader({ shop, productCount, stats }: StoreHeaderProps) {
       </div>
     </header>
   );
+}
+
+function formatStoreTime(value: string) {
+  const [hours = 0, minutes = 0] = value.split(":").map(Number);
+  const period = hours >= 12 ? "PM" : "AM";
+  const displayHours = hours % 12 || 12;
+  return `${displayHours}:${String(minutes).padStart(2, "0")} ${period}`;
 }
 
 export interface StorefrontOffer {

@@ -1898,6 +1898,60 @@ const mutations = {
             };
         }),
 
+    /** Update the logo and operating hours shown on the shop profile. */
+    updateShopProfile: shopOwnerProcedure
+        .route({
+            method: "POST",
+            path: "/shop-owner/update-profile",
+            tags: ["Shop Owner"],
+            summary: "Update shop logo and operating hours",
+        })
+        .input(
+            z
+                .object({
+                    shopLogo: z.string().url("Shop logo must be a valid URL").max(2048).nullable(),
+                    openingTime: z
+                        .string()
+                        .regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Opening time must use HH:mm format")
+                        .nullable(),
+                    closingTime: z
+                        .string()
+                        .regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Closing time must use HH:mm format")
+                        .nullable(),
+                })
+                .superRefine((value, ctx) => {
+                    if ((value.openingTime === null) !== (value.closingTime === null)) {
+                        ctx.addIssue({
+                            code: "custom",
+                            message: "Set both opening and closing times, or leave both empty",
+                            path: value.openingTime === null ? ["openingTime"] : ["closingTime"],
+                        });
+                    }
+                }),
+        )
+        .handler(async ({ input, context }) => {
+            const userId = context.session.user.id;
+
+            await db
+                .update(user)
+                .set({
+                    shopLogo: input.shopLogo,
+                    shopOpeningTime: input.openingTime,
+                    shopClosingTime: input.closingTime,
+                })
+                .where(eq(user.id, userId));
+
+            return {
+                success: true,
+                message: "Shop profile updated",
+                profile: {
+                    shopLogo: input.shopLogo,
+                    openingTime: input.openingTime,
+                    closingTime: input.closingTime,
+                },
+            };
+        }),
+
     // ── Purchase Order Actions ───────────────────────────────
 
     /**

@@ -88,6 +88,18 @@ export const auth = betterAuth({
         type: "string",
         required: false,
       },
+      shopLogo: {
+        type: "string",
+        required: false,
+      },
+      shopOpeningTime: {
+        type: "string",
+        required: false,
+      },
+      shopClosingTime: {
+        type: "string",
+        required: false,
+      },
       canAcceptOpenOrder: {
         type: "boolean",
         required: false,

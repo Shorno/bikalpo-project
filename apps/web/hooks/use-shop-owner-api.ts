@@ -585,6 +585,17 @@ export function useUpdateShopLocation() {
   });
 }
 
+/** Update shop branding and operating hours */
+export function useUpdateShopProfile() {
+  return useMutation({
+    ...orpc.shopOwner.updateShopProfile.mutationOptions(),
+    onSuccess: () => {
+      toast.success("Shop profile updated!");
+    },
+    onError: (err) => toast.error(err.message),
+  });
+}
+
 // ────────────────────────────────────────────────────────────────
 // INCOMING B2C ORDER HOOKS
 // ────────────────────────────────────────────────────────────────
