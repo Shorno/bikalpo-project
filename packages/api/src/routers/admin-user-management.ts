@@ -1,3 +1,8 @@
+import {
+  getPhoneAuthEmail,
+  isPhoneAuthEmail,
+  normalizeBangladeshPhoneNumber,
+} from "@bikalpo-project/auth/phone-identity";
 import { db } from "@bikalpo-project/db";
 import {
   kycVerification,
@@ -7,7 +12,7 @@ import {
   warehouseApplication,
 } from "@bikalpo-project/db/schema";
 import { ORPCError } from "@orpc/server";
-import { desc, eq, sql, type SQL } from "drizzle-orm";
+import { and, desc, eq, ne, or, type SQL, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { BUSINESS_NATURES } from "../business-registration";
@@ -771,7 +776,16 @@ export const adminUserManagementRouter = {
       z.object({
         userId: z.string().min(1),
         name: z.string().min(1).optional(),
-        phoneNumber: z.string().optional(),
+        phoneNumber: z
+          .string()
+          .trim()
+          .refine(
+            (value) =>
+              value.length === 0 ||
+              normalizeBangladeshPhoneNumber(value) !== null,
+            "Enter a valid Bangladesh phone number",
+          )
+          .optional(),
         shopName: z.string().optional(),
         shopAddress: z.string().optional(),
         ownerName: z.string().optional(),
@@ -781,10 +795,64 @@ export const adminUserManagementRouter = {
     )
     .handler(async ({ input }) => {
       const { userId, ...updates } = input;
+      const currentUser = await db.query.user.findFirst({
+        where: eq(user.id, userId),
+        columns: { id: true, email: true, phoneNumber: true },
+      });
 
-      const cleanUpdates = Object.fromEntries(
+      if (!currentUser) {
+        throw new ORPCError("NOT_FOUND", { message: "User not found" });
+      }
+
+      const cleanUpdates: Record<string, string | boolean | null> = Object.fromEntries(
         Object.entries(updates).filter(([_, v]) => v !== undefined),
       );
+
+      if (input.phoneNumber !== undefined) {
+        const normalizedPhone = input.phoneNumber
+          ? normalizeBangladeshPhoneNumber(input.phoneNumber)
+          : null;
+        const usesPhoneAuthEmail = isPhoneAuthEmail(currentUser.email);
+
+        if (!normalizedPhone && usesPhoneAuthEmail) {
+          throw new ORPCError("BAD_REQUEST", {
+            message: "A phone-auth account must keep a valid phone number",
+          });
+        }
+
+        if (normalizedPhone !== currentUser.phoneNumber) {
+          const nextEmail =
+            normalizedPhone && usesPhoneAuthEmail
+              ? getPhoneAuthEmail(normalizedPhone)
+              : null;
+          const identityConflict = normalizedPhone
+            ? await db.query.user.findFirst({
+                where: and(
+                  ne(user.id, userId),
+                  nextEmail
+                    ? or(
+                        eq(user.phoneNumber, normalizedPhone),
+                        eq(user.email, nextEmail),
+                      )
+                    : eq(user.phoneNumber, normalizedPhone),
+                ),
+                columns: { id: true },
+              })
+            : null;
+
+          if (identityConflict) {
+            throw new ORPCError("CONFLICT", {
+              message: "That phone number is already used by another account",
+            });
+          }
+
+          cleanUpdates.phoneNumber = normalizedPhone;
+          cleanUpdates.phoneNumberVerified = false;
+          if (nextEmail) cleanUpdates.email = nextEmail;
+        } else {
+          delete cleanUpdates.phoneNumber;
+        }
+      }
 
       if (Object.keys(cleanUpdates).length === 0) {
         throw new ORPCError("BAD_REQUEST", {

@@ -17,7 +17,6 @@ import {
   ShoppingBag,
   ShoppingCart,
   Star,
-  Store,
   Users,
   X,
 } from "lucide-react";
@@ -91,9 +90,6 @@ interface StoreHeaderProps {
     name: string;
     shopName: string | null;
     shopAddress: string | null;
-    businessType: string | null;
-    image: string | null;
-    shopLogo: string | null;
     shopOpeningTime: string | null;
     shopClosingTime: string | null;
     phoneNumber: string | null;
@@ -107,7 +103,6 @@ interface StoreHeaderProps {
   };
   followerCount: number;
   isFollowing: boolean;
-  canFollow: boolean;
   isFollowPending: boolean;
   onToggleFollow: () => void;
 }
@@ -118,12 +113,10 @@ export function StoreHeader({
   stats,
   followerCount,
   isFollowing,
-  canFollow,
   isFollowPending,
   onToggleFollow,
 }: StoreHeaderProps) {
   const displayName = shop.shopName || shop.name;
-  const logo = shop.shopLogo || shop.image;
   const metrics = [
     stats.totalReviews > 0
       ? {
@@ -164,88 +157,63 @@ export function StoreHeader({
 
   return (
     <header className="border-b bg-white">
-      <div className="container mx-auto px-4 py-6 md:py-8">
+      <div className="mx-auto max-w-7xl px-3 py-6 sm:px-6 md:py-8 lg:px-8">
         <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
-          <div className="flex min-w-0 items-start gap-4 md:gap-5">
-            {logo ? (
-              <Image
-                src={logo}
-                alt={`${displayName} logo`}
-                width={80}
-                height={80}
-                className="size-16 shrink-0 rounded-lg border bg-slate-50 object-cover md:size-20"
-              />
-            ) : (
-              <div className="flex size-16 shrink-0 items-center justify-center rounded-lg border bg-slate-50 md:size-20">
-                <Store className="size-7 text-primary" aria-hidden="true" />
-              </div>
+          <div className="min-w-0">
+            <h1 className="truncate text-2xl font-bold tracking-tight text-slate-950 md:text-3xl">
+              {displayName}
+            </h1>
+            {shop.shopAddress && (
+              <p className="mt-2 flex max-w-3xl items-start gap-1.5 text-sm leading-5 text-slate-600">
+                <MapPin
+                  className="mt-0.5 size-4 shrink-0 text-slate-400"
+                  aria-hidden="true"
+                />
+                <span>{shop.shopAddress}</span>
+              </p>
             )}
-
-            <div className="min-w-0">
-              <h1 className="truncate text-2xl font-bold tracking-tight text-slate-950 md:text-3xl">
-                {displayName}
-              </h1>
-              {shop.shopAddress && (
-                <p className="mt-2 flex max-w-3xl items-start gap-1.5 text-sm leading-5 text-slate-600">
-                  <MapPin
-                    className="mt-0.5 size-4 shrink-0 text-slate-400"
-                    aria-hidden="true"
-                  />
-                  <span>{shop.shopAddress}</span>
-                </p>
-              )}
-              {shop.businessType && (
-                <p className="mt-1 text-xs capitalize text-slate-500">
-                  {shop.businessType} store
-                </p>
-              )}
-              {shop.shopOpeningTime && shop.shopClosingTime && (
-                <p className="mt-2 flex items-center gap-1.5 text-sm text-slate-600">
-                  <Clock3
-                    className="size-4 shrink-0 text-slate-400"
-                    aria-hidden="true"
-                  />
-                  <span>
-                    Open {formatStoreTime(shop.shopOpeningTime)}–
-                    {formatStoreTime(shop.shopClosingTime)}
-                  </span>
-                </p>
-              )}
-            </div>
+            {shop.shopOpeningTime && shop.shopClosingTime && (
+              <p className="mt-2 flex items-center gap-1.5 text-sm text-slate-600">
+                <Clock3
+                  className="size-4 shrink-0 text-slate-400"
+                  aria-hidden="true"
+                />
+                <span>
+                  Open {formatStoreTime(shop.shopOpeningTime)}–
+                  {formatStoreTime(shop.shopClosingTime)}
+                </span>
+              </p>
+            )}
           </div>
 
-          {(canFollow || shop.phoneNumber) && (
-            <div className="flex flex-wrap items-center gap-2">
-              {canFollow && (
-                <Button
-                  type="button"
-                  variant={isFollowing ? "outline" : "default"}
-                  className={cn("h-10", isFollowing && "bg-white")}
-                  aria-pressed={isFollowing}
-                  disabled={isFollowPending}
-                  onClick={onToggleFollow}
-                >
-                  <Heart
-                    className={cn("size-4", isFollowing && "fill-current")}
-                    aria-hidden="true"
-                  />
-                  {isFollowPending
-                    ? "Updating…"
-                    : isFollowing
-                      ? "Following"
-                      : "Follow"}
-                </Button>
-              )}
-              {shop.phoneNumber && (
-                <Button asChild variant="outline" className="h-10 bg-white">
-                  <a href={`tel:${shop.phoneNumber}`}>
-                    <Phone className="size-4" aria-hidden="true" />
-                    Contact store
-                  </a>
-                </Button>
-              )}
-            </div>
-          )}
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              type="button"
+              variant={isFollowing ? "outline" : "default"}
+              className={cn("h-10", isFollowing && "bg-white")}
+              aria-pressed={isFollowing}
+              disabled={isFollowPending}
+              onClick={onToggleFollow}
+            >
+              <Heart
+                className={cn("size-4", isFollowing && "fill-current")}
+                aria-hidden="true"
+              />
+              {isFollowPending
+                ? "Updating…"
+                : isFollowing
+                  ? "Following"
+                  : "Follow"}
+            </Button>
+            {shop.phoneNumber && (
+              <Button asChild variant="outline" className="h-10 bg-white">
+                <a href={`tel:${shop.phoneNumber}`}>
+                  <Phone className="size-4" aria-hidden="true" />
+                  Contact store
+                </a>
+              </Button>
+            )}
+          </div>
         </div>
 
         <div className="mt-6 grid grid-cols-2 border-y sm:flex sm:flex-wrap">
@@ -291,14 +259,37 @@ export function StorefrontOfferBanner({
   offers: StorefrontOffer[];
 }) {
   const [activeIndex, setActiveIndex] = useState(0);
-  if (offers.length === 0) return null;
+  if (offers.length === 0) {
+    return (
+      <section aria-label="Store offers" className="border-b bg-blue-50">
+        <div className="mx-auto max-w-7xl px-3 py-5 sm:px-6 md:py-6 lg:px-8">
+          <div className="flex items-start gap-3 rounded-lg border border-dashed border-blue-200 bg-white/70 p-4 md:p-5">
+            <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+              <Megaphone className="size-5" aria-hidden="true" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-primary">
+                Store offers
+              </p>
+              <h2 className="mt-1 text-base font-semibold text-slate-950 md:text-lg">
+                Promotions coming soon
+              </h2>
+              <p className="mt-1 text-sm text-slate-600">
+                Special offers and limited-time deals will appear here.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+    );
+  }
 
   const activeOffer = offers[Math.min(activeIndex, offers.length - 1)];
   if (!activeOffer) return null;
 
   return (
     <section aria-label="Store offers" className="border-b bg-blue-50">
-      <div className="container mx-auto px-4 py-5 md:py-6">
+      <div className="mx-auto max-w-7xl px-3 py-5 sm:px-6 md:py-6 lg:px-8">
         <div className="flex flex-col gap-4 rounded-lg border border-blue-200 bg-white p-4 md:flex-row md:items-center md:justify-between md:p-5">
           <div className="flex min-w-0 items-start gap-3">
             <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground">
@@ -988,7 +979,7 @@ export function StorefrontSkeleton() {
   return (
     <div className="min-h-screen">
       <div className="border-b bg-slate-50/70">
-        <div className="container mx-auto px-4 py-6">
+        <div className="mx-auto max-w-7xl px-3 py-6 sm:px-6 lg:px-8">
           <Skeleton className="mb-5 h-3 w-48" />
           <div className="flex items-center gap-4">
             <Skeleton className="size-16 rounded-lg" />
@@ -999,7 +990,7 @@ export function StorefrontSkeleton() {
           </div>
         </div>
       </div>
-      <div className="container mx-auto px-4 py-7">
+      <div className="mx-auto max-w-7xl px-3 py-7 sm:px-6 lg:px-8">
         <div className="mb-6 rounded-lg border p-4">
           <div className="flex gap-3">
             <Skeleton className="h-11 flex-1" />

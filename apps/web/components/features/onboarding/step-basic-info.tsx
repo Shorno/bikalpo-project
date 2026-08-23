@@ -275,7 +275,10 @@ export function StepBasicInfo({ data, onUpdate, onNext }: StepBasicInfoProps) {
 
       if (result.error) {
 
-        setOtpError(result.error.message || "Invalid OTP");
+        setOtpError(
+          result.error.message ||
+            "Unable to verify OTP. Please request a new code and try again.",
+        );
 
         setIsVerifying(false);
 

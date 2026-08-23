@@ -400,6 +400,13 @@
       "when": 1787900000000,
       "tag": "0057_consumer_shop_followers",
       "breakpoints": true
+    },
+    {
+      "idx": 58,
+      "version": "7",
+      "when": 1788000000000,
+      "tag": "0058_repair_phone_auth_identities",
+      "breakpoints": true
     }
   ]
 }

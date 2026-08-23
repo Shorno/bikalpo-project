@@ -6,6 +6,7 @@ import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { use, useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
+import { useLoginRequired } from "@/components/features/auth/login-required-modal";
 import { ProductPagination } from "@/components/features/products/product-pagination";
 import { CustomerPreviewBanner } from "@/components/storefront/customer-preview-banner";
 import {
@@ -18,6 +19,13 @@ import {
   StoreHeader,
 } from "@/components/storefront/retailer-storefront";
 import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useCart } from "@/hooks/use-orpc-cart";
 import { authClient } from "@/lib/auth-client";
 import { isCustomerStorefrontPreview } from "@/lib/customer-storefront-preview";
@@ -71,6 +79,7 @@ export default function ShopStorePage({
     isFollowing: boolean;
   } | null>(null);
   const { data: session } = authClient.useSession();
+  const { showLoginModal } = useLoginRequired();
   const { addItem, items: cartItems, updateQuantity } = useCart();
   const followMutation = useMutation(
     orpc.customer.setShopFollow.mutationOptions(),
@@ -178,11 +187,17 @@ export default function ShopStorePage({
   };
 
   const handleToggleFollow = async () => {
-    if (
-      !data?.shop ||
-      session?.user.role !== "consumer" ||
-      followMutation.isPending
-    ) {
+    if (!data?.shop || followMutation.isPending) {
+      return;
+    }
+
+    if (!session) {
+      showLoginModal();
+      return;
+    }
+
+    if (session.user.role !== "consumer") {
+      toast.info("Only consumer accounts can follow stores");
       return;
     }
 
@@ -219,7 +234,7 @@ export default function ShopStorePage({
 
   if (isError || !data?.shop) {
     return (
-      <main className="container mx-auto px-4 py-20">
+      <main className="mx-auto max-w-7xl px-3 py-20 sm:px-6 lg:px-8">
         <div className="mx-auto max-w-lg rounded-lg border bg-slate-50 px-6 py-12 text-center">
           <AlertCircle
             className="mx-auto size-10 text-red-500"
@@ -264,13 +279,12 @@ export default function ShopStorePage({
         stats={data.storeStats}
         followerCount={followState.followerCount}
         isFollowing={followState.isFollowing}
-        canFollow={!previewMode && session?.user.role === "consumer"}
         isFollowPending={followMutation.isPending}
         onToggleFollow={() => void handleToggleFollow()}
       />
       <StorefrontOfferBanner offers={data.activeOffers} />
 
-      <main className="container mx-auto px-4 py-6 md:py-8">
+      <main className="mx-auto max-w-7xl px-3 py-6 sm:px-6 md:py-8 lg:px-8">
         <section aria-labelledby="store-catalog-heading" aria-busy={isFetching}>
           <div className="mb-5 border-b pb-5">
             <div className="flex items-center justify-between gap-4">
@@ -402,25 +416,31 @@ export default function ShopStorePage({
                   ? "Updating…"
                   : `${pagination.totalCount.toLocaleString("en-BD")} results`}
               </p>
-              <select
+              <Select
                 value={sort}
-                onChange={(event) =>
+                onValueChange={(value) =>
                   updateUrl({
-                    sort: event.target.value,
+                    sort: value,
                     q: query || null,
                     page: null,
                   })
                 }
-                aria-label="Sort products"
-                className="h-9 rounded-md border border-slate-200 bg-white px-3 text-xs text-slate-700 outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
               >
-                <option value="recommended">Recommended</option>
-                <option value="popular">Popular</option>
-                <option value="newest">Newest</option>
-                <option value="price_asc">Price: low to high</option>
-                <option value="price_desc">Price: high to low</option>
-                <option value="name_asc">Name: A–Z</option>
-              </select>
+                <SelectTrigger
+                  aria-label="Sort products"
+                  className="h-9 w-[146px] border-slate-200 bg-white px-3 text-xs text-slate-700 shadow-none"
+                >
+                  <SelectValue placeholder="Recommended" />
+                </SelectTrigger>
+                <SelectContent position="popper" align="end">
+                  <SelectItem value="recommended">Recommended</SelectItem>
+                  <SelectItem value="popular">Popular</SelectItem>
+                  <SelectItem value="newest">Newest</SelectItem>
+                  <SelectItem value="price_asc">Price: low to high</SelectItem>
+                  <SelectItem value="price_desc">Price: high to low</SelectItem>
+                  <SelectItem value="name_asc">Name: A–Z</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </div>
 

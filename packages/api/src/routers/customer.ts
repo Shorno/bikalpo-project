@@ -3572,6 +3572,42 @@ const queries = {
       };
     }),
 
+  /** Get the lightweight shop identity used by storefront navigation. */
+  getShopNavigation: publicProcedure
+    .route({
+      method: "GET",
+      path: "/customer/shops/{slug}/navigation",
+      tags: ["Customer"],
+      summary: "Get storefront navigation identity",
+    })
+    .input(z.object({ slug: z.string().trim().min(1).max(200) }))
+    .handler(async ({ input }) => {
+      const shop = await db
+        .select({
+          id: user.id,
+          name: user.name,
+          shopName: user.shopName,
+          shopSlug: user.shopSlug,
+          image: user.image,
+          shopLogo: user.shopLogo,
+        })
+        .from(user)
+        .where(
+          and(
+            eq(user.shopSlug, input.slug),
+            eq(user.role, "shop_owner"),
+            eq(user.sellerStatus, "approved"),
+          ),
+        )
+        .limit(1);
+
+      if (!shop[0]) {
+        throw new ORPCError("NOT_FOUND", { message: "Shop not found" });
+      }
+
+      return { shop: shop[0] };
+    }),
+
   /** Get a single shop by slug with their retail products */
   getShopBySlug: publicProcedure
     .route({

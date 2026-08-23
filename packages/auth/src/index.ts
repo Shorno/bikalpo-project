@@ -8,6 +8,10 @@ import { createAuthMiddleware } from "better-auth/api";
 import { admin as adminPlugin, bearer, openAPI, phoneNumber } from "better-auth/plugins";
 import { storeOtp } from "./otp-store";
 import { ac, admin as adminRole, consumer, deliveryman, salesman, shop_owner, warehouse } from "./permissions";
+import {
+  getPhoneAuthEmail,
+  normalizeBangladeshPhoneNumber,
+} from "./phone-identity";
 
 const isProduction = env.NODE_ENV === "production";
 
@@ -39,13 +43,15 @@ export const auth = betterAuth({
     }),
     phoneNumber({
       otpLength: 6,
+      phoneNumberValidator: (phone) =>
+        normalizeBangladeshPhoneNumber(phone) !== null,
       sendOTP: ({ phoneNumber: phone, code }) => {
         // Store OTP in shared in-memory map (readable by dev-otp endpoint)
         storeOtp(phone, code);
         console.log(`[OTP] Phone: ${phone} → Code: ${code}`);
       },
       signUpOnVerification: {
-        getTempEmail: (phone) => `${phone.replace(/\+/g, "")}@bikalpo.com`,
+        getTempEmail: getPhoneAuthEmail,
         getTempName: (phone) => phone,
       },
     }),
@@ -55,7 +61,7 @@ export const auth = betterAuth({
       phoneNumber: {
         type: "string",
         required: false,
-        input: true,
+        input: false,
       },
       // Shop owner capability flags (set by admin on approval)
       isSeller: {
