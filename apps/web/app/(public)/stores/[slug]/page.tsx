@@ -1,25 +1,22 @@
 "use client";
 
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { AlertCircle, Search, X } from "lucide-react";
+import { AlertCircle } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { use, useCallback, useEffect, useRef, useState } from "react";
+import { use, useCallback, useEffect, useState } from "react";
 import { ProductPagination } from "@/components/features/products/product-pagination";
 import { CustomerPreviewBanner } from "@/components/storefront/customer-preview-banner";
 import {
-  ActiveFilterSummary,
   type StorefrontAddSelection,
-  StorefrontCategorySidebar,
   StorefrontEmptyState,
-  StorefrontMobileFilters,
+  StorefrontOfferBanner,
   type StorefrontProduct,
   StorefrontProductCard,
   StorefrontSkeleton,
   StoreHeader,
 } from "@/components/storefront/retailer-storefront";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { useCart } from "@/hooks/use-orpc-cart";
 import { isCustomerStorefrontPreview } from "@/lib/customer-storefront-preview";
 import { addRetailerProductToCart } from "@/lib/retailer-quick-add";
@@ -27,6 +24,7 @@ import { orpc } from "@/utils/orpc";
 
 const sortValues = [
   "recommended",
+  "popular",
   "newest",
   "price_asc",
   "price_desc",
@@ -60,19 +58,13 @@ export default function ShopStorePage({
   const subcategory = searchParams.get("subcategory")?.trim() ?? "";
   const sort = getSafeSort(searchParams.get("sort"));
   const page = getSafePage(searchParams.get("page"));
-  const [searchInput, setSearchInput] = useState(query);
   const [quickAddingProductIds, setQuickAddingProductIds] = useState<
     ReadonlySet<number>
   >(() => new Set());
   const [pendingCartItemIds, setPendingCartItemIds] = useState<
     ReadonlySet<number>
   >(() => new Set());
-  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const {
-    addItem,
-    items: cartItems,
-    updateQuantity,
-  } = useCart();
+  const { addItem, items: cartItems, updateQuantity } = useCart();
 
   const updateUrl = useCallback(
     (
@@ -98,17 +90,6 @@ export default function ShopStorePage({
       else router.push(href, { scroll: false });
     },
     [pathname, router, searchParams],
-  );
-
-  useEffect(() => {
-    setSearchInput(query);
-  }, [query]);
-
-  useEffect(
-    () => () => {
-      if (searchTimer.current) clearTimeout(searchTimer.current);
-    },
-    [],
   );
 
   const { data, isLoading, isFetching, isError, refetch } = useQuery({
@@ -137,26 +118,13 @@ export default function ShopStorePage({
     }
   }, [data?.pagination, isFetching, page, updateUrl]);
 
-  const scheduleSearch = (value: string) => {
-    setSearchInput(value);
-    if (searchTimer.current) clearTimeout(searchTimer.current);
-    searchTimer.current = setTimeout(() => {
-      updateUrl(
-        { q: value.trim().slice(0, 150) || null, page: null },
-        { replace: true },
-      );
-    }, 300);
-  };
-
   const clearCatalogFilters = () => {
-    if (searchTimer.current) clearTimeout(searchTimer.current);
-    setSearchInput("");
     updateUrl({ q: null, category: null, subcategory: null, page: null });
   };
 
   const handleCategoryChange = (value: string) => {
     updateUrl({
-      q: searchInput.trim() || null,
+      q: query || null,
       category: value || null,
       subcategory: null,
       page: null,
@@ -169,9 +137,7 @@ export default function ShopStorePage({
   ) => {
     if (previewMode || !data?.shop) return;
 
-    setQuickAddingProductIds((current) =>
-      new Set(current).add(product.id),
-    );
+    setQuickAddingProductIds((current) => new Set(current).add(product.id));
     try {
       await addRetailerProductToCart(addItem, {
         productId: product.id,
@@ -188,10 +154,7 @@ export default function ShopStorePage({
     }
   };
 
-  const handleQuantityUpdate = async (
-    cartItemId: number,
-    quantity: number,
-  ) => {
+  const handleQuantityUpdate = async (cartItemId: number, quantity: number) => {
     setPendingCartItemIds((current) => new Set(current).add(cartItemId));
     try {
       await updateQuantity(cartItemId, quantity);
@@ -241,10 +204,6 @@ export default function ShopStorePage({
   const { shop, facets, pagination, catalogProductCount } = data;
   const products = data.products as StorefrontProduct[];
   const selectedCategory = facets.find((facet) => facet.slug === category);
-  const selectedSubcategory = selectedCategory?.subcategories.find(
-    (facet) => facet.slug === subcategory,
-  );
-  const activeFilterCount = Number(!!category) + Number(!!subcategory);
   const hasCatalogFilters = !!(query || category || subcategory);
 
   return (
@@ -253,153 +212,197 @@ export default function ShopStorePage({
       <StoreHeader
         shop={shop}
         productCount={catalogProductCount}
-        previewMode={previewMode}
+        stats={data.storeStats}
       />
+      <StorefrontOfferBanner offers={data.activeOffers} />
 
       <main className="container mx-auto px-4 py-6 md:py-8">
         <section aria-labelledby="store-catalog-heading" aria-busy={isFetching}>
-          <div className="mb-6 overflow-hidden rounded-lg border bg-white">
-            <div className="flex flex-col gap-3 p-4 lg:flex-row lg:items-end lg:justify-between">
-              <div className="min-w-0 flex-1">
-                <div className="mb-2 flex items-center justify-between gap-3">
-                  <div>
-                    <h2
-                      id="store-catalog-heading"
-                      className="text-base font-semibold text-slate-950"
-                    >
-                      Product catalog
-                    </h2>
-                    <p
-                      className="mt-0.5 text-xs text-slate-500"
-                      aria-live="polite"
-                    >
-                      {isFetching
-                        ? "Updating results…"
-                        : `${pagination.totalCount} results`}
-                    </p>
-                  </div>
-                  <StorefrontMobileFilters
-                    facets={facets}
-                    category={category}
-                    subcategory={subcategory}
-                    activeCount={activeFilterCount}
-                    onApply={(nextCategory, nextSubcategory) =>
-                      updateUrl({
-                        q: searchInput.trim() || null,
-                        category: nextCategory || null,
-                        subcategory: nextSubcategory || null,
-                        page: null,
-                      })
-                    }
-                  />
-                </div>
+          <div className="mb-5 border-b pb-5">
+            <div className="flex items-center justify-between gap-4">
+              <h2
+                id="store-catalog-heading"
+                className="text-sm font-semibold text-slate-950"
+              >
+                Categories
+              </h2>
+              <p className="font-mono text-xs tabular-nums text-slate-500">
+                {catalogProductCount.toLocaleString("en-BD")} products
+              </p>
+            </div>
+            <div
+              className="mt-3 flex gap-2 overflow-x-auto pb-1"
+              role="list"
+              aria-label="Product categories"
+            >
+              <button
+                type="button"
+                onClick={() => handleCategoryChange("")}
+                aria-pressed={!category}
+                className={`h-10 shrink-0 rounded-lg border px-4 text-sm font-medium transition-colors ${
+                  !category
+                    ? "border-primary bg-primary text-primary-foreground"
+                    : "border-slate-200 bg-white text-slate-700 hover:border-slate-400"
+                }`}
+              >
+                All
+              </button>
+              {facets.map((facet) => (
+                <button
+                  key={facet.slug}
+                  type="button"
+                  onClick={() => handleCategoryChange(facet.slug)}
+                  aria-pressed={category === facet.slug}
+                  className={`h-10 shrink-0 rounded-lg border px-4 text-sm font-medium transition-colors ${
+                    category === facet.slug
+                      ? "border-primary bg-primary text-primary-foreground"
+                      : "border-slate-200 bg-white text-slate-700 hover:border-slate-400"
+                  }`}
+                >
+                  {facet.name}
+                </button>
+              ))}
+            </div>
 
-                <div className="relative">
-                  <Search
-                    className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400"
-                    aria-hidden="true"
-                  />
-                  <Input
-                    id="store-search"
-                    type="search"
-                    value={searchInput}
-                    onChange={(event) => scheduleSearch(event.target.value)}
-                    placeholder="Search this store by product name or SKU"
-                    aria-label="Search this store"
-                    className="h-11 rounded-lg bg-white pl-10 pr-10"
-                    maxLength={150}
-                  />
-                  {searchInput && (
-                    <button
-                      type="button"
-                      onClick={() => scheduleSearch("")}
-                      className="absolute right-1 top-1/2 flex size-9 -translate-y-1/2 items-center justify-center rounded-md text-slate-500 hover:bg-slate-100 hover:text-slate-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
-                      aria-label="Clear store search"
-                    >
-                      <X className="size-4" aria-hidden="true" />
-                    </button>
-                  )}
-                </div>
-              </div>
-
-              <label className="block shrink-0 text-xs font-medium text-slate-600">
-                Sort by
-                <select
-                  value={sort}
-                  onChange={(event) =>
+            {selectedCategory && selectedCategory.subcategories.length > 0 && (
+              <div className="mt-3 flex gap-2 overflow-x-auto border-t pt-3">
+                <button
+                  type="button"
+                  onClick={() =>
                     updateUrl({
-                      sort: event.target.value,
-                      q: searchInput.trim() || null,
+                      subcategory: null,
+                      q: query || null,
                       page: null,
                     })
                   }
-                  className="mt-2 h-11 w-full min-w-48 rounded-lg border border-input bg-white px-3 text-sm text-slate-900 outline-none transition-colors focus:border-primary focus:ring-2 focus:ring-primary/20 lg:w-auto"
+                  aria-pressed={!subcategory}
+                  className={`h-8 shrink-0 rounded-md border px-3 text-xs font-medium transition-colors ${
+                    !subcategory
+                      ? "border-blue-200 bg-blue-50 text-primary"
+                      : "border-slate-200 text-slate-600 hover:border-slate-400"
+                  }`}
                 >
-                  <option value="recommended">Recommended</option>
-                  <option value="newest">Newest</option>
-                  <option value="price_asc">Price: low to high</option>
-                  <option value="price_desc">Price: high to low</option>
-                  <option value="name_asc">Name: A–Z</option>
-                </select>
-              </label>
-            </div>
-            <ActiveFilterSummary
-              query={query}
-              categoryLabel={selectedCategory?.name}
-              subcategoryLabel={selectedSubcategory?.name}
-              onClear={clearCatalogFilters}
-            />
+                  All {selectedCategory.name}
+                </button>
+                {selectedCategory.subcategories.map((facet) => (
+                  <button
+                    key={facet.slug}
+                    type="button"
+                    onClick={() =>
+                      updateUrl({
+                        q: query || null,
+                        subcategory: facet.slug,
+                        page: null,
+                      })
+                    }
+                    aria-pressed={subcategory === facet.slug}
+                    className={`h-8 shrink-0 rounded-md border px-3 text-xs font-medium transition-colors ${
+                      subcategory === facet.slug
+                        ? "border-blue-200 bg-blue-50 text-primary"
+                        : "border-slate-200 text-slate-600 hover:border-slate-400"
+                    }`}
+                  >
+                    {facet.name}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
-          <div className="grid items-start gap-6 lg:grid-cols-[240px_minmax(0,1fr)]">
-            <StorefrontCategorySidebar
-              facets={facets}
-              category={category}
-              subcategory={subcategory}
-              onCategoryChange={handleCategoryChange}
-              onSubcategoryChange={(value) =>
-                updateUrl({
-                  q: searchInput.trim() || null,
-                  subcategory: value || null,
-                  page: null,
-                })
-              }
-            />
-
+          <div className="mb-6 flex flex-col gap-3 rounded-lg border bg-slate-50 p-3 sm:flex-row sm:items-center sm:justify-between">
             <div
-              className={
-                isFetching
-                  ? "opacity-60 transition-opacity"
-                  : "transition-opacity"
-              }
+              className="flex gap-2 overflow-x-auto"
+              role="group"
+              aria-label="Quick filters"
             >
-              {products.length === 0 ? (
-                <StorefrontEmptyState
-                  filtered={catalogProductCount > 0 && hasCatalogFilters}
-                  onClear={clearCatalogFilters}
-                />
-              ) : (
-                <>
-                  <div className="grid grid-cols-1 gap-4 min-[430px]:grid-cols-2 xl:grid-cols-3">
-                    {products.map((product) => (
-                      <StorefrontProductCard
-                        key={product.id}
-                        product={product}
-                        shopSlug={shop.shopSlug || slug}
-                        shopId={data.shop.id}
-                        previewMode={previewMode}
-                        isAdding={quickAddingProductIds.has(product.id)}
-                        cartItems={cartItems}
-                        onQuickAdd={handleQuickAdd}
-                        pendingCartItemIds={pendingCartItemIds}
-                        onUpdateQuantity={handleQuantityUpdate}
-                      />
-                    ))}
-                  </div>
-                  <ProductPagination pagination={pagination} />
-                </>
-              )}
+              {[
+                { label: "All", value: "recommended" },
+                { label: "Popular", value: "popular" },
+                { label: "Low price", value: "price_asc" },
+                { label: "Newest", value: "newest" },
+              ].map((filter) => (
+                <button
+                  key={filter.value}
+                  type="button"
+                  onClick={() =>
+                    updateUrl({
+                      sort: filter.value,
+                      q: query || null,
+                      page: null,
+                    })
+                  }
+                  aria-pressed={sort === filter.value}
+                  className={`h-9 shrink-0 rounded-md border px-3 text-xs font-medium transition-colors ${
+                    sort === filter.value
+                      ? "border-primary bg-primary text-primary-foreground"
+                      : "border-slate-200 bg-white text-slate-700 hover:border-slate-400"
+                  }`}
+                >
+                  {filter.label}
+                </button>
+              ))}
             </div>
+            <div className="flex items-center justify-between gap-3 sm:justify-end">
+              <p className="text-xs text-slate-500" aria-live="polite">
+                {isFetching
+                  ? "Updating…"
+                  : `${pagination.totalCount.toLocaleString("en-BD")} results`}
+              </p>
+              <select
+                value={sort}
+                onChange={(event) =>
+                  updateUrl({
+                    sort: event.target.value,
+                    q: query || null,
+                    page: null,
+                  })
+                }
+                aria-label="Sort products"
+                className="h-9 rounded-md border border-slate-200 bg-white px-3 text-xs text-slate-700 outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+              >
+                <option value="recommended">Recommended</option>
+                <option value="popular">Popular</option>
+                <option value="newest">Newest</option>
+                <option value="price_asc">Price: low to high</option>
+                <option value="price_desc">Price: high to low</option>
+                <option value="name_asc">Name: A–Z</option>
+              </select>
+            </div>
+          </div>
+
+          <div
+            className={
+              isFetching
+                ? "opacity-60 transition-opacity"
+                : "transition-opacity"
+            }
+          >
+            {products.length === 0 ? (
+              <StorefrontEmptyState
+                filtered={catalogProductCount > 0 && hasCatalogFilters}
+                onClear={clearCatalogFilters}
+              />
+            ) : (
+              <>
+                <div className="grid grid-cols-1 gap-4 min-[560px]:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                  {products.map((product) => (
+                    <StorefrontProductCard
+                      key={product.id}
+                      product={product}
+                      shopSlug={shop.shopSlug || slug}
+                      shopId={data.shop.id}
+                      previewMode={previewMode}
+                      isAdding={quickAddingProductIds.has(product.id)}
+                      cartItems={cartItems}
+                      onQuickAdd={handleQuickAdd}
+                      pendingCartItemIds={pendingCartItemIds}
+                      onUpdateQuantity={handleQuantityUpdate}
+                    />
+                  ))}
+                </div>
+                <ProductPagination pagination={pagination} />
+              </>
+            )}
           </div>
         </section>
       </main>

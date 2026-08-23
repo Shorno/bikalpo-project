@@ -8,9 +8,13 @@ import { CartDrawer } from "./cart-drawer";
 
 interface CartButtonProps {
   variant?: "default" | "emerald";
+  iconOnly?: boolean;
 }
 
-export function CartButton({ variant = "default" }: CartButtonProps) {
+export function CartButton({
+  variant = "default",
+  iconOnly = false,
+}: CartButtonProps) {
   const context = useContext(CartContext);
   const [isOpen, setIsOpen] = useState(false);
   const isEmerald = variant === "emerald";
@@ -20,11 +24,12 @@ export function CartButton({ variant = "default" }: CartButtonProps) {
     return (
       <Button
         variant="ghost"
+        size={iconOnly ? "icon" : "default"}
         className={`relative ${isEmerald ? "text-emerald-950 hover:bg-emerald-50 hover:text-emerald-700" : ""}`}
         disabled
       >
         <ShoppingCart className="size-5" />
-        Cart
+        {!iconOnly && "Cart"}
         <span className="sr-only">Shopping Cart</span>
       </Button>
     );
@@ -36,6 +41,7 @@ export function CartButton({ variant = "default" }: CartButtonProps) {
     <>
       <Button
         variant="ghost"
+        size={iconOnly ? "icon" : "default"}
         className={`relative ${isEmerald ? "text-emerald-950 hover:bg-emerald-50 hover:text-emerald-700" : ""}`}
         onClick={() => setIsOpen(true)}
       >
@@ -47,7 +53,7 @@ export function CartButton({ variant = "default" }: CartButtonProps) {
             {totalItems > 99 ? "99+" : totalItems}
           </span>
         )}
-        Cart
+        {!iconOnly && "Cart"}
         <span className="sr-only">Shopping Cart</span>
       </Button>
       <CartDrawer open={isOpen} onOpenChange={setIsOpen} variant={variant} />
