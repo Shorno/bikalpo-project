@@ -938,25 +938,22 @@ export function StorefrontSkeleton() {
             <Skeleton className="h-11 w-40" />
           </div>
         </div>
-        <div className="grid gap-6 lg:grid-cols-[240px_minmax(0,1fr)]">
-          <Skeleton className="hidden h-80 rounded-lg lg:block" />
-          <div className="grid grid-cols-1 gap-4 min-[430px]:grid-cols-2 xl:grid-cols-3">
-            {Array.from({ length: 6 }).map((_, index) => (
-              <div
-                key={index}
-                className="overflow-hidden rounded-lg border bg-white"
-              >
-                <Skeleton className="aspect-[4/3] w-full rounded-none" />
-                <div className="space-y-3 p-4">
-                  <Skeleton className="h-3 w-24" />
-                  <Skeleton className="h-10 w-full" />
-                  <Skeleton className="h-7 w-28" />
-                  <Skeleton className="h-12 w-full" />
-                  <Skeleton className="h-11 w-full" />
-                </div>
+        <div className="grid grid-cols-1 gap-4 min-[560px]:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          {Array.from({ length: 8 }).map((_, index) => (
+            <div
+              key={index}
+              className="overflow-hidden rounded-lg border bg-white"
+            >
+              <Skeleton className="aspect-[4/3] w-full rounded-none" />
+              <div className="space-y-3 p-4">
+                <Skeleton className="h-3 w-24" />
+                <Skeleton className="h-10 w-full" />
+                <Skeleton className="h-7 w-28" />
+                <Skeleton className="h-12 w-full" />
+                <Skeleton className="h-11 w-full" />
               </div>
-            ))}
-          </div>
+            </div>
+          ))}
         </div>
       </div>
     </div>
