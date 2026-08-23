@@ -39,8 +39,10 @@ import {
   productReview,
   productType,
   productVariant,
+  retailerOffer,
   retailerOfferApplication,
   sellerAreaMapping,
+  shopFollower,
   subCategory,
   supportTicket,
   supportTicketReply,
@@ -121,9 +123,9 @@ import {
   getCustomerOrderLineDecision,
   getRetailerCartDecision,
   isSameCustomerCartSnapshot,
-  retailerCylinderExchangeAvailable,
   type RetailerCartInventorySnapshot,
   resolveCustomerCartSource,
+  retailerCylinderExchangeAvailable,
 } from "./helpers/retailer-cart-inventory";
 import {
   createRetailerOrderStockWriter,
@@ -2549,8 +2551,7 @@ const queries = {
         const exchangeEnabled = item.shopId
           ? retailerCylinderExchangeAvailable(retailerInventory)
           : Boolean(
-              item.product.category?.slug === "lpg" &&
-                variant?.exchangeEnabled,
+              item.product.category?.slug === "lpg" && variant?.exchangeEnabled,
             );
         const exchangeCreditAmount = exchangeEnabled
           ? Number(variant?.exchangeCreditAmount ?? 0)
@@ -2584,20 +2585,20 @@ const queries = {
             : null,
           cylinderSale:
             item.product.category?.slug === "lpg" && variant
-            ? {
-                exchangeEnabled,
-                mode: item.cylinderSaleMode,
-                defaultMode: exchangeEnabled ? "exchange" : "new",
-                exchangeCreditAmount,
-                newUnitPrice: listedPrice,
-                effectiveUnitPrice: effectivePrice,
-                expectedReturnQty:
-                  item.cylinderSaleMode === "exchange" && exchangeEnabled
-                    ? item.quantity
-                    : 0,
-                selectionValid: cylinderSelectionValid,
-              }
-            : null,
+              ? {
+                  exchangeEnabled,
+                  mode: item.cylinderSaleMode,
+                  defaultMode: exchangeEnabled ? "exchange" : "new",
+                  exchangeCreditAmount,
+                  newUnitPrice: listedPrice,
+                  effectiveUnitPrice: effectivePrice,
+                  expectedReturnQty:
+                    item.cylinderSaleMode === "exchange" && exchangeEnabled
+                      ? item.quantity
+                      : 0,
+                  selectionValid: cylinderSelectionValid,
+                }
+              : null,
         };
       });
 
@@ -3571,6 +3572,42 @@ const queries = {
       };
     }),
 
+  /** Get the lightweight shop identity used by storefront navigation. */
+  getShopNavigation: publicProcedure
+    .route({
+      method: "GET",
+      path: "/customer/shops/{slug}/navigation",
+      tags: ["Customer"],
+      summary: "Get storefront navigation identity",
+    })
+    .input(z.object({ slug: z.string().trim().min(1).max(200) }))
+    .handler(async ({ input }) => {
+      const shop = await db
+        .select({
+          id: user.id,
+          name: user.name,
+          shopName: user.shopName,
+          shopSlug: user.shopSlug,
+          image: user.image,
+          shopLogo: user.shopLogo,
+        })
+        .from(user)
+        .where(
+          and(
+            eq(user.shopSlug, input.slug),
+            eq(user.role, "shop_owner"),
+            eq(user.sellerStatus, "approved"),
+          ),
+        )
+        .limit(1);
+
+      if (!shop[0]) {
+        throw new ORPCError("NOT_FOUND", { message: "Shop not found" });
+      }
+
+      return { shop: shop[0] };
+    }),
+
   /** Get a single shop by slug with their retail products */
   getShopBySlug: publicProcedure
     .route({
@@ -3591,7 +3628,7 @@ const queries = {
         limit: z.coerce.number().int().min(1).max(48).default(12),
       }),
     )
-    .handler(async ({ input }) => {
+    .handler(async ({ context, input }) => {
       // 1. Find the shop owner by slug
       const shop = await db
         .select({
@@ -3602,6 +3639,10 @@ const queries = {
           shopAddress: user.shopAddress,
           businessType: user.businessType,
           image: user.image,
+          shopLogo: user.shopLogo,
+          shopOpeningTime: user.shopOpeningTime,
+          shopClosingTime: user.shopClosingTime,
+          phoneNumber: user.phoneNumber,
           shopLat: user.shopLat,
           shopLng: user.shopLng,
         })
@@ -3620,6 +3661,22 @@ const queries = {
       }
 
       const shopData = shop[0];
+
+      const [followerCountResult, viewerFollow] = await Promise.all([
+        db
+          .select({ count: count() })
+          .from(shopFollower)
+          .where(eq(shopFollower.shopId, shopData.id)),
+        context.session?.user.role === "consumer"
+          ? db.query.shopFollower.findFirst({
+              where: and(
+                eq(shopFollower.shopId, shopData.id),
+                eq(shopFollower.consumerId, context.session.user.id),
+              ),
+              columns: { consumerId: true },
+            })
+          : Promise.resolve(undefined),
+      ]);
 
       // 2. Get shop's retail inventory with product details
       const inventoryItems = await db.query.inventory.findMany({
@@ -3706,7 +3763,7 @@ const queries = {
         });
       }
 
-      const completeCatalog = Array.from(productMap.values()).map((product) => {
+      let completeCatalog = Array.from(productMap.values()).map((product) => {
         const variants = (
           product.variants as Array<{
             retailPrice: string | number;
@@ -3728,6 +3785,75 @@ const queries = {
           ),
         };
       });
+      const allProductIds = completeCatalog.map((product) =>
+        Number(product.id),
+      );
+      const now = new Date();
+      const [soldOrderCountMap, storeOrderStats, storeReviewStats, offerRows] =
+        await Promise.all([
+          getShopProductSoldOrderCountMap(shopData.id, allProductIds),
+          db
+            .select({
+              totalCustomers: sql<number>`COUNT(DISTINCT ${order.userId})::int`,
+              totalOrders: sql<number>`COUNT(*)::int`,
+            })
+            .from(order)
+            .where(
+              and(
+                eq(order.shopId, shopData.id),
+                eq(order.orderType, "b2c"),
+                ne(order.status, "cancelled"),
+              ),
+            ),
+          allProductIds.length > 0
+            ? db
+                .select({
+                  averageRating: avg(productReview.rating),
+                  totalReviews: count(productReview.id),
+                })
+                .from(productReview)
+                .where(inArray(productReview.productId, allProductIds))
+            : Promise.resolve([]),
+          db
+            .select()
+            .from(retailerOffer)
+            .where(
+              and(
+                eq(retailerOffer.shopId, shopData.id),
+                inArray(retailerOffer.status, ["active", "scheduled"]),
+                eq(retailerOffer.targetType, "all_customers"),
+                lte(retailerOffer.startDate, now),
+                gte(retailerOffer.endDate, now),
+                isNull(retailerOffer.deactivatedAt),
+              ),
+            )
+            .orderBy(desc(retailerOffer.startDate))
+            .limit(8),
+        ]);
+
+      completeCatalog = completeCatalog.map((catalogProduct) => ({
+        ...catalogProduct,
+        soldOrderCount: soldOrderCountMap[catalogProduct.id] ?? 0,
+      }));
+      const offerUsageRows =
+        offerRows.length > 0
+          ? await db
+              .select({
+                offerId: retailerOfferApplication.retailerOfferId,
+                totalUses: sql<number>`COUNT(*)::int`,
+              })
+              .from(retailerOfferApplication)
+              .where(
+                inArray(
+                  retailerOfferApplication.retailerOfferId,
+                  offerRows.map((offer) => offer.id),
+                ),
+              )
+              .groupBy(retailerOfferApplication.retailerOfferId)
+          : [];
+      const offerUseCount = new Map(
+        offerUsageRows.map((row) => [row.offerId, Number(row.totalUses)]),
+      );
       const facets = buildRetailerStorefrontFacets(completeCatalog);
       const filteredProducts = filterAndSortRetailerStorefrontProducts(
         completeCatalog,
@@ -3745,10 +3871,68 @@ const queries = {
       const offset = (safePage - 1) * input.limit;
       const pageProducts = filteredProducts.slice(offset, offset + input.limit);
       const pageProductIds = pageProducts.map((product) => Number(product.id));
-      const [reviewStatsMap, soldOrderCountMap] = await Promise.all([
-        getReferenceReviewStatsMap(pageProductIds),
-        getShopProductSoldOrderCountMap(shopData.id, pageProductIds),
-      ]);
+      const reviewStatsMap = await getReferenceReviewStatsMap(pageProductIds);
+
+      const activeOffers = offerRows
+        .filter((offer) => {
+          if (
+            offer.maximumLimit != null &&
+            (offerUseCount.get(offer.id) ?? 0) >= offer.maximumLimit
+          ) {
+            return false;
+          }
+          if (offer.allDay) return true;
+          if (!offer.startTime || !offer.endTime) return false;
+          const currentTime = new Intl.DateTimeFormat("en-GB", {
+            timeZone: "Asia/Dhaka",
+            hour: "2-digit",
+            minute: "2-digit",
+            hour12: false,
+          }).format(now);
+          return offer.startTime <= offer.endTime
+            ? currentTime >= offer.startTime && currentTime <= offer.endTime
+            : currentTime >= offer.startTime || currentTime <= offer.endTime;
+        })
+        .map((offer) => {
+          const target =
+            offer.applyTo === "all_products"
+              ? "all products"
+              : offer.applyTo === "category"
+                ? offer.categoryName
+                : [offer.productName, offer.variantName]
+                    .filter(Boolean)
+                    .join(" · ");
+          const minimumQuantity = Number(offer.minimumQuantity);
+          let benefit = "";
+          if (offer.offerType === "percentage") {
+            benefit = `${Number(offer.discountValue ?? 0)}% off`;
+          } else if (offer.offerType === "flat") {
+            benefit = `৳${Number(offer.discountValue ?? 0).toLocaleString("en-BD")} off`;
+          } else {
+            const buyQuantity = offer.templateSnapshot.buyProducts.reduce(
+              (sum, item) => sum + item.quantity,
+              0,
+            );
+            const getQuantity = offer.templateSnapshot.getProducts.reduce(
+              (sum, item) => sum + item.quantity,
+              0,
+            );
+            benefit = `Buy ${buyQuantity || minimumQuantity}, get ${getQuantity || 1}`;
+          }
+          return {
+            id: offer.id,
+            name: offer.name,
+            summary: [
+              minimumQuantity > 1 && offer.offerType !== "buy_x_get_y"
+                ? `Buy ${minimumQuantity}+`
+                : "",
+              benefit,
+              target ? `on ${target}` : "",
+            ]
+              .filter(Boolean)
+              .join(" "),
+          };
+        });
 
       return {
         shop: shopData,
@@ -3762,7 +3946,20 @@ const queries = {
           };
         }),
         facets,
+        activeOffers,
         catalogProductCount: completeCatalog.length,
+        followState: {
+          followerCount: followerCountResult[0]?.count ?? 0,
+          isFollowing: Boolean(viewerFollow),
+        },
+        storeStats: {
+          averageRating: storeReviewStats[0]?.averageRating
+            ? Number.parseFloat(storeReviewStats[0].averageRating)
+            : 0,
+          totalReviews: storeReviewStats[0]?.totalReviews ?? 0,
+          totalOrders: storeOrderStats[0]?.totalOrders ?? 0,
+          totalCustomers: storeOrderStats[0]?.totalCustomers ?? 0,
+        },
         pagination: {
           page: safePage,
           limit: input.limit,
@@ -4063,6 +4260,63 @@ const queries = {
 // ════════════════════════════════════════════════════════════════
 
 const mutations = {
+  /** Follow or unfollow an approved retailer storefront. */
+  setShopFollow: consumerProcedure
+    .route({
+      method: "POST",
+      path: "/customer/shops/{shopId}/follow",
+      tags: ["Customer"],
+      summary: "Follow or unfollow a retailer storefront",
+    })
+    .input(
+      z.object({
+        shopId: z.string().trim().min(1),
+        follow: z.boolean(),
+      }),
+    )
+    .handler(async ({ context, input }) => {
+      const consumerId = context.session.user.id;
+      const shop = await db.query.user.findFirst({
+        where: and(
+          eq(user.id, input.shopId),
+          eq(user.role, "shop_owner"),
+          eq(user.sellerStatus, "approved"),
+        ),
+        columns: { id: true },
+      });
+
+      if (!shop) {
+        throw new ORPCError("NOT_FOUND", { message: "Shop not found" });
+      }
+
+      if (input.follow) {
+        await db
+          .insert(shopFollower)
+          .values({ consumerId, shopId: shop.id })
+          .onConflictDoNothing();
+      } else {
+        await db
+          .delete(shopFollower)
+          .where(
+            and(
+              eq(shopFollower.consumerId, consumerId),
+              eq(shopFollower.shopId, shop.id),
+            ),
+          );
+      }
+
+      const [followerCountResult] = await db
+        .select({ count: count() })
+        .from(shopFollower)
+        .where(eq(shopFollower.shopId, shop.id));
+
+      return {
+        success: true,
+        isFollowing: input.follow,
+        followerCount: followerCountResult?.count ?? 0,
+      };
+    }),
+
   // ── Cart ─────────────────────────────────────────────────────
 
   /** Add item to cart */
@@ -4230,8 +4484,7 @@ const mutations = {
           itemPrice = resolveRetailerCylinderSale({
             newUnitPrice: variantData.price,
             exchangeEnabled: cylinderExchangeAvailable,
-            exchangeCreditAmount:
-              referenceVariant?.exchangeCreditAmount ?? "0",
+            exchangeCreditAmount: referenceVariant?.exchangeCreditAmount ?? "0",
             requestedMode: cylinderSaleMode,
             quantity: input.quantity,
           }).effectiveUnitPrice;
@@ -5256,7 +5509,8 @@ const mutations = {
 
       if (!review) {
         throw new ORPCError("NOT_FOUND", {
-          message: "Review not found or you do not have permission to update it",
+          message:
+            "Review not found or you do not have permission to update it",
         });
       }
 
@@ -5913,10 +6167,8 @@ const openOrderEndpoints = {
             totalPrice: totalPrice.toFixed(2),
             cylinderSaleMode: item.cylinderSaleMode,
             newUnitPrice: referenceCylinderSale.newUnitPrice,
-            exchangeCreditAmount:
-              referenceCylinderSale.exchangeCreditAmount,
-            expectedEmptyPackQty:
-              referenceCylinderSale.expectedEmptyPackQty,
+            exchangeCreditAmount: referenceCylinderSale.exchangeCreditAmount,
+            expectedEmptyPackQty: referenceCylinderSale.expectedEmptyPackQty,
           };
         },
       );
@@ -6314,9 +6566,7 @@ const openOrderEndpoints = {
                   retailerNewPrice: Number(
                     item.sellerNewPrice ?? item.sellerPrice,
                   ),
-                  exchangeCreditAmount: Number(
-                    item.exchangeCreditAmount ?? 0,
-                  ),
+                  exchangeCreditAmount: Number(item.exchangeCreditAmount ?? 0),
                 })),
             })),
           ).map((offer, index) => ({ ...offer, isLowestTotal: index === 0 }))

@@ -8,6 +8,10 @@ import { createAuthMiddleware } from "better-auth/api";
 import { admin as adminPlugin, bearer, openAPI, phoneNumber } from "better-auth/plugins";
 import { storeOtp } from "./otp-store";
 import { ac, admin as adminRole, consumer, deliveryman, salesman, shop_owner, warehouse } from "./permissions";
+import {
+  getPhoneAuthEmail,
+  normalizeBangladeshPhoneNumber,
+} from "./phone-identity";
 
 const isProduction = env.NODE_ENV === "production";
 const isDevelopment = env.NODE_ENV === "development";
@@ -40,6 +44,8 @@ export const auth = betterAuth({
     }),
     phoneNumber({
       otpLength: 6,
+      phoneNumberValidator: (phone) =>
+        normalizeBangladeshPhoneNumber(phone) !== null,
       sendOTP: ({ phoneNumber: phone, code }) => {
         if (isDevelopment) {
           // Local-only helper. Production must use a real SMS provider.
@@ -48,7 +54,7 @@ export const auth = betterAuth({
         }
       },
       signUpOnVerification: {
-        getTempEmail: (phone) => `${phone.replace(/\+/g, "")}@bikalpo.com`,
+        getTempEmail: getPhoneAuthEmail,
         getTempName: (phone) => phone,
       },
     }),
@@ -58,7 +64,7 @@ export const auth = betterAuth({
       phoneNumber: {
         type: "string",
         required: false,
-        input: true,
+        input: false,
       },
       // Shop owner capability flags (set by admin on approval)
       isSeller: {
@@ -88,6 +94,18 @@ export const auth = betterAuth({
         required: false,
       },
       shopSlug: {
+        type: "string",
+        required: false,
+      },
+      shopLogo: {
+        type: "string",
+        required: false,
+      },
+      shopOpeningTime: {
+        type: "string",
+        required: false,
+      },
+      shopClosingTime: {
         type: "string",
         required: false,
       },

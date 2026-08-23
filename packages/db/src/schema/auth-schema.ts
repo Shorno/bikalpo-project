@@ -25,6 +25,11 @@ export const user = pgTable("user", {
     // === B2B + B2C Shop Owner fields ===
     shopName: text("shop_name"),
     shopSlug: text("shop_slug"), // for public store URL: /store/{shop_slug}
+    shopLogo: text("shop_logo"),
+    /** Local store opening time in 24-hour HH:mm format */
+    shopOpeningTime: text("shop_opening_time"),
+    /** Local store closing time in 24-hour HH:mm format */
+    shopClosingTime: text("shop_closing_time"),
 
     // === Warehouse fields ===
     warehouseName: text("warehouse_name"),

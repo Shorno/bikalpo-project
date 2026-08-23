@@ -1,20 +1,23 @@
 "use client";
 
 import {
-  ArrowLeft,
-  CheckCircle2,
+  ChevronLeft,
   ChevronRight,
+  Clock3,
   Eye,
   Filter,
+  Heart,
   MapPin,
+  Megaphone,
   Minus,
   Package,
+  Phone,
   Plus,
   RotateCcw,
+  ShoppingBag,
   ShoppingCart,
   Star,
-  Store,
-  Truck,
+  Users,
   X,
 } from "lucide-react";
 import Image from "next/image";
@@ -38,7 +41,6 @@ import {
 } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { CartItem } from "@/hooks/use-orpc-cart";
-import { withCustomerStorefrontPreview } from "@/lib/customer-storefront-preview";
 import { getRetailerProductHref } from "@/lib/retailer-storefront-url";
 import { cn } from "@/lib/utils";
 
@@ -88,111 +90,278 @@ interface StoreHeaderProps {
     name: string;
     shopName: string | null;
     shopAddress: string | null;
-    businessType: string | null;
-    image: string | null;
+    shopOpeningTime: string | null;
+    shopClosingTime: string | null;
+    phoneNumber: string | null;
   };
   productCount: number;
-  previewMode: boolean;
+  stats: {
+    averageRating: number;
+    totalReviews: number;
+    totalOrders: number;
+    totalCustomers: number;
+  };
+  followerCount: number;
+  isFollowing: boolean;
+  isFollowPending: boolean;
+  onToggleFollow: () => void;
 }
 
 export function StoreHeader({
   shop,
   productCount,
-  previewMode,
+  stats,
+  followerCount,
+  isFollowing,
+  isFollowPending,
+  onToggleFollow,
 }: StoreHeaderProps) {
   const displayName = shop.shopName || shop.name;
+  const metrics = [
+    stats.totalReviews > 0
+      ? {
+          icon: Star,
+          value: stats.averageRating.toFixed(1),
+          label: `${stats.totalReviews.toLocaleString("en-BD")} reviews`,
+        }
+      : null,
+    stats.totalOrders > 0
+      ? {
+          icon: ShoppingBag,
+          value: stats.totalOrders.toLocaleString("en-BD"),
+          label: stats.totalOrders === 1 ? "order" : "orders",
+        }
+      : null,
+    stats.totalCustomers > 0
+      ? {
+          icon: Users,
+          value: stats.totalCustomers.toLocaleString("en-BD"),
+          label: stats.totalCustomers === 1 ? "customer" : "customers",
+        }
+      : null,
+    {
+      icon: Heart,
+      value: followerCount.toLocaleString("en-BD"),
+      label: followerCount === 1 ? "follower" : "followers",
+    },
+    {
+      icon: Package,
+      value: productCount.toLocaleString("en-BD"),
+      label: productCount === 1 ? "product" : "products",
+    },
+  ].filter(Boolean) as Array<{
+    icon: typeof Star;
+    value: string;
+    label: string;
+  }>;
 
   return (
-    <header className="border-b bg-slate-50/70">
-      <div className="container mx-auto px-4 py-5 md:py-6">
-        <nav
-          aria-label="Breadcrumb"
-          className="mb-4 flex items-center gap-1.5 text-xs text-muted-foreground"
-        >
-          <Link href="/" className="hover:text-foreground">
-            Home
-          </Link>
-          <ChevronRight className="size-3" aria-hidden="true" />
-          <Link
-            href={withCustomerStorefrontPreview("/stores", previewMode)}
-            className="hover:text-foreground"
-          >
-            Stores
-          </Link>
-          <ChevronRight className="size-3" aria-hidden="true" />
-          <span
-            className="max-w-48 truncate text-foreground"
-            aria-current="page"
-          >
-            {displayName}
-          </span>
-        </nav>
-
-        <div className="flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
-          <div className="flex min-w-0 items-start gap-4">
-            {shop.image ? (
-              <Image
-                src={shop.image}
-                alt=""
-                width={64}
-                height={64}
-                className="size-14 shrink-0 rounded-lg border bg-white object-cover md:size-16"
-              />
-            ) : (
-              <div className="flex size-14 shrink-0 items-center justify-center rounded-lg border bg-white md:size-16">
-                <Store className="size-6 text-primary" aria-hidden="true" />
-              </div>
+    <header className="border-b bg-white">
+      <div className="mx-auto max-w-7xl px-3 py-6 sm:px-6 md:py-8 lg:px-8">
+        <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
+          <div className="min-w-0">
+            <h1 className="truncate text-2xl font-bold tracking-tight text-slate-950 md:text-3xl">
+              {displayName}
+            </h1>
+            {shop.shopAddress && (
+              <p className="mt-2 flex max-w-3xl items-start gap-1.5 text-sm leading-5 text-slate-600">
+                <MapPin
+                  className="mt-0.5 size-4 shrink-0 text-slate-400"
+                  aria-hidden="true"
+                />
+                <span>{shop.shopAddress}</span>
+              </p>
             )}
+            {shop.shopOpeningTime && shop.shopClosingTime && (
+              <p className="mt-2 flex items-center gap-1.5 text-sm text-slate-600">
+                <Clock3
+                  className="size-4 shrink-0 text-slate-400"
+                  aria-hidden="true"
+                />
+                <span>
+                  Open {formatStoreTime(shop.shopOpeningTime)}–
+                  {formatStoreTime(shop.shopClosingTime)}
+                </span>
+              </p>
+            )}
+          </div>
 
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              type="button"
+              variant={isFollowing ? "outline" : "default"}
+              className={cn("h-10", isFollowing && "bg-white")}
+              aria-pressed={isFollowing}
+              disabled={isFollowPending}
+              onClick={onToggleFollow}
+            >
+              <Heart
+                className={cn("size-4", isFollowing && "fill-current")}
+                aria-hidden="true"
+              />
+              {isFollowPending
+                ? "Updating…"
+                : isFollowing
+                  ? "Following"
+                  : "Follow"}
+            </Button>
+            {shop.phoneNumber && (
+              <Button asChild variant="outline" className="h-10 bg-white">
+                <a href={`tel:${shop.phoneNumber}`}>
+                  <Phone className="size-4" aria-hidden="true" />
+                  Contact store
+                </a>
+              </Button>
+            )}
+          </div>
+        </div>
+
+        <div className="mt-6 grid grid-cols-2 border-y sm:flex sm:flex-wrap">
+          {metrics.map(({ icon: Icon, value, label }) => (
+            <div
+              key={label}
+              className="flex min-h-16 items-center gap-3 border-r px-3 first:pl-0 last:border-r-0 sm:min-w-40 sm:px-5"
+            >
+              <Icon
+                className="size-4 shrink-0 text-primary"
+                aria-hidden="true"
+              />
+              <div className="min-w-0">
+                <p className="font-mono text-sm font-semibold tabular-nums text-slate-950">
+                  {value}
+                </p>
+                <p className="truncate text-xs text-slate-500">{label}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </header>
+  );
+}
+
+function formatStoreTime(value: string) {
+  const [hours = 0, minutes = 0] = value.split(":").map(Number);
+  const period = hours >= 12 ? "PM" : "AM";
+  const displayHours = hours % 12 || 12;
+  return `${displayHours}:${String(minutes).padStart(2, "0")} ${period}`;
+}
+
+export interface StorefrontOffer {
+  id: number;
+  name: string;
+  summary: string;
+}
+
+export function StorefrontOfferBanner({
+  offers,
+}: {
+  offers: StorefrontOffer[];
+}) {
+  const [activeIndex, setActiveIndex] = useState(0);
+  if (offers.length === 0) {
+    return (
+      <section aria-label="Store offers" className="border-b bg-blue-50">
+        <div className="mx-auto max-w-7xl px-3 py-5 sm:px-6 md:py-6 lg:px-8">
+          <div className="flex items-start gap-3 rounded-lg border border-dashed border-blue-200 bg-white/70 p-4 md:p-5">
+            <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+              <Megaphone className="size-5" aria-hidden="true" />
+            </div>
             <div className="min-w-0">
-              <div className="flex flex-wrap items-center gap-2">
-                <h1 className="truncate text-xl font-semibold tracking-tight text-slate-950 md:text-2xl">
-                  {displayName}
-                </h1>
-                <span className="inline-flex h-6 items-center gap-1 rounded-md border border-blue-200 bg-blue-50 px-2 text-[11px] font-medium text-blue-800">
-                  <CheckCircle2 className="size-3.5" aria-hidden="true" />
-                  Verified retailer
-                </span>
-              </div>
-              <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-muted-foreground">
-                <span className="capitalize">
-                  {shop.businessType || "Retail"} business
-                </span>
-                <span className="font-mono tabular-nums">
-                  {productCount} {productCount === 1 ? "product" : "products"}
-                </span>
-              </div>
-              {shop.shopAddress && (
-                <p className="mt-2 flex max-w-3xl items-start gap-1.5 text-sm leading-5 text-slate-600">
-                  <MapPin
-                    className="mt-0.5 size-4 shrink-0 text-slate-400"
-                    aria-hidden="true"
-                  />
-                  <span>{shop.shopAddress}</span>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-primary">
+                Store offers
+              </p>
+              <h2 className="mt-1 text-base font-semibold text-slate-950 md:text-lg">
+                Promotions coming soon
+              </h2>
+              <p className="mt-1 text-sm text-slate-600">
+                Special offers and limited-time deals will appear here.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+    );
+  }
+
+  const activeOffer = offers[Math.min(activeIndex, offers.length - 1)];
+  if (!activeOffer) return null;
+
+  return (
+    <section aria-label="Store offers" className="border-b bg-blue-50">
+      <div className="mx-auto max-w-7xl px-3 py-5 sm:px-6 md:py-6 lg:px-8">
+        <div className="flex flex-col gap-4 rounded-lg border border-blue-200 bg-white p-4 md:flex-row md:items-center md:justify-between md:p-5">
+          <div className="flex min-w-0 items-start gap-3">
+            <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+              <Megaphone className="size-5" aria-hidden="true" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-primary">
+                Today&apos;s special offer
+              </p>
+              <h2 className="mt-1 text-base font-semibold text-slate-950 md:text-lg">
+                {activeOffer.name}
+              </h2>
+              {activeOffer.summary && (
+                <p className="mt-1 text-sm text-slate-600">
+                  {activeOffer.summary}
                 </p>
               )}
             </div>
           </div>
 
-          <div className="flex shrink-0 flex-wrap items-center gap-2">
-            {shop.shopAddress && (
-              <span className="inline-flex h-9 items-center gap-2 rounded-lg border bg-white px-3 text-xs text-slate-600">
-                <Truck className="size-4 text-primary" aria-hidden="true" />
-                Delivery from this location
-              </span>
-            )}
-            <Button asChild variant="outline" className="h-9 bg-white">
-              <Link
-                href={withCustomerStorefrontPreview("/stores", previewMode)}
+          {offers.length > 1 && (
+            <div className="flex shrink-0 items-center gap-3">
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                className="size-9 bg-white"
+                onClick={() =>
+                  setActiveIndex((current) =>
+                    current === 0 ? offers.length - 1 : current - 1,
+                  )
+                }
+                aria-label="Previous offer"
               >
-                <ArrowLeft className="size-4" aria-hidden="true" />
-                All stores
-              </Link>
-            </Button>
-          </div>
+                <ChevronLeft className="size-4" aria-hidden="true" />
+              </Button>
+              <div
+                className="flex items-center gap-1.5"
+                role="group"
+                aria-label={`${activeIndex + 1} of ${offers.length}`}
+              >
+                {offers.map((offer, index) => (
+                  <button
+                    key={offer.id}
+                    type="button"
+                    onClick={() => setActiveIndex(index)}
+                    className={cn(
+                      "size-2 rounded-full transition-colors",
+                      index === activeIndex ? "bg-primary" : "bg-slate-300",
+                    )}
+                    aria-label={`Show offer ${index + 1}`}
+                    aria-current={index === activeIndex ? "true" : undefined}
+                  />
+                ))}
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                className="size-9 bg-white"
+                onClick={() =>
+                  setActiveIndex((current) => (current + 1) % offers.length)
+                }
+                aria-label="Next offer"
+              >
+                <ChevronRight className="size-4" aria-hidden="true" />
+              </Button>
+            </div>
+          )}
         </div>
       </div>
-    </header>
+    </section>
   );
 }
 
@@ -810,7 +979,7 @@ export function StorefrontSkeleton() {
   return (
     <div className="min-h-screen">
       <div className="border-b bg-slate-50/70">
-        <div className="container mx-auto px-4 py-6">
+        <div className="mx-auto max-w-7xl px-3 py-6 sm:px-6 lg:px-8">
           <Skeleton className="mb-5 h-3 w-48" />
           <div className="flex items-center gap-4">
             <Skeleton className="size-16 rounded-lg" />
@@ -821,32 +990,29 @@ export function StorefrontSkeleton() {
           </div>
         </div>
       </div>
-      <div className="container mx-auto px-4 py-7">
+      <div className="mx-auto max-w-7xl px-3 py-7 sm:px-6 lg:px-8">
         <div className="mb-6 rounded-lg border p-4">
           <div className="flex gap-3">
             <Skeleton className="h-11 flex-1" />
             <Skeleton className="h-11 w-40" />
           </div>
         </div>
-        <div className="grid gap-6 lg:grid-cols-[240px_minmax(0,1fr)]">
-          <Skeleton className="hidden h-80 rounded-lg lg:block" />
-          <div className="grid grid-cols-1 gap-4 min-[430px]:grid-cols-2 xl:grid-cols-3">
-            {Array.from({ length: 6 }).map((_, index) => (
-              <div
-                key={index}
-                className="overflow-hidden rounded-lg border bg-white"
-              >
-                <Skeleton className="aspect-[4/3] w-full rounded-none" />
-                <div className="space-y-3 p-4">
-                  <Skeleton className="h-3 w-24" />
-                  <Skeleton className="h-10 w-full" />
-                  <Skeleton className="h-7 w-28" />
-                  <Skeleton className="h-12 w-full" />
-                  <Skeleton className="h-11 w-full" />
-                </div>
+        <div className="grid grid-cols-1 gap-4 min-[560px]:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          {Array.from({ length: 8 }).map((_, index) => (
+            <div
+              key={index}
+              className="overflow-hidden rounded-lg border bg-white"
+            >
+              <Skeleton className="aspect-[4/3] w-full rounded-none" />
+              <div className="space-y-3 p-4">
+                <Skeleton className="h-3 w-24" />
+                <Skeleton className="h-10 w-full" />
+                <Skeleton className="h-7 w-28" />
+                <Skeleton className="h-12 w-full" />
+                <Skeleton className="h-11 w-full" />
               </div>
-            ))}
-          </div>
+            </div>
+          ))}
         </div>
       </div>
     </div>

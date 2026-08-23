@@ -238,7 +238,10 @@ export function PhoneAuthFlow({ onComplete }: PhoneAuthFlowProps) {
       });
 
       if (result.error) {
-        setError(result.error.message || "Invalid OTP");
+        setError(
+          result.error.message ||
+            "Unable to verify OTP. Please request a new code and try again.",
+        );
         setIsVerifying(false);
         return;
       }
