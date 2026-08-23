@@ -42,6 +42,7 @@ import {
   retailerOffer,
   retailerOfferApplication,
   sellerAreaMapping,
+  shopFollower,
   subCategory,
   supportTicket,
   supportTicketReply,
@@ -3571,6 +3572,42 @@ const queries = {
       };
     }),
 
+  /** Get the lightweight shop identity used by storefront navigation. */
+  getShopNavigation: publicProcedure
+    .route({
+      method: "GET",
+      path: "/customer/shops/{slug}/navigation",
+      tags: ["Customer"],
+      summary: "Get storefront navigation identity",
+    })
+    .input(z.object({ slug: z.string().trim().min(1).max(200) }))
+    .handler(async ({ input }) => {
+      const shop = await db
+        .select({
+          id: user.id,
+          name: user.name,
+          shopName: user.shopName,
+          shopSlug: user.shopSlug,
+          image: user.image,
+          shopLogo: user.shopLogo,
+        })
+        .from(user)
+        .where(
+          and(
+            eq(user.shopSlug, input.slug),
+            eq(user.role, "shop_owner"),
+            eq(user.sellerStatus, "approved"),
+          ),
+        )
+        .limit(1);
+
+      if (!shop[0]) {
+        throw new ORPCError("NOT_FOUND", { message: "Shop not found" });
+      }
+
+      return { shop: shop[0] };
+    }),
+
   /** Get a single shop by slug with their retail products */
   getShopBySlug: publicProcedure
     .route({
@@ -3591,7 +3628,7 @@ const queries = {
         limit: z.coerce.number().int().min(1).max(48).default(12),
       }),
     )
-    .handler(async ({ input }) => {
+    .handler(async ({ context, input }) => {
       // 1. Find the shop owner by slug
       const shop = await db
         .select({
@@ -3602,6 +3639,9 @@ const queries = {
           shopAddress: user.shopAddress,
           businessType: user.businessType,
           image: user.image,
+          shopLogo: user.shopLogo,
+          shopOpeningTime: user.shopOpeningTime,
+          shopClosingTime: user.shopClosingTime,
           phoneNumber: user.phoneNumber,
           shopLat: user.shopLat,
           shopLng: user.shopLng,
@@ -3621,6 +3661,22 @@ const queries = {
       }
 
       const shopData = shop[0];
+
+      const [followerCountResult, viewerFollow] = await Promise.all([
+        db
+          .select({ count: count() })
+          .from(shopFollower)
+          .where(eq(shopFollower.shopId, shopData.id)),
+        context.session?.user.role === "consumer"
+          ? db.query.shopFollower.findFirst({
+              where: and(
+                eq(shopFollower.shopId, shopData.id),
+                eq(shopFollower.consumerId, context.session.user.id),
+              ),
+              columns: { consumerId: true },
+            })
+          : Promise.resolve(undefined),
+      ]);
 
       // 2. Get shop's retail inventory with product details
       const inventoryItems = await db.query.inventory.findMany({
@@ -3892,6 +3948,10 @@ const queries = {
         facets,
         activeOffers,
         catalogProductCount: completeCatalog.length,
+        followState: {
+          followerCount: followerCountResult[0]?.count ?? 0,
+          isFollowing: Boolean(viewerFollow),
+        },
         storeStats: {
           averageRating: storeReviewStats[0]?.averageRating
             ? Number.parseFloat(storeReviewStats[0].averageRating)
@@ -4200,6 +4260,63 @@ const queries = {
 // ════════════════════════════════════════════════════════════════
 
 const mutations = {
+  /** Follow or unfollow an approved retailer storefront. */
+  setShopFollow: consumerProcedure
+    .route({
+      method: "POST",
+      path: "/customer/shops/{shopId}/follow",
+      tags: ["Customer"],
+      summary: "Follow or unfollow a retailer storefront",
+    })
+    .input(
+      z.object({
+        shopId: z.string().trim().min(1),
+        follow: z.boolean(),
+      }),
+    )
+    .handler(async ({ context, input }) => {
+      const consumerId = context.session.user.id;
+      const shop = await db.query.user.findFirst({
+        where: and(
+          eq(user.id, input.shopId),
+          eq(user.role, "shop_owner"),
+          eq(user.sellerStatus, "approved"),
+        ),
+        columns: { id: true },
+      });
+
+      if (!shop) {
+        throw new ORPCError("NOT_FOUND", { message: "Shop not found" });
+      }
+
+      if (input.follow) {
+        await db
+          .insert(shopFollower)
+          .values({ consumerId, shopId: shop.id })
+          .onConflictDoNothing();
+      } else {
+        await db
+          .delete(shopFollower)
+          .where(
+            and(
+              eq(shopFollower.consumerId, consumerId),
+              eq(shopFollower.shopId, shop.id),
+            ),
+          );
+      }
+
+      const [followerCountResult] = await db
+        .select({ count: count() })
+        .from(shopFollower)
+        .where(eq(shopFollower.shopId, shop.id));
+
+      return {
+        success: true,
+        isFollowing: input.follow,
+        followerCount: followerCountResult?.count ?? 0,
+      };
+    }),
+
   // ── Cart ─────────────────────────────────────────────────────
 
   /** Add item to cart */

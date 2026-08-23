@@ -60,6 +60,7 @@ export * from "./sales-model";
 export * from "./salesman-area-assignment";
 export * from "./seller-application";
 export * from "./shop-category-assignment";
+export * from "./shop-follower";
 export * from "./shop-warehouse-connection";
 export * from "./stock-adjustment";
 export * from "./stock-entry";

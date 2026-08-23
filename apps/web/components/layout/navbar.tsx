@@ -1,5 +1,6 @@
 "use client";
 
+import { useQuery } from "@tanstack/react-query";
 import {
   Building2,
   Eye,
@@ -28,6 +29,7 @@ import {
   isCustomerStorefrontPreview,
   withCustomerStorefrontPreview,
 } from "@/lib/customer-storefront-preview";
+import { orpc } from "@/utils/orpc";
 import { CartButton } from "./cart-button";
 import { MobileMenu } from "./mobile-menu";
 import { NavbarSearch } from "./navbar-search";
@@ -40,7 +42,7 @@ const storefrontLinks = [
   { label: "For business", href: "/b2b", icon: Building2 },
 ];
 
-function RetailerStoreSearch({ pathname }: { pathname: string }) {
+function RetailerStoreSearch({ storePath }: { storePath: string }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const query = searchParams.get("q") ?? "";
@@ -64,7 +66,7 @@ function RetailerStoreSearch({ pathname }: { pathname: string }) {
       if (normalized) next.set("q", normalized);
       else next.delete("q");
       next.delete("page");
-      const href = next.size ? `${pathname}?${next.toString()}` : pathname;
+      const href = next.size ? `${storePath}?${next.toString()}` : storePath;
       router.replace(href, { scroll: false });
     }, 300);
   };
@@ -79,7 +81,7 @@ function RetailerStoreSearch({ pathname }: { pathname: string }) {
         type="search"
         value={value}
         onChange={(event) => updateSearch(event.target.value)}
-        placeholder="Search products"
+        placeholder="Search this store"
         aria-label="Search products in this store"
         maxLength={150}
         className="h-10 w-full rounded-lg border border-white/25 bg-white pl-9 pr-9 text-sm text-slate-950 outline-none placeholder:text-slate-400 focus:border-white focus:ring-2 focus:ring-white/25"
@@ -98,29 +100,50 @@ function RetailerStoreSearch({ pathname }: { pathname: string }) {
   );
 }
 
-function RetailerStoreNavbar({ previewMode }: { previewMode: boolean }) {
-  const pathname = usePathname();
+function RetailerStoreNavbar({
+  previewMode,
+  slug,
+}: {
+  previewMode: boolean;
+  slug: string;
+}) {
+  const storePath = `/stores/${slug}`;
+  const { data } = useQuery(
+    orpc.customer.getShopNavigation.queryOptions({ input: { slug } }),
+  );
+  const shop = data?.shop;
+  const displayName = shop?.shopName || shop?.name || "Store";
+  const logo = shop?.shopLogo || shop?.image;
 
   return (
     <nav className="sticky top-0 z-50 border-b border-blue-950/25 bg-primary text-primary-foreground">
       <div className="mx-auto flex h-16 max-w-7xl items-center gap-2 px-3 sm:gap-4 sm:px-6 lg:px-8">
         <MobileMenu previewMode={previewMode} />
         <Link
-          href="/"
-          aria-label="Bikalpo home"
-          className="flex shrink-0 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary-foreground"
+          href={withCustomerStorefrontPreview(storePath, previewMode)}
+          aria-label={`${displayName} storefront home`}
+          className="flex min-w-0 shrink-0 items-center gap-2 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary-foreground"
         >
-          <Image
-            src="/logos/site-logo-white.svg"
-            alt="Bikalpo"
-            width={96}
-            height={36}
-            priority
-            className="h-auto w-16 object-contain sm:w-24"
-          />
+          {logo ? (
+            <Image
+              src={logo}
+              alt={`${displayName} logo`}
+              width={40}
+              height={40}
+              priority
+              className="size-10 rounded-lg border border-white/25 bg-white object-cover"
+            />
+          ) : (
+            <span className="flex size-10 items-center justify-center rounded-lg border border-white/25 bg-white/10">
+              <Store className="size-5" aria-hidden="true" />
+            </span>
+          )}
+          <span className="hidden max-w-36 truncate text-sm font-semibold sm:block">
+            {displayName}
+          </span>
         </Link>
 
-        <RetailerStoreSearch pathname={pathname} />
+        <RetailerStoreSearch storePath={storePath} />
 
         {!previewMode && (
           <div className="[&_button]:text-white [&_button:hover]:bg-white/10 [&_button:hover]:text-white">
@@ -168,10 +191,15 @@ export function Navbar() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const previewMode = isCustomerStorefrontPreview(searchParams.get("preview"));
-  const isRetailerStorefront = /^\/stores\/[^/]+\/?$/.test(pathname);
+  const retailerStoreMatch = pathname.match(/^\/stores\/([^/]+)(?:\/.*)?$/);
 
-  if (isRetailerStorefront) {
-    return <RetailerStoreNavbar previewMode={previewMode} />;
+  if (retailerStoreMatch?.[1]) {
+    return (
+      <RetailerStoreNavbar
+        previewMode={previewMode}
+        slug={retailerStoreMatch[1]}
+      />
+    );
   }
 
   return (
