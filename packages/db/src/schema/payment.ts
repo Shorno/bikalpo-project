@@ -14,6 +14,7 @@ import {
 import { timestamps } from "./columns.helpers";
 import { financePaymentAccount } from "./finance-payment-account";
 import { type Order, order } from "./order";
+import { purchase } from "./purchase";
 
 // Payment transaction status (different from order payment status)
 export const paymentTransactionStatusEnum = pgEnum("payment_transaction_status", [
@@ -48,9 +49,12 @@ export const payment = pgTable(
     "payment",
     {
         id: serial("id").primaryKey(),
-        orderId: integer("order_id")
-            .notNull()
-            .references(() => order.id, { onDelete: "restrict" }),
+        orderId: integer("order_id").references(() => order.id, {
+            onDelete: "restrict",
+        }),
+        purchaseId: integer("purchase_id").references(() => purchase.id, {
+            onDelete: "restrict",
+        }),
 
         transactionId: varchar("transaction_id", { length: 255 }).unique(),
         idempotencyKey: varchar("idempotency_key", { length: 100 }),
@@ -91,6 +95,7 @@ export const payment = pgTable(
     },
     (table) => [
         index("payment_orderId_idx").on(table.orderId),
+        index("payment_purchaseId_idx").on(table.purchaseId),
         index("payment_purchasePurpose_idx").on(table.purchasePurpose),
         index("payment_paymentAccount_idx").on(table.paymentAccountId),
         uniqueIndex("payment_idempotencyKey_unique").on(table.idempotencyKey),
@@ -101,6 +106,10 @@ export const paymentRelations = relations(payment, ({ one }) => ({
     order: one(order, {
         fields: [payment.orderId],
         references: [order.id],
+    }),
+    purchase: one(purchase, {
+        fields: [payment.purchaseId],
+        references: [purchase.id],
     }),
     paymentAccount: one(financePaymentAccount, {
         fields: [payment.paymentAccountId],
