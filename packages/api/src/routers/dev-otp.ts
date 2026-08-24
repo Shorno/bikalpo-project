@@ -8,8 +8,6 @@
  * TODO: Remove or re-guard this endpoint once a real SMS provider is integrated.
  */
 import { getOtp } from "@bikalpo-project/auth/otp-store";
-import { env } from "@bikalpo-project/env/server";
-import { ORPCError } from "@orpc/server";
 import { z } from "zod";
 import { publicProcedure } from "../index";
 
@@ -27,11 +25,6 @@ export const devOtpRouter = {
       }),
     )
     .handler(async ({ input }) => {
-      if (env.NODE_ENV !== "development") {
-        throw new ORPCError("NOT_FOUND", {
-          message: "Development OTP helper is not available",
-        });
-      }
       const code = getOtp(input.phoneNumber);
       return { code };
     }),

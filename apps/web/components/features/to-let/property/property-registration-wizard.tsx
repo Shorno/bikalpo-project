@@ -44,7 +44,6 @@ import { client } from "@/utils/orpc";
 import { PropertyLocationFields } from "./property-location-fields";
 import { PropertyPhoneVerification } from "./property-phone-verification";
 import { PropertyPageHeader } from "./property-ui";
-import { PropertyVideoField } from "./property-video-field";
 
 const steps = [
   { id: 1, label: "Basic" },
@@ -115,7 +114,6 @@ const initialValues: PropertyRegistrationValues = {
   description: "",
   frontImageUrl: "",
   buildingImageUrl: "",
-  videoUrl: "",
   phoneVerified: false,
   informationConfirmed: false,
   termsAccepted: false,
@@ -565,7 +563,7 @@ export function PropertyRegistrationWizard() {
         longitude: payload.longitude ? Number(payload.longitude) : undefined,
         description: payload.description || undefined,
         buildingImageUrl: payload.buildingImageUrl || undefined,
-        videoUrl: payload.videoUrl || undefined,
+        videoUrl: undefined,
       });
       const propertyCode = resultPropertyCode(result);
       window.localStorage.removeItem(PROPERTY_REGISTRATION_DRAFT_KEY);
@@ -923,16 +921,6 @@ export function PropertyRegistrationWizard() {
                     className="min-h-44"
                   />
                   <FieldMessage message={errors.buildingImageUrl} />
-                </div>
-                <div className="space-y-1.5 sm:col-span-2">
-                  <Label>Building Video (90 sec)</Label>
-                  <PropertyVideoField
-                    value={values.videoUrl}
-                    onChange={(url) => update("videoUrl", url)}
-                    disabled={createProperty.isPending}
-                    invalid={Boolean(errors.videoUrl)}
-                  />
-                  <FieldMessage message={errors.videoUrl} />
                 </div>
               </div>
 

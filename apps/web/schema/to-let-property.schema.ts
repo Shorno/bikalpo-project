@@ -138,7 +138,6 @@ export const propertyBuildingSchema = z.object({
 export const propertyVerificationSchema = z.object({
   frontImageUrl: httpUrl,
   buildingImageUrl: z.union([z.literal(""), httpUrl]),
-  videoUrl: optionalUrl,
   phoneVerified: z.literal(true, {
     error: "Verify the property contact number",
   }),
@@ -179,7 +178,8 @@ export type PropertyRegistrationValues = Omit<
 
 export const propertyEditableSchema = propertyBasicSchema
   .merge(propertyBuildingSchema)
-  .merge(propertyVerificationSchema);
+  .merge(propertyVerificationSchema)
+  .extend({ videoUrl: optionalUrl });
 
 type ParsedPropertyEditable = z.infer<typeof propertyEditableSchema>;
 export type PropertyEditableValues = Omit<
