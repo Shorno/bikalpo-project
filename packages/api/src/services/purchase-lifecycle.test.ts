@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   allocateReceiptLandedCost,
+  calculateIncrementalReceipt,
   calculateReceiptPosting,
   classifyPurchasePayment,
   deriveFinancialStatus,
@@ -56,6 +57,31 @@ test("applies advance before leaving a supplier payable", () => {
       receiptValue: 50_000,
       settlementApplied: 0,
     },
+  );
+});
+
+test("posts only the newly received quantity and value", () => {
+  assert.deepEqual(
+    calculateIncrementalReceipt({
+      cumulativeQuantity: 7,
+      cumulativeValue: 1750,
+      priorQuantity: 3,
+      priorValue: 750,
+    }),
+    { quantity: 4, value: 1000 },
+  );
+});
+
+test("rejects receipt totals that move backwards", () => {
+  assert.throws(
+    () =>
+      calculateIncrementalReceipt({
+        cumulativeQuantity: 2,
+        cumulativeValue: 500,
+        priorQuantity: 3,
+        priorValue: 750,
+      }),
+    /cannot be lower/,
   );
 });
 
