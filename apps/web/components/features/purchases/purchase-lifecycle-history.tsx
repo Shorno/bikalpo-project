@@ -10,6 +10,7 @@ import {
   Eye,
   Loader2,
   PackageCheck,
+  RotateCcw,
   Search,
 } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -151,6 +152,11 @@ function DetailDialog({
   const canPay =
     dueAmount > 0 &&
     !["cancelled", "returned"].includes(detail?.order?.status ?? "");
+  const refundStage = detail?.summary?.refundStage as string | null | undefined;
+  const canReturn =
+    detail?.order?.status !== "returned" &&
+    detail?.order?.status !== "cancelled" &&
+    detail?.order?.items?.some((item: any) => Number(item.receivedQty ?? 0) > 0);
 
   useEffect(() => {
     if (!detail?.order) return;
@@ -230,6 +236,37 @@ function DetailDialog({
       await refreshPurchase();
     },
   });
+  const returnPurchase = useMutation({
+    mutationFn: () =>
+      orpc.purchaseLifecycle.returnPurchase.call({ orderId: orderId! }),
+    onError: (error: Error) => toast.error(error.message),
+    onSuccess: async () => {
+      toast.success("Purchase returned and accounting reversed");
+      await refreshPurchase();
+    },
+  });
+  const approveRefund = useMutation({
+    mutationFn: () =>
+      orpc.purchaseLifecycle.approveRefund.call({
+        paymentId: refundPending.id,
+      }),
+    onError: (error: Error) => toast.error(error.message),
+    onSuccess: async () => {
+      toast.success("Refund approved");
+      await refreshPurchase();
+    },
+  });
+  const processRefund = useMutation({
+    mutationFn: () =>
+      orpc.purchaseLifecycle.processRefund.call({
+        paymentId: refundPending.id,
+      }),
+    onError: (error: Error) => toast.error(error.message),
+    onSuccess: async () => {
+      toast.success("Refund marked as processing");
+      await refreshPurchase();
+    },
+  });
 
   return (
     <Dialog open={orderId !== null} onOpenChange={onOpenChange}>
@@ -266,8 +303,59 @@ function DetailDialog({
           ) : detailQuery.isError ? (
             <EmptyHistory message="The purchase history could not be loaded." />
           ) : tab === "purchase" ? (
-            detail.purchaseHistory.length ? (
-              <div className="divide-y border">
+            <div className="space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-3 border bg-muted/20 p-4">
+                <div>
+                  <p className="font-semibold">{detail.order.orderNumber}</p>
+                  <p className="text-sm text-muted-foreground">
+                    {detail.order.items.length} product line(s) · {money(detail.summary.total)}
+                  </p>
+                </div>
+                {canReturn ? (
+                  <Button
+                    disabled={returnPurchase.isPending}
+                    onClick={() => returnPurchase.mutate()}
+                    variant="outline"
+                  >
+                    {returnPurchase.isPending ? (
+                      <Loader2 className="size-4 animate-spin" />
+                    ) : (
+                      <RotateCcw className="size-4" />
+                    )}
+                    Return Purchase
+                  </Button>
+                ) : null}
+              </div>
+              <div className="overflow-x-auto border">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Product</TableHead>
+                      <TableHead className="text-right">Ordered</TableHead>
+                      <TableHead className="text-right">Received</TableHead>
+                      <TableHead className="text-right">Unit price</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {detail.order.items.map((item: any) => (
+                      <TableRow key={item.id}>
+                        <TableCell className="font-medium">{item.productName}</TableCell>
+                        <TableCell className="text-right">
+                          {Number(item.modifiedQty ?? item.quantity).toLocaleString("en-BD")}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {Number(item.receivedQty ?? 0).toLocaleString("en-BD")}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {money(item.modifiedUnitPrice ?? item.unitPrice)}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+              {detail.purchaseHistory.length ? (
+                <div className="divide-y border">
                 {detail.purchaseHistory.map((event: any) => (
                   <div
                     className="grid gap-2 p-4 sm:grid-cols-[170px_1fr_auto]"
@@ -285,10 +373,11 @@ function DetailDialog({
                     <StatusBadge value={event.toState ?? event.eventType} />
                   </div>
                 ))}
-              </div>
-            ) : (
-              <EmptyHistory message="No purchase events have been recorded." />
-            )
+                </div>
+              ) : (
+                <EmptyHistory message="No purchase events have been recorded." />
+              )}
+            </div>
           ) : tab === "payment" ? (
             <div className="space-y-4">
               {canPay || refundPending ? (
@@ -347,7 +436,7 @@ function DetailDialog({
                       value={paymentReference}
                     />
                   </div>
-                  {refundPending ? (
+                  {refundPending && refundStage === "refund_processed" ? (
                     <Button
                       disabled={completeRefund.isPending || !paymentAccountId}
                       onClick={() => completeRefund.mutate()}
@@ -356,6 +445,22 @@ function DetailDialog({
                         <Loader2 className="size-4 animate-spin" />
                       ) : null}
                       Complete Refund
+                    </Button>
+                  ) : refundPending && refundStage === "refund_approved" ? (
+                    <Button
+                      disabled={processRefund.isPending}
+                      onClick={() => processRefund.mutate()}
+                    >
+                      {processRefund.isPending ? <Loader2 className="size-4 animate-spin" /> : null}
+                      Process Refund
+                    </Button>
+                  ) : refundPending ? (
+                    <Button
+                      disabled={approveRefund.isPending}
+                      onClick={() => approveRefund.mutate()}
+                    >
+                      {approveRefund.isPending ? <Loader2 className="size-4 animate-spin" /> : null}
+                      Approve Refund
                     </Button>
                   ) : (
                     <Button
@@ -381,6 +486,7 @@ function DetailDialog({
                         <TableHead>Method</TableHead>
                         <TableHead>Reference</TableHead>
                         <TableHead>Status</TableHead>
+                        <TableHead className="text-right">Due after</TableHead>
                         <TableHead className="text-right">Amount</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -399,6 +505,9 @@ function DetailDialog({
                           </TableCell>
                           <TableCell>
                             <StatusBadge value={payment.status} />
+                          </TableCell>
+                          <TableCell className="text-right">
+                            {money(payment.dueAfter)}
                           </TableCell>
                           <TableCell className="text-right font-semibold">
                             {money(payment.amount)}
@@ -456,7 +565,7 @@ function DetailDialog({
                 <section className="border" key={entry.id}>
                   <div className="flex flex-wrap items-center justify-between gap-2 border-b bg-muted/30 p-3">
                     <div>
-                      <p className="font-semibold">{entry.entryNumber}</p>
+                      <p className="font-semibold">{entry.journalNumber}</p>
                       <p className="text-xs text-muted-foreground">
                         {entry.memo}
                       </p>
@@ -472,7 +581,7 @@ function DetailDialog({
                         key={line.id}
                       >
                         <span>
-                          {line.description ??
+                          {line.accountName ?? line.description ??
                             `Account #${line.financeAccountId}`}
                         </span>
                         <span>Debit {money(line.debit)}</span>
