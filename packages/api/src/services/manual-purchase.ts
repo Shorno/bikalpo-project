@@ -5,13 +5,16 @@ import {
   purchaseItem,
   supplier,
 } from "@bikalpo-project/db/schema";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { localDateStamp, localDateString } from "../utils/date";
 import {
   type ManualPurchaseLine,
   verifyManualPurchaseInput,
 } from "./manual-purchase-domain";
-import { appendManualPurchaseEvent } from "./purchase-history";
+import {
+  appendManualPurchaseEvent,
+  appendPurchaseInventoryMovement,
+} from "./purchase-history";
 
 export type ManualPurchaseItemInput = ManualPurchaseLine & {
   batchNo?: string | null;
@@ -203,4 +206,141 @@ export async function persistManualPurchaseDraft(
     created: true,
     purchase: { ...created, items: itemValues },
   };
+}
+
+export async function confirmManualPurchaseReceipt(
+  tx: any,
+  scope: ManualPurchaseScope,
+  purchaseId: number,
+) {
+  await tx.execute(sql`SELECT pg_advisory_xact_lock(${purchaseId})`);
+  const purchaseRecord = await tx.query.purchase.findFirst({
+    where: and(
+      eq(purchase.id, purchaseId),
+      eq(purchase.warehouseId, scope.ownerId),
+      eq(purchase.ownerType, scope.ownerType),
+    ),
+    with: { items: true },
+  });
+  if (!purchaseRecord) throw new Error("Manual purchase was not found");
+  if (purchaseRecord.status === "received") return purchaseRecord;
+  if (purchaseRecord.status !== "draft") {
+    throw new Error("Only a draft manual purchase can be confirmed");
+  }
+  if (purchaseRecord.verificationStatus !== "verified") {
+    throw new Error(
+      purchaseRecord.verificationMessage || "Manual purchase is on hold",
+    );
+  }
+  if (purchaseRecord.items.length === 0) {
+    throw new Error("Manual purchase has no verified items");
+  }
+
+  const variantIds = purchaseRecord.items
+    .map((item: any) => item.variantId)
+    .filter((id: number | null): id is number => Boolean(id));
+  const inventoryRows = await tx.query.inventory.findMany({
+    where: and(
+      eq(inventory.ownerId, scope.ownerId),
+      eq(inventory.ownerType, scope.ownerType),
+      inArray(inventory.variantId, variantIds),
+    ),
+  });
+  const inventoryByVariant = new Map<number, any>(
+    inventoryRows.map((row: any) => [row.variantId, row]),
+  );
+  if (inventoryByVariant.size !== new Set(variantIds).size) {
+    throw new Error("A purchase item is no longer available in this inventory");
+  }
+
+  const receivedAt = new Date();
+  await appendManualPurchaseEvent(tx, {
+    actorId: scope.actorId,
+    category: "purchase",
+    description: "Manual purchase accepted",
+    eventType: "accepted",
+    fromState: "draft",
+    idempotencyKey: `manual-purchase:${purchaseId}:accepted`,
+    ownerId: scope.ownerId,
+    purchaseId,
+    reference: purchaseRecord.purchaseNumber,
+    toState: "accepted",
+  });
+
+  for (const item of purchaseRecord.items) {
+    if (!item.variantId) continue;
+    const inventoryRow = inventoryByVariant.get(item.variantId);
+    if (!inventoryRow) continue;
+    const quantity = Number(item.quantity);
+    const quantityBefore = Number(inventoryRow.availableQty);
+    const quantityAfter = quantityBefore + quantity;
+
+    await tx
+      .update(inventory)
+      .set({ availableQty: quantityAfter.toFixed(4), updatedAt: receivedAt })
+      .where(eq(inventory.id, inventoryRow.id));
+    await tx
+      .update(purchaseItem)
+      .set({ receivedQty: item.quantity, updatedAt: receivedAt })
+      .where(eq(purchaseItem.id, item.id));
+    await appendPurchaseInventoryMovement(tx, {
+      createdById: scope.actorId,
+      idempotencyKey: `manual-purchase:${purchaseId}:item:${item.id}:receipt`,
+      ownerId: scope.ownerId,
+      ownerType: scope.ownerType,
+      purchaseId,
+      purchaseItemId: item.id,
+      quantity,
+      quantityAfter,
+      reason: "purchase_receipt",
+      reference: purchaseRecord.purchaseNumber,
+      totalCost: Number(item.totalCost),
+      unit: item.quantityUnit,
+      unitCost: Number(item.unitCost),
+      variantId: item.variantId,
+    });
+  }
+
+  await appendManualPurchaseEvent(tx, {
+    actorId: scope.actorId,
+    amount: Number(purchaseRecord.total),
+    category: "inventory",
+    description: "All manual purchase items received into inventory",
+    eventType: "inventory_recognized",
+    fromState: "accepted",
+    idempotencyKey: `manual-purchase:${purchaseId}:inventory`,
+    metadata: {
+      itemCount: purchaseRecord.items.length,
+      receivedAt: receivedAt.toISOString(),
+    },
+    ownerId: scope.ownerId,
+    purchaseId,
+    reference: purchaseRecord.purchaseNumber,
+    toState: "received",
+  });
+  await appendManualPurchaseEvent(tx, {
+    actorId: scope.actorId,
+    amount: Number(purchaseRecord.total),
+    category: "purchase",
+    description: "Manual purchase received",
+    eventType: "received",
+    fromState: "accepted",
+    idempotencyKey: `manual-purchase:${purchaseId}:received`,
+    ownerId: scope.ownerId,
+    purchaseId,
+    reference: purchaseRecord.purchaseNumber,
+    toState: "received",
+  });
+
+  const [updated] = await tx
+    .update(purchase)
+    .set({
+      acceptedAt: receivedAt,
+      receivedAt,
+      status: "received",
+      updatedAt: receivedAt,
+    })
+    .where(eq(purchase.id, purchaseId))
+    .returning();
+  return updated!;
 }
