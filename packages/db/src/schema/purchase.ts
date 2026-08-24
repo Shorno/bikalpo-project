@@ -183,6 +183,12 @@ export const purchaseItem = pgTable(
 
         /** Snapshot of product name at purchase time */
         productName: text("product_name").notNull(),
+        sku: varchar("sku", { length: 100 }),
+        brandName: varchar("brand_name", { length: 180 }),
+        sizeLabel: varchar("size_label", { length: 100 }),
+        quantityUnit: varchar("quantity_unit", { length: 30 })
+            .default("unit")
+            .notNull(),
 
         quantity: decimal("quantity", { precision: 12, scale: 2 }).notNull(),
         unitCost: decimal("unit_cost", { precision: 10, scale: 2 }).notNull(),
@@ -201,6 +207,9 @@ export const purchaseItem = pgTable(
 
         /** Number of empty packs returned to supplier on this item */
         returnPackQty: decimal("return_pack_qty", { precision: 12, scale: 2 })
+            .default("0")
+            .notNull(),
+        exchangeQty: decimal("exchange_qty", { precision: 12, scale: 2 })
             .default("0")
             .notNull(),
 
