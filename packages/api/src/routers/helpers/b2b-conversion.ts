@@ -78,7 +78,8 @@ export async function convertB2bOrderToRetailInventory(tx: any, orderId: number)
 
     // ─── IDEMPOTENCY GUARD ───
     // Receipt can be completed through the retailer or verified self-pickup path.
-    // Skip items already converted to prevent double-counting inventory.
+    // Fully converted items are immutable. Partially converted items can be
+    // claimed again when another receipt increases their cumulative quantity.
     const items = allItems.filter((item: any) => item.conversionStatus !== "converted");
 
     if (items.length === 0) {
@@ -443,15 +444,25 @@ export async function convertB2bOrderToRetailInventory(tx: any, orderId: number)
             item.inventoryQty !== undefined &&
             item.conversionFactor !== null &&
             item.conversionFactor !== undefined;
-        const sourceInventoryQty = hasMovementSnapshot ? Number(item.inventoryQty) : calculatedRetailQty;
+        const fullSourceInventoryQty = hasMovementSnapshot ? Number(item.inventoryQty) : calculatedRetailQty;
         const receivedOrderQty = Number(item.receivedQty ?? orderedQty);
-        const retailerInventoryQty = hasMovementSnapshot
+        const cumulativeRetailerQty = hasMovementSnapshot
             ? getReceivedRetailerQty({
                   receivedOrderQty,
                   approvedOrderQty: orderedQty,
                   retailerInventoryQty: orderedQty * Number(item.conversionFactor),
               })
-            : calculatedRetailQty;
+            : calculatedRetailQty * (receivedOrderQty / orderedQty);
+        const previousConvertedQty = Number(item.convertedQty ?? 0);
+        const retailerInventoryQty = Math.max(0, cumulativeRetailerQty - previousConvertedQty);
+        const previousReceiptRatio = calculatedRetailQty > 0
+            ? Math.min(1, previousConvertedQty / calculatedRetailQty)
+            : 0;
+        const previousReceivedOrderQty = orderedQty * previousReceiptRatio;
+        const receivedOrderDelta = Math.max(0, receivedOrderQty - previousReceivedOrderQty);
+        const cumulativeSourceInventoryQty = fullSourceInventoryQty * (receivedOrderQty / orderedQty);
+        const previousSourceInventoryQty = fullSourceInventoryQty * previousReceiptRatio;
+        const sourceInventoryQty = Math.max(0, cumulativeSourceInventoryQty - previousSourceInventoryQty);
 
         // Calculate per-pack price when doing pack breakdown
         let effectiveRetailPrice = purchaseUnitPrice;
@@ -585,15 +596,13 @@ export async function convertB2bOrderToRetailInventory(tx: any, orderId: number)
 
             // Mark consumed carton records as "sold" (FIFO: oldest first)
             if (allocatedCartons.length > 0) {
+                const cartonIds = allocatedCartons
+                    .slice(0, Math.ceil(receivedOrderDelta))
+                    .map((row: { id: number }) => row.id);
                 await tx
                     .update(carton)
                     .set({ status: "sold" })
-                    .where(
-                        inArray(
-                            carton.id,
-                            allocatedCartons.map((row: { id: number }) => row.id),
-                        ),
-                    );
+                    .where(inArray(carton.id, cartonIds));
             } else if (isCartonOrder && !hasMovementSnapshot) {
                 const activeCartons = await tx.query.carton.findMany({
                     where: and(
@@ -604,7 +613,7 @@ export async function convertB2bOrderToRetailInventory(tx: any, orderId: number)
                     orderBy: [carton.createdAt], // FIFO
                 });
 
-                let cartonsToConsume = orderedQty; // number of cartons ordered
+                let cartonsToConsume = receivedOrderDelta;
                 for (const c of activeCartons) {
                     if (cartonsToConsume <= 0) break;
                     await tx.update(carton).set({ status: "sold" }).where(eq(carton.id, c.id));
@@ -647,10 +656,10 @@ export async function convertB2bOrderToRetailInventory(tx: any, orderId: number)
         await tx
             .update(orderItem)
             .set({
-                conversionStatus: "converted",
-                convertedQty: retailerInventoryQty.toFixed(2),
+                conversionStatus: receivedOrderQty >= orderedQty ? "converted" : "partial",
+                convertedQty: cumulativeRetailerQty.toFixed(2),
             })
-            .where(and(eq(orderItem.id, item.id), sql`${orderItem.conversionStatus} IS DISTINCT FROM 'converted'`));
+            .where(eq(orderItem.id, item.id));
     }
 }
 
@@ -673,8 +682,8 @@ async function transferB2bOrderToWarehouseInventory(
 
         const approvedOrderQty = Number(item.modifiedQty ?? item.quantity);
         const receivedOrderQty = Number(item.receivedQty ?? approvedOrderQty);
-        const sourceInventoryQty = Number(item.inventoryQty ?? approvedOrderQty);
-        const targetInventoryQty =
+        const fullSourceInventoryQty = Number(item.inventoryQty ?? approvedOrderQty);
+        const cumulativeTargetInventoryQty =
             item.conversionFactor !== null && item.conversionFactor !== undefined
                 ? getReceivedRetailerQty({
                       receivedOrderQty,
@@ -682,15 +691,28 @@ async function transferB2bOrderToWarehouseInventory(
                       retailerInventoryQty: approvedOrderQty * Number(item.conversionFactor),
                   })
                 : receivedOrderQty;
+        const previousTargetInventoryQty = Number(item.convertedQty ?? 0);
+        const targetInventoryQty = Math.max(0, cumulativeTargetInventoryQty - previousTargetInventoryQty);
+        const fullTargetInventoryQty = item.conversionFactor !== null && item.conversionFactor !== undefined
+            ? approvedOrderQty * Number(item.conversionFactor)
+            : approvedOrderQty;
+        const previousReceiptRatio = fullTargetInventoryQty > 0
+            ? Math.min(1, previousTargetInventoryQty / fullTargetInventoryQty)
+            : 0;
+        const cumulativeSourceInventoryQty = fullSourceInventoryQty * (receivedOrderQty / approvedOrderQty);
+        const sourceInventoryQty = Math.max(
+            0,
+            cumulativeSourceInventoryQty - fullSourceInventoryQty * previousReceiptRatio,
+        );
         if (
             !Number.isFinite(approvedOrderQty) ||
             !Number.isFinite(receivedOrderQty) ||
-            !Number.isFinite(sourceInventoryQty) ||
+            !Number.isFinite(fullSourceInventoryQty) ||
             !Number.isFinite(targetInventoryQty) ||
             approvedOrderQty <= 0 ||
             receivedOrderQty < 0 ||
             receivedOrderQty > approvedOrderQty ||
-            sourceInventoryQty <= 0 ||
+            fullSourceInventoryQty <= 0 ||
             targetInventoryQty < 0
         ) {
             throw new Error(`Order item ${item.id} has an invalid movement snapshot`);
@@ -839,10 +861,10 @@ async function transferB2bOrderToWarehouseInventory(
         await tx
             .update(orderItem)
             .set({
-                conversionStatus: "converted",
-                convertedQty: targetInventoryQty.toFixed(2),
+                conversionStatus: receivedOrderQty >= approvedOrderQty ? "converted" : "partial",
+                convertedQty: cumulativeTargetInventoryQty.toFixed(2),
             })
-            .where(and(eq(orderItem.id, item.id), sql`${orderItem.conversionStatus} IS DISTINCT FROM 'converted'`));
+            .where(eq(orderItem.id, item.id));
 
         console.log(
             `[B2B-W2W] Transferred source=${item.variantId}, target=${targetVariantId}, sourceQty=${sourceInventoryQty}, receivedQty=${targetInventoryQty}, item=${item.id}`,
