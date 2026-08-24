@@ -2096,7 +2096,7 @@ const mutations = {
 					.array(
 						z.object({
 							itemId: z.number(),
-							receivedQty: z.number().int().min(0),
+							receivedQty: z.number().min(0),
 						}),
 					)
 					.optional(),
@@ -2154,16 +2154,30 @@ const mutations = {
 						message: `${item.productName} is not fully delivered yet`,
 					});
 				}
+				const priorReceivedQty = Number(item.receivedQty ?? 0);
 				if (
-					receivedQty < 0 ||
+					receivedQty < priorReceivedQty ||
 					receivedQty > deliveredQty ||
 					receivedQty > approvedQty
 				) {
 					throw new ORPCError("BAD_REQUEST", {
-						message: `Received quantity for ${item.productName} must be between 0 and ${Math.min(deliveredQty, approvedQty)}`,
+						message: `Received quantity for ${item.productName} must be between ${priorReceivedQty} and ${Math.min(deliveredQty, approvedQty)}`,
 					});
 				}
 				return { itemId: item.id, receivedQty };
+			});
+			const hasNewReceipt = receiptRows.some((receipt) => {
+				const item = existingOrder.items.find((row) => row.id === receipt.itemId);
+				return receipt.receivedQty > Number(item?.receivedQty ?? 0);
+			});
+			if (!hasNewReceipt) {
+				throw new ORPCError("BAD_REQUEST", {
+					message: "At least one received quantity must increase",
+				});
+			}
+			const fullyReceived = receiptRows.every((receipt) => {
+				const item = existingOrder.items.find((row) => row.id === receipt.itemId);
+				return receipt.receivedQty >= Number(item?.modifiedQty ?? item?.quantity ?? 0);
 			});
 
 			const receivedAt = new Date();
@@ -2171,20 +2185,20 @@ const mutations = {
 				const claimed = await tx
 					.update(order)
 					.set({
-						receivedAt,
+						receivedAt: fullyReceived ? receivedAt : null,
+						updatedAt: receivedAt,
 					})
 					.where(
 						and(
 							eq(order.id, input.orderId),
 							eq(order.status, "delivered"),
-							sql`${order.receivedAt} IS NULL`,
 						),
 					)
 					.returning({ id: order.id });
 				if (claimed.length === 0) {
 					throw new ORPCError("BAD_REQUEST", {
 						message:
-							"Order receipt was already completed or its status changed",
+							"Order receipt status changed while it was being updated",
 					});
 				}
 
@@ -2208,7 +2222,10 @@ const mutations = {
 
 			return {
 				success: true,
-				message: `Order ${existingOrder.orderNumber} received successfully`,
+				message: fullyReceived
+					? `Order ${existingOrder.orderNumber} received successfully`
+					: `Partial receipt saved for ${existingOrder.orderNumber}`,
+				purchaseStatus: fullyReceived ? "received" : "partially_received",
 			};
 		}),
 
