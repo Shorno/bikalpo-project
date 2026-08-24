@@ -5,6 +5,11 @@ import { and, desc, eq, ilike, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { protectedProcedure } from "../index";
+import {
+    confirmManualPurchaseReceipt,
+    persistManualPurchaseDraft,
+    recordManualPurchasePayment,
+} from "../services/manual-purchase";
 import { localDateStamp, localDateString } from "../utils/date";
 
 /** Generate unique purchase number: PO-YYYYMMDD-NNN */
@@ -22,7 +27,158 @@ async function generatePurchaseNumber(warehouseId: string): Promise<string> {
     return `${prefix}${String(seq).padStart(3, "0")}`;
 }
 
+function manualPurchaseScope(user: { id: string; role?: string | null }) {
+    if (user.role === "shop_owner") {
+        return { actorId: user.id, ownerId: user.id, ownerType: "shop" as const };
+    }
+    if (user.role === "warehouse") {
+        return {
+            actorId: user.id,
+            ownerId: user.id,
+            ownerType: "warehouse" as const,
+        };
+    }
+    throw new ORPCError("FORBIDDEN", {
+        message: "Manual purchases require a shop or warehouse account",
+    });
+}
+
+const manualPurchaseInput = z.object({
+    attachmentName: z.string().max(255).optional().nullable(),
+    attachmentUrl: z.string().url().max(2000).optional().nullable(),
+    discount: z.number().min(0).default(0),
+    entryMode: z.enum(["new", "exchange"]).default("new"),
+    idempotencyKey: z.string().min(8).max(120),
+    items: z.array(z.object({
+        batchNo: z.string().max(100).optional().nullable(),
+        exchangeQty: z.number().min(0).default(0),
+        expiryDate: z.string().optional().nullable(),
+        inventoryId: z.number().int().positive(),
+        quantity: z.number().positive(),
+        unitCost: z.number().min(0),
+    })).min(1),
+    note: z.string().max(2000).optional().nullable(),
+    paidAmount: z.number().min(0).default(0),
+    paymentAccountId: z.number().int().positive().optional().nullable(),
+    paymentMethod: z.string().max(50).optional().nullable(),
+    purchaseDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().nullable(),
+    supplierId: z.number().int().positive(),
+    supplierInvoiceNo: z.string().max(100).optional().nullable(),
+    vatAmount: z.number().min(0).default(0),
+});
+
 export const purchaseRouter = {
+    saveManualDraft: protectedProcedure
+        .route({
+            method: "POST",
+            path: "/purchases/manual/draft",
+            tags: ["Purchase Management"],
+            summary: "Save and verify a manual purchase draft",
+        })
+        .input(manualPurchaseInput)
+        .handler(async ({ context, input }) => {
+            const scope = manualPurchaseScope(context.session.user);
+            const result = await db.transaction((tx) =>
+                persistManualPurchaseDraft(tx, scope, input),
+            );
+            return {
+                purchase: result.purchase,
+                verificationStatus: result.purchase.verificationStatus,
+            };
+        }),
+
+    confirmManual: protectedProcedure
+        .route({
+            method: "POST",
+            path: "/purchases/manual/confirm",
+            tags: ["Purchase Management"],
+            summary: "Confirm a verified manual purchase and add stock",
+        })
+        .input(manualPurchaseInput)
+        .handler(async ({ context, input }) => {
+            const scope = manualPurchaseScope(context.session.user);
+            try {
+                return await db.transaction(async (tx) => {
+                    const draft = await persistManualPurchaseDraft(tx, scope, input);
+                    if (draft.purchase.verificationStatus !== "verified") {
+                        return {
+                            confirmed: false,
+                            purchase: draft.purchase,
+                            verificationStatus: draft.purchase.verificationStatus,
+                        };
+                    }
+                    const received = await confirmManualPurchaseReceipt(
+                        tx,
+                        scope,
+                        draft.purchase.id,
+                    );
+                    if (input.paidAmount > 0) {
+                        if (!input.paymentAccountId || !input.paymentMethod) {
+                            throw new Error(
+                                "Select a payment method and cash or bank account",
+                            );
+                        }
+                        await recordManualPurchasePayment(tx, scope, {
+                            amount: input.paidAmount,
+                            idempotencyKey: `${input.idempotencyKey}:initial-payment`,
+                            paymentAccountId: input.paymentAccountId,
+                            paymentMethod: input.paymentMethod,
+                            purchaseId: received.id,
+                            referenceNo: input.supplierInvoiceNo,
+                        });
+                    }
+                    const complete = await tx.query.purchase.findFirst({
+                        where: eq(purchase.id, received.id),
+                        with: { items: true, supplier: true },
+                    });
+                    return {
+                        confirmed: true,
+                        purchase: complete!,
+                        verificationStatus: "verified" as const,
+                    };
+                });
+            } catch (error) {
+                if (error instanceof ORPCError) throw error;
+                throw new ORPCError("BAD_REQUEST", {
+                    message:
+                        error instanceof Error
+                            ? error.message
+                            : "Manual purchase confirmation failed",
+                });
+            }
+        }),
+
+    addManualPayment: protectedProcedure
+        .route({
+            method: "POST",
+            path: "/purchases/manual/payments",
+            tags: ["Purchase Management"],
+            summary: "Add an advance or due payment to a manual purchase",
+        })
+        .input(z.object({
+            amount: z.number().positive(),
+            idempotencyKey: z.string().min(8).max(120),
+            paymentAccountId: z.number().int().positive(),
+            paymentMethod: z.string().min(1).max(50),
+            purchaseId: z.number().int().positive(),
+            referenceNo: z.string().max(180).optional().nullable(),
+            transactionId: z.string().max(255).optional().nullable(),
+        }))
+        .handler(async ({ context, input }) => {
+            const scope = manualPurchaseScope(context.session.user);
+            try {
+                const paymentRecord = await db.transaction((tx) =>
+                    recordManualPurchasePayment(tx, scope, input),
+                );
+                return { payment: paymentRecord, success: true };
+            } catch (error) {
+                throw new ORPCError("BAD_REQUEST", {
+                    message:
+                        error instanceof Error ? error.message : "Payment failed",
+                });
+            }
+        }),
+
     /** Create a purchase with line items */
     create: protectedProcedure
         .route({ method: "POST", path: "/purchases/create", tags: ["Purchase Management"], summary: "Create purchase" })
