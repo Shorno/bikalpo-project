@@ -2679,6 +2679,18 @@ const orderQueries = {
 					),
 				)
 				.orderBy(desc(order.receivedAt));
+			const manualPurchases = await db.query.purchase.findMany({
+				where: and(
+					eq(purchase.warehouseId, userId),
+					eq(purchase.ownerType, "shop"),
+					inArray(purchase.status, ["received", "cancelled"]),
+					isNotNull(purchase.receivedAt),
+					gte(purchase.receivedAt, dateFrom),
+					lte(purchase.receivedAt, dateTo),
+				),
+				orderBy: [desc(purchase.receivedAt)],
+				with: { supplier: true },
+			});
 
 			const warehouseIds = [
 				...new Set(
@@ -2715,7 +2727,13 @@ const orderQueries = {
 				id: warehouseId,
 				name: warehouseNames.get(warehouseId) ?? "Unknown supplier",
 			}));
-			const rows = reportOrders
+			for (const manual of manualPurchases) {
+				const supplierId = `manual:${manual.supplierId}`;
+				if (!suppliers.some((item) => item.id === supplierId)) {
+					suppliers.push({ id: supplierId, name: manual.supplier.name });
+				}
+			}
+			const platformRows = reportOrders
 				.filter(
 					(purchaseOrder) =>
 						!input.warehouseId ||
@@ -2741,6 +2759,30 @@ const orderQueries = {
 						warehouseId: purchaseOrder.warehouseId,
 					};
 				});
+			const manualRows = manualPurchases
+				.filter(
+					(item) =>
+						!input.warehouseId ||
+						input.warehouseId === `manual:${item.supplierId}`,
+				)
+				.map((item) => {
+					const cancelled = item.status === "cancelled";
+					return {
+						amount: Number(item.subtotal),
+						date: item.receivedAt!,
+						detailHref: `/dashboard/purchases/manual/${item.id}`,
+						discount: Number(item.discount),
+						id: `manual:${item.id}`,
+						net: cancelled ? 0 : Number(item.total),
+						poNo: item.purchaseNumber,
+						returnAmount: cancelled ? Number(item.total) : 0,
+						supplier: item.supplier.name,
+						warehouseId: `manual:${item.supplierId}`,
+					};
+				});
+			const rows = [...platformRows, ...manualRows].sort(
+				(left, right) => right.date.getTime() - left.date.getTime(),
+			);
 
 			return {
 				rows,
