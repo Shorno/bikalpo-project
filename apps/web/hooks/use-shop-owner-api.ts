@@ -1004,6 +1004,60 @@ export function useAddShopStock() {
   );
 }
 
+/** Suppliers owned by the current business for manual purchase entry. */
+export function useManualPurchaseSuppliers() {
+  return useQuery(
+    orpc.purchase.getSuppliers.queryOptions({
+      input: {},
+      staleTime: 1000 * 60,
+    }),
+  );
+}
+
+/** Cash and bank accounts available to fund a manual purchase. */
+export function useManualPurchasePaymentAccounts() {
+  return useQuery(
+    orpc.finance.getPaymentAccounts.queryOptions({
+      input: {},
+      staleTime: 1000 * 30,
+    }),
+  );
+}
+
+export function useSaveManualPurchaseDraft() {
+  const queryClient = useQueryClient();
+  return useMutation(
+    orpc.purchase.saveManualDraft.mutationOptions({
+      onSuccess: () => {
+        queryClient.invalidateQueries({
+          queryKey: orpc.purchase.listManual.key(),
+        });
+      },
+    }),
+  );
+}
+
+export function useConfirmManualPurchase() {
+  const queryClient = useQueryClient();
+  return useMutation(
+    orpc.purchase.confirmManual.mutationOptions({
+      onSuccess: () => {
+        for (const queryKey of [
+          orpc.purchase.listManual.key(),
+          [["shopOwner", "getMyRetailProducts"]],
+          [["shopOwner", "getMyInventory"]],
+          [["shopOwner", "getShopProductsForStock"]],
+          [["shopOwner", "getPurchaseReport"]],
+          [["shopOwner", "getAccountsPayableReport"]],
+          orpc.finance.getPaymentAccounts.key(),
+        ]) {
+          queryClient.invalidateQueries({ queryKey });
+        }
+      },
+    }),
+  );
+}
+
 // ────────────────────────────────────────────────────────────────
 // STOCK ADJUSTMENT HOOKS
 // ────────────────────────────────────────────────────────────────
