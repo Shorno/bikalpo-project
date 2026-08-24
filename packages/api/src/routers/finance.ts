@@ -16,10 +16,24 @@ import {
   financeCategory,
   financePaymentAccount,
   financialLedger,
+  journalEntry,
+  journalLine,
   supplier,
 } from "@bikalpo-project/db/schema";
 import { ORPCError } from "@orpc/server";
-import { and, asc, eq, ilike, inArray, isNull, ne, or, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  eq,
+  gte,
+  ilike,
+  inArray,
+  isNull,
+  lte,
+  ne,
+  or,
+  sql,
+} from "drizzle-orm";
 import { z } from "zod";
 
 import { protectedProcedure } from "../index";
@@ -606,6 +620,13 @@ function ledgerDateValue(value: Date) {
     2,
     "0",
   )}-${String(value.getDate()).padStart(2, "0")}`;
+}
+
+function journalTransactionTypeLabel(value: string) {
+  return value
+    .split("_")
+    .map((word) => `${word.charAt(0).toUpperCase()}${word.slice(1)}`)
+    .join(" ");
 }
 
 function resolveAccountReportLines(input: {
@@ -2777,71 +2798,105 @@ export const financeRouter = {
           ? Number(input.accountId)
           : null;
 
-      const [accountRows, paymentRows, ledgerRows, expenseNumberRows] =
-        await Promise.all([
-          db
-            .select({
-              accountType: financeAccount.accountType,
-              categoryName: financeCategory.name,
-              currentBalance: financeAccount.currentBalance,
-              id: financeAccount.id,
-              isPaymentAccount: financeAccount.isPaymentAccount,
-              name: financeAccount.name,
-              normalBalance: financeAccount.normalBalance,
-              openingBalance: financeAccount.openingBalance,
-              sortOrder: financeAccount.sortOrder,
-            })
-            .from(financeAccount)
-            .innerJoin(
-              financeCategory,
-              eq(financeAccount.categoryId, financeCategory.id),
-            )
-            .where(
-              and(
-                eq(financeAccount.ownerId, ownerId),
-                eq(financeAccount.ownerType, ownerType),
-                eq(financeAccount.isActive, true),
-              ),
-            )
-            .orderBy(
-              asc(financeAccount.accountType),
-              asc(financeAccount.sortOrder),
-              asc(financeAccount.name),
+      const [
+        accountRows,
+        paymentRows,
+        ledgerRows,
+        journalRows,
+        expenseNumberRows,
+      ] = await Promise.all([
+        db
+          .select({
+            accountType: financeAccount.accountType,
+            categoryName: financeCategory.name,
+            currentBalance: financeAccount.currentBalance,
+            id: financeAccount.id,
+            isPaymentAccount: financeAccount.isPaymentAccount,
+            name: financeAccount.name,
+            normalBalance: financeAccount.normalBalance,
+            openingBalance: financeAccount.openingBalance,
+            sortOrder: financeAccount.sortOrder,
+          })
+          .from(financeAccount)
+          .innerJoin(
+            financeCategory,
+            eq(financeAccount.categoryId, financeCategory.id),
+          )
+          .where(
+            and(
+              eq(financeAccount.ownerId, ownerId),
+              eq(financeAccount.ownerType, ownerType),
+              eq(financeAccount.isActive, true),
             ),
-          db.query.financePaymentAccount.findMany({
-            where: (table, { and: andFn, eq: eqFn }) =>
-              andFn(
-                eqFn(table.ownerId, ownerId),
-                eqFn(table.ownerType, ownerType),
-                eqFn(table.isActive, true),
-              ),
-          }),
-          db.query.financialLedger.findMany({
-            where: (table, { and: andFn, eq: eqFn, gte: gteFn, lte: lteFn }) =>
-              andFn(
-                eqFn(table.ownerId, ownerId),
-                eqFn(table.ownerType, ownerType),
-                gteFn(table.createdAt, startDateTime),
-                lteFn(table.createdAt, endDateTime),
-              ),
-            orderBy: (table, { asc: ascFn }) => [
-              ascFn(table.createdAt),
-              ascFn(table.id),
-            ],
-          }),
-          db
-            .select({
-              expenseNumber: expense.expenseNumber,
-              id: expense.id,
-            })
-            .from(expense)
-            .where(
-              and(
-                eq(expense.ownerId, ownerId),
-                eq(expense.ownerType, ownerType),
-              ),
+          )
+          .orderBy(
+            asc(financeAccount.accountType),
+            asc(financeAccount.sortOrder),
+            asc(financeAccount.name),
+          ),
+        db.query.financePaymentAccount.findMany({
+          where: (table, { and: andFn, eq: eqFn }) =>
+            andFn(
+              eqFn(table.ownerId, ownerId),
+              eqFn(table.ownerType, ownerType),
+              eqFn(table.isActive, true),
             ),
-        ]);
+        }),
+        db.query.financialLedger.findMany({
+          where: (table, { and: andFn, eq: eqFn, gte: gteFn, lte: lteFn }) =>
+            andFn(
+              eqFn(table.ownerId, ownerId),
+              eqFn(table.ownerType, ownerType),
+              gteFn(table.createdAt, startDateTime),
+              lteFn(table.createdAt, endDateTime),
+            ),
+          orderBy: (table, { asc: ascFn }) => [
+            ascFn(table.createdAt),
+            ascFn(table.id),
+          ],
+        }),
+        db
+          .select({
+            accountId: journalLine.financeAccountId,
+            credit: journalLine.credit,
+            debit: journalLine.debit,
+            entryId: journalEntry.id,
+            lineId: journalLine.id,
+            memo: journalLine.memo,
+            sourceId: journalEntry.sourceId,
+            sourceType: journalEntry.sourceType,
+            transactionDate: journalEntry.transactionDate,
+            transactionType: journalEntry.transactionType,
+          })
+          .from(journalLine)
+          .innerJoin(
+            journalEntry,
+            eq(journalLine.journalEntryId, journalEntry.id),
+          )
+          .where(
+            and(
+              eq(journalEntry.ownerId, ownerId),
+              eq(journalEntry.ownerType, ownerType),
+              eq(journalEntry.status, "posted"),
+              gte(journalEntry.transactionDate, input.startDate),
+              lte(journalEntry.transactionDate, input.endDate),
+            ),
+          )
+          .orderBy(
+            asc(journalEntry.transactionDate),
+            asc(journalEntry.id),
+            asc(journalLine.lineOrder),
+          ),
+        db
+          .select({
+            expenseNumber: expense.expenseNumber,
+            id: expense.id,
+          })
+          .from(expense)
+          .where(
+            and(eq(expense.ownerId, ownerId), eq(expense.ownerType, ownerType)),
+          ),
+      ]);
 
       const paymentById = new Map(paymentRows.map((row) => [row.id, row]));
       const paymentByName = new Map(
@@ -2868,6 +2923,7 @@ export const financeRouter = {
           date: string;
           description: string;
           direction: "credit" | "debit";
+          editable: boolean;
           id: number;
           referenceId: number;
           referenceType: string;
@@ -2929,6 +2985,7 @@ export const financeRouter = {
               referenceType: row.referenceType,
             }),
             direction: row.direction,
+            editable: true,
             id: row.id,
             referenceId: row.referenceId,
             referenceType: row.referenceType,
@@ -2942,9 +2999,51 @@ export const financeRouter = {
         }
       }
 
+      for (const row of journalRows) {
+        const account = accountsById.get(row.accountId);
+        if (!account) continue;
+
+        const debit = parseMoney(row.debit);
+        const credit = parseMoney(row.credit);
+        const direction = debit > 0 ? "debit" : "credit";
+        const amount = debit > 0 ? debit : credit;
+        if (amount <= 0) continue;
+
+        const signedAmount = signedLedgerAmount({
+          accountType: account.accountType,
+          amount,
+          direction,
+          isPaymentAccount: account.isPaymentAccount,
+          normalBalance: account.normalBalance,
+        });
+        const currentRows = ledgerByAccount.get(row.accountId) ?? [];
+        const referenceId = Number(row.sourceId);
+
+        currentRows.push({
+          amount: toMoney(amount),
+          balance: "0.00",
+          createdAt: new Date(`${row.transactionDate}T12:00:00.000`),
+          date: row.transactionDate,
+          description:
+            row.memo || journalTransactionTypeLabel(row.transactionType),
+          direction,
+          editable: false,
+          id: -row.lineId,
+          referenceId: Number.isFinite(referenceId) ? referenceId : row.entryId,
+          referenceType: row.sourceType,
+          signedAmount: toMoney(signedAmount),
+          transactionType: journalTransactionTypeLabel(row.transactionType),
+        });
+        ledgerByAccount.set(row.accountId, currentRows);
+      }
+
       const accounts = accountRows
         .map((account) => {
-          const rows = ledgerByAccount.get(account.id) ?? [];
+          const rows = [...(ledgerByAccount.get(account.id) ?? [])].sort(
+            (left, right) =>
+              left.createdAt.getTime() - right.createdAt.getTime() ||
+              left.id - right.id,
+          );
           const paymentAccount = account.isPaymentAccount
             ? paymentByFinanceAccountId.get(account.id)
             : null;
