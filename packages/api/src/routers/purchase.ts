@@ -334,6 +334,31 @@ export const purchaseRouter = {
             }
         }),
 
+    confirmSavedManual: protectedProcedure
+        .route({
+            method: "POST",
+            path: "/purchases/manual/confirm-saved",
+            tags: ["Purchase Management"],
+            summary: "Confirm a saved verified manual purchase and add stock",
+        })
+        .input(z.object({ purchaseId: z.number().int().positive() }))
+        .handler(async ({ context, input }) => {
+            const scope = manualPurchaseScope(context.session.user);
+            try {
+                const received = await db.transaction((tx) =>
+                    confirmManualPurchaseReceipt(tx, scope, input.purchaseId),
+                );
+                return { confirmed: true, purchase: received };
+            } catch (error) {
+                throw new ORPCError("BAD_REQUEST", {
+                    message:
+                        error instanceof Error
+                            ? error.message
+                            : "Manual purchase confirmation failed",
+                });
+            }
+        }),
+
     addManualPayment: protectedProcedure
         .route({
             method: "POST",

@@ -156,7 +156,9 @@ export default function AddStockPage() {
       toast.success(mode === "draft"
         ? `${result.purchase.purchaseNumber} saved as a verified draft`
         : `${result.purchase.purchaseNumber} confirmed and stock added`);
-      if (mode === "confirm") router.push("/dashboard/stock");
+      router.push(mode === "draft"
+        ? `/dashboard/purchases/manual/${result.purchase.id}`
+        : "/dashboard/stock");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Manual purchase failed");
     }

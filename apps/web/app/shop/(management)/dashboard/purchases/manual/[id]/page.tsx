@@ -52,6 +52,14 @@ export default function ManualPurchaseDetailPage() {
     onSuccess: async () => { toast.success("Purchase payment recorded"); setPaymentAmount(""); await refresh(); },
     onError: (error) => toast.error(error.message),
   });
+  const confirmDraft = useMutation({
+    mutationFn: () => orpc.purchase.confirmSavedManual.call({ purchaseId }),
+    onSuccess: async () => {
+      toast.success("Purchase confirmed and stock added");
+      await refresh();
+    },
+    onError: (error) => toast.error(error.message),
+  });
   const cancelPurchase = useMutation({
     mutationFn: () => orpc.purchase.cancelManual.call({ purchaseId, reason: "Cancelled from manual purchase details" }),
     onSuccess: async () => { toast.success("Purchase cancelled and connected records reversed"); await refresh(); },
@@ -101,6 +109,7 @@ export default function ManualPurchaseDetailPage() {
           <div><Label>Cash / Bank account</Label><Select onValueChange={setPaymentAccountId} value={paymentAccountId}><SelectTrigger className="mt-2 w-full"><SelectValue placeholder="Select account" /></SelectTrigger><SelectContent>{(accounts.data?.paymentAccounts ?? []).filter((account) => account.type === paymentMethod).map((account) => <SelectItem key={account.id} value={account.id}>{account.name} ({money(account.balance)})</SelectItem>)}</SelectContent></Select></div>
         </div>
         <div className="flex flex-wrap items-end gap-2">
+          {purchase.status === "draft" && purchase.verificationStatus === "verified" ? <Button disabled={confirmDraft.isPending} onClick={() => confirmDraft.mutate()}>{confirmDraft.isPending ? <Loader2 className="animate-spin" /> : null} Confirm & Add Stock</Button> : null}
           {purchase.status !== "cancelled" && Number(purchase.dueAmount) > 0 ? <Button disabled={!paymentAccountId || Number(paymentAmount) <= 0 || addPayment.isPending} onClick={() => addPayment.mutate()}><WalletCards /> Add Payment</Button> : null}
           {purchase.status !== "cancelled" ? <Button disabled={cancelPurchase.isPending} onClick={() => cancelPurchase.mutate()} variant="destructive"><XCircle /> Cancel Purchase</Button> : null}
         </div>
