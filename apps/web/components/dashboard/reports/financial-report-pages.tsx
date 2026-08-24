@@ -39,13 +39,20 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  useAccountsPayableReport,
+  usePurchaseReport,
+} from "@/hooks/use-shop-owner-api";
 import { cn } from "@/lib/utils";
 
 const BDT = "\u09F3";
-const DEFAULT_YEAR = "2026";
-const DEFAULT_START_DATE = "2026-01-01";
-const DEFAULT_END_DATE = "2026-07-18";
-const YEAR_OPTIONS = ["2026", "2025", "2024", "2023"];
+const TODAY = new Date().toISOString().slice(0, 10);
+const DEFAULT_YEAR = TODAY.slice(0, 4);
+const DEFAULT_START_DATE = `${DEFAULT_YEAR}-01-01`;
+const DEFAULT_END_DATE = TODAY;
+const YEAR_OPTIONS = Array.from({ length: 4 }, (_, index) =>
+  String(Number(DEFAULT_YEAR) - index),
+);
 
 const reportCards = [
   {
@@ -129,6 +136,7 @@ type PurchaseRow = {
   poNo: string;
   returnAmount: number;
   supplier: string;
+  detailHref: string;
 };
 
 type PayableRow = {
@@ -138,6 +146,8 @@ type PayableRow = {
   due: number;
   dueDate: string;
   id: string;
+  orderNo: string;
+  paymentMethod: EditableEntry["paymentMethod"];
   status: "Overdue" | "Paid" | "Unpaid";
   supplier: string;
   totalBill: number;
@@ -227,100 +237,6 @@ const salesRows: SalesRow[] = [
     invoiceNo: "INV-100248",
     net: 45000,
     returnAmount: 0,
-  },
-];
-
-const purchaseRows: PurchaseRow[] = [
-  {
-    amount: 25000,
-    date: "17 Jul",
-    dateIso: "2026-07-17",
-    discount: 500,
-    id: "purchase-100245",
-    net: 24500,
-    poNo: "PO-100245",
-    returnAmount: 0,
-    supplier: "ABC Distributor",
-  },
-  {
-    amount: 18000,
-    date: "17 Jul",
-    dateIso: "2026-07-17",
-    discount: 0,
-    id: "purchase-100246",
-    net: 18000,
-    poNo: "PO-100246",
-    returnAmount: 0,
-    supplier: "XYZ Traders",
-  },
-  {
-    amount: 32000,
-    date: "18 Jul",
-    dateIso: "2026-07-18",
-    discount: 1000,
-    id: "purchase-100247",
-    net: 30500,
-    poNo: "PO-100247",
-    returnAmount: 500,
-    supplier: "Noor Enterprise",
-  },
-  {
-    amount: 45000,
-    date: "18 Jul",
-    dateIso: "2026-07-18",
-    discount: 0,
-    id: "purchase-100248",
-    net: 45000,
-    poNo: "PO-100248",
-    returnAmount: 0,
-    supplier: "Delta Supply",
-  },
-];
-
-const payableRows: PayableRow[] = [
-  {
-    billNo: "BILL-100245",
-    date: "17 Jul",
-    dateIso: "2026-07-17",
-    due: 25000,
-    dueDate: "30 Jul",
-    id: "payable-100245",
-    status: "Unpaid",
-    supplier: "ABC Distributor",
-    totalBill: 25000,
-  },
-  {
-    billNo: "BILL-100246",
-    date: "18 Jul",
-    dateIso: "2026-07-18",
-    due: 0,
-    dueDate: "25 Jul",
-    id: "payable-100246",
-    status: "Paid",
-    supplier: "Noor Enterprise",
-    totalBill: 18000,
-  },
-  {
-    billNo: "BILL-100247",
-    date: "19 Jul",
-    dateIso: "2026-07-19",
-    due: 32000,
-    dueDate: "28 Jul",
-    id: "payable-100247",
-    status: "Unpaid",
-    supplier: "Delta Supply",
-    totalBill: 32000,
-  },
-  {
-    billNo: "BILL-100248",
-    date: "20 Jul",
-    dateIso: "2026-07-20",
-    due: 25000,
-    dueDate: "15 Jul",
-    id: "payable-100248",
-    status: "Overdue",
-    supplier: "XYZ Traders",
-    totalBill: 45000,
   },
 ];
 
@@ -426,11 +342,18 @@ const initialReceivableEntry: EditableEntry = {
 function payableEntryFromRow(row: PayableRow): EditableEntry {
   return {
     ...initialPayableEntry,
+    accountLine: "Supplier Payable",
+    accountLineDescription: `Purchase order ${row.orderNo}`,
     amount: row.due,
     date: row.dateIso,
     idNo: row.billNo,
     partyName: row.supplier,
-    referenceNo: `REF-${row.billNo.replace("BILL-", "")}`,
+    paymentMethod: row.paymentMethod,
+    productName: "Wholesale purchase",
+    referenceCode: row.billNo,
+    referenceNo: row.orderNo,
+    secondaryCode: row.orderNo,
+    senderName: row.supplier,
     total: row.totalBill,
     totalPaid: Math.max(0, row.totalBill - row.due),
   };
@@ -523,7 +446,8 @@ function useReportFilters(defaultParty = "all") {
       [key]: value,
       ...(key === "year"
         ? {
-            endDate: `${value}-07-18`,
+            endDate:
+              value === DEFAULT_YEAR ? DEFAULT_END_DATE : `${value}-12-31`,
             startDate: `${value}-01-01`,
           }
         : null),
@@ -622,6 +546,7 @@ function mapSalesRows(rows: SalesRow[]): ReportTableRow[] {
 function mapPurchaseRows(rows: PurchaseRow[]): ReportTableRow[] {
   return rows.map((row) => ({
     id: row.id,
+    links: { poNo: row.detailHref },
     values: {
       amount: money(row.amount),
       date: row.date,
@@ -771,21 +696,35 @@ export function ReportsIndexPage() {
 
 export function PurchaseReportPage() {
   const { filters, updateFilter } = useReportFilters();
-  const filteredRows = useMemo(
-    () =>
-      purchaseRows.filter(
-        (row) =>
-          isWithinRange(row.dateIso, filters) &&
-          (filters.party === "all" || row.supplier === filters.party),
-      ),
-    [filters],
-  );
-  const tableRows = mapPurchaseRows(filteredRows);
+  const purchaseReport = usePurchaseReport({
+    dateFrom: filters.startDate,
+    dateTo: filters.endDate,
+    warehouseId: filters.party === "all" ? undefined : filters.party,
+  });
+  const rows: PurchaseRow[] = (purchaseReport.data?.rows ?? []).map((row) => {
+    const dateIso = new Date(row.date).toISOString().slice(0, 10);
+
+    return {
+      ...row,
+      date: shortReportDate(dateIso),
+      dateIso,
+      detailHref: `/dashboard/orders/${row.id}`,
+      id: String(row.id),
+    };
+  });
+  const tableRows = mapPurchaseRows(rows);
+  const summary = purchaseReport.data?.summary ?? {
+    discount: 0,
+    netPurchase: 0,
+    returnAmount: 0,
+    totalOrders: 0,
+    totalPurchase: 0,
+  };
   const partyOptions = [
     { label: "All Suppliers", value: "all" },
-    ...purchaseRows.map((row) => ({
-      label: row.supplier,
-      value: row.supplier,
+    ...(purchaseReport.data?.suppliers ?? []).map((supplier) => ({
+      label: supplier.name,
+      value: supplier.id,
     })),
   ];
 
@@ -801,45 +740,108 @@ export function PurchaseReportPage() {
       <ReportFilters
         filters={filters}
         onChange={updateFilter}
+        onUpdate={() => purchaseReport.refetch()}
         partyLabel="Supplier"
         partyOptions={partyOptions}
+        updating={purchaseReport.isFetching}
       />
       <SummaryStrip
         metrics={[
-          { label: "Total Purchase Orders", tone: "blue", value: "98 Orders" },
-          { label: "Total Purchase", tone: "emerald", value: money(985000) },
-          { label: "Discount", tone: "amber", value: money(12000) },
-          { label: "Return", tone: "rose", value: money(8000) },
-          { label: "Net Purchase", tone: "slate", value: money(965000) },
+          {
+            label: "Total Purchase Orders",
+            tone: "blue",
+            value: `${summary.totalOrders} ${summary.totalOrders === 1 ? "Order" : "Orders"}`,
+          },
+          {
+            label: "Total Purchase",
+            tone: "emerald",
+            value: money(summary.totalPurchase),
+          },
+          { label: "Discount", tone: "amber", value: money(summary.discount) },
+          {
+            label: "Return",
+            tone: "rose",
+            value: money(summary.returnAmount),
+          },
+          {
+            label: "Net Purchase",
+            tone: "slate",
+            value: money(summary.netPurchase),
+          },
         ]}
       />
-      <ReportTable columns={purchaseColumns} rows={tableRows} />
+      {purchaseReport.isLoading ? (
+        <ReportNotice>Loading received purchases...</ReportNotice>
+      ) : purchaseReport.isError ? (
+        <ReportNotice tone="error">
+          Could not load the purchase report. Please update the report again.
+        </ReportNotice>
+      ) : (
+        <ReportTable columns={purchaseColumns} rows={tableRows} />
+      )}
     </ReportShell>
   );
 }
 
 export function AccountsPayableReportPage() {
   const { filters, updateFilter } = useReportFilters();
-  const [entries, setEntries] = useState<Record<string, EditableEntry>>(() =>
-    Object.fromEntries(
-      payableRows.map((row) => [row.id, payableEntryFromRow(row)]),
-    ),
-  );
+  const payableReport = useAccountsPayableReport({
+    dateFrom: filters.startDate,
+    dateTo: filters.endDate,
+    supplierKey: filters.party === "all" ? undefined : filters.party,
+  });
+  const rows: PayableRow[] = (payableReport.data?.rows ?? []).map((row) => {
+    const dateIso = new Date(row.date).toISOString().slice(0, 10);
+    const dueDateIso = row.dueDate
+      ? new Date(row.dueDate).toISOString().slice(0, 10)
+      : null;
+
+    return {
+      billNo: row.billNo,
+      date: shortReportDate(dateIso),
+      dateIso,
+      due: row.due,
+      dueDate: dueDateIso ? shortReportDate(dueDateIso) : "Due now",
+      id: String(row.id),
+      orderNo: row.orderNo,
+      paymentMethod:
+        row.paymentMethod === "bank_transfer"
+          ? "bank"
+          : row.paymentMethod === "bkash" || row.paymentMethod === "nagad"
+            ? "mobile-banking"
+            : "cash",
+      status: row.status,
+      supplier: row.supplier,
+      totalBill: row.totalBill,
+    };
+  });
+  const [entryOverrides, setEntryOverrides] = useState<
+    Record<string, EditableEntry>
+  >({});
   const [editingRowId, setEditingRowId] = useState<string | null>(null);
-  const filteredRows = useMemo(
-    () =>
-      payableRows.filter(
-        (row) =>
-          isWithinRange(row.dateIso, filters) &&
-          (filters.party === "all" || row.supplier === filters.party),
+  const entries = useMemo(
+    () => ({
+      ...Object.fromEntries(
+        rows.map((row) => [row.id, payableEntryFromRow(row)]),
       ),
-    [filters],
+      ...entryOverrides,
+    }),
+    [entryOverrides, rows],
   );
-  const tableRows = mapPayableRows(filteredRows, entries);
+  const tableRows = mapPayableRows(rows, entries);
   const editingEntry = editingRowId ? entries[editingRowId] : undefined;
+  const summary = payableReport.data?.summary ?? {
+    outstanding: 0,
+    overdue: 0,
+    paid: 0,
+    totalBills: 0,
+  };
   const partyOptions = [
     { label: "All Suppliers", value: "all" },
-    ...payableRows.map((row) => ({ label: row.supplier, value: row.supplier })),
+    ...(payableReport.data?.suppliers ?? []).map((supplier) => ({
+      label: supplier.name,
+      value: supplier.id,
+    })),
   ];
 
   return (
@@ -854,32 +856,50 @@ export function AccountsPayableReportPage() {
       <ReportFilters
         filters={filters}
         onChange={updateFilter}
+        onUpdate={() => payableReport.refetch()}
         partyLabel="Supplier"
         partyOptions={partyOptions}
+        updating={payableReport.isFetching}
       />
       <SummaryStrip
         metrics={[
-          { label: "Total Bills", tone: "blue", value: "248 Bills" },
-          { label: "Outstanding", tone: "amber", value: money(845000) },
-          { label: "Paid", tone: "emerald", value: money(1250000) },
-          { label: "Overdue", tone: "rose", value: money(120000) },
+          {
+            label: "Total Bills",
+            tone: "blue",
+            value: `${summary.totalBills} ${summary.totalBills === 1 ? "Bill" : "Bills"}`,
+          },
+          {
+            label: "Outstanding",
+            tone: "amber",
+            value: money(summary.outstanding),
+          },
+          { label: "Paid", tone: "emerald", value: money(summary.paid) },
+          { label: "Overdue", tone: "rose", value: money(summary.overdue) },
         ]}
       />
-      <ReportTable
-        columns={payableColumns}
-        detailTriggerKey="billNo"
-        onEditRow={(row) => {
-          setEditingRowId(row.id);
-        }}
-        rows={tableRows}
-      />
+      {payableReport.isLoading ? (
+        <ReportNotice>Loading supplier bills...</ReportNotice>
+      ) : payableReport.isError ? (
+        <ReportNotice tone="error">
+          Could not load accounts payable. Please update the report again.
+        </ReportNotice>
+      ) : (
+        <ReportTable
+          columns={payableColumns}
+          detailTriggerKey="billNo"
+          onEditRow={(row) => {
+            setEditingRowId(row.id);
+          }}
+          rows={tableRows}
+        />
+      )}
       {editingEntry && editingRowId && (
         <EntryEditScreen
           entry={editingEntry}
           kind="payable"
           onClose={() => setEditingRowId(null)}
           onSave={(nextEntry) => {
-            setEntries((current) => ({
+            setEntryOverrides((current) => ({
               ...current,
               [editingRowId]: nextEntry,
             }));
@@ -1057,13 +1077,17 @@ function ReportShell({
 function ReportFilters({
   filters,
   onChange,
+  onUpdate,
   partyLabel,
   partyOptions,
+  updating = false,
 }: {
   filters: ReportFiltersState;
   onChange: (key: keyof ReportFiltersState, value: string) => void;
+  onUpdate?: () => void;
   partyLabel: "Customer" | "Supplier";
   partyOptions: { label: string; value: string }[];
+  updating?: boolean;
 }) {
   return (
     <section className="rounded-lg border bg-white p-3 shadow-sm sm:p-4">
@@ -1118,9 +1142,11 @@ function ReportFilters({
         </div>
         <Button
           className="h-10 w-full bg-blue-700 px-5 hover:bg-blue-800 lg:w-auto"
+          disabled={updating}
+          onClick={onUpdate}
           type="button"
         >
-          <RefreshCcwIcon />
+          <RefreshCcwIcon className={cn(updating && "animate-spin")} />
           Update Report
         </Button>
       </div>
@@ -1280,6 +1306,25 @@ function SummaryStrip({ metrics }: { metrics: SummaryMetric[] }) {
           </div>
         </div>
       ))}
+    </section>
+  );
+}
+
+function ReportNotice({
+  children,
+  tone = "default",
+}: {
+  children: React.ReactNode;
+  tone?: "default" | "error";
+}) {
+  return (
+    <section
+      className={cn(
+        "rounded-lg border bg-white px-4 py-12 text-center text-sm text-slate-500 shadow-sm",
+        tone === "error" && "border-red-200 bg-red-50 text-red-700",
+      )}
+    >
+      {children}
     </section>
   );
 }
