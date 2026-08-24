@@ -2,7 +2,7 @@ import { ShopOwnerSidebar } from "@/components/dashboard/shop-owner-sidebar";
 import { SiteHeader } from "@/components/dashboard/site-header";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 
-export default function ShopDashboardLayout({
+export function ShopDashboardShell({
   children,
 }: Readonly<{
   children: React.ReactNode;
@@ -29,4 +29,12 @@ export default function ShopDashboardLayout({
       </SidebarInset>
     </SidebarProvider>
   );
+}
+
+export default function ShopDashboardLayout({
+  children,
+}: Readonly<{
+  children: React.ReactNode;
+}>) {
+  return <ShopDashboardShell>{children}</ShopDashboardShell>;
 }

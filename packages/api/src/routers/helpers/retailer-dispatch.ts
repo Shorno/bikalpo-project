@@ -4,7 +4,7 @@ import { ORPCError } from "@orpc/server";
 import { and, desc, eq, sql } from "drizzle-orm";
 import {
     applyFulfillmentMode,
-    calculateDispatchInvoiceCharges,
+    calculateDispatchInvoiceSnapshot,
     type DispatchFulfillmentMode,
 } from "./order-dispatch";
 import {
@@ -103,17 +103,38 @@ export async function createRetailerDispatchInvoiceForOrder(input: {
             });
         }
 
-        const { discountAmount, deliveryCharge, grandTotal } =
-            calculateDispatchInvoiceCharges({
-                subtotal: Number(existingOrder.subtotal),
-                approvedSubtotal: Number(existingOrder.subtotal),
-                approvedDiscount: Number(existingOrder.discount),
-                allocatedDiscount: 0,
-                shippingCost: Number(existingOrder.shippingCost),
-                hasExistingInvoices: false,
-                fullyInvoiced: true,
-                fulfillmentMode,
-            });
+        const deliveryFee = Number(existingOrder.deliveryFee);
+        let shippingFee = Number(existingOrder.shippingFee);
+        if (deliveryFee === 0 && shippingFee === 0) {
+            shippingFee = Number(existingOrder.shippingCost);
+        }
+        const invoiceSnapshot = calculateDispatchInvoiceSnapshot({
+            subtotal: Number(existingOrder.subtotal),
+            approvedSubtotal: Number(existingOrder.subtotal),
+            fullyInvoiced: true,
+            hasExistingInvoices: false,
+            fulfillmentMode,
+            orderTotals: {
+                discount: Number(existingOrder.discount),
+                productDiscount: Number(existingOrder.productDiscount),
+                couponDiscount: Number(existingOrder.couponDiscount),
+                rewardDiscount: Number(existingOrder.rewardDiscount),
+                taxAmount: Number(existingOrder.taxAmount),
+                deliveryFee,
+                shippingFee,
+                paidAmount: Number(existingOrder.paidAmount),
+                returnAmount: Number(existingOrder.returnAmount),
+            },
+            allocated: {
+                discount: 0,
+                productDiscount: 0,
+                couponDiscount: 0,
+                rewardDiscount: 0,
+                taxAmount: 0,
+                paidAmount: 0,
+                returnAmount: 0,
+            },
+        });
         const persistedMode = persistedInvoiceFulfillmentMode(
             owner,
             fulfillmentMode,
@@ -126,14 +147,31 @@ export async function createRetailerDispatchInvoiceForOrder(input: {
                 orderId: existingOrder.id,
                 customerId: existingOrder.userId,
                 invoiceType: "main",
-                paymentStatus: "unpaid",
+                paymentStatus:
+                    invoiceSnapshot.dueAmount <= 0 ? "collected" : "unpaid",
                 deliveryStatus: "not_assigned",
                 fulfillmentMode: persistedMode,
                 subtotal: money(Number(existingOrder.subtotal)),
-                discountAmount: money(discountAmount),
-                deliveryCharge: money(deliveryCharge),
-                taxAmount: "0.00",
-                grandTotal: money(grandTotal),
+                discountAmount: money(invoiceSnapshot.discountAmount),
+                productDiscount: money(invoiceSnapshot.productDiscount),
+                couponDiscount: money(invoiceSnapshot.couponDiscount),
+                rewardDiscount: money(invoiceSnapshot.rewardDiscount),
+                deliveryCharge: money(invoiceSnapshot.deliveryCharge),
+                shippingCharge: money(invoiceSnapshot.shippingCharge),
+                taxAmount: money(invoiceSnapshot.taxAmount),
+                grandTotal: money(invoiceSnapshot.grandTotal),
+                paidAmount: money(invoiceSnapshot.paidAmount),
+                dueAmount: money(invoiceSnapshot.dueAmount),
+                returnAmount: money(invoiceSnapshot.returnAmount),
+                promotionCode: existingOrder.promotionCode,
+                paymentPlan: existingOrder.paymentPlan,
+                paymentDueAt: existingOrder.paymentDueAt,
+                billedName:
+                    existingOrder.invoiceName ?? existingOrder.shippingName,
+                billedPhone:
+                    existingOrder.invoicePhone ?? existingOrder.shippingPhone,
+                billedEmail:
+                    existingOrder.invoiceEmail ?? existingOrder.shippingEmail,
                 customerNotes: existingOrder.customerNote,
             })
             .returning();
@@ -166,10 +204,10 @@ export async function createRetailerDispatchInvoiceForOrder(input: {
             fulfillmentMode === "self_pickup"
                 ? {
                       shippingCost: "0.00",
-                      total: money(
-                          Number(existingOrder.subtotal) -
-                              Number(existingOrder.discount),
-                      ),
+                      deliveryFee: "0.00",
+                      shippingFee: "0.00",
+                      total: money(invoiceSnapshot.grandTotal),
+                      dueAmount: money(invoiceSnapshot.dueAmount),
                   }
                 : {};
         await tx

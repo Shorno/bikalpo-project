@@ -1,6 +1,6 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   CalendarIcon,
   FileTextIcon,
@@ -27,11 +27,11 @@ import {
 } from "@/components/dashboard/daybook/daybook-expense-ledger";
 import { useDaybookBills } from "@/components/dashboard/daybook/use-daybook-bills";
 import { useDaybookProductPurchases } from "@/components/dashboard/daybook/use-daybook-product-purchases";
+import { useRetailerSuppliers } from "@/components/dashboard/daybook/use-retailer-suppliers";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -139,6 +139,7 @@ export function DaybookBillDialog({
   open,
   scope,
 }: DaybookBillDialogProps) {
+  const queryClient = useQueryClient();
   const { data: paymentAccountsData } = useQuery(
     orpc.finance.getPaymentAccounts.queryOptions({ input: {} }),
   );
@@ -147,6 +148,57 @@ export function DaybookBillDialog({
   );
   const savedBills = useDaybookBills(scope);
   const savedProductPurchases = useDaybookProductPurchases(scope);
+  const retailerSuppliers = useRetailerSuppliers(scope);
+  const recordSupplierBillMutation = useMutation({
+    mutationFn: async (input: {
+      amount: number;
+      billNo?: string;
+      referenceNo?: string;
+      supplierId: number;
+    }) => {
+      if (scope === "warehouse") {
+        const result = await orpc.warehouse.recordSupplierBill.call(input);
+
+        return {
+          currentPayable: result.currentPayable,
+          supplierId: result.supplierId,
+        };
+      }
+
+      const result = await orpc.shopOwner.recordSupplierBill.call(input);
+
+      return {
+        currentPayable: result.payable,
+        supplierId: input.supplierId,
+      };
+    },
+  });
+  const postBillMutation = useMutation({
+    mutationFn: (input: {
+      billNo?: string;
+      items: Array<{
+        accountId?: string;
+        accountName: string;
+        amount: number;
+        description: string;
+        productName: string;
+      }>;
+      notes?: string;
+      paymentDate: string;
+      referenceNo?: string;
+      supplier: string;
+    }) =>
+      orpc.finance.createProductPurchase.call({
+        billNo: input.billNo,
+        items: input.items,
+        notes: input.notes,
+        paymentDate: input.paymentDate,
+        paymentType: "due",
+        postingSource: "bill",
+        referenceNo: input.referenceNo,
+        supplier: input.supplier,
+      }),
+  });
   const paymentAccounts = useMemo(
     () =>
       paymentAccountsData?.paymentAccounts?.length
@@ -194,15 +246,15 @@ export function DaybookBillDialog({
   const [lines, setLines] = useState<DraftBillLine[]>(() => [
     createDraftLine(),
   ]);
-  const scopeLabel = scope === "warehouse" ? "Warehouse" : "Retailer";
   const supplierOptions = useMemo(
     () =>
       buildDaybookBillPayeeOptions({
         bills: savedBills,
+        externalPayees: retailerSuppliers,
         partyType: "supplier",
         productPurchases: savedProductPurchases,
       }),
-    [savedBills, savedProductPurchases],
+    [retailerSuppliers, savedBills, savedProductPurchases],
   );
   const filteredSuppliers = useMemo(
     () => filterDaybookBillPayees(supplierOptions, supplierName).slice(0, 6),
@@ -223,6 +275,15 @@ export function DaybookBillDialog({
   );
   const activeSupplier = selectedSupplier ?? matchingSupplier;
   const previousBillAmount = activeSupplier?.previousBillAmount ?? 0;
+  const activeRetailerSupplier = useMemo(
+    () =>
+      retailerSuppliers.find(
+        (supplier) =>
+          supplier.name.trim().toLowerCase() ===
+          supplierName.trim().toLowerCase(),
+      ),
+    [retailerSuppliers, supplierName],
+  );
   const selectedPaymentAccount = useMemo(
     () =>
       paymentAccounts.find((account) => account.id === paymentAccountId) ??
@@ -373,7 +434,7 @@ export function DaybookBillDialog({
     onOpenChange(nextOpen);
   };
 
-  const saveBill = (closeAfterSave: boolean) => {
+  const saveBill = async (closeAfterSave: boolean) => {
     const supplier = supplierName.trim();
     const paymentAccount = selectedPaymentAccount;
     const billLines = buildBillLines();
@@ -424,7 +485,58 @@ export function DaybookBillDialog({
       totalPaid: nextTotalPaid,
     };
 
+    try {
+      await postBillMutation.mutateAsync({
+        billNo: savedBill.billNo,
+        items: billLines.map((line) => ({
+          accountId: line.accountId,
+          accountName: line.accountName,
+          amount: line.price,
+          description: line.description || line.productName,
+          productName: line.productName,
+        })),
+        notes: savedBill.notes || undefined,
+        paymentDate: savedBill.paymentDate,
+        referenceNo: savedBill.referenceNo || undefined,
+        supplier,
+      });
+
+      if (activeRetailerSupplier) {
+        await recordSupplierBillMutation.mutateAsync({
+          amount: nextAmountDue,
+          billNo: savedBill.billNo,
+          referenceNo: savedBill.referenceNo || undefined,
+          supplierId: activeRetailerSupplier.id,
+        });
+      }
+    } catch (error) {
+      setMessage({
+        text:
+          error instanceof Error
+            ? error.message
+            : "Bill could not be posted to accounting.",
+        tone: "error",
+      });
+      return;
+    }
+
     addDaybookBill(savedBill);
+    void queryClient.invalidateQueries({
+      queryKey: ["shopOwner", "suppliers"],
+    });
+    void queryClient.invalidateQueries({
+      queryKey: ["shopOwner", "supplierStats"],
+    });
+    void queryClient.invalidateQueries({
+      queryKey: ["shopOwner", "suppliers", "daybook-selector"],
+    });
+    void queryClient.invalidateQueries({
+      queryKey: ["warehouse", "supplierStats"],
+    });
+    void queryClient.invalidateQueries({
+      queryKey: ["warehouse", "suppliers", "daybook-selector"],
+    });
+    void queryClient.invalidateQueries();
     resetForm([...savedBills, savedBill]);
 
     if (closeAfterSave) {
@@ -444,9 +556,6 @@ export function DaybookBillDialog({
             <FileTextIcon className="size-5 text-blue-700" />
             Bill
           </DialogTitle>
-          <DialogDescription>
-            Record a supplier bill for {scopeLabel}.
-          </DialogDescription>
         </DialogHeader>
 
         <div className="px-6 py-5">
@@ -475,7 +584,7 @@ export function DaybookBillDialog({
                     <div className="absolute z-20 mt-1 max-h-72 w-full overflow-y-auto rounded-lg border border-slate-200 bg-white p-1 shadow-lg">
                       {filteredSuppliers.map((supplier) => (
                         <button
-                          className="flex w-full items-center justify-between gap-3 rounded-md px-3 py-2 text-left text-sm hover:bg-slate-100"
+                          className="flex w-full flex-col rounded-md px-3 py-2 text-left text-sm hover:bg-slate-100"
                           key={supplier.id}
                           onClick={() => {
                             setSupplierName(supplier.name);
@@ -485,16 +594,8 @@ export function DaybookBillDialog({
                           onMouseDown={(event) => event.preventDefault()}
                           type="button"
                         >
-                          <span className="min-w-0">
-                            <span className="block truncate font-medium text-slate-900">
-                              {supplier.name}
-                            </span>
-                            <span className="block text-slate-500 text-xs">
-                              {supplier.subtitle}
-                            </span>
-                          </span>
-                          <span className="shrink-0 rounded-md bg-amber-50 px-2 py-1 font-semibold text-amber-700 text-xs">
-                            Prev {money(supplier.previousBillAmount)}
+                          <span className="block truncate font-medium text-slate-900">
+                            {supplier.name}
                           </span>
                         </button>
                       ))}
@@ -603,21 +704,15 @@ export function DaybookBillDialog({
                   className="grid grid-cols-[repeat(3,minmax(0,1fr))_52px] items-center gap-2 border-slate-200 border-b px-4 py-3 last:border-b-0"
                   key={line.id}
                 >
-                  <Select
-                    onValueChange={(value) => updateAccount(line.id, value)}
+                  <BillAccountNameInput
+                    onSelect={(account) => updateAccount(line.id, account.name)}
+                    onValueChange={(value) => {
+                      updateLine(line.id, "accountName", value);
+                      updateLine(line.id, "accountId", "");
+                    }}
+                    options={billAccounts}
                     value={line.accountName}
-                  >
-                    <SelectTrigger className="!h-10 min-h-10 w-full bg-white">
-                      <SelectValue placeholder="Select account" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {billAccounts.map((account) => (
-                        <SelectItem key={account.id} value={account.name}>
-                          {account.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  />
                   <Input
                     aria-label={`Product name ${index + 1}`}
                     className="h-10 w-full"
@@ -679,11 +774,6 @@ export function DaybookBillDialog({
               <SummaryLine label="Total" value={money(0)} />
               <SummaryLine label="Total Paid" value={money(totalPaid)} />
               <SummaryLine label="Amount Due" value={money(amountDue)} strong />
-              {previousBillAmount > 0 ? (
-                <div className="rounded-md bg-amber-50 px-3 py-2 text-amber-700">
-                  Previous bill {money(previousBillAmount)}
-                </div>
-              ) : null}
             </div>
           </div>
 
@@ -740,6 +830,64 @@ function SummaryLine({
       >
         {value}
       </span>
+    </div>
+  );
+}
+
+function BillAccountNameInput({
+  onSelect,
+  onValueChange,
+  options,
+  value,
+}: {
+  onSelect: (account: BillAccountOption) => void;
+  onValueChange: (value: string) => void;
+  options: BillAccountOption[];
+  value: string;
+}) {
+  const [focused, setFocused] = useState(false);
+  const filteredOptions = useMemo(() => {
+    const query = value.trim().toLowerCase();
+
+    return options
+      .filter((account) =>
+        query ? account.name.toLowerCase().includes(query) : true,
+      )
+      .slice(0, 8);
+  }, [options, value]);
+
+  return (
+    <div className="relative">
+      <Input
+        autoComplete="off"
+        className="h-10 w-full"
+        onBlur={() => window.setTimeout(() => setFocused(false), 120)}
+        onChange={(event) => {
+          onValueChange(event.target.value);
+          setFocused(true);
+        }}
+        onFocus={() => setFocused(true)}
+        placeholder="Select account"
+        value={value}
+      />
+      {focused && filteredOptions.length > 0 ? (
+        <div className="absolute z-30 mt-1 max-h-72 w-full overflow-y-auto rounded-lg border border-slate-200 bg-white p-1 shadow-lg">
+          {filteredOptions.map((account) => (
+            <button
+              className="flex w-full rounded-md px-3 py-2 text-left font-medium text-slate-900 text-sm hover:bg-slate-100"
+              key={account.id}
+              onClick={() => {
+                onSelect(account);
+                setFocused(false);
+              }}
+              onMouseDown={(event) => event.preventDefault()}
+              type="button"
+            >
+              {account.name}
+            </button>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }

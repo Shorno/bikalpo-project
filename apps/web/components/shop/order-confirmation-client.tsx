@@ -205,8 +205,10 @@ export function OrderConfirmationClient({
                     Payment
                   </p>
                   <p className="text-xs font-semibold text-gray-900 mt-0.5">
-                    {paymentMethodLabels[order.paymentMethod] ||
-                      order.paymentMethod}
+                    {order.paymentMethod
+                      ? paymentMethodLabels[order.paymentMethod] ||
+                        order.paymentMethod
+                      : "Not selected"}
                   </p>
                 </div>
               </div>

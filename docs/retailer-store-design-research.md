@@ -112,4 +112,3 @@ The product card should remain an implementation boundary: leave `StorefrontProd
 - Empty offers omit the carousel cleanly; one offer has no misleading navigation controls; multiple offers expose working arrows/dots.
 - `StorefrontProductCard` content and interaction design are unchanged; only the surrounding layout/card width changes.
 - Existing preview mode, add-to-cart/quantity, product-detail navigation, error/empty/loading states, and pagination remain functional.
-

@@ -495,7 +495,9 @@ export function OrderDetailClient({ orderNumber }: OrderDetailClientProps) {
           <div className="rounded-xl border border-slate-200 bg-white p-5">
             <h2 className="font-semibold text-slate-950">Payment</h2>
             <p className="mt-2 text-sm text-slate-600">
-              {paymentMethodLabels[order.paymentMethod] || order.paymentMethod}
+              {order.paymentMethod
+                ? paymentMethodLabels[order.paymentMethod] || order.paymentMethod
+                : "Not selected"}
             </p>
           </div>
           {order.customerNote && (

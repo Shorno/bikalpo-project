@@ -21,6 +21,10 @@ export type VerifiedUser = Awaited<
   ReturnType<typeof client.customer.getVerifiedUsers>
 >["users"][number];
 
+export type CustomerCheckoutQuoteResponse = Awaited<
+  ReturnType<typeof client.customer.getCheckoutQuote>
+>;
+
 // ────────────────────────────────────────────────────────────────
 // QUERY HOOKS
 // ────────────────────────────────────────────────────────────────
@@ -380,6 +384,26 @@ export function useEstimatedDeliveryCost(area?: string) {
     orpc.customer.getEstimatedDeliveryCost.queryOptions({
       input: { area },
       staleTime: 1000 * 60 * 2,
+    }),
+  );
+}
+
+/** Server-authoritative totals and seller checkout capabilities. */
+export function useCheckoutQuote(
+  input: {
+    area?: string;
+    deliveryMode: "self_pickup" | "courier";
+    paymentPlan: "pay_now" | "partial" | "pay_later";
+    partialAmount?: number;
+    promotionCode?: string;
+  },
+  enabled = true,
+) {
+  return useQuery(
+    orpc.customer.getCheckoutQuote.queryOptions({
+      input: enabled ? input : skipToken,
+      staleTime: 1000 * 30,
+      retry: false,
     }),
   );
 }

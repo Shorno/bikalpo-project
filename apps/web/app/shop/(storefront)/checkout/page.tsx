@@ -19,9 +19,16 @@ import {
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { AddressSelector } from "@/components/checkout/address-selector";
+import {
+  type CheckoutInvoiceContact,
+  DeliveryModeSelector,
+  InvoiceContactFields,
+  PaymentPlanSelector,
+  PromotionCodeControl,
+} from "@/components/checkout/checkout-controls";
 import {
   CheckoutSummary,
   formatCheckoutPrice,
@@ -40,7 +47,7 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import {
-  useEstimatedDeliveryCost,
+  useCheckoutQuote,
   usePlaceOpenOrder,
   usePlaceOrder,
 } from "@/hooks/use-customer-api";
@@ -125,6 +132,22 @@ const DIRECT_PAYMENT_OPTIONS = [
     icon: Smartphone,
     activeClass: "border-orange-400 bg-orange-50",
     iconClass: "bg-orange-100 text-orange-700",
+  },
+  {
+    value: "bank_transfer",
+    label: "Bank transfer",
+    description: "Pay from your bank and provide the transaction reference.",
+    icon: Banknote,
+    activeClass: "border-blue-400 bg-blue-50",
+    iconClass: "bg-blue-100 text-blue-700",
+  },
+  {
+    value: "card",
+    label: "Online pay",
+    description: "Complete payment through the secure online payment page.",
+    icon: CreditCard,
+    activeClass: "border-violet-400 bg-violet-50",
+    iconClass: "bg-violet-100 text-violet-700",
   },
 ] as const satisfies ReadonlyArray<{
   value: PaymentMethod;
@@ -230,6 +253,21 @@ export default function CustomerCheckoutPage() {
 
   const [paymentMethod, setPaymentMethod] =
     useState<PaymentMethod>("cash_on_delivery");
+  const [deliveryMode, setDeliveryMode] = useState<"self_pickup" | "courier">(
+    "courier",
+  );
+  const [paymentPlan, setPaymentPlan] = useState<
+    "pay_now" | "partial" | "pay_later"
+  >("pay_later");
+  const [partialAmount, setPartialAmount] = useState("");
+  const [promotionInput, setPromotionInput] = useState("");
+  const [appliedPromotion, setAppliedPromotion] = useState<string | null>(null);
+  const [invoiceContact, setInvoiceContact] = useState<CheckoutInvoiceContact>({
+    name: "",
+    phone: "",
+    email: "",
+  });
+  const checkoutIdempotencyKey = useRef<string | null>(null);
   const [summaryOpen, setSummaryOpen] = useState(false);
   const [selectedAddressId, setSelectedAddressId] = useState<number | null>(
     null,
@@ -258,15 +296,45 @@ export default function CustomerCheckoutPage() {
         email: session.user.email || "",
         phone: (session.user as { phoneNumber?: string }).phoneNumber || "",
       }));
+      setInvoiceContact((previous) => ({
+        name: previous.name || session.user.name || "",
+        email: previous.email || session.user.email || "",
+        phone:
+          previous.phone ||
+          (session.user as { phoneNumber?: string }).phoneNumber ||
+          "",
+      }));
     }
   }, [session]);
 
-  // Estimate delivery cost when area changes
-  const { data: deliveryCostData } = useEstimatedDeliveryCost(
-    formData.area || undefined,
+  const checkoutQuoteQuery = useCheckoutQuote(
+    {
+      area: formData.area || undefined,
+      deliveryMode,
+      paymentPlan,
+      partialAmount:
+        paymentPlan === "partial" && Number(partialAmount) > 0
+          ? Number(partialAmount)
+          : undefined,
+      promotionCode: appliedPromotion || undefined,
+    },
+    !isOpenOrder && mode === "direct" && items.length > 0,
   );
+  const checkoutQuote = checkoutQuoteQuery.data?.quote ?? null;
   const shippingCost =
-    items.length > 0 ? (deliveryCostData?.deliveryCost ?? 0) : 0;
+    checkoutQuote == null
+      ? 0
+      : checkoutQuote.totals.deliveryFee + checkoutQuote.totals.shippingFee;
+
+  useEffect(() => {
+    const availability = checkoutQuoteQuery.data?.availableDeliveryModes;
+    if (!availability) return;
+    if (deliveryMode === "self_pickup" && !availability.selfPickup) {
+      setDeliveryMode("courier");
+    } else if (deliveryMode === "courier" && !availability.courier) {
+      setDeliveryMode("self_pickup");
+    }
+  }, [checkoutQuoteQuery.data, deliveryMode]);
 
   // Handle address selection
   const handleAddressSelect = useCallback(
@@ -285,6 +353,11 @@ export default function CustomerCheckoutPage() {
           lat: address.lat || "",
           lng: address.lng || "",
         });
+        setInvoiceContact((previous) => ({
+          ...previous,
+          name: address.recipientName,
+          phone: address.phone,
+        }));
       } else {
         setSelectedAddressId(null);
         // Clear form for new address entry
@@ -323,11 +396,14 @@ export default function CustomerCheckoutPage() {
       toast.error("Please enter your phone number");
       return false;
     }
-    if (!formData.address.trim()) {
+    if (
+      (isOpenOrder || deliveryMode === "courier") &&
+      !formData.address.trim()
+    ) {
       toast.error("Please enter your address");
       return false;
     }
-    if (!formData.city) {
+    if ((isOpenOrder || deliveryMode === "courier") && !formData.city) {
       toast.error("Please select your city");
       return false;
     }
@@ -353,8 +429,20 @@ export default function CustomerCheckoutPage() {
       toast.error("Review the Exchange or New choice for your cylinder items");
       return;
     }
+    if (!invoiceContact.name.trim() || !invoiceContact.phone.trim()) {
+      toast.error("Invoice name and phone are required");
+      return;
+    }
+    if (checkoutQuoteQuery.isPending || !checkoutQuote) {
+      toast.error(
+        checkoutQuoteQuery.error?.message ||
+          "The order summary is still being calculated",
+      );
+      return;
+    }
 
     try {
+      checkoutIdempotencyKey.current ??= crypto.randomUUID();
       const result = await placeOrderMutation.mutateAsync({
         shippingInfo: {
           name: formData.name,
@@ -369,6 +457,21 @@ export default function CustomerCheckoutPage() {
           lng: formData.lng || undefined,
         },
         paymentMethod,
+        checkout: {
+          deliveryMode,
+          paymentPlan,
+          partialAmount:
+            paymentPlan === "partial" ? Number(partialAmount) : undefined,
+          promotionCode: appliedPromotion || undefined,
+          quoteVersion: checkoutQuote.version,
+          quoteExpiresAt: new Date(checkoutQuote.expiresAt),
+          idempotencyKey: checkoutIdempotencyKey.current,
+          invoiceContact: {
+            name: invoiceContact.name,
+            phone: invoiceContact.phone,
+            email: invoiceContact.email || undefined,
+          },
+        },
       });
 
       if (result.order?.orderNumber) {
@@ -543,11 +646,45 @@ export default function CustomerCheckoutPage() {
               onUpdateQuantity={updateQuantity}
               onUpdateCylinderSaleMode={updateCylinderSaleMode}
               onRemoveItem={removeItem}
+              quote={checkoutQuote}
+              quoteLoading={checkoutQuoteQuery.isFetching}
             />
           </div>
 
           <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_24rem] xl:grid-cols-[minmax(0,1fr)_26rem]">
             <div className="min-w-0 space-y-5">
+              {!isOpenOrder && (
+                <Card className="gap-0 rounded-2xl border-slate-200 bg-white py-0 shadow-sm ring-0">
+                  <div className="flex items-start gap-3 border-b border-slate-100 p-5 sm:p-6">
+                    <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-blue-700">
+                      <Store className="size-5" aria-hidden="true" />
+                    </span>
+                    <div>
+                      <h2 className="text-base font-semibold text-slate-950">
+                        Delivery method
+                      </h2>
+                      <p className="mt-1 text-sm leading-5 text-slate-500">
+                        Collect the order yourself or send it by courier.
+                      </p>
+                    </div>
+                  </div>
+                  <CardContent className="p-5 sm:p-6">
+                    <DeliveryModeSelector
+                      value={deliveryMode}
+                      onChange={setDeliveryMode}
+                      allowSelfPickup={
+                        checkoutQuoteQuery.data?.availableDeliveryModes
+                          .selfPickup ?? true
+                      }
+                      allowCourier={
+                        checkoutQuoteQuery.data?.availableDeliveryModes
+                          .courier ?? true
+                      }
+                    />
+                  </CardContent>
+                </Card>
+              )}
+
               <Card className="gap-0 rounded-2xl border-slate-200 bg-white py-0 shadow-sm ring-0">
                 <div className="flex items-start gap-3 border-b border-slate-100 p-5 sm:p-6">
                   <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700">
@@ -857,6 +994,48 @@ export default function CustomerCheckoutPage() {
 
               {!isOpenOrder && (
                 <Card className="gap-0 rounded-2xl border-slate-200 bg-white py-0 shadow-sm ring-0">
+                  <div className="border-b border-slate-100 p-5 sm:p-6">
+                    <h2 className="text-base font-semibold text-slate-950">
+                      Promotion and invoice contact
+                    </h2>
+                    <p className="mt-1 text-sm leading-5 text-slate-500">
+                      Apply an eligible seller code and confirm who should
+                      appear on the invoice.
+                    </p>
+                  </div>
+                  <CardContent className="space-y-6 p-5 sm:p-6">
+                    <PromotionCodeControl
+                      value={promotionInput}
+                      appliedCode={checkoutQuote?.promotionCode}
+                      error={
+                        appliedPromotion
+                          ? checkoutQuoteQuery.error?.message
+                          : null
+                      }
+                      isApplying={checkoutQuoteQuery.isFetching}
+                      onChange={setPromotionInput}
+                      onApply={() =>
+                        setAppliedPromotion(
+                          promotionInput.trim().toUpperCase() || null,
+                        )
+                      }
+                      onClear={() => {
+                        setAppliedPromotion(null);
+                        setPromotionInput("");
+                      }}
+                    />
+                    <div className="border-t border-slate-100 pt-6">
+                      <InvoiceContactFields
+                        value={invoiceContact}
+                        onChange={setInvoiceContact}
+                      />
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              {!isOpenOrder && (
+                <Card className="gap-0 rounded-2xl border-slate-200 bg-white py-0 shadow-sm ring-0">
                   <div className="flex items-start gap-3 border-b border-slate-100 p-5 sm:p-6">
                     <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700">
                       <CreditCard className="size-5" aria-hidden="true" />
@@ -870,58 +1049,86 @@ export default function CustomerCheckoutPage() {
                       </p>
                     </div>
                   </div>
-                  <CardContent className="p-5 sm:p-6">
-                    <RadioGroup
-                      value={paymentMethod}
-                      onValueChange={(value) =>
-                        setPaymentMethod(value as PaymentMethod)
+                  <CardContent className="space-y-6 p-5 sm:p-6">
+                    <PaymentPlanSelector
+                      value={paymentPlan}
+                      onChange={(plan) => {
+                        setPaymentPlan(plan);
+                        if (
+                          plan !== "pay_later" &&
+                          paymentMethod === "cash_on_delivery"
+                        ) {
+                          setPaymentMethod("bank_transfer");
+                        }
+                      }}
+                      allowPartial={
+                        checkoutQuoteQuery.data?.allowPartialPayment ?? false
                       }
-                      className="grid gap-3"
-                    >
-                      {DIRECT_PAYMENT_OPTIONS.map((option) => {
-                        const Icon = option.icon;
-                        const isSelected = paymentMethod === option.value;
+                      partialAmount={partialAmount}
+                      onPartialAmountChange={setPartialAmount}
+                      grandTotal={
+                        checkoutQuote?.totals.grandTotal ?? totalPrice
+                      }
+                    />
+                    <div className="border-t border-slate-100 pt-6">
+                      <RadioGroup
+                        value={paymentMethod}
+                        onValueChange={(value) => {
+                          const method = value as PaymentMethod;
+                          setPaymentMethod(method);
+                          if (method === "cash_on_delivery") {
+                            setPaymentPlan("pay_later");
+                          } else if (paymentPlan === "pay_later") {
+                            setPaymentPlan("pay_now");
+                          }
+                        }}
+                        className="grid gap-3"
+                      >
+                        {DIRECT_PAYMENT_OPTIONS.map((option) => {
+                          const Icon = option.icon;
+                          const isSelected = paymentMethod === option.value;
 
-                        return (
-                          <div
-                            key={option.value}
-                            className={cn(
-                              "flex min-h-16 items-center gap-3 rounded-xl border p-3.5 transition-colors motion-reduce:transition-none",
-                              isSelected
-                                ? option.activeClass
-                                : "border-slate-200 bg-white hover:bg-slate-50",
-                            )}
-                          >
-                            <RadioGroupItem
-                              value={option.value}
-                              id={`payment-${option.value}`}
-                              className="text-emerald-600 focus-visible:ring-emerald-600"
-                            />
-                            <Label
-                              htmlFor={`payment-${option.value}`}
-                              className="flex flex-1 cursor-pointer items-center gap-3"
+                          return (
+                            <div
+                              key={option.value}
+                              className={cn(
+                                "flex min-h-16 items-center gap-3 rounded-xl border p-3.5 transition-colors motion-reduce:transition-none",
+                                isSelected
+                                  ? option.activeClass
+                                  : "border-slate-200 bg-white hover:bg-slate-50",
+                              )}
                             >
-                              <span
-                                className={cn(
-                                  "flex size-9 shrink-0 items-center justify-center rounded-lg",
-                                  option.iconClass,
-                                )}
+                              <RadioGroupItem
+                                value={option.value}
+                                id={`payment-${option.value}`}
+                                className="text-emerald-600 focus-visible:ring-emerald-600"
+                              />
+                              <Label
+                                htmlFor={`payment-${option.value}`}
+                                className="flex flex-1 cursor-pointer items-center gap-3"
                               >
-                                <Icon className="size-4" aria-hidden="true" />
-                              </span>
-                              <span className="min-w-0">
-                                <span className="block text-sm font-semibold text-slate-900">
-                                  {option.label}
+                                <span
+                                  className={cn(
+                                    "flex size-9 shrink-0 items-center justify-center rounded-lg",
+                                    option.iconClass,
+                                  )}
+                                >
+                                  <Icon className="size-4" aria-hidden="true" />
                                 </span>
-                                <span className="mt-0.5 block text-xs leading-5 text-slate-500">
-                                  {option.description}
+                                <span className="min-w-0">
+                                  <span className="block text-sm font-semibold text-slate-900">
+                                    {option.label}
+                                  </span>
+                                  <span className="mt-0.5 block text-xs leading-5 text-slate-500">
+                                    {option.description}
+                                  </span>
                                 </span>
-                              </span>
-                            </Label>
-                          </div>
-                        );
-                      })}
-                    </RadioGroup>
+                              </Label>
+                            </div>
+                          );
+                        })}
+                      </RadioGroup>
+                    </div>
                   </CardContent>
                 </Card>
               )}
@@ -941,6 +1148,8 @@ export default function CustomerCheckoutPage() {
                 onUpdateQuantity={updateQuantity}
                 onUpdateCylinderSaleMode={updateCylinderSaleMode}
                 onRemoveItem={removeItem}
+                quote={checkoutQuote}
+                quoteLoading={checkoutQuoteQuery.isFetching}
               />
             </aside>
           </div>
@@ -955,7 +1164,10 @@ export default function CustomerCheckoutPage() {
             </span>
             <span className="text-lg font-bold tabular-nums text-slate-950 sm:mt-0.5 sm:block">
               {formatCheckoutPrice(
-                isOpenOrder ? totalPrice : totalPrice + shippingCost,
+                isOpenOrder
+                  ? totalPrice
+                  : (checkoutQuote?.totals.grandTotal ??
+                      totalPrice + shippingCost),
               )}
             </span>
           </div>
@@ -963,7 +1175,12 @@ export default function CustomerCheckoutPage() {
             type="submit"
             form="checkout-form"
             className="h-12 w-full bg-emerald-600 px-5 font-semibold text-white shadow-sm hover:bg-emerald-700 focus-visible:ring-emerald-600 sm:w-auto sm:min-w-80"
-            disabled={isSubmitting || mode == null}
+            disabled={
+              isSubmitting ||
+              mode == null ||
+              (!isOpenOrder &&
+                (checkoutQuoteQuery.isFetching || !checkoutQuote))
+            }
           >
             {(isOpenOrder ? placeOpenOrderMutation : placeOrderMutation)
               .isPending ? (

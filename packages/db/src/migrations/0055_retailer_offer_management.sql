@@ -113,4 +113,3 @@ CREATE INDEX "retailer_offer_application_customer_idx" ON "retailer_offer_applic
 CREATE UNIQUE INDEX "retailer_offer_application_pos_unique" ON "retailer_offer_application" ("retailer_offer_id", "pos_sale_id") WHERE "pos_sale_id" IS NOT NULL;
 --> statement-breakpoint
 CREATE UNIQUE INDEX "retailer_offer_application_order_unique" ON "retailer_offer_application" ("retailer_offer_id", "order_id") WHERE "order_id" IS NOT NULL;
-

@@ -14,6 +14,14 @@ export type DaybookBillPayeeOption = {
   subtitle: string;
 };
 
+export type ExternalBillPayee = {
+  company?: string | null;
+  currentPayable?: number | string | null;
+  id: number | string;
+  name: string;
+  phone?: string | null;
+};
+
 const DEFAULT_SUPPLIERS = [
   "ABC Supplier",
   "Rahim Traders",
@@ -51,13 +59,21 @@ function addPayeeOption(
   const key = optionKey(input.partyType, name);
   const existing = options.get(key);
 
+  const nextAmount = input.previousBillAmount ?? 0;
+  const existingAmount = existing?.previousBillAmount ?? 0;
+  const shouldUseLargestAmount =
+    (existing?.source === "supplier" && existingAmount > 0) ||
+    (input.source === "supplier" && nextAmount > 0);
+
   options.set(key, {
-    id: key,
+    id: existing?.id ?? key,
     name: existing?.name ?? name,
     partyType: input.partyType,
-    previousBillAmount:
-      (existing?.previousBillAmount ?? 0) + (input.previousBillAmount ?? 0),
-    source: existing?.source ?? input.source,
+    previousBillAmount: shouldUseLargestAmount
+      ? Math.max(existingAmount, nextAmount)
+      : existingAmount + nextAmount,
+    source:
+      existingAmount > 0 ? (existing?.source ?? input.source) : input.source,
     subtitle: existing?.subtitle ?? input.subtitle,
   });
 }
@@ -81,11 +97,25 @@ export function buildDefaultBillPayeeOptions(partyType: DaybookBillPartyType) {
 
 export function buildDaybookBillPayeeOptions(input: {
   bills: DaybookBillEntry[];
+  externalPayees?: ExternalBillPayee[];
   partyType: DaybookBillPartyType;
   productPurchases?: DaybookProductPurchaseEntry[];
   productSales?: DaybookProductSaleEntry[];
 }) {
   const options = buildDefaultBillPayeeOptions(input.partyType);
+
+  for (const payee of input.externalPayees ?? []) {
+    addPayeeOption(options, {
+      name: payee.name,
+      partyType: input.partyType,
+      previousBillAmount: Number(payee.currentPayable ?? 0),
+      source: input.partyType,
+      subtitle:
+        payee.company?.trim() ||
+        payee.phone?.trim() ||
+        (input.partyType === "supplier" ? "Supplier" : "Customer"),
+    });
+  }
 
   for (const bill of input.bills) {
     if (bill.partyType !== input.partyType) {

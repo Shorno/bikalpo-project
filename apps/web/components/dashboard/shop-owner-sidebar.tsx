@@ -33,18 +33,13 @@ import {
   Warehouse as WarehouseIcon,
 } from "lucide-react";
 import Link from "next/link";
-import { useMemo } from "react";
 import { type NavGroup, NavGrouped } from "@/components/dashboard/nav-grouped";
-import { NavUser } from "@/components/dashboard/nav-user";
-import UserNavSkeleton from "@/components/dashboard/user-nav-skeleton";
 import {
   Sidebar,
   SidebarContent,
   SidebarFooter,
   SidebarHeader,
 } from "@/components/ui/sidebar";
-import { useOpenOrderPool } from "@/hooks/use-shop-owner-api";
-import { authClient } from "@/lib/auth-client";
 
 const D = "/dashboard";
 
@@ -260,17 +255,41 @@ const shopOwnerNavGroups: NavGroup[] = [
   },
   {
     label: "Reports",
+    hideLabel: true,
     items: [
-      { title: "Sales Report", url: `${D}/reports/sales`, icon: BarChart3Icon },
       {
-        title: "Purchase Report",
-        url: `${D}/reports/purchase`,
+        activePrefixes: [`${D}/reports`],
+        defaultOpen: true,
+        title: "Reports",
+        url: `${D}/reports`,
         icon: FileTextIcon,
-      },
-      {
-        title: "Stock Movement",
-        url: `${D}/reports/stock-movement`,
-        icon: BoxesIcon,
+        items: [
+          {
+            title: "Sales Report",
+            url: `${D}/reports/sales`,
+            icon: FileTextIcon,
+          },
+          {
+            title: "Purchase Report",
+            url: `${D}/reports/purchase`,
+            icon: FileTextIcon,
+          },
+          {
+            title: "ACCOUNTS PAYABLE Report",
+            url: `${D}/reports/accounts-payable`,
+            icon: FileTextIcon,
+          },
+          {
+            title: "ACCOUNTS RECEIVABLE Report",
+            url: `${D}/reports/accounts-receivable`,
+            icon: FileTextIcon,
+          },
+          {
+            title: "PROFIT & LOSS Report",
+            url: `${D}/reports/profit-loss`,
+            icon: FileTextIcon,
+          },
+        ],
       },
     ],
   },
@@ -299,21 +318,6 @@ const shopOwnerNavGroups: NavGroup[] = [
 ];
 
 export function ShopOwnerSidebar(props: React.ComponentProps<typeof Sidebar>) {
-  const { data, isPending } = authClient.useSession();
-  const { data: openOrders } = useOpenOrderPool();
-  const navGroups = useMemo(
-    () =>
-      shopOwnerNavGroups.map((group) => ({
-        ...group,
-        items: group.items.map((item) =>
-          item.url === `${D}/open-orders`
-            ? { ...item, badge: (openOrders as any)?.activeCount ?? 0 }
-            : item,
-        ),
-      })),
-    [openOrders],
-  );
-
   return (
     <Sidebar collapsible="offcanvas" {...props}>
       <SidebarHeader className="p-4">
@@ -323,7 +327,7 @@ export function ShopOwnerSidebar(props: React.ComponentProps<typeof Sidebar>) {
           </div>
           <div className="min-w-0 flex-1">
             <p className="text-sm font-bold truncate group-hover:text-emerald-600 transition-colors">
-              {data?.user?.shopName || "My Shop"}
+              My Shop
             </p>
             <p className="text-xs text-muted-foreground">Shop Dashboard</p>
           </div>
@@ -337,15 +341,9 @@ export function ShopOwnerSidebar(props: React.ComponentProps<typeof Sidebar>) {
         </a>
       </SidebarHeader>
       <SidebarContent className="mt-4 thin-scrollbar">
-        <NavGrouped groups={navGroups} />
+        <NavGrouped groups={shopOwnerNavGroups} />
       </SidebarContent>
-      <SidebarFooter>
-        {isPending || !data ? (
-          <UserNavSkeleton />
-        ) : (
-          <NavUser session={data as any} />
-        )}
-      </SidebarFooter>
+      <SidebarFooter />
     </Sidebar>
   );
 }

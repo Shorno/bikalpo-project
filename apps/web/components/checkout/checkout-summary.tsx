@@ -53,6 +53,21 @@ interface CheckoutSummaryProps {
   shippingCost: number;
   totalItems: number;
   totalPrice: number;
+  quote?: {
+    initialPaymentAmount: number;
+    projectedDueAfterPayment: number;
+    totals: {
+      itemsTotal: number;
+      productDiscount: number;
+      couponDiscount: number;
+      rewardDiscount: number;
+      taxAmount: number;
+      deliveryFee: number;
+      shippingFee: number;
+      grandTotal: number;
+    };
+  } | null;
+  quoteLoading?: boolean;
 }
 
 function CheckoutLineItem({
@@ -210,6 +225,19 @@ function CheckoutLineItem({
                 </span>
               </Label>
             </RadioGroup>
+            {item.cylinderSale.mode === "exchange" && (
+              <div className="mt-2 border-t border-emerald-200 pt-2 text-xs text-emerald-900">
+                <p className="font-semibold">Empty cylinder information</p>
+                <div className="mt-1 grid grid-cols-2 gap-x-3 gap-y-1 text-emerald-800">
+                  <span>Variant</span>
+                  <span className="text-right font-medium">{item.size}</span>
+                  <span>Expected quantity</span>
+                  <span className="text-right font-medium tabular-nums">
+                    {item.quantity}
+                  </span>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -229,11 +257,26 @@ function CheckoutSummaryBody({
   shippingCost,
   showAction,
   totalPrice,
+  quote,
+  quoteLoading,
 }: Omit<
   CheckoutSummaryProps,
   "onOpenChange" | "open" | "presentation" | "totalItems"
 > & { showAction: boolean }) {
-  const payableTotal = isOpenOrder ? totalPrice : totalPrice + shippingCost;
+  const payableTotal = isOpenOrder
+    ? totalPrice
+    : (quote?.totals.grandTotal ?? totalPrice + shippingCost);
+  const summaryRows = quote
+    ? [
+        ["Items total", quote.totals.itemsTotal, false],
+        ["Product discount", quote.totals.productDiscount, true],
+        ["Coupon discount", quote.totals.couponDiscount, true],
+        ["Reward discount", quote.totals.rewardDiscount, true],
+        ["VAT / Tax", quote.totals.taxAmount, false],
+        ["Delivery fee", quote.totals.deliveryFee, false],
+        ["Shipping fee", quote.totals.shippingFee, false],
+      ].filter(([, amount, subtract]) => !subtract || Number(amount) > 0)
+    : null;
 
   return (
     <div className="space-y-5">
@@ -258,26 +301,57 @@ function CheckoutSummaryBody({
             : "border-slate-200 bg-slate-50",
         )}
       >
-        <div className="space-y-2.5 text-sm">
-          <div className="flex items-center justify-between gap-4">
-            <span className="text-slate-600">
-              {isOpenOrder ? "Reference subtotal" : "Subtotal"}
-            </span>
-            <span className="font-medium tabular-nums text-slate-900">
-              {formatCheckoutPrice(totalPrice)}
-            </span>
-          </div>
-          {!isOpenOrder && (
+        <div
+          className={cn(
+            "space-y-2.5 text-sm",
+            quoteLoading && "animate-pulse opacity-60",
+          )}
+        >
+          {summaryRows ? (
+            summaryRows.map(([label, amount, subtract]) => (
+              <div
+                key={String(label)}
+                className="flex items-center justify-between gap-4"
+              >
+                <span className="text-slate-600">{label}</span>
+                <span
+                  className={cn(
+                    "font-medium tabular-nums",
+                    subtract ? "text-emerald-700" : "text-slate-900",
+                  )}
+                >
+                  {subtract ? "-" : ""}
+                  {formatCheckoutPrice(Number(amount))}
+                </span>
+              </div>
+            ))
+          ) : (
             <div className="flex items-center justify-between gap-4">
-              <span className="text-slate-600">Delivery</span>
+              <span className="text-slate-600">
+                {isOpenOrder ? "Reference subtotal" : "Subtotal"}
+              </span>
               <span className="font-medium tabular-nums text-slate-900">
-                {shippingCost === 0
-                  ? "Free"
-                  : formatCheckoutPrice(shippingCost)}
+                {formatCheckoutPrice(totalPrice)}
               </span>
             </div>
           )}
         </div>
+        {!isOpenOrder && quote && quote.initialPaymentAmount > 0 && (
+          <div className="mt-3 space-y-1 border-t border-slate-200 pt-3 text-xs">
+            <div className="flex justify-between gap-4 text-slate-600">
+              <span>Pay now</span>
+              <span className="font-semibold tabular-nums text-slate-900">
+                {formatCheckoutPrice(quote.initialPaymentAmount)}
+              </span>
+            </div>
+            <div className="flex justify-between gap-4 text-slate-600">
+              <span>Remaining after payment</span>
+              <span className="font-semibold tabular-nums text-slate-900">
+                {formatCheckoutPrice(quote.projectedDueAfterPayment)}
+              </span>
+            </div>
+          </div>
+        )}
 
         <div className="my-3 h-px bg-slate-200/80" />
 
@@ -352,7 +426,7 @@ function CheckoutSummaryBody({
 export function CheckoutSummary(props: CheckoutSummaryProps) {
   const total = props.isOpenOrder
     ? props.totalPrice
-    : props.totalPrice + props.shippingCost;
+    : (props.quote?.totals.grandTotal ?? props.totalPrice + props.shippingCost);
 
   if (props.presentation === "compact") {
     return (

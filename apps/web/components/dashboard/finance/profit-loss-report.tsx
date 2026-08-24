@@ -74,6 +74,10 @@ function toNumber(value: number | string | null | undefined) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+function hasReportBalance(value: number | string | null | undefined) {
+  return Math.abs(toNumber(value)) > 0.000_001;
+}
+
 function toPercent(value: number, total: number) {
   if (total === 0) {
     return 0;
@@ -127,10 +131,10 @@ function normalizeRows(
   fallback: BreakdownRow,
 ) {
   if (!rows || rows.length === 0) {
-    return [fallback];
+    return hasReportBalance(fallback.amount) ? [fallback] : [];
   }
 
-  return rows;
+  return rows.filter((row) => hasReportBalance(row.amount));
 }
 
 function normalizeBreakdownKey(row: BreakdownRow) {
@@ -169,7 +173,11 @@ function mergeBreakdownRows(rows: BreakdownRow[], fallback: BreakdownRow) {
 
   const normalizedRows = Array.from(mergedRows.values());
 
-  return normalizedRows.length > 0 ? normalizedRows : [fallback];
+  return normalizedRows.length > 0
+    ? normalizedRows.filter((row) => hasReportBalance(row.amount))
+    : hasReportBalance(fallback.amount)
+      ? [fallback]
+      : [];
 }
 
 function addToBreakdownRow(

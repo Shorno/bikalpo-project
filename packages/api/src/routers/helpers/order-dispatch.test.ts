@@ -4,6 +4,7 @@ import type { invoiceItem, orderItem } from "@bikalpo-project/db/schema";
 import {
 	buildInvoiceProgress,
 	calculateDispatchInvoiceCharges,
+	calculateDispatchInvoiceSnapshot,
 	deriveDispatchQueueStatus,
 	summarizeInvoiceProgress,
 } from "./order-dispatch";
@@ -26,6 +27,12 @@ function item(input: {
 		quantity: input.quantity,
 		unitPrice: input.unitPrice ?? "100.00",
 		totalPrice: "100.00",
+		cylinderSaleMode: "new",
+		newUnitPrice: null,
+		exchangeCreditAmount: "0.00",
+		expectedEmptyPackQty: 0,
+		collectedEmptyPackQty: 0,
+		convertedToNewQty: 0,
 		modifiedQty: input.modifiedQty ?? null,
 		modifiedUnitPrice: null,
 		deliveredQty: 0,
@@ -38,6 +45,10 @@ function item(input: {
 		inventoryUnit: "unit",
 		conversionFactor: "1.0000",
 		inventoryQty: input.quantity.toFixed(2),
+		catalogVariantId: null,
+		globalSkuSnapshot: null,
+		sourceSkuSnapshot: null,
+		targetSkuSnapshot: null,
 		createdAt: new Date(),
 	};
 }
@@ -176,6 +187,107 @@ test("self pickup never carries a delivery charge", () => {
 		deliveryCharge: 0,
 		grandTotal: 900,
 	});
+});
+
+test("full invoice snapshots reconcile checkout totals and outstanding due", () => {
+	const snapshot = calculateDispatchInvoiceSnapshot({
+		subtotal: 1_000,
+		approvedSubtotal: 1_000,
+		fullyInvoiced: true,
+		hasExistingInvoices: false,
+		fulfillmentMode: "delivery",
+		orderTotals: {
+			discount: 100,
+			productDiscount: 60,
+			couponDiscount: 40,
+			rewardDiscount: 0,
+			taxAmount: 45,
+			deliveryFee: 20,
+			shippingFee: 10,
+			paidAmount: 500,
+			returnAmount: 0,
+		},
+		allocated: {
+			discount: 0,
+			productDiscount: 0,
+			couponDiscount: 0,
+			rewardDiscount: 0,
+			taxAmount: 0,
+			paidAmount: 0,
+			returnAmount: 0,
+		},
+	});
+
+	assert.deepEqual(snapshot, {
+		discountAmount: 100,
+		productDiscount: 60,
+		couponDiscount: 40,
+		rewardDiscount: 0,
+		taxAmount: 45,
+		deliveryCharge: 20,
+		shippingCharge: 10,
+		grandTotal: 975,
+		paidAmount: 500,
+		returnAmount: 0,
+		dueAmount: 475,
+	});
+});
+
+test("split invoices allocate checkout values without double counting", () => {
+	const orderTotals = {
+		discount: 100,
+		productDiscount: 60,
+		couponDiscount: 40,
+		rewardDiscount: 0,
+		taxAmount: 45,
+		deliveryFee: 20,
+		shippingFee: 10,
+		paidAmount: 500,
+		returnAmount: 0,
+	};
+	const emptyAllocation = {
+		discount: 0,
+		productDiscount: 0,
+		couponDiscount: 0,
+		rewardDiscount: 0,
+		taxAmount: 0,
+		paidAmount: 0,
+		returnAmount: 0,
+	};
+	const first = calculateDispatchInvoiceSnapshot({
+		subtotal: 400,
+		approvedSubtotal: 1_000,
+		fullyInvoiced: false,
+		hasExistingInvoices: false,
+		fulfillmentMode: "delivery",
+		orderTotals,
+		allocated: emptyAllocation,
+	});
+	const final = calculateDispatchInvoiceSnapshot({
+		subtotal: 600,
+		approvedSubtotal: 1_000,
+		fullyInvoiced: true,
+		hasExistingInvoices: true,
+		fulfillmentMode: "delivery",
+		orderTotals,
+		allocated: {
+			discount: first.discountAmount,
+			productDiscount: first.productDiscount,
+			couponDiscount: first.couponDiscount,
+			rewardDiscount: first.rewardDiscount,
+			taxAmount: first.taxAmount,
+			paidAmount: first.paidAmount,
+			returnAmount: first.returnAmount,
+		},
+	});
+
+	assert.equal(first.grandTotal, 408);
+	assert.equal(final.grandTotal, 567);
+	assert.equal(first.grandTotal + final.grandTotal, 975);
+	assert.equal(first.paidAmount + final.paidAmount, 500);
+	assert.equal(first.dueAmount + final.dueAmount, 475);
+	assert.equal(first.deliveryCharge + final.deliveryCharge, 20);
+	assert.equal(first.shippingCharge + final.shippingCharge, 10);
 });
 
 test("legacy confirmed orders without invoices normalize to ready for dispatch", () => {

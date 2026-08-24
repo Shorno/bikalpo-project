@@ -25,15 +25,23 @@ import Link from "next/link";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useDashboardStats } from "@/hooks/use-shop-owner-api";
-import { authClient } from "@/lib/auth-client";
 
 export default function ShopOwnerDashboardPage() {
-  const { data: session, isPending: sessionLoading } = authClient.useSession();
-  const { data: stats, isLoading: statsLoading } = useDashboardStats();
-
-  const user = session?.user as any;
-  const loading = sessionLoading || statsLoading;
+  const stats = {
+    totalOrders: 0,
+    pendingOrders: 0,
+    totalSpent: 0,
+  };
+  const user = {
+    shopName: "My Shop",
+    name: "",
+    ownerName: "",
+    sellerStatus: "",
+    businessType: "",
+    shopAddress: "Not set",
+  };
+  const sessionLoading = false;
+  const loading = false;
 
   const [showPromo, setShowPromo] = useState(true);
   const [showFeature, setShowFeature] = useState(true);
@@ -100,8 +108,7 @@ export default function ShopOwnerDashboardPage() {
               </span>
             </div>
             <p className="text-sm font-medium">
-              Trial ends in{" "}
-              <span className="text-lg font-bold">10 days</span>
+              Trial ends in <span className="text-lg font-bold">10 days</span>
             </p>
             <p className="text-xs text-emerald-200 mt-0.5">
               Renewal date: 04 Feb 2026
@@ -220,10 +227,7 @@ export default function ShopOwnerDashboardPage() {
       {/* ================================================================ */}
       {/*  ROW 2 — SALES                                                   */}
       {/* ================================================================ */}
-      <SectionHeader
-        icon={<TrendingUp className="w-4 h-4" />}
-        title="Sales"
-      />
+      <SectionHeader icon={<TrendingUp className="w-4 h-4" />} title="Sales" />
       <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
         <SummaryCard
           label="Last Sale Status"
@@ -314,7 +318,11 @@ export default function ShopOwnerDashboardPage() {
           {[
             { label: "Recent Orders", value: "No orders yet", icon: "order" },
             { label: "Last Order Status", value: "—", icon: "status" },
-            { label: "Recent Payments", value: "No payments yet", icon: "payment" },
+            {
+              label: "Recent Payments",
+              value: "No payments yet",
+              icon: "payment",
+            },
           ].map((item, i) => (
             <div
               key={i}
@@ -468,9 +476,7 @@ function SectionHeader({
         <div className="text-gray-500">{icon}</div>
         <h2 className="text-base font-bold text-gray-900">{title}</h2>
       </div>
-      {note && (
-        <p className="text-xs text-gray-400 mt-0.5 ml-6">{note}</p>
-      )}
+      {note && <p className="text-xs text-gray-400 mt-0.5 ml-6">{note}</p>}
     </div>
   );
 }
@@ -538,7 +544,9 @@ function SummaryCard({
         <div className="flex items-baseline gap-2">
           <p className="text-2xl font-bold text-gray-900">{value}</p>
           {sub && (
-            <span className={`text-xs font-medium ${subColor || "text-gray-400"}`}>
+            <span
+              className={`text-xs font-medium ${subColor || "text-gray-400"}`}
+            >
               {sub}
             </span>
           )}

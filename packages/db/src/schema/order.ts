@@ -37,9 +37,22 @@ export const orderStatusEnum = pgEnum("order_status", [
 // Payment status enum
 export const paymentStatusEnum = pgEnum("payment_status", [
     "pending",
+    "partial",
     "paid",
     "failed",
+    "partially_refunded",
     "refunded",
+]);
+
+export const orderDeliveryModeEnum = pgEnum("order_delivery_mode", [
+    "self_pickup",
+    "courier",
+]);
+
+export const orderPaymentPlanEnum = pgEnum("order_payment_plan", [
+    "pay_now",
+    "partial",
+    "pay_later",
 ]);
 
 // B2B order type enum (B2B = shop buying from admin, B2C = consumer buying from shop)
@@ -118,6 +131,37 @@ export const order = pgTable(
         shippingCost: decimal("shipping_cost", { precision: 10, scale: 2 }).default("0").notNull(),
         discount: decimal("discount", { precision: 10, scale: 2 }).default("0").notNull(),
         total: decimal("total", { precision: 10, scale: 2 }).notNull(),
+        productDiscount: decimal("product_discount", {
+            precision: 10,
+            scale: 2,
+        }).default("0").notNull(),
+        couponDiscount: decimal("coupon_discount", {
+            precision: 10,
+            scale: 2,
+        }).default("0").notNull(),
+        rewardDiscount: decimal("reward_discount", {
+            precision: 10,
+            scale: 2,
+        }).default("0").notNull(),
+        taxAmount: decimal("tax_amount", { precision: 10, scale: 2 })
+            .default("0")
+            .notNull(),
+        deliveryFee: decimal("delivery_fee", { precision: 10, scale: 2 })
+            .default("0")
+            .notNull(),
+        shippingFee: decimal("shipping_fee", { precision: 10, scale: 2 })
+            .default("0")
+            .notNull(),
+        paidAmount: decimal("paid_amount", { precision: 10, scale: 2 })
+            .default("0")
+            .notNull(),
+        dueAmount: decimal("due_amount", { precision: 10, scale: 2 })
+            .default("0")
+            .notNull(),
+        returnAmount: decimal("return_amount", { precision: 10, scale: 2 })
+            .default("0")
+            .notNull(),
+        promotionCode: varchar("promotion_code", { length: 40 }),
 
         // Pending price change (admin changed price while order was pending)
         previousTotal: decimal("previous_total", { precision: 10, scale: 2 }),
@@ -133,7 +177,22 @@ export const order = pgTable(
         // Status
         status: orderStatusEnum("status").default("pending").notNull(),
         paymentStatus: paymentStatusEnum("payment_status").default("pending").notNull(),
-        paymentMethod: paymentMethodEnum("payment_method").default("cash_on_delivery").notNull(),
+        paymentMethod: paymentMethodEnum("payment_method").default("cash_on_delivery"),
+        paymentPlan: orderPaymentPlanEnum("payment_plan")
+            .default("pay_later")
+            .notNull(),
+        paymentDueAt: timestamp("payment_due_at"),
+        creditDays: integer("credit_days"),
+
+        // Checkout snapshot and retry protection
+        deliveryMode: orderDeliveryModeEnum("delivery_mode")
+            .default("courier")
+            .notNull(),
+        checkoutQuoteVersion: varchar("checkout_quote_version", { length: 80 }),
+        checkoutQuoteExpiresAt: timestamp("checkout_quote_expires_at"),
+        checkoutIdempotencyKey: varchar("checkout_idempotency_key", {
+            length: 100,
+        }),
 
         // Shipping address
         shippingName: text("shipping_name").notNull(),
@@ -143,6 +202,11 @@ export const order = pgTable(
         shippingCity: text("shipping_city").notNull(),
         shippingArea: text("shipping_area"),
         shippingPostalCode: text("shipping_postal_code"),
+
+        // Invoice/contact information is immutable once the order is placed.
+        invoiceName: text("invoice_name"),
+        invoicePhone: text("invoice_phone"),
+        invoiceEmail: text("invoice_email"),
 
         // Notes
         customerNote: text("customer_note"),
@@ -203,6 +267,9 @@ export const order = pgTable(
             .where(
                 sql`${table.isOpenOrder} = true AND ${table.status} IN ('matching_shop', 'negotiating')`,
             ),
+        uniqueIndex("order_checkout_idempotency_unique")
+            .on(table.checkoutIdempotencyKey)
+            .where(sql`${table.checkoutIdempotencyKey} IS NOT NULL`),
     ],
 );
 
@@ -338,6 +405,8 @@ export type NewOrderItem = typeof orderItem.$inferInsert;
 export type OrderStatus = (typeof orderStatusEnum.enumValues)[number];
 export type PaymentStatus = (typeof paymentStatusEnum.enumValues)[number];
 export type PaymentMethod = (typeof paymentMethodEnum.enumValues)[number];
+export type OrderDeliveryMode = (typeof orderDeliveryModeEnum.enumValues)[number];
+export type OrderPaymentPlan = (typeof orderPaymentPlanEnum.enumValues)[number];
 export type OrderType = (typeof b2bOrderTypeEnum.enumValues)[number];
 export type OrderSource = (typeof orderSourceEnum.enumValues)[number];
 

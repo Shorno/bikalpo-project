@@ -58,6 +58,7 @@ import { payeeRouter } from "./payee";
 import { productRouter } from "./product";
 import { profitLossRouter } from "./profit-loss";
 import { purchaseRouter } from "./purchase";
+import { purchaseLifecycleRouter } from "./purchase-lifecycle";
 import { retailerPosRouter } from "./retailer-pos";
 import { retailerOfferRouter } from "./retailer-offer";
 import { returnsRouter } from "./returns";
@@ -159,6 +160,7 @@ export const appRouter = {
   balanceSheet: balanceSheetRouter,
   profitLoss: profitLossRouter,
   purchase: purchaseRouter,
+  purchaseLifecycle: purchaseLifecycleRouter,
   stockOverview: stockOverviewRouter,
   adminInviteTracking: adminInviteTrackingRouter,
   adminAssistedInvite: adminAssistedInviteRouter,

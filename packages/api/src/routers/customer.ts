@@ -19,6 +19,9 @@ import {
   cart,
   cartItem,
   category,
+  checkoutPromotion,
+  checkoutPromotionRedemption,
+  checkoutSetting,
   comboOffer,
   coreProductIdentity,
   customerHomeTab,
@@ -81,6 +84,12 @@ import {
   protectedProcedure,
   publicProcedure,
 } from "../index";
+import {
+  assertCheckoutQuoteMatches,
+  buildCheckoutQuote,
+  type CheckoutPromotionRecord,
+  normalizePromotionCode,
+} from "../services/checkout-quote";
 import {
   computeOrderAreaFields,
   findAreasForPoint,
@@ -176,6 +185,26 @@ const shippingInfoSchema = z.object({
   customerNote: z.string().optional(),
   lat: z.string().optional(),
   lng: z.string().optional(),
+});
+
+const checkoutSelectionSchema = z.object({
+  deliveryMode: z.enum(["self_pickup", "courier"]).default("courier"),
+  paymentPlan: z.enum(["pay_now", "partial", "pay_later"]).default("pay_later"),
+  partialAmount: z.coerce.number().positive().optional(),
+  promotionCode: z.string().trim().max(40).optional(),
+});
+
+const checkoutSubmissionSchema = checkoutSelectionSchema.extend({
+  quoteVersion: z.string().min(10).max(80).optional(),
+  quoteExpiresAt: z.coerce.date().optional(),
+  idempotencyKey: z.string().trim().min(8).max(100).optional(),
+  invoiceContact: z
+    .object({
+      name: z.string().trim().min(1).max(150),
+      phone: z.string().trim().min(5).max(30),
+      email: z.string().trim().email().optional().or(z.literal("")),
+    })
+    .optional(),
 });
 
 async function loadConsumerOrderJourney(orderData: typeof order.$inferSelect) {
@@ -470,6 +499,143 @@ async function calculateDeliveryCost(
     // delivery_rule table may not exist – fall back to 0
   }
   return 0;
+}
+
+async function getSellerCheckoutConfiguration(ownerId: string) {
+  const setting = await db.query.checkoutSetting.findFirst({
+    where: eq(checkoutSetting.ownerId, ownerId),
+  });
+  return {
+    allowSelfPickup: setting?.allowSelfPickup ?? true,
+    allowCourier: setting?.allowCourier ?? true,
+    allowRetailDeposits: setting?.allowRetailDeposits ?? false,
+    defaultShippingFee: Number(setting?.defaultShippingFee ?? 0),
+    taxPercentage: Number(setting?.taxPercentage ?? 0),
+    wholesaleCreditDays: setting?.wholesaleCreditDays ?? 0,
+  };
+}
+
+async function getCheckoutPromotionRecord(input: {
+  sellerId: string;
+  code?: string | null;
+}): Promise<CheckoutPromotionRecord | null> {
+  const normalizedCode = normalizePromotionCode(input.code);
+  if (!normalizedCode) return null;
+
+  const promotion = await db.query.checkoutPromotion.findFirst({
+    where: and(
+      eq(checkoutPromotion.ownerId, input.sellerId),
+      sql`upper(${checkoutPromotion.code}) = ${normalizedCode}`,
+    ),
+  });
+  if (!promotion) {
+    throw new ORPCError("BAD_REQUEST", {
+      message: "Promotion code was not found for this seller",
+    });
+  }
+  return {
+    id: promotion.id,
+    ownerId: promotion.ownerId,
+    code: promotion.code,
+    audience: promotion.audience,
+    isActive: promotion.isActive,
+    type: promotion.type,
+    value: Number(promotion.value),
+    minimumSubtotal: Number(promotion.minimumSubtotal),
+    maximumDiscount:
+      promotion.maximumDiscount == null
+        ? null
+        : Number(promotion.maximumDiscount),
+    startsAt: promotion.startsAt,
+    endsAt: promotion.endsAt,
+    usageLimit: promotion.usageLimit,
+    usedCount: promotion.usedCount,
+  };
+}
+
+async function getRetailCheckoutQuoteContext(userId: string) {
+  const userCart = await db.query.cart.findFirst({
+    where: eq(cart.userId, userId),
+    with: {
+      items: {
+        with: {
+          product: true,
+          variant: { with: { sourceVariantOption: true } },
+        },
+      },
+    },
+  });
+  if (
+    !userCart ||
+    userCart.items.length === 0 ||
+    userCart.mode !== "direct" ||
+    !userCart.directShopId
+  ) {
+    throw new ORPCError("BAD_REQUEST", {
+      message: "A direct retailer cart is required for checkout",
+    });
+  }
+
+  const retailerInventoryByKey = await getRetailerCartInventorySnapshots(
+    userCart.items.flatMap((item) =>
+      item.shopId && item.variantId
+        ? [
+            {
+              shopId: item.shopId,
+              productId: item.productId,
+              variantId: item.variantId,
+            },
+          ]
+        : [],
+    ),
+  );
+  let totalWeightKg = 0;
+  const lines = userCart.items.map((item) => {
+    if (!item.shopId || !item.variantId || !item.variant) {
+      throw new ORPCError("BAD_REQUEST", {
+        message: `${item.product?.name ?? "Product"} is missing its retailer variant`,
+      });
+    }
+    const inventorySnapshot = retailerInventoryByKey.get(
+      getRetailerCartInventoryKey({
+        shopId: item.shopId,
+        productId: item.productId,
+        variantId: item.variantId,
+      }),
+    );
+    const decision = getCustomerOrderLineDecision(inventorySnapshot, {
+      shopId: item.shopId,
+      productId: item.productId,
+      variantId: item.variantId,
+      quantity: item.quantity,
+      referenceProductInStock: item.product?.inStock ?? false,
+      referenceAvailableQuantity: item.variant.stockQuantity,
+    });
+    if (!decision.ok || decision.source !== "retailer") {
+      throw new ORPCError("BAD_REQUEST", {
+        message: `${item.product?.name ?? "Product"} is no longer available in the requested quantity`,
+      });
+    }
+    const cylinderSale = resolveRetailerCylinderSale({
+      newUnitPrice: decision.retailPrice,
+      exchangeEnabled: inventorySnapshot?.exchangeEnabled ?? false,
+      exchangeCreditAmount: inventorySnapshot?.exchangeCreditAmount ?? "0",
+      requestedMode: item.cylinderSaleMode,
+      quantity: item.quantity,
+    });
+    totalWeightKg += Number(item.variant.weightKg ?? 0) * item.quantity;
+    return {
+      key: `${item.id}:${item.variantId}:${cylinderSale.mode}`,
+      quantity: item.quantity,
+      unitPrice: Number(cylinderSale.effectiveUnitPrice),
+    };
+  });
+
+  return {
+    sellerId: userCart.directShopId,
+    lines,
+    totalWeightKg,
+  };
 }
 
 function asNumber(value: unknown): number {
@@ -2842,6 +3008,76 @@ const queries = {
 
   // ── Reorder ──────────────────────────────────────────────────
 
+  /** Price the direct retailer cart with seller checkout rules. */
+  getCheckoutQuote: consumerProcedure
+    .route({
+      method: "GET",
+      path: "/customer/checkout/quote",
+      tags: ["Customer"],
+      summary: "Get a server-authoritative checkout quote",
+    })
+    .input(
+      checkoutSelectionSchema.extend({
+        area: z.string().optional(),
+      }),
+    )
+    .handler(async ({ context, input }) => {
+      const quoteContext = await getRetailCheckoutQuoteContext(
+        context.session.user.id,
+      );
+      const [configuration, promotion, deliveryFee] = await Promise.all([
+        getSellerCheckoutConfiguration(quoteContext.sellerId),
+        getCheckoutPromotionRecord({
+          sellerId: quoteContext.sellerId,
+          code: input.promotionCode,
+        }),
+        input.deliveryMode === "courier"
+          ? calculateDeliveryCost(quoteContext.totalWeightKg, input.area)
+          : Promise.resolve(0),
+      ]);
+      if (
+        (input.deliveryMode === "self_pickup" &&
+          !configuration.allowSelfPickup) ||
+        (input.deliveryMode === "courier" && !configuration.allowCourier)
+      ) {
+        throw new ORPCError("BAD_REQUEST", {
+          message: "The selected delivery method is not available",
+        });
+      }
+
+      try {
+        const quote = buildCheckoutQuote({
+          audience: "retail",
+          sellerId: quoteContext.sellerId,
+          lines: quoteContext.lines,
+          deliveryMode: input.deliveryMode,
+          paymentPlan: input.paymentPlan,
+          partialAmount: input.partialAmount,
+          allowRetailDeposits: configuration.allowRetailDeposits,
+          deliveryFee,
+          shippingFee: configuration.defaultShippingFee,
+          taxPercentage: configuration.taxPercentage,
+          promotion,
+        });
+        return {
+          quote,
+          availableDeliveryModes: {
+            selfPickup: configuration.allowSelfPickup,
+            courier: configuration.allowCourier,
+          },
+          allowPartialPayment: configuration.allowRetailDeposits,
+          taxPercentage: configuration.taxPercentage,
+        };
+      } catch (error) {
+        throw new ORPCError("BAD_REQUEST", {
+          message:
+            error instanceof Error
+              ? error.message
+              : "Unable to calculate checkout totals",
+        });
+      }
+    }),
+
   /** Get order items with current prices for reordering */
   getReorderItems: protectedProcedure
     .route({
@@ -4888,10 +5124,24 @@ const mutations = {
         paymentMethod: z
           .enum(["cash_on_delivery", "bkash", "nagad", "bank_transfer", "card"])
           .default("cash_on_delivery"),
+        checkout: checkoutSubmissionSchema.optional(),
       }),
     )
     .handler(async ({ context, input }) => {
       const userId = context.session.user.id;
+
+      if (input.checkout?.idempotencyKey) {
+        const existingOrder = await db.query.order.findFirst({
+          where: and(
+            eq(order.userId, userId),
+            eq(order.checkoutIdempotencyKey, input.checkout.idempotencyKey),
+          ),
+          columns: { id: true, orderNumber: true },
+        });
+        if (existingOrder) {
+          return { success: true, order: existingOrder, idempotent: true };
+        }
+      }
 
       // Check for active order
       const activeOrder = await db.query.order.findFirst({
@@ -4984,6 +5234,7 @@ const mutations = {
 
       // Validate stock & build order items
       const orderItems: Array<{
+        cartItemId: number;
         productId: number;
         variantId: number | null;
         shopId: string | null;
@@ -5003,7 +5254,6 @@ const mutations = {
         expectedEmptyPackQty: number;
       }> = [];
 
-      let subtotal = 0;
       let totalWeightKg = 0;
 
       for (const item of userCart.items) {
@@ -5127,14 +5377,13 @@ const mutations = {
         }
         const effectiveUnitPrice = cylinderSale.effectiveUnitPrice;
         const itemTotal = Number(cylinderSale.lineTotal);
-        subtotal += itemTotal;
-
         const weightPerUnit = item.variant
           ? Number(item.variant.weightKg)
           : parseWeightFromSize(item.product.size);
         totalWeightKg += weightPerUnit * item.quantity;
 
         orderItems.push({
+          cartItemId: item.id,
           productId: item.productId,
           variantId: item.variantId ?? null,
           shopId: item.shopId ?? null,
@@ -5163,10 +5412,71 @@ const mutations = {
         });
       }
 
-      const shippingCost = await calculateDeliveryCost(
-        totalWeightKg,
-        input.shippingInfo.area,
-      );
+      const checkoutSelection = {
+        deliveryMode: input.checkout?.deliveryMode ?? ("courier" as const),
+        paymentPlan:
+          input.checkout?.paymentPlan ??
+          (input.paymentMethod === "cash_on_delivery"
+            ? ("pay_later" as const)
+            : ("pay_now" as const)),
+        partialAmount: input.checkout?.partialAmount,
+      };
+      const sellerId = userCart.directShopId ?? "bikalpo-platform";
+      const [configuration, promotion, calculatedDeliveryFee] =
+        await Promise.all([
+          getSellerCheckoutConfiguration(sellerId),
+          getCheckoutPromotionRecord({
+            sellerId,
+            code: input.checkout?.promotionCode,
+          }),
+          checkoutSelection.deliveryMode === "courier"
+            ? calculateDeliveryCost(totalWeightKg, input.shippingInfo.area)
+            : Promise.resolve(0),
+        ]);
+      if (
+        (checkoutSelection.deliveryMode === "self_pickup" &&
+          !configuration.allowSelfPickup) ||
+        (checkoutSelection.deliveryMode === "courier" &&
+          !configuration.allowCourier)
+      ) {
+        throw new ORPCError("BAD_REQUEST", {
+          message: "The selected delivery method is not available",
+        });
+      }
+      let checkoutQuote: ReturnType<typeof buildCheckoutQuote>;
+      try {
+        checkoutQuote = buildCheckoutQuote({
+          audience: "retail",
+          sellerId,
+          lines: orderItems.map((item) => ({
+            key: `${item.cartItemId}:${item.variantId ?? "base"}:${item.cylinderSaleMode}`,
+            quantity: item.quantity,
+            unitPrice: Number(item.unitPrice),
+          })),
+          deliveryMode: checkoutSelection.deliveryMode,
+          paymentPlan: checkoutSelection.paymentPlan,
+          partialAmount: checkoutSelection.partialAmount,
+          allowRetailDeposits: configuration.allowRetailDeposits,
+          deliveryFee: calculatedDeliveryFee,
+          shippingFee: configuration.defaultShippingFee,
+          taxPercentage: configuration.taxPercentage,
+          promotion,
+        });
+        assertCheckoutQuoteMatches({
+          expectedVersion: input.checkout?.quoteVersion,
+          expectedExpiresAt: input.checkout?.quoteExpiresAt,
+          quote: checkoutQuote,
+        });
+      } catch (error) {
+        throw new ORPCError("CONFLICT", {
+          message:
+            error instanceof Error
+              ? error.message
+              : "Checkout totals could not be confirmed",
+        });
+      }
+      const shippingCost =
+        checkoutQuote.totals.deliveryFee + checkoutQuote.totals.shippingFee;
       // Compute area fields from consumer location
       const consumerLat = input.shippingInfo.lat
         ? parseFloat(input.shippingInfo.lat)
@@ -5197,7 +5507,18 @@ const mutations = {
             })
           : null;
       const offerDiscount = appliedRetailerOffer?.discountAmount ?? 0;
-      const total = Math.max(subtotal + shippingCost - offerDiscount, 0);
+      const total = Math.max(
+        checkoutQuote.totals.grandTotal - offerDiscount,
+        0,
+      );
+      const initialPaymentAmount = Math.min(
+        checkoutQuote.initialPaymentAmount,
+        total,
+      );
+      const projectedDueAfterPayment = Math.max(
+        0,
+        total - initialPaymentAmount,
+      );
 
       // Transaction: create order, deduct stock, clear cart
       const result = await db.transaction(async (tx) => {
@@ -5237,13 +5558,32 @@ const mutations = {
             userId,
             orderType,
             shopId: b2cShopId,
-            subtotal: subtotal.toFixed(2),
+            subtotal: checkoutQuote.totals.itemsTotal.toFixed(2),
             shippingCost: shippingCost.toFixed(2),
-            discount: offerDiscount.toFixed(2),
+            discount: (
+              checkoutQuote.totals.totalDiscount + offerDiscount
+            ).toFixed(2),
             total: total.toFixed(2),
+            productDiscount: (
+              checkoutQuote.totals.productDiscount + offerDiscount
+            ).toFixed(2),
+            couponDiscount: checkoutQuote.totals.couponDiscount.toFixed(2),
+            rewardDiscount: checkoutQuote.totals.rewardDiscount.toFixed(2),
+            taxAmount: checkoutQuote.totals.taxAmount.toFixed(2),
+            deliveryFee: checkoutQuote.totals.deliveryFee.toFixed(2),
+            shippingFee: checkoutQuote.totals.shippingFee.toFixed(2),
+            paidAmount: "0.00",
+            dueAmount: total.toFixed(2),
+            returnAmount: "0.00",
+            promotionCode: checkoutQuote.promotionCode,
             status: "pending",
             paymentStatus: "pending",
             paymentMethod: input.paymentMethod,
+            paymentPlan: checkoutQuote.paymentPlan,
+            deliveryMode: checkoutQuote.deliveryMode,
+            checkoutQuoteVersion: checkoutQuote.version,
+            checkoutQuoteExpiresAt: new Date(checkoutQuote.expiresAt),
+            checkoutIdempotencyKey: input.checkout?.idempotencyKey,
             shippingName: input.shippingInfo.name,
             shippingPhone: input.shippingInfo.phone,
             shippingEmail: input.shippingInfo.email,
@@ -5251,6 +5591,12 @@ const mutations = {
             shippingCity: input.shippingInfo.city,
             shippingArea: input.shippingInfo.area,
             shippingPostalCode: input.shippingInfo.postalCode,
+            invoiceName:
+              input.checkout?.invoiceContact?.name ?? input.shippingInfo.name,
+            invoicePhone:
+              input.checkout?.invoiceContact?.phone ?? input.shippingInfo.phone,
+            invoiceEmail:
+              input.checkout?.invoiceContact?.email || input.shippingInfo.email,
             customerNote: input.shippingInfo.customerNote,
             // Populate area fields from consumer location
             ...(areaFields.consumerAreaId && {
@@ -5300,6 +5646,57 @@ const mutations = {
           });
         }
 
+        if (promotion) {
+          const consumedPromotion = await tx
+            .update(checkoutPromotion)
+            .set({
+              usedCount: sql`${checkoutPromotion.usedCount} + 1`,
+              updatedAt: new Date(),
+            })
+            .where(
+              and(
+                eq(checkoutPromotion.id, promotion.id),
+                eq(checkoutPromotion.isActive, true),
+                or(
+                  isNull(checkoutPromotion.usageLimit),
+                  sql`${checkoutPromotion.usedCount} < ${checkoutPromotion.usageLimit}`,
+                ),
+              ),
+            )
+            .returning({ id: checkoutPromotion.id });
+          if (consumedPromotion.length !== 1) {
+            throw new ORPCError("CONFLICT", {
+              message: "The promotion is no longer available",
+            });
+          }
+          await tx.insert(checkoutPromotionRedemption).values({
+            promotionId: promotion.id,
+            orderId: newOrder!.id,
+            userId,
+            codeSnapshot: checkoutQuote.promotionCode!,
+            discountAmount: checkoutQuote.totals.couponDiscount.toFixed(2),
+            metadata: JSON.stringify({ audience: "retail" }),
+          });
+        }
+
+        if (initialPaymentAmount > 0) {
+          await tx.insert(payment).values({
+            orderId: newOrder!.id,
+            idempotencyKey: input.checkout?.idempotencyKey
+              ? `${input.checkout.idempotencyKey}:initial`
+              : undefined,
+            paymentMethod: input.paymentMethod,
+            paymentProvider:
+              input.paymentMethod === "bank_transfer"
+                ? "manual_bank"
+                : input.paymentMethod === "cash_on_delivery"
+                  ? "delivery"
+                  : "sslcommerz",
+            status: "pending",
+            amount: initialPaymentAmount.toFixed(2),
+          });
+        }
+
         // Deduct from the validated cart source. Every retailer line goes
         // through the exact shop/product/variant writer in this transaction.
         if (cartSource.kind === "retailer") {
@@ -5340,6 +5737,13 @@ const mutations = {
       return {
         success: true,
         order: { id: result.id, orderNumber: result.orderNumber },
+        checkout: {
+          quoteVersion: checkoutQuote.version,
+          grandTotal: total,
+          amountToPay: initialPaymentAmount,
+          projectedDueAfterPayment,
+          paymentRequired: initialPaymentAmount > 0,
+        },
       };
     }),
 

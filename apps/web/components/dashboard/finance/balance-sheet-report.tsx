@@ -85,6 +85,32 @@ function toNumber(value: number | string | null | undefined) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+function hasReportBalance(value: number | string | null | undefined) {
+  return Math.abs(toNumber(value)) > 0.000_001;
+}
+
+function filterZeroBalanceReport(report: BalanceSheetData): BalanceSheetData {
+  return {
+    ...report,
+    sections: report.sections
+      .map((section) => ({
+        ...section,
+        groups: section.groups
+          .map((group) => ({
+            ...group,
+            rows: group.rows.filter((row) => hasReportBalance(row.amount)),
+          }))
+          .filter(
+            (group) => hasReportBalance(group.total) && group.rows.length > 0,
+          ),
+      }))
+      .filter(
+        (section) =>
+          hasReportBalance(section.total) && section.groups.length > 0,
+      ),
+  };
+}
+
 function money(value: number | string | null | undefined) {
   const numeric = toNumber(value);
   const sign = numeric < 0 ? "-" : "";
@@ -135,12 +161,9 @@ export function BalanceSheetReport() {
   } = useQuery(
     orpc.balanceSheet.getBalanceSheet.queryOptions({
       input: { endDate, reportType, startDate, year },
-      refetchOnMount: "always",
-      refetchOnReconnect: "always",
-      refetchOnWindowFocus: "always",
-      refetchInterval: 5000,
-      refetchIntervalInBackground: false,
-      staleTime: 0,
+      refetchOnReconnect: true,
+      refetchOnWindowFocus: false,
+      staleTime: 30_000,
     }),
   );
   const adjustedReport = useMemo(
@@ -159,6 +182,10 @@ export function BalanceSheetReport() {
           )
         : null,
     [daybookExpenses, daybookProductSales, endDate, report, startDate],
+  );
+  const visibleReport = useMemo(
+    () => (adjustedReport ? filterZeroBalanceReport(adjustedReport) : null),
+    [adjustedReport],
   );
 
   const yearOptions = useMemo(
@@ -235,8 +262,8 @@ export function BalanceSheetReport() {
         <div className="flex min-h-80 items-center justify-center">
           <Loader2 className="size-8 animate-spin text-slate-400" />
         </div>
-      ) : adjustedReport ? (
-        <AccountDetailsTable report={adjustedReport} />
+      ) : visibleReport ? (
+        <AccountDetailsTable report={visibleReport} />
       ) : null}
     </div>
   );

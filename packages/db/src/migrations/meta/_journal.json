@@ -435,6 +435,69 @@
       "when": 1788000000000,
       "tag": "0062_repair_phone_auth_identities",
       "breakpoints": true
+    },
+    {
+      "idx": 63,
+      "version": "7",
+      "when": 1788100000000,
+      "tag": "0063_checkout_quote_and_payments",
+      "breakpoints": true
+    },
+    {
+      "idx": 64,
+      "version": "7",
+      "when": 1788200000000,
+      "tag": "0064_checkout_seller_settings",
+      "breakpoints": true
+    },
+    {
+      "idx": 65,
+      "version": "7",
+      "when": 1788300000000,
+      "tag": "0065_invoice_checkout_snapshots",
+      "breakpoints": true
+    },
+    {
+      "idx": 66,
+      "version": "7",
+      "when": 1788400000000,
+      "tag": "0066_purchase_lifecycle",
+      "breakpoints": true
+    },
+    {
+      "idx": 67,
+      "version": "7",
+      "when": 1788500000000,
+      "tag": "0067_purchase_account_balance_backfill",
+      "breakpoints": true
+    },
+    {
+      "idx": 68,
+      "version": "7",
+      "when": 1788600000000,
+      "tag": "0068_repair_checkout_setting",
+      "breakpoints": true
+    },
+    {
+      "idx": 69,
+      "version": "7",
+      "when": 1788700000000,
+      "tag": "0069_allow_unselected_order_payment_method",
+      "breakpoints": true
+    },
+    {
+      "idx": 70,
+      "version": "7",
+      "when": 1788800000000,
+      "tag": "0070_repair_purchase_lifecycle",
+      "breakpoints": true
+    },
+    {
+      "idx": 71,
+      "version": "7",
+      "when": 1788900000000,
+      "tag": "0071_manual_purchase_transaction",
+      "breakpoints": true
     }
   ]
 }

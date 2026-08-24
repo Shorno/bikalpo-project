@@ -336,6 +336,34 @@ export function usePurchaseOrders(params?: {
   );
 }
 
+/** Purchases recognized when wholesale stock was received. */
+export function usePurchaseReport(params: {
+  dateFrom: string;
+  dateTo: string;
+  warehouseId?: string;
+}) {
+  return useQuery(
+    orpc.shopOwner.getPurchaseReport.queryOptions({
+      input: params,
+      staleTime: 1000 * 30,
+    }),
+  );
+}
+
+/** Supplier invoices recognized after wholesale stock was received. */
+export function useAccountsPayableReport(params: {
+  dateFrom: string;
+  dateTo: string;
+  supplierKey?: string;
+}) {
+  return useQuery(
+    orpc.shopOwner.getAccountsPayableReport.queryOptions({
+      input: params,
+      staleTime: 1000 * 30,
+    }),
+  );
+}
+
 /** Full detail for a single purchase order */
 export function usePurchaseOrderDetail(orderId: number | null) {
   return useQuery(
@@ -367,9 +395,27 @@ export function useMarkPurchaseReceived() {
       toast.success(data.message || "Order received successfully");
       qc.invalidateQueries({ queryKey: ["shopOwner", "getPurchaseOrders"] });
       qc.invalidateQueries({
+        queryKey: orpc.shopOwner.getPurchaseReport.key(),
+      });
+      qc.invalidateQueries({
+        queryKey: orpc.shopOwner.getAccountsPayableReport.key(),
+      });
+      qc.invalidateQueries({
         queryKey: ["shopOwner", "getPurchaseOrderDetail"],
       });
       qc.invalidateQueries({ queryKey: ["shopOwner", "getMyOrders"] });
+      qc.invalidateQueries({
+        queryKey: orpc.balanceSheet.getBalanceSheet.key(),
+      });
+      qc.invalidateQueries({
+        queryKey: orpc.finance.getGeneralLedger.key(),
+      });
+      qc.invalidateQueries({
+        queryKey: orpc.purchaseLifecycle.getHistory.key(),
+      });
+      qc.invalidateQueries({
+        queryKey: orpc.purchaseLifecycle.getDetail.key(),
+      });
     },
     onError: (err: any) => {
       toast.error(err.message || "Failed to receive order");
@@ -542,10 +588,12 @@ export function useConnectedSupplierDetail(warehouseId: string) {
 }
 
 /** Dashboard summary stats */
-export function useDashboardStats() {
+export function useDashboardStats(options?: { enabled?: boolean }) {
   return useQuery(
     orpc.shopOwner.getDashboardStats.queryOptions({
       input: undefined,
+      enabled: options?.enabled ?? true,
+      retry: false,
       staleTime: 1000 * 60,
     }),
   );
@@ -878,11 +926,16 @@ export function useDeleteRetailDeliveryman() {
 // ────────────────────────────────────────────────────────────────
 
 /** Available open order broadcasts for this shop */
-export function useOpenOrderPool() {
+export function useOpenOrderPool(options?: {
+  enabled?: boolean;
+  refetchInterval?: number | false;
+}) {
   return useQuery(
     orpc.shopOwner.getOpenOrderPool.queryOptions({
+      enabled: options?.enabled ?? true,
+      retry: false,
       staleTime: 1000 * 5,
-      refetchInterval: 1000 * 10,
+      refetchInterval: options?.refetchInterval ?? 1000 * 10,
     }),
   );
 }
@@ -958,6 +1011,60 @@ export function useAddShopStock() {
         queryClient.invalidateQueries({
           queryKey: [["shopOwner", "getMyStorePreview"]],
         });
+      },
+    }),
+  );
+}
+
+/** Suppliers owned by the current business for manual purchase entry. */
+export function useManualPurchaseSuppliers() {
+  return useQuery(
+    orpc.purchase.getSuppliers.queryOptions({
+      input: {},
+      staleTime: 1000 * 60,
+    }),
+  );
+}
+
+/** Cash and bank accounts available to fund a manual purchase. */
+export function useManualPurchasePaymentAccounts() {
+  return useQuery(
+    orpc.finance.getPaymentAccounts.queryOptions({
+      input: {},
+      staleTime: 1000 * 30,
+    }),
+  );
+}
+
+export function useSaveManualPurchaseDraft() {
+  const queryClient = useQueryClient();
+  return useMutation(
+    orpc.purchase.saveManualDraft.mutationOptions({
+      onSuccess: () => {
+        queryClient.invalidateQueries({
+          queryKey: orpc.purchase.listManual.key(),
+        });
+      },
+    }),
+  );
+}
+
+export function useConfirmManualPurchase() {
+  const queryClient = useQueryClient();
+  return useMutation(
+    orpc.purchase.confirmManual.mutationOptions({
+      onSuccess: () => {
+        for (const queryKey of [
+          orpc.purchase.listManual.key(),
+          [["shopOwner", "getMyRetailProducts"]],
+          [["shopOwner", "getMyInventory"]],
+          [["shopOwner", "getShopProductsForStock"]],
+          [["shopOwner", "getPurchaseReport"]],
+          [["shopOwner", "getAccountsPayableReport"]],
+          orpc.finance.getPaymentAccounts.key(),
+        ]) {
+          queryClient.invalidateQueries({ queryKey });
+        }
       },
     }),
   );

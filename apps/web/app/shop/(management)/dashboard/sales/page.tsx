@@ -15,7 +15,7 @@ import {
   Undo2,
   WalletCards,
 } from "lucide-react";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
@@ -80,6 +80,7 @@ export default function RetailerSalesPage() {
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [selectedSaleId, setSelectedSaleId] = useState<number | null>(null);
+  const [linkedInvoiceNo, setLinkedInvoiceNo] = useState("");
   const [collectOpen, setCollectOpen] = useState(false);
   const collectRequestId = useRef<string | null>(null);
   const [collectForm, setCollectForm] = useState({
@@ -113,6 +114,33 @@ export default function RetailerSalesPage() {
     }),
     enabled: selectedSaleId !== null,
   });
+
+  useEffect(() => {
+    const invoiceNo = new URLSearchParams(window.location.search).get(
+      "invoice",
+    );
+
+    if (invoiceNo) {
+      setSearch(invoiceNo);
+      setPage(1);
+      setLinkedInvoiceNo(invoiceNo);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!linkedInvoiceNo) {
+      return;
+    }
+
+    const linkedSale = salesQuery.data?.rows.find(
+      (row) => row.invoiceNo === linkedInvoiceNo && row.kind === "pos",
+    );
+
+    if (linkedSale) {
+      setSelectedSaleId(linkedSale.id);
+      setLinkedInvoiceNo("");
+    }
+  }, [linkedInvoiceNo, salesQuery.data?.rows]);
 
   const collectMutation = useMutation({
     mutationFn: () => {

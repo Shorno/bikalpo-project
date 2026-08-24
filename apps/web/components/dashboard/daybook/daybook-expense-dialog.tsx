@@ -11,6 +11,11 @@ import {
   Trash2Icon,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
+import { applyDaybookSupplierBillPayment } from "@/components/dashboard/daybook/daybook-bill-ledger";
+import {
+  buildDaybookBillPayeeOptions,
+  filterDaybookBillPayees,
+} from "@/components/dashboard/daybook/daybook-bill-payees";
 import {
   addDaybookExpense,
   createDaybookExpenseId,
@@ -19,6 +24,9 @@ import {
   type DaybookExpenseLine,
   type DaybookExpenseScope,
 } from "@/components/dashboard/daybook/daybook-expense-ledger";
+import { useDaybookBills } from "@/components/dashboard/daybook/use-daybook-bills";
+import { useDaybookProductPurchases } from "@/components/dashboard/daybook/use-daybook-product-purchases";
+import { useRetailerSuppliers } from "@/components/dashboard/daybook/use-retailer-suppliers";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -100,6 +108,9 @@ export function DaybookExpenseDialog({
   const createExpenseMutation = useMutation(
     orpc.finance.createDaybookExpense.mutationOptions(),
   );
+  const savedBills = useDaybookBills(scope);
+  const savedProductPurchases = useDaybookProductPurchases(scope);
+  const retailerSuppliers = useRetailerSuppliers(scope);
   const paymentAccounts = useMemo(
     () =>
       paymentAccountsData?.paymentAccounts?.length
@@ -108,6 +119,7 @@ export function DaybookExpenseDialog({
     [paymentAccountsData],
   );
   const [payee, setPayee] = useState("");
+  const [payeeFocused, setPayeeFocused] = useState(false);
   const [paymentAccountId, setPaymentAccountId] = useState(
     paymentAccounts[0]?.id ?? DAYBOOK_PAYMENT_ACCOUNTS[0]?.id ?? "",
   );
@@ -124,6 +136,36 @@ export function DaybookExpenseDialog({
     createDraftLine(),
   ]);
   const scopeLabel = scope === "warehouse" ? "Warehouse" : "Retailer";
+  const supplierOptions = useMemo(
+    () =>
+      buildDaybookBillPayeeOptions({
+        bills: savedBills,
+        externalPayees: retailerSuppliers,
+        partyType: "supplier",
+        productPurchases: savedProductPurchases,
+      }),
+    [retailerSuppliers, savedBills, savedProductPurchases],
+  );
+  const filteredSuppliers = useMemo(
+    () => filterDaybookBillPayees(supplierOptions, payee).slice(0, 6),
+    [payee, supplierOptions],
+  );
+  const activeSupplier = useMemo(
+    () =>
+      supplierOptions.find(
+        (supplier) =>
+          supplier.name.trim().toLowerCase() === payee.trim().toLowerCase(),
+      ),
+    [payee, supplierOptions],
+  );
+  const activeRetailerSupplier = useMemo(
+    () =>
+      retailerSuppliers.find(
+        (supplier) =>
+          supplier.name.trim().toLowerCase() === payee.trim().toLowerCase(),
+      ),
+    [payee, retailerSuppliers],
+  );
   const selectedPaymentAccount = useMemo(
     () =>
       paymentAccounts.find((account) => account.id === paymentAccountId) ??
@@ -167,6 +209,7 @@ export function DaybookExpenseDialog({
   };
   const resetForm = () => {
     setPayee("");
+    setPayeeFocused(false);
     setPaymentAccountId(
       paymentAccounts[0]?.id ?? DAYBOOK_PAYMENT_ACCOUNTS[0]?.id ?? "",
     );
@@ -213,6 +256,15 @@ export function DaybookExpenseDialog({
       }),
       queryClient.invalidateQueries({
         queryKey: orpc.expense.getExpenses.key(),
+      }),
+      queryClient.invalidateQueries({
+        queryKey: ["shopOwner", "suppliers"],
+      }),
+      queryClient.invalidateQueries({
+        queryKey: ["shopOwner", "supplierStats"],
+      }),
+      queryClient.invalidateQueries({
+        queryKey: ["shopOwner", "suppliers", "daybook-selector"],
       }),
     ]);
   };
@@ -268,6 +320,7 @@ export function DaybookExpenseDialog({
       paymentDate,
       paymentMethod: paymentAccount.type,
       referenceNo: referenceNo.trim() || undefined,
+      supplierId: activeRetailerSupplier?.id,
     };
 
     if (closeAfterSave) {
@@ -278,6 +331,11 @@ export function DaybookExpenseDialog({
           ...localExpense,
           isSynced: true,
           serverExpenseIds: result.expenses.map((expense) => expense.id),
+        });
+        applyDaybookSupplierBillPayment({
+          amount: nextTotal,
+          scope,
+          supplierName: payee,
         });
 
         void invalidateFinanceQueries();
@@ -303,8 +361,13 @@ export function DaybookExpenseDialog({
         isSynced: true,
         serverExpenseIds: result.expenses.map((expense) => expense.id),
       });
+      applyDaybookSupplierBillPayment({
+        amount: nextTotal,
+        scope,
+        supplierName: payee,
+      });
 
-      await invalidateFinanceQueries();
+      void invalidateFinanceQueries();
       resetForm();
       setMessage({ text: result.message, tone: "success" });
     } catch (error) {
@@ -344,13 +407,56 @@ export function DaybookExpenseDialog({
             <div className="grid gap-5 md:grid-cols-2">
               <div className="grid gap-2">
                 <Label htmlFor="daybook-expense-payee">Payee</Label>
-                <Input
-                  className="h-10"
-                  id="daybook-expense-payee"
-                  onChange={(event) => setPayee(event.target.value)}
-                  placeholder="Who did you pay?"
-                  value={payee}
-                />
+                <div className="relative">
+                  <Input
+                    autoComplete="off"
+                    className="h-10"
+                    id="daybook-expense-payee"
+                    onBlur={() =>
+                      window.setTimeout(() => setPayeeFocused(false), 120)
+                    }
+                    onChange={(event) => {
+                      setPayee(event.target.value);
+                      setPayeeFocused(true);
+                    }}
+                    onFocus={() => setPayeeFocused(true)}
+                    placeholder="Select supplier or payee"
+                    value={payee}
+                  />
+                  {payeeFocused && filteredSuppliers.length > 0 ? (
+                    <div className="absolute z-20 mt-1 max-h-72 w-full overflow-y-auto rounded-lg border border-slate-200 bg-white p-1 shadow-lg">
+                      {filteredSuppliers.map((supplier) => (
+                        <button
+                          className="flex w-full items-center justify-between gap-3 rounded-md px-3 py-2 text-left text-sm hover:bg-slate-100"
+                          key={supplier.id}
+                          onClick={() => {
+                            setPayee(supplier.name);
+                            setPayeeFocused(false);
+                          }}
+                          onMouseDown={(event) => event.preventDefault()}
+                          type="button"
+                        >
+                          <span className="min-w-0">
+                            <span className="block truncate font-medium text-slate-900">
+                              {supplier.name}
+                            </span>
+                            <span className="block text-slate-500 text-xs">
+                              {supplier.subtitle}
+                            </span>
+                          </span>
+                          <span className="shrink-0 rounded-md bg-amber-50 px-2 py-1 font-semibold text-amber-700 text-xs">
+                            Prev {money(supplier.previousBillAmount)}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+                {activeSupplier ? (
+                  <span className="font-medium text-amber-700 text-xs">
+                    Previous bill {money(activeSupplier.previousBillAmount)}
+                  </span>
+                ) : null}
               </div>
 
               <div className="grid gap-2">

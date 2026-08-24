@@ -2,10 +2,10 @@ import { db } from "@bikalpo-project/db";
 import {
   expense,
   expenseCategory,
+  financeAccount,
   financialLedger,
   invoice,
   order,
-  purchase,
   warehousePosSale,
 } from "@bikalpo-project/db/schema";
 import { and, eq, gte, inArray, isNotNull, lte, sql } from "drizzle-orm";
@@ -58,6 +58,14 @@ function percentage(value: number, total: number) {
   return ((value / total) * 100).toFixed(2);
 }
 
+function signedProfitLossAmount(input: {
+  amount: number;
+  direction: "credit" | "debit";
+  normalBalance: "credit" | "debit";
+}) {
+  return input.direction === input.normalBalance ? input.amount : -input.amount;
+}
+
 export const profitLossRouter = {
   /** Date range Profit & Loss report */
   getMonthlyPnL: protectedProcedure
@@ -96,10 +104,6 @@ export const profitLossRouter = {
       const role = context.session.user.role;
       const ownerType = role === "warehouse" ? "warehouse" : "shop";
       const isCashBasis = input.reportType === "cash";
-      const manualPurchaseEntryTypes = isCashBasis
-        ? (["purchase_cash"] as const)
-        : (["purchase_cash", "purchase_credit"] as const);
-
       const expenseRows = await db
         .select({
           categoryName: expenseCategory.name,
@@ -119,26 +123,6 @@ export const profitLossRouter = {
         )
         .groupBy(expenseCategory.name, expenseCategory.slug);
 
-      const manualProductPurchaseRows = await db
-        .select({
-          balanceBefore: financialLedger.balanceBefore,
-          total: financialLedger.amount,
-        })
-        .from(financialLedger)
-        .where(
-          and(
-            eq(financialLedger.ownerId, ownerId),
-            eq(financialLedger.ownerType, ownerType),
-            inArray(financialLedger.entryType, manualPurchaseEntryTypes),
-            eq(financialLedger.referenceType, "adjustment"),
-            gte(financialLedger.createdAt, startDateTime),
-            lte(financialLedger.createdAt, endDateTime),
-          ),
-        );
-      const manualProductPurchase = manualProductPurchaseRows.reduce(
-        (sum, row) => sum + toNumber(row.total),
-        0,
-      );
       const manualProductSaleRows = await db
         .select({
           balanceBefore: financialLedger.balanceBefore,
@@ -169,13 +153,75 @@ export const profitLossRouter = {
           row.direction === "debit" ? sum + toNumber(row.total) : sum,
         0,
       );
+      const centralProfitLossRows = await db
+        .select({
+          accountName: financeAccount.name,
+          direction: financialLedger.direction,
+          line: financeAccount.profitAndLossLine,
+          normalBalance: financeAccount.normalBalance,
+          total: financialLedger.amount,
+        })
+        .from(financialLedger)
+        .innerJoin(
+          financeAccount,
+          eq(financialLedger.referenceId, financeAccount.id),
+        )
+        .where(
+          and(
+            eq(financialLedger.ownerId, ownerId),
+            eq(financialLedger.ownerType, ownerType),
+            eq(financialLedger.entryType, "adjustment"),
+            eq(financialLedger.referenceType, "adjustment"),
+            eq(financeAccount.ownerId, ownerId),
+            eq(financeAccount.ownerType, ownerType),
+            isNotNull(financeAccount.profitAndLossLine),
+            gte(financialLedger.createdAt, startDateTime),
+            lte(financialLedger.createdAt, endDateTime),
+            sql`(${financialLedger.description} ILIKE 'Money In%' OR ${financialLedger.description} ILIKE 'Money Out%' OR ${financialLedger.description} ILIKE 'Bill due%' OR ${financialLedger.description} ILIKE 'Bill paid%')`,
+          ),
+        );
+      const centralExpenseBreakdown = new Map<string, number>();
+      const centralTotals = centralProfitLossRows.reduce(
+        (totals, row) => {
+          const signedAmount = signedProfitLossAmount({
+            amount: toNumber(row.total),
+            direction: row.direction,
+            normalBalance: row.normalBalance,
+          });
+
+          if (row.line === "product_sales") {
+            totals.productSales += signedAmount;
+          } else if (row.line === "service_income") {
+            totals.serviceIncome += signedAmount;
+          } else if (row.line === "other_income") {
+            totals.otherIncome += signedAmount;
+          } else if (row.line === "product_purchase_cost") {
+            totals.productPurchase += signedAmount;
+          } else if (row.line === "operating_expenses") {
+            totals.operatingExpenses += signedAmount;
+            centralExpenseBreakdown.set(
+              row.accountName,
+              (centralExpenseBreakdown.get(row.accountName) ?? 0) +
+                signedAmount,
+            );
+          }
+
+          return totals;
+        },
+        {
+          operatingExpenses: 0,
+          otherIncome: 0,
+          productPurchase: 0,
+          productSales: 0,
+          serviceIncome: 0,
+        },
+      );
 
       let productSales = 0;
       let productPurchase = 0;
 
       if (role === "warehouse") {
-        const [orderRevenueRows, posRevenueRows, purchaseRows] =
-          await Promise.all([
+        const [orderRevenueRows, posRevenueRows] = await Promise.all([
             db
               .select({
                 total: order.total,
@@ -213,20 +259,6 @@ export const profitLossRouter = {
                   lte(warehousePosSale.createdAt, endDateTime),
                 ),
               ),
-            db
-              .select({
-                total: purchase.total,
-                paymentType: purchase.paymentType,
-              })
-              .from(purchase)
-              .where(
-                and(
-                  eq(purchase.warehouseId, ownerId),
-                  eq(purchase.status, "received"),
-                  gte(purchase.purchaseDate, startDate),
-                  lte(purchase.purchaseDate, endDate),
-                ),
-              ),
           ]);
 
         productSales += orderRevenueRows.reduce((sum, row) => {
@@ -243,63 +275,30 @@ export const profitLossRouter = {
           (sum, row) => sum + toNumber(isCashBasis ? row.paid : row.total),
           0,
         );
-        productPurchase = purchaseRows.reduce((sum, row) => {
-          if (isCashBasis && row.paymentType !== "cash") {
-            return sum;
-          }
-
-          return sum + toNumber(row.total);
-        }, 0);
       } else {
-        const [salesRows, purchaseOrderRows] = await Promise.all([
-          db
-            .select({
-              total: order.total,
-              paymentStatus: order.paymentStatus,
-              invoicePaymentStatus: invoice.paymentStatus,
-            })
-            .from(order)
-            .leftJoin(
-              invoice,
-              and(
-                eq(invoice.orderId, order.id),
-                eq(invoice.invoiceType, "main"),
-              ),
-            )
-            .where(
-              and(
-                eq(order.shopId, ownerId),
-                eq(order.orderType, "b2c"),
-                inArray(order.status, ACTIVE_ORDER_STATUSES),
-                gte(order.createdAt, startDateTime),
-                lte(order.createdAt, endDateTime),
-              ),
+        const salesRows = await db
+          .select({
+            total: order.total,
+            paymentStatus: order.paymentStatus,
+            invoicePaymentStatus: invoice.paymentStatus,
+          })
+          .from(order)
+          .leftJoin(
+            invoice,
+            and(
+              eq(invoice.orderId, order.id),
+              eq(invoice.invoiceType, "main"),
             ),
-          db
-            .select({
-              total: order.total,
-              paymentStatus: order.paymentStatus,
-              invoicePaymentStatus: invoice.paymentStatus,
-            })
-            .from(order)
-            .leftJoin(
-              invoice,
-              and(
-                eq(invoice.orderId, order.id),
-                eq(invoice.invoiceType, "main"),
-              ),
-            )
-            .where(
-              and(
-                eq(order.userId, ownerId),
-                eq(order.orderType, "b2b"),
-                isNotNull(order.warehouseId),
-                inArray(order.status, ACTIVE_ORDER_STATUSES),
-                gte(order.createdAt, startDateTime),
-                lte(order.createdAt, endDateTime),
-              ),
+          )
+          .where(
+            and(
+              eq(order.shopId, ownerId),
+              eq(order.orderType, "b2c"),
+              inArray(order.status, ACTIVE_ORDER_STATUSES),
+              gte(order.createdAt, startDateTime),
+              lte(order.createdAt, endDateTime),
             ),
-        ]);
+          );
 
         productSales = salesRows.reduce((sum, row) => {
           if (
@@ -311,30 +310,59 @@ export const profitLossRouter = {
 
           return sum + toNumber(row.total);
         }, 0);
-        productPurchase = purchaseOrderRows.reduce((sum, row) => {
-          if (
-            isCashBasis &&
-            !isOrderPaid(row.paymentStatus, row.invoicePaymentStatus)
-          ) {
-            return sum;
-          }
-
-          return sum + toNumber(row.total);
-        }, 0);
       }
 
+      const serviceIncome = centralTotals.serviceIncome;
+      const otherIncome = centralTotals.otherIncome;
       const uncategorizedIncome = 0;
       productSales += manualProductSales;
-      const revenue = productSales + uncategorizedIncome;
-      productPurchase += manualProductPurchase + manualProductSaleCost;
+      productSales += centralTotals.productSales;
+      const revenue =
+        productSales + serviceIncome + otherIncome + uncategorizedIncome;
+      productPurchase += manualProductSaleCost + centralTotals.productPurchase;
 
       const cogs = productPurchase;
       const grossProfit = revenue - cogs;
-      const totalExpenses = expenseRows.reduce(
-        (sum, row) => sum + toNumber(row.total),
-        0,
-      );
+      const totalExpenses =
+        expenseRows.reduce((sum, row) => sum + toNumber(row.total), 0) +
+        centralTotals.operatingExpenses;
       const netProfit = grossProfit - totalExpenses;
+      const incomeBreakdown = [
+        {
+          category: "Product Sales",
+          slug: "product-sales",
+          amount: toMoney(productSales),
+        },
+        {
+          category: "Service Income",
+          slug: "service-income",
+          amount: toMoney(serviceIncome),
+        },
+        {
+          category: "Other Income",
+          slug: "other-income",
+          amount: toMoney(otherIncome),
+        },
+        {
+          category: "Uncategorized Income",
+          slug: "uncategorized-income",
+          amount: toMoney(uncategorizedIncome),
+        },
+      ].filter((row) => Math.abs(toNumber(row.amount)) >= 0.005);
+      const expenseBreakdown = [
+        ...expenseRows.map((row) => ({
+          category: row.categoryName,
+          slug: row.categorySlug,
+          amount: toMoney(toNumber(row.total)),
+        })),
+        ...Array.from(centralExpenseBreakdown.entries()).map(
+          ([category, amount]) => ({
+            category,
+            slug: category.toLowerCase().replace(/[^a-z0-9]+/g, "-"),
+            amount: toMoney(amount),
+          }),
+        ),
+      ].filter((row) => Math.abs(toNumber(row.amount)) >= 0.005);
 
       return {
         period: {
@@ -346,26 +374,15 @@ export const profitLossRouter = {
         },
         revenue: toMoney(revenue),
         income: {
-          breakdown: [
-            {
-              category: "Product Sales",
-              slug: "product-sales",
-              amount: toMoney(productSales),
-            },
-            {
-              category: "Uncategorized Income",
-              slug: "uncategorized-income",
-              amount: toMoney(uncategorizedIncome),
-            },
-          ],
+          breakdown: incomeBreakdown,
           total: toMoney(revenue),
         },
         cogs: toMoney(cogs),
         costOfGoods: {
           breakdown: [
             {
-              category: "Product Purchase",
-              slug: "product-purchase",
+              category: "Cost of Goods Sold",
+              slug: "cost-of-goods-sold",
               amount: toMoney(productPurchase),
             },
           ],
@@ -374,11 +391,7 @@ export const profitLossRouter = {
         grossProfit: toMoney(grossProfit),
         grossProfitPercent: percentage(grossProfit, revenue),
         expenses: {
-          breakdown: expenseRows.map((row) => ({
-            category: row.categoryName,
-            slug: row.categorySlug,
-            amount: toMoney(toNumber(row.total)),
-          })),
+          breakdown: expenseBreakdown,
           total: toMoney(totalExpenses),
         },
         netProfit: toMoney(netProfit),

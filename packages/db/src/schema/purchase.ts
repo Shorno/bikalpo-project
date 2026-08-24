@@ -9,9 +9,12 @@ import {
     serial,
     text,
     timestamp,
+    uniqueIndex,
     varchar,
 } from "drizzle-orm/pg-core";
 import { user } from "./auth-schema";
+import { financePaymentAccount } from "./finance-payment-account";
+import { inventoryOwnerTypeEnum } from "./inventory";
 import { supplier } from "./supplier";
 import { productVariant } from "./product-variant";
 import { timestamps } from "./columns.helpers";
@@ -33,6 +36,25 @@ export const purchaseStatusEnum = pgEnum("purchase_status", [
 export const purchasePaymentTypeEnum = pgEnum("purchase_payment_type", [
     "cash",
     "credit",
+]);
+
+export const purchaseEntryModeEnum = pgEnum("purchase_entry_mode", [
+    "new",
+    "exchange",
+]);
+
+export const purchaseVerificationStatusEnum = pgEnum(
+    "purchase_verification_status",
+    ["pending", "verified", "on_hold"],
+);
+
+export const purchasePaymentStatusEnum = pgEnum("purchase_payment_status", [
+    "unpaid",
+    "partial",
+    "paid",
+    "refund_pending",
+    "partially_refunded",
+    "refunded",
 ]);
 
 /**
@@ -57,6 +79,11 @@ export const purchase = pgTable(
             .notNull()
             .references(() => user.id, { onDelete: "cascade" }),
 
+        /** The inventory/accounting scope that owns this purchase. */
+        ownerType: inventoryOwnerTypeEnum("owner_type")
+            .default("warehouse")
+            .notNull(),
+
         /** Supplier's own invoice reference number */
         supplierInvoiceNo: varchar("supplier_invoice_no", { length: 100 }),
 
@@ -70,7 +97,16 @@ export const purchase = pgTable(
         discount: decimal("discount", { precision: 12, scale: 2 })
             .default("0")
             .notNull(),
+        vatAmount: decimal("vat_amount", { precision: 12, scale: 2 })
+            .default("0")
+            .notNull(),
         total: decimal("total", { precision: 12, scale: 2 })
+            .default("0")
+            .notNull(),
+        paidAmount: decimal("paid_amount", { precision: 12, scale: 2 })
+            .default("0")
+            .notNull(),
+        dueAmount: decimal("due_amount", { precision: 12, scale: 2 })
             .default("0")
             .notNull(),
 
@@ -84,11 +120,36 @@ export const purchase = pgTable(
             .default("cash")
             .notNull(),
 
+        paymentStatus: purchasePaymentStatusEnum("payment_status")
+            .default("unpaid")
+            .notNull(),
+        paymentMethod: varchar("payment_method", { length: 50 }),
+        paymentAccountId: integer("payment_account_id").references(
+            () => financePaymentAccount.id,
+            { onDelete: "set null" },
+        ),
+
+        entryMode: purchaseEntryModeEnum("entry_mode").default("new").notNull(),
+        verificationStatus: purchaseVerificationStatusEnum(
+            "verification_status",
+        )
+            .default("pending")
+            .notNull(),
+        verificationMessage: text("verification_message"),
+        idempotencyKey: varchar("idempotency_key", { length: 120 }),
+        attachmentUrl: text("attachment_url"),
+        attachmentName: varchar("attachment_name", { length: 255 }),
+
         status: purchaseStatusEnum("status").default("draft").notNull(),
 
         note: text("note"),
 
+        acceptedAt: timestamp("accepted_at"),
         receivedAt: timestamp("received_at"),
+        cancelledAt: timestamp("cancelled_at"),
+        createdById: text("created_by_id").references(() => user.id, {
+            onDelete: "set null",
+        }),
 
         ...timestamps,
     },
@@ -96,6 +157,12 @@ export const purchase = pgTable(
         index("purchase_warehouseId_idx").on(table.warehouseId),
         index("purchase_supplierId_idx").on(table.supplierId),
         index("purchase_status_idx").on(table.status),
+        index("purchase_paymentStatus_idx").on(table.paymentStatus),
+        index("purchase_verificationStatus_idx").on(table.verificationStatus),
+        uniqueIndex("purchase_owner_idempotency_unique").on(
+            table.warehouseId,
+            table.idempotencyKey,
+        ),
     ],
 );
 
@@ -116,6 +183,12 @@ export const purchaseItem = pgTable(
 
         /** Snapshot of product name at purchase time */
         productName: text("product_name").notNull(),
+        sku: varchar("sku", { length: 100 }),
+        brandName: varchar("brand_name", { length: 180 }),
+        sizeLabel: varchar("size_label", { length: 100 }),
+        quantityUnit: varchar("quantity_unit", { length: 30 })
+            .default("unit")
+            .notNull(),
 
         quantity: decimal("quantity", { precision: 12, scale: 2 }).notNull(),
         unitCost: decimal("unit_cost", { precision: 10, scale: 2 }).notNull(),
@@ -136,6 +209,9 @@ export const purchaseItem = pgTable(
         returnPackQty: decimal("return_pack_qty", { precision: 12, scale: 2 })
             .default("0")
             .notNull(),
+        exchangeQty: decimal("exchange_qty", { precision: 12, scale: 2 })
+            .default("0")
+            .notNull(),
 
         ...timestamps,
     },
@@ -154,6 +230,15 @@ export const purchaseRelations = relations(purchase, ({ one, many }) => ({
     warehouse: one(user, {
         fields: [purchase.warehouseId],
         references: [user.id],
+    }),
+    createdBy: one(user, {
+        fields: [purchase.createdById],
+        references: [user.id],
+        relationName: "purchaseCreatedBy",
+    }),
+    paymentAccount: one(financePaymentAccount, {
+        fields: [purchase.paymentAccountId],
+        references: [financePaymentAccount.id],
     }),
     items: many(purchaseItem),
 }));
@@ -176,3 +261,8 @@ export type NewPurchase = typeof purchase.$inferInsert;
 export type NewPurchaseItem = typeof purchaseItem.$inferInsert;
 export type PurchaseStatus = (typeof purchaseStatusEnum.enumValues)[number];
 export type PurchasePaymentType = (typeof purchasePaymentTypeEnum.enumValues)[number];
+export type PurchaseEntryMode = (typeof purchaseEntryModeEnum.enumValues)[number];
+export type PurchasePaymentStatus =
+    (typeof purchasePaymentStatusEnum.enumValues)[number];
+export type PurchaseVerificationStatus =
+    (typeof purchaseVerificationStatusEnum.enumValues)[number];

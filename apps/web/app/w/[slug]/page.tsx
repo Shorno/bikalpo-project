@@ -4,22 +4,38 @@ import type { FulfillmentMode } from "@bikalpo-project/db/fulfillment";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   AlertCircle,
+  ArrowLeft,
   ArrowRight,
   BadgeCheck,
+  Banknote,
+  Building2,
+  CreditCard,
+  Home,
   Loader2,
   MapPin,
   Minus,
   Package,
+  Pencil,
   Plus,
   Search,
   ShoppingCart,
+  Smartphone,
   Trash2,
   Warehouse,
+  X,
 } from "lucide-react";
+import Image from "next/image";
 import Link from "next/link";
-import { useParams } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useParams, useSearchParams } from "next/navigation";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
+import {
+  type CheckoutInvoiceContact,
+  DeliveryModeSelector,
+  InvoiceContactFields,
+  PaymentPlanSelector,
+  PromotionCodeControl,
+} from "@/components/checkout/checkout-controls";
 import { CylinderSaleModeToggle } from "@/components/features/warehouse/cylinder-sale-mode-toggle";
 import {
   type WarehouseCylinderSaleMode,
@@ -81,12 +97,19 @@ function cartItemMode(item: {
 
 export default function WarehouseStorefrontPage() {
   const { slug } = useParams<{ slug: string }>();
+  const searchParams = useSearchParams();
   const queryClient = useQueryClient();
+  const isCheckoutMode = searchParams.get("checkout") === "1";
 
   const [search, setSearch] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const [isCartOpen, setIsCartOpen] = useState(false);
+  const [checkoutStep, setCheckoutStep] = useState<"review" | "payment">(
+    "review",
+  );
+  const [isEditingShipping, setIsEditingShipping] = useState(false);
+  const [isEditingInvoice, setIsEditingInvoice] = useState(false);
 
   // Buyer connection context
   const { data: sessionData, isPending: sessionPending } =
@@ -129,11 +152,14 @@ export default function WarehouseStorefrontPage() {
       )
     : null;
   const [cart, setCart] = useState<WarehouseStorefrontCartItem[]>([]);
+  const [isCartHydrated, setIsCartHydrated] = useState(false);
 
   // Load cart state
   useEffect(() => {
+    if (sessionPending) return;
     setCart(readWarehouseStorefrontCart(cartKey));
-  }, [cartKey]);
+    setIsCartHydrated(true);
+  }, [cartKey, sessionPending]);
 
   // Save cart state
   const saveCart = (newCart: WarehouseStorefrontCartItem[]) => {
@@ -229,8 +255,23 @@ export default function WarehouseStorefrontPage() {
   const [shippingArea, setShippingArea] = useState("");
   const [customerNote, setCustomerNote] = useState("");
   const [paymentMethod, setPaymentMethod] = useState<
-    "cash_on_delivery" | "bkash" | "nagad" | "bank_transfer" | "card"
-  >("cash_on_delivery");
+    "cash_on_delivery" | "bkash" | "nagad" | "bank_transfer" | "card" | null
+  >(null);
+  const [deliveryMode, setDeliveryMode] = useState<"self_pickup" | "courier">(
+    "courier",
+  );
+  const [paymentPlan, setPaymentPlan] = useState<
+    "pay_now" | "partial" | "pay_later"
+  >("pay_later");
+  const [partialAmount, setPartialAmount] = useState("");
+  const [promotionInput, setPromotionInput] = useState("");
+  const [promotionCode, setPromotionCode] = useState<string | null>(null);
+  const [invoiceContact, setInvoiceContact] = useState<CheckoutInvoiceContact>({
+    name: "",
+    phone: "",
+    email: "",
+  });
+  const checkoutIdempotencyKey = useRef<string | null>(null);
 
   // Prefill details from session
   useEffect(() => {
@@ -239,6 +280,11 @@ export default function WarehouseStorefrontPage() {
       setShippingName(u.shopName || u.warehouseName || u.name || "");
       setShippingPhone(u.phoneNumber || u.phone || "");
       setShippingAddress(u.shopAddress || u.warehouseAddress || "");
+      setInvoiceContact({
+        name: u.shopName || u.warehouseName || u.name || "",
+        phone: u.phoneNumber || u.phone || "",
+        email: u.email || "",
+      });
     }
   }, [sessionData]);
 
@@ -266,7 +312,18 @@ export default function WarehouseStorefrontPage() {
         | "bkash"
         | "nagad"
         | "bank_transfer"
-        | "card";
+        | "card"
+        | null;
+      checkout: {
+        deliveryMode: "self_pickup" | "courier";
+        paymentPlan: "pay_now" | "partial" | "pay_later";
+        partialAmount?: number;
+        promotionCode?: string;
+        quoteVersion: string;
+        quoteExpiresAt: Date;
+        idempotencyKey: string;
+        invoiceContact: CheckoutInvoiceContact;
+      };
     }) => {
       const { warehouseKey, ...orderInput } = input;
 
@@ -279,6 +336,7 @@ export default function WarehouseStorefrontPage() {
     },
     onSuccess: (result) => {
       toast.success(result.message || "Order placed successfully!");
+      checkoutIdempotencyKey.current = null;
       clearCart();
       setIsCartOpen(false);
 
@@ -330,6 +388,22 @@ export default function WarehouseStorefrontPage() {
       toast.error("Your cart is empty");
       return;
     }
+    if (!checkoutQuote || checkoutQuoteQuery.isFetching) {
+      toast.error("Wait for the supplier totals to finish updating");
+      return;
+    }
+    if (!invoiceContact.name.trim() || !invoiceContact.phone.trim()) {
+      toast.error("Invoice name and phone are required");
+      return;
+    }
+    if (
+      paymentPlan === "partial" &&
+      (!Number(partialAmount) || Number(partialAmount) >= checkoutGrandTotal)
+    ) {
+      toast.error("Enter a partial payment below the order total");
+      return;
+    }
+    checkoutIdempotencyKey.current ??= crypto.randomUUID();
     orderMutation.mutate({
       warehouseKey: slug,
       items: cart.map((i) => ({
@@ -349,6 +423,17 @@ export default function WarehouseStorefrontPage() {
       shippingArea: shippingArea || undefined,
       customerNote: customerNote || undefined,
       paymentMethod,
+      checkout: {
+        deliveryMode,
+        paymentPlan,
+        partialAmount:
+          paymentPlan === "partial" ? Number(partialAmount) : undefined,
+        promotionCode: promotionCode || undefined,
+        quoteVersion: checkoutQuote.version,
+        quoteExpiresAt: new Date(checkoutQuote.expiresAt),
+        idempotencyKey: checkoutIdempotencyKey.current,
+        invoiceContact,
+      },
     });
   };
 
@@ -393,6 +478,46 @@ export default function WarehouseStorefrontPage() {
   const cartCount = useMemo(() => {
     return cart.reduce((sum, item) => sum + item.quantity, 0);
   }, [cart]);
+
+  const checkoutQuoteQuery = useQuery({
+    ...orpc.warehouse.getStorefrontCheckoutQuote.queryOptions({
+      input: {
+        slug,
+        lines: cart.map((item) => ({
+          key: isRetailerBuyer
+            ? `${item.variantId}:${item.supplyMode || item.fulfillmentMode || "direct"}:${item.targetVariantId ?? "none"}`
+            : `${item.variantId}:direct:none`,
+          quantity: item.quantity,
+          unitPrice: Number(item.price),
+        })),
+        deliveryMode,
+        paymentPlan,
+        partialAmount:
+          paymentPlan === "partial" && Number(partialAmount) > 0
+            ? Number(partialAmount)
+            : undefined,
+        promotionCode: promotionCode || undefined,
+      },
+    }),
+    enabled:
+      hasCartAccess &&
+      cart.length > 0 &&
+      (paymentPlan !== "partial" || Number(partialAmount) > 0),
+  });
+  const checkoutQuote = checkoutQuoteQuery.data?.quote;
+
+  useEffect(() => {
+    const configuration = warehouse?.checkoutConfiguration;
+    if (!configuration) return;
+    if (deliveryMode === "courier" && !configuration.allowCourier) {
+      setDeliveryMode("self_pickup");
+    } else if (
+      deliveryMode === "self_pickup" &&
+      !configuration.allowSelfPickup
+    ) {
+      setDeliveryMode("courier");
+    }
+  }, [deliveryMode, warehouse]);
 
   if (
     warehouseLoading ||
@@ -461,6 +586,273 @@ export default function WarehouseStorefrontPage() {
   const categories = categoriesData?.categories || [];
   const products = productsData?.products || [];
   const pagination = productsData?.pagination;
+  const checkoutConfiguration = warehouse.checkoutConfiguration;
+  const checkoutDelivery = checkoutQuote?.totals.deliveryFee ?? 0;
+  const checkoutTax =
+    checkoutQuote?.totals.taxAmount ??
+    Math.round(cartTotal * checkoutConfiguration.taxPercentage) / 100;
+  const checkoutShipping =
+    checkoutQuote?.totals.shippingFee ??
+    (deliveryMode === "courier" ? checkoutConfiguration.defaultShippingFee : 0);
+  const checkoutProductDiscount = checkoutQuote?.totals.productDiscount ?? 0;
+  const checkoutCouponDiscount = checkoutQuote?.totals.couponDiscount ?? 0;
+  const checkoutRewardDiscount = checkoutQuote?.totals.rewardDiscount ?? 0;
+  const checkoutDiscount = checkoutQuote?.totals.totalDiscount ?? 0;
+  const checkoutGrandTotal =
+    checkoutQuote?.totals.grandTotal ??
+    cartTotal -
+      checkoutDiscount +
+      checkoutTax +
+      checkoutDelivery +
+      checkoutShipping;
+  const checkoutPayment =
+    checkoutQuote?.initialPaymentAmount ??
+    (paymentPlan === "pay_now"
+      ? checkoutGrandTotal
+      : paymentPlan === "partial"
+        ? Number(partialAmount || 0)
+        : 0);
+
+  const updatePaymentPlan = (value: "pay_now" | "partial" | "pay_later") => {
+    setPaymentPlan(value);
+    if (value === "pay_later") setPaymentMethod("cash_on_delivery");
+    if (value !== "pay_later" && paymentMethod === "cash_on_delivery") {
+      setPaymentMethod("bank_transfer");
+    }
+  };
+
+  const paymentChannel =
+    paymentMethod === null
+      ? "none"
+      : paymentMethod === "cash_on_delivery"
+        ? "cod"
+        : paymentMethod === "bank_transfer"
+          ? "bank"
+          : "online";
+
+  const clearPaymentMethod = () => {
+    setPaymentMethod(null);
+    setPaymentPlan("pay_later");
+    setPartialAmount("");
+  };
+
+  const selectPaymentChannel = (channel: "cod" | "online" | "bank") => {
+    if (channel === "cod") {
+      setPaymentMethod("cash_on_delivery");
+      setPaymentPlan("pay_later");
+      setPartialAmount("");
+      return;
+    }
+
+    setPaymentMethod(channel === "bank" ? "bank_transfer" : "bkash");
+    if (paymentPlan === "pay_later") setPaymentPlan("pay_now");
+  };
+
+  const proceedToPayment = () => {
+    const shippingComplete =
+      shippingName.trim() &&
+      shippingPhone.trim() &&
+      shippingAddress.trim() &&
+      shippingCity.trim();
+    if (!shippingComplete) {
+      setIsEditingShipping(true);
+      toast.error("Complete the shipping and billing information");
+      return;
+    }
+    if (!invoiceContact.name.trim() || !invoiceContact.phone.trim()) {
+      setIsEditingInvoice(true);
+      toast.error("Complete the invoice contact information");
+      return;
+    }
+    if (!checkoutQuote || checkoutQuoteQuery.isFetching) {
+      toast.error("Wait for the order totals to finish updating");
+      return;
+    }
+
+    setCheckoutStep("payment");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const renderCheckoutItems = () => (
+    <div className="divide-y divide-zinc-200">
+      {cart.map((item, index) => {
+        const fulfillmentLabel = String(
+          item.supplyMode || item.fulfillmentMode || "direct",
+        )
+          .replaceAll("_", " ")
+          .replace(/^./, (character) => character.toUpperCase());
+
+        return (
+          <div
+            key={`${item.variantId}:${item.supplyMode || item.fulfillmentMode || "direct"}:${item.targetVariantId ?? "none"}:${index}`}
+            className="grid grid-cols-[4.5rem_minmax(0,1fr)] gap-4 py-5 sm:grid-cols-[5rem_minmax(0,1fr)_auto]"
+          >
+            <div className="relative h-[4.5rem] w-[4.5rem] overflow-hidden border border-zinc-200 bg-zinc-50 sm:h-20 sm:w-20">
+              {item.image ? (
+                <Image
+                  src={item.image}
+                  alt={item.productName}
+                  fill
+                  sizes="80px"
+                  className="object-contain p-1"
+                  unoptimized
+                />
+              ) : (
+                <Package className="absolute inset-0 m-auto h-7 w-7 text-zinc-300" />
+              )}
+            </div>
+
+            <div className="min-w-0">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="font-semibold text-zinc-900">
+                    {item.productName}
+                  </p>
+                  <p className="mt-1 text-xs text-zinc-500">
+                    {item.sku || "Supplier item"}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => removeFromCart(item.variantId)}
+                  className="shrink-0 p-1 text-zinc-400 hover:text-red-600 sm:hidden"
+                  aria-label={`Remove ${item.productName}`}
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              </div>
+              <p className="mt-2 text-xs text-zinc-600">
+                {fulfillmentLabel} · {item.unitLabel || "Unit"}
+              </p>
+              <div className="mt-3 inline-flex h-8 items-center border border-zinc-200 bg-white">
+                <button
+                  type="button"
+                  onClick={() => updateQuantity(item.variantId, -1)}
+                  className="flex h-full w-8 items-center justify-center text-zinc-500 hover:bg-zinc-50"
+                  aria-label={`Decrease ${item.productName} quantity`}
+                >
+                  <Minus className="h-3.5 w-3.5" />
+                </button>
+                <span className="w-9 text-center text-xs font-semibold tabular-nums">
+                  {item.quantity}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => updateQuantity(item.variantId, 1)}
+                  className="flex h-full w-8 items-center justify-center text-zinc-500 hover:bg-zinc-50"
+                  aria-label={`Increase ${item.productName} quantity`}
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            </div>
+
+            <div className="col-start-2 flex items-end justify-between gap-4 sm:col-start-auto sm:flex-col sm:items-end">
+              <button
+                type="button"
+                onClick={() => removeFromCart(item.variantId)}
+                className="hidden p-1 text-zinc-400 hover:text-red-600 sm:block"
+                aria-label={`Remove ${item.productName}`}
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
+              <div className="text-right">
+                <p className="font-semibold tabular-nums text-zinc-900">
+                  ৳ {(Number(item.price) * item.quantity).toLocaleString()}
+                </p>
+                <p className="mt-1 text-xs tabular-nums text-zinc-500">
+                  ৳ {Number(item.price).toLocaleString()} each
+                </p>
+              </div>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+
+  const renderDocumentTotals = (showSettlement = false) => (
+    <div className="space-y-2.5 text-sm">
+      <div className="flex items-center justify-between gap-4">
+        <span className="text-zinc-600">
+          Items Total ({cartCount} {cartCount === 1 ? "Item" : "Items"})
+        </span>
+        <span className="font-medium tabular-nums text-zinc-900">
+          ৳ {cartTotal.toLocaleString()}
+        </span>
+      </div>
+      {checkoutProductDiscount > 0 && (
+        <div className="flex items-center justify-between gap-4">
+          <span className="text-zinc-600">Product Discount</span>
+          <span className="font-medium tabular-nums text-emerald-700">
+            -৳ {checkoutProductDiscount.toLocaleString()}
+          </span>
+        </div>
+      )}
+      {checkoutCouponDiscount > 0 && (
+        <div className="flex items-center justify-between gap-4">
+          <span className="text-zinc-600">Coupon Discount</span>
+          <span className="font-medium tabular-nums text-emerald-700">
+            -৳ {checkoutCouponDiscount.toLocaleString()}
+          </span>
+        </div>
+      )}
+      {checkoutRewardDiscount > 0 && (
+        <div className="flex items-center justify-between gap-4">
+          <span className="text-zinc-600">Reward Discount</span>
+          <span className="font-medium tabular-nums text-emerald-700">
+            -৳ {checkoutRewardDiscount.toLocaleString()}
+          </span>
+        </div>
+      )}
+      <div className="flex items-center justify-between gap-4">
+        <span className="text-zinc-600">VAT / Tax</span>
+        <span className="font-medium tabular-nums text-zinc-900">
+          ৳ {checkoutTax.toLocaleString()}
+        </span>
+      </div>
+      <div className="flex items-center justify-between gap-4">
+        <span className="text-zinc-600">Delivery Fee</span>
+        <span className="font-medium tabular-nums text-zinc-900">
+          ৳ {checkoutDelivery.toLocaleString()}
+        </span>
+      </div>
+      <div className="flex items-center justify-between gap-4">
+        <span className="text-zinc-600">Shipping Fee</span>
+        <span className="font-medium tabular-nums text-zinc-900">
+          ৳ {checkoutShipping.toLocaleString()}
+        </span>
+      </div>
+      <div className="flex items-center justify-between gap-4 border-t border-zinc-200 pt-3">
+        <span className="font-semibold text-zinc-950">Total Amount</span>
+        <span className="text-lg font-bold tabular-nums text-zinc-950">
+          ৳ {checkoutGrandTotal.toLocaleString()}
+        </span>
+      </div>
+      {showSettlement && (
+        <>
+          {checkoutPayment > 0 && (
+            <div className="flex items-center justify-between gap-4">
+              <span className="text-zinc-600">Pay now</span>
+              <span className="font-semibold tabular-nums text-emerald-700">
+                ৳ {checkoutPayment.toLocaleString()}
+              </span>
+            </div>
+          )}
+          <div className="flex items-center justify-between gap-4 border-t border-zinc-100 pt-2.5">
+            <span className="font-semibold text-zinc-700">Due Amount</span>
+            <span className="font-bold tabular-nums text-amber-700">
+              ৳{" "}
+              {Math.max(
+                0,
+                checkoutGrandTotal - checkoutPayment,
+              ).toLocaleString()}
+            </span>
+          </div>
+        </>
+      )}
+    </div>
+  );
 
   const renderCartItems = () => {
     if (cart.length === 0) {
@@ -593,6 +985,18 @@ export default function WarehouseStorefrontPage() {
   const renderCheckoutForm = () => {
     return (
       <div className="space-y-4 pt-4 border-t border-zinc-200">
+        <div className="space-y-2">
+          <Label className="text-xs font-bold text-zinc-600">
+            Delivery Method
+          </Label>
+          <DeliveryModeSelector
+            value={deliveryMode}
+            onChange={setDeliveryMode}
+            allowSelfPickup={checkoutConfiguration.allowSelfPickup}
+            allowCourier={checkoutConfiguration.allowCourier}
+          />
+        </div>
+
         <h3 className="text-xs font-bold text-zinc-800 uppercase tracking-widest flex items-center gap-1.5">
           <MapPin className="w-4 h-4 text-emerald-600" />
           Receiving Details
@@ -697,6 +1101,27 @@ export default function WarehouseStorefrontPage() {
           </div>
         </div>
 
+        <div className="space-y-2">
+          <Label className="text-xs font-bold text-zinc-600">
+            Payment Terms
+          </Label>
+          <PaymentPlanSelector
+            value={paymentPlan}
+            onChange={updatePaymentPlan}
+            allowPartial
+            partialAmount={partialAmount}
+            onPartialAmountChange={setPartialAmount}
+            grandTotal={checkoutGrandTotal}
+          />
+          {paymentPlan === "pay_later" &&
+            checkoutConfiguration.wholesaleCreditDays > 0 && (
+              <p className="text-xs text-zinc-500">
+                Payment is due within{" "}
+                {checkoutConfiguration.wholesaleCreditDays} days.
+              </p>
+            )}
+        </div>
+
         <div className="space-y-1.5">
           <Label
             htmlFor="paymentMethod"
@@ -705,8 +1130,12 @@ export default function WarehouseStorefrontPage() {
             Payment Method *
           </Label>
           <Select
-            value={paymentMethod}
-            onValueChange={(v) => setPaymentMethod(v as any)}
+            value={paymentMethod ?? ""}
+            onValueChange={(value) => {
+              const method = value as typeof paymentMethod;
+              setPaymentMethod(method);
+              if (method === "cash_on_delivery") setPaymentPlan("pay_later");
+            }}
           >
             <SelectTrigger
               id="paymentMethod"
@@ -715,7 +1144,11 @@ export default function WarehouseStorefrontPage() {
               <SelectValue placeholder="Select payment method" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="cash_on_delivery" className="text-xs">
+              <SelectItem
+                value="cash_on_delivery"
+                className="text-xs"
+                disabled={paymentPlan !== "pay_later"}
+              >
                 Cash on delivery
               </SelectItem>
               <SelectItem value="bkash" className="text-xs">
@@ -732,6 +1165,36 @@ export default function WarehouseStorefrontPage() {
               </SelectItem>
             </SelectContent>
           </Select>
+        </div>
+
+        <PromotionCodeControl
+          value={promotionInput}
+          appliedCode={checkoutQuote?.promotionCode}
+          error={
+            checkoutQuoteQuery.error instanceof Error
+              ? checkoutQuoteQuery.error.message
+              : null
+          }
+          isApplying={checkoutQuoteQuery.isFetching}
+          onChange={(value) => {
+            setPromotionInput(value);
+            setPromotionCode(null);
+          }}
+          onApply={() => setPromotionCode(promotionInput.trim().toUpperCase())}
+          onClear={() => {
+            setPromotionCode(null);
+            setPromotionInput("");
+          }}
+        />
+
+        <div className="space-y-2">
+          <Label className="text-xs font-bold text-zinc-600">
+            Invoice Contact
+          </Label>
+          <InvoiceContactFields
+            value={invoiceContact}
+            onChange={setInvoiceContact}
+          />
         </div>
 
         <div className="space-y-1.5">
@@ -752,6 +1215,564 @@ export default function WarehouseStorefrontPage() {
       </div>
     );
   };
+
+  const renderOrderTotals = () => (
+    <div className="space-y-2.5 text-sm">
+      <div className="flex items-center justify-between gap-4">
+        <span className="text-zinc-500">Subtotal</span>
+        <span className="font-semibold tabular-nums text-zinc-900">
+          ৳ {cartTotal.toLocaleString()}
+        </span>
+      </div>
+      {checkoutDiscount > 0 && (
+        <div className="flex items-center justify-between gap-4">
+          <span className="text-zinc-500">Discount</span>
+          <span className="font-semibold tabular-nums text-emerald-700">
+            -৳ {checkoutDiscount.toLocaleString()}
+          </span>
+        </div>
+      )}
+      {checkoutTax > 0 && (
+        <div className="flex items-center justify-between gap-4">
+          <span className="text-zinc-500">Tax</span>
+          <span className="font-semibold tabular-nums text-zinc-900">
+            ৳ {checkoutTax.toLocaleString()}
+          </span>
+        </div>
+      )}
+      {checkoutShipping > 0 && (
+        <div className="flex items-center justify-between gap-4">
+          <span className="text-zinc-500">Shipping</span>
+          <span className="font-semibold tabular-nums text-zinc-900">
+            ৳ {checkoutShipping.toLocaleString()}
+          </span>
+        </div>
+      )}
+      <div className="flex items-center justify-between gap-4 border-t border-zinc-200 pt-3">
+        <span className="font-semibold text-zinc-900">Order Total</span>
+        <span
+          className={`text-lg font-bold tabular-nums ${
+            gridMode === "retailer" ? "text-blue-700" : "text-emerald-700"
+          }`}
+        >
+          ৳ {checkoutGrandTotal.toLocaleString()}
+        </span>
+      </div>
+      <div className="flex items-center justify-between gap-4">
+        <span className="text-zinc-500">Pay now</span>
+        <span className="font-semibold tabular-nums text-emerald-700">
+          ৳ {checkoutPayment.toLocaleString()}
+        </span>
+      </div>
+      <div className="flex items-center justify-between gap-4">
+        <span className="text-zinc-500">Due</span>
+        <span className="font-semibold tabular-nums text-amber-700">
+          ৳ {Math.max(0, checkoutGrandTotal - checkoutPayment).toLocaleString()}
+        </span>
+      </div>
+    </div>
+  );
+
+  if (isCheckoutMode) {
+    const storefrontHref = `/w/${encodeURIComponent(slug)}`;
+
+    return (
+      <div className="min-h-screen bg-zinc-50">
+        <header className="border-b border-zinc-200 bg-white">
+          <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-4 sm:px-6">
+            <div className="flex min-w-0 items-center gap-3">
+              {checkoutStep === "review" ? (
+                <Button
+                  asChild
+                  variant="outline"
+                  size="icon"
+                  className="shrink-0"
+                >
+                  <Link href={storefrontHref} aria-label="Continue shopping">
+                    <ArrowLeft className="h-4 w-4" />
+                  </Link>
+                </Button>
+              ) : (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  className="shrink-0"
+                  onClick={() => setCheckoutStep("review")}
+                  aria-label="Back to checkout review"
+                >
+                  <ArrowLeft className="h-4 w-4" />
+                </Button>
+              )}
+              <div className="min-w-0">
+                <h1 className="text-xl font-bold text-zinc-950 sm:text-2xl">
+                  {checkoutStep === "review"
+                    ? `Proceed to Checkout (${cartCount})`
+                    : "Select Payment Method"}
+                </h1>
+                <p className="truncate text-xs text-zinc-500 sm:text-sm">
+                  Ordering from {warehouse.warehouseName || warehouse.name}
+                </p>
+              </div>
+            </div>
+            <div className="hidden items-center gap-2 text-xs font-medium sm:flex">
+              <span
+                className={`border px-3 py-1.5 ${
+                  checkoutStep === "review"
+                    ? "border-blue-600 bg-blue-50 text-blue-700"
+                    : "border-emerald-200 bg-emerald-50 text-emerald-700"
+                }`}
+              >
+                1. Review
+              </span>
+              <ArrowRight className="h-3.5 w-3.5 text-zinc-300" />
+              <span
+                className={`border px-3 py-1.5 ${
+                  checkoutStep === "payment"
+                    ? "border-blue-600 bg-blue-50 text-blue-700"
+                    : "border-zinc-200 text-zinc-400"
+                }`}
+              >
+                2. Payment
+              </span>
+            </div>
+          </div>
+        </header>
+
+        <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6 sm:py-8">
+          {!isCartHydrated ? (
+            <div className="flex min-h-[55vh] items-center justify-center border border-zinc-200 bg-white">
+              <div className="flex items-center gap-2 text-sm text-zinc-500">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Loading checkout...
+              </div>
+            </div>
+          ) : cart.length === 0 ? (
+            <div className="flex min-h-[55vh] flex-col items-center justify-center border border-dashed border-zinc-300 bg-white px-6 text-center">
+              <ShoppingCart className="mb-3 h-10 w-10 text-zinc-300" />
+              <h2 className="text-lg font-semibold text-zinc-900">
+                Your checkout is empty
+              </h2>
+              <p className="mt-1 max-w-sm text-sm text-zinc-500">
+                Return to the supplier catalog and add products before checking
+                out.
+              </p>
+              <Button asChild className="mt-5 gap-2">
+                <Link href={storefrontHref}>
+                  <ArrowLeft className="h-4 w-4" />
+                  Browse products
+                </Link>
+              </Button>
+            </div>
+          ) : checkoutStep === "review" ? (
+            <div className="grid border border-zinc-200 bg-white lg:grid-cols-[minmax(0,3fr)_minmax(20rem,2fr)]">
+              <div className="min-w-0 p-5 sm:p-7">
+                <section>
+                  <div className="flex items-center justify-between gap-4">
+                    <h2 className="text-sm font-bold uppercase text-zinc-950">
+                      Shipping & Billing
+                    </h2>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setIsEditingShipping((value) => !value)}
+                      className="h-8 gap-1.5 text-xs"
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                      {isEditingShipping ? "Done" : "Edit"}
+                    </Button>
+                  </div>
+
+                  {isEditingShipping ? (
+                    <div className="mt-5 grid gap-4 sm:grid-cols-2">
+                      <div className="space-y-1.5">
+                        <Label htmlFor="review-shipping-name">Name *</Label>
+                        <Input
+                          id="review-shipping-name"
+                          value={shippingName}
+                          onChange={(event) =>
+                            setShippingName(event.target.value)
+                          }
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label htmlFor="review-shipping-phone">Phone *</Label>
+                        <Input
+                          id="review-shipping-phone"
+                          type="tel"
+                          value={shippingPhone}
+                          onChange={(event) =>
+                            setShippingPhone(event.target.value)
+                          }
+                        />
+                      </div>
+                      <div className="space-y-1.5 sm:col-span-2">
+                        <Label htmlFor="review-shipping-address">
+                          Address *
+                        </Label>
+                        <Textarea
+                          id="review-shipping-address"
+                          value={shippingAddress}
+                          onChange={(event) =>
+                            setShippingAddress(event.target.value)
+                          }
+                          className="min-h-20 resize-none"
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label htmlFor="review-shipping-city">City *</Label>
+                        <Select
+                          value={shippingCity || undefined}
+                          onValueChange={setShippingCity}
+                        >
+                          <SelectTrigger
+                            id="review-shipping-city"
+                            className="w-full"
+                          >
+                            <SelectValue placeholder="Select city" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {CITIES.map((city) => (
+                              <SelectItem key={city} value={city}>
+                                {city}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label htmlFor="review-shipping-area">Area</Label>
+                        <Input
+                          id="review-shipping-area"
+                          value={shippingArea}
+                          onChange={(event) =>
+                            setShippingArea(event.target.value)
+                          }
+                          placeholder="Optional"
+                        />
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="mt-4 border-t border-zinc-200 pt-4">
+                      <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+                        <span className="font-semibold text-zinc-950">
+                          {shippingName || "Add receiving name"}
+                        </span>
+                        <span className="text-sm text-zinc-600">
+                          {shippingPhone || "Add phone number"}
+                        </span>
+                      </div>
+                      <div className="mt-4 flex gap-3">
+                        <div className="flex h-9 w-9 shrink-0 items-center justify-center border border-zinc-200 bg-zinc-50">
+                          <Home className="h-4 w-4 text-zinc-600" />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-xs font-bold uppercase text-zinc-700">
+                            Business Address
+                          </p>
+                          <p className="mt-1 text-sm leading-6 text-zinc-600">
+                            {[shippingAddress, shippingArea, shippingCity]
+                              .filter(Boolean)
+                              .join(", ") || "Add delivery address and city"}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </section>
+
+                <section className="mt-7 border-t border-zinc-200 pt-6">
+                  <div className="flex items-center justify-between gap-4">
+                    <h2 className="text-sm font-bold uppercase text-zinc-950">
+                      Selected ({cartCount} {cartCount === 1 ? "Item" : "Items"}
+                      )
+                    </h2>
+                    <Button
+                      asChild
+                      variant="ghost"
+                      size="sm"
+                      className="h-8 text-xs text-blue-700"
+                    >
+                      <Link href={storefrontHref}>Add more</Link>
+                    </Button>
+                  </div>
+                  {renderCheckoutItems()}
+                </section>
+              </div>
+
+              <aside className="border-t border-zinc-200 p-5 sm:p-7 lg:border-l lg:border-t-0">
+                <section>
+                  <Label className="text-sm font-bold text-zinc-950">
+                    Delivery
+                  </Label>
+                  <div className="mt-3">
+                    <DeliveryModeSelector
+                      value={deliveryMode}
+                      onChange={setDeliveryMode}
+                      allowSelfPickup={checkoutConfiguration.allowSelfPickup}
+                      allowCourier={checkoutConfiguration.allowCourier}
+                    />
+                  </div>
+                </section>
+
+                <section className="mt-6 border-t border-zinc-200 pt-5">
+                  <PromotionCodeControl
+                    value={promotionInput}
+                    appliedCode={checkoutQuote?.promotionCode}
+                    error={
+                      checkoutQuoteQuery.error instanceof Error
+                        ? checkoutQuoteQuery.error.message
+                        : null
+                    }
+                    isApplying={checkoutQuoteQuery.isFetching}
+                    onChange={(value) => {
+                      setPromotionInput(value);
+                      setPromotionCode(null);
+                    }}
+                    onApply={() =>
+                      setPromotionCode(promotionInput.trim().toUpperCase())
+                    }
+                    onClear={() => {
+                      setPromotionCode(null);
+                      setPromotionInput("");
+                    }}
+                  />
+                </section>
+
+                <section className="mt-6 border-t border-zinc-200 pt-5">
+                  <div className="flex items-center justify-between gap-4">
+                    <h2 className="text-sm font-bold text-zinc-950">
+                      Invoice and Contact Info
+                    </h2>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setIsEditingInvoice((value) => !value)}
+                      className="h-8 gap-1.5 text-xs text-blue-700"
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                      {isEditingInvoice ? "Done" : "Edit"}
+                    </Button>
+                  </div>
+                  {isEditingInvoice ? (
+                    <div className="mt-4">
+                      <InvoiceContactFields
+                        value={invoiceContact}
+                        onChange={setInvoiceContact}
+                      />
+                    </div>
+                  ) : (
+                    <div className="mt-3 space-y-1 text-sm text-zinc-600">
+                      <p className="font-semibold text-zinc-900">
+                        {invoiceContact.name || "Add invoice name"}
+                      </p>
+                      <p>{invoiceContact.phone || "Add invoice phone"}</p>
+                      {invoiceContact.email && <p>{invoiceContact.email}</p>}
+                    </div>
+                  )}
+                </section>
+
+                <section className="mt-6 border-t border-zinc-200 pt-5">
+                  <h2 className="mb-4 text-sm font-bold text-zinc-950">
+                    Order Summary
+                  </h2>
+                  {renderDocumentTotals()}
+                </section>
+
+                <Button
+                  type="button"
+                  onClick={proceedToPayment}
+                  disabled={checkoutQuoteQuery.isFetching || !checkoutQuote}
+                  className="mt-6 h-11 w-full gap-2 bg-blue-600 text-sm font-semibold text-white hover:bg-blue-700"
+                >
+                  Continue to Payment
+                  <ArrowRight className="h-4 w-4" />
+                </Button>
+              </aside>
+            </div>
+          ) : (
+            <div className="space-y-5">
+              {(paymentChannel === "online" || paymentChannel === "bank") && (
+                <div className="flex items-start gap-3 border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                  <BadgeCheck className="mt-0.5 h-4 w-4 shrink-0 text-amber-700" />
+                  <p>
+                    Collect your payment voucher and keep it with the invoice
+                    for payment verification and available purchase savings.
+                  </p>
+                </div>
+              )}
+
+              <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_23rem]">
+                <section className="border border-zinc-200 bg-white p-5 sm:p-7">
+                  <div className="flex items-center justify-between gap-3">
+                    <h2 className="text-base font-bold text-zinc-950">
+                      Select Payment Method
+                    </h2>
+                    {paymentChannel !== "none" && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        onClick={clearPaymentMethod}
+                        aria-label="Clear payment method"
+                        title="Clear payment method"
+                        className="h-8 w-8 text-zinc-500"
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    )}
+                  </div>
+                  <div
+                    className="mt-5 grid gap-3 sm:grid-cols-3"
+                    role="radiogroup"
+                    aria-label="Payment method"
+                  >
+                    {[
+                      {
+                        value: "cod" as const,
+                        label: "COD",
+                        description: "Pay on delivery",
+                        icon: Banknote,
+                      },
+                      {
+                        value: "online" as const,
+                        label: "Online Pay",
+                        description: "bKash, Nagad or card",
+                        icon: Smartphone,
+                      },
+                      {
+                        value: "bank" as const,
+                        label: "Bank Pay",
+                        description: "Bank transfer",
+                        icon: Building2,
+                      },
+                    ].map((option) => {
+                      const Icon = option.icon;
+                      const selected = paymentChannel === option.value;
+                      return (
+                        <button
+                          key={option.value}
+                          type="button"
+                          role="radio"
+                          aria-checked={selected}
+                          onClick={() => selectPaymentChannel(option.value)}
+                          className={`flex min-h-24 items-start gap-3 border p-4 text-left transition-colors ${
+                            selected
+                              ? "border-blue-600 bg-blue-50 text-blue-950"
+                              : "border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50"
+                          }`}
+                        >
+                          <Icon className="mt-0.5 h-5 w-5 shrink-0" />
+                          <span>
+                            <span className="block text-sm font-semibold">
+                              {option.label}
+                            </span>
+                            <span className="mt-1 block text-xs text-zinc-500">
+                              {option.description}
+                            </span>
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {paymentChannel === "online" && (
+                    <div className="mt-6 space-y-2">
+                      <Label htmlFor="online-provider">Online provider</Label>
+                      <Select
+                        value={paymentMethod ?? ""}
+                        onValueChange={(value) =>
+                          setPaymentMethod(value as typeof paymentMethod)
+                        }
+                      >
+                        <SelectTrigger id="online-provider" className="w-full">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="bkash">bKash</SelectItem>
+                          <SelectItem value="nagad">Nagad</SelectItem>
+                          <SelectItem value="card">Card</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+
+                  {paymentChannel === "cod" && (
+                    <div className="mt-6 border border-zinc-200 bg-zinc-50 p-4 text-sm text-zinc-600">
+                      The full order amount will remain due and will be
+                      collected when the order is delivered.
+                    </div>
+                  )}
+
+                  <div className="mt-6 space-y-2">
+                    <Label htmlFor="payment-order-note">
+                      Order Note (Optional)
+                    </Label>
+                    <Textarea
+                      id="payment-order-note"
+                      value={customerNote}
+                      onChange={(event) => setCustomerNote(event.target.value)}
+                      placeholder="Please keep the product ready for delivery."
+                      className="min-h-24 resize-none"
+                    />
+                  </div>
+                </section>
+
+                <aside className="border border-zinc-200 bg-white lg:sticky lg:top-6">
+                  <div className="border-b border-zinc-200 px-5 py-4">
+                    <h2 className="text-base font-bold text-zinc-950">
+                      Order Summary
+                    </h2>
+                    <p className="mt-1 text-xs text-zinc-500">
+                      {cartCount} {cartCount === 1 ? "item" : "items"}, fees
+                      included below
+                    </p>
+                  </div>
+                  <div className="space-y-5 p-5">
+                    {renderDocumentTotals(true)}
+                    <Button
+                      type="button"
+                      className="h-11 w-full gap-2 bg-blue-600 text-sm font-semibold text-white hover:bg-blue-700"
+                      disabled={
+                        orderMutation.isPending ||
+                        checkoutQuoteQuery.isFetching ||
+                        !checkoutQuote
+                      }
+                      onClick={handlePlaceOrder}
+                    >
+                      {orderMutation.isPending ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : paymentPlan === "pay_later" ? (
+                        <Package className="h-4 w-4" />
+                      ) : (
+                        <CreditCard className="h-4 w-4" />
+                      )}
+                      {paymentChannel === "cod"
+                        ? "Confirm COD Order"
+                        : paymentChannel === "none"
+                          ? "Place Order"
+                          : "Pay & Place Order"}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setCheckoutStep("review")}
+                      className="h-10 w-full gap-2"
+                    >
+                      <ArrowLeft className="h-4 w-4" />
+                      Back to Checkout
+                    </Button>
+                  </div>
+                </aside>
+              </div>
+            </div>
+          )}
+        </main>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-zinc-50/50">
@@ -980,30 +2001,7 @@ export default function WarehouseStorefrontPage() {
               {/* Sticky Drawer Footer with Totals and Order Placement CTA */}
               {cart.length > 0 && (
                 <div className="p-4 border-t border-zinc-200 bg-white flex-shrink-0 space-y-3 shadow-[0_-4px_12px_rgba(0,0,0,0.03)]">
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="text-zinc-500 font-semibold">
-                        Subtotal
-                      </span>
-                      <span className="font-bold text-zinc-900 font-mono">
-                        ৳ {cartTotal.toLocaleString()}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between text-xs pt-1.5 border-t">
-                      <span className="text-zinc-500 font-semibold">
-                        Order Total
-                      </span>
-                      <span
-                        className={`font-extrabold text-sm font-mono ${
-                          gridMode === "retailer"
-                            ? "text-blue-600"
-                            : "text-emerald-600"
-                        }`}
-                      >
-                        ৳ {cartTotal.toLocaleString()}
-                      </span>
-                    </div>
-                  </div>
+                  {renderOrderTotals()}
 
                   <Button
                     type="button"
@@ -1012,7 +2010,11 @@ export default function WarehouseStorefrontPage() {
                         ? "bg-blue-600 hover:bg-blue-700"
                         : "bg-emerald-600 hover:bg-emerald-700"
                     }`}
-                    disabled={orderMutation.isPending}
+                    disabled={
+                      orderMutation.isPending ||
+                      checkoutQuoteQuery.isFetching ||
+                      !checkoutQuote
+                    }
                     onClick={handlePlaceOrder}
                   >
                     {orderMutation.isPending ? (

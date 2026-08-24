@@ -61,6 +61,17 @@ function isPathAtOrBelow(pathname: string, route: string) {
   return pathname === route || pathname.startsWith(`${route}/`);
 }
 
+function isShopDashboardAliasPath(pathname: string) {
+  return (
+    pathname === "/dashboard" ||
+    pathname === "/dashboard/daybook" ||
+    isPathAtOrBelow(pathname, "/dashboard/reports") ||
+    isPathAtOrBelow(pathname, "/dashboard/finance") ||
+    isPathAtOrBelow(pathname, "/dashboard/suppliers") ||
+    isPathAtOrBelow(pathname, "/dashboard/customers")
+  );
+}
+
 export function proxy(request: NextRequest) {
   const hostname = request.headers.get("host") || "";
   const pathname = request.nextUrl.pathname;
@@ -169,6 +180,12 @@ export function proxy(request: NextRequest) {
       return NextResponse.next();
     }
 
+    // Keep warehouse checkout handoffs on the shop origin so browser cart
+    // storage remains available when the shared storefront opens.
+    if (pathname.startsWith("/w/")) {
+      return NextResponse.next();
+    }
+
     // Allow apply-business and application-status routes (they live at root, not under /shop)
     if (pathname === "/apply-business" || pathname === "/application-status") {
       if (!token) {
@@ -193,6 +210,10 @@ export function proxy(request: NextRequest) {
     // Logged-in shop owners hitting root → redirect to dashboard (like warehouse)
     if (pathname === "/") {
       return NextResponse.redirect(new URL("/dashboard", request.url));
+    }
+
+    if (isShopDashboardAliasPath(pathname)) {
+      return NextResponse.next();
     }
 
     // Rewrite to shop folder for shop owners

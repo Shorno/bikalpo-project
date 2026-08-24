@@ -5,8 +5,10 @@ import type { ReactNode } from "react";
 import { CustomerPreviewBanner } from "@/components/storefront/customer-preview-banner";
 import { ProductReviews } from "../reviews/product-reviews";
 import { ProductImageGallery } from "./product-image-gallery";
-import type { DetailVariant } from "./trade-product-detail-client";
-import { ProductDetailClient } from "./trade-product-detail-client";
+import {
+  type DetailVariant,
+  ProductDetailClient,
+} from "./trade-product-detail-client";
 
 interface ProductDetailsViewProps {
   product: {
