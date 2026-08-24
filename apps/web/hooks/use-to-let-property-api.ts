@@ -33,7 +33,17 @@ export function useToLetPropertyNavigation() {
     description: needsRegistration
       ? "Register your property to start using To-Let"
       : "View your properties and manage To-Let spaces",
+    hasPropertyAccount: isConsumer && propertyCount > 0,
+    isConsumer,
+    isLoading: isConsumer && propertiesQuery.isLoading,
   };
+}
+
+export function useMyToLetPosts(enabled = true) {
+  return useQuery({
+    ...orpc.toLetUnitListing.listMine.queryOptions(),
+    enabled,
+  });
 }
 
 export function useMyToLetProperty(propertyCode?: string) {
@@ -182,6 +192,9 @@ function invalidateUnitListingQueries(
   queryClient.invalidateQueries({
     queryKey: orpc.toLetProperty.listMine.key(),
   });
+  queryClient.invalidateQueries({
+    queryKey: orpc.toLetUnitListing.listMine.key(),
+  });
 }
 
 export function useCreateToLetUnitListing() {
@@ -237,7 +250,7 @@ export function useMarkToLetUnitRented() {
   return useMutation({
     ...orpc.toLetUnitListing.markRented.mutationOptions(),
     onSuccess: (_data, variables) => {
-      toast.success("Unit marked as rented");
+      toast.success("Unit marked as booked");
       invalidateUnitListingQueries(queryClient, variables);
       queryClient.invalidateQueries({
         queryKey: orpc.toLetBooking.listOwnerForUnit.key({

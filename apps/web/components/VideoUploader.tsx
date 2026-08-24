@@ -20,6 +20,7 @@ interface VideoUploaderProps {
   value?: string;
   onChange: (url: string) => void;
   disabled?: boolean;
+  subjectLabel?: string;
 }
 
 interface DirectUploadResult {
@@ -101,6 +102,7 @@ export default function VideoUploader({
   value = "",
   onChange,
   disabled = false,
+  subjectLabel = "Building video",
 }: VideoUploaderProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -152,7 +154,7 @@ export default function VideoUploader({
 
         const previousPublicId = value ? getPublicIdFromUrl(value) : null;
         onChange(finalized.url);
-        toast.success("Building video uploaded successfully");
+        toast.success(`${subjectLabel} uploaded successfully`);
 
         if (previousPublicId && previousPublicId !== uploaded.public_id) {
           void client.cloudinary.delete({
@@ -173,7 +175,7 @@ export default function VideoUploader({
         if (inputRef.current) inputRef.current.value = "";
       }
     },
-    [onChange, value],
+    [onChange, subjectLabel, value],
   );
 
   const removeVideo = useCallback(async () => {
@@ -190,7 +192,7 @@ export default function VideoUploader({
       }
       onChange("");
       setError("");
-      toast.success("Building video removed");
+      toast.success(`${subjectLabel} removed`);
     } catch (deleteError) {
       toast.error(
         deleteError instanceof Error
@@ -200,7 +202,7 @@ export default function VideoUploader({
     } finally {
       setIsDeleting(false);
     }
-  }, [disabled, isUploading, onChange, value]);
+  }, [disabled, isUploading, onChange, subjectLabel, value]);
 
   const busy = isUploading || isDeleting;
 
@@ -221,7 +223,9 @@ export default function VideoUploader({
       <div
         role="button"
         tabIndex={disabled || busy ? -1 : 0}
-        aria-label={value ? "Replace building video" : "Upload building video"}
+        aria-label={
+          value ? `Replace ${subjectLabel}` : `Upload ${subjectLabel}`
+        }
         aria-disabled={disabled || busy}
         onClick={() => !disabled && !busy && inputRef.current?.click()}
         onKeyDown={(event) => {
@@ -320,7 +324,7 @@ export default function VideoUploader({
 
       {value ? (
         <div className="flex items-center gap-2 text-xs text-emerald-700">
-          <Video className="size-4" /> Building video added
+          <Video className="size-4" /> {subjectLabel} added
         </div>
       ) : null}
       {error ? (

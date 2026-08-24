@@ -9,6 +9,8 @@ import {
   CheckCircle2,
   Clock3,
   Eye,
+  History,
+  Home,
   ListFilter,
   MapPin,
   Phone,
@@ -42,14 +44,12 @@ import {
   useMyToLetBookings,
 } from "@/hooks/use-to-let-booking-api";
 import {
-  rentalFromResponse,
   type ToLetAlertCategory,
   toLetAlertCategoryOptions,
   useCreateToLetAlert,
-  useToLetRental,
 } from "@/hooks/use-to-let-rental-api";
 
-type BookingTab = "all" | ToLetBookingStatus;
+type BookingTab = "all" | "requests" | "current" | "history";
 
 const statusConfig: Record<
   ToLetBookingStatus,
@@ -83,10 +83,9 @@ const tabs: Array<{
   icon: React.ElementType;
 }> = [
   { value: "all", label: "All", icon: ListFilter },
-  { value: "pending", label: "Pending", icon: Clock3 },
-  { value: "accepted", label: "Booked", icon: CheckCircle2 },
-  { value: "rejected", label: "Rejected", icon: XCircle },
-  { value: "cancelled", label: "Cancelled", icon: Ban },
+  { value: "requests", label: "Booking Requests", icon: Clock3 },
+  { value: "current", label: "Current Rental", icon: Home },
+  { value: "history", label: "Rental History", icon: History },
 ];
 
 function humanize(value: string) {
@@ -113,9 +112,20 @@ function formatDate(value: string, includeTime = false) {
 }
 
 function filterBookings(bookings: ToLetBookingRequestView[], tab: BookingTab) {
-  return tab === "all"
-    ? bookings
-    : bookings.filter((booking) => booking.status === tab);
+  if (tab === "all") return bookings;
+  if (tab === "requests") {
+    return bookings.filter((booking) => !booking.rentalSummary);
+  }
+  if (tab === "current") {
+    return bookings.filter(
+      (booking) =>
+        booking.rentalSummary?.status === "active" ||
+        booking.rentalSummary?.status === "leaving",
+    );
+  }
+  return bookings.filter(
+    (booking) => booking.rentalSummary?.status === "completed",
+  );
 }
 
 function BookingStatusBadge({ status }: { status: ToLetBookingStatus }) {
@@ -147,7 +157,7 @@ function RentalStatusBadge({
         status === "completed"
           ? "border-gray-200 bg-gray-100 text-gray-600"
           : status === "leaving"
-            ? "border-blue-200 bg-blue-50 text-blue-700"
+            ? "border-amber-200 bg-amber-50 text-amber-800"
             : "border-emerald-200 bg-emerald-50 text-emerald-700"
       }
     >
@@ -157,16 +167,38 @@ function RentalStatusBadge({
 }
 
 function EmptyBookings({ tab }: { tab: BookingTab }) {
-  const label = tab === "all" ? "booking requests" : `${tab} requests`;
+  const emptyCopy: Record<BookingTab, { title: string; description: string }> =
+    {
+      all: {
+        title: "No To-Let activity yet",
+        description:
+          "Booking requests, current rentals and completed rentals will appear here.",
+      },
+      requests: {
+        title: "No booking requests",
+        description:
+          "Requests you send from a To-Let listing will appear here.",
+      },
+      current: {
+        title: "No current rental",
+        description:
+          "An accepted booking appears here after its rental contract is activated.",
+      },
+      history: {
+        title: "No rental history",
+        description: "Rentals move here automatically after the contract ends.",
+      },
+    };
+  const copy = emptyCopy[tab];
 
   return (
     <div className="rounded-lg border border-dashed border-gray-300 bg-white px-6 py-12 text-center">
       <span className="mx-auto flex size-12 items-center justify-center rounded-full bg-emerald-50 text-emerald-600">
         <CalendarCheck className="size-6" />
       </span>
-      <h2 className="mt-4 font-semibold text-gray-900">No {label}</h2>
+      <h2 className="mt-4 font-semibold text-gray-900">{copy.title}</h2>
       <p className="mx-auto mt-1 max-w-md text-sm leading-6 text-gray-500">
-        Requests you send from an available To-Let listing will appear here.
+        {copy.description}
       </p>
       <Button asChild className="mt-5 bg-emerald-600 hover:bg-emerald-700">
         <Link href="/to-let">Browse To-Let listings</Link>
@@ -185,8 +217,7 @@ function BookingCard({
   onCancel: (bookingCode: string) => Promise<void>;
 }) {
   const snapshot = booking.offerSnapshot;
-  const rentalQuery = useToLetRental(booking.bookingCode);
-  const contract = rentalFromResponse(rentalQuery.data);
+  const rental = booking.rentalSummary;
   const bookingImages = Array.from(
     new Set(
       [snapshot.imageUrl, ...(snapshot.unit.imageUrls ?? [])].filter(
@@ -211,9 +242,17 @@ function BookingCard({
     label: `${snapshot.unit.sizeSqFt.toLocaleString()} sq ft`,
     icon: Ruler,
   });
+  const facilityLabels = [
+    snapshot.property.facilities?.hasWaterSupply && "Water supply",
+    snapshot.property.facilities?.hasGasConnection && "Gas connection",
+    snapshot.property.facilities?.hasSecurityGuard && "Security",
+    snapshot.property.facilities?.hasParking && "Parking",
+    snapshot.property.facilities?.hasLift && "Lift",
+    snapshot.hasInternet && "Internet",
+  ].filter((value): value is string => Boolean(value));
 
   return (
-    <article className="overflow-hidden rounded-lg border border-gray-200 bg-white shadow-sm">
+    <article className="overflow-hidden rounded-xl border border-gray-200 bg-white">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-100 px-4 py-3 sm:px-5">
         <div>
           <p className="text-xs text-gray-500">
@@ -225,8 +264,8 @@ function BookingCard({
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          {contract ? (
-            <RentalStatusBadge status={contract.status} />
+          {rental ? (
+            <RentalStatusBadge status={rental.status} />
           ) : (
             <BookingStatusBadge status={booking.status} />
           )}
@@ -244,6 +283,7 @@ function BookingCard({
           alt={snapshot.title}
           className="md:h-full md:min-h-64 md:aspect-auto"
           sizes="(max-width: 768px) 100vw, 208px"
+          galleryHref={`/account/to-let/bookings/${booking.bookingCode}`}
         />
 
         <div className="space-y-4 p-4 sm:p-5">
@@ -261,10 +301,10 @@ function BookingCard({
             </div>
             <div className="text-left sm:text-right">
               <p className="text-lg font-bold text-emerald-700">
-                {formatMoney(contract?.monthlyRent ?? snapshot.monthlyRent)}
+                {formatMoney(rental?.monthlyRent ?? snapshot.monthlyRent)}
               </p>
               <p className="text-xs text-gray-500">
-                {contract ? "contract monthly rent" : "requested monthly rent"}
+                {rental ? "contract monthly rent" : "requested monthly rent"}
               </p>
             </div>
           </div>
@@ -287,6 +327,16 @@ function BookingCard({
               );
             })}
           </div>
+
+          {facilityLabels.length > 0 ? (
+            <p className="text-sm text-gray-600">
+              <span className="font-medium text-gray-900">Facilities:</span>{" "}
+              {facilityLabels.slice(0, 3).join(" · ")}
+              {facilityLabels.length > 3
+                ? ` +${facilityLabels.length - 3} more`
+                : ""}
+            </p>
+          ) : null}
 
           <div className="grid gap-3 rounded-lg bg-gray-50 p-3 text-sm sm:grid-cols-2">
             <p>
@@ -316,7 +366,7 @@ function BookingCard({
             </div>
           ) : null}
 
-          {booking.status === "accepted" && !contract ? (
+          {booking.status === "accepted" && !rental ? (
             <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">
               <p className="font-semibold">The owner accepted your request.</p>
               <p className="mt-1 leading-6">
@@ -641,10 +691,9 @@ export function MyBookingsClient() {
   const bookings = bookingRequestsFromResponse(query.data);
   const counts: Record<BookingTab, number> = {
     all: bookings.length,
-    pending: filterBookings(bookings, "pending").length,
-    accepted: filterBookings(bookings, "accepted").length,
-    rejected: filterBookings(bookings, "rejected").length,
-    cancelled: filterBookings(bookings, "cancelled").length,
+    requests: filterBookings(bookings, "requests").length,
+    current: filterBookings(bookings, "current").length,
+    history: filterBookings(bookings, "history").length,
   };
 
   const cancel = async (bookingCode: string) => {
@@ -679,7 +728,7 @@ export function MyBookingsClient() {
               <TabsTrigger
                 key={value}
                 value={value}
-                aria-label={`${label}, ${counts[value]} requests`}
+                aria-label={`${label}, ${counts[value]} items`}
                 className="min-h-10 shrink-0 gap-1.5 px-3 sm:gap-2"
               >
                 <Icon className="size-4" />

@@ -146,7 +146,7 @@ export function ToLetAlertDialog({
         size="sm"
         onClick={openAlertManager}
         disabled={isCheckingSession}
-        className="w-fit border-primary/25 bg-primary/5 text-primary hover:bg-primary/10 hover:text-primary"
+        className="min-h-11 w-fit border-primary/25 bg-primary/5 text-primary hover:bg-primary/10 hover:text-primary"
       >
         <Bell className="size-4" />
         {isCheckingSession ? "Checking..." : "My Alerts"}

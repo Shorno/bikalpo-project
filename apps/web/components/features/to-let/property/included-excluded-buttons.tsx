@@ -1,6 +1,7 @@
 "use client";
 
-import { Check, X } from "lucide-react";
+import { useId } from "react";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { cn } from "@/lib/utils";
 
 export function IncludedExcludedButtons({
@@ -14,43 +15,47 @@ export function IncludedExcludedButtons({
   onChange?: (included: boolean) => void;
   className?: string;
 }) {
+  const id = useId();
+
   return (
-    <div
+    <RadioGroup
+      value={included ? "yes" : "no"}
+      onValueChange={(value) => onChange?.(value === "yes")}
+      disabled={!onChange}
       className={cn(
-        "inline-grid min-w-44 grid-cols-2 overflow-hidden rounded-md border border-gray-200 bg-white",
+        "inline-flex w-auto min-w-32 items-center gap-4",
         className,
       )}
-      role="group"
-      aria-label={`${label}: Included or Excluded`}
+      aria-label={`${label}: Yes or No`}
     >
-      <button
-        type="button"
-        aria-pressed={included}
-        disabled={!onChange}
+      <label
+        htmlFor={`${id}-yes`}
         className={cn(
-          "flex min-h-9 items-center justify-center gap-1.5 border-r border-gray-200 px-3 text-xs font-semibold transition-colors disabled:cursor-default disabled:opacity-100",
-          included
-            ? "bg-emerald-600 text-white"
-            : "bg-white text-gray-500 hover:bg-gray-50",
+          "flex min-h-9 cursor-pointer items-center gap-2 text-sm text-gray-700",
+          !onChange && "cursor-default",
         )}
-        onClick={() => onChange?.(true)}
       >
-        <Check className="size-3.5" /> Included
-      </button>
-      <button
-        type="button"
-        aria-pressed={!included}
-        disabled={!onChange}
+        <RadioGroupItem
+          id={`${id}-yes`}
+          value="yes"
+          className="disabled:opacity-100"
+        />
+        Yes
+      </label>
+      <label
+        htmlFor={`${id}-no`}
         className={cn(
-          "flex min-h-9 items-center justify-center gap-1.5 px-3 text-xs font-semibold transition-colors disabled:cursor-default disabled:opacity-100",
-          included
-            ? "bg-white text-gray-500 hover:bg-gray-50"
-            : "bg-gray-700 text-white",
+          "flex min-h-9 cursor-pointer items-center gap-2 text-sm text-gray-700",
+          !onChange && "cursor-default",
         )}
-        onClick={() => onChange?.(false)}
       >
-        <X className="size-3.5" /> Excluded
-      </button>
-    </div>
+        <RadioGroupItem
+          id={`${id}-no`}
+          value="no"
+          className="disabled:opacity-100"
+        />
+        No
+      </label>
+    </RadioGroup>
   );
 }

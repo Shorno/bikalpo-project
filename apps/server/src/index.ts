@@ -2,6 +2,7 @@
 import { createContext } from "@bikalpo-project/api/context";
 import { appRouter } from "@bikalpo-project/api/routers/index";
 import { processDueOpenOrders } from "@bikalpo-project/api/services/open-order-matching";
+import { processToLetRentalLifecycle } from "@bikalpo-project/api/services/tolet-rental-lifecycle";
 import { auth } from "@bikalpo-project/auth";
 import { env } from "@bikalpo-project/env/server";
 import { OpenAPIHandler } from "@orpc/openapi/fetch";
@@ -95,7 +96,7 @@ export const rpcHandler = new RPCHandler(appRouter, {
 });
 
 app.use("/*", async (c, next) => {
-  let context;
+  let context: Awaited<ReturnType<typeof createContext>>;
   try {
     context = await createContext({ context: c, realtime: openOrderRealtime });
   } catch (err) {
@@ -173,6 +174,23 @@ const dueOrderTimer = setInterval(async () => {
   }
 }, 5_000);
 dueOrderTimer.unref?.();
+
+// Production-only reconciliation keeps monthly rent cycles current and releases
+// Units after a Contract ends. Local development may point at shared data, so it
+// deliberately relies on the same on-access reconciliation without a background
+// writer.
+if (env.NODE_ENV === "production") {
+  const reconcileToLetRentals = async () => {
+    try {
+      await processToLetRentalLifecycle();
+    } catch (error) {
+      console.error("[To-Let Rental Reconciler]", error);
+    }
+  };
+  void reconcileToLetRentals();
+  const toLetRentalTimer = setInterval(reconcileToLetRentals, 60 * 60 * 1_000);
+  toLetRentalTimer.unref?.();
+}
 
 export default {
   port: new URL(env.BETTER_AUTH_URL).port || 3000,

@@ -41,7 +41,7 @@ export function MyPropertiesClient() {
           <Button asChild className="bg-emerald-600 hover:bg-emerald-700">
             <Link href="/account/to-let/properties/new">
               <Plus />
-              Register Property
+              Add Property
             </Link>
           </Button>
         }

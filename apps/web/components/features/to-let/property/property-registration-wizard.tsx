@@ -93,7 +93,7 @@ const initialValues: PropertyRegistrationValues = {
   ownerName: "",
   mobileNumber: "",
   email: "",
-  propertyType: "",
+  propertyType: "apartment",
   division: "",
   district: "",
   area: "",
@@ -101,7 +101,7 @@ const initialValues: PropertyRegistrationValues = {
   nearbyLandmark: "",
   latitude: "",
   longitude: "",
-  buildingType: "",
+  buildingType: "residential",
   totalFloors: 0,
   declaredTotalUnits: 0,
   hasParking: false,
@@ -134,7 +134,10 @@ function restoreDraftValues(input: unknown): PropertyRegistrationValues | null {
       Object.assign(restored, { [key]: value });
     }
   }
-  if (restored.propertyType === "office") restored.propertyType = "";
+  if (!restored.propertyType || restored.propertyType === "office") {
+    restored.propertyType = "apartment";
+  }
+  if (!restored.buildingType) restored.buildingType = "residential";
   const normalizedDivision = normalizeBangladeshDivision(restored.division);
   if (normalizedDivision) {
     restored.division = normalizedDivision;
@@ -399,16 +402,11 @@ export function PropertyRegistrationWizard() {
   };
 
   const updateFrontImage = (frontImageUrl: string) => {
-    setValues((current) => ({
-      ...current,
-      frontImageUrl,
-      coverImageUrl: frontImageUrl,
-    }));
+    setValues((current) => ({ ...current, frontImageUrl }));
     setErrors((current) => {
-      if (!current.frontImageUrl && !current.coverImageUrl) return current;
+      if (!current.frontImageUrl) return current;
       const next = { ...current };
       delete next.frontImageUrl;
-      delete next.coverImageUrl;
       return next;
     });
   };
@@ -547,7 +545,10 @@ export function PropertyRegistrationWizard() {
       }
     }
 
-    const parsed = propertyRegistrationSchema.safeParse(values);
+    const parsed = propertyRegistrationSchema.safeParse({
+      ...values,
+      coverImageUrl: values.coverImageUrl || values.frontImageUrl,
+    });
     if (!parsed.success) {
       setErrors(errorsFromIssues(parsed.error.issues));
       toast.error("Please complete all registration requirements");

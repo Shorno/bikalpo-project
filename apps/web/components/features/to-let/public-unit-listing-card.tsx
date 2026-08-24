@@ -78,8 +78,12 @@ export function PublicUnitListingCard({
       }).format(new Date(`${listing.availableFrom}T00:00:00`))}`;
 
   return (
-    <article className="flex h-full flex-col overflow-hidden rounded-xl border border-gray-100 bg-white shadow-sm transition-shadow hover:shadow-md">
-      <ListingImageCarousel imageUrls={listing.imageUrls} alt={listing.title} />
+    <article className="flex h-full flex-col overflow-hidden rounded-xl border border-border bg-background transition-colors hover:border-primary/40">
+      <ListingImageCarousel
+        imageUrls={listing.imageUrls}
+        alt={listing.title}
+        galleryHref={detailHref}
+      />
 
       <div className="flex flex-1 flex-col space-y-3 p-4">
         <div className="flex flex-wrap items-center justify-between gap-2">
@@ -92,33 +96,33 @@ export function PublicUnitListingCard({
           >
             {isBooked ? "Booked" : "Available"}
           </span>
-          <span className="text-xs font-medium text-gray-500">
+          <span className="font-mono text-xs font-medium tabular-nums text-muted-foreground">
             {listing.listingCode}
           </span>
         </div>
 
         <div>
-          <p className="flex items-center gap-1 text-xs font-medium text-blue-600">
+          <p className="flex items-center gap-1 text-xs font-medium text-primary">
             <Building2 className="size-3.5" /> {humanize(listing.unit.unitType)}
           </p>
-          <h3 className="mt-1 text-lg font-semibold text-gray-900">
+          <h3 className="mt-1 text-lg font-semibold text-foreground">
             {listing.title}
           </h3>
-          <p className="mt-1 text-sm text-gray-500">
+          <p className="mt-1 text-sm text-muted-foreground">
             {listing.property.name} / {listing.unit.name}
           </p>
-          <p className="mt-1.5 flex items-center gap-1 text-xs text-gray-500">
+          <p className="mt-1.5 flex items-center gap-1 text-xs text-muted-foreground">
             <CalendarDays className="size-3.5" />
             {isBooked ? "No new booking requests" : availabilityLabel}
           </p>
         </div>
 
-        <p className="flex items-center gap-1 text-sm text-gray-500">
+        <p className="flex items-center gap-1 text-sm text-muted-foreground">
           <MapPin className="h-4 w-4 shrink-0" />
           <span className="truncate">{listing.location}</span>
         </p>
 
-        <div className="flex flex-wrap gap-x-3 gap-y-1 text-sm text-gray-600">
+        <div className="flex flex-wrap gap-x-3 gap-y-1 text-sm text-muted-foreground">
           {listing.unit.bedrooms > 0 ? (
             <span className="flex items-center gap-1">
               <BedDouble className="h-4 w-4" /> {listing.unit.bedrooms} bed
@@ -138,14 +142,14 @@ export function PublicUnitListingCard({
           </span>
         </div>
 
-        <div className="mt-auto flex items-end justify-between border-t border-gray-100 pt-3">
+        <div className="mt-auto flex items-end justify-between border-t border-border pt-3">
           <div>
-            <p className="text-lg font-bold text-emerald-600">
+            <p className="font-mono text-lg font-semibold tabular-nums text-emerald-700">
               {listing.monthlyRent === null
                 ? "Price hidden"
                 : `৳${listing.monthlyRent.toLocaleString("en-BD")}`}
             </p>
-            <p className="text-xs text-gray-500">
+            <p className="text-xs text-muted-foreground">
               {listing.monthlyRent === null
                 ? "Owner visibility setting"
                 : "per month"}
@@ -153,32 +157,36 @@ export function PublicUnitListingCard({
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-2 border-t border-gray-100 pt-3">
-          {contactPhone ? (
+        <div
+          className={`grid gap-2 border-t border-border pt-3 ${
+            !isBooked && contactPhone ? "grid-cols-2" : "grid-cols-1"
+          }`}
+        >
+          {!isBooked && contactPhone ? (
             <a
               href={`tel:${contactPhone}`}
               aria-label={`Call about ${listing.title}`}
-              className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-50"
+              className="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-lg border border-border px-3 py-2 text-xs font-semibold text-foreground transition-colors hover:border-primary/40 hover:bg-primary/5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
             >
               <Phone className="size-3.5" /> Call
             </a>
-          ) : (
-            <span className="inline-flex items-center justify-center rounded-lg border border-gray-100 px-3 py-2 text-xs font-semibold text-gray-400">
+          ) : !isBooked ? (
+            <span className="inline-flex min-h-11 items-center justify-center rounded-lg border border-border px-3 py-2 text-xs font-semibold text-muted-foreground">
               Contact unavailable
             </span>
-          )}
+          ) : null}
 
           {detailHref ? (
             <Link
               href={detailHref}
               prefetch={false}
               aria-label={`View details for ${listing.title}`}
-              className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-700"
+              className="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground transition-colors hover:bg-primary/90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
             >
               View Details <ArrowRight className="size-3.5" />
             </Link>
           ) : (
-            <span className="inline-flex items-center justify-center rounded-lg bg-gray-100 px-3 py-2 text-xs font-semibold text-gray-400">
+            <span className="inline-flex min-h-11 items-center justify-center rounded-lg bg-muted px-3 py-2 text-xs font-semibold text-muted-foreground">
               Details unavailable
             </span>
           )}

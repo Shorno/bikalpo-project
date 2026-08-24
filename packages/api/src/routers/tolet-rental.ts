@@ -16,6 +16,12 @@ import { and, asc, count, desc, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 
 import { consumerProcedure } from "../index";
+import {
+	completeExpiredToLetContract,
+	ensureToLetRentCycles,
+	TO_LET_RENT_DUE_DAY,
+	type ToLetContractRow,
+} from "../services/tolet-rental-lifecycle";
 
 const bookingCodeSchema = z
 	.string()
@@ -43,29 +49,6 @@ function contractCode(value: number) {
 	return `CTR-${String(value).padStart(6, "0")}`;
 }
 
-function dhakaDateString(date = new Date()) {
-	return new Intl.DateTimeFormat("en-CA", {
-		timeZone: "Asia/Dhaka",
-		year: "numeric",
-		month: "2-digit",
-		day: "2-digit",
-	}).format(date);
-}
-
-function monthStart(value: string) {
-	return `${value.slice(0, 7)}-01`;
-}
-
-function addMonth(value: string) {
-	const [year, month] = value.split("-").map(Number);
-	const date = new Date(Date.UTC(year ?? 0, month ?? 0, 1));
-	return date.toISOString().slice(0, 10);
-}
-
-function dueDate(cycleMonth: string, dueDay: number) {
-	return `${cycleMonth.slice(0, 8)}${String(dueDay).padStart(2, "0")}`;
-}
-
 function rentOtp(contractId: string, cycleMonth: string) {
 	const digest = createHmac("sha256", env.BETTER_AUTH_SECRET)
 		.update(`tolet-rent:${contractId}:${cycleMonth}`)
@@ -74,62 +57,6 @@ function rentOtp(contractId: string, cycleMonth: string) {
 		6,
 		"0",
 	);
-}
-
-type ContractRow = typeof toletRentalContract.$inferSelect;
-
-async function ensureRentCycles(contract: ContractRow) {
-	const lastMonth = monthStart(
-		contract.endDate < dhakaDateString() ? contract.endDate : dhakaDateString(),
-	);
-	let cycle = monthStart(contract.startDate);
-	const rows: Array<{
-		contractId: string;
-		cycleMonth: string;
-		dueDate: string;
-		amount: string;
-	}> = [];
-
-	for (let count = 0; count < 240 && cycle <= lastMonth; count += 1) {
-		rows.push({
-			contractId: contract.id,
-			cycleMonth: cycle,
-			dueDate: dueDate(cycle, contract.rentDueDay),
-			amount: contract.monthlyRent,
-		});
-		cycle = addMonth(cycle);
-	}
-
-	if (rows.length > 0) {
-		await db.insert(toletRentPayment).values(rows).onConflictDoNothing();
-	}
-}
-
-async function completeExpiredLeave(contract: ContractRow) {
-	if (contract.status !== "leaving" || contract.endDate >= dhakaDateString()) {
-		return contract;
-	}
-	const now = new Date();
-	const completed = await db.transaction(async (tx) => {
-		const [updated] = await tx
-			.update(toletRentalContract)
-			.set({ status: "completed", completedAt: now, updatedAt: now })
-			.where(
-				and(
-					eq(toletRentalContract.id, contract.id),
-					eq(toletRentalContract.status, "leaving"),
-				),
-			)
-			.returning();
-		if (updated) {
-			await tx
-				.update(toletUnit)
-				.set({ status: "vacant", updatedAt: now })
-				.where(eq(toletUnit.id, contract.unitId));
-		}
-		return updated ?? contract;
-	});
-	return completed;
 }
 
 async function contractContext(bookingCode: string, userId: string) {
@@ -161,8 +88,10 @@ async function contractContext(bookingCode: string, userId: string) {
 	) {
 		throw new ORPCError("NOT_FOUND", { message: "Rental contract not found" });
 	}
-	row.contract = await completeExpiredLeave(row.contract);
-	await ensureRentCycles(row.contract);
+	row.contract = await completeExpiredToLetContract(
+		row.contract as ToLetContractRow,
+	);
+	await ensureToLetRentCycles(row.contract as ToLetContractRow);
 	return row;
 }
 
@@ -397,7 +326,8 @@ export const toLetRentalRouter = {
 					bookingCode: bookingCodeSchema,
 					startDate: dateSchema,
 					endDate: dateSchema,
-					rentDueDay: z.number().int().min(1).max(28),
+					rentDueDay: z.literal(TO_LET_RENT_DUE_DAY),
+					contractSigned: z.literal(true),
 				})
 				.strict(),
 		)
@@ -482,7 +412,7 @@ export const toLetRentalRouter = {
 				return created;
 			});
 
-			await ensureRentCycles(contract);
+			await ensureToLetRentCycles(contract as ToLetContractRow);
 			return {
 				contract: await rentalDto(input.bookingCode, context.session.user.id),
 			};

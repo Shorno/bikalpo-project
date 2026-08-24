@@ -66,10 +66,10 @@ export function PropertyQrCard({
     };
 
     const qrSvg = svg.cloneNode(true) as SVGElement;
-    qrSvg.setAttribute("x", "280");
-    qrSvg.setAttribute("y", "570");
-    qrSvg.setAttribute("width", "640");
-    qrSvg.setAttribute("height", "640");
+    qrSvg.setAttribute("x", "420");
+    qrSvg.setAttribute("y", "590");
+    qrSvg.setAttribute("width", "360");
+    qrSvg.setAttribute("height", "360");
     const qrSource = new XMLSerializer().serializeToString(qrSvg);
     const propertyLines = splitLine(propertyName, 36);
     const locationLines = splitLine(
@@ -78,32 +78,45 @@ export function PropertyQrCard({
     const propertyText = propertyLines
       .map(
         (line, index) =>
-          `<text x="600" y="${330 + index * 60}" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="48" font-weight="700" fill="#ffffff">${escapeXml(line)}</text>`,
+          `<text x="600" y="${430 + index * 48}" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="48" font-weight="800" fill="#101010">${escapeXml(line)}</text>`,
       )
       .join("");
-    const locationStartY = propertyLines.length > 1 ? 470 : 420;
+    const locationStartY = propertyLines.length > 1 ? 535 : 490;
     const locationText = locationLines
       .map(
         (line, index) =>
-          `<text x="600" y="${locationStartY + index * 40}" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="28" fill="#d1fae5">${escapeXml(line)}</text>`,
+          `<text x="600" y="${locationStartY + index * 32}" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="30" font-weight="600" fill="#111827">${escapeXml(line)}</text>`,
       )
       .join("");
     const source = `<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1600" viewBox="0 0 1200 1600" role="img" aria-label="${escapeXml(propertyName)} To-Let QR poster">
-  <rect width="1200" height="1600" rx="40" fill="#ffffff"/>
-  <rect x="24" y="24" width="1152" height="1552" rx="32" fill="none" stroke="#059669" stroke-width="8"/>
-  <path d="M56 24h1088a32 32 0 0 1 32 32v440H24V56a32 32 0 0 1 32-32Z" fill="#059669"/>
-  <text x="600" y="175" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="112" font-weight="800" letter-spacing="8" fill="#ffffff">TO-LET</text>
-  <rect x="460" y="218" width="280" height="6" rx="3" fill="#6ee7b7"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1200" viewBox="0 0 1200 1200" role="img" aria-label="${escapeXml(propertyName)} To-Let QR poster">
+  <rect width="1200" height="1200" fill="#ffffff"/>
+  <rect x="14" y="14" width="1172" height="1172" fill="none" stroke="#123f92" stroke-width="14"/>
+  <text x="600" y="125" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="96" font-weight="800" fill="#123f92">B</text>
+  <circle cx="520" cy="107" r="13" fill="#123f92"/>
+  <line x1="535" y1="107" x2="665" y2="107" stroke="#f97316" stroke-width="11" stroke-linecap="round"/>
+  <rect x="580" y="98" width="48" height="18" rx="9" fill="#f97316"/>
+  <circle cx="680" cy="107" r="13" fill="#f97316"/>
+  <text x="600" y="190" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="42" font-weight="800" letter-spacing="14" fill="#123f92">BIKALPO</text>
+  <line x1="140" y1="310" x2="245" y2="310" stroke="#f97316" stroke-width="8"/>
+  <line x1="955" y1="310" x2="1060" y2="310" stroke="#f97316" stroke-width="8"/>
+  <text x="600" y="350" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="128" font-weight="900" letter-spacing="4" fill="#123f92">TO-LET</text>
+  <line x1="370" y1="375" x2="570" y2="375" stroke="#f97316" stroke-width="5"/>
+  <circle cx="600" cy="375" r="9" fill="#f97316"/>
+  <line x1="630" y1="375" x2="830" y2="375" stroke="#f97316" stroke-width="5"/>
   ${propertyText}
   ${locationText}
-  <text x="600" y="550" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="34" font-weight="700" letter-spacing="3" fill="#111827">SCAN TO VIEW</text>
-  <rect x="245" y="535" width="710" height="710" rx="36" fill="#ffffff" stroke="#e5e7eb" stroke-width="5"/>
+  <rect x="400" y="568" width="400" height="400" rx="22" fill="#ffffff" stroke="#f97316" stroke-width="5"/>
+  <rect x="485" y="548" width="230" height="48" rx="10" fill="#123f92"/>
+  <text x="600" y="581" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="27" font-weight="700" fill="#ffffff">Scan To View</text>
   ${qrSource}
-  <text x="600" y="1325" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="26" fill="#6b7280">PROPERTY ID</text>
-  <text x="600" y="1380" text-anchor="middle" font-family="Courier New, monospace" font-size="46" font-weight="700" fill="#111827">${escapeXml(propertyCode)}</text>
-  <line x1="180" y1="1450" x2="1020" y2="1450" stroke="#e5e7eb" stroke-width="3"/>
-  <text x="600" y="1515" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="30" fill="#6b7280">Powered by <tspan font-weight="700" fill="#059669">Bikalpo.com</tspan></text>
+  <rect x="355" y="985" width="490" height="66" rx="14" fill="#123f92"/>
+  <text x="600" y="1030" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="34" font-weight="700" fill="#ffffff">Property ID : <tspan fill="#f97316">${escapeXml(propertyCode)}</tspan></text>
+  <text x="600" y="1100" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="32" font-weight="700" fill="#123f92">Powered by <tspan fill="#f97316">Bikalpo.com</tspan></text>
+  <line x1="130" y1="1135" x2="570" y2="1135" stroke="#f97316" stroke-width="3"/>
+  <circle cx="600" cy="1135" r="7" fill="#f97316"/>
+  <line x1="630" y1="1135" x2="1070" y2="1135" stroke="#f97316" stroke-width="3"/>
+  <text x="600" y="1170" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="23" font-weight="700" fill="#123f92">আপনার সম্পত্তি ভাড়ার জন্য <tspan fill="#f97316">Bikalpo</tspan>-তে তালিকাভুক্ত করুন</text>
 </svg>`;
     const blob = new Blob([source], { type: "image/svg+xml;charset=utf-8" });
     const objectUrl = URL.createObjectURL(blob);
@@ -126,23 +139,62 @@ export function PropertyQrCard({
         </div>
       </div>
 
-      <div className="mt-5 overflow-hidden rounded-xl border-2 border-emerald-600 bg-white shadow-sm">
-        <div className="bg-emerald-600 px-4 py-4 text-center text-white">
-          <p className="text-2xl font-extrabold tracking-[0.2em]">TO-LET</p>
-          <div className="mx-auto mt-2 h-0.5 w-14 bg-emerald-300" />
-          <p className="mt-3 line-clamp-2 font-semibold">{propertyName}</p>
-          {location ? (
-            <p className="mt-1 line-clamp-2 text-xs text-emerald-100">
-              {location}
-            </p>
-          ) : null}
+      <div
+        data-property-qr-poster
+        className="mt-5 border-[5px] border-[#123f92] bg-white px-4 py-5 text-center sm:px-5"
+      >
+        <div className="mx-auto w-28 text-[#123f92]">
+          <svg viewBox="0 0 180 112" role="img" aria-label="Bikalpo">
+            <text
+              x="90"
+              y="82"
+              textAnchor="middle"
+              fontSize="92"
+              fontWeight="800"
+              fill="currentColor"
+            >
+              B
+            </text>
+            <circle cx="26" cy="65" r="9" fill="currentColor" />
+            <path
+              d="M38 65h104"
+              stroke="#f97316"
+              strokeWidth="8"
+              strokeLinecap="round"
+            />
+            <rect x="76" y="58" width="34" height="14" rx="7" fill="#f97316" />
+            <circle cx="154" cy="65" r="9" fill="#f97316" />
+          </svg>
+        </div>
+        <p className="-mt-2 text-sm font-extrabold tracking-[0.38em] text-[#123f92]">
+          BIKALPO
+        </p>
+
+        <div className="mt-5 flex items-center gap-2 text-[#f97316]">
+          <span className="h-1 flex-1 bg-current" />
+          <p className="whitespace-nowrap text-3xl font-black tracking-tight text-[#123f92] sm:text-4xl">
+            TO-LET
+          </p>
+          <span className="h-1 flex-1 bg-current" />
+        </div>
+        <div className="mx-auto mt-1 flex max-w-52 items-center gap-2 text-[#f97316]">
+          <span className="h-0.5 flex-1 bg-current" />
+          <span className="size-2 rounded-full bg-current" />
+          <span className="h-0.5 flex-1 bg-current" />
         </div>
 
-        <div className="px-4 py-5 text-center">
-          <p className="mb-3 text-xs font-semibold tracking-[0.16em] text-gray-800">
-            SCAN TO VIEW
+        <p className="mt-5 line-clamp-2 text-xl font-extrabold text-gray-950">
+          {propertyName}
+        </p>
+        <p className="mt-1 line-clamp-2 text-sm font-semibold text-gray-800">
+          {location || "Location available on property page"}
+        </p>
+
+        <div className="relative mx-auto mt-7 w-fit rounded-xl border-2 border-[#f97316] bg-white p-3 pt-5">
+          <p className="absolute -top-4 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-md bg-[#123f92] px-5 py-1.5 text-sm font-bold text-white">
+            Scan To View
           </p>
-          <div className="mx-auto flex aspect-square max-w-44 items-center justify-center rounded-xl border border-gray-200 bg-white p-2">
+          <div className="flex aspect-square w-44 items-center justify-center bg-white">
             <QRCodeSVG
               id={qrId}
               value={qrUrl}
@@ -154,26 +206,34 @@ export function PropertyQrCard({
               title={`${propertyCode} permanent To-Let QR`}
             />
           </div>
-          <p className="mt-4 text-[10px] font-medium uppercase tracking-wide text-gray-500">
-            Property ID
-          </p>
-          <p className="mt-0.5 font-mono text-xs font-semibold text-gray-900">
-            {propertyCode}
-          </p>
-          <div className="mx-auto mt-4 h-px w-4/5 bg-gray-200" />
-          <p className="mt-3 text-xs text-gray-500">
-            Powered by{" "}
-            <span className="font-semibold text-emerald-600">Bikalpo.com</span>
-          </p>
         </div>
+
+        <p className="mx-auto mt-4 w-full whitespace-nowrap rounded-lg bg-[#123f92] px-2 py-2 text-[10px] font-bold text-white sm:text-xs">
+          Property ID :{" "}
+          <span className="font-mono tabular-nums text-[#fb7a1c]">
+            {propertyCode}
+          </span>
+        </p>
+        <p className="mt-4 text-sm font-bold text-[#123f92]">
+          Powered by <span className="text-[#f97316]">Bikalpo.com</span>
+        </p>
+        <div className="mx-auto mt-3 flex max-w-64 items-center gap-2 text-[#f97316]">
+          <span className="h-px flex-1 bg-current" />
+          <span className="size-1.5 rounded-full bg-current" />
+          <span className="h-px flex-1 bg-current" />
+        </div>
+        <p className="mx-auto mt-2 max-w-72 text-xs font-semibold leading-5 text-[#123f92]">
+          আপনার সম্পত্তি ভাড়ার জন্য <span className="text-[#f97316]">Bikalpo</span>-তে
+          তালিকাভুক্ত করুন
+        </p>
       </div>
 
       <div className="mt-4 flex items-start gap-2 rounded-lg bg-gray-50 p-3">
         <ShieldCheck className="mt-0.5 size-4 shrink-0 text-emerald-600" />
         <p className="text-xs leading-5 text-gray-600">
-          This permanent QR opens the property's available To-Let units. Only
-          active listings appear and they stay hidden from public browse and
-          search.
+          This permanent QR opens the property's available To-Let units. Public
+          Listings can appear in browse and search; QR Only Listings remain
+          accessible through this poster.
         </p>
       </div>
 

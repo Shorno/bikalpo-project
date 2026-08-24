@@ -12,7 +12,6 @@ import {
   PauseCircle,
   QrCode,
   Save,
-  ShieldCheck,
   Upload,
 } from "lucide-react";
 import Link from "next/link";
@@ -33,15 +32,10 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -68,6 +62,7 @@ import {
   PropertyErrorState,
   PropertyPageHeader,
 } from "./property-ui";
+import { PropertyVideoField } from "./property-video-field";
 import {
   humanize,
   type ToLetPropertyView,
@@ -78,13 +73,13 @@ import {
 const steps = [
   { id: 1, label: "Unit" },
   { id: 2, label: "Details" },
-  { id: 3, label: "Facilities" },
-  { id: 4, label: "Contact" },
+  { id: 3, label: "Facility" },
+  { id: 4, label: "Pricing" },
   { id: 5, label: "Review" },
 ] as const;
 
 const stepSchemas = [
-  listingDraftSchema.pick({
+  listingPublishSchema.pick({
     title: true,
     monthlyRent: true,
     monthlyRentVisible: true,
@@ -301,6 +296,21 @@ function PriceVisibility({
 
 function formatMoney(value: number) {
   return `৳${value.toLocaleString("en-BD")}`;
+}
+
+function ordinalSuffix(value: number) {
+  const remainder = Math.abs(value) % 100;
+  if (remainder >= 11 && remainder <= 13) return "th";
+  if (remainder % 10 === 1) return "st";
+  if (remainder % 10 === 2) return "nd";
+  if (remainder % 10 === 3) return "rd";
+  return "th";
+}
+
+function formatFloor(value: number) {
+  if (value === 0) return "Ground Floor";
+  if (value < 0) return `Basement ${Math.abs(value)}`;
+  return `${value}${ordinalSuffix(value)} Floor`;
 }
 
 function LoadedListingForm({
@@ -559,146 +569,393 @@ function LoadedListingForm({
       </nav>
 
       {currentStep === 1 ? (
+        <FormSection
+          title="Step 1 · Unit Information"
+          description="Create the rental post for this registered Property Unit. Permanent Unit details remain read-only."
+        >
+          <div className="grid gap-4 sm:grid-cols-2">
+            <ReadonlyField
+              label="Property ID *"
+              value={property.propertyCode}
+            />
+            <ReadonlyField label="Property Name" value={property.name} />
+            <ReadonlyField
+              label="Unit Name / Number *"
+              value={`${unit.name} · ${unit.unitCode}`}
+            />
+            <ReadonlyField
+              label="Listing Category *"
+              value={humanize(unit.unitType)}
+            />
+            <ReadonlyField
+              label="Floor Number *"
+              value={formatFloor(unit.floorNumber)}
+            />
+            <ReadonlyField
+              label="Unit Size *"
+              value={`${unit.sizeSqFt.toLocaleString("en-BD")} Sq.ft`}
+            />
+            <MoneyField
+              id="monthly-rent"
+              label="Rent *"
+              value={values.monthlyRent}
+              error={errors.monthlyRent}
+              onChange={(value) => update("monthlyRent", value)}
+            />
+            <MoneyField
+              id="advance-amount"
+              label="Advance *"
+              value={values.advanceAmount}
+              error={errors.advanceAmount}
+              onChange={(value) => update("advanceAmount", value)}
+            />
+            <MoneyField
+              id="security-deposit"
+              label="Security Deposit"
+              value={values.securityDeposit}
+              error={errors.securityDeposit}
+              onChange={(value) => update("securityDeposit", value)}
+            />
+            <div>
+              <MoneyField
+                id="service-charge"
+                label="Service Charge"
+                value={values.serviceCharge}
+                error={errors.serviceCharge}
+                onChange={(value) => update("serviceCharge", value)}
+              />
+              <ChargeIncluded
+                label="Service charge"
+                checked={values.serviceChargeIncluded}
+                onChange={(checked) => update("serviceChargeIncluded", checked)}
+              />
+            </div>
+            <div>
+              <MoneyField
+                id="parking-charge"
+                label="Parking"
+                value={values.parkingCharge}
+                error={errors.parkingCharge}
+                onChange={(value) => update("parkingCharge", value)}
+              />
+              <ChargeIncluded
+                label="Parking"
+                checked={values.parkingChargeIncluded}
+                onChange={(checked) => update("parkingChargeIncluded", checked)}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="available-from">Available From</Label>
+              <Input
+                id="available-from"
+                type="date"
+                value={values.availableFrom}
+                onChange={(event) =>
+                  update("availableFrom", event.target.value)
+                }
+                aria-invalid={Boolean(errors.availableFrom)}
+              />
+              <FieldError message={errors.availableFrom} />
+            </div>
+          </div>
+        </FormSection>
+      ) : null}
+
+      {currentStep === 2 ? (
+        <FormSection
+          title="Step 2 · Unit Details"
+          description="Physical details come from the reusable Unit. Edit the Unit itself if any permanent information is incorrect."
+        >
+          <div className="grid gap-4 sm:grid-cols-2">
+            <ReadonlyField label="Bedrooms *" value={unit.bedrooms} />
+            <ReadonlyField label="Bathrooms *" value={unit.bathrooms} />
+            {[
+              ["Balcony", unit.balconies > 0],
+              ["Kitchen", unit.hasKitchen],
+              ["Drawing Room", unit.hasDrawingRoom],
+              ["Dining Space", unit.hasDiningSpace],
+            ].map(([label, included]) => (
+              <div key={String(label)} className="space-y-1.5">
+                <p className="text-sm font-medium text-gray-900">{label}</p>
+                <div className="flex min-h-10 items-center rounded-md border border-gray-200 bg-gray-50 px-3">
+                  <IncludedExcludedButtons
+                    label={String(label)}
+                    included={Boolean(included)}
+                  />
+                </div>
+              </div>
+            ))}
+            <div className="space-y-2 sm:col-span-2">
+              <Label>Preferred Tenant *</Label>
+              <RadioGroup
+                value={values.preferredTenant}
+                onValueChange={(value) =>
+                  update(
+                    "preferredTenant",
+                    value as ToLetListingFormValues["preferredTenant"],
+                  )
+                }
+                className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4"
+                aria-invalid={Boolean(errors.preferredTenant)}
+              >
+                {preferredTenantOptions
+                  .filter(
+                    (option) =>
+                      option.value !== "female" ||
+                      values.preferredTenant === "female",
+                  )
+                  .map((option) => (
+                    <label
+                      key={option.value}
+                      htmlFor={`preferred-${option.value}`}
+                      className="flex min-h-10 cursor-pointer items-center gap-2 rounded-md border border-gray-200 px-3 text-sm text-gray-700"
+                    >
+                      <RadioGroupItem
+                        id={`preferred-${option.value}`}
+                        value={option.value}
+                      />
+                      {option.label}
+                    </label>
+                  ))}
+              </RadioGroup>
+              <FieldError message={errors.preferredTenant} />
+            </div>
+            <div className="space-y-1.5 sm:col-span-2">
+              <Label htmlFor="listing-description">Property Description</Label>
+              <Textarea
+                id="listing-description"
+                rows={5}
+                value={values.description}
+                onChange={(event) => update("description", event.target.value)}
+                placeholder="Describe this unit"
+                aria-invalid={Boolean(errors.description)}
+              />
+              <FieldError message={errors.description} />
+            </div>
+          </div>
+        </FormSection>
+      ) : null}
+
+      {currentStep === 3 ? (
         <div className="space-y-5">
           <FormSection
-            title="Step 1 · Unit Information"
-            description="Confirm the selected Property and Unit before adding the rental price. These permanent details remain read-only."
+            title="Step 3 · Facilities"
+            description="Property and Unit facilities are shown automatically on the live listing."
           >
-            <div className="grid gap-4 sm:grid-cols-2">
-              <ReadonlyField
-                label="Property ID *"
-                value={property.propertyCode}
-              />
-              <ReadonlyField label="Property Name" value={property.name} />
-              <ReadonlyField
-                label="Unit Name / Number *"
-                value={`${unit.name} · ${unit.unitCode}`}
-              />
-              <ReadonlyField
-                label="Listing Category *"
-                value={humanize(unit.unitType)}
-              />
-              <ReadonlyField
-                label="Floor Number *"
-                value={
-                  unit.floorNumber === 0 ? "Ground floor" : unit.floorNumber
+            <div className="grid gap-x-8 gap-y-4 sm:grid-cols-2">
+              {[
+                { label: "Water Supply", available: property.hasWaterSupply },
+                {
+                  label: "Gas Connection",
+                  available: property.hasGasConnection,
+                },
+                { label: "Electricity", available: property.hasElectricity },
+                {
+                  label: "Internet",
+                  available: values.hasInternet,
+                  onChange: (available: boolean) =>
+                    update("hasInternet", available),
+                },
+                { label: "Lift", available: property.hasLift },
+                { label: "Parking", available: property.hasParking },
+                { label: "Generator", available: property.hasGenerator },
+                { label: "Security", available: property.hasSecurityGuard },
+                { label: "CCTV", available: property.hasCctv },
+                { label: "Furnished", available: unit.isFurnished },
+              ].map((facility) => (
+                <div
+                  key={facility.label}
+                  className="space-y-2 border-b border-gray-100 pb-4"
+                >
+                  <p className="text-sm font-medium text-gray-900">
+                    {facility.label}
+                  </p>
+                  <label
+                    htmlFor={`facility-${facility.label.toLowerCase().replaceAll(" ", "-")}`}
+                    className={cn(
+                      "flex min-h-9 items-center gap-2 text-sm text-gray-700",
+                      facility.onChange ? "cursor-pointer" : "cursor-default",
+                    )}
+                  >
+                    <Checkbox
+                      id={`facility-${facility.label.toLowerCase().replaceAll(" ", "-")}`}
+                      checked={facility.available}
+                      disabled={!facility.onChange}
+                      className="disabled:opacity-100"
+                      onCheckedChange={(checked) =>
+                        facility.onChange?.(checked === true)
+                      }
+                    />
+                    Available
+                  </label>
+                </div>
+              ))}
+            </div>
+            <div className="mt-4 space-y-1.5">
+              <Label htmlFor="other-facilities">Other Facilities</Label>
+              <Textarea
+                id="other-facilities"
+                rows={3}
+                value={values.otherFacilities}
+                onChange={(event) =>
+                  update("otherFacilities", event.target.value)
                 }
+                placeholder="Rooftop, kids zone, garden, nearby services..."
               />
-              <ReadonlyField
-                label="Unit Size *"
-                value={`${unit.sizeSqFt} sq ft`}
-              />
+              <FieldError message={errors.otherFacilities} />
             </div>
           </FormSection>
 
           <FormSection
-            title="Listing and Pricing"
-            description="Add the rental terms and choose which amounts visitors can see before a Contract is active."
+            title="Unit Photos & Property Video"
+            description="Upload at least one Unit photo before publishing. The Property video is optional and limited to 90 seconds."
           >
+            <div className="grid gap-5 lg:grid-cols-2">
+              <div className="space-y-2">
+                <Label>Unit Photos *</Label>
+                <AdditionalImagesUploader
+                  value={values.imageUrls}
+                  onChange={(urls) => update("imageUrls", urls)}
+                  folder="to-let/listings"
+                  maxFiles={12}
+                  hideTitle
+                  compact
+                />
+                <FieldError message={errors.imageUrls} />
+              </div>
+              <div className="space-y-2">
+                <Label>Property Video (Optional)</Label>
+                <PropertyVideoField
+                  value={values.videoUrl}
+                  onChange={(url) => update("videoUrl", url)}
+                  invalid={Boolean(errors.videoUrl)}
+                  allowLink={false}
+                  subjectLabel="Property video"
+                />
+                <FieldError message={errors.videoUrl} />
+              </div>
+            </div>
+          </FormSection>
+        </div>
+      ) : null}
+
+      {currentStep === 4 ? (
+        <div className="space-y-5">
+          <FormSection title="Step 4 · Contact">
             <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-1.5 sm:col-span-2">
-                <Label htmlFor="listing-title">Listing Title *</Label>
-                <Input
-                  id="listing-title"
-                  value={values.title}
-                  onChange={(event) => update("title", event.target.value)}
-                  aria-invalid={Boolean(errors.title)}
-                />
-                <FieldError message={errors.title} />
-              </div>
+              <ReadonlyField
+                label="Contact Person"
+                value={property.ownerName}
+              />
+              <ReadonlyField
+                label="Contact Number"
+                value={property.mobileNumber}
+              />
+            </div>
+            <p className="mt-3 text-xs text-gray-500">
+              The verified Property contact is used for calls and booking
+              requests. Update it from Edit Property when needed.
+            </p>
+          </FormSection>
+
+          <details className="rounded-lg border border-gray-200 bg-white">
+            <summary className="cursor-pointer px-5 py-4 text-sm font-semibold text-gray-900 sm:px-6">
+              Advanced publishing settings
+            </summary>
+            <div className="space-y-6 border-t border-gray-100 px-5 py-5 sm:px-6">
               <div>
-                <MoneyField
-                  id="monthly-rent"
-                  label="Monthly Rent *"
-                  value={values.monthlyRent}
-                  error={errors.monthlyRent}
-                  onChange={(value) => update("monthlyRent", value)}
-                />
-                <PriceVisibility
-                  label="monthly rent"
-                  checked={values.monthlyRentVisible}
-                  onChange={(checked) => update("monthlyRentVisible", checked)}
-                />
+                <h3 className="text-sm font-semibold text-gray-900">
+                  Listing visibility
+                </h3>
+                <p className="mt-1 text-xs text-gray-500">
+                  Choose where this active Listing can be discovered.
+                </p>
+                <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                  {listingVisibilityOptions.map((option) => {
+                    const selected = values.visibility === option.value;
+                    const Icon = option.value === "public" ? Eye : QrCode;
+                    return (
+                      <button
+                        key={option.value}
+                        type="button"
+                        aria-pressed={selected}
+                        onClick={() => update("visibility", option.value)}
+                        className={cn(
+                          "flex items-start gap-3 rounded-lg border p-4 text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600",
+                          selected
+                            ? "border-emerald-500 bg-emerald-50"
+                            : "border-gray-200 bg-white hover:border-emerald-300",
+                        )}
+                      >
+                        <span
+                          className={cn(
+                            "flex size-9 shrink-0 items-center justify-center rounded-lg",
+                            selected
+                              ? "bg-emerald-600 text-white"
+                              : "bg-gray-100 text-gray-500",
+                          )}
+                        >
+                          <Icon className="size-4.5" />
+                        </span>
+                        <span>
+                          <span className="block font-medium text-gray-900">
+                            {option.label}
+                          </span>
+                          <span className="mt-1 block text-xs leading-5 text-gray-600">
+                            {option.description}
+                          </span>
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+                <FieldError message={errors.visibility} />
               </div>
+
               <div>
-                <MoneyField
-                  id="advance-amount"
-                  label="Advance"
-                  value={values.advanceAmount}
-                  error={errors.advanceAmount}
-                  onChange={(value) => update("advanceAmount", value)}
-                />
-                <PriceVisibility
-                  label="advance"
-                  checked={values.advanceAmountVisible}
-                  onChange={(checked) =>
-                    update("advanceAmountVisible", checked)
-                  }
-                />
+                <h3 className="text-sm font-semibold text-gray-900">
+                  Visitor price details
+                </h3>
+                <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                  <PriceVisibility
+                    label="monthly rent"
+                    checked={values.monthlyRentVisible}
+                    onChange={(checked) =>
+                      update("monthlyRentVisible", checked)
+                    }
+                  />
+                  <PriceVisibility
+                    label="advance"
+                    checked={values.advanceAmountVisible}
+                    onChange={(checked) =>
+                      update("advanceAmountVisible", checked)
+                    }
+                  />
+                  <PriceVisibility
+                    label="security deposit"
+                    checked={values.securityDepositVisible}
+                    onChange={(checked) =>
+                      update("securityDepositVisible", checked)
+                    }
+                  />
+                  <PriceVisibility
+                    label="service charge"
+                    checked={values.serviceChargeVisible}
+                    onChange={(checked) =>
+                      update("serviceChargeVisible", checked)
+                    }
+                  />
+                  <PriceVisibility
+                    label="parking charge"
+                    checked={values.parkingChargeVisible}
+                    onChange={(checked) =>
+                      update("parkingChargeVisible", checked)
+                    }
+                  />
+                </div>
               </div>
-              <div>
-                <MoneyField
-                  id="security-deposit"
-                  label="Security Deposit"
-                  value={values.securityDeposit}
-                  error={errors.securityDeposit}
-                  onChange={(value) => update("securityDeposit", value)}
-                />
-                <PriceVisibility
-                  label="security deposit"
-                  checked={values.securityDepositVisible}
-                  onChange={(checked) =>
-                    update("securityDepositVisible", checked)
-                  }
-                />
-              </div>
-              <div>
-                <MoneyField
-                  id="service-charge"
-                  label="Service Charge"
-                  value={values.serviceCharge}
-                  error={errors.serviceCharge}
-                  onChange={(value) => update("serviceCharge", value)}
-                />
-                <ChargeIncluded
-                  label="Service charge"
-                  checked={values.serviceChargeIncluded}
-                  onChange={(checked) =>
-                    update("serviceChargeIncluded", checked)
-                  }
-                />
-                <PriceVisibility
-                  label="service charge"
-                  checked={values.serviceChargeVisible}
-                  onChange={(checked) =>
-                    update("serviceChargeVisible", checked)
-                  }
-                />
-              </div>
-              <div>
-                <MoneyField
-                  id="parking-charge"
-                  label="Parking Charge"
-                  value={values.parkingCharge}
-                  error={errors.parkingCharge}
-                  onChange={(value) => update("parkingCharge", value)}
-                />
-                <ChargeIncluded
-                  label="Parking charge"
-                  checked={values.parkingChargeIncluded}
-                  onChange={(checked) =>
-                    update("parkingChargeIncluded", checked)
-                  }
-                />
-                <PriceVisibility
-                  label="parking charge"
-                  checked={values.parkingChargeVisible}
-                  onChange={(checked) =>
-                    update("parkingChargeVisible", checked)
-                  }
-                />
-              </div>
-              <div>
+
+              <div className="max-w-xl">
                 <MoneyField
                   id="utility-charge"
                   label="Utility Charge"
@@ -721,274 +978,36 @@ function LoadedListingForm({
                   }
                 />
               </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="available-from">Available From *</Label>
-                <Input
-                  id="available-from"
-                  type="date"
-                  value={values.availableFrom}
-                  onChange={(event) =>
-                    update("availableFrom", event.target.value)
-                  }
-                  aria-invalid={Boolean(errors.availableFrom)}
-                />
-                <FieldError message={errors.availableFrom} />
-              </div>
             </div>
-          </FormSection>
-        </div>
-      ) : null}
-
-      {currentStep === 2 ? (
-        <FormSection
-          title="Step 2 · Unit Details"
-          description="Physical details come from the reusable Unit. Edit the Unit itself if any permanent information is incorrect."
-        >
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            <ReadonlyField label="Bedrooms *" value={unit.bedrooms} />
-            <ReadonlyField label="Bathrooms *" value={unit.bathrooms} />
-            <ReadonlyField label="Balconies" value={unit.balconies} />
-            <ReadonlyField
-              label="Kitchen"
-              value={unit.hasKitchen ? "Yes" : "No"}
-            />
-            <ReadonlyField
-              label="Drawing Room"
-              value={unit.hasDrawingRoom ? "Yes" : "No"}
-            />
-            <ReadonlyField
-              label="Dining Space"
-              value={unit.hasDiningSpace ? "Yes" : "No"}
-            />
-            <div className="space-y-1.5">
-              <Label>Preferred Tenant *</Label>
-              <Select
-                value={values.preferredTenant}
-                onValueChange={(value) =>
-                  update(
-                    "preferredTenant",
-                    value as ToLetListingFormValues["preferredTenant"],
-                  )
-                }
-              >
-                <SelectTrigger aria-invalid={Boolean(errors.preferredTenant)}>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {preferredTenantOptions.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <FieldError message={errors.preferredTenant} />
-            </div>
-            <div className="flex min-h-10 items-center rounded-md border border-emerald-200 bg-emerald-50 px-3 text-sm font-medium text-emerald-800 lg:col-span-2">
-              {unit.isFurnished ? "Furnished Unit" : "Unfurnished Unit"}
-            </div>
-            <div className="space-y-1.5 sm:col-span-2 lg:col-span-3">
-              <Label htmlFor="listing-description">Listing Description</Label>
-              <Textarea
-                id="listing-description"
-                rows={8}
-                value={values.description}
-                onChange={(event) => update("description", event.target.value)}
-                placeholder="Describe availability, access, neighborhood and tenant expectations."
-                aria-invalid={Boolean(errors.description)}
-              />
-              <FieldError message={errors.description} />
-            </div>
-          </div>
-        </FormSection>
-      ) : null}
-
-      {currentStep === 3 ? (
-        <div className="space-y-5">
-          <FormSection
-            title="Step 3 · Facilities"
-            description="Property and Unit facilities are shown automatically on the live listing."
-          >
-            <div className="grid gap-3 sm:grid-cols-2">
-              {[
-                { label: "Water Supply", included: property.hasWaterSupply },
-                {
-                  label: "Gas Connection",
-                  included: property.hasGasConnection,
-                },
-                { label: "Electricity", included: property.hasElectricity },
-                {
-                  label: "Internet",
-                  included: values.hasInternet,
-                  onChange: (included: boolean) =>
-                    update("hasInternet", included),
-                },
-                { label: "Lift", included: property.hasLift },
-                { label: "Parking", included: property.hasParking },
-                { label: "Generator", included: property.hasGenerator },
-                { label: "Security", included: property.hasSecurityGuard },
-                { label: "CCTV", included: property.hasCctv },
-                { label: "Furnished", included: unit.isFurnished },
-              ].map((facility) => (
-                <div
-                  key={facility.label}
-                  className="flex min-h-14 flex-wrap items-center justify-between gap-3 rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-700"
-                >
-                  <span>{facility.label}</span>
-                  <IncludedExcludedButtons
-                    label={facility.label}
-                    included={facility.included}
-                    onChange={facility.onChange}
-                  />
-                </div>
-              ))}
-            </div>
-            <div className="mt-4 space-y-1.5">
-              <Label htmlFor="other-facilities">Other Facilities</Label>
-              <Textarea
-                id="other-facilities"
-                rows={3}
-                value={values.otherFacilities}
-                onChange={(event) =>
-                  update("otherFacilities", event.target.value)
-                }
-                placeholder="Rooftop, kids zone, garden, nearby services..."
-              />
-              <FieldError message={errors.otherFacilities} />
-            </div>
-          </FormSection>
-
-          <FormSection
-            title="Unit Photos & Property Video"
-            description="Unit photos are reused automatically. Add or remove media for this advertisement."
-          >
-            <AdditionalImagesUploader
-              value={values.imageUrls}
-              onChange={(urls) => update("imageUrls", urls)}
-              folder="to-let/listings"
-              maxFiles={12}
-              compact
-            />
-            <FieldError message={errors.imageUrls} />
-            <div className="mt-4 space-y-1.5">
-              <Label htmlFor="listing-video">Video URL (optional)</Label>
-              <Input
-                id="listing-video"
-                type="url"
-                value={values.videoUrl}
-                onChange={(event) => update("videoUrl", event.target.value)}
-                placeholder="https://..."
-                aria-invalid={Boolean(errors.videoUrl)}
-              />
-              <FieldError message={errors.videoUrl} />
-            </div>
-          </FormSection>
-        </div>
-      ) : null}
-
-      {currentStep === 4 ? (
-        <div className="space-y-5">
-          <FormSection
-            title="Step 4 · Contact"
-            description="The verified Property contact will receive calls and booking requests for this Listing."
-          >
-            <div className="flex items-start gap-3 rounded-lg border border-emerald-200 bg-emerald-50 p-4">
-              <ShieldCheck className="mt-0.5 size-5 text-emerald-600" />
-              <div>
-                <p className="font-medium text-emerald-900">
-                  {property.ownerName}
-                </p>
-                <p className="text-sm text-emerald-700">
-                  {property.mobileNumber}
-                </p>
-                <p className="mt-1 text-xs text-emerald-700">
-                  The listing uses the verified Property contact. Change it from
-                  Edit Property if needed.
-                </p>
-              </div>
-            </div>
-          </FormSection>
-
-          <FormSection
-            title="Listing visibility"
-            description="Choose where this active Listing can be discovered."
-          >
-            <div className="grid gap-3 sm:grid-cols-2">
-              {listingVisibilityOptions.map((option) => {
-                const selected = values.visibility === option.value;
-                const Icon = option.value === "public" ? Eye : QrCode;
-                return (
-                  <button
-                    key={option.value}
-                    type="button"
-                    aria-pressed={selected}
-                    onClick={() => update("visibility", option.value)}
-                    className={cn(
-                      "flex items-start gap-3 rounded-lg border p-4 text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600",
-                      selected
-                        ? "border-emerald-500 bg-emerald-50"
-                        : "border-gray-200 bg-white hover:border-emerald-300",
-                    )}
-                  >
-                    <span
-                      className={cn(
-                        "flex size-9 shrink-0 items-center justify-center rounded-lg",
-                        selected
-                          ? "bg-emerald-600 text-white"
-                          : "bg-gray-100 text-gray-500",
-                      )}
-                    >
-                      <Icon className="size-4.5" />
-                    </span>
-                    <span>
-                      <span className="block font-medium text-gray-900">
-                        {option.label}
-                      </span>
-                      <span className="mt-1 block text-xs leading-5 text-gray-600">
-                        {option.description}
-                      </span>
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-            <FieldError message={errors.visibility} />
-          </FormSection>
+          </details>
         </div>
       ) : null}
 
       {currentStep === 5 ? (
         <div className="space-y-5">
           <FormSection title="Step 5 · Review & Publish">
-            <div className="grid gap-3 sm:grid-cols-2">
+            <dl className="divide-y divide-gray-100">
               {[
                 ["Property", property.name],
-                ["Unit", `${unit.name} · ${unit.unitCode}`],
+                ["Unit", unit.name],
                 ["Category", humanize(unit.unitType)],
                 ["Location", `${property.area}, ${property.district}`],
-                ["Title", values.title],
-                ["Monthly rent", formatMoney(values.monthlyRent)],
-                ["Available from", values.availableFrom],
-                ["Preferred tenant", humanize(values.preferredTenant)],
-                ["Photos", `${values.imageUrls.length} uploaded`],
-                ["Video", values.videoUrl ? "Added" : "Not added"],
-                ["Visibility", humanize(values.visibility)],
-                ["Contact", `${property.ownerName} · ${property.mobileNumber}`],
               ].map(([label, value]) => (
-                <div key={label} className="rounded-lg bg-gray-50 p-3">
-                  <p className="text-xs text-gray-500">{label}</p>
-                  <p className="mt-1 text-sm font-medium text-gray-900">
-                    {value}
-                  </p>
+                <div
+                  key={label}
+                  className="grid gap-1 py-3 sm:grid-cols-[10rem_1fr]"
+                >
+                  <dt className="text-sm text-gray-500">{label}</dt>
+                  <dd className="text-sm font-medium text-gray-900">{value}</dd>
                 </div>
               ))}
-            </div>
+            </dl>
 
-            <div className="mt-5 border-t border-gray-100 pt-5">
+            <div className="mt-6 border-t border-gray-100 pt-5">
               <h3 className="text-sm font-semibold text-gray-900">
                 Facilities
               </h3>
-              <div className="mt-3 flex flex-wrap gap-2">
+              <div className="mt-3 grid gap-x-8 gap-y-2 sm:grid-cols-2">
                 {[
                   ["Water", property.hasWaterSupply],
                   ["Gas", property.hasGasConnection],
@@ -1003,13 +1022,12 @@ function LoadedListingForm({
                 ]
                   .filter(([, available]) => available)
                   .map(([label]) => (
-                    <Badge
+                    <div
                       key={String(label)}
-                      variant="outline"
-                      className="border-emerald-200 bg-emerald-50 text-emerald-700"
+                      className="flex items-center gap-2 text-sm text-gray-700"
                     >
-                      <Check className="size-3" /> {label}
-                    </Badge>
+                      <Check className="size-4 text-emerald-600" /> {label}
+                    </div>
                   ))}
               </div>
               {values.otherFacilities ? (
@@ -1019,19 +1037,21 @@ function LoadedListingForm({
               ) : null}
             </div>
 
-            <div className="mt-4 flex items-start gap-3 rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">
-              {listing?.status === "active" ? (
-                <Eye className="mt-0.5 size-5 shrink-0" />
-              ) : (
-                <Upload className="mt-0.5 size-5 shrink-0" />
-              )}
-              <p>
-                {listing?.status === "active"
-                  ? "This listing is live. Saving changes updates the live page immediately."
-                  : values.visibility === "public"
-                    ? "Publishing adds this Listing to the To-Let landing page, search and map while the Unit remains Vacant."
-                    : "Publishing adds this Listing to the permanent Property QR page while the Unit remains Vacant."}
-              </p>
+            <div className="mt-6 border-t border-gray-100 pt-5">
+              <h3 className="text-sm font-semibold text-gray-900">Media</h3>
+              <div className="mt-3 space-y-2 text-sm text-gray-700">
+                <p className="flex items-center gap-2">
+                  <Check className="size-4 text-emerald-600" />
+                  {String(values.imageUrls.length).padStart(2, "0")} Photos
+                  Uploaded
+                </p>
+                {values.videoUrl ? (
+                  <p className="flex items-center gap-2">
+                    <Check className="size-4 text-emerald-600" /> 01 Video
+                    Uploaded
+                  </p>
+                ) : null}
+              </div>
             </div>
           </FormSection>
 
@@ -1081,14 +1101,18 @@ function LoadedListingForm({
 
       <div className="sticky bottom-0 z-10 -mx-4 border-t border-gray-200 bg-white px-4 py-4 sm:static sm:mx-0 sm:rounded-lg sm:border sm:px-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <Button
-            type="button"
-            variant="outline"
-            onClick={currentStep === 1 ? () => router.back() : back}
-            disabled={isPending}
-          >
-            <ArrowLeft /> {currentStep === 1 ? "Cancel" : "Back"}
-          </Button>
+          {currentStep > 1 ? (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={back}
+              disabled={isPending}
+            >
+              <ArrowLeft /> Back
+            </Button>
+          ) : (
+            <span />
+          )}
 
           {currentStep < 5 ? (
             <Button
@@ -1097,50 +1121,56 @@ function LoadedListingForm({
               disabled={isPending}
               className="bg-emerald-600 hover:bg-emerald-700"
             >
-              Continue <ArrowRight />
+              Save &amp; Continue <ArrowRight />
             </Button>
           ) : (
             <div className="flex flex-wrap gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => save(false)}
-                disabled={isPending}
-              >
-                {isPending ? <Loader2 className="animate-spin" /> : <Save />}
-                {listing ? "Save Changes" : "Save Draft"}
-              </Button>
               {listing?.status === "active" ? (
-                <AlertDialog>
-                  <AlertDialogTrigger asChild>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      className="text-amber-700"
-                      disabled={isPending}
-                    >
-                      <PauseCircle /> Unpublish
-                    </Button>
-                  </AlertDialogTrigger>
-                  <AlertDialogContent>
-                    <AlertDialogHeader>
-                      <AlertDialogTitle>
-                        Unpublish this listing?
-                      </AlertDialogTitle>
-                      <AlertDialogDescription>
-                        It will disappear from the To-Let landing/search results
-                        and the Property QR page. You can edit and publish it
-                        again later.
-                      </AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                      <AlertDialogCancel>Cancel</AlertDialogCancel>
-                      <AlertDialogAction onClick={pause}>
-                        Unpublish Listing
-                      </AlertDialogAction>
-                    </AlertDialogFooter>
-                  </AlertDialogContent>
-                </AlertDialog>
+                <>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => save(false)}
+                    disabled={isPending}
+                  >
+                    {isPending ? (
+                      <Loader2 className="animate-spin" />
+                    ) : (
+                      <Save />
+                    )}
+                    Save Changes
+                  </Button>
+                  <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="text-amber-700"
+                        disabled={isPending}
+                      >
+                        <PauseCircle /> Unpublish
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>
+                          Unpublish this listing?
+                        </AlertDialogTitle>
+                        <AlertDialogDescription>
+                          It will disappear from the To-Let landing/search
+                          results and the Property QR page. You can edit and
+                          publish it again later.
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogAction onClick={pause}>
+                          Unpublish Listing
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
+                </>
               ) : (
                 <Button
                   type="button"

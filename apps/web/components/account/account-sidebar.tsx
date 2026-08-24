@@ -2,8 +2,8 @@
 
 import {
   AlertTriangle,
+  Building2,
   CalendarCheck,
-  Check,
   ChevronDown,
   FileQuestion,
   FileText,
@@ -12,6 +12,7 @@ import {
   Lock,
   LogOut,
   MapPin,
+  Megaphone,
   Menu,
   Package,
   ReceiptText,
@@ -24,6 +25,7 @@ import { usePathname } from "next/navigation";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useCartQuery } from "@/hooks/use-customer-api";
+import { useToLetPropertyNavigation } from "@/hooks/use-to-let-property-api";
 import { authClient } from "@/lib/auth-client";
 import { redirectToRootLogin } from "@/lib/auth-routing";
 import { cn } from "@/lib/utils";
@@ -107,6 +109,29 @@ export function AccountSidebar() {
   const pathname = usePathname();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const { data: cartData } = useCartQuery();
+  const propertyNavigation = useToLetPropertyNavigation();
+
+  const toLetOwnerItems = propertyNavigation.isConsumer
+    ? [
+        {
+          label: propertyNavigation.label,
+          href: propertyNavigation.href,
+          icon: Building2,
+        },
+        ...(propertyNavigation.hasPropertyAccount
+          ? [
+              {
+                label: "My Posts",
+                href: "/account/to-let/posts",
+                icon: Megaphone,
+              },
+            ]
+          : []),
+      ]
+    : [];
+  const navigationItems = sidebarItems.flatMap((item) =>
+    item.href === "/account/to-let" ? [item, ...toLetOwnerItems] : [item],
+  );
 
   const counts = {
     cart: cartData?.totalItems || 0,
@@ -157,15 +182,16 @@ export function AccountSidebar() {
       >
         <div className="flex flex-col divide-y divide-gray-100">
           {/* Dashboard/Top Items */}
-          {sidebarItems.map((item) => {
+          {navigationItems.map((item) => {
             const isActive =
               "exact" in item && item.exact
                 ? pathname === item.href
                 : pathname === item.href ||
                   pathname.startsWith(item.href + "/");
             const Icon = item.icon;
-            const badgeCount = item.badgeKey
-              ? counts[item.badgeKey as keyof typeof counts]
+            const badgeKey = "badgeKey" in item ? item.badgeKey : undefined;
+            const badgeCount = badgeKey
+              ? counts[badgeKey as keyof typeof counts]
               : 0;
 
             return (
@@ -196,16 +222,13 @@ export function AccountSidebar() {
                         <span
                           className={cn(
                             "flex items-center justify-center min-w-5 h-5 px-1 rounded-full text-[11px] font-bold",
-                            item.badgeKey === "requests"
+                            badgeKey === "requests"
                               ? "bg-emerald-600 text-white"
                               : "bg-emerald-50 text-emerald-600",
                           )}
                         >
                           {badgeCount}
                         </span>
-                      )}
-                      {isActive && (
-                        <Check className="h-4 w-4 text-emerald-500" />
                       )}
                     </div>
                   </div>

@@ -146,8 +146,11 @@ export function useActivateToLetContract() {
   return useMutation({
     ...orpc.toLetRental.activate.mutationOptions(),
     onSuccess: (_data, variables) => {
-      toast.success("Rental contract activated and Unit occupied");
+      toast.success("Rental contract signed, activated, and Unit occupied");
       invalidateRentalContext(queryClient, variables.bookingCode);
+      queryClient.invalidateQueries({
+        queryKey: orpc.toLetUnitListing.listMine.key(),
+      });
       queryClient.invalidateQueries({
         queryKey: orpc.toLetProperty.getMine.key({
           input: { propertyCode: variables.propertyCode },

@@ -202,7 +202,7 @@ export function UnitCard({
         : "Book Now";
 
   return (
-    <article className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+    <article className="overflow-hidden rounded-lg border border-gray-200 bg-white">
       <header className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 px-4 py-3">
         <div className="flex items-center gap-2">
           {listing?.status === "active" ? (
@@ -264,7 +264,7 @@ export function UnitCard({
                   current === 0 ? media.length - 1 : current - 1,
                 )
               }
-              className="absolute left-3 top-1/2 flex size-8 -translate-y-1/2 items-center justify-center rounded-full bg-white/90 text-gray-800 shadow transition-colors hover:bg-white"
+              className="absolute left-3 top-1/2 flex size-8 -translate-y-1/2 items-center justify-center rounded-full border border-gray-200 bg-white/90 text-gray-800 transition-colors hover:bg-white"
             >
               <ChevronLeft className="size-4" />
             </button>
@@ -274,7 +274,7 @@ export function UnitCard({
               onClick={() =>
                 setSlideIndex((current) => (current + 1) % media.length)
               }
-              className="absolute right-3 top-1/2 flex size-8 -translate-y-1/2 items-center justify-center rounded-full bg-white/90 text-gray-800 shadow transition-colors hover:bg-white"
+              className="absolute right-3 top-1/2 flex size-8 -translate-y-1/2 items-center justify-center rounded-full border border-gray-200 bg-white/90 text-gray-800 transition-colors hover:bg-white"
             >
               <ChevronRight className="size-4" />
             </button>
@@ -380,13 +380,13 @@ export function UnitCard({
               <AlertDialog>
                 <AlertDialogTrigger asChild>
                   <Button variant="outline" size="sm" className="flex-1">
-                    Mark Rented
+                    Mark as Booked
                   </Button>
                 </AlertDialogTrigger>
                 <AlertDialogContent>
                   <AlertDialogHeader>
                     <AlertDialogTitle>
-                      Mark {unit.name} as rented?
+                      Mark {unit.name} as booked?
                     </AlertDialogTitle>
                     <AlertDialogDescription>
                       This confirms an offline deal. The Unit will be marked as
@@ -402,7 +402,7 @@ export function UnitCard({
                       disabled={markRented.isPending}
                       onClick={() => void confirmRented()}
                     >
-                      {markRented.isPending ? "Updating..." : "Confirm Rented"}
+                      {markRented.isPending ? "Updating..." : "Confirm Booking"}
                     </AlertDialogAction>
                   </AlertDialogFooter>
                 </AlertDialogContent>

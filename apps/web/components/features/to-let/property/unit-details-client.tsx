@@ -38,6 +38,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -243,7 +244,11 @@ const unitSectionNavigation = [
   { id: "facilities", label: "Facilities" },
   { id: "rent", label: "Rent" },
   { id: "tenant", label: "Tenant" },
-  { id: "booking-history", label: "Booking History" },
+] as const;
+
+const activeListingSectionNavigation = [
+  ...unitSectionNavigation,
+  { id: "booking-history", label: "Booking Requests" },
 ] as const;
 
 function UnitInformationPanel({
@@ -557,7 +562,7 @@ function OwnerContractPanel({
     booking.desiredMoveInDate ?? new Date().toISOString().slice(0, 10);
   const [startDate, setStartDate] = useState(startDefault);
   const [endDate, setEndDate] = useState(addOneYear(startDefault));
-  const [rentDueDay, setRentDueDay] = useState(1);
+  const [contractSigned, setContractSigned] = useState(false);
   const query = useToLetRental(booking.bookingCode);
   const activate = useActivateToLetContract();
   const contract = rentalFromResponse(query.data);
@@ -626,7 +631,7 @@ function OwnerContractPanel({
           </div>
           <p className="mt-3 text-sm text-gray-600">
             {contract
-              ? `${formatBookingDate(contract.startDate)} – ${formatBookingDate(contract.endDate)} · Rent due on day ${contract.rentDueDay}`
+              ? `${formatBookingDate(contract.startDate)} – ${formatBookingDate(contract.endDate)} · Monthly Rent OTP on the 1st day`
               : "Accepting the Booking reserves the Unit. Activate the contract only after the agreement is signed."}
           </p>
         </div>
@@ -635,13 +640,14 @@ function OwnerContractPanel({
       {!contract ? (
         <div className="rounded-lg border border-blue-200 bg-blue-50 p-4">
           <p className="text-sm font-semibold text-blue-900">
-            Activate rental contract
+            Sign and activate rental contract
           </p>
           <p className="mt-1 text-xs leading-5 text-blue-800">
-            Activation links the tenant, makes the Unit Occupied and starts
-            monthly OTP rent cycles.
+            The accepted Booking remains Booked until both parties sign.
+            Activation then links the tenant, makes the Unit Occupied and
+            creates the Monthly Rent OTP cycle on the 1st day of every month.
           </p>
-          <div className="mt-3 grid gap-3 sm:grid-cols-3">
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">
             <label className="text-xs font-medium text-gray-700">
               Start date
               <Input
@@ -661,25 +667,30 @@ function OwnerContractPanel({
                 className="mt-1 bg-white"
               />
             </label>
-            <label className="text-xs font-medium text-gray-700">
-              Rent due day
-              <Input
-                type="number"
-                min={1}
-                max={28}
-                value={rentDueDay}
-                onChange={(event) => setRentDueDay(Number(event.target.value))}
-                className="mt-1 bg-white"
-              />
-            </label>
           </div>
+          <label
+            htmlFor={`contract-signed-${booking.bookingCode}`}
+            className="mt-3 flex cursor-pointer items-start gap-2 rounded-md border border-blue-200 bg-white p-3 text-sm text-gray-700"
+          >
+            <Checkbox
+              id={`contract-signed-${booking.bookingCode}`}
+              checked={contractSigned}
+              onCheckedChange={(checked) => setContractSigned(checked === true)}
+              className="mt-0.5"
+            />
+            <span>
+              I confirm the rental contract has been signed by the owner and
+              tenant.
+            </span>
+          </label>
           <Button
             className="mt-3 bg-blue-700 hover:bg-blue-800"
             disabled={
               activate.isPending ||
               !startDate ||
               !endDate ||
-              endDate < startDate
+              endDate < startDate ||
+              !contractSigned
             }
             onClick={() =>
               activate.mutate({
@@ -688,7 +699,8 @@ function OwnerContractPanel({
                 bookingCode: booking.bookingCode,
                 startDate,
                 endDate,
-                rentDueDay,
+                rentDueDay: 1,
+                contractSigned: true,
               })
             }
           >
@@ -697,7 +709,7 @@ function OwnerContractPanel({
             ) : (
               <CheckCircle2 />
             )}
-            Activate Contract
+            Sign &amp; Activate Contract
           </Button>
         </div>
       ) : null}
@@ -1159,11 +1171,16 @@ export function UnitDetailsClient({
     (candidate: ToLetUnitView) => candidate.unitCode === unitCode,
   );
   const loadedListing = listingFromResponse(listingQuery.data);
+  const showBookingRequests =
+    loadedListing?.status === "active" && loadedUnit?.status === "vacant";
+  const sectionNavigation = showBookingRequests
+    ? activeListingSectionNavigation
+    : unitSectionNavigation;
 
   useEffect(() => {
     if (query.isLoading || listingQuery.isLoading) return;
 
-    const sections = unitSectionNavigation
+    const sections = sectionNavigation
       .map(({ id }) => document.getElementById(id))
       .filter((section): section is HTMLElement => Boolean(section));
 
@@ -1180,7 +1197,7 @@ export function UnitDetailsClient({
 
     for (const section of sections) observer.observe(section);
     return () => observer.disconnect();
-  }, [query.isLoading, listingQuery.isLoading]);
+  }, [query.isLoading, listingQuery.isLoading, sectionNavigation]);
 
   if (query.isLoading || listingQuery.isLoading) {
     return <PropertyDetailsSkeleton />;
@@ -1518,7 +1535,7 @@ export function UnitDetailsClient({
           className="sticky top-0 z-20 overflow-x-auto border-b border-gray-200 bg-white/95 px-3 backdrop-blur"
         >
           <div className="flex h-12 min-w-max items-center gap-2">
-            {unitSectionNavigation.map(({ id, label }) => (
+            {sectionNavigation.map(({ id, label }) => (
               <button
                 key={id}
                 type="button"
@@ -1581,15 +1598,17 @@ export function UnitDetailsClient({
               onRetry={() => bookingRequestsQuery.refetch()}
             />
           </div>
-          <div
-            id="booking-history"
-            className="scroll-mt-16 [&>section]:rounded-none [&>section]:border-0"
-          >
-            <OwnerBookingRequestsSection
-              propertyCode={property.propertyCode}
-              unitCode={unit.unitCode}
-            />
-          </div>
+          {showBookingRequests ? (
+            <div
+              id="booking-history"
+              className="scroll-mt-16 [&>section]:rounded-none [&>section]:border-0"
+            >
+              <OwnerBookingRequestsSection
+                propertyCode={property.propertyCode}
+                unitCode={unit.unitCode}
+              />
+            </div>
+          ) : null}
         </div>
       </section>
     </div>

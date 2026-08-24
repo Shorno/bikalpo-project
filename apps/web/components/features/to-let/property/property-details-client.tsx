@@ -193,7 +193,7 @@ export function PropertyDetailsClient({
       ) : null}
 
       <PropertyPageHeader
-        title="My To-Let"
+        title="My Property"
         description="Manage your property identity, physical units and rental listings."
         backHref="/account/to-let/properties"
         action={
@@ -268,11 +268,8 @@ export function PropertyDetailsClient({
                 <Building2 className="size-5" />
               </span>
               <div>
-                <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">
+                <h2 className="font-semibold text-gray-900">
                   Property Information
-                </p>
-                <h2 className="mt-1 text-xl font-semibold text-gray-900">
-                  {property.name}
                 </h2>
                 <p className="mt-1 flex items-start gap-1.5 text-sm text-gray-500">
                   <MapPin className="mt-0.5 size-4 shrink-0" />
@@ -358,7 +355,7 @@ export function PropertyDetailsClient({
       <section id="property-units" className="scroll-mt-24 space-y-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h2 className="text-lg font-semibold text-gray-900">My Property</h2>
+            <h2 className="text-lg font-semibold text-gray-900">My To-Let</h2>
             <p className="text-sm text-gray-500">
               Manage every Unit and its current To-Let Listing.
             </p>

@@ -1,6 +1,6 @@
 # RayhanDev Quick Handoff
 
-Last updated: 2026-08-06
+Last updated: 2026-08-24
 
 ## Current status
 
@@ -34,8 +34,8 @@ Included now:
 - Accept runs atomically: the request becomes Accepted, the Unit becomes
   `BOOKED`, the Listing becomes `CLOSED`, and competing Pending requests are
   rejected.
-- The owner can activate an accepted rental Contract, which links the tenant and
-  changes the Unit to `OCCUPIED`.
+- The owner must confirm the Contract is signed before activation; activation
+  links the tenant and changes the Unit to `OCCUPIED`.
 - Owners control which Listing price fields visitors see before Contract
   activation. Contract participants see the full agreed price snapshot.
 - Monthly rent OTP, payment confirmation, Leave + saved Alert, and verified
@@ -52,6 +52,7 @@ The existing legacy public `/to-let` feature was not replaced or changed.
 | `/to-let/qr/[qrToken]` | Permanent Property QR page; Public and QR Only listings | M2 complete |
 | `/account/to-let` | Booking/rental history, status tabs, and saved Alert form | M4 complete |
 | `/account/to-let/bookings/[bookingCode]` | Contract, payments, Leave/Alert, and comments | M4 complete |
+| `/account/to-let/posts` | Latest Unit posts grouped as Active, Paused, Booked, or Contract | M2-M4 complete |
 | `/account/to-let/properties` | Owned property list | M1 complete |
 | `/account/to-let/properties/new` | Four-step property registration | M1 complete |
 | `/account/to-let/properties/[propertyCode]` | Property details and units | M1 complete |
@@ -71,7 +72,7 @@ All `/account` routes require login.
 | --- | --- |
 | `apps/web/components/layout/navbar.tsx` | Existing desktop To-Let navigation entry. |
 | `apps/web/components/layout/mobile-menu.tsx` | Existing mobile To-Let navigation entry. |
-| `apps/web/components/account/account-sidebar.tsx` | Keeps My Bookings in the Account menu; Property Registration/My Properties is intentionally not duplicated in the sidebar. |
+| `apps/web/components/account/account-sidebar.tsx` | Shows Property Registration before the first property, then My Properties and My Posts beside My Bookings. |
 | `apps/web/components/shop/account-overview-client.tsx` | Dashboard property card uses the same registration-aware destination and never links to Booking. |
 | `apps/web/app/(public)/account/to-let/page.tsx` | Real My Booking To-lets route; remains separate from property management. |
 | `apps/web/app/(auth)/login/client.tsx` | Safely returns Consumers to the requested same-origin page after login. |
@@ -599,3 +600,160 @@ restriction above. The legacy To-Let catalog remains a separate module.
 - Combined the latest API router registry and web dependencies with the To-Let
   routers and QR-code dependency.
 - No migration or database command was run during this integration.
+
+### PDF-aligned To-Let landing polish (2026-08-23)
+
+- `/to-let` now uses a To-Let-specific header search and the approved
+  **Products / Seller / To-Let** navigation state without changing navigation
+  on other public routes.
+- The Smart Rental Map now includes Search Area, radius selection, nearby
+  School/Hospital/Mosque/Market/Bus Stop/Metro controls, area-based Draw Zone,
+  Google Maps directions, and live-availability feedback. These controls work
+  without inventing distance or commute numbers.
+- Booked Listing cards no longer expose the owner Call action. View Details
+  remains available as the safe read-only action.
+- Community Reviews now has the supplied textarea, five-star UI and publish
+  action. Publishing is safely gated through a confirmed My Bookings rental;
+  unverified sample testimonials are not shown as real data.
+- The owner CTA includes Verified Listing, Permanent Property ID, QR Code,
+  Smart Booking, Social Media Share, and Tenant Management. To-Let routes also
+  receive the full ecosystem, coverage, policy, social, contact, and powered-by
+  footer from the supplied PDF; other public pages keep the existing footer.
+- Added a route loading skeleton, direct retry/alert recovery, 44px primary
+  interaction targets, flatter borders, and theme-token styling. No database
+  schema, API route, migration, seed, or database command was changed or run.
+
+### Property Registration PDF revision (2026-08-23)
+
+- Per the latest approved UI, Step 1 does not include a separate
+  **Property Photo** uploader. **Property Name** uses the full row.
+- Step 3 keeps the required **Property Front Image** used for verification.
+- The visible PDF defaults are now real values: **Apartment** for Property Type
+  and **Residential** for Building Type, avoiding a placeholder that looked
+  selected but failed validation.
+- The verified front image is reused as the cover when the form is submitted,
+  so the existing API contract stays compatible without a duplicate upload.
+- Steps 2-4 and the post-registration success actions already matched the PDF
+  and were left unchanged. No database schema or migration was changed or run.
+
+### After-registration My Property revision (2026-08-23)
+
+- Matched `SERIES CREATION SYSTEM (5).pdf`: the page heading is now
+  **My Property**, while the Unit/Listing section is **My To-Let**.
+- The Property Information panel keeps the Property photo, exact identity and
+  contact rows, Verified status, Edit Property, and conditional Create Unit or
+  Manage Units action without repeating the Property name as a second heading.
+- Active Listing cards retain the five-photo/video slider, view count, rotating
+  Book Now/Booking count, Details, Mark Rented, and Share actions. Booked or
+  rented Units still reduce to the Details action and must be reactivated from
+  Unit Details.
+- Booking Requests navigation and content now appear only while the Unit has an
+  Active Listing and remains Vacant. They disappear after acceptance or an
+  offline Mark Rented action changes the Unit/Listing state.
+- The permanent QR poster now includes Bikalpo branding, Property ID, location,
+  Powered by Bikalpo.com, and the supplied Bengali property-listing line. Its
+  active/vacant listing filter and QR-only privacy behavior remain enforced by
+  the existing API.
+- Removed decorative card/slider shadows to match the flat site design system.
+  No database schema, migration, seed, or database command was changed or run.
+
+### To-Let facility Yes/No controls (2026-08-23)
+
+- Replaced the shared **Included / Excluded** segmented control with accessible
+  **Yes / No** radio choices across To-Let facility and applicable rent fields.
+- Editable forms still update the same boolean values. Detail views show the
+  saved choice as read-only, so API and database behavior remain unchanged.
+
+### PDF-aligned Create To-Let Post flow (2026-08-23)
+
+- Matched `SERIES CREATION SYSTEM (6).pdf` across the five Listing steps:
+  Unit Information, Unit Details, Facilities, Contact, and Review & Publish.
+- Step 1 now follows the supplied Property/Unit, rent, advance, deposit,
+  service charge, parking, and Available From order. The Listing title remains
+  generated automatically from the Property and Unit.
+- Step 2 uses read-only Yes/No radios for permanent Unit facts and the supplied
+  Family/Bachelor/Office/Any Preferred Tenant choices.
+- Step 3 uses Available checkboxes, Unit photo upload, and real optional
+  Property video upload with the existing 90-second validation.
+- Step 4 displays the verified Property contact. Existing Public/QR Only,
+  visitor-price visibility, and utility settings remain available inside the
+  collapsed advanced section so previous To-Let behavior is not lost.
+- Step 5 now mirrors the supplied Property, Unit, Category, Location,
+  Facilities, Media, publish-success, and next-action structure.
+- No database schema, migration, seed, or database command was changed or run.
+
+### To-Let landing colour polish (2026-08-23)
+
+- Reduced the blue-heavy appearance on `/to-let` with a route-scoped emerald
+  primary colour and warm neutral section surfaces. The shared blue shop
+  navbar remains unchanged so the page still matches the main Bikalpo site.
+- Neutralised the hero image treatment and changed the hero search/actions,
+  marketplace stats, rental types, listing/map controls, reviews, and owner CTA
+  to one consistent To-Let visual language.
+- Simplified repeated section labels, improved card borders and hover states,
+  and added matching text-selection and input-caret colours.
+- Existing listing data, search/filter/map behavior, links, APIs, database
+  schema, migrations, and seeds were not changed.
+
+### To-Let card gallery control (2026-08-23)
+
+- Added the requested compact dark image-gallery control to the bottom-right of
+  every To-Let listing-card photo, including single-image Listings.
+- The control displays the Listing's real total photo count and opens that
+  Listing's full photo/details page. Multiple-image cards keep the existing
+  carousel controls, while the gallery action has an expanded 44px touch area,
+  keyboard focus styling, and an accessible label. No API, database, or image
+  data change was required.
+
+### Consumer My Bookings and private rental details (2026-08-23)
+
+- Reorganized **My Bookings** into the lifecycle groups from `CONSUMER.pdf`:
+  Booking Requests, Current Rental, and Rental History. Active and Leaving
+  contracts stay under Current Rental; completed contracts move to history.
+- Booking cards now show the saved photo gallery, Booking ID/date, rental or
+  request status, Property/Unit, rent, location, size, key facilities, and a
+  private **View Details** link.
+- The private Booking Details page keeps the contract-only price view, Leave +
+  Create Alert flow, comments/reviews, and Monthly Rent OTP history. Paid rows
+  now correctly show both **Verified** and **Paid** in their matching columns.
+- The bookings response now includes a read-only rental summary and reveals all
+  captured pricing only when that user already has a rental contract. This is
+  an API response change only; no database schema, migration, seed, or database
+  write was added or run.
+- The public To-Let Listing **View Details** page was intentionally left
+  unchanged for the next review.
+
+### Reference-style Property QR poster and DB verification (2026-08-23)
+
+- Restyled the permanent Property QR preview and downloaded SVG to match the
+  supplied blue/orange Bikalpo To-Let poster: brand mark, large To-Let title,
+  Property name/location, Scan To View QR frame, Property ID strip, powered-by
+  line, and Bengali footer.
+- The QR destination remains the same permanent Property token URL. No QR token
+  or Property identity behavior was changed.
+- Confirmed with a read-only query that Listing creation persists rows in the
+  configured remote PostgreSQL `tolet_unit_listing` table. Creating saves a
+  draft row; publishing updates that same row to active. No test Listing,
+  migration, seed, or database write was run during verification.
+
+### Property pipeline completion pass (2026-08-24)
+
+- Rechecked all three pages of `SERIES CREATION SYSTEM (7).pdf` and added the
+  missing owner-side **My Posts** route. It shows the latest Listing for every
+  Unit with Active, Paused, Booked, and Contract filters plus View, Manage,
+  Pause, Mark as Booked, Re-List, and Share paths where the state allows them.
+- Consumer Account navigation is registration-aware: before the first Property
+  it shows **Property Registration**; afterwards it shows **My Properties** and
+  **My Posts** immediately after **My Bookings**. The redundant selected-row
+  check icon was removed, and the To-Let navbar entry now uses **Sell**.
+- Offline copy now consistently says **Mark as Booked**. Online acceptance still
+  reserves the Unit as `BOOKED`; the owner must explicitly confirm the Contract
+  is signed before activation links the tenant and changes it to `OCCUPIED`.
+- New Contracts use the fixed 1st-day rent schedule from the pipeline. Rental
+  access reconciles monthly payment/OTP cycles and both active and leaving
+  Contracts become Completed with their Unit returned to `VACANT` after the end
+  date. Production also runs the same idempotent lifecycle reconciler hourly;
+  development does not start that background writer against a shared DB.
+- Added pure lifecycle tests for the final-day boundary, Active/Leaving contract
+  completion, and first-day monthly cycles. No database schema, migration, seed,
+  or manual database command was changed or run.

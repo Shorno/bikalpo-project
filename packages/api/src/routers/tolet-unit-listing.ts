@@ -474,6 +474,88 @@ function assertListingWritable(row: JoinedListing) {
 }
 
 export const toLetUnitListingRouter = {
+  listMine: consumerProcedure
+    .route({
+      method: "GET",
+      path: "/to-let/owner/posts",
+      tags: ["To-Let Unit Listing"],
+      summary: "List the current user's latest To-Let post for every Unit",
+    })
+    .handler(async ({ context }) => {
+      const rows = await db
+        .select({
+          listing: toletUnitListing,
+          unit: toletUnit,
+          property: toletProperty,
+        })
+        .from(toletUnitListing)
+        .innerJoin(toletUnit, eq(toletUnitListing.unitId, toletUnit.id))
+        .innerJoin(toletProperty, eq(toletUnit.propertyId, toletProperty.id))
+        .where(
+          and(
+            eq(toletProperty.ownerUserId, context.session.user.id),
+            ne(toletProperty.status, "inactive"),
+            ne(toletUnit.status, "inactive"),
+          ),
+        )
+        .orderBy(desc(toletUnitListing.createdAt))
+        .limit(500);
+
+      const latestRows = rows.filter(
+        (row, index, allRows) =>
+          allRows.findIndex(
+            (candidate) => candidate.unit.id === row.unit.id,
+          ) === index,
+      );
+      const now = new Date();
+
+      return {
+        posts: latestRows.map((row) => {
+          const marketplaceStatus = toLetMarketplaceStatus(
+            {
+              listingStatus: row.listing.status,
+              unitStatus: row.unit.status,
+              publishedAt: row.listing.publishedAt,
+              createdAt: row.listing.createdAt,
+              closedAt: row.listing.closedAt,
+            },
+            now,
+          );
+          const marketplaceStartedAt =
+            marketplaceStatus === "booked"
+              ? row.listing.closedAt
+              : (row.listing.publishedAt ?? row.listing.createdAt);
+          const managementStatus =
+            row.unit.status === "occupied"
+              ? "contract"
+              : row.unit.status === "booked"
+                ? "booked"
+                : row.listing.status;
+
+          return {
+            ...ownerListingDto(row.listing),
+            propertyCode: formatPropertyCode(row.property),
+            propertyName: row.property.name,
+            qrToken: row.property.qrToken,
+            location: [
+              row.property.area,
+              row.property.district,
+              row.property.division,
+            ].join(", "),
+            unitCode: formatUnitCode(row.unit),
+            unitName: row.unit.name,
+            unitType: row.unit.unitType,
+            unitStatus: row.unit.status,
+            managementStatus,
+            marketplaceStatus,
+            marketplaceVisibleUntil: marketplaceStartedAt
+              ? toLetListingVisibleUntil(marketplaceStartedAt)
+              : null,
+          };
+        }),
+      };
+    }),
+
   getForUnit: consumerProcedure
     .route({
       method: "GET",
@@ -709,7 +791,7 @@ export const toLetUnitListingRouter = {
       method: "POST",
       path: "/to-let/owner/properties/{propertyCode}/units/{unitCode}/listing/{listingCode}/mark-rented",
       tags: ["To-Let Unit Listing"],
-      summary: "Mark an active owned listing as rented through an offline deal",
+      summary: "Mark an active owned listing as booked through an offline deal",
     })
     .input(listingMutationIdentitySchema)
     .handler(async ({ context, input }) => {
@@ -749,12 +831,12 @@ export const toLetUnitListingRouter = {
         }
         if (owned.property.status !== "active") {
           throw new ORPCError("CONFLICT", {
-            message: "Only an active property can mark a listing as rented",
+            message: "Only an active property can mark a listing as booked",
           });
         }
         if (owned.unit.status !== "vacant") {
           throw new ORPCError("CONFLICT", {
-            message: "Only a vacant unit can be marked as rented",
+            message: "Only a vacant unit can be marked as booked",
           });
         }
         if (owned.listing.status !== "active") {
@@ -818,7 +900,7 @@ export const toLetUnitListingRouter = {
           .update(toletBookingRequest)
           .set({
             status: "rejected",
-            responseNote: "The owner completed this rental offline",
+            responseNote: "The owner marked this offline deal as booked",
             respondedAt: now,
             updatedAt: now,
           })

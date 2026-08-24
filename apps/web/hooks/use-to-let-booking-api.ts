@@ -26,6 +26,14 @@ export interface ToLetBookingRequestView {
   createdAt: string;
   respondedAt: string | null;
   cancelledAt: string | null;
+  rentalSummary: {
+    status: "active" | "leaving" | "completed";
+    monthlyRent: number;
+    startDate: string;
+    endDate: string;
+    accessEndsAt: string | null;
+    completedAt: string | null;
+  } | null;
   offerSnapshot: {
     version: number;
     capturedAt: string;

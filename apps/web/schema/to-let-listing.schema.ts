@@ -24,11 +24,11 @@ export const listingVisibilityOptions = [
 ] as const;
 
 export const preferredTenantOptions = [
-  { value: "any", label: "Any" },
   { value: "family", label: "Family" },
   { value: "bachelor", label: "Bachelor" },
-  { value: "female", label: "Female" },
   { value: "office", label: "Office" },
+  { value: "any", label: "Any" },
+  { value: "female", label: "Female" },
 ] as const;
 
 export const listingDraftSchema = z.object({
@@ -61,6 +61,7 @@ export const listingDraftSchema = z.object({
 });
 
 export const listingPublishSchema = listingDraftSchema.extend({
+  advanceAmount: money.min(1, "Advance is required"),
   imageUrls: z
     .array(httpUrl)
     .min(1, "Add at least one listing photo before publishing")

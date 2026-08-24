@@ -137,31 +137,24 @@ function formatDate(value: string | null, includeTime = false) {
 
 function Section({
   icon: Icon,
-  eyebrow,
   title,
   description,
   children,
 }: {
   icon: React.ElementType;
-  eyebrow: string;
   title: string;
   description?: string;
   children: ReactNode;
 }) {
   return (
-    <section className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+    <section className="overflow-hidden rounded-xl border border-gray-200 bg-white">
       <div className="border-b border-gray-100 px-5 py-4 sm:px-6">
         <div className="flex items-start gap-3">
           <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-700">
             <Icon className="size-5" />
           </span>
           <div>
-            <p className="text-[11px] font-semibold tracking-[0.14em] text-emerald-700 uppercase">
-              {eyebrow}
-            </p>
-            <h2 className="mt-1 text-lg font-semibold text-gray-900">
-              {title}
-            </h2>
+            <h2 className="text-lg font-semibold text-gray-900">{title}</h2>
             {description ? (
               <p className="mt-1 text-sm leading-6 text-gray-500">
                 {description}
@@ -305,7 +298,7 @@ function PaymentRow({
           placeholder="6-digit OTP"
         />
       ) : (
-        <span className="font-semibold text-emerald-700">Paid</span>
+        <span className="font-medium text-emerald-700">Verified</span>
       )}
       {payment.status === "pending" ? (
         <Button
@@ -326,7 +319,9 @@ function PaymentRow({
         >
           Verify
         </Button>
-      ) : null}
+      ) : (
+        <span className="font-semibold text-emerald-700">Paid</span>
+      )}
     </div>
   );
 }
@@ -345,7 +340,6 @@ function CommentsSection({
   return (
     <Section
       icon={MessageSquareText}
-      eyebrow="Comments"
       title="Verified rental feedback"
       description="Comments are linked to this active or completed rental contract."
     >
@@ -403,9 +397,18 @@ function CommentsSection({
       <Button
         className="mt-3"
         disabled={addComment.isPending || body.trim().length < 3}
-        onClick={() =>
-          addComment.mutate({ bookingCode, body: body.trim(), rating })
-        }
+        onClick={async () => {
+          try {
+            await addComment.mutateAsync({
+              bookingCode,
+              body: body.trim(),
+              rating,
+            });
+            setBody("");
+          } catch {
+            // The mutation hook displays the API error.
+          }
+        }}
       >
         <MessageSquareText className="size-4" /> Submit comment
       </Button>
@@ -424,7 +427,7 @@ export function BookingDetailsClient({ bookingCode }: { bookingCode: string }) {
 
   if (query.isError || !booking) {
     return (
-      <div className="rounded-xl border border-gray-200 bg-white px-6 py-12 text-center shadow-sm">
+      <div className="rounded-xl border border-gray-200 bg-white px-6 py-12 text-center">
         <Building2 className="mx-auto size-10 text-gray-300" />
         <h1 className="mt-4 text-xl font-semibold text-gray-900">
           Booking details could not be loaded
@@ -510,7 +513,7 @@ function BookingDetails({ booking }: { booking: ToLetBookingRequestView }) {
         </Badge>
       </div>
 
-      <section className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+      <section className="overflow-hidden rounded-xl border border-gray-200 bg-white">
         <div className="grid lg:grid-cols-[minmax(0,1.1fr)_minmax(20rem,0.9fr)]">
           <div className="bg-gray-50 p-3 sm:p-4">
             <PublicListingGallery imageUrls={images} alt={snapshot.title} />
@@ -601,7 +604,7 @@ function BookingDetails({ booking }: { booking: ToLetBookingRequestView }) {
       </section>
 
       {contract ? (
-        <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-5 text-sm text-emerald-900 shadow-sm">
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-5 text-sm text-emerald-900">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <p className="font-semibold">
@@ -626,7 +629,7 @@ function BookingDetails({ booking }: { booking: ToLetBookingRequestView }) {
         </div>
       ) : null}
 
-      <Section icon={Home} eyebrow="Overview" title="Unit and rental overview">
+      <Section icon={Home} title="Unit and rental overview">
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           <InfoTile label="Unit name / number" value={snapshot.unit.name} />
           <InfoTile
@@ -652,6 +655,11 @@ function BookingDetails({ booking }: { booking: ToLetBookingRequestView }) {
             label="Desired move-in"
             value={formatDate(booking.desiredMoveInDate)}
           />
+          <InfoTile
+            label={booking.status === "accepted" ? "Booked on" : "Requested on"}
+            value={formatDate(booking.respondedAt ?? booking.createdAt, true)}
+          />
+          <InfoTile label="Listing status" value={status.label} />
         </div>
 
         <div className="mt-4 grid gap-3 sm:grid-cols-3">
@@ -681,7 +689,6 @@ function BookingDetails({ booking }: { booking: ToLetBookingRequestView }) {
 
       <Section
         icon={ShieldCheck}
-        eyebrow="Facilities"
         title="Facilities captured with this rental offer"
         description="Older booking snapshots may show Not recorded where the original request did not preserve a facility value."
       >
@@ -727,7 +734,6 @@ function BookingDetails({ booking }: { booking: ToLetBookingRequestView }) {
 
       <Section
         icon={WalletCards}
-        eyebrow="Rent information"
         title="Offer price snapshot"
         description="These values were captured when this Booking Request was submitted. An active contract will become the final source of truth."
       >
@@ -760,7 +766,7 @@ function BookingDetails({ booking }: { booking: ToLetBookingRequestView }) {
             included={snapshot.utilityChargeIncluded}
           />
         </div>
-        <div className="mt-4 flex items-center gap-3 rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800">
+        <div className="mt-4 flex items-center gap-3 rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">
           <LockKeyhole className="size-5 shrink-0" />
           {contract
             ? "Payment method: Monthly OTP Verification. Enter the receiver name and the owner-provided OTP for each rent cycle."
@@ -771,7 +777,6 @@ function BookingDetails({ booking }: { booking: ToLetBookingRequestView }) {
       {contract ? (
         <Section
           icon={CalendarDays}
-          eyebrow="Payment history"
           title="Monthly rent cycles"
           description="This private history is available because the booking is confirmed and a rental contract has been activated."
         >
@@ -802,7 +807,6 @@ function BookingDetails({ booking }: { booking: ToLetBookingRequestView }) {
 
       <Section
         icon={Bell}
-        eyebrow="Create To-Let alert"
         title="Prepare your next rental preference"
         description="This preview is prefilled from the current Unit. Saving alerts requires the upcoming notification service."
       >

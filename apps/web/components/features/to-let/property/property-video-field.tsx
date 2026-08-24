@@ -40,12 +40,14 @@ export function PropertyVideoField({
   disabled = false,
   invalid = false,
   allowLink = true,
+  subjectLabel = "Building video",
 }: {
   value: string;
   onChange: (url: string) => void;
   disabled?: boolean;
   invalid?: boolean;
   allowLink?: boolean;
+  subjectLabel?: string;
 }) {
   const [source, setSource] = useState<VideoSource>(() =>
     sourceForValue(value),
@@ -59,7 +61,12 @@ export function PropertyVideoField({
 
   if (!allowLink) {
     return (
-      <VideoUploader value={value} onChange={onChange} disabled={disabled} />
+      <VideoUploader
+        value={value}
+        onChange={onChange}
+        disabled={disabled}
+        subjectLabel={subjectLabel}
+      />
     );
   }
 
@@ -103,7 +110,12 @@ export function PropertyVideoField({
       </div>
 
       {source === "upload" ? (
-        <VideoUploader value={value} onChange={onChange} disabled={disabled} />
+        <VideoUploader
+          value={value}
+          onChange={onChange}
+          disabled={disabled}
+          subjectLabel={subjectLabel}
+        />
       ) : (
         <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
           <Input

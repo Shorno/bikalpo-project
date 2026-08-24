@@ -1,7 +1,8 @@
 "use client";
 
-import { ChevronLeft, ChevronRight, Pause, Play } from "lucide-react";
+import { ChevronLeft, ChevronRight, Images, Pause, Play } from "lucide-react";
 import Image from "next/image";
+import Link from "next/link";
 import {
   type FocusEvent,
   useCallback,
@@ -16,6 +17,7 @@ interface ListingImageCarouselProps {
   alt: string;
   className?: string;
   sizes?: string;
+  galleryHref?: string | null;
 }
 
 const AUTO_ADVANCE_MS = 5_000;
@@ -25,10 +27,10 @@ export function ListingImageCarousel({
   alt,
   className,
   sizes = "(max-width: 640px) 100vw, (max-width: 1280px) 50vw, 33vw",
+  galleryHref,
 }: ListingImageCarouselProps) {
   const images = useMemo(
-    () =>
-      imageUrls.filter((imageUrl) => imageUrl.trim().length > 0).slice(0, 5),
+    () => imageUrls.filter((imageUrl) => imageUrl.trim().length > 0),
     [imageUrls],
   );
   const [activeIndex, setActiveIndex] = useState(0);
@@ -115,7 +117,7 @@ export function ListingImageCarousel({
           <button
             type="button"
             onClick={() => setIsUserPaused((paused) => !paused)}
-            className="absolute right-2 top-2 z-10 inline-flex size-8 items-center justify-center rounded-full bg-black/60 text-white hover:bg-black/75 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+            className="absolute right-2 top-2 z-10 inline-flex size-11 items-center justify-center rounded-full bg-black/65 text-white hover:bg-black/80 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
             aria-label={
               isUserPaused
                 ? "Resume automatic slideshow"
@@ -133,7 +135,7 @@ export function ListingImageCarousel({
             <button
               type="button"
               onClick={showPrevious}
-              className="inline-flex size-8 items-center justify-center rounded-full bg-black/60 text-white hover:bg-black/75 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+              className="inline-flex size-11 items-center justify-center rounded-full bg-black/65 text-white hover:bg-black/80 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
               aria-label="Show previous photo"
             >
               <ChevronLeft className="size-4" aria-hidden="true" />
@@ -141,29 +143,40 @@ export function ListingImageCarousel({
             <button
               type="button"
               onClick={showNext}
-              className="inline-flex size-8 items-center justify-center rounded-full bg-black/60 text-white hover:bg-black/75 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+              className="inline-flex size-11 items-center justify-center rounded-full bg-black/65 text-white hover:bg-black/80 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
               aria-label="Show next photo"
             >
               <ChevronRight className="size-4" aria-hidden="true" />
             </button>
           </div>
-
-          <div className="absolute inset-x-0 bottom-2 flex justify-center gap-1.5">
-            {images.map((imageUrl, index) => (
-              <button
-                key={`${imageUrl}-${index}`}
-                type="button"
-                onClick={() => setActiveIndex(index)}
-                className={`size-2 rounded-full transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white ${
-                  index === activeIndex ? "bg-white" : "bg-white/70"
-                }`}
-                aria-label={`Show photo ${index + 1}`}
-                aria-current={index === activeIndex}
-              />
-            ))}
-          </div>
         </>
       )}
+
+      {galleryHref ? (
+        <Link
+          href={galleryHref}
+          prefetch={false}
+          className="absolute bottom-3 right-3 z-10 inline-flex h-9 min-w-12 items-center justify-center gap-1 rounded-lg bg-zinc-950/90 px-2.5 text-white transition-colors after:absolute after:-inset-1 hover:bg-zinc-950 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+          aria-label={`Open ${alt} photo gallery`}
+        >
+          <Images className="size-5" aria-hidden="true" />
+          <span className="text-xs font-semibold tabular-nums">
+            {images.length}
+          </span>
+        </Link>
+      ) : hasMultipleImages ? (
+        <button
+          type="button"
+          onClick={showNext}
+          className="absolute bottom-3 right-3 z-10 inline-flex h-9 min-w-12 items-center justify-center gap-1 rounded-lg bg-zinc-950/90 px-2.5 text-white transition-colors after:absolute after:-inset-1 hover:bg-zinc-950 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+          aria-label={`Show next photo. Photo ${activeIndex + 1} of ${images.length} is currently shown`}
+        >
+          <Images className="size-5" aria-hidden="true" />
+          <span className="text-xs font-semibold tabular-nums">
+            {images.length}
+          </span>
+        </button>
+      ) : null}
     </div>
   );
 }
