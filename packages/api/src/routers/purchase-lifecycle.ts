@@ -169,7 +169,10 @@ export const purchaseLifecycleRouter = {
             0,
           );
           const recognizedAmount = rowMovements.reduce(
-            (sum, item) => sum + Number(item.totalCost ?? 0),
+            (sum, item) =>
+              sum +
+              (item.direction === "out" ? -1 : 1) *
+                Number(item.totalCost ?? 0),
             0,
           );
           const advances = rowPayments
@@ -213,7 +216,9 @@ export const purchaseLifecycleRouter = {
             }),
             id: row.id,
             inventoryStatus:
-              recognizedAmount <= 0
+              row.status === "returned"
+                ? "reversed"
+                : recognizedAmount <= 0
                 ? "not_recognized"
                 : receivedQty < expectedQty
                   ? "partially_received"
@@ -295,6 +300,35 @@ export const purchaseLifecycleRouter = {
             where: inArray(journalLine.journalEntryId, journalIds),
           })
         : [];
+      const chronologicalPayments = [...payments].sort(
+        (left, right) =>
+          new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime(),
+      );
+      let runningDue = Number(purchaseOrder.total);
+      const paymentHistory = chronologicalPayments.map((row) => {
+        if (row.status === "completed" && row.entryType === "payment") {
+          runningDue = Math.max(0, runningDue - Number(row.amount));
+        }
+        return {
+          ...row,
+          dueAfter: runningDue.toFixed(2),
+          method: row.paymentMethod,
+          purpose: row.purchasePurpose,
+          timing: row.purchaseTiming,
+        };
+      });
+      const latestRefundStage = [
+        "refund_completed",
+        "refund_processed",
+        "refund_approved",
+        "refund_requested",
+      ].find((eventType) => events.some((event) => event.eventType === eventType));
+      const receiptValue = movements
+        .filter((movement) => movement.reason === "purchase_receipt")
+        .reduce((sum, movement) => sum + Number(movement.totalCost), 0);
+      const returnedValue = movements
+        .filter((movement) => movement.reason === "purchase_return")
+        .reduce((sum, movement) => sum + Number(movement.totalCost), 0);
 
       return {
         accountingHistory: journals.map((entry) => ({
@@ -303,8 +337,16 @@ export const purchaseLifecycleRouter = {
         })),
         inventoryHistory: movements,
         order: purchaseOrder,
-        paymentHistory: payments,
+        paymentHistory: paymentHistory.reverse(),
         purchaseHistory: events,
+        summary: {
+          dueAmount: purchaseOrder.dueAmount,
+          netInventoryValue: (receiptValue - returnedValue).toFixed(2),
+          paidAmount: purchaseOrder.paidAmount,
+          refundStage: latestRefundStage ?? null,
+          returnAmount: purchaseOrder.returnAmount,
+          total: purchaseOrder.total,
+        },
       };
     }),
 
