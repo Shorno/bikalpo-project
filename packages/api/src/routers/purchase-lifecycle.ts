@@ -661,6 +661,52 @@ export const purchaseLifecycleRouter = {
       return { status: "refund_approved" as const, success: true };
     }),
 
+  processRefund: protectedProcedure
+    .route({
+      method: "POST",
+      path: "/purchase-lifecycle/refunds/process",
+      tags: ["Purchase Lifecycle"],
+      summary: "Mark an approved purchase refund as processing",
+    })
+    .input(z.object({ paymentId: z.number().int().positive() }))
+    .handler(async ({ context, input }) => {
+      const ownerId = context.session.user.id;
+      const paid = await db.query.payment.findFirst({
+        where: eq(payment.id, input.paymentId),
+        with: { order: true },
+      });
+      if (!paid || paid.order.userId !== ownerId || paid.order.orderType !== "b2b") {
+        throw new ORPCError("NOT_FOUND", { message: "Purchase payment not found" });
+      }
+      if (paid.status !== "refund_pending") {
+        throw new ORPCError("BAD_REQUEST", { message: "Refund is not pending" });
+      }
+      const approved = await db.query.purchaseEvent.findFirst({
+        where: and(
+          eq(purchaseEvent.orderId, paid.orderId),
+          eq(purchaseEvent.eventType, "refund_approved"),
+        ),
+        orderBy: [desc(purchaseEvent.occurredAt)],
+      });
+      if (!approved) {
+        throw new ORPCError("BAD_REQUEST", { message: "Approve the refund first" });
+      }
+      await appendOrderPurchaseEvent(db, {
+        actorId: ownerId,
+        amount: Number(paid.amount) - Number(paid.refundedAmount),
+        category: "payment",
+        description: "Purchase refund is being processed",
+        eventType: "refund_processed",
+        fromState: "refund_approved",
+        idempotencyKey: `payment:${paid.id}:refund-processed`,
+        orderId: paid.orderId,
+        ownerId,
+        reference: paid.referenceNo ?? paid.order.orderNumber,
+        toState: "refund_processed",
+      });
+      return { status: "refund_processed" as const, success: true };
+    }),
+
   completeRefund: protectedProcedure
     .route({
       method: "POST",
