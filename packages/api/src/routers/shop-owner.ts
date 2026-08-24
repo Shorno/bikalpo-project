@@ -77,6 +77,7 @@ import {
 	gte,
 	ilike,
 	inArray,
+	isNotNull,
 	isNull,
 	lte,
 	min,
@@ -2585,6 +2586,378 @@ const orderQueries = {
 					totalAmount: kpi?.totalAmount || "0",
 					pendingAmount: kpi?.pendingAmount || "0",
 				},
+			};
+		}),
+
+	/**
+	 * Get purchases recognized when stock was received.
+	 * This keeps the purchase report aligned with inventory and payable posting.
+	 */
+	getPurchaseReport: shopOwnerProcedure
+		.route({
+			method: "POST",
+			path: "/shop-owner/purchase-report",
+			tags: ["Shop Owner"],
+			summary: "Get received purchases for the purchase report",
+		})
+		.input(
+			z.object({
+				dateFrom: z.string(),
+				dateTo: z.string(),
+				warehouseId: z.string().optional(),
+			}),
+		)
+		.handler(async ({ context, input }) => {
+			const userId = context.session.user.id;
+			const dateFrom = new Date(`${input.dateFrom}T00:00:00.000Z`);
+			const dateTo = new Date(`${input.dateTo}T23:59:59.999Z`);
+
+			if (
+				Number.isNaN(dateFrom.getTime()) ||
+				Number.isNaN(dateTo.getTime()) ||
+				dateFrom > dateTo
+			) {
+				throw new ORPCError("BAD_REQUEST", {
+					message: "Select a valid purchase report date range",
+				});
+			}
+
+			const reportOrders = await db
+				.select({
+					discount: order.discount,
+					id: order.id,
+					orderNumber: order.orderNumber,
+					receivedAt: order.receivedAt,
+					returnAmount: order.returnAmount,
+					subtotal: order.subtotal,
+					total: order.total,
+					warehouseId: order.warehouseId,
+				})
+				.from(order)
+				.where(
+					and(
+						eq(order.userId, userId),
+						eq(order.orderType, "b2b"),
+						inArray(order.status, ["delivered", "returned"]),
+						isNotNull(order.receivedAt),
+						gte(order.receivedAt, dateFrom),
+						lte(order.receivedAt, dateTo),
+					),
+				)
+				.orderBy(desc(order.receivedAt));
+
+			const warehouseIds = [
+				...new Set(
+					reportOrders
+						.map((purchaseOrder) => purchaseOrder.warehouseId)
+						.filter((id): id is string => Boolean(id)),
+				),
+			];
+			const warehouseNames = new Map<string, string>();
+
+			if (warehouseIds.length > 0) {
+				const warehouses = await db
+					.select({
+						id: user.id,
+						name: user.name,
+						shopName: user.shopName,
+						warehouseName: user.warehouseName,
+					})
+					.from(user)
+					.where(inArray(user.id, warehouseIds));
+
+				for (const warehouse of warehouses) {
+					warehouseNames.set(
+						warehouse.id,
+						warehouse.warehouseName ||
+							warehouse.shopName ||
+							warehouse.name ||
+							"Unknown supplier",
+					);
+				}
+			}
+
+			const suppliers = warehouseIds.map((warehouseId) => ({
+				id: warehouseId,
+				name: warehouseNames.get(warehouseId) ?? "Unknown supplier",
+			}));
+			const rows = reportOrders
+				.filter(
+					(purchaseOrder) =>
+						!input.warehouseId ||
+						purchaseOrder.warehouseId === input.warehouseId,
+				)
+				.map((purchaseOrder) => {
+					const amount = Number(purchaseOrder.subtotal);
+					const discount = Number(purchaseOrder.discount);
+					const returnAmount = Number(purchaseOrder.returnAmount);
+
+					return {
+						amount,
+						date: purchaseOrder.receivedAt!,
+						discount,
+						id: purchaseOrder.id,
+						net: Math.max(0, Number(purchaseOrder.total) - returnAmount),
+						poNo: purchaseOrder.orderNumber,
+						returnAmount,
+						supplier:
+							(purchaseOrder.warehouseId
+								? warehouseNames.get(purchaseOrder.warehouseId)
+								: null) ?? "Admin",
+						warehouseId: purchaseOrder.warehouseId,
+					};
+				});
+
+			return {
+				rows,
+				summary: rows.reduce(
+					(summary, row) => ({
+						discount: summary.discount + row.discount,
+						netPurchase: summary.netPurchase + row.net,
+						returnAmount: summary.returnAmount + row.returnAmount,
+						totalOrders: summary.totalOrders + 1,
+						totalPurchase: summary.totalPurchase + row.amount,
+					}),
+					{
+						discount: 0,
+						netPurchase: 0,
+						returnAmount: 0,
+						totalOrders: 0,
+						totalPurchase: 0,
+					},
+				),
+				suppliers: suppliers.sort((left, right) =>
+					left.name.localeCompare(right.name),
+				),
+			};
+		}),
+
+	/** Get supplier invoices recognized after B2B purchases are received. */
+	getAccountsPayableReport: shopOwnerProcedure
+		.route({
+			method: "POST",
+			path: "/shop-owner/accounts-payable-report",
+			tags: ["Shop Owner"],
+			summary: "Get received supplier bills for accounts payable",
+		})
+		.input(
+			z.object({
+				dateFrom: z.string(),
+				dateTo: z.string(),
+				supplierKey: z.string().optional(),
+			}),
+		)
+		.handler(async ({ context, input }) => {
+			const userId = context.session.user.id;
+			const dateFrom = new Date(`${input.dateFrom}T00:00:00.000Z`);
+			const dateTo = new Date(`${input.dateTo}T23:59:59.999Z`);
+
+			if (
+				Number.isNaN(dateFrom.getTime()) ||
+				Number.isNaN(dateTo.getTime()) ||
+				dateFrom > dateTo
+			) {
+				throw new ORPCError("BAD_REQUEST", {
+					message: "Select a valid accounts payable date range",
+				});
+			}
+
+			const bills = await db
+				.select({
+					dueAmount: invoice.dueAmount,
+					grandTotal: invoice.grandTotal,
+					id: invoice.id,
+					invoiceNumber: invoice.invoiceNumber,
+					invoicePaymentDueAt: invoice.paymentDueAt,
+					orderId: order.id,
+					orderNumber: order.orderNumber,
+					orderPaymentDueAt: order.paymentDueAt,
+					paidAmount: invoice.paidAmount,
+					paymentMethod: order.paymentMethod,
+					receivedAt: order.receivedAt,
+					returnAmount: invoice.returnAmount,
+					warehouseId: order.warehouseId,
+				})
+				.from(invoice)
+				.innerJoin(order, eq(order.id, invoice.orderId))
+				.where(
+					and(
+						eq(order.userId, userId),
+						eq(order.orderType, "b2b"),
+						inArray(order.status, ["delivered", "returned"]),
+						isNotNull(order.receivedAt),
+						gte(order.receivedAt, dateFrom),
+						lte(order.receivedAt, dateTo),
+					),
+				)
+				.orderBy(desc(order.receivedAt), desc(invoice.id));
+			const manualBills = await db
+				.select({
+					amount: financialLedger.amount,
+					createdAt: financialLedger.createdAt,
+					description: financialLedger.description,
+					id: financialLedger.id,
+				})
+				.from(financialLedger)
+				.where(
+					and(
+						eq(financialLedger.ownerId, userId),
+						eq(financialLedger.ownerType, "shop"),
+						gte(financialLedger.createdAt, dateFrom),
+						lte(financialLedger.createdAt, dateTo),
+						or(
+							and(
+								eq(financialLedger.entryType, "purchase_credit"),
+								eq(financialLedger.direction, "debit"),
+							),
+							and(
+								eq(financialLedger.entryType, "adjustment"),
+								eq(financialLedger.direction, "credit"),
+								or(
+									ilike(financialLedger.description, "Bill due%"),
+									ilike(
+										financialLedger.description,
+										"Supplier bill tracker%",
+									),
+								),
+							),
+						),
+					),
+				)
+				.orderBy(desc(financialLedger.createdAt));
+
+			const warehouseIds = [
+				...new Set(
+					bills
+						.map((bill) => bill.warehouseId)
+						.filter((id): id is string => Boolean(id)),
+				),
+			];
+			const warehouseNames = new Map<string, string>();
+
+			if (warehouseIds.length > 0) {
+				const warehouses = await db
+					.select({
+						id: user.id,
+						name: user.name,
+						shopName: user.shopName,
+						warehouseName: user.warehouseName,
+					})
+					.from(user)
+					.where(inArray(user.id, warehouseIds));
+
+				for (const warehouse of warehouses) {
+					warehouseNames.set(
+						warehouse.id,
+						warehouse.warehouseName ||
+							warehouse.shopName ||
+							warehouse.name ||
+							"Unknown supplier",
+					);
+				}
+			}
+
+			const now = new Date();
+			const platformRows = bills.map((bill) => {
+					const due = Math.max(0, Number(bill.dueAmount));
+					const dueDate = bill.invoicePaymentDueAt ?? bill.orderPaymentDueAt;
+					const isOverdue = due > 0 && dueDate !== null && dueDate < now;
+					const status: "Overdue" | "Paid" | "Unpaid" =
+						due <= 0 ? "Paid" : isOverdue ? "Overdue" : "Unpaid";
+					const supplier =
+						(bill.warehouseId
+							? warehouseNames.get(bill.warehouseId)
+							: null) ?? "Admin";
+
+					return {
+						billNo: bill.invoiceNumber,
+						date: bill.receivedAt!,
+						due,
+						dueDate,
+						id: `invoice:${bill.id}`,
+						orderId: bill.orderId,
+						orderNo: bill.orderNumber,
+						paid: Math.max(0, Number(bill.paidAmount)),
+						paymentMethod: bill.paymentMethod,
+						status,
+						supplier,
+						supplierKey: bill.warehouseId
+							? `warehouse:${bill.warehouseId}`
+							: "admin",
+						totalBill: Math.max(
+							0,
+							Number(bill.grandTotal) - Number(bill.returnAmount),
+						),
+					};
+				});
+			const descriptionValue = (
+				description: string | null,
+				label: string,
+			) => {
+				const prefix = `${label}:`;
+				const segment = description
+					?.split("|")
+					.map((part) => part.trim())
+					.find((part) => part.startsWith(prefix));
+
+				return segment?.slice(prefix.length).trim() || null;
+			};
+			const ledgerRows = manualBills.map((bill) => {
+				const amount = Math.max(0, Number(bill.amount));
+				const supplier =
+					descriptionValue(bill.description, "Supplier") ?? "External supplier";
+				const billNo =
+					descriptionValue(bill.description, "Bill") ??
+					`DUE-${String(bill.id).padStart(6, "0")}`;
+				const reference =
+					descriptionValue(bill.description, "Reference") ?? `LEDGER-${bill.id}`;
+
+				return {
+					billNo,
+					date: bill.createdAt,
+					due: amount,
+					dueDate: null,
+					id: `ledger:${bill.id}`,
+					orderId: null,
+					orderNo: reference,
+					paid: 0,
+					paymentMethod: null,
+					status: "Unpaid" as const,
+					supplier,
+					supplierKey: `manual:${supplier.toLocaleLowerCase()}`,
+					totalBill: amount,
+				};
+			});
+			const allRows = [...platformRows, ...ledgerRows].sort(
+				(left, right) => right.date.getTime() - left.date.getTime(),
+			);
+			const rows = allRows.filter(
+				(row) => !input.supplierKey || row.supplierKey === input.supplierKey,
+			);
+			const suppliers = Array.from(
+				new Map(
+					allRows.map((row) => [
+						row.supplierKey,
+						{ id: row.supplierKey, name: row.supplier },
+					]),
+				).values(),
+			);
+
+			return {
+				rows,
+				summary: rows.reduce(
+					(summary, row) => ({
+						outstanding: summary.outstanding + row.due,
+						overdue:
+							summary.overdue + (row.status === "Overdue" ? row.due : 0),
+						paid: summary.paid + row.paid,
+						totalBills: summary.totalBills + 1,
+					}),
+					{ outstanding: 0, overdue: 0, paid: 0, totalBills: 0 },
+				),
+				suppliers: suppliers.sort((left, right) =>
+					left.name.localeCompare(right.name),
+				),
 			};
 		}),
 
