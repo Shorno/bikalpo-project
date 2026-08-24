@@ -40,6 +40,7 @@ type LedgerTransaction = {
   date: string;
   description: string;
   direction: "credit" | "debit";
+  editable: boolean;
   id: number;
   referenceId: number;
   referenceType: string;
@@ -331,7 +332,9 @@ export default function LedgerPage() {
               Ledger Transaction
             </DialogTitle>
             <DialogDescription>
-              Edit the amount or delete this transaction from the ledger.
+              {selectedTransaction?.editable === false
+                ? "This system-generated accounting entry is read-only."
+                : "Edit the amount or delete this transaction from the ledger."}
             </DialogDescription>
           </DialogHeader>
           {selectedTransaction ? (
@@ -424,6 +427,7 @@ export default function LedgerPage() {
                         className="h-10 text-right tabular-nums"
                         inputMode="decimal"
                         onChange={(event) => setDraftAmount(event.target.value)}
+                        readOnly={selectedTransaction.editable === false}
                         value={draftAmount}
                       />
                     </div>
@@ -441,40 +445,53 @@ export default function LedgerPage() {
             </div>
           ) : null}
           <DialogFooter className="border-slate-200 border-t bg-white px-5 py-4 sm:justify-between">
-            <Button
-              className="text-red-600 hover:bg-red-50 hover:text-red-700"
-              disabled={!selectedTransaction || deleteMutation.isPending}
-              onClick={() => {
-                if (
-                  selectedTransaction &&
-                  window.confirm("Delete this ledger transaction?")
-                ) {
-                  deleteMutation.mutate({ id: selectedTransaction.id });
-                }
-              }}
-              type="button"
-              variant="ghost"
-            >
-              <Trash2Icon />
-              Delete
-            </Button>
-            <Button
-              disabled={!selectedTransaction || updateMutation.isPending}
-              onClick={() => {
-                if (!selectedTransaction) {
-                  return;
-                }
+            {selectedTransaction?.editable === false ? (
+              <Button
+                className="ml-auto"
+                onClick={() => setSelectedTransaction(null)}
+                type="button"
+                variant="outline"
+              >
+                Close
+              </Button>
+            ) : (
+              <>
+                <Button
+                  className="text-red-600 hover:bg-red-50 hover:text-red-700"
+                  disabled={!selectedTransaction || deleteMutation.isPending}
+                  onClick={() => {
+                    if (
+                      selectedTransaction &&
+                      window.confirm("Delete this ledger transaction?")
+                    ) {
+                      deleteMutation.mutate({ id: selectedTransaction.id });
+                    }
+                  }}
+                  type="button"
+                  variant="ghost"
+                >
+                  <Trash2Icon />
+                  Delete
+                </Button>
+                <Button
+                  disabled={!selectedTransaction || updateMutation.isPending}
+                  onClick={() => {
+                    if (!selectedTransaction) {
+                      return;
+                    }
 
-                updateMutation.mutate({
-                  amount: toNumber(draftAmount),
-                  id: selectedTransaction.id,
-                });
-              }}
-              type="button"
-            >
-              <SaveIcon />
-              Save
-            </Button>
+                    updateMutation.mutate({
+                      amount: toNumber(draftAmount),
+                      id: selectedTransaction.id,
+                    });
+                  }}
+                  type="button"
+                >
+                  <SaveIcon />
+                  Save
+                </Button>
+              </>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -584,7 +601,11 @@ function LedgerAccountRows({
             className="cursor-pointer border-b border-slate-200 hover:bg-blue-50"
             key={`${account.id}-${transaction.id}`}
             onDoubleClick={() => onOpen(transaction, account)}
-            title="Double-click to edit transaction"
+            title={
+              transaction.editable
+                ? "Double-click to edit transaction"
+                : "Double-click to view transaction"
+            }
           >
             <td className="px-8 py-3 text-slate-600">
               {formatDate(transaction.date)}
