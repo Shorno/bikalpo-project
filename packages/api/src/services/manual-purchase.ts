@@ -4,6 +4,7 @@ import {
   inventoryMovement,
   payment,
   purchase,
+  purchaseEvent,
   purchaseItem,
   supplier,
 } from "@bikalpo-project/db/schema";
@@ -742,4 +743,178 @@ export async function cancelManualPurchase(
     toState: "cancelled",
   });
   return cancelled!;
+}
+
+export async function advanceManualPurchaseRefund(
+  tx: any,
+  scope: ManualPurchaseScope,
+  input: {
+    action: "approve" | "complete" | "process" | "request" | "verify";
+    amount?: number;
+    idempotencyKey?: string;
+    paymentAccountId?: number;
+    paymentId: number;
+    reason?: string | null;
+    referenceNo?: string | null;
+  },
+) {
+  const paid = await tx.query.payment.findFirst({
+    where: eq(payment.id, input.paymentId),
+    with: { purchase: true },
+  });
+  if (
+    !paid ||
+    !paid.purchase ||
+    paid.purchase.warehouseId !== scope.ownerId ||
+    paid.purchase.ownerType !== scope.ownerType
+  ) {
+    throw new Error("Manual purchase payment was not found");
+  }
+  if (paid.purchase.status !== "cancelled") {
+    throw new Error("Cancel the purchase before processing a refund");
+  }
+
+  const eventTypeByAction = {
+    approve: "refund_approved",
+    process: "refund_processed",
+    request: "refund_requested",
+    verify: "refund_verified",
+  } as const;
+  const prerequisiteByAction = {
+    approve: "refund_verified",
+    process: "refund_approved",
+    verify: "refund_requested",
+  } as const;
+
+  if (input.action !== "complete") {
+    if (!['completed', 'partially_refunded', 'refund_pending'].includes(paid.status)) {
+      throw new Error("Only completed payments can be refunded");
+    }
+    const prerequisite = prerequisiteByAction[
+      input.action as keyof typeof prerequisiteByAction
+    ];
+    if (prerequisite) {
+      const prior = await tx.query.purchaseEvent.findFirst({
+        where: and(
+          eq(purchaseEvent.purchaseId, paid.purchaseId!),
+          eq(purchaseEvent.eventType, prerequisite),
+          eq(purchaseEvent.ownerId, scope.ownerId),
+        ),
+      });
+      if (!prior) throw new Error(`Refund must be ${prerequisite.replace("refund_", "")} first`);
+    }
+    if (input.action === "request") {
+      await tx
+        .update(payment)
+        .set({ status: "refund_pending", updatedAt: new Date() })
+        .where(eq(payment.id, paid.id));
+      await tx
+        .update(purchase)
+        .set({ paymentStatus: "refund_pending", updatedAt: new Date() })
+        .where(eq(purchase.id, paid.purchaseId!));
+    }
+    const eventType = eventTypeByAction[input.action];
+    await appendManualPurchaseEvent(tx, {
+      actorId: scope.actorId,
+      amount: Number(paid.amount) - Number(paid.refundedAmount),
+      category: "payment",
+      description:
+        input.action === "request"
+          ? input.reason || "Manual purchase refund requested"
+          : `Manual purchase refund ${input.action}d`,
+      eventType,
+      fromState: input.action === "request" ? paid.status : prerequisite,
+      idempotencyKey: `manual-payment:${paid.id}:${eventType}`,
+      ownerId: scope.ownerId,
+      purchaseId: paid.purchaseId!,
+      reference: paid.referenceNo ?? paid.purchase.purchaseNumber,
+      toState: eventType,
+    });
+    return { status: eventType };
+  }
+
+  const processed = await tx.query.purchaseEvent.findFirst({
+    where: and(
+      eq(purchaseEvent.purchaseId, paid.purchaseId!),
+      eq(purchaseEvent.eventType, "refund_processed"),
+      eq(purchaseEvent.ownerId, scope.ownerId),
+    ),
+  });
+  if (!processed) throw new Error("Process the refund before completion");
+  if (!input.amount || !input.paymentAccountId || !input.idempotencyKey) {
+    throw new Error("Refund amount, account, and idempotency key are required");
+  }
+  const refundable = Number(paid.amount) - Number(paid.refundedAmount);
+  if (input.amount > refundable + 0.001) {
+    throw new Error(`Refund exceeds Tk${refundable.toFixed(2)}`);
+  }
+  const completedAt = new Date();
+  const [refund] = await tx
+    .insert(payment)
+    .values({
+      amount: input.amount.toFixed(2),
+      completedAt,
+      entryType: "refund",
+      idempotencyKey: input.idempotencyKey,
+      orderId: null,
+      paymentAccountId: input.paymentAccountId,
+      paymentMethod: paid.paymentMethod,
+      paymentProvider: paid.paymentProvider,
+      purchaseId: paid.purchaseId,
+      purchasePurpose: paid.purchasePurpose,
+      purchaseTiming: paid.purchaseTiming,
+      referenceNo: input.referenceNo ?? paid.referenceNo,
+      relatedPaymentId: paid.id,
+      status: "completed",
+      verifiedAt: completedAt,
+    })
+    .returning();
+  if (!refund) throw new Error("Failed to complete refund");
+  await postPurchaseJournal(tx, {
+    actorId: scope.actorId,
+    amount: input.amount,
+    idempotencyKey: `manual-purchase-refund:${refund.id}:journal`,
+    memo: `Refund received for ${paid.purchase.purchaseNumber}`,
+    ownerId: scope.ownerId,
+    ownerType: scope.ownerType,
+    paymentAccountId: input.paymentAccountId,
+    sourceId: String(refund.id),
+    sourceType: "payment",
+    transactionDate: localDateString(completedAt),
+    transactionType:
+      paid.purchasePurpose === "supplier_advance"
+        ? "supplier_advance_refunded"
+        : "supplier_refund_received",
+  });
+  const refundedAmount = Number(paid.refundedAmount) + input.amount;
+  const fullyRefunded = refundedAmount >= Number(paid.amount) - 0.001;
+  await tx
+    .update(payment)
+    .set({
+      refundedAmount: refundedAmount.toFixed(2),
+      status: fullyRefunded ? "refunded" : "partially_refunded",
+      updatedAt: completedAt,
+    })
+    .where(eq(payment.id, paid.id));
+  await tx
+    .update(purchase)
+    .set({
+      paymentStatus: fullyRefunded ? "refunded" : "partially_refunded",
+      updatedAt: completedAt,
+    })
+    .where(eq(purchase.id, paid.purchaseId!));
+  await appendManualPurchaseEvent(tx, {
+    actorId: scope.actorId,
+    amount: input.amount,
+    category: "payment",
+    description: "Manual purchase refund completed",
+    eventType: "refund_completed",
+    fromState: "refund_processed",
+    idempotencyKey: `manual-payment:${paid.id}:refund:${refund.id}:completed`,
+    ownerId: scope.ownerId,
+    purchaseId: paid.purchaseId!,
+    reference: input.referenceNo ?? paid.purchase.purchaseNumber,
+    toState: fullyRefunded ? "refunded" : "partially_refunded",
+  });
+  return { refundId: refund.id, status: fullyRefunded ? "refunded" : "partially_refunded" };
 }
