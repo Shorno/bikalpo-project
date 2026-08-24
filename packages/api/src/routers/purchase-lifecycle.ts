@@ -739,6 +739,18 @@ export const purchaseLifecycleRouter = {
           message: "The purchase payment is not awaiting a refund",
         });
       }
+      const processed = await db.query.purchaseEvent.findFirst({
+        where: and(
+          eq(purchaseEvent.orderId, paid.orderId),
+          eq(purchaseEvent.eventType, "refund_processed"),
+        ),
+        orderBy: [desc(purchaseEvent.occurredAt)],
+      });
+      if (!processed) {
+        throw new ORPCError("BAD_REQUEST", {
+          message: "Approve and process the refund before completion",
+        });
+      }
       const refundable = Number(paid.amount) - Number(paid.refundedAmount);
       if (input.amount > refundable + 0.001) {
         throw new ORPCError("BAD_REQUEST", {
@@ -785,6 +797,7 @@ export const purchaseLifecycleRouter = {
           sourceType: "payment",
           transactionDate: localDateString(refundedAt),
           transactionType:
+            paid.order.status === "cancelled" &&
             paid.purchasePurpose === "supplier_advance"
               ? "supplier_advance_refunded"
               : "supplier_refund_received",
@@ -801,9 +814,10 @@ export const purchaseLifecycleRouter = {
           .update(order)
           .set({
             paymentStatus: fullyRefunded ? "refunded" : "partially_refunded",
-            returnAmount: (
-              Number(paid.order.returnAmount) + input.amount
-            ).toFixed(2),
+            returnAmount:
+              paid.order.status === "returned"
+                ? paid.order.returnAmount
+                : (Number(paid.order.returnAmount) + input.amount).toFixed(2),
           })
           .where(eq(order.id, paid.orderId));
         await appendOrderPurchaseEvent(tx, {
