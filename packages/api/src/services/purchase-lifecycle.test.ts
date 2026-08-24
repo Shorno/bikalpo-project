@@ -45,6 +45,24 @@ test("derives purchase state independently from payment", () => {
     }),
     "partially_received",
   );
+  assert.equal(
+    derivePurchaseStatus({
+      expectedQty: 10,
+      orderStatus: "delivered",
+      receivedAt: null,
+      receivedQty: 10,
+    }),
+    "received",
+  );
+  assert.equal(
+    derivePurchaseStatus({
+      expectedQty: 10,
+      orderStatus: "returned",
+      receivedAt: new Date(),
+      receivedQty: 10,
+    }),
+    "returned",
+  );
 });
 
 test("applies advance before leaving a supplier payable", () => {
