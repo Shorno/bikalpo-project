@@ -1,5 +1,4 @@
 import { db } from "@bikalpo-project/db";
-import { ensureDefaultFinancePaymentAccounts } from "@bikalpo-project/db/accounting-seed";
 import {
   deliveryGroupInvoice,
   expense,
@@ -122,7 +121,6 @@ export const balanceSheetRouter = {
       const startDateTime = new Date(`${startDate}T00:00:00.000`);
       const asOfEnd = new Date(`${endDate}T23:59:59.999`);
       const isCashBasis = input.reportType === "cash";
-      await ensureDefaultFinancePaymentAccounts({ ownerId, ownerType });
       const cashBankRows = await db
         .select({
           amount: financePaymentAccount.currentBalance,
@@ -146,21 +144,39 @@ export const balanceSheetRouter = {
         label: row.label,
       }));
 
-      const fixedAssetRows = await db
+      const balanceSheetAccountRows = await db
         .select({
           amount: financeAccount.currentBalance,
+          accountType: financeAccount.accountType,
+          balanceSheetLine: financeAccount.balanceSheetLine,
           label: financeAccount.name,
+          normalBalance: financeAccount.normalBalance,
         })
         .from(financeAccount)
         .where(
           and(
             eq(financeAccount.ownerId, ownerId),
             eq(financeAccount.ownerType, ownerType),
-            eq(financeAccount.accountType, "asset"),
-            eq(financeAccount.balanceSheetLine, "fixed_assets"),
+            inArray(financeAccount.balanceSheetLine, [
+              "fixed_assets",
+              "supplier_advance",
+              "supplier_refund_receivable",
+              "inventory",
+              "loan_payable",
+              "customer_advance",
+              "accounts_payable",
+              "accounts_receivable",
+              "owner_capital",
+              "owner_drawings",
+            ]),
           ),
         )
         .orderBy(asc(financeAccount.sortOrder), asc(financeAccount.name));
+      const fixedAssetRows = balanceSheetAccountRows.filter(
+        (row) =>
+          row.accountType === "asset" &&
+          row.balanceSheetLine === "fixed_assets",
+      );
       const longTermAssetRows = fixedAssetRows
         .map((row) => ({
           amount: toNumber(row.amount),
@@ -172,21 +188,11 @@ export const balanceSheetRouter = {
         0,
       );
 
-      const supplierAdvanceRows = await db
-        .select({
-          amount: financeAccount.currentBalance,
-          label: financeAccount.name,
-        })
-        .from(financeAccount)
-        .where(
-          and(
-            eq(financeAccount.ownerId, ownerId),
-            eq(financeAccount.ownerType, ownerType),
-            eq(financeAccount.accountType, "asset"),
-            eq(financeAccount.balanceSheetLine, "supplier_advance"),
-          ),
-        )
-        .orderBy(asc(financeAccount.sortOrder), asc(financeAccount.name));
+      const supplierAdvanceRows = balanceSheetAccountRows.filter(
+        (row) =>
+          row.accountType === "asset" &&
+          row.balanceSheetLine === "supplier_advance",
+      );
       const currentSupplierAdvanceRows = supplierAdvanceRows
         .map((row) => ({
           amount: toNumber(row.amount),
@@ -198,21 +204,11 @@ export const balanceSheetRouter = {
         0,
       );
 
-      const supplierRefundRows = await db
-        .select({
-          amount: financeAccount.currentBalance,
-          label: financeAccount.name,
-        })
-        .from(financeAccount)
-        .where(
-          and(
-            eq(financeAccount.ownerId, ownerId),
-            eq(financeAccount.ownerType, ownerType),
-            eq(financeAccount.accountType, "asset"),
-            eq(financeAccount.balanceSheetLine, "supplier_refund_receivable"),
-          ),
-        )
-        .orderBy(asc(financeAccount.sortOrder), asc(financeAccount.name));
+      const supplierRefundRows = balanceSheetAccountRows.filter(
+        (row) =>
+          row.accountType === "asset" &&
+          row.balanceSheetLine === "supplier_refund_receivable",
+      );
       const currentSupplierRefundRows = supplierRefundRows
         .map((row) => ({
           amount: toNumber(row.amount),
@@ -224,21 +220,10 @@ export const balanceSheetRouter = {
         0,
       );
 
-      const inventoryRows = await db
-        .select({
-          amount: financeAccount.currentBalance,
-          label: financeAccount.name,
-        })
-        .from(financeAccount)
-        .where(
-          and(
-            eq(financeAccount.ownerId, ownerId),
-            eq(financeAccount.ownerType, ownerType),
-            eq(financeAccount.accountType, "asset"),
-            eq(financeAccount.balanceSheetLine, "inventory"),
-          ),
-        )
-        .orderBy(asc(financeAccount.sortOrder), asc(financeAccount.name));
+      const inventoryRows = balanceSheetAccountRows.filter(
+        (row) =>
+          row.accountType === "asset" && row.balanceSheetLine === "inventory",
+      );
       const currentInventoryRows = inventoryRows
         .map((row) => ({
           amount: toNumber(row.amount),
@@ -250,21 +235,11 @@ export const balanceSheetRouter = {
         0,
       );
 
-      const loanPayableRows = await db
-        .select({
-          amount: financeAccount.currentBalance,
-          label: financeAccount.name,
-        })
-        .from(financeAccount)
-        .where(
-          and(
-            eq(financeAccount.ownerId, ownerId),
-            eq(financeAccount.ownerType, ownerType),
-            eq(financeAccount.accountType, "liability"),
-            eq(financeAccount.balanceSheetLine, "loan_payable"),
-          ),
-        )
-        .orderBy(asc(financeAccount.sortOrder), asc(financeAccount.name));
+      const loanPayableRows = balanceSheetAccountRows.filter(
+        (row) =>
+          row.accountType === "liability" &&
+          row.balanceSheetLine === "loan_payable",
+      );
       const currentLoanRows = loanPayableRows
         .map((row) => ({
           amount: toNumber(row.amount),
@@ -276,21 +251,11 @@ export const balanceSheetRouter = {
         0,
       );
 
-      const customerAdvanceRows = await db
-        .select({
-          amount: financeAccount.currentBalance,
-          label: financeAccount.name,
-        })
-        .from(financeAccount)
-        .where(
-          and(
-            eq(financeAccount.ownerId, ownerId),
-            eq(financeAccount.ownerType, ownerType),
-            eq(financeAccount.accountType, "liability"),
-            eq(financeAccount.balanceSheetLine, "customer_advance"),
-          ),
-        )
-        .orderBy(asc(financeAccount.sortOrder), asc(financeAccount.name));
+      const customerAdvanceRows = balanceSheetAccountRows.filter(
+        (row) =>
+          row.accountType === "liability" &&
+          row.balanceSheetLine === "customer_advance",
+      );
       const currentCustomerAdvanceRows = customerAdvanceRows
         .map((row) => ({
           amount: toNumber(row.amount),
@@ -302,21 +267,11 @@ export const balanceSheetRouter = {
         0,
       );
 
-      const accountsPayableRows = await db
-        .select({
-          amount: financeAccount.currentBalance,
-          label: financeAccount.name,
-        })
-        .from(financeAccount)
-        .where(
-          and(
-            eq(financeAccount.ownerId, ownerId),
-            eq(financeAccount.ownerType, ownerType),
-            eq(financeAccount.accountType, "liability"),
-            eq(financeAccount.balanceSheetLine, "accounts_payable"),
-          ),
-        )
-        .orderBy(asc(financeAccount.sortOrder), asc(financeAccount.name));
+      const accountsPayableRows = balanceSheetAccountRows.filter(
+        (row) =>
+          row.accountType === "liability" &&
+          row.balanceSheetLine === "accounts_payable",
+      );
       const currentAccountsPayableRows = accountsPayableRows
         .map((row) => ({
           amount: toNumber(row.amount),
@@ -327,21 +282,11 @@ export const balanceSheetRouter = {
         ? 0
         : currentAccountsPayableRows.reduce((sum, row) => sum + row.amount, 0);
 
-      const accountsReceivableRows = await db
-        .select({
-          amount: financeAccount.currentBalance,
-          label: financeAccount.name,
-        })
-        .from(financeAccount)
-        .where(
-          and(
-            eq(financeAccount.ownerId, ownerId),
-            eq(financeAccount.ownerType, ownerType),
-            eq(financeAccount.accountType, "asset"),
-            eq(financeAccount.balanceSheetLine, "accounts_receivable"),
-          ),
-        )
-        .orderBy(asc(financeAccount.sortOrder), asc(financeAccount.name));
+      const accountsReceivableRows = balanceSheetAccountRows.filter(
+        (row) =>
+          row.accountType === "asset" &&
+          row.balanceSheetLine === "accounts_receivable",
+      );
       const manualAccountsReceivable = isCashBasis
         ? 0
         : accountsReceivableRows.reduce(
@@ -349,26 +294,12 @@ export const balanceSheetRouter = {
             0,
           );
 
-      const equityRows = await db
-        .select({
-          amount: financeAccount.currentBalance,
-          balanceSheetLine: financeAccount.balanceSheetLine,
-          label: financeAccount.name,
-          normalBalance: financeAccount.normalBalance,
-        })
-        .from(financeAccount)
-        .where(
-          and(
-            eq(financeAccount.ownerId, ownerId),
-            eq(financeAccount.ownerType, ownerType),
-            eq(financeAccount.accountType, "equity"),
-            inArray(financeAccount.balanceSheetLine, [
-              "owner_capital",
-              "owner_drawings",
-            ]),
-          ),
-        )
-        .orderBy(asc(financeAccount.sortOrder), asc(financeAccount.name));
+      const equityRows = balanceSheetAccountRows.filter(
+        (row) =>
+          row.accountType === "equity" &&
+          (row.balanceSheetLine === "owner_capital" ||
+            row.balanceSheetLine === "owner_drawings"),
+      );
       const currentEquityRows = equityRows
         .map((row) => {
           const amount = toNumber(row.amount);
@@ -496,45 +427,45 @@ export const balanceSheetRouter = {
 
       if (role === "warehouse") {
         const [orderRows, posRows] = await Promise.all([
-            db
-              .select({
-                total: order.total,
-                status: order.status,
-                paymentStatus: order.paymentStatus,
-                invoicePaymentStatus: invoice.paymentStatus,
-              })
-              .from(order)
-              .leftJoin(
-                invoice,
-                and(
-                  eq(invoice.orderId, order.id),
-                  eq(invoice.invoiceType, "main"),
-                ),
-              )
-              .where(
-                and(
-                  eq(order.warehouseId, ownerId),
-                  eq(order.orderType, "b2b"),
-                  gte(order.createdAt, startDateTime),
-                  lte(order.createdAt, asOfEnd),
-                ),
+          db
+            .select({
+              total: order.total,
+              status: order.status,
+              paymentStatus: order.paymentStatus,
+              invoicePaymentStatus: invoice.paymentStatus,
+            })
+            .from(order)
+            .leftJoin(
+              invoice,
+              and(
+                eq(invoice.orderId, order.id),
+                eq(invoice.invoiceType, "main"),
               ),
-            db
-              .select({
-                due: warehousePosSale.due,
-                paid: warehousePosSale.paid,
-                total: warehousePosSale.total,
-              })
-              .from(warehousePosSale)
-              .where(
-                and(
-                  eq(warehousePosSale.warehouseId, ownerId),
-                  eq(warehousePosSale.status, "completed"),
-                  gte(warehousePosSale.createdAt, startDateTime),
-                  lte(warehousePosSale.createdAt, asOfEnd),
-                ),
+            )
+            .where(
+              and(
+                eq(order.warehouseId, ownerId),
+                eq(order.orderType, "b2b"),
+                gte(order.createdAt, startDateTime),
+                lte(order.createdAt, asOfEnd),
               ),
-          ]);
+            ),
+          db
+            .select({
+              due: warehousePosSale.due,
+              paid: warehousePosSale.paid,
+              total: warehousePosSale.total,
+            })
+            .from(warehousePosSale)
+            .where(
+              and(
+                eq(warehousePosSale.warehouseId, ownerId),
+                eq(warehousePosSale.status, "completed"),
+                gte(warehousePosSale.createdAt, startDateTime),
+                lte(warehousePosSale.createdAt, asOfEnd),
+              ),
+            ),
+        ]);
 
         const invoiceRows = await db
           .select({
@@ -641,7 +572,6 @@ export const balanceSheetRouter = {
 
         revenue = orderRevenue + posRevenue;
         receivable = isCashBasis ? 0 : invoiceDue + posDue;
-
       } else {
         const salesRows = await db
           .select({
@@ -653,10 +583,7 @@ export const balanceSheetRouter = {
           .from(order)
           .leftJoin(
             invoice,
-            and(
-              eq(invoice.orderId, order.id),
-              eq(invoice.invoiceType, "main"),
-            ),
+            and(eq(invoice.orderId, order.id), eq(invoice.invoiceType, "main")),
           )
           .where(
             and(
@@ -691,7 +618,6 @@ export const balanceSheetRouter = {
               }
               return sum + toNumber(row.total);
             }, 0);
-
       }
 
       payable += manualAccountsPayable;
