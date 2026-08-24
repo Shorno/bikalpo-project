@@ -148,6 +148,30 @@ export function calculateReceiptPosting(input: {
   };
 }
 
+export function calculateIncrementalReceipt(input: {
+  cumulativeQuantity: number;
+  cumulativeValue: number;
+  priorQuantity: number;
+  priorValue: number;
+}) {
+  const cumulativeQuantity = Math.max(0, input.cumulativeQuantity);
+  const priorQuantity = Math.max(0, input.priorQuantity);
+  const cumulativeValue = money(Math.max(0, input.cumulativeValue));
+  const priorValue = money(Math.max(0, input.priorValue));
+
+  if (cumulativeQuantity + Number.EPSILON < priorQuantity) {
+    throw new Error("Received quantity cannot be lower than its prior value");
+  }
+  if (cumulativeValue + Number.EPSILON < priorValue) {
+    throw new Error("Recognized purchase value cannot decrease during receipt");
+  }
+
+  return {
+    quantity: cumulativeQuantity - priorQuantity,
+    value: money(cumulativeValue - priorValue),
+  };
+}
+
 export type PurchaseReceiptLine = {
   id: number;
   lineTotal: number;
