@@ -1,12 +1,13 @@
-import { ACCOUNTING_POSTING_RULES } from "@bikalpo-project/db/accounting";
 import type { AccountingOwnerType } from "@bikalpo-project/db/accounting";
+import { ACCOUNTING_POSTING_RULES } from "@bikalpo-project/db/accounting";
+import { ensureDefaultFinanceAccounts } from "@bikalpo-project/db/accounting-seed";
 import {
   financeAccount,
   financePaymentAccount,
   journalEntry,
   journalLine,
 } from "@bikalpo-project/db/schema";
-import { and, eq, inArray, isNull, or, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 
 export type PurchaseAccountingTransaction =
   | "supplier_advance_payment"
@@ -45,6 +46,125 @@ function shortHash(value: string) {
     hash = Math.imul(hash, 16777619);
   }
   return (hash >>> 0).toString(36).toUpperCase();
+}
+
+async function resolveOwnerPostingAccounts(
+  tx: any,
+  input: {
+    accountCodes: string[];
+    ownerId: string;
+    ownerType: AccountingOwnerType;
+  },
+) {
+  const loadOwnerAccounts = () =>
+    tx.query.financeAccount.findMany({
+      where: and(
+        eq(financeAccount.ownerId, input.ownerId),
+        eq(financeAccount.ownerType, input.ownerType),
+        inArray(financeAccount.code, input.accountCodes),
+      ),
+    });
+
+  let ownerAccounts = await loadOwnerAccounts();
+  const ownerCodes = new Set(
+    ownerAccounts.map(
+      (account: typeof financeAccount.$inferSelect) => account.code,
+    ),
+  );
+  let missingCodes = input.accountCodes.filter((code) => !ownerCodes.has(code));
+
+  if (missingCodes.length > 0) {
+    let templates = await tx.query.financeAccount.findMany({
+      where: and(
+        isNull(financeAccount.ownerId),
+        isNull(financeAccount.ownerType),
+        inArray(financeAccount.code, missingCodes),
+      ),
+    });
+
+    if (templates.length !== missingCodes.length) {
+      await ensureDefaultFinanceAccounts(tx);
+      templates = await tx.query.financeAccount.findMany({
+        where: and(
+          isNull(financeAccount.ownerId),
+          isNull(financeAccount.ownerType),
+          inArray(financeAccount.code, missingCodes),
+        ),
+      });
+    }
+
+    const templatesByCode = new Map<string, typeof financeAccount.$inferSelect>(
+      templates.map(
+        (
+          account: typeof financeAccount.$inferSelect,
+        ): [string, typeof financeAccount.$inferSelect] => [
+          account.code,
+          account,
+        ],
+      ),
+    );
+    for (const code of missingCodes) {
+      const template = templatesByCode.get(code);
+      if (!template) {
+        throw new Error(`Finance account ${code} is not configured`);
+      }
+
+      await tx
+        .insert(financeAccount)
+        .values({
+          accountType: template.accountType,
+          balanceSheetLine: template.balanceSheetLine,
+          categoryId: template.categoryId,
+          code: template.code,
+          currentBalance: "0.00",
+          description: template.description,
+          isActive: true,
+          isPaymentAccount: template.isPaymentAccount,
+          isSystem: false,
+          name: template.name,
+          normalBalance: template.normalBalance,
+          openingBalance: "0.00",
+          ownerId: input.ownerId,
+          ownerType: input.ownerType,
+          parentAccountId: null,
+          profitAndLossLine: template.profitAndLossLine,
+          sortOrder: template.sortOrder,
+        })
+        .onConflictDoNothing({
+          target: [
+            financeAccount.ownerId,
+            financeAccount.ownerType,
+            financeAccount.code,
+          ],
+        });
+    }
+
+    ownerAccounts = await loadOwnerAccounts();
+    const refreshedCodes = new Set(
+      ownerAccounts.map(
+        (account: typeof financeAccount.$inferSelect) => account.code,
+      ),
+    );
+    missingCodes = input.accountCodes.filter(
+      (code) => !refreshedCodes.has(code),
+    );
+    if (missingCodes.length > 0) {
+      throw new Error(
+        `Finance accounts are not configured for this business: ${missingCodes.join(", ")}`,
+      );
+    }
+  }
+
+  return new Map<string, typeof financeAccount.$inferSelect>(
+    ownerAccounts.map(
+      (
+        account: typeof financeAccount.$inferSelect,
+      ): [string, typeof financeAccount.$inferSelect] => [
+        account.code,
+        account,
+      ],
+    ),
+  );
 }
 
 export function buildPurchasePosting(input: {
@@ -109,25 +229,11 @@ export async function postPurchaseJournal(
     : null;
 
   const codes = [...new Set(posting.map((line) => line.accountCode))];
-  const accountRows = await tx.query.financeAccount.findMany({
-    where: and(
-      inArray(financeAccount.code, codes),
-      or(
-        and(
-          eq(financeAccount.ownerId, input.ownerId),
-          eq(financeAccount.ownerType, input.ownerType),
-        ),
-        and(isNull(financeAccount.ownerId), isNull(financeAccount.ownerType)),
-      ),
-    ),
+  const accountsByCode = await resolveOwnerPostingAccounts(tx, {
+    accountCodes: codes,
+    ownerId: input.ownerId,
+    ownerType: input.ownerType,
   });
-  const accountsByCode = new Map<string, (typeof accountRows)[number]>();
-  for (const account of accountRows) {
-    const previous = accountsByCode.get(account.code);
-    if (!previous || account.ownerId === input.ownerId) {
-      accountsByCode.set(account.code, account);
-    }
-  }
 
   const resolvedLines = posting.map((line) => {
     const account =
