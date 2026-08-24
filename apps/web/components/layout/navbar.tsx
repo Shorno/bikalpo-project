@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import {
   Building2,
   Eye,
+  KeyRound,
   LayoutGrid,
   MapPin,
   MoreVertical,
@@ -17,6 +18,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
+import { ToLetAccountLink } from "@/components/features/to-let/to-let-account-link";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -39,6 +41,7 @@ const storefrontLinks = [
   { label: "Products", href: "/products", icon: LayoutGrid },
   { label: "Offers", href: "/offers", icon: Tags },
   { label: "Stores", href: "/stores", icon: MapPin },
+  { label: "To-Let", href: "/to-let", icon: KeyRound },
   { label: "For business", href: "/b2b", icon: Building2 },
 ];
 
@@ -192,6 +195,7 @@ export function Navbar() {
   const searchParams = useSearchParams();
   const previewMode = isCustomerStorefrontPreview(searchParams.get("preview"));
   const retailerStoreMatch = pathname.match(/^\/stores\/([^/]+)(?:\/.*)?$/);
+  const isToLetPage = pathname.startsWith("/to-let");
 
   if (retailerStoreMatch?.[1]) {
     return (
@@ -226,7 +230,11 @@ export function Navbar() {
           </Link>
 
           <div className="hidden min-w-0 flex-1 md:block">
-            <NavbarSearch previewMode={previewMode} />
+            {isToLetPage ? (
+              <ToLetHeaderSearch />
+            ) : (
+              <NavbarSearch previewMode={previewMode} />
+            )}
           </div>
 
           <div className="ml-auto flex shrink-0 items-center gap-2 sm:gap-3">
@@ -249,19 +257,43 @@ export function Navbar() {
 
       <div className="border-t border-white/15 bg-[oklch(0.43_0.19_265)]">
         <div className="mx-auto hidden h-10 max-w-7xl items-center gap-1 px-4 sm:px-6 md:flex lg:px-8">
-          {storefrontLinks.map(({ label, href, icon: Icon }) => (
-            <Link
-              key={href}
-              href={withCustomerStorefrontPreview(
-                href,
-                previewMode && (href === "/products" || href === "/stores"),
-              )}
-              className="inline-flex h-10 items-center gap-1.5 px-3 text-xs font-medium text-blue-50 transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-white"
-            >
-              <Icon className="size-3.5" />
-              {label}
-            </Link>
-          ))}
+          {isToLetPage ? (
+            <>
+              <Link
+                href="/products"
+                className="inline-flex h-10 items-center gap-1.5 px-3 text-xs font-medium text-blue-50 transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-white"
+              >
+                <LayoutGrid className="size-3.5" /> Products
+              </Link>
+              <ToLetAccountLink
+                href="/account/to-let/properties"
+                className="inline-flex h-10 items-center gap-1.5 px-3 text-xs font-medium text-blue-50 transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-white"
+              >
+                <Building2 className="size-3.5" /> Sell
+              </ToLetAccountLink>
+              <Link
+                href="/to-let"
+                aria-current="page"
+                className="inline-flex h-10 items-center gap-1.5 border-b-2 border-white bg-white/10 px-3 text-xs font-semibold text-white focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-white"
+              >
+                <KeyRound className="size-3.5" /> To-Let
+              </Link>
+            </>
+          ) : (
+            storefrontLinks.map(({ label, href, icon: Icon }) => (
+              <Link
+                key={href}
+                href={withCustomerStorefrontPreview(
+                  href,
+                  previewMode && (href === "/products" || href === "/stores"),
+                )}
+                className="inline-flex h-10 items-center gap-1.5 px-3 text-xs font-medium text-blue-50 transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-white"
+              >
+                <Icon className="size-3.5" />
+                {label}
+              </Link>
+            ))
+          )}
           <Link
             href="/contact"
             className="ml-auto text-xs font-medium text-blue-100 hover:text-white hover:underline hover:underline-offset-4"
@@ -271,9 +303,37 @@ export function Navbar() {
         </div>
 
         <div className="px-4 py-2 md:hidden">
-          <NavbarSearch previewMode={previewMode} />
+          {isToLetPage ? (
+            <ToLetHeaderSearch />
+          ) : (
+            <NavbarSearch previewMode={previewMode} />
+          )}
         </div>
       </div>
     </nav>
+  );
+}
+
+function ToLetHeaderSearch() {
+  return (
+    <form
+      action="/to-let#listings"
+      role="search"
+      className="flex h-11 items-center gap-2 rounded-full bg-background px-4 text-foreground"
+    >
+      <Search className="size-4 shrink-0 text-muted-foreground" />
+      <input
+        type="search"
+        name="q"
+        placeholder="Search your listings"
+        className="min-w-0 flex-1 border-0 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+      />
+      <button
+        type="submit"
+        className="inline-flex min-h-11 items-center rounded-full px-3 text-xs font-semibold text-primary hover:bg-primary/5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+      >
+        Search
+      </button>
+    </form>
   );
 }
