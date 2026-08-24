@@ -16,6 +16,7 @@ import { z } from "zod";
 
 import { protectedProcedure } from "../index";
 import {
+    advanceManualPurchaseRefund,
     cancelManualPurchase,
     confirmManualPurchaseReceipt,
     persistManualPurchaseDraft,
@@ -79,6 +80,37 @@ const manualPurchaseInput = z.object({
 });
 
 export const purchaseRouter = {
+    advanceManualRefund: protectedProcedure
+        .route({
+            method: "POST",
+            path: "/purchases/manual/refunds",
+            tags: ["Purchase Management"],
+            summary: "Advance a manual purchase refund stage",
+        })
+        .input(z.object({
+            action: z.enum(["request", "verify", "approve", "process", "complete"]),
+            amount: z.number().positive().optional(),
+            idempotencyKey: z.string().min(8).max(120).optional(),
+            paymentAccountId: z.number().int().positive().optional(),
+            paymentId: z.number().int().positive(),
+            reason: z.string().max(500).optional().nullable(),
+            referenceNo: z.string().max(180).optional().nullable(),
+        }))
+        .handler(async ({ context, input }) => {
+            const scope = manualPurchaseScope(context.session.user);
+            try {
+                const result = await db.transaction((tx) =>
+                    advanceManualPurchaseRefund(tx, scope, input),
+                );
+                return { ...result, success: true };
+            } catch (error) {
+                throw new ORPCError("BAD_REQUEST", {
+                    message:
+                        error instanceof Error ? error.message : "Refund failed",
+                });
+            }
+        }),
+
     cancelManual: protectedProcedure
         .route({
             method: "POST",
