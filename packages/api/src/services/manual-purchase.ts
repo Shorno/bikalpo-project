@@ -353,6 +353,54 @@ export async function confirmManualPurchaseReceipt(
       updatedAt: receivedAt,
     })
     .where(eq(supplier.id, purchaseRecord.supplierId));
+  const advancePayments = await tx.query.payment.findMany({
+    where: and(
+      eq(payment.purchaseId, purchaseId),
+      eq(payment.purchasePurpose, "supplier_advance"),
+      eq(payment.status, "completed"),
+    ),
+  });
+  const advanceApplied = Math.min(
+    Number(purchaseRecord.total),
+    advancePayments.reduce(
+      (sum: number, row: any) =>
+        sum + Math.max(0, Number(row.amount) - Number(row.refundedAmount)),
+      0,
+    ),
+  );
+  if (advanceApplied > 0) {
+    await postPurchaseJournal(tx, {
+      actorId: scope.actorId,
+      amount: advanceApplied,
+      idempotencyKey: `manual-purchase:${purchaseId}:advance-applied-journal`,
+      memo: `Supplier advance applied to ${purchaseRecord.purchaseNumber}`,
+      ownerId: scope.ownerId,
+      ownerType: scope.ownerType,
+      sourceId: String(purchaseId),
+      sourceType: "purchase_event",
+      transactionDate: purchaseRecord.purchaseDate || localDateString(receivedAt),
+      transactionType: "supplier_advance_applied",
+    });
+    await tx
+      .update(supplier)
+      .set({
+        currentPayable: sql`greatest(0, ${supplier.currentPayable}::numeric - ${advanceApplied})`,
+        updatedAt: receivedAt,
+      })
+      .where(eq(supplier.id, purchaseRecord.supplierId));
+    await appendManualPurchaseEvent(tx, {
+      actorId: scope.actorId,
+      amount: advanceApplied,
+      category: "accounting",
+      description: "Supplier advance applied against Accounts Payable",
+      eventType: "advance_applied",
+      idempotencyKey: `manual-purchase:${purchaseId}:advance-applied`,
+      ownerId: scope.ownerId,
+      purchaseId,
+      reference: purchaseRecord.purchaseNumber,
+      toState: "applied",
+    });
+  }
   await appendManualPurchaseEvent(tx, {
     actorId: scope.actorId,
     amount: Number(purchaseRecord.total),
