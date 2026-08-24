@@ -335,6 +335,34 @@ export function usePurchaseOrders(params?: {
   );
 }
 
+/** Purchases recognized when wholesale stock was received. */
+export function usePurchaseReport(params: {
+  dateFrom: string;
+  dateTo: string;
+  warehouseId?: string;
+}) {
+  return useQuery(
+    orpc.shopOwner.getPurchaseReport.queryOptions({
+      input: params,
+      staleTime: 1000 * 30,
+    }),
+  );
+}
+
+/** Supplier invoices recognized after wholesale stock was received. */
+export function useAccountsPayableReport(params: {
+  dateFrom: string;
+  dateTo: string;
+  supplierKey?: string;
+}) {
+  return useQuery(
+    orpc.shopOwner.getAccountsPayableReport.queryOptions({
+      input: params,
+      staleTime: 1000 * 30,
+    }),
+  );
+}
+
 /** Full detail for a single purchase order */
 export function usePurchaseOrderDetail(orderId: number | null) {
   return useQuery(
@@ -366,9 +394,27 @@ export function useMarkPurchaseReceived() {
       toast.success(data.message || "Order received successfully");
       qc.invalidateQueries({ queryKey: ["shopOwner", "getPurchaseOrders"] });
       qc.invalidateQueries({
+        queryKey: orpc.shopOwner.getPurchaseReport.key(),
+      });
+      qc.invalidateQueries({
+        queryKey: orpc.shopOwner.getAccountsPayableReport.key(),
+      });
+      qc.invalidateQueries({
         queryKey: ["shopOwner", "getPurchaseOrderDetail"],
       });
       qc.invalidateQueries({ queryKey: ["shopOwner", "getMyOrders"] });
+      qc.invalidateQueries({
+        queryKey: orpc.balanceSheet.getBalanceSheet.key(),
+      });
+      qc.invalidateQueries({
+        queryKey: orpc.finance.getGeneralLedger.key(),
+      });
+      qc.invalidateQueries({
+        queryKey: orpc.purchaseLifecycle.getHistory.key(),
+      });
+      qc.invalidateQueries({
+        queryKey: orpc.purchaseLifecycle.getDetail.key(),
+      });
     },
     onError: (err: any) => {
       toast.error(err.message || "Failed to receive order");
