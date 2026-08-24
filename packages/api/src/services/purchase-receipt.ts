@@ -1,4 +1,10 @@
-import { inventory, order, payment } from "@bikalpo-project/db/schema";
+import {
+  inventory,
+  inventoryMovement,
+  order,
+  payment,
+  purchaseEvent,
+} from "@bikalpo-project/db/schema";
 import { and, eq, inArray } from "drizzle-orm";
 import { localDateString } from "../utils/date";
 import { postPurchaseJournal } from "./purchase-accounting";
@@ -8,6 +14,7 @@ import {
 } from "./purchase-history";
 import {
   allocateReceiptLandedCost,
+  calculateIncrementalReceipt,
   calculateReceiptPosting,
 } from "./purchase-lifecycle";
 
@@ -41,8 +48,46 @@ export async function recognizePlatformPurchaseReceipt(
     })),
   });
   const landedCostByItem = new Map(landedCosts.map((line) => [line.id, line]));
-  const receiptValue = landedCosts.reduce(
-    (total, line) => total + line.recognizedTotal,
+  const priorMovements = await tx.query.inventoryMovement.findMany({
+    where: and(
+      eq(inventoryMovement.orderId, input.orderId),
+      eq(inventoryMovement.ownerId, input.ownerId),
+      eq(inventoryMovement.reason, "purchase_receipt"),
+    ),
+  });
+  const priorQuantityByItem = new Map<number, number>();
+  const priorValueByItem = new Map<number, number>();
+  for (const movement of priorMovements) {
+    if (!movement.orderItemId) continue;
+    priorQuantityByItem.set(
+      movement.orderItemId,
+      (priorQuantityByItem.get(movement.orderItemId) ?? 0) +
+        Number(movement.quantity),
+    );
+    priorValueByItem.set(
+      movement.orderItemId,
+      (priorValueByItem.get(movement.orderItemId) ?? 0) +
+        Number(movement.totalCost),
+    );
+  }
+  const receiptSequence = priorMovements.length + 1;
+  const receiptDeltas = purchaseOrder.items.map((item: any) => {
+    const cumulativeQuantity = Number(
+      item.convertedQty ?? item.receivedQty ?? 0,
+    );
+    const cumulativeValue = landedCostByItem.get(item.id)?.recognizedTotal ?? 0;
+    return {
+      id: item.id,
+      ...calculateIncrementalReceipt({
+        cumulativeQuantity,
+        cumulativeValue,
+        priorQuantity: priorQuantityByItem.get(item.id) ?? 0,
+        priorValue: priorValueByItem.get(item.id) ?? 0,
+      }),
+    };
+  });
+  const receiptValue = receiptDeltas.reduce(
+    (total, line) => total + line.value,
     0,
   );
 
@@ -58,8 +103,19 @@ export async function recognizePlatformPurchaseReceipt(
       total + Math.max(0, Number(row.amount) - Number(row.refundedAmount)),
     0,
   );
+  const appliedAdvanceEvents = await tx.query.purchaseEvent.findMany({
+    where: and(
+      eq(purchaseEvent.orderId, input.orderId),
+      eq(purchaseEvent.ownerId, input.ownerId),
+      eq(purchaseEvent.eventType, "advance_applied"),
+    ),
+  });
+  const advanceAlreadyApplied = appliedAdvanceEvents.reduce(
+    (total: number, event: any) => total + Number(event.amount ?? 0),
+    0,
+  );
   const receiptPosting = calculateReceiptPosting({
-    advanceAvailable,
+    advanceAvailable: Math.max(0, advanceAvailable - advanceAlreadyApplied),
     receiptValue,
   });
 
@@ -80,14 +136,15 @@ export async function recognizePlatformPurchaseReceipt(
   );
 
   for (const item of purchaseOrder.items) {
-    const movementQty = Number(item.convertedQty ?? item.receivedQty ?? 0);
+    const delta = receiptDeltas.find((line) => line.id === item.id);
+    const movementQty = delta?.quantity ?? 0;
     const targetVariantId = item.targetVariantId ?? item.variantId;
     const cost = landedCostByItem.get(item.id);
-    if (!targetVariantId || movementQty <= 0 || !cost) continue;
+    if (!targetVariantId || movementQty <= 0 || !cost || !delta) continue;
 
     await appendPurchaseInventoryMovement(tx, {
       createdById: input.actorId,
-      idempotencyKey: `order:${input.orderId}:item:${item.id}:receipt`,
+      idempotencyKey: `order:${input.orderId}:item:${item.id}:receipt:${receiptSequence}`,
       orderId: input.orderId,
       orderItemId: item.id,
       ownerId: input.ownerId,
@@ -98,9 +155,9 @@ export async function recognizePlatformPurchaseReceipt(
       ),
       reason: "purchase_receipt",
       reference: purchaseOrder.orderNumber,
-      totalCost: cost.recognizedTotal,
+      totalCost: delta.value,
       unit: item.inventoryUnit ?? item.quantityUnit ?? "unit",
-      unitCost: cost.recognizedTotal / movementQty,
+      unitCost: delta.value / movementQty,
       variantId: targetVariantId,
     });
   }
@@ -109,7 +166,7 @@ export async function recognizePlatformPurchaseReceipt(
     await postPurchaseJournal(tx, {
       actorId: input.actorId,
       amount: receiptPosting.receiptValue,
-      idempotencyKey: `order:${input.orderId}:purchase-receipt`,
+      idempotencyKey: `order:${input.orderId}:purchase-receipt:${receiptSequence}`,
       memo: `Products received for ${purchaseOrder.orderNumber}`,
       ownerId: input.ownerId,
       ownerType: input.ownerType,
@@ -123,7 +180,7 @@ export async function recognizePlatformPurchaseReceipt(
     await postPurchaseJournal(tx, {
       actorId: input.actorId,
       amount: receiptPosting.advanceApplied,
-      idempotencyKey: `order:${input.orderId}:advance-applied`,
+      idempotencyKey: `order:${input.orderId}:advance-applied:${receiptSequence}`,
       memo: `Supplier advance applied to ${purchaseOrder.orderNumber}`,
       ownerId: input.ownerId,
       ownerType: input.ownerType,
@@ -134,17 +191,23 @@ export async function recognizePlatformPurchaseReceipt(
     });
   }
 
+  const fullyReceived = purchaseOrder.items.every(
+    (item: any) =>
+      Number(item.receivedQty ?? 0) >= Number(item.modifiedQty ?? item.quantity),
+  );
   await appendOrderPurchaseEvent(tx, {
     actorId: input.actorId,
     category: "purchase",
-    description: "Purchase accepted and products received",
-    eventType: "received",
+    description: fullyReceived
+      ? "Purchase accepted and products received"
+      : "Part of the purchase was received",
+    eventType: fullyReceived ? "received" : "partially_received",
     fromState: "accepted",
-    idempotencyKey: `order:${input.orderId}:received`,
+    idempotencyKey: `order:${input.orderId}:receipt:${receiptSequence}`,
     orderId: input.orderId,
     ownerId: input.ownerId,
     reference: purchaseOrder.orderNumber,
-    toState: "received",
+    toState: fullyReceived ? "received" : "partially_received",
   });
   await appendOrderPurchaseEvent(tx, {
     actorId: input.actorId,
@@ -152,7 +215,7 @@ export async function recognizePlatformPurchaseReceipt(
     category: "inventory",
     description: "Received product cost recognized as inventory",
     eventType: "inventory_recognized",
-    idempotencyKey: `order:${input.orderId}:inventory-recognized`,
+    idempotencyKey: `order:${input.orderId}:inventory-recognized:${receiptSequence}`,
     orderId: input.orderId,
     ownerId: input.ownerId,
     reference: purchaseOrder.orderNumber,
@@ -164,7 +227,7 @@ export async function recognizePlatformPurchaseReceipt(
     category: "accounting",
     description: "Inventory debited and Accounts Payable credited",
     eventType: "payable_created",
-    idempotencyKey: `order:${input.orderId}:payable-created`,
+    idempotencyKey: `order:${input.orderId}:payable-created:${receiptSequence}`,
     metadata: { payableRemaining: receiptPosting.payableRemaining },
     orderId: input.orderId,
     ownerId: input.ownerId,
@@ -177,7 +240,7 @@ export async function recognizePlatformPurchaseReceipt(
       category: "accounting",
       description: "Supplier advance applied against Accounts Payable",
       eventType: "advance_applied",
-      idempotencyKey: `order:${input.orderId}:advance-applied:event`,
+      idempotencyKey: `order:${input.orderId}:advance-applied:event:${receiptSequence}`,
       orderId: input.orderId,
       ownerId: input.ownerId,
       reference: purchaseOrder.orderNumber,
