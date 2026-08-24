@@ -1,6 +1,6 @@
 import { inventory, order, payment } from "@bikalpo-project/db/schema";
-import { ensureDefaultFinanceAccounts } from "@bikalpo-project/db/accounting-seed";
 import { and, eq, inArray } from "drizzle-orm";
+import { localDateString } from "../utils/date";
 import { postPurchaseJournal } from "./purchase-accounting";
 import {
   appendOrderPurchaseEvent,
@@ -10,7 +10,6 @@ import {
   allocateReceiptLandedCost,
   calculateReceiptPosting,
 } from "./purchase-lifecycle";
-import { localDateString } from "../utils/date";
 
 export async function recognizePlatformPurchaseReceipt(
   tx: any,
@@ -22,13 +21,12 @@ export async function recognizePlatformPurchaseReceipt(
     receivedAt: Date;
   },
 ) {
-  await ensureDefaultFinanceAccounts(tx);
-
   const purchaseOrder = await tx.query.order.findFirst({
     where: and(eq(order.id, input.orderId), eq(order.userId, input.ownerId)),
     with: { items: true },
   });
-  if (!purchaseOrder) throw new Error("Purchase order was not found for receipt");
+  if (!purchaseOrder)
+    throw new Error("Purchase order was not found for receipt");
 
   const landedCosts = allocateReceiptLandedCost({
     grandTotal: Number(purchaseOrder.total),
@@ -42,9 +40,7 @@ export async function recognizePlatformPurchaseReceipt(
       receivedQty: Number(item.receivedQty ?? 0),
     })),
   });
-  const landedCostByItem = new Map(
-    landedCosts.map((line) => [line.id, line]),
-  );
+  const landedCostByItem = new Map(landedCosts.map((line) => [line.id, line]));
   const receiptValue = landedCosts.reduce(
     (total, line) => total + line.recognizedTotal,
     0,
