@@ -31,6 +31,8 @@ export const purchaseEventCategoryEnum = pgEnum("purchase_event_category", [
 
 export const purchaseEventTypeEnum = pgEnum("purchase_event_type", [
   "draft_created",
+  "verification_passed",
+  "verification_on_hold",
   "checkout_confirmed",
   "submitted",
   "otp_verified",
@@ -47,6 +49,7 @@ export const purchaseEventTypeEnum = pgEnum("purchase_event_type", [
   "payment_settled",
   "cancelled",
   "refund_requested",
+  "refund_verified",
   "refund_approved",
   "refund_processed",
   "refund_completed",
