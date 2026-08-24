@@ -161,7 +161,7 @@ function LoadedPropertyEditForm({ property }: { property: ToLetPropertyView }) {
       return;
     }
 
-    const { phoneVerified: _phoneVerified, ...formData } = parsed.data;
+    const formData = parsed.data;
     try {
       await mutation.mutateAsync({
         propertyCode: property.propertyCode,

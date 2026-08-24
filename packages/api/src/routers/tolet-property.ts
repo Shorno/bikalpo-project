@@ -8,7 +8,6 @@ import {
 	toletRentalContract,
 	toletUnit,
 	toletUnitListing,
-	user,
 } from "@bikalpo-project/db/schema";
 import { ORPCError } from "@orpc/server";
 import { and, asc, count, desc, eq, inArray, max, ne } from "drizzle-orm";
@@ -148,6 +147,7 @@ export const toletPropertyFieldsSchema = z
 
 export const createToletPropertyInputSchema = toletPropertyFieldsSchema
 	.extend({
+		phoneVerified: z.literal(true),
 		informationConfirmed: z.literal(true),
 		termsAccepted: z.literal(true),
 		propertyPolicyAccepted: z.literal(true),
@@ -157,7 +157,9 @@ export const createToletPropertyInputSchema = toletPropertyFieldsSchema
 export const updateToletPropertyInputSchema = z
 	.object({
 		propertyCode: propertyCodeSchema,
-		data: toletPropertyFieldsSchema,
+		data: toletPropertyFieldsSchema.extend({
+			phoneVerified: z.literal(true),
+		}),
 	})
 	.strict();
 
@@ -325,48 +327,6 @@ function unitWriteValues(input: UnitFields) {
 		description: input.description ?? null,
 		imageUrls: input.imageUrls,
 	};
-}
-
-function normalizeStoredMobileNumber(value: string | null) {
-	if (!value) return null;
-	if (isDevelopment) {
-		return /\d/.test(value) ? normalizeMobileNumber(value) : null;
-	}
-	const digits = value.replace(/\D/g, "");
-	const localNumber = digits.startsWith("88") ? digits.slice(2) : digits;
-	if (!/^01[3-9]\d{8}$/.test(localNumber)) return null;
-	return `+88${localNumber}`;
-}
-
-async function requireMatchingVerifiedPhone(
-	userId: string,
-	mobileNumber: string,
-) {
-	if (isDevelopment) return;
-
-	const account = await db.query.user.findFirst({
-		where: eq(user.id, userId),
-		columns: {
-			phoneNumber: true,
-			phoneNumberVerified: true,
-		},
-	});
-
-	if (!account) {
-		throw new ORPCError("UNAUTHORIZED", {
-			message: "Your account could not be found",
-		});
-	}
-
-	if (
-		account.phoneNumberVerified !== true ||
-		normalizeStoredMobileNumber(account.phoneNumber) !== mobileNumber
-	) {
-		throw new ORPCError("BAD_REQUEST", {
-			message:
-				"Verify this mobile number on your account before saving the property",
-		});
-	}
 }
 
 function isUniqueViolation(error: unknown) {
@@ -565,7 +525,6 @@ export const toLetPropertyRouter = {
 		.input(createToletPropertyInputSchema)
 		.handler(async ({ context, input }) => {
 			const userId = context.session.user.id;
-			await requireMatchingVerifiedPhone(userId, input.mobileNumber);
 			const now = new Date();
 
 			const [created] = await db
@@ -745,7 +704,6 @@ export const toLetPropertyRouter = {
 		.input(updateToletPropertyInputSchema)
 		.handler(async ({ context, input }) => {
 			const userId = context.session.user.id;
-			await requireMatchingVerifiedPhone(userId, input.data.mobileNumber);
 			const identity = parsePropertyCode(input.propertyCode);
 
 			const result = await db.transaction(async (tx) => {

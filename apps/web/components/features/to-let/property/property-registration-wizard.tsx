@@ -553,7 +553,7 @@ export function PropertyRegistrationWizard() {
       return;
     }
 
-    const { phoneVerified: _phoneVerified, ...payload } = parsed.data;
+    const payload = parsed.data;
     try {
       const result = await createProperty.mutateAsync({
         ...payload,
