@@ -57,6 +57,54 @@ export async function appendOrderPurchaseEvent(
   return created ?? null;
 }
 
+export async function appendManualPurchaseEvent(
+  tx: any,
+  input: {
+    actorId?: string | null;
+    amount?: number | null;
+    category: PurchaseEventCategory;
+    description?: string | null;
+    eventType: PurchaseEventType;
+    fromState?: string | null;
+    idempotencyKey: string;
+    metadata?: Record<string, unknown> | null;
+    occurredAt?: Date;
+    ownerId: string;
+    purchaseId: number;
+    reference?: string | null;
+    toState?: string | null;
+  },
+) {
+  const [created] = await tx
+    .insert(purchaseEvent)
+    .values({
+      actorId: input.actorId ?? null,
+      amount:
+        input.amount === null || input.amount === undefined
+          ? null
+          : input.amount.toFixed(2),
+      category: input.category,
+      description: input.description ?? null,
+      eventType: input.eventType,
+      fromState: input.fromState ?? null,
+      idempotencyKey: input.idempotencyKey,
+      metadata: input.metadata ?? null,
+      occurredAt: input.occurredAt ?? new Date(),
+      orderId: null,
+      ownerId: input.ownerId,
+      purchaseId: input.purchaseId,
+      reference: input.reference ?? null,
+      sourceType: "manual_purchase",
+      toState: input.toState ?? null,
+    })
+    .onConflictDoNothing({
+      target: [purchaseEvent.ownerId, purchaseEvent.idempotencyKey],
+    })
+    .returning();
+
+  return created ?? null;
+}
+
 export async function recordPurchaseSubmission(
   tx: any,
   input: {
@@ -104,10 +152,12 @@ export async function appendPurchaseInventoryMovement(
   input: {
     createdById?: string | null;
     idempotencyKey: string;
-    orderId: number;
-    orderItemId: number;
+    orderId?: number | null;
+    orderItemId?: number | null;
     ownerId: string;
     ownerType: "shop" | "warehouse";
+    purchaseId?: number | null;
+    purchaseItemId?: number | null;
     quantity: number;
     quantityAfter?: number | null;
     reason?: "purchase_receipt" | "purchase_return" | "purchase_reversal";
@@ -120,6 +170,9 @@ export async function appendPurchaseInventoryMovement(
   },
 ) {
   if (input.quantity <= 0) return null;
+  if (!input.orderId && !input.purchaseId) {
+    throw new Error("Inventory movement requires an order or purchase source");
+  }
 
   const quantityAfter = input.quantityAfter ?? null;
   const direction = input.reason === "purchase_receipt" || !input.reason
@@ -138,10 +191,12 @@ export async function appendPurchaseInventoryMovement(
       createdById: input.createdById ?? null,
       direction,
       idempotencyKey: input.idempotencyKey,
-      orderId: input.orderId,
-      orderItemId: input.orderItemId,
+      orderId: input.orderId ?? null,
+      orderItemId: input.orderItemId ?? null,
       ownerId: input.ownerId,
       ownerType: input.ownerType,
+      purchaseId: input.purchaseId ?? null,
+      purchaseItemId: input.purchaseItemId ?? null,
       quantity: input.quantity.toFixed(4),
       quantityAfter: quantityAfter?.toFixed(4) ?? null,
       quantityBefore: quantityBefore?.toFixed(4) ?? null,
