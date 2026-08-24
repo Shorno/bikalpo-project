@@ -1,768 +1,253 @@
 "use client";
 
-import { useState, useMemo } from "react";
 import Link from "next/link";
-import Image from "next/image";
 import { useRouter } from "next/navigation";
-import {
-  ArrowLeft, Check, ChevronRight, Loader, Package,
-  Search, Tag, Box, CreditCard, FileText,
-} from "lucide-react";
+import { ArrowLeft, CheckCircle2, FileUp, Loader2, Plus, Save, Trash2, X } from "lucide-react";
+import { useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Card, CardContent, CardDescription, CardHeader, CardTitle,
-} from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Separator } from "@/components/ui/separator";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
-} from "@/components/ui/table";
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from "@/components/ui/select";
-import {
+  useConfirmManualPurchase,
+  useManualPurchasePaymentAccounts,
+  useManualPurchaseSuppliers,
+  useSaveManualPurchaseDraft,
   useShopProductsForStock,
-  useAddShopStock,
 } from "@/hooks/use-shop-owner-api";
+import { fileToDataUrl } from "@/lib/cloudinary";
+import { client } from "@/utils/orpc";
 
-// ─── Types ───────────────────────────────────────────────────────
-
-type StockType = "purchase" | "return" | "adjustment" | "opening";
-
-type Product = {
+type StockProduct = {
   id: number;
   name: string;
-  image: string | null;
-  category: { id: number; name: string } | null;
-  variants: {
-    variantId: number;
-    inventoryId: number;
-    unitLabel: string;
-    weightKg: string;
+  variants: Array<{
     brandName: string | null;
     currentStock: number;
-    retailPrice: string | null;
+    inventoryId: number;
     operationalUnit: string;
-    stockDisplay: string;
-  }[];
+    retailPrice: string | null;
+    unitLabel: string;
+    variantId: number;
+  }>;
 };
 
-// ─── Main Component ──────────────────────────────────────────────
+type PurchaseRow = {
+  batchNo: string;
+  exchangeQty: string;
+  expiryDate: string;
+  id: string;
+  inventoryId: string;
+  quantity: string;
+  unitCost: string;
+};
+
+const dateValue = () => new Date().toISOString().slice(0, 10);
+const createRow = (): PurchaseRow => ({
+  batchNo: "",
+  exchangeQty: "0",
+  expiryDate: "",
+  id: crypto.randomUUID(),
+  inventoryId: "",
+  quantity: "",
+  unitCost: "",
+});
+const toAmount = (value: string) => {
+  const parsed = Number.parseFloat(value.replace(/,/g, ""));
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+const money = (value: number) =>
+  `Tk${value.toLocaleString("en-US", { maximumFractionDigits: 2, minimumFractionDigits: 2 })}`;
 
 export default function AddStockPage() {
   const router = useRouter();
-
-  // Search
+  const attachmentInput = useRef<HTMLInputElement>(null);
   const [productSearch, setProductSearch] = useState("");
-  const { data, isLoading: loadingProducts } = useShopProductsForStock(productSearch);
-  const products: Product[] = (data as any)?.products ?? [];
-
-  // Selection
-  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
-
-  // Quantity entries: inventoryId → addQuantity
-  const [quantities, setQuantities] = useState<Record<number, string>>({});
-
-  // Stock type + note
-  const [stockType, setStockType] = useState<StockType>("purchase");
-  const [note, setNote] = useState("");
-
-  // ── Payment & Supplier Info (frontend-only) ──
-  const [supplier, setSupplier] = useState("");
-  const [paymentAccount, setPaymentAccount] = useState("cash");
-  const [paymentDate, setPaymentDate] = useState(
-    new Date().toISOString().split("T")[0]
+  const { data: productData, isLoading: productsLoading } = useShopProductsForStock(productSearch);
+  const { data: supplierData } = useManualPurchaseSuppliers();
+  const { data: accountData } = useManualPurchasePaymentAccounts();
+  const saveDraft = useSaveManualPurchaseDraft();
+  const confirmPurchase = useConfirmManualPurchase();
+  const products = ((productData as { products?: StockProduct[] } | undefined)?.products ?? []) as StockProduct[];
+  const suppliers = supplierData ?? [];
+  const paymentAccounts = accountData?.paymentAccounts ?? [];
+  const variants = useMemo(
+    () => products.flatMap((product) => product.variants.map((variant) => ({ ...variant, productName: product.name }))),
+    [products],
   );
-  const [referenceNo, setReferenceNo] = useState("");
+  const variantsByInventory = useMemo(
+    () => new Map(variants.map((variant) => [String(variant.inventoryId), variant])),
+    [variants],
+  );
 
-  // ── Cost & Total (frontend-only) ──
+  const [supplierId, setSupplierId] = useState("");
+  const [billNo, setBillNo] = useState("");
+  const [purchaseDate, setPurchaseDate] = useState(dateValue);
+  const [entryMode, setEntryMode] = useState<"exchange" | "new">("new");
+  const [paymentMethod, setPaymentMethod] = useState<"bank" | "cash">("cash");
+  const [paymentAccountId, setPaymentAccountId] = useState("");
+  const [paidAmount, setPaidAmount] = useState("0");
   const [discount, setDiscount] = useState("0");
-  const [vatTax, setVatTax] = useState("0");
+  const [vatAmount, setVatAmount] = useState("0");
+  const [note, setNote] = useState("");
+  const [rows, setRows] = useState<PurchaseRow[]>([createRow()]);
+  const [attachment, setAttachment] = useState<{ name: string; url: string } | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [idempotencyKey] = useState(() => `manual-purchase-${crypto.randomUUID()}`);
 
-  // ── Batch & Expiry (frontend-only) ──
-  const [batchNo, setBatchNo] = useState("");
-  const [expiryDate, setExpiryDate] = useState("");
+  const subtotal = useMemo(
+    () => rows.reduce((sum, row) => sum + toAmount(row.quantity) * toAmount(row.unitCost), 0),
+    [rows],
+  );
+  const total = Math.max(0, subtotal - toAmount(discount) + toAmount(vatAmount));
+  const paid = Math.min(total, Math.max(0, toAmount(paidAmount)));
+  const due = Math.max(0, total - paid);
+  const pending = saveDraft.isPending || confirmPurchase.isPending || uploading;
 
-  // Mutation
-  const addStock = useAddShopStock();
-
-  // ─── Derived ─────────────────────────────────────────────────
-
-  const previews = useMemo(() => {
-    if (!selectedProduct) return [];
-    return selectedProduct.variants.map((v) => {
-      const addQty = parseFloat(quantities[v.inventoryId] || "0") || 0;
-      return {
-        ...v,
-        addQty,
-        newStock: v.currentStock + addQty,
-      };
-    });
-  }, [selectedProduct, quantities]);
-
-  const totalAdding = previews.reduce((sum, v) => sum + v.addQty, 0);
-  const hasEntries = totalAdding > 0;
-  const variantsChanged = previews.filter((v) => v.addQty > 0).length;
-
-  // ─── Handlers ────────────────────────────────────────────────
-
-  const handleSelectProduct = (product: Product) => {
-    setSelectedProduct(product);
-    setQuantities({});
+  const updateRow = (id: string, field: keyof PurchaseRow, value: string) => {
+    setRows((current) => current.map((row) => {
+      if (row.id !== id) return row;
+      if (field !== "inventoryId") return { ...row, [field]: value };
+      return { ...row, inventoryId: value, unitCost: row.unitCost || variantsByInventory.get(value)?.retailPrice || "" };
+    }));
   };
 
-  const handleClearProduct = () => {
-    setSelectedProduct(null);
-    setQuantities({});
+  const buildInput = () => {
+    const items = rows.filter((row) => row.inventoryId && toAmount(row.quantity) > 0).map((row) => ({
+      batchNo: row.batchNo || null,
+      exchangeQty: entryMode === "exchange" ? toAmount(row.exchangeQty) : 0,
+      expiryDate: row.expiryDate || null,
+      inventoryId: Number(row.inventoryId),
+      quantity: toAmount(row.quantity),
+      unitCost: toAmount(row.unitCost),
+    }));
+    if (!supplierId) throw new Error("Select a supplier");
+    if (items.length === 0) throw new Error("Add at least one product row");
+    if (paid > 0 && !paymentAccountId) throw new Error("Select a payment account");
+    return {
+      attachmentName: attachment?.name ?? null,
+      attachmentUrl: attachment?.url ?? null,
+      discount: toAmount(discount),
+      entryMode,
+      idempotencyKey,
+      items,
+      note: note.trim() || null,
+      paidAmount: paid,
+      paymentAccountId: paid > 0 ? Number(paymentAccountId) : null,
+      paymentMethod: paid > 0 ? paymentMethod : null,
+      purchaseDate,
+      supplierId: Number(supplierId),
+      supplierInvoiceNo: billNo.trim() || null,
+      vatAmount: toAmount(vatAmount),
+    };
   };
 
-  const handleSubmit = () => {
-    const entries = previews
-      .filter((v) => v.addQty > 0)
-      .map((v) => ({
-        inventoryId: v.inventoryId,
-        addQuantity: v.addQty,
-      }));
-
-    if (entries.length === 0) {
-      toast.error("Please enter quantity for at least one variant");
-      return;
+  const submit = async (mode: "confirm" | "draft") => {
+    try {
+      const result = mode === "draft"
+        ? await saveDraft.mutateAsync(buildInput())
+        : await confirmPurchase.mutateAsync(buildInput());
+      if (result.verificationStatus === "on_hold") {
+        toast.error(result.purchase.verificationMessage || "Manual purchase is on hold");
+        return;
+      }
+      toast.success(mode === "draft"
+        ? `${result.purchase.purchaseNumber} saved as a verified draft`
+        : `${result.purchase.purchaseNumber} confirmed and stock added`);
+      if (mode === "confirm") router.push("/dashboard/stock");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Manual purchase failed");
     }
-
-    addStock.mutate(
-      {
-        entries,
-        stockType,
-        note: note.trim() || undefined,
-      },
-      {
-        onSuccess: (result: any) => {
-          toast.success(result.message || "Stock added successfully!");
-          router.push("/dashboard/stock");
-        },
-        onError: (err: any) => {
-          toast.error(err?.message || "Failed to add stock");
-        },
-      },
-    );
   };
 
-  const isPending = addStock.isPending;
-
-  // ─── Render ──────────────────────────────────────────────────
+  const uploadAttachment = async (file?: File) => {
+    if (!file) return;
+    if (file.size > 20 * 1024 * 1024) return toast.error("Attachment must be 20 MB or smaller");
+    setUploading(true);
+    try {
+      const result = await client.cloudinary.upload({ file: await fileToDataUrl(file), folder: "manual-purchases" });
+      if (!result.success) throw new Error("Attachment upload failed");
+      setAttachment({ name: file.name, url: result.url });
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Attachment upload failed");
+    } finally {
+      setUploading(false);
+    }
+  };
 
   return (
-    <div className="min-h-screen bg-muted/30">
-      {/* ══ Sticky Header (compact) ══ */}
-      <div className="sticky top-0 z-10 bg-background border-b">
-        <div className="container mx-auto px-4 py-2.5">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <Button asChild variant="ghost" size="icon" className="h-8 w-8">
-                <Link href="/dashboard/stock">
-                  <ArrowLeft className="h-4 w-4" />
-                </Link>
-              </Button>
-              <div>
-                <h1 className="text-base font-bold flex items-center gap-2">
-                  📦 Add Stock
-                  <span className="text-[10px] text-muted-foreground font-normal">Product Inventory Entry</span>
-                </h1>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-8 text-xs"
-                onClick={() => router.push("/dashboard/stock")}
-                disabled={isPending}
-              >
-                ❌ Cancel
-              </Button>
-              <Button
-                size="sm"
-                className="h-8 text-xs"
-                onClick={handleSubmit}
-                disabled={isPending || !hasEntries}
-              >
-                {isPending && (
-                  <Loader className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-                )}
-                <Check className="mr-1.5 h-3.5 w-3.5" />
-                Confirm & Add Stock
-              </Button>
-            </div>
+    <div className="min-h-screen bg-background">
+      <header className="sticky top-0 z-20 border-b bg-background">
+        <div className="mx-auto flex max-w-[1500px] items-center justify-between gap-3 px-4 py-3 sm:px-6">
+          <div className="flex min-w-0 items-center gap-3">
+            <Button asChild size="icon" variant="ghost"><Link aria-label="Back to stock" href="/dashboard/stock"><ArrowLeft /></Link></Button>
+            <div className="min-w-0"><h1 className="truncate text-xl font-bold">Manual Purchase / Add Stock</h1><p className="text-sm text-muted-foreground">One connected inventory, payment, and accounting transaction</p></div>
+          </div>
+          <div className="hidden items-center gap-2 sm:flex">
+            <Button asChild variant="outline"><Link href="/dashboard/stock">Cancel</Link></Button>
+            <Button disabled={pending} onClick={() => void submit("draft")} variant="outline"><Save /> Save Draft</Button>
+            <Button disabled={pending} onClick={() => void submit("confirm")}>{pending ? <Loader2 className="animate-spin" /> : <CheckCircle2 />} Confirm & Add Stock</Button>
           </div>
         </div>
-      </div>
+      </header>
 
-      <div className="container mx-auto px-4 py-4 max-w-4xl space-y-4">
-        {/* ══════════════════════════════════════════════════════════
-            🟦 PAYMENT & SUPPLIER INFO
-            ══════════════════════════════════════════════════════════ */}
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm flex items-center gap-2">
-              <div className="p-1 bg-blue-100 rounded">
-                <CreditCard className="h-3.5 w-3.5 text-blue-600" />
-              </div>
-              Payment & Supplier Info
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              {/* Payee / Supplier */}
-              <div className="space-y-1">
-                <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
-                  Payee
-                </label>
-                <Select value={supplier} onValueChange={setSupplier}>
-                  <SelectTrigger className="h-8 text-xs">
-                    <SelectValue placeholder="Select Supplier" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="direct">Direct Purchase</SelectItem>
-                    <SelectItem value="supplier-1">ACI Foods Ltd</SelectItem>
-                    <SelectItem value="supplier-2">PRAN Group</SelectItem>
-                    <SelectItem value="supplier-3">Fresh Agro</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+      <main className="mx-auto max-w-[1500px] space-y-6 px-4 py-6 sm:px-6">
+        <section className="grid gap-4 border-b pb-6 md:grid-cols-2 xl:grid-cols-4">
+          <Field label="Payee Name *"><Select onValueChange={setSupplierId} value={supplierId}><SelectTrigger className="w-full"><SelectValue placeholder="Select supplier" /></SelectTrigger><SelectContent>{suppliers.map((item) => <SelectItem key={item.id} value={String(item.id)}>{item.name}{item.company ? ` - ${item.company}` : ""}</SelectItem>)}</SelectContent></Select></Field>
+          <Field label="ID / Bill No"><Input onChange={(event) => setBillNo(event.target.value)} placeholder="BILL-100245" value={billNo} /></Field>
+          <Field label="Date *"><Input onChange={(event) => setPurchaseDate(event.target.value)} type="date" value={purchaseDate} /></Field>
+          <div className="rounded-md border bg-muted/30 p-3 text-right"><p className="text-xs font-semibold uppercase text-muted-foreground">Amount</p><p className="mt-1 text-2xl font-bold tabular-nums">{money(total)}</p></div>
+          <Field label="Payment Method"><Select onValueChange={(value) => setPaymentMethod(value as "bank" | "cash")} value={paymentMethod}><SelectTrigger className="w-full"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="cash">Cash</SelectItem><SelectItem value="bank">Bank</SelectItem></SelectContent></Select></Field>
+          <Field label={`Account ${paid > 0 ? "*" : ""}`}><Select onValueChange={setPaymentAccountId} value={paymentAccountId}><SelectTrigger className="w-full"><SelectValue placeholder="Select cash / bank" /></SelectTrigger><SelectContent>{paymentAccounts.filter((item) => item.type === paymentMethod).map((item) => <SelectItem key={item.id} value={item.id}>{item.name} ({money(item.balance)})</SelectItem>)}</SelectContent></Select></Field>
+          <Field label="Total Paid"><Input inputMode="decimal" onChange={(event) => setPaidAmount(event.target.value)} value={paidAmount} /></Field>
+          <Field label="Entry Mode"><div className="grid grid-cols-2 overflow-hidden rounded-md border">{(["new", "exchange"] as const).map((mode) => <button className={`h-10 text-sm font-medium capitalize ${entryMode === mode ? "bg-primary text-primary-foreground" : "bg-background"}`} key={mode} onClick={() => setEntryMode(mode)} type="button">{mode}</button>)}</div></Field>
+        </section>
 
-              {/* Payment Account */}
-              <div className="space-y-1">
-                <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
-                  Payment Account
-                </label>
-                <Select value={paymentAccount} onValueChange={setPaymentAccount}>
-                  <SelectTrigger className="h-8 text-xs">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="cash">💵 Cash</SelectItem>
-                    <SelectItem value="bank">🏦 Bank Transfer</SelectItem>
-                    <SelectItem value="bkash">📱 bKash</SelectItem>
-                    <SelectItem value="credit">📋 Credit / Due</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Payment Date */}
-              <div className="space-y-1">
-                <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
-                  Payment Date
-                </label>
-                <Input
-                  type="date"
-                  value={paymentDate}
-                  onChange={(e) => setPaymentDate(e.target.value)}
-                  className="h-8 text-xs"
-                />
-              </div>
-
-              {/* Reference No */}
-              <div className="space-y-1">
-                <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
-                  Reference No
-                </label>
-                <Input
-                  placeholder="Invoice No..."
-                  value={referenceNo}
-                  onChange={(e) => setReferenceNo(e.target.value)}
-                  className="h-8 text-xs"
-                />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* ══════════════════════════════════════════════════════════
-            🟨 PRODUCT SELECTION (Step 1)
-            ══════════════════════════════════════════════════════════ */}
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm flex items-center gap-2">
-              <div className="p-1 bg-amber-100 rounded">
-                <Search className="h-3.5 w-3.5 text-amber-600" />
-              </div>
-              Product Selection
-            </CardTitle>
-            <CardDescription className="text-xs">
-              Search and select a product to add stock for
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-              <Input
-                placeholder="Search by SKU / Product Name / Brand..."
-                value={productSearch}
-                onChange={(e) => setProductSearch(e.target.value)}
-                className="pl-9 h-9 text-sm"
-              />
-            </div>
-
-            {selectedProduct ? (
-              <div
-                className="flex items-center gap-3 p-3 bg-primary/5 border border-primary/20 rounded-lg cursor-pointer"
-                onClick={handleClearProduct}
-              >
-                {selectedProduct.image && (
-                  <Image
-                    src={selectedProduct.image}
-                    alt={selectedProduct.name}
-                    width={40}
-                    height={40}
-                    className="w-10 h-10 rounded-lg object-cover border"
-                  />
-                )}
-                <div className="flex-1 min-w-0">
-                  <p className="font-medium text-sm">{selectedProduct.name}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {selectedProduct.category?.name || ""}
-                    {" · "}
-                    {selectedProduct.variants.length} variant
-                    {selectedProduct.variants.length !== 1 ? "s" : ""}
-                  </p>
-                </div>
-                <Badge variant="secondary" className="text-[10px] shrink-0">
-                  ✓ Selected
-                </Badge>
-              </div>
-            ) : (
-              <div className="max-h-[200px] overflow-y-auto space-y-1">
-                {loadingProducts ? (
-                  <div className="flex items-center justify-center py-6">
-                    <Loader className="h-5 w-5 animate-spin text-muted-foreground" />
-                  </div>
-                ) : products.length === 0 ? (
-                  <div className="text-center py-6 text-sm text-muted-foreground">
-                    {productSearch
-                      ? "No products match your search"
-                      : "No products found. Create products from the catalog first."}
-                  </div>
-                ) : (
-                  products.map((p) => (
-                    <button
-                      key={p.id}
-                      type="button"
-                      className="flex items-center gap-3 w-full rounded-lg px-3 py-2 text-left hover:bg-muted/80 transition-colors cursor-pointer"
-                      onClick={() => handleSelectProduct(p)}
-                    >
-                      {p.image ? (
-                        <Image
-                          src={p.image}
-                          alt={p.name}
-                          width={32}
-                          height={32}
-                          className="w-8 h-8 rounded-md object-cover border"
-                        />
-                      ) : (
-                        <div className="w-8 h-8 rounded-md bg-gray-100 flex items-center justify-center">
-                          <Package className="h-3.5 w-3.5 text-gray-300" />
-                        </div>
-                      )}
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium truncate">{p.name}</p>
-                        <p className="text-xs text-muted-foreground truncate">
-                          {p.category?.name || ""}
-                          {" · "}
-                          {p.variants.length} variant{p.variants.length !== 1 ? "s" : ""}
-                        </p>
-                      </div>
-                      <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
-                    </button>
-                  ))
-                )}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* ══════════════════════════════════════════════════════════
-            📋 ITEM ENTRY TABLE
-            ══════════════════════════════════════════════════════════ */}
-        {selectedProduct && (
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm flex items-center gap-2">
-                <div className="p-1 bg-emerald-100 rounded">
-                  <Box className="h-3.5 w-3.5 text-emerald-600" />
-                </div>
-                📋 Item Entry Table
-              </CardTitle>
-              <CardDescription className="text-xs">
-                Enter the quantity to add for each variant
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {/* Variant summary info */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 p-2.5 bg-muted/50 rounded-lg text-xs">
-                <div>
-                  <span className="text-muted-foreground text-[10px]">Product</span>
-                  <p className="font-medium truncate">{selectedProduct.name}</p>
-                </div>
-                <div>
-                  <span className="text-muted-foreground text-[10px]">Category</span>
-                  <p>{selectedProduct.category?.name || "—"}</p>
-                </div>
-                <div>
-                  <span className="text-muted-foreground text-[10px]">Variants</span>
-                  <p>{selectedProduct.variants.length}</p>
-                </div>
-                <div>
-                  <span className="text-muted-foreground text-[10px]">Total Stock</span>
-                  <p className="font-semibold">
-                    {selectedProduct.variants.reduce((s, v) => s + v.currentStock, 0)}
-                  </p>
-                </div>
-              </div>
-
-              {/* Entry table */}
-              <div className="rounded-lg border overflow-hidden">
-                <Table>
-                  <TableHeader>
-                    <TableRow className="text-[10px] bg-gray-50">
-                      <TableHead className="py-2 font-bold text-gray-700">Brand</TableHead>
-                      <TableHead className="py-2 font-bold text-gray-700">Variant</TableHead>
-                      <TableHead className="py-2 font-bold text-gray-700">Unit</TableHead>
-                      <TableHead className="text-center py-2 font-bold text-gray-700">Current</TableHead>
-                      <TableHead className="text-center py-2 w-[100px] font-bold text-gray-700">Add Qty</TableHead>
-                      <TableHead className="text-center py-2 font-bold text-gray-700">Result</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {previews.map((v) => (
-                      <TableRow key={v.inventoryId} className="hover:bg-gray-50/50">
-                        <TableCell className="text-xs py-2">
-                          {v.brandName || "—"}
-                        </TableCell>
-                        <TableCell className="text-xs font-medium py-2">
-                          {v.unitLabel}
-                        </TableCell>
-                        <TableCell className="text-[10px] text-muted-foreground py-2">
-                          {v.operationalUnit}
-                        </TableCell>
-                        <TableCell className="text-center py-2">
-                          <Badge
-                            variant="outline"
-                            className={`text-[10px] font-bold ${
-                              v.currentStock > 10
-                                ? "border-emerald-200 text-emerald-700 bg-emerald-50"
-                                : v.currentStock > 0
-                                  ? "border-amber-200 text-amber-700 bg-amber-50"
-                                  : "border-red-200 text-red-700 bg-red-50"
-                            }`}
-                          >
-                            {v.currentStock}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-center py-2">
-                          <Input
-                            type="text"
-                            inputMode="numeric"
-                            value={quantities[v.inventoryId] || ""}
-                            onChange={(e) =>
-                              setQuantities((prev) => ({
-                                ...prev,
-                                [v.inventoryId]: e.target.value,
-                              }))
-                            }
-                            placeholder="0"
-                            className="h-7 w-16 mx-auto text-center text-xs"
-                          />
-                        </TableCell>
-                        <TableCell className="text-center py-2">
-                          {v.addQty > 0 ? (
-                            <div className="flex items-center justify-center gap-1">
-                              <span className="text-[10px] text-muted-foreground line-through">
-                                {v.currentStock}
-                              </span>
-                              <span className="text-xs font-bold text-emerald-600">
-                                → {v.newStock}
-                              </span>
-                            </div>
-                          ) : (
-                            <span className="text-xs text-muted-foreground">
-                              {v.currentStock}
-                            </span>
-                          )}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-
-              {/* Addition summary */}
-              {hasEntries && (
-                <div className="flex items-center p-2.5 bg-emerald-50 border border-emerald-200 rounded-lg">
-                  <p className="text-xs text-emerald-700 font-medium">
-                    Stock will be added in the canonical unit for {variantsChanged} variant{variantsChanged !== 1 ? "s" : ""}.
-                  </p>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        )}
-
-        {/* ══════════════════════════════════════════════════════════
-            💰 COST & TOTAL
-            ══════════════════════════════════════════════════════════ */}
-        {selectedProduct && hasEntries && (() => {
-          const subtotal = previews.reduce((sum, v) => {
-            const price = parseFloat(v.retailPrice || "0");
-            return sum + (v.addQty * price);
-          }, 0);
-          const disc = parseFloat(discount) || 0;
-          const vat = parseFloat(vatTax) || 0;
-          const total = subtotal - disc + vat;
-
-          return (
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm flex items-center gap-2">
-                  <div className="p-1 bg-rose-100 rounded">
-                    <CreditCard className="h-3.5 w-3.5 text-rose-600" />
-                  </div>
-                  💰 Cost & Total
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="flex justify-end">
-                  <div className="w-64 space-y-2">
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="text-muted-foreground">Subtotal:</span>
-                      <span className="font-medium">৳ {subtotal.toFixed(0)}</span>
-                    </div>
-                    <div className="flex items-center justify-between text-xs gap-2">
-                      <span className="text-muted-foreground">Discount:</span>
-                      <div className="flex items-center gap-1">
-                        <span className="text-muted-foreground">৳</span>
-                        <Input
-                          type="text"
-                          inputMode="numeric"
-                          value={discount}
-                          onChange={(e) => setDiscount(e.target.value)}
-                          className="h-6 w-16 text-right text-xs"
-                        />
-                      </div>
-                    </div>
-                    <div className="flex items-center justify-between text-xs gap-2">
-                      <span className="text-muted-foreground">VAT / Tax:</span>
-                      <div className="flex items-center gap-1">
-                        <span className="text-muted-foreground">৳</span>
-                        <Input
-                          type="text"
-                          inputMode="numeric"
-                          value={vatTax}
-                          onChange={(e) => setVatTax(e.target.value)}
-                          className="h-6 w-16 text-right text-xs"
-                        />
-                      </div>
-                    </div>
-                    <Separator />
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="font-bold">TOTAL:</span>
-                      <span className="font-bold text-lg">৳ {total.toFixed(0)}</span>
-                    </div>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          );
-        })()}
-
-        {/* ══════════════════════════════════════════════════════════
-            📦 BATCH & EXPIRY
-            ══════════════════════════════════════════════════════════ */}
-        {selectedProduct && (
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm flex items-center gap-2">
-                <div className="p-1 bg-cyan-100 rounded">
-                  <FileText className="h-3.5 w-3.5 text-cyan-600" />
-                </div>
-                📦 Batch & Expiry
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
-                    Batch No
-                  </label>
-                  <Input
-                    placeholder="B-1001"
-                    value={batchNo}
-                    onChange={(e) => setBatchNo(e.target.value)}
-                    className="h-8 text-xs"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
-                    Expiry Date
-                  </label>
-                  <Input
-                    type="date"
-                    value={expiryDate}
-                    onChange={(e) => setExpiryDate(e.target.value)}
-                    className="h-8 text-xs"
-                  />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* ══════════════════════════════════════════════════════════
-            ⚙ STOCK TYPE & NOTE
-            ══════════════════════════════════════════════════════════ */}
-        {selectedProduct && (
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm flex items-center gap-2">
-                <div className="p-1 bg-purple-100 rounded">
-                  <Tag className="h-3.5 w-3.5 text-purple-600" />
-                </div>
-                Stock Type & Note
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {/* Stock type radio */}
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-                {(
-                  [
-                    { value: "purchase", label: "Purchase Stock", desc: "Bought from supplier", icon: "🛒" },
-                    { value: "return", label: "Return Stock", desc: "Returned from customer", icon: "↩️" },
-                    { value: "adjustment", label: "Adjustment", desc: "Manual correction", icon: "🔧" },
-                    { value: "opening", label: "Opening Stock", desc: "Initial inventory", icon: "📋" },
-                  ] as const
-                ).map(({ value, label, desc, icon }) => (
-                  <label
-                    key={value}
-                    className={`flex items-center gap-2 p-2.5 border rounded-lg cursor-pointer transition-colors text-xs ${
-                      stockType === value
-                        ? "bg-primary/5 border-primary/30"
-                        : "hover:bg-muted/50"
-                    }`}
-                  >
-                    <input
-                      type="radio"
-                      name="stockType"
-                      value={value}
-                      checked={stockType === value}
-                      onChange={() => setStockType(value)}
-                      className="accent-primary"
-                    />
-                    <div>
-                      <p className="font-medium">{icon} {label}</p>
-                      <p className="text-[10px] text-muted-foreground">{desc}</p>
-                    </div>
-                  </label>
-                ))}
-              </div>
-
-              {/* Note */}
-              <div className="space-y-1">
-                <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
-                  Note (Optional)
-                </label>
-                <Input
-                  value={note}
-                  onChange={(e) => setNote(e.target.value)}
-                  placeholder="Any additional notes about this stock entry..."
-                  className="h-8 text-xs"
-                />
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* ══════════════════════════════════════════════════════════
-            📊 LIVE PREVIEW
-            ══════════════════════════════════════════════════════════ */}
-        {hasEntries && (
-          <Card className="border-emerald-200 bg-emerald-50/30">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm flex items-center gap-2">
-                <div className="p-1 bg-emerald-100 rounded">
-                  <Package className="h-3.5 w-3.5 text-emerald-600" />
-                </div>
-                📊 Live Preview — After Adding Stock
-              </CardTitle>
-              <CardDescription className="text-xs text-emerald-700">
-                Confirm the stock changes before submitting
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-1.5">
-                <p className="text-xs font-semibold text-emerald-800 mb-2">
-                  Product: {selectedProduct?.name}
-                </p>
-                {previews
-                  .filter((v) => v.addQty > 0)
-                  .map((v) => (
-                    <div
-                      key={v.inventoryId}
-                      className="flex items-center justify-between text-xs p-2 bg-white rounded-md border border-emerald-100"
-                    >
-                      <span className="text-emerald-800 font-medium truncate">
-                        {v.brandName ? `${v.brandName} + ` : ""}{v.unitLabel}
-                      </span>
-                      <span className="text-emerald-700 shrink-0 font-medium">
-                        {v.currentStock} → <span className="font-bold text-emerald-900">{v.newStock}</span>
-                        {` ${v.operationalUnit}`}
-                      </span>
-                    </div>
-                  ))}
-                <p className="text-[10px] text-emerald-600 mt-2">
-                  👉 Helps retailer confirm before submit
-                </p>
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* ══════════════════════════════════════════════════════════
-            ⚡ FINAL ACTIONS
-            ══════════════════════════════════════════════════════════ */}
-        {selectedProduct && (
-          <div className="flex items-center justify-end gap-2 pb-6">
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-9 text-xs"
-              onClick={() => router.push("/dashboard/stock")}
-              disabled={isPending}
-            >
-              ❌ Cancel
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-9 text-xs"
-              disabled
-            >
-              💾 Save Draft
-            </Button>
-            <Button
-              size="sm"
-              className="h-9 text-xs"
-              onClick={handleSubmit}
-              disabled={isPending || !hasEntries}
-            >
-              {isPending && (
-                <Loader className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-              )}
-              ✅ Confirm & Add Stock
-            </Button>
+        <section className="space-y-3">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between"><div><h2 className="text-base font-semibold">Item Entry</h2><p className="text-sm text-muted-foreground">Every row creates a variant-level inventory movement.</p></div><Input className="w-full sm:max-w-sm" onChange={(event) => setProductSearch(event.target.value)} placeholder="Search products or brands" value={productSearch} /></div>
+          <div className="overflow-x-auto rounded-md border">
+            <table className="w-full min-w-[1050px] text-sm">
+              <thead className="bg-muted/50 text-left text-xs uppercase text-muted-foreground"><tr><th className="px-3 py-3">SKU / Product *</th><th className="px-3 py-3">Brand</th><th className="px-3 py-3">Size</th><th className="px-3 py-3">Qty *</th>{entryMode === "exchange" && <th className="px-3 py-3">Exchange</th>}<th className="px-3 py-3">Price *</th><th className="px-3 py-3">Batch</th><th className="px-3 py-3">Expiry</th><th /></tr></thead>
+              <tbody>{rows.map((row) => {
+                const selected = variantsByInventory.get(row.inventoryId);
+                return <tr className="border-t" key={row.id}>
+                  <td className="min-w-72 px-3 py-2"><Select onValueChange={(value) => updateRow(row.id, "inventoryId", value)} value={row.inventoryId}><SelectTrigger className="w-full"><SelectValue placeholder={productsLoading ? "Loading..." : "Select product variant"} /></SelectTrigger><SelectContent>{variants.map((item) => <SelectItem key={item.inventoryId} value={String(item.inventoryId)}>{item.productName} - {item.unitLabel} - Stock {item.currentStock}</SelectItem>)}</SelectContent></Select></td>
+                  <td className="px-3 py-2">{selected?.brandName || "-"}</td><td className="px-3 py-2">{selected?.unitLabel || "-"}</td>
+                  <td className="px-3 py-2"><Input className="w-24" inputMode="decimal" onChange={(event) => updateRow(row.id, "quantity", event.target.value)} value={row.quantity} /></td>
+                  {entryMode === "exchange" && <td className="px-3 py-2"><Input className="w-24" inputMode="decimal" onChange={(event) => updateRow(row.id, "exchangeQty", event.target.value)} value={row.exchangeQty} /></td>}
+                  <td className="px-3 py-2"><Input className="w-28" inputMode="decimal" onChange={(event) => updateRow(row.id, "unitCost", event.target.value)} value={row.unitCost} /></td>
+                  <td className="px-3 py-2"><Input className="w-32" onChange={(event) => updateRow(row.id, "batchNo", event.target.value)} value={row.batchNo} /></td>
+                  <td className="px-3 py-2"><Input className="w-36" onChange={(event) => updateRow(row.id, "expiryDate", event.target.value)} type="date" value={row.expiryDate} /></td>
+                  <td className="px-3 py-2"><Button aria-label="Remove row" disabled={rows.length === 1} onClick={() => setRows((current) => current.filter((item) => item.id !== row.id))} size="icon" variant="ghost"><Trash2 /></Button></td>
+                </tr>;
+              })}</tbody>
+            </table>
           </div>
-        )}
-      </div>
+          <div className="flex gap-2"><Button onClick={() => setRows((current) => [...current, createRow()])} variant="outline"><Plus /> Add Row</Button><Button onClick={() => setRows([createRow()])} variant="outline"><Trash2 /> Clear All</Button></div>
+        </section>
+
+        <section className="grid gap-6 border-y py-6 lg:grid-cols-[minmax(0,1fr)_360px]">
+          <div className="grid gap-5 sm:grid-cols-2">
+            <Field label="Attachment"><input accept="image/*,.pdf" className="hidden" onChange={(event) => void uploadAttachment(event.target.files?.[0])} ref={attachmentInput} type="file" /><button className="flex min-h-28 w-full flex-col items-center justify-center rounded-md border border-dashed text-sm" onClick={() => attachmentInput.current?.click()} type="button">{uploading ? <Loader2 className="mb-2 animate-spin" /> : <FileUp className="mb-2" />}<span className="font-medium">{attachment?.name || "Add attachment"}</span><span className="text-xs text-muted-foreground">Max file size: 20 MB</span></button></Field>
+            <Field label="Note"><Textarea className="min-h-28" onChange={(event) => setNote(event.target.value)} value={note} /></Field>
+          </div>
+          <div className="space-y-3 rounded-md bg-muted/30 p-4 text-sm">
+            <Total label="Subtotal" value={money(subtotal)} /><div className="flex items-center justify-between gap-4"><Label>Discount</Label><Input className="w-32 text-right" inputMode="decimal" onChange={(event) => setDiscount(event.target.value)} value={discount} /></div><div className="flex items-center justify-between gap-4"><Label>VAT / Tax</Label><Input className="w-32 text-right" inputMode="decimal" onChange={(event) => setVatAmount(event.target.value)} value={vatAmount} /></div>
+            <div className="border-t pt-3"><Total bold label="Amount" value={money(total)} /></div><Total label="Total Paid" value={money(paid)} /><Total bold className={due > 0 ? "text-amber-700" : "text-emerald-700"} label="Amount Due" value={money(due)} />
+          </div>
+        </section>
+        <div className="flex flex-col gap-2 pb-8 sm:hidden"><Button disabled={pending} onClick={() => void submit("confirm")}><CheckCircle2 /> Confirm & Add Stock</Button><Button disabled={pending} onClick={() => void submit("draft")} variant="outline"><Save /> Save Draft</Button><Button asChild variant="ghost"><Link href="/dashboard/stock"><X /> Cancel</Link></Button></div>
+      </main>
     </div>
   );
+}
+
+function Field({ children, label }: { children: React.ReactNode; label: string }) {
+  return <div className="space-y-2"><Label>{label}</Label>{children}</div>;
+}
+
+function Total({ bold, className = "", label, value }: { bold?: boolean; className?: string; label: string; value: string }) {
+  return <div className={`flex justify-between ${bold ? "text-base font-bold" : ""} ${className}`}><span>{label}</span><span className="tabular-nums">{value}</span></div>;
 }
