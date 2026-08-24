@@ -632,10 +632,18 @@ export const purchaseLifecycleRouter = {
         where: eq(payment.id, input.paymentId),
         with: { order: true },
       });
-      if (!paid || paid.order.userId !== ownerId || paid.order.orderType !== "b2b") {
+      if (
+        !paid ||
+        !paid.order ||
+        paid.orderId === null ||
+        paid.order.userId !== ownerId ||
+        paid.order.orderType !== "b2b"
+      ) {
         throw new ORPCError("NOT_FOUND", { message: "Purchase payment not found" });
       }
-      if (!["cancelled", "returned"].includes(paid.order.status)) {
+      const orderId = paid.orderId;
+      const purchaseOrder = paid.order;
+      if (!["cancelled", "returned"].includes(purchaseOrder.status)) {
         throw new ORPCError("BAD_REQUEST", {
           message: "Cancel or return the purchase before requesting a refund",
         });
@@ -659,9 +667,9 @@ export const purchaseLifecycleRouter = {
           eventType: "refund_requested",
           fromState: paid.status,
           idempotencyKey: `payment:${paid.id}:refund-requested`,
-          orderId: paid.orderId,
+          orderId,
           ownerId,
-          reference: paid.referenceNo ?? paid.order.orderNumber,
+          reference: paid.referenceNo ?? purchaseOrder.orderNumber,
           toState: "refund_pending",
         });
       });
@@ -683,15 +691,23 @@ export const purchaseLifecycleRouter = {
         where: eq(payment.id, input.paymentId),
         with: { order: true },
       });
-      if (!paid || paid.order.userId !== ownerId || paid.order.orderType !== "b2b") {
+      if (
+        !paid ||
+        !paid.order ||
+        paid.orderId === null ||
+        paid.order.userId !== ownerId ||
+        paid.order.orderType !== "b2b"
+      ) {
         throw new ORPCError("NOT_FOUND", { message: "Purchase payment not found" });
       }
+      const orderId = paid.orderId;
+      const purchaseOrder = paid.order;
       if (paid.status !== "refund_pending") {
         throw new ORPCError("BAD_REQUEST", { message: "Refund is not pending" });
       }
       const verified = await db.query.purchaseEvent.findFirst({
         where: and(
-          eq(purchaseEvent.orderId, paid.orderId),
+          eq(purchaseEvent.orderId, orderId),
           eq(purchaseEvent.eventType, "refund_verified"),
           ilike(purchaseEvent.idempotencyKey, `payment:${paid.id}:%`),
         ),
@@ -708,9 +724,9 @@ export const purchaseLifecycleRouter = {
         eventType: "refund_approved",
         fromState: "refund_pending",
         idempotencyKey: `payment:${paid.id}:refund-approved`,
-        orderId: paid.orderId,
+        orderId,
         ownerId,
-        reference: paid.referenceNo ?? paid.order.orderNumber,
+        reference: paid.referenceNo ?? purchaseOrder.orderNumber,
         toState: "refund_approved",
       });
       return { status: "refund_approved" as const, success: true };
@@ -733,6 +749,7 @@ export const purchaseLifecycleRouter = {
       if (
         !paid ||
         !paid.order ||
+        paid.orderId === null ||
         paid.order.userId !== ownerId ||
         paid.order.orderType !== "b2b"
       ) {
@@ -740,12 +757,14 @@ export const purchaseLifecycleRouter = {
           message: "Purchase payment not found",
         });
       }
+      const orderId = paid.orderId;
+      const purchaseOrder = paid.order;
       if (paid.status !== "refund_pending") {
         throw new ORPCError("BAD_REQUEST", { message: "Refund is not pending" });
       }
       const requested = await db.query.purchaseEvent.findFirst({
         where: and(
-          eq(purchaseEvent.orderId, paid.orderId!),
+          eq(purchaseEvent.orderId, orderId),
           eq(purchaseEvent.eventType, "refund_requested"),
           ilike(purchaseEvent.idempotencyKey, `payment:${paid.id}:%`),
         ),
@@ -762,9 +781,9 @@ export const purchaseLifecycleRouter = {
         eventType: "refund_verified",
         fromState: "refund_pending",
         idempotencyKey: `payment:${paid.id}:refund-verified`,
-        orderId: paid.orderId!,
+        orderId,
         ownerId,
-        reference: paid.referenceNo ?? paid.order.orderNumber,
+        reference: paid.referenceNo ?? purchaseOrder.orderNumber,
         toState: "refund_verified",
       });
       return { status: "refund_verified" as const, success: true };
@@ -784,15 +803,23 @@ export const purchaseLifecycleRouter = {
         where: eq(payment.id, input.paymentId),
         with: { order: true },
       });
-      if (!paid || paid.order.userId !== ownerId || paid.order.orderType !== "b2b") {
+      if (
+        !paid ||
+        !paid.order ||
+        paid.orderId === null ||
+        paid.order.userId !== ownerId ||
+        paid.order.orderType !== "b2b"
+      ) {
         throw new ORPCError("NOT_FOUND", { message: "Purchase payment not found" });
       }
+      const orderId = paid.orderId;
+      const purchaseOrder = paid.order;
       if (paid.status !== "refund_pending") {
         throw new ORPCError("BAD_REQUEST", { message: "Refund is not pending" });
       }
       const approved = await db.query.purchaseEvent.findFirst({
         where: and(
-          eq(purchaseEvent.orderId, paid.orderId),
+          eq(purchaseEvent.orderId, orderId),
           eq(purchaseEvent.eventType, "refund_approved"),
           ilike(purchaseEvent.idempotencyKey, `payment:${paid.id}:%`),
         ),
@@ -809,9 +836,9 @@ export const purchaseLifecycleRouter = {
         eventType: "refund_processed",
         fromState: "refund_approved",
         idempotencyKey: `payment:${paid.id}:refund-processed`,
-        orderId: paid.orderId,
+        orderId,
         ownerId,
-        reference: paid.referenceNo ?? paid.order.orderNumber,
+        reference: paid.referenceNo ?? purchaseOrder.orderNumber,
         toState: "refund_processed",
       });
       return { status: "refund_processed" as const, success: true };
@@ -841,9 +868,17 @@ export const purchaseLifecycleRouter = {
         where: eq(payment.id, input.paymentId),
         with: { order: true },
       });
-      if (!paid || paid.order.userId !== ownerId || paid.order.orderType !== "b2b") {
+      if (
+        !paid ||
+        !paid.order ||
+        paid.orderId === null ||
+        paid.order.userId !== ownerId ||
+        paid.order.orderType !== "b2b"
+      ) {
         throw new ORPCError("NOT_FOUND", { message: "Purchase payment not found" });
       }
+      const orderId = paid.orderId;
+      const purchaseOrder = paid.order;
       if (paid.status !== "refund_pending") {
         throw new ORPCError("BAD_REQUEST", {
           message: "The purchase payment is not awaiting a refund",
@@ -851,7 +886,7 @@ export const purchaseLifecycleRouter = {
       }
       const processed = await db.query.purchaseEvent.findFirst({
         where: and(
-          eq(purchaseEvent.orderId, paid.orderId),
+          eq(purchaseEvent.orderId, orderId),
           eq(purchaseEvent.eventType, "refund_processed"),
           ilike(purchaseEvent.idempotencyKey, `payment:${paid.id}:%`),
         ),
@@ -882,7 +917,7 @@ export const purchaseLifecycleRouter = {
             completedAt: refundedAt,
             entryType: "refund",
             idempotencyKey: input.idempotencyKey,
-            orderId: paid.orderId,
+            orderId,
             paymentAccountId: input.paymentAccountId,
             paymentMethod: paid.paymentMethod,
             paymentProvider: paid.paymentProvider,
@@ -900,7 +935,7 @@ export const purchaseLifecycleRouter = {
           actorId: ownerId,
           amount: input.amount,
           idempotencyKey: `purchase-refund:${refund!.id}:completed`,
-          memo: `Purchase refund for ${paid.order.orderNumber}`,
+          memo: `Purchase refund for ${purchaseOrder.orderNumber}`,
           ownerId,
           ownerType,
           paymentAccountId: input.paymentAccountId,
@@ -908,7 +943,7 @@ export const purchaseLifecycleRouter = {
           sourceType: "payment",
           transactionDate: localDateString(refundedAt),
           transactionType:
-            paid.order.status === "cancelled" &&
+            purchaseOrder.status === "cancelled" &&
             paid.purchasePurpose === "supplier_advance"
               ? "supplier_advance_refunded"
               : "supplier_refund_received",
@@ -926,11 +961,11 @@ export const purchaseLifecycleRouter = {
           .set({
             paymentStatus: fullyRefunded ? "refunded" : "partially_refunded",
             returnAmount:
-              paid.order.status === "returned"
-                ? paid.order.returnAmount
-                : (Number(paid.order.returnAmount) + input.amount).toFixed(2),
+              purchaseOrder.status === "returned"
+                ? purchaseOrder.returnAmount
+                : (Number(purchaseOrder.returnAmount) + input.amount).toFixed(2),
           })
-          .where(eq(order.id, paid.orderId));
+          .where(eq(order.id, orderId));
         await appendOrderPurchaseEvent(tx, {
           actorId: ownerId,
           amount: input.amount,
@@ -939,9 +974,9 @@ export const purchaseLifecycleRouter = {
           eventType: "refund_completed",
           fromState: "refund_pending",
           idempotencyKey: `payment:${paid.id}:refund:${refund!.id}:completed`,
-          orderId: paid.orderId,
+          orderId,
           ownerId,
-          reference: input.referenceNo ?? paid.order.orderNumber,
+          reference: input.referenceNo ?? purchaseOrder.orderNumber,
           toState: fullyRefunded ? "refunded" : "partially_refunded",
         });
 

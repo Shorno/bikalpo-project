@@ -503,7 +503,7 @@ export const purchaseRouter = {
         .route({ method: "POST", path: "/purchases/products", tags: ["Purchase Management"], summary: "Get products for purchase" })
         .input(z.object({ search: z.string().optional() }).optional())
         .handler(async ({ input }) => {
-            const { product, productVariant } = await import("@bikalpo-project/db/schema");
+            const { product } = await import("@bikalpo-project/db/schema");
             const conditions = [eq(product.status, "active")];
             if (input?.search?.trim()) {
                 conditions.push(ilike(product.name, `%${input.search.trim()}%`));
