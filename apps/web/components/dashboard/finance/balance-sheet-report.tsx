@@ -161,12 +161,9 @@ export function BalanceSheetReport() {
   } = useQuery(
     orpc.balanceSheet.getBalanceSheet.queryOptions({
       input: { endDate, reportType, startDate, year },
-      refetchOnMount: "always",
-      refetchOnReconnect: "always",
-      refetchOnWindowFocus: "always",
-      refetchInterval: 5000,
-      refetchIntervalInBackground: false,
-      staleTime: 0,
+      refetchOnReconnect: true,
+      refetchOnWindowFocus: false,
+      staleTime: 30_000,
     }),
   );
   const adjustedReport = useMemo(
