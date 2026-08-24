@@ -3,6 +3,7 @@ import { invoice, order, user } from "@bikalpo-project/db/schema";
 import { ORPCError } from "@orpc/server";
 import { and, eq, sql } from "drizzle-orm";
 import { recognizePlatformPurchaseReceipt } from "../../services/purchase-receipt";
+import { recordPurchaseSettlement } from "../../services/purchase-payment";
 import {
   type FulfillmentOwner,
   fulfillmentInvoiceOwnerCondition,
@@ -18,9 +19,11 @@ type SelfPickupPaymentStatus = "collected" | "settled" | "unpaid";
 export function resolveSelfPickupPaymentStatus(input: {
   dueAmount: number;
   orderType: string;
+  paymentMethod?: string | null;
   requestedStatus: SelfPickupPaymentStatus;
 }) {
   if (input.orderType !== "b2b") return input.requestedStatus;
+  if (input.paymentMethod === "cash_on_delivery") return "settled";
   return input.dueAmount > 0 ? "unpaid" : "settled";
 }
 
@@ -93,6 +96,7 @@ export async function completeSelfPickupInvoice(
     const paymentStatus = resolveSelfPickupPaymentStatus({
       dueAmount: Number(existingInvoice.order.dueAmount),
       orderType: existingInvoice.order.orderType,
+      paymentMethod: existingInvoice.order.paymentMethod,
       requestedStatus: input.paymentStatus,
     });
     const [completedInvoice] = await tx
@@ -144,6 +148,21 @@ export async function completeSelfPickupInvoice(
         ownerType: buyerOwnerType,
         receivedAt: completedAt,
       });
+      if (
+        existingInvoice.order.paymentMethod === "cash_on_delivery" &&
+        Number(existingInvoice.order.dueAmount) > 0
+      ) {
+        await recordPurchaseSettlement(tx, {
+          actorId: input.owner.id,
+          completedAt,
+          idempotencyKey: `order:${existingInvoice.order.id}:cod-receipt`,
+          orderId: existingInvoice.order.id,
+          ownerId: existingInvoice.order.userId,
+          ownerType: buyerOwnerType,
+          paymentMethod: "cash",
+          reference: existingInvoice.order.orderNumber,
+        });
+      }
     }
 
     if (input.markOrderPaid) {

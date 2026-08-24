@@ -97,6 +97,7 @@ import {
 	recordPurchaseSubmission,
 } from "../services/purchase-history";
 import { recognizePlatformPurchaseReceipt } from "../services/purchase-receipt";
+import { recordPurchaseSettlement } from "../services/purchase-payment";
 import {
 	buildWholesaleCheckoutQuote,
 	getWholesalePaymentDueAt,
@@ -2218,6 +2219,22 @@ const mutations = {
 					ownerType: "shop",
 					receivedAt,
 				});
+				if (
+					fullyReceived &&
+					existingOrder.paymentMethod === "cash_on_delivery" &&
+					Number(existingOrder.dueAmount) > 0
+				) {
+					await recordPurchaseSettlement(tx, {
+						actorId: userId,
+						completedAt: receivedAt,
+						idempotencyKey: `order:${input.orderId}:cod-receipt`,
+						orderId: input.orderId,
+						ownerId: userId,
+						ownerType: "shop",
+						paymentMethod: "cash",
+						reference: existingOrder.orderNumber,
+					});
+				}
 			});
 
 			return {
