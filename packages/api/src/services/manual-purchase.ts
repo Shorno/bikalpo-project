@@ -11,6 +11,7 @@ import {
   type ManualPurchaseLine,
   verifyManualPurchaseInput,
 } from "./manual-purchase-domain";
+import { postPurchaseJournal } from "./purchase-accounting";
 import {
   appendManualPurchaseEvent,
   appendPurchaseInventoryMovement,
@@ -330,6 +331,55 @@ export async function confirmManualPurchaseReceipt(
     purchaseId,
     reference: purchaseRecord.purchaseNumber,
     toState: "received",
+  });
+
+  await postPurchaseJournal(tx, {
+    actorId: scope.actorId,
+    amount: Number(purchaseRecord.total),
+    idempotencyKey: `manual-purchase:${purchaseId}:receipt-journal`,
+    memo: `Inventory received for ${purchaseRecord.purchaseNumber}`,
+    ownerId: scope.ownerId,
+    ownerType: scope.ownerType,
+    sourceId: String(purchaseId),
+    sourceType: "purchase",
+    transactionDate: purchaseRecord.purchaseDate || localDateString(receivedAt),
+    transactionType: "purchase_receipt",
+  });
+  await tx
+    .update(supplier)
+    .set({
+      currentPayable: sql`${supplier.currentPayable}::numeric + ${Number(purchaseRecord.total)}`,
+      updatedAt: receivedAt,
+    })
+    .where(eq(supplier.id, purchaseRecord.supplierId));
+  await appendManualPurchaseEvent(tx, {
+    actorId: scope.actorId,
+    amount: Number(purchaseRecord.total),
+    category: "accounting",
+    description: "Inventory debited and Accounts Payable credited",
+    eventType: "payable_created",
+    idempotencyKey: `manual-purchase:${purchaseId}:payable`,
+    ownerId: scope.ownerId,
+    purchaseId,
+    reference: purchaseRecord.purchaseNumber,
+    toState: "posted",
+  });
+  await appendManualPurchaseEvent(tx, {
+    actorId: scope.actorId,
+    amount: Number(purchaseRecord.total),
+    category: "accounting",
+    description: "Manual purchase receipt journal posted",
+    eventType: "accounting_posted",
+    idempotencyKey: `manual-purchase:${purchaseId}:accounting`,
+    metadata: {
+      credit: "Accounts Payable",
+      debit: "Inventory",
+      profitAndLossImpact: 0,
+    },
+    ownerId: scope.ownerId,
+    purchaseId,
+    reference: purchaseRecord.purchaseNumber,
+    toState: "posted",
   });
 
   const [updated] = await tx
