@@ -615,6 +615,52 @@ export const purchaseLifecycleRouter = {
       return { status: "refund_pending" as const, success: true };
     }),
 
+  approveRefund: protectedProcedure
+    .route({
+      method: "POST",
+      path: "/purchase-lifecycle/refunds/approve",
+      tags: ["Purchase Lifecycle"],
+      summary: "Approve a requested purchase refund",
+    })
+    .input(z.object({ paymentId: z.number().int().positive() }))
+    .handler(async ({ context, input }) => {
+      const ownerId = context.session.user.id;
+      const paid = await db.query.payment.findFirst({
+        where: eq(payment.id, input.paymentId),
+        with: { order: true },
+      });
+      if (!paid || paid.order.userId !== ownerId || paid.order.orderType !== "b2b") {
+        throw new ORPCError("NOT_FOUND", { message: "Purchase payment not found" });
+      }
+      if (paid.status !== "refund_pending") {
+        throw new ORPCError("BAD_REQUEST", { message: "Refund is not pending" });
+      }
+      const requested = await db.query.purchaseEvent.findFirst({
+        where: and(
+          eq(purchaseEvent.orderId, paid.orderId),
+          eq(purchaseEvent.eventType, "refund_requested"),
+        ),
+        orderBy: [desc(purchaseEvent.occurredAt)],
+      });
+      if (!requested) {
+        throw new ORPCError("BAD_REQUEST", { message: "Request the refund first" });
+      }
+      await appendOrderPurchaseEvent(db, {
+        actorId: ownerId,
+        amount: Number(paid.amount) - Number(paid.refundedAmount),
+        category: "payment",
+        description: "Purchase refund approved",
+        eventType: "refund_approved",
+        fromState: "refund_pending",
+        idempotencyKey: `payment:${paid.id}:refund-approved`,
+        orderId: paid.orderId,
+        ownerId,
+        reference: paid.referenceNo ?? paid.order.orderNumber,
+        toState: "refund_approved",
+      });
+      return { status: "refund_approved" as const, success: true };
+    }),
+
   completeRefund: protectedProcedure
     .route({
       method: "POST",
