@@ -112,6 +112,7 @@ export async function appendPurchaseInventoryMovement(
     quantityAfter?: number | null;
     reason?: "purchase_receipt" | "purchase_return" | "purchase_reversal";
     reference?: string | null;
+    reversesMovementId?: number | null;
     totalCost: number;
     unit: string;
     unitCost: number;
@@ -121,11 +122,15 @@ export async function appendPurchaseInventoryMovement(
   if (input.quantity <= 0) return null;
 
   const quantityAfter = input.quantityAfter ?? null;
-  const quantityBefore =
-    quantityAfter === null ? null : Math.max(0, quantityAfter - input.quantity);
   const direction = input.reason === "purchase_receipt" || !input.reason
     ? "in"
     : "out";
+  const quantityBefore =
+    quantityAfter === null
+      ? null
+      : direction === "in"
+        ? Math.max(0, quantityAfter - input.quantity)
+        : quantityAfter + input.quantity;
 
   const [created] = await tx
     .insert(inventoryMovement)
@@ -142,6 +147,7 @@ export async function appendPurchaseInventoryMovement(
       quantityBefore: quantityBefore?.toFixed(4) ?? null,
       reason: input.reason ?? "purchase_receipt",
       reference: input.reference ?? null,
+      reversesMovementId: input.reversesMovementId ?? null,
       totalCost: input.totalCost.toFixed(2),
       unit: input.unit,
       unitCost: input.unitCost.toFixed(4),
