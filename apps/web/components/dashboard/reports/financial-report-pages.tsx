@@ -708,7 +708,10 @@ export function PurchaseReportPage() {
       ...row,
       date: shortReportDate(dateIso),
       dateIso,
-      detailHref: `/dashboard/orders/${row.id}`,
+      detailHref:
+        "detailHref" in row && row.detailHref
+          ? row.detailHref
+          : `/dashboard/orders/${row.id}`,
       id: String(row.id),
     };
   });
