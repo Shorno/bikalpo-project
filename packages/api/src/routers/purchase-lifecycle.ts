@@ -34,6 +34,7 @@ import {
   derivePurchaseStatus,
 } from "../services/purchase-lifecycle";
 import { localDateString } from "../utils/date";
+import { returnReceivedPurchase } from "../services/purchase-return";
 
 function ownerTypeForRole(role?: string | null) {
   if (role === "shop_owner") return "shop" as const;
@@ -518,6 +519,44 @@ export const purchaseLifecycleRouter = {
         paymentStatus: aggregateStatus,
         success: true,
       };
+    }),
+
+  returnPurchase: protectedProcedure
+    .route({
+      method: "POST",
+      path: "/purchase-lifecycle/returns",
+      tags: ["Purchase Lifecycle"],
+      summary: "Return received purchase stock",
+    })
+    .input(
+      z.object({
+        orderId: z.number().int().positive(),
+        reason: z.string().trim().max(300).optional(),
+      }),
+    )
+    .handler(async ({ context, input }) => {
+      const ownerId = context.session.user.id;
+      const ownerType = ownerTypeForRole(context.session.user.role);
+      try {
+        const result = await db.transaction(async (tx) => {
+          await tx.execute(sql`SELECT pg_advisory_xact_lock(${input.orderId})`);
+          return returnReceivedPurchase(tx, {
+            actorId: ownerId,
+            orderId: input.orderId,
+            ownerId,
+            ownerType,
+            reason: input.reason,
+            returnedAt: new Date(),
+          });
+        });
+        return { ...result, success: true };
+      } catch (error) {
+        if (error instanceof ORPCError) throw error;
+        throw new ORPCError("BAD_REQUEST", {
+          message:
+            error instanceof Error ? error.message : "Purchase return failed",
+        });
+      }
     }),
 
   requestRefund: protectedProcedure
