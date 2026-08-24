@@ -16,6 +16,7 @@ import { z } from "zod";
 
 import { protectedProcedure } from "../index";
 import {
+    cancelManualPurchase,
     confirmManualPurchaseReceipt,
     persistManualPurchaseDraft,
     recordManualPurchasePayment,
@@ -78,6 +79,34 @@ const manualPurchaseInput = z.object({
 });
 
 export const purchaseRouter = {
+    cancelManual: protectedProcedure
+        .route({
+            method: "POST",
+            path: "/purchases/manual/cancel",
+            tags: ["Purchase Management"],
+            summary: "Cancel a manual purchase and reverse connected records",
+        })
+        .input(z.object({
+            purchaseId: z.number().int().positive(),
+            reason: z.string().max(500).optional().nullable(),
+        }))
+        .handler(async ({ context, input }) => {
+            const scope = manualPurchaseScope(context.session.user);
+            try {
+                const purchaseRecord = await db.transaction((tx) =>
+                    cancelManualPurchase(tx, scope, input),
+                );
+                return { purchase: purchaseRecord, success: true };
+            } catch (error) {
+                throw new ORPCError("BAD_REQUEST", {
+                    message:
+                        error instanceof Error
+                            ? error.message
+                            : "Purchase cancellation failed",
+                });
+            }
+        }),
+
     listManual: protectedProcedure
         .route({
             method: "POST",
