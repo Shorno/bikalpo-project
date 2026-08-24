@@ -1,6 +1,7 @@
 import {
   financePaymentAccount,
   inventory,
+  payment,
   purchase,
   purchaseItem,
   supplier,
@@ -393,4 +394,159 @@ export async function confirmManualPurchaseReceipt(
     .where(eq(purchase.id, purchaseId))
     .returning();
   return updated!;
+}
+
+export async function recordManualPurchasePayment(
+  tx: any,
+  scope: ManualPurchaseScope,
+  input: {
+    amount: number;
+    idempotencyKey: string;
+    paymentAccountId: number;
+    paymentMethod: string;
+    purchaseId: number;
+    referenceNo?: string | null;
+    transactionId?: string | null;
+  },
+) {
+  if (!Number.isFinite(input.amount) || input.amount <= 0) {
+    throw new Error("Payment amount must be greater than zero");
+  }
+  const existingPayment = await tx.query.payment.findFirst({
+    where: eq(payment.idempotencyKey, input.idempotencyKey),
+  });
+  if (existingPayment?.status === "completed") return existingPayment;
+
+  await tx.execute(sql`SELECT pg_advisory_xact_lock(${input.purchaseId})`);
+  const purchaseRecord = await tx.query.purchase.findFirst({
+    where: and(
+      eq(purchase.id, input.purchaseId),
+      eq(purchase.warehouseId, scope.ownerId),
+      eq(purchase.ownerType, scope.ownerType),
+    ),
+  });
+  if (!purchaseRecord) throw new Error("Manual purchase was not found");
+  if (purchaseRecord.status === "cancelled") {
+    throw new Error("A cancelled purchase cannot receive payments");
+  }
+  const currentPaid = Number(purchaseRecord.paidAmount);
+  const total = Number(purchaseRecord.total);
+  const outstanding = Math.max(0, total - currentPaid);
+  if (input.amount > outstanding + 0.001) {
+    throw new Error(
+      `Payment exceeds the outstanding amount of Tk${outstanding.toFixed(2)}`,
+    );
+  }
+
+  const account = await tx.query.financePaymentAccount.findFirst({
+    where: and(
+      eq(financePaymentAccount.id, input.paymentAccountId),
+      eq(financePaymentAccount.ownerId, scope.ownerId),
+      eq(financePaymentAccount.ownerType, scope.ownerType),
+      eq(financePaymentAccount.isActive, true),
+    ),
+  });
+  if (!account) throw new Error("Payment account was not found");
+
+  const completedAt = new Date();
+  const isAdvance = purchaseRecord.status === "draft";
+  const paidAmount = Math.min(total, currentPaid + input.amount);
+  const dueAmount = Math.max(0, total - paidAmount);
+  const paymentStatus = dueAmount <= 0 ? "paid" : "partial";
+  const [created] = await tx
+    .insert(payment)
+    .values({
+      amount: input.amount.toFixed(2),
+      completedAt,
+      idempotencyKey: input.idempotencyKey,
+      orderId: null,
+      paymentAccountId: input.paymentAccountId,
+      paymentMethod: input.paymentMethod,
+      paymentProvider: "manual",
+      purchaseId: input.purchaseId,
+      purchasePurpose: isAdvance ? "supplier_advance" : "payable_settlement",
+      purchaseTiming: isAdvance ? "before_receipt" : "after_receipt",
+      referenceNo: input.referenceNo ?? purchaseRecord.supplierInvoiceNo,
+      status: "completed",
+      transactionId: input.transactionId ?? null,
+      verifiedAt: completedAt,
+    })
+    .returning();
+  if (!created) throw new Error("Failed to record manual purchase payment");
+
+  await postPurchaseJournal(tx, {
+    actorId: scope.actorId,
+    amount: input.amount,
+    idempotencyKey: `manual-purchase-payment:${created.id}:journal`,
+    memo: `${isAdvance ? "Supplier advance" : "Purchase payment"} for ${purchaseRecord.purchaseNumber}`,
+    ownerId: scope.ownerId,
+    ownerType: scope.ownerType,
+    paymentAccountId: input.paymentAccountId,
+    sourceId: String(created.id),
+    sourceType: "payment",
+    transactionDate: localDateString(completedAt),
+    transactionType: isAdvance
+      ? "supplier_advance_payment"
+      : "supplier_payment",
+  });
+
+  if (!isAdvance) {
+    await tx
+      .update(supplier)
+      .set({
+        currentPayable: sql`greatest(0, ${supplier.currentPayable}::numeric - ${input.amount})`,
+        updatedAt: completedAt,
+      })
+      .where(eq(supplier.id, purchaseRecord.supplierId));
+  }
+  await tx
+    .update(purchase)
+    .set({
+      dueAmount: dueAmount.toFixed(2),
+      paidAmount: paidAmount.toFixed(2),
+      paymentAccountId: input.paymentAccountId,
+      paymentMethod: input.paymentMethod,
+      paymentStatus,
+      paymentType: dueAmount <= 0 ? "cash" : "credit",
+      updatedAt: completedAt,
+    })
+    .where(eq(purchase.id, input.purchaseId));
+
+  await appendManualPurchaseEvent(tx, {
+    actorId: scope.actorId,
+    amount: input.amount,
+    category: "payment",
+    description: isAdvance
+      ? "Supplier advance payment completed"
+      : "Purchase due payment completed",
+    eventType: "payment_completed",
+    fromState: currentPaid <= 0 ? "unpaid" : "partial",
+    idempotencyKey: `manual-purchase-payment:${created.id}:completed`,
+    metadata: {
+      dueAmount,
+      paymentAccountId: input.paymentAccountId,
+      paymentMethod: input.paymentMethod,
+      purpose: created.purchasePurpose,
+    },
+    ownerId: scope.ownerId,
+    purchaseId: input.purchaseId,
+    reference: input.referenceNo ?? purchaseRecord.purchaseNumber,
+    toState: paymentStatus,
+  });
+  await appendManualPurchaseEvent(tx, {
+    actorId: scope.actorId,
+    amount: input.amount,
+    category: "accounting",
+    description: isAdvance
+      ? "Supplier Advance debited and Cash/Bank credited"
+      : "Accounts Payable debited and Cash/Bank credited",
+    eventType: isAdvance ? "advance_recorded" : "payment_settled",
+    idempotencyKey: `manual-purchase-payment:${created.id}:accounting`,
+    ownerId: scope.ownerId,
+    purchaseId: input.purchaseId,
+    reference: purchaseRecord.purchaseNumber,
+    toState: "posted",
+  });
+
+  return created;
 }
