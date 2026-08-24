@@ -62,11 +62,14 @@ export async function persistManualPurchaseDraft(
   const existing = await tx.query.purchase.findFirst({
     where: and(
       eq(purchase.warehouseId, scope.ownerId),
+      eq(purchase.ownerType, scope.ownerType),
       eq(purchase.idempotencyKey, input.idempotencyKey),
     ),
     with: { items: true },
   });
-  if (existing) return { created: false, purchase: existing };
+  if (existing && existing.status !== "draft") {
+    return { created: false, purchase: existing };
+  }
 
   const [supplierRecord, inventoryRows, paymentAccount] = await Promise.all([
     tx.query.supplier.findFirst({
@@ -117,38 +120,53 @@ export async function persistManualPurchaseDraft(
 
   const verificationStatus = errors.length === 0 ? "verified" : "on_hold";
   const purchaseDate = input.purchaseDate || localDateString();
-  const [created] = await tx
-    .insert(purchase)
-    .values({
-      attachmentName: input.attachmentName ?? null,
-      attachmentUrl: input.attachmentUrl ?? null,
-      createdById: scope.actorId,
-      discount: verification.totals.discount.toFixed(2),
-      dueAmount: verification.totals.total.toFixed(2),
-      entryMode: input.entryMode,
-      idempotencyKey: input.idempotencyKey,
-      note: input.note ?? null,
-      ownerType: scope.ownerType,
-      paidAmount: "0.00",
-      paymentAccountId: input.paymentAccountId ?? null,
-      paymentMethod: input.paymentMethod ?? null,
-      paymentStatus: "unpaid",
-      paymentType: verification.totals.paidAmount > 0 ? "cash" : "credit",
-      purchaseDate,
-      purchaseNumber: manualPurchaseNumber(scope, input),
-      status: "draft",
-      subtotal: verification.totals.subtotal.toFixed(2),
-      supplierId: input.supplierId,
-      supplierInvoiceNo: input.supplierInvoiceNo ?? null,
-      total: verification.totals.total.toFixed(2),
-      transportCost: "0.00",
-      vatAmount: verification.totals.vatAmount.toFixed(2),
-      verificationMessage: errors.join("; ") || null,
-      verificationStatus,
-      warehouseId: scope.ownerId,
-    })
-    .returning();
-  if (!created) throw new Error("Failed to create manual purchase draft");
+  const savedAt = new Date();
+  const draftValues = {
+    attachmentName: input.attachmentName ?? null,
+    attachmentUrl: input.attachmentUrl ?? null,
+    discount: verification.totals.discount.toFixed(2),
+    dueAmount: verification.totals.total.toFixed(2),
+    entryMode: input.entryMode,
+    note: input.note ?? null,
+    paidAmount: "0.00",
+    paymentAccountId: paymentAccount?.id ?? null,
+    paymentMethod: input.paymentMethod ?? null,
+    paymentStatus: "unpaid" as const,
+    paymentType: verification.totals.paidAmount > 0 ? "cash" as const : "credit" as const,
+    purchaseDate,
+    status: "draft" as const,
+    subtotal: verification.totals.subtotal.toFixed(2),
+    supplierId: input.supplierId,
+    supplierInvoiceNo: input.supplierInvoiceNo ?? null,
+    total: verification.totals.total.toFixed(2),
+    transportCost: "0.00",
+    updatedAt: savedAt,
+    vatAmount: verification.totals.vatAmount.toFixed(2),
+    verificationMessage: errors.join("; ") || null,
+    verificationStatus,
+  };
+  let saved = existing;
+  if (existing) {
+    [saved] = await tx
+      .update(purchase)
+      .set(draftValues)
+      .where(eq(purchase.id, existing.id))
+      .returning();
+    await tx.delete(purchaseItem).where(eq(purchaseItem.purchaseId, existing.id));
+  } else {
+    [saved] = await tx
+      .insert(purchase)
+      .values({
+        ...draftValues,
+        createdById: scope.actorId,
+        idempotencyKey: input.idempotencyKey,
+        ownerType: scope.ownerType,
+        purchaseNumber: manualPurchaseNumber(scope, input),
+        warehouseId: scope.ownerId,
+      })
+      .returning();
+  }
+  if (!saved) throw new Error("Failed to save manual purchase draft");
 
   const inventoryById = new Map<number, any>(
     inventoryRows.map((row: any) => [row.id, row]),
@@ -163,7 +181,7 @@ export async function persistManualPurchaseDraft(
       exchangeQty: String(line.exchangeQty ?? 0),
       expiryDate: line.expiryDate ?? null,
       productName: variant.product?.name ?? "Product",
-      purchaseId: created.id,
+      purchaseId: saved.id,
       quantity: line.quantity.toFixed(2),
       quantityUnit: variant.orderUnit || variant.packType || "unit",
       receivedQty: "0.00",
@@ -176,17 +194,19 @@ export async function persistManualPurchaseDraft(
   });
   if (itemValues.length > 0) await tx.insert(purchaseItem).values(itemValues);
 
-  await appendManualPurchaseEvent(tx, {
-    actorId: scope.actorId,
-    category: "purchase",
-    description: "Manual purchase draft created",
-    eventType: "draft_created",
-    idempotencyKey: `manual-purchase:${created.id}:draft`,
-    ownerId: scope.ownerId,
-    purchaseId: created.id,
-    reference: created.purchaseNumber,
-    toState: "draft",
-  });
+  if (!existing) {
+    await appendManualPurchaseEvent(tx, {
+      actorId: scope.actorId,
+      category: "purchase",
+      description: "Manual purchase draft created",
+      eventType: "draft_created",
+      idempotencyKey: `manual-purchase:${saved.id}:draft`,
+      ownerId: scope.ownerId,
+      purchaseId: saved.id,
+      reference: saved.purchaseNumber,
+      toState: "draft",
+    });
+  }
   await appendManualPurchaseEvent(tx, {
     actorId: scope.actorId,
     category: "purchase",
@@ -198,17 +218,19 @@ export async function persistManualPurchaseDraft(
       verificationStatus === "verified"
         ? "verification_passed"
         : "verification_on_hold",
-    idempotencyKey: `manual-purchase:${created.id}:verification`,
+    idempotencyKey: existing
+      ? `manual-purchase:${saved.id}:verification:${savedAt.getTime()}`
+      : `manual-purchase:${saved.id}:verification`,
     metadata: { errors },
     ownerId: scope.ownerId,
-    purchaseId: created.id,
-    reference: created.purchaseNumber,
+    purchaseId: saved.id,
+    reference: saved.purchaseNumber,
     toState: verificationStatus,
   });
 
   return {
-    created: true,
-    purchase: { ...created, items: itemValues },
+    created: !existing,
+    purchase: { ...saved, items: itemValues },
   };
 }
 
