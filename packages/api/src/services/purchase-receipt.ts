@@ -71,21 +71,22 @@ export async function recognizePlatformPurchaseReceipt(
     );
   }
   const receiptSequence = priorMovements.length + 1;
-  const receiptDeltas = purchaseOrder.items.map((item: any) => {
+  const receiptDeltas: Array<{ id: number; quantity: number; value: number }> =
+    purchaseOrder.items.map((item: any) => {
     const cumulativeQuantity = Number(
       item.convertedQty ?? item.receivedQty ?? 0,
     );
     const cumulativeValue = landedCostByItem.get(item.id)?.recognizedTotal ?? 0;
-    return {
-      id: item.id,
-      ...calculateIncrementalReceipt({
-        cumulativeQuantity,
-        cumulativeValue,
-        priorQuantity: priorQuantityByItem.get(item.id) ?? 0,
-        priorValue: priorValueByItem.get(item.id) ?? 0,
-      }),
-    };
-  });
+      return {
+        id: item.id,
+        ...calculateIncrementalReceipt({
+          cumulativeQuantity,
+          cumulativeValue,
+          priorQuantity: priorQuantityByItem.get(item.id) ?? 0,
+          priorValue: priorValueByItem.get(item.id) ?? 0,
+        }),
+      };
+    });
   const receiptValue = receiptDeltas.reduce(
     (total, line) => total + line.value,
     0,

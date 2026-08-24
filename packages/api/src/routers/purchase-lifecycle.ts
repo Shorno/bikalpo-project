@@ -317,12 +317,24 @@ export const purchaseLifecycleRouter = {
           timing: row.purchaseTiming,
         };
       });
+      const pendingRefundPayment = payments.find(
+        (row) => row.entryType === "payment" && row.status === "refund_pending",
+      );
       const latestRefundStage = [
         "refund_completed",
         "refund_processed",
         "refund_approved",
         "refund_requested",
-      ].find((eventType) => events.some((event) => event.eventType === eventType));
+      ].find((eventType) =>
+        events.some(
+          (event) =>
+            event.eventType === eventType &&
+            (!pendingRefundPayment ||
+              event.idempotencyKey.startsWith(
+                `payment:${pendingRefundPayment.id}:`,
+              )),
+        ),
+      );
       const receiptValue = movements
         .filter((movement) => movement.reason === "purchase_receipt")
         .reduce((sum, movement) => sum + Number(movement.totalCost), 0);
@@ -681,6 +693,7 @@ export const purchaseLifecycleRouter = {
         where: and(
           eq(purchaseEvent.orderId, paid.orderId),
           eq(purchaseEvent.eventType, "refund_requested"),
+          ilike(purchaseEvent.idempotencyKey, `payment:${paid.id}:%`),
         ),
         orderBy: [desc(purchaseEvent.occurredAt)],
       });
@@ -727,6 +740,7 @@ export const purchaseLifecycleRouter = {
         where: and(
           eq(purchaseEvent.orderId, paid.orderId),
           eq(purchaseEvent.eventType, "refund_approved"),
+          ilike(purchaseEvent.idempotencyKey, `payment:${paid.id}:%`),
         ),
         orderBy: [desc(purchaseEvent.occurredAt)],
       });
@@ -785,6 +799,7 @@ export const purchaseLifecycleRouter = {
         where: and(
           eq(purchaseEvent.orderId, paid.orderId),
           eq(purchaseEvent.eventType, "refund_processed"),
+          ilike(purchaseEvent.idempotencyKey, `payment:${paid.id}:%`),
         ),
         orderBy: [desc(purchaseEvent.occurredAt)],
       });

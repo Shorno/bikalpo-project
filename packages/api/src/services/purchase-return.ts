@@ -52,6 +52,9 @@ export async function returnReceivedPurchase(
   if (["cancelled", "returned"].includes(purchaseOrder.status)) {
     throw new Error("Purchase order is already closed");
   }
+  if (!purchaseOrder.receivedAt) {
+    throw new Error("Complete product receipt before returning this purchase");
+  }
 
   const movements = await tx.query.inventoryMovement.findMany({
     where: and(
@@ -200,16 +203,40 @@ export async function returnReceivedPurchase(
       transactionDate: localDateString(input.returnedAt),
       transactionType: "purchase_return_paid",
     });
-    await tx
-      .update(payment)
-      .set({ status: "refund_pending", updatedAt: input.returnedAt })
-      .where(
-        and(
-          eq(payment.orderId, input.orderId),
-          eq(payment.entryType, "payment"),
-          eq(payment.status, "completed"),
-        ),
+    const refundablePayments = await tx.query.payment.findMany({
+      where: and(
+        eq(payment.orderId, input.orderId),
+        eq(payment.entryType, "payment"),
+        eq(payment.status, "completed"),
+      ),
+    });
+    let refundRemaining = split.refundReceivable;
+    for (const paid of refundablePayments) {
+      const refundable = Math.min(
+        refundRemaining,
+        Math.max(0, Number(paid.amount) - Number(paid.refundedAmount)),
       );
+      if (refundable <= 0) continue;
+      await tx
+        .update(payment)
+        .set({ status: "refund_pending", updatedAt: input.returnedAt })
+        .where(eq(payment.id, paid.id));
+      await appendOrderPurchaseEvent(tx, {
+        actorId: input.actorId,
+        amount: refundable,
+        category: "payment",
+        description: "Supplier refund requested for returned products",
+        eventType: "refund_requested",
+        fromState: "completed",
+        idempotencyKey: `payment:${paid.id}:refund-requested`,
+        metadata: { paymentId: paid.id },
+        orderId: input.orderId,
+        ownerId: input.ownerId,
+        reference: paid.referenceNo ?? purchaseOrder.orderNumber,
+        toState: "refund_pending",
+      });
+      refundRemaining = money(refundRemaining - refundable);
+    }
   }
 
   await tx
@@ -237,21 +264,5 @@ export async function returnReceivedPurchase(
     reference: purchaseOrder.orderNumber,
     toState: "returned",
   });
-  if (split.refundReceivable > 0) {
-    await appendOrderPurchaseEvent(tx, {
-      actorId: input.actorId,
-      amount: split.refundReceivable,
-      category: "payment",
-      description: "Supplier refund requested for returned products",
-      eventType: "refund_requested",
-      fromState: "completed",
-      idempotencyKey: `order:${input.orderId}:return:refund-requested`,
-      orderId: input.orderId,
-      ownerId: input.ownerId,
-      reference: purchaseOrder.orderNumber,
-      toState: "refund_pending",
-    });
-  }
-
   return split;
 }
