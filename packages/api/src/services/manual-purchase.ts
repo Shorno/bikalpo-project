@@ -1,6 +1,7 @@
 import {
   financePaymentAccount,
   inventory,
+  inventoryMovement,
   payment,
   purchase,
   purchaseItem,
@@ -597,4 +598,148 @@ export async function recordManualPurchasePayment(
   });
 
   return created;
+}
+
+export async function cancelManualPurchase(
+  tx: any,
+  scope: ManualPurchaseScope,
+  input: { purchaseId: number; reason?: string | null },
+) {
+  await tx.execute(sql`SELECT pg_advisory_xact_lock(${input.purchaseId})`);
+  const purchaseRecord = await tx.query.purchase.findFirst({
+    where: and(
+      eq(purchase.id, input.purchaseId),
+      eq(purchase.warehouseId, scope.ownerId),
+      eq(purchase.ownerType, scope.ownerType),
+    ),
+    with: { items: true },
+  });
+  if (!purchaseRecord) throw new Error("Manual purchase was not found");
+  if (purchaseRecord.status === "cancelled") return purchaseRecord;
+
+  const cancelledAt = new Date();
+  if (purchaseRecord.status === "received") {
+    const receiptMovements = await tx.query.inventoryMovement.findMany({
+      where: and(
+        eq(inventoryMovement.purchaseId, input.purchaseId),
+        eq(inventoryMovement.ownerId, scope.ownerId),
+        eq(inventoryMovement.reason, "purchase_receipt"),
+      ),
+    });
+    for (const movement of receiptMovements) {
+      const inventoryRow = await tx.query.inventory.findFirst({
+        where: and(
+          eq(inventory.ownerId, scope.ownerId),
+          eq(inventory.ownerType, scope.ownerType),
+          eq(inventory.variantId, movement.variantId),
+        ),
+      });
+      if (!inventoryRow) throw new Error("Received inventory no longer exists");
+      const quantityBefore = Number(inventoryRow.availableQty);
+      const quantity = Number(movement.quantity);
+      if (quantityBefore + 0.0001 < quantity) {
+        throw new Error(
+          "Purchase cannot be cancelled because some received stock was already used",
+        );
+      }
+      const quantityAfter = quantityBefore - quantity;
+      await tx
+        .update(inventory)
+        .set({ availableQty: quantityAfter.toFixed(4), updatedAt: cancelledAt })
+        .where(eq(inventory.id, inventoryRow.id));
+      await appendPurchaseInventoryMovement(tx, {
+        createdById: scope.actorId,
+        idempotencyKey: `manual-purchase:${input.purchaseId}:movement:${movement.id}:reversal`,
+        ownerId: scope.ownerId,
+        ownerType: scope.ownerType,
+        purchaseId: input.purchaseId,
+        purchaseItemId: movement.purchaseItemId,
+        quantity,
+        quantityAfter,
+        reason: "purchase_reversal",
+        reference: purchaseRecord.purchaseNumber,
+        reversesMovementId: movement.id,
+        totalCost: Number(movement.totalCost ?? 0),
+        unit: movement.unit,
+        unitCost: Number(movement.unitCost ?? 0),
+        variantId: movement.variantId,
+      });
+    }
+
+    const dueAmount = Number(purchaseRecord.dueAmount);
+    const paidAmount = Number(purchaseRecord.paidAmount);
+    if (dueAmount > 0) {
+      await postPurchaseJournal(tx, {
+        actorId: scope.actorId,
+        amount: dueAmount,
+        idempotencyKey: `manual-purchase:${input.purchaseId}:cancel-due`,
+        memo: `Unpaid purchase cancelled: ${purchaseRecord.purchaseNumber}`,
+        ownerId: scope.ownerId,
+        ownerType: scope.ownerType,
+        sourceId: String(input.purchaseId),
+        sourceType: "purchase_return",
+        transactionDate: localDateString(cancelledAt),
+        transactionType: "purchase_return_due",
+      });
+      await tx
+        .update(supplier)
+        .set({
+          currentPayable: sql`greatest(0, ${supplier.currentPayable}::numeric - ${dueAmount})`,
+          updatedAt: cancelledAt,
+        })
+        .where(eq(supplier.id, purchaseRecord.supplierId));
+    }
+    if (paidAmount > 0) {
+      await postPurchaseJournal(tx, {
+        actorId: scope.actorId,
+        amount: paidAmount,
+        idempotencyKey: `manual-purchase:${input.purchaseId}:cancel-paid`,
+        memo: `Paid purchase returned: ${purchaseRecord.purchaseNumber}`,
+        ownerId: scope.ownerId,
+        ownerType: scope.ownerType,
+        sourceId: String(input.purchaseId),
+        sourceType: "purchase_return",
+        transactionDate: localDateString(cancelledAt),
+        transactionType: "purchase_return_paid",
+      });
+    }
+    await appendManualPurchaseEvent(tx, {
+      actorId: scope.actorId,
+      amount: Number(purchaseRecord.total),
+      category: "inventory",
+      description: "Received inventory reversed after purchase cancellation",
+      eventType: "return_processed",
+      idempotencyKey: `manual-purchase:${input.purchaseId}:return`,
+      ownerId: scope.ownerId,
+      purchaseId: input.purchaseId,
+      reference: purchaseRecord.purchaseNumber,
+      toState: "reversed",
+    });
+  }
+
+  const [cancelled] = await tx
+    .update(purchase)
+    .set({
+      cancelledAt,
+      paymentStatus:
+        Number(purchaseRecord.paidAmount) > 0 ? "refund_pending" : "unpaid",
+      status: "cancelled",
+      updatedAt: cancelledAt,
+    })
+    .where(eq(purchase.id, input.purchaseId))
+    .returning();
+  await appendManualPurchaseEvent(tx, {
+    actorId: scope.actorId,
+    amount: Number(purchaseRecord.total),
+    category: "purchase",
+    description: input.reason || "Manual purchase cancelled",
+    eventType: "cancelled",
+    fromState: purchaseRecord.status,
+    idempotencyKey: `manual-purchase:${input.purchaseId}:cancelled`,
+    ownerId: scope.ownerId,
+    purchaseId: input.purchaseId,
+    reference: purchaseRecord.purchaseNumber,
+    toState: "cancelled",
+  });
+  return cancelled!;
 }
