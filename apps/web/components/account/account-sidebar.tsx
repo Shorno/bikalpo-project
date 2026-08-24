@@ -2,7 +2,9 @@
 
 import {
   AlertTriangle,
-  Check,
+  Building2,
+  CalendarCheck,
+  ChevronDown,
   FileQuestion,
   FileText,
   Headphones,
@@ -10,6 +12,8 @@ import {
   Lock,
   LogOut,
   MapPin,
+  Megaphone,
+  Menu,
   Package,
   ReceiptText,
   ShoppingCart,
@@ -18,8 +22,10 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useCartQuery } from "@/hooks/use-customer-api";
+import { useToLetPropertyNavigation } from "@/hooks/use-to-let-property-api";
 import { authClient } from "@/lib/auth-client";
 import { redirectToRootLogin } from "@/lib/auth-routing";
 import { cn } from "@/lib/utils";
@@ -68,6 +74,12 @@ const sidebarItems = [
     badgeKey: "requests",
   },
   {
+    label: "My Bookings",
+    href: "/account/to-let",
+    icon: CalendarCheck,
+    exact: true,
+  },
+  {
     label: "My Cart",
     href: "/checkout",
     icon: ShoppingCart,
@@ -95,7 +107,31 @@ const bottomItems = [
 
 export function AccountSidebar() {
   const pathname = usePathname();
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const { data: cartData } = useCartQuery();
+  const propertyNavigation = useToLetPropertyNavigation();
+
+  const toLetOwnerItems = propertyNavigation.isConsumer
+    ? [
+        {
+          label: propertyNavigation.label,
+          href: propertyNavigation.href,
+          icon: Building2,
+        },
+        ...(propertyNavigation.hasPropertyAccount
+          ? [
+              {
+                label: "My Posts",
+                href: "/account/to-let/posts",
+                icon: Megaphone,
+              },
+            ]
+          : []),
+      ]
+    : [];
+  const navigationItems = sidebarItems.flatMap((item) =>
+    item.href === "/account/to-let" ? [item, ...toLetOwnerItems] : [item],
+  );
 
   const counts = {
     cart: cartData?.totalItems || 0,
@@ -115,18 +151,47 @@ export function AccountSidebar() {
 
   return (
     <aside className="w-full lg:w-64 shrink-0 py-0">
-      <nav className="bg-white rounded-lg border border-gray-100 overflow-hidden">
+      <Button
+        type="button"
+        variant="outline"
+        className="mb-3 flex h-11 w-full items-center justify-between bg-white lg:hidden"
+        aria-expanded={mobileMenuOpen}
+        aria-controls="account-navigation"
+        onClick={() => setMobileMenuOpen((open) => !open)}
+      >
+        <span className="inline-flex items-center gap-2">
+          <Menu className="size-4" aria-hidden="true" />
+          Account menu
+        </span>
+        <ChevronDown
+          className={cn(
+            "size-4 transition-transform",
+            mobileMenuOpen && "rotate-180",
+          )}
+          aria-hidden="true"
+        />
+      </Button>
+
+      <nav
+        id="account-navigation"
+        className={cn(
+          "overflow-hidden rounded-lg border border-gray-100 bg-white",
+          mobileMenuOpen ? "block" : "hidden",
+          "lg:block",
+        )}
+      >
         <div className="flex flex-col divide-y divide-gray-100">
           {/* Dashboard/Top Items */}
-          {sidebarItems.map((item) => {
+          {navigationItems.map((item) => {
             const isActive =
               "exact" in item && item.exact
                 ? pathname === item.href
                 : pathname === item.href ||
                   pathname.startsWith(item.href + "/");
             const Icon = item.icon;
-            const badgeCount = item.badgeKey
-              ? counts[item.badgeKey as keyof typeof counts]
+            const badgeKey = "badgeKey" in item ? item.badgeKey : undefined;
+            const badgeCount = badgeKey
+              ? counts[badgeKey as keyof typeof counts]
               : 0;
 
             return (
@@ -141,7 +206,7 @@ export function AccountSidebar() {
                 )}
                 asChild
               >
-                <Link href={item.href}>
+                <Link href={item.href} onClick={() => setMobileMenuOpen(false)}>
                   <div className="flex items-center justify-between w-full">
                     <div className="flex items-center gap-3">
                       <Icon
@@ -157,16 +222,13 @@ export function AccountSidebar() {
                         <span
                           className={cn(
                             "flex items-center justify-center min-w-5 h-5 px-1 rounded-full text-[11px] font-bold",
-                            item.badgeKey === "requests"
+                            badgeKey === "requests"
                               ? "bg-emerald-600 text-white"
                               : "bg-emerald-50 text-emerald-600",
                           )}
                         >
                           {badgeCount}
                         </span>
-                      )}
-                      {isActive && (
-                        <Check className="h-4 w-4 text-emerald-500" />
                       )}
                     </div>
                   </div>
@@ -185,7 +247,7 @@ export function AccountSidebar() {
                 className="justify-start gap-3 h-12 rounded-none px-4 text-gray-600 hover:bg-gray-50 flex"
                 asChild
               >
-                <Link href={item.href}>
+                <Link href={item.href} onClick={() => setMobileMenuOpen(false)}>
                   <Icon className="h-5 w-5 text-[#7B8B9A]" />
                   <span className="text-[15px]">{item.label}</span>
                 </Link>

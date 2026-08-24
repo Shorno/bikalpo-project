@@ -1,5 +1,5 @@
 import { getReferenceProductsWithQuery } from "@/lib/public-data";
-import { ProductCard } from "./product-card";
+import { ConsumerProductCard } from "./consumer-product-card";
 
 interface RelatedProductsProps {
   categorySlug: string;
@@ -37,11 +37,10 @@ export async function RelatedProducts({
         </h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
           {relatedProducts.map((prod) => (
-            <ProductCard
+            <ConsumerProductCard
               key={prod.id}
               product={prod}
               previewMode={previewMode}
-              readOnly={previewMode}
             />
           ))}
         </div>

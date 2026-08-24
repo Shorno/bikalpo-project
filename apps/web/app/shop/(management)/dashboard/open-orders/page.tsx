@@ -142,7 +142,8 @@ export default function OpenOrdersPage() {
     const subtotal = offer.items.reduce(
       (sum: number, item: any) =>
         sum +
-        Number(item.currentStorePrice ?? item.retailerPrice) * item.quantity,
+        Number(item.currentEffectivePrice ?? item.retailerPrice) *
+          item.quantity,
       0,
     );
     const value = Math.max(0, Number(draft.discountValue) || 0);
@@ -263,6 +264,9 @@ export default function OpenOrdersPage() {
                   }
                 : totals;
               const submitted = offer.status === "submitted";
+              const hasInvalidExchangeConfiguration = offer.items.some(
+                (item: any) => item.selectionValid === false,
+              );
               return (
                 <Card
                   key={offer.bidId}
@@ -408,7 +412,28 @@ export default function OpenOrdersPage() {
                                   <span className="font-medium text-slate-600">
                                     Qty {item.quantity}
                                   </span>
+                                  <Badge
+                                    variant="outline"
+                                    className={
+                                      item.cylinderSaleMode === "exchange"
+                                        ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                                        : "border-slate-200 bg-slate-50 text-slate-600"
+                                    }
+                                  >
+                                    {item.cylinderSaleMode === "exchange"
+                                      ? "Exchange"
+                                      : "New"}
+                                  </Badge>
                                 </div>
+                                {item.cylinderSaleMode === "exchange" ? (
+                                  <p className="mt-1 text-[11px] text-emerald-700">
+                                    New {money.format(item.currentStorePrice)} −
+                                    credit{" "}
+                                    {money.format(
+                                      item.currentExchangeCreditAmount,
+                                    )}
+                                  </p>
+                                ) : null}
                               </div>
                               <div className="shrink-0 text-right">
                                 <p className="text-sm font-bold tabular-nums text-slate-950">
@@ -613,6 +638,14 @@ export default function OpenOrdersPage() {
                               <OfferBreakdown {...displayedTotals} />
                             </div>
 
+                            {hasInvalidExchangeConfiguration ? (
+                              <p className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
+                                Exchange is no longer enabled for one of the
+                                requested exact variants. Update the variant or
+                                withdraw this Offer.
+                              </p>
+                            ) : null}
+
                             <div className="mt-4 flex flex-col-reverse gap-2 sm:flex-row lg:flex-col-reverse xl:flex-row">
                               {submitted && (
                                 <Button
@@ -628,7 +661,10 @@ export default function OpenOrdersPage() {
                               )}
                               <Button
                                 className="h-11 flex-1 bg-emerald-600 font-semibold text-white hover:bg-emerald-700 focus-visible:ring-emerald-600"
-                                disabled={submit.isPending}
+                                disabled={
+                                  submit.isPending ||
+                                  hasInvalidExchangeConfiguration
+                                }
                                 onClick={() =>
                                   submit.mutate({
                                     bidId: offer.bidId,

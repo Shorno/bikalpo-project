@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { format } from "date-fns";
+import { addDays, format, parseISO } from "date-fns";
 import {
   ArrowLeft,
   BoxSelect,
@@ -147,6 +147,12 @@ function getOperationalUnitLabels(unit?: string | null) {
   );
 }
 
+function minimumExpiryDate(manufactureDate: string) {
+  return manufactureDate
+    ? format(addDays(parseISO(manufactureDate), 1), "yyyy-MM-dd")
+    : undefined;
+}
+
 function variantMatchesEntryType(
   variant: ProductResult["variants"][number],
   entryType: EntryType,
@@ -184,6 +190,8 @@ type TableRow = {
   brandName: string;
   variantId: number | null;
   batchNo: string;
+  manufactureDate: string;
+  expiryDate: string;
   cartonUnitSize: string;
   quantity: string;
   purchaseUnitPrice: string;
@@ -207,6 +215,8 @@ export default function AddStockPage() {
   const rowIdRef = useRef(0);
   const [tableRows, setTableRows] = useState<TableRow[]>([]);
   const [sharedBatchNo, setSharedBatchNo] = useState("");
+  const [sharedManufactureDate, setSharedManufactureDate] = useState("");
+  const [sharedExpiryDate, setSharedExpiryDate] = useState("");
 
   // === Product selection modal state ===
   const [showProductModal, setShowProductModal] = useState(false);
@@ -228,10 +238,6 @@ export default function AddStockPage() {
   const [newAreaName, setNewAreaName] = useState("");
   const [newAreaDescription, setNewAreaDescription] = useState("");
 
-  // Batch/Expiry
-  const [batchNo] = useState("");
-  const [expiryDate] = useState("");
-  const [manufactureDate] = useState("");
   const [note] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -364,12 +370,13 @@ export default function AddStockPage() {
     return units > 0 ? units : 0;
   }, []);
 
-  const hasBatchTrackedRows = useMemo(
-    () =>
-      entryType === "direct" &&
-      tableRows.some((row) => row.product.trackingType === "batch"),
-    [entryType, tableRows],
+  const hasBatchTrackedRows = tableRows.some(
+    (row) => row.product.trackingType === "batch",
   );
+  const hasExpiryTrackedRows = tableRows.some(
+    (row) => row.product.expiryEnabled,
+  );
+  const hasTrackingRows = hasBatchTrackedRows || hasExpiryTrackedRows;
 
   // Check if all rows are complete
   const allRowsComplete = useMemo(() => {
@@ -383,10 +390,13 @@ export default function AddStockPage() {
           : parseFloat(row.quantity) <= 0)
       )
         return false;
+      if (row.product.trackingType === "batch" && !row.batchNo?.trim())
+        return false;
+      if (row.product.expiryEnabled && !row.expiryDate) return false;
       if (
-        entryType === "direct" &&
-        row.product.trackingType === "batch" &&
-        !row.batchNo?.trim()
+        row.manufactureDate &&
+        row.expiryDate &&
+        row.expiryDate <= row.manufactureDate
       )
         return false;
       if (entryType === "direct" && !Number.isInteger(Number(row.quantity))) {
@@ -653,6 +663,10 @@ export default function AddStockPage() {
             : null,
         batchNo:
           selectedProduct.trackingType === "batch" ? sharedBatchNo.trim() : "",
+        manufactureDate: selectedProduct.expiryEnabled
+          ? sharedManufactureDate
+          : "",
+        expiryDate: selectedProduct.expiryEnabled ? sharedExpiryDate : "",
         cartonUnitSize: "",
         quantity: "",
         purchaseUnitPrice: "",
@@ -663,7 +677,7 @@ export default function AddStockPage() {
       toast.success(`Added ${selectedProduct.name} to the table`);
       return true;
     },
-    [entryType, sharedBatchNo],
+    [entryType, sharedBatchNo, sharedExpiryDate, sharedManufactureDate],
   );
 
   const updateRow = useCallback((rowId: number, updates: Partial<TableRow>) => {
@@ -679,20 +693,28 @@ export default function AddStockPage() {
   const clearRows = useCallback(() => {
     setTableRows([]);
     setSharedBatchNo("");
+    setSharedManufactureDate("");
+    setSharedExpiryDate("");
   }, []);
 
-  const applySharedBatchNo = useCallback(() => {
+  const applySharedTracking = useCallback(() => {
     const normalizedBatchNo = sharedBatchNo.trim();
-    if (!normalizedBatchNo) return;
     setTableRows((rows) =>
-      rows.map((row) =>
-        row.product.trackingType === "batch"
-          ? { ...row, batchNo: normalizedBatchNo }
-          : row,
-      ),
+      rows.map((row) => ({
+        ...row,
+        ...(row.product.trackingType === "batch" && normalizedBatchNo
+          ? { batchNo: normalizedBatchNo }
+          : {}),
+        ...(row.product.expiryEnabled && sharedManufactureDate
+          ? { manufactureDate: sharedManufactureDate }
+          : {}),
+        ...(row.product.expiryEnabled && sharedExpiryDate
+          ? { expiryDate: sharedExpiryDate }
+          : {}),
+      })),
     );
-    toast.success("Batch number applied to all batch-tracked items");
-  }, [sharedBatchNo]);
+    toast.success("Tracking details applied to eligible items");
+  }, [sharedBatchNo, sharedExpiryDate, sharedManufactureDate]);
 
   const handleSubmit = async () => {
     if (tableRows.length === 0) {
@@ -700,14 +722,30 @@ export default function AddStockPage() {
       return;
     }
     const missingBatch = tableRows.find(
-      (row) =>
-        entryType === "direct" &&
-        row.product.trackingType === "batch" &&
-        !row.batchNo?.trim(),
+      (row) => row.product.trackingType === "batch" && !row.batchNo?.trim(),
     );
     if (missingBatch) {
       toast.error(
         `Enter a batch / lot number for ${missingBatch.product.name}`,
+      );
+      return;
+    }
+    const missingExpiry = tableRows.find(
+      (row) => row.product.expiryEnabled && !row.expiryDate,
+    );
+    if (missingExpiry) {
+      toast.error(`Enter an expiry date for ${missingExpiry.product.name}`);
+      return;
+    }
+    const invalidDateRange = tableRows.find(
+      (row) =>
+        row.manufactureDate &&
+        row.expiryDate &&
+        row.expiryDate <= row.manufactureDate,
+    );
+    if (invalidDateRange) {
+      toast.error(
+        `Expiry date must be after manufacture date for ${invalidDateRange.product.name}`,
       );
       return;
     }
@@ -759,8 +797,8 @@ export default function AddStockPage() {
               row.product.trackingType === "batch"
                 ? row.batchNo?.trim()
                 : undefined,
-            expiryDate: expiryDate || undefined,
-            manufactureDate: manufactureDate || undefined,
+            expiryDate: row.expiryDate || undefined,
+            manufactureDate: row.manufactureDate || undefined,
           })),
         });
       } else {
@@ -793,9 +831,9 @@ export default function AddStockPage() {
                   : "per_unit",
             purchasePrice: String(price),
             reference: reference || undefined,
-            batchNo: batchNo || undefined,
-            expiryDate: expiryDate || undefined,
-            manufactureDate: manufactureDate || undefined,
+            batchNo: row.batchNo?.trim() || undefined,
+            expiryDate: row.expiryDate || undefined,
+            manufactureDate: row.manufactureDate || undefined,
             storageAreaId: storageAreaId || undefined,
             shelfRack: shelfRack || undefined,
             note: note || undefined,
@@ -1086,42 +1124,84 @@ export default function AddStockPage() {
                   Record incoming stock and its purchase cost. Selling prices
                   are not changed here.
                 </CardDescription>
-                {hasBatchTrackedRows && (
-                  <div className="flex flex-wrap items-end gap-2 border-t pt-3">
-                    <Field className="min-w-[220px] flex-1">
-                      <FieldLabel className="text-xs">
-                        Batch / Lot for all items
-                      </FieldLabel>
-                      <Input
-                        value={sharedBatchNo}
-                        onChange={(event) =>
-                          setSharedBatchNo(event.target.value)
+                {hasTrackingRows && (
+                  <div className="mt-1 rounded-xl border border-amber-200 bg-amber-50/60 p-3">
+                    <div className="mb-3 flex items-start gap-2">
+                      <CalendarIcon className="mt-0.5 h-4 w-4 text-amber-700" />
+                      <div>
+                        <p className="text-xs font-semibold text-amber-950">
+                          Apply shared tracking details
+                        </p>
+                        <p className="text-[11px] text-amber-800/80">
+                          Only eligible rows are updated. Every value remains
+                          editable in the table.
+                        </p>
+                      </div>
+                    </div>
+                    <div className="grid items-end gap-2 sm:grid-cols-2 xl:grid-cols-[1.2fr_1fr_1fr_auto]">
+                      {hasBatchTrackedRows && (
+                        <Field>
+                          <FieldLabel className="text-[11px]">
+                            Batch / Lot
+                          </FieldLabel>
+                          <Input
+                            value={sharedBatchNo}
+                            onChange={(event) =>
+                              setSharedBatchNo(event.target.value)
+                            }
+                            placeholder="e.g. LOT-2026-08-A"
+                            maxLength={100}
+                            className="h-8 bg-white font-mono text-xs"
+                          />
+                        </Field>
+                      )}
+                      {hasExpiryTrackedRows && (
+                        <>
+                          <Field>
+                            <FieldLabel className="text-[11px]">
+                              Manufacture date
+                            </FieldLabel>
+                            <Input
+                              type="date"
+                              value={sharedManufactureDate}
+                              max={format(new Date(), "yyyy-MM-dd")}
+                              onChange={(event) =>
+                                setSharedManufactureDate(event.target.value)
+                              }
+                              className="h-8 bg-white text-xs"
+                            />
+                          </Field>
+                          <Field>
+                            <FieldLabel className="text-[11px]">
+                              Expiry date
+                            </FieldLabel>
+                            <Input
+                              type="date"
+                              value={sharedExpiryDate}
+                              min={minimumExpiryDate(sharedManufactureDate)}
+                              onChange={(event) =>
+                                setSharedExpiryDate(event.target.value)
+                              }
+                              className="h-8 bg-white text-xs"
+                            />
+                          </Field>
+                        </>
+                      )}
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-8 bg-white"
+                        onClick={applySharedTracking}
+                        disabled={
+                          !sharedBatchNo.trim() &&
+                          !sharedManufactureDate &&
+                          !sharedExpiryDate
                         }
-                        onKeyDown={(event) => {
-                          if (event.key === "Enter") {
-                            event.preventDefault();
-                            applySharedBatchNo();
-                          }
-                        }}
-                        placeholder="e.g. LPG-2026-07-15-A"
-                        maxLength={100}
-                        className="h-8 font-mono text-xs"
-                      />
-                    </Field>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="h-8"
-                      onClick={applySharedBatchNo}
-                      disabled={!sharedBatchNo.trim()}
-                    >
-                      Apply to All
-                    </Button>
-                    <p className="w-full text-xs text-muted-foreground">
-                      Applies to batch-tracked rows. Individual values remain
-                      editable.
-                    </p>
+                      >
+                        Apply to eligible rows
+                      </Button>
+                    </div>
                   </div>
                 )}
               </CardHeader>
@@ -1141,9 +1221,9 @@ export default function AddStockPage() {
                             ? "Units / Carton"
                             : "Configured Variant"}
                         </th>
-                        {hasBatchTrackedRows && (
+                        {hasTrackingRows && (
                           <th className="text-left px-3 py-2.5 font-medium text-muted-foreground">
-                            Batch / Lot No. *
+                            Batch &amp; Expiry
                           </th>
                         )}
                         <th className="text-center px-3 py-2.5 font-medium text-muted-foreground">
@@ -1172,7 +1252,7 @@ export default function AddStockPage() {
                       {tableRows.length === 0 ? (
                         <tr>
                           <td
-                            colSpan={hasBatchTrackedRows ? 8 : 7}
+                            colSpan={hasTrackingRows ? 8 : 7}
                             className="text-center py-12 text-muted-foreground"
                           >
                             <div className="flex flex-col items-center gap-2">
@@ -1264,27 +1344,74 @@ export default function AddStockPage() {
                                   </Select>
                                 )}
                               </td>
-                              {hasBatchTrackedRows && (
-                                <td className="px-3 py-2.5">
-                                  {row.product.trackingType === "batch" ? (
-                                    <Input
-                                      value={row.batchNo ?? ""}
-                                      onChange={(event) =>
-                                        updateRow(row.id, {
-                                          batchNo: event.target.value,
-                                        })
-                                      }
-                                      placeholder="Required"
-                                      maxLength={100}
-                                      required
-                                      aria-label={`Batch or lot number for ${row.product.name}`}
-                                      className="h-8 w-[150px] font-mono text-xs"
-                                    />
-                                  ) : (
-                                    <span className="text-muted-foreground">
-                                      —
-                                    </span>
+                              {hasTrackingRows && (
+                                <td className="min-w-[220px] px-3 py-2.5 align-top">
+                                  {row.product.trackingType === "batch" && (
+                                    <div className="mb-2">
+                                      <span className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                                        Batch / Lot *
+                                      </span>
+                                      <Input
+                                        value={row.batchNo ?? ""}
+                                        onChange={(event) =>
+                                          updateRow(row.id, {
+                                            batchNo: event.target.value,
+                                          })
+                                        }
+                                        placeholder="Required"
+                                        maxLength={100}
+                                        required
+                                        aria-label={`Batch or lot number for ${row.product.name}`}
+                                        className="h-8 font-mono text-xs"
+                                      />
+                                    </div>
                                   )}
+                                  {row.product.expiryEnabled ? (
+                                    <div className="grid grid-cols-2 gap-2">
+                                      <label className="space-y-1">
+                                        <span className="block text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                                          Manufactured
+                                        </span>
+                                        <Input
+                                          type="date"
+                                          value={row.manufactureDate}
+                                          max={format(new Date(), "yyyy-MM-dd")}
+                                          onChange={(event) =>
+                                            updateRow(row.id, {
+                                              manufactureDate:
+                                                event.target.value,
+                                            })
+                                          }
+                                          aria-label={`Manufacture date for ${row.product.name}`}
+                                          className="h-8 px-2 text-[11px]"
+                                        />
+                                      </label>
+                                      <label className="space-y-1">
+                                        <span className="block text-[10px] font-semibold uppercase tracking-wide text-red-600">
+                                          Expires *
+                                        </span>
+                                        <Input
+                                          type="date"
+                                          value={row.expiryDate}
+                                          min={minimumExpiryDate(
+                                            row.manufactureDate,
+                                          )}
+                                          onChange={(event) =>
+                                            updateRow(row.id, {
+                                              expiryDate: event.target.value,
+                                            })
+                                          }
+                                          required
+                                          aria-label={`Expiry date for ${row.product.name}`}
+                                          className="h-8 border-red-200 px-2 text-[11px] focus-visible:ring-red-200"
+                                        />
+                                      </label>
+                                    </div>
+                                  ) : row.product.trackingType !== "batch" ? (
+                                    <span className="text-xs text-muted-foreground">
+                                      Not tracked
+                                    </span>
+                                  ) : null}
                                 </td>
                               )}
                               <td className="px-3 py-2.5 text-center">

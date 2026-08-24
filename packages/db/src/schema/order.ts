@@ -231,6 +231,8 @@ export const order = pgTable(
         deliveredAt: timestamp("delivered_at"),
         /** When the shop owner confirmed receipt */
         receivedAt: timestamp("received_at"),
+        /** Filled warehouse stock reservation was permanently consumed. */
+        sellerStockConsumedAt: timestamp("seller_stock_consumed_at"),
         cancelledAt: timestamp("cancelled_at"),
         adminModifiedAt: timestamp("admin_modified_at"),
         /** When the warehouse/wholesaler modified the order */

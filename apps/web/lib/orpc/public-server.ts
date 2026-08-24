@@ -14,10 +14,16 @@ export function getPublicOrpcClient(revalidate: number): AppRouterClient {
       };
 
       try {
+        const cacheOptions =
+          revalidate === 0
+            ? ({ cache: "no-store" } as const)
+            : ({
+                cache: "force-cache",
+                next: { revalidate },
+              } as const);
         const response = await fetch(request, {
           ...init,
-          cache: "force-cache",
-          next: { revalidate },
+          ...cacheOptions,
         });
         if (!response.ok) {
           const errText = await response.clone().text();

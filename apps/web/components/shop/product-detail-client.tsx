@@ -12,12 +12,15 @@ import { notFound } from "next/navigation";
 import { useEffect, useState } from "react";
 import { ConsumerProductCard } from "@/components/features/products/consumer-product-card";
 import { ProductDetailClient as VariantDetailClient } from "@/components/features/products/trade-product-detail-client";
+import { ReviewCard } from "@/components/features/reviews/review-card";
+import { ReviewFormWrapper } from "@/components/features/reviews/review-form-wrapper";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useProductReviews } from "@/hooks/use-customer-api";
 import {
   useRoleAwareProductDetails,
   useRoleAwareProducts,
 } from "@/hooks/use-role-aware-products";
+import { authClient } from "@/lib/auth-client";
 
 interface ShopProductDetailProps {
   slug: string;
@@ -346,6 +349,7 @@ function ShopImageGallery({
 
 function ShopProductReviews({ productId }: { productId: number }) {
   const { data, isLoading } = useProductReviews(productId);
+  const { data: session } = authClient.useSession();
 
   if (isLoading) {
     return (
@@ -365,10 +369,8 @@ function ShopProductReviews({ productId }: { productId: number }) {
   }
 
   const reviews = data?.reviews ?? [];
-  type ProductReviewItem = (typeof reviews)[number];
   const stats = data?.stats;
-
-  if (reviews.length === 0) return null;
+  const userId = session?.user?.id;
 
   return (
     <div className="bg-white rounded-lg shadow-sm p-6 lg:p-8 mt-6">
@@ -397,41 +399,30 @@ function ShopProductReviews({ productId }: { productId: number }) {
         )}
       </div>
 
-      <div className="space-y-4 divide-y">
-        {reviews.map((review: ProductReviewItem) => (
-          <div key={review.id} className="pt-4 first:pt-0">
-            <div className="flex items-start gap-3">
-              <div className="w-8 h-8 bg-emerald-100 rounded-full flex items-center justify-center text-emerald-700 font-medium text-sm shrink-0">
-                {review.user?.name?.charAt(0)?.toUpperCase() || "?"}
-              </div>
-              <div className="flex-1">
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="font-medium text-sm text-gray-900">
-                    {review.user?.name || "Anonymous"}
-                  </span>
-                  <div className="flex items-center gap-0.5">
-                    {Array.from({ length: 5 }).map((_, i) => (
-                      <Star
-                        key={i}
-                        className={`w-3 h-3 ${
-                          i < review.rating
-                            ? "fill-yellow-400 text-yellow-400"
-                            : "text-gray-300"
-                        }`}
-                      />
-                    ))}
-                  </div>
-                </div>
-                {review.title && (
-                  <p className="text-sm font-medium text-gray-800 mb-1">
-                    {review.title}
-                  </p>
-                )}
-                <p className="text-sm text-gray-600">{review.comment}</p>
-              </div>
-            </div>
-          </div>
-        ))}
+      {userId ? (
+        <div className="mb-8">
+          <ReviewFormWrapper productId={productId} variant="emerald" />
+        </div>
+      ) : (
+        <div className="mb-8 rounded-lg bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+          Please log in to leave a review.
+        </div>
+      )}
+
+      <div className="space-y-6">
+        {reviews.length === 0 ? (
+          <p className="py-6 text-center text-sm text-gray-500">
+            No reviews yet. Be the first to review this product.
+          </p>
+        ) : (
+          reviews.map((review) => (
+            <ReviewCard
+              key={review.id}
+              review={review}
+              canEdit={review.userId === userId}
+            />
+          ))
+        )}
       </div>
     </div>
   );

@@ -234,6 +234,7 @@ export function usePlaceWarehouseOrder() {
         fulfillmentMode?: FulfillmentMode;
         supplyMode?: FulfillmentMode;
         targetVariantId?: number | null;
+        cylinderSaleMode?: "new" | "exchange";
       }>;
       shippingName: string;
       shippingPhone: string;
@@ -627,6 +628,17 @@ export function useUpdateShopLocation() {
     ...orpc.shopOwner.updateShopLocation.mutationOptions(),
     onSuccess: () => {
       toast.success("Shop location updated!");
+    },
+    onError: (err) => toast.error(err.message),
+  });
+}
+
+/** Update shop branding and operating hours */
+export function useUpdateShopProfile() {
+  return useMutation({
+    ...orpc.shopOwner.updateShopProfile.mutationOptions(),
+    onSuccess: () => {
+      toast.success("Shop profile updated!");
     },
     onError: (err) => toast.error(err.message),
   });

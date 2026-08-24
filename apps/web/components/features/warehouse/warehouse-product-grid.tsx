@@ -1,20 +1,18 @@
 "use client";
 
-import { Package, ShoppingCart, X } from "lucide-react";
-import Image from "next/image";
+import { Package } from "lucide-react";
 import { useState } from "react";
-import { createPortal } from "react-dom";
 import { Button } from "@/components/ui/button";
 import { WarehouseOrderDialog } from "./warehouse-order-dialog";
 import {
-  shortVariantLabel,
+  type WarehouseCylinderSaleMode,
   type WarehouseProduct,
   WarehouseProductCard,
   WarehouseProductCardSkeleton,
   type WarehouseProductVariantOption,
 } from "./warehouse-product-card";
 
-/** Map API storefront product to the card-compatible shape */
+/** Map API storefront product to the card-compatible shape. */
 function mapApiProduct(item: any): WarehouseProduct {
   const variantRows =
     Array.isArray(item.variants) && item.variants.length > 0
@@ -59,6 +57,7 @@ function mapApiProduct(item: any): WarehouseProduct {
         packType: rowVariant?.packType || rowUnit,
         fulfillmentMode: row.fulfillmentMode,
         targetVariantId: row.targetVariantId,
+        canExchange: Boolean(row.canExchange),
       };
     },
   );
@@ -72,6 +71,8 @@ function mapApiProduct(item: any): WarehouseProduct {
   return {
     id: item.inventoryId || variant?.id || 0,
     name: product?.name || "Unknown Product",
+    slug: product?.slug || item.productSlug || null,
+    categorySlug: product?.category?.slug || null,
     brand: brand?.name || "",
     sku: selectedVariant?.sku,
     image,
@@ -90,229 +91,23 @@ function mapApiProduct(item: any): WarehouseProduct {
     stockStatus,
     variants,
     selectedVariant,
+    canExchange: variants.some((row) => row.canExchange),
   };
 }
 
-function getStockLabel(status: "high" | "medium" | "low") {
-  switch (status) {
-    case "high":
-      return {
-        text: "In Stock",
-        color: "text-emerald-700 bg-emerald-50 border-emerald-200",
-        dot: "bg-emerald-500",
-      };
-    case "medium":
-      return {
-        text: "Limited Stock",
-        color: "text-amber-700 bg-amber-50 border-amber-200",
-        dot: "bg-amber-500",
-      };
-    case "low":
-      return {
-        text: "Low Stock",
-        color: "text-red-700 bg-red-50 border-red-200",
-        dot: "bg-red-500",
-      };
-  }
-}
-
-function ProductDetailModal({
-  product,
-  onClose,
-  mode = "default",
-  onAddToCart,
-}: {
-  product: WarehouseProduct;
-  onClose: () => void;
-  mode?: "default" | "retailer" | "w2w" | "view-only";
-  onAddToCart?: (product: WarehouseProduct) => void;
-}) {
-  const [imageError, setImageError] = useState(false);
-  const [selectedVariantId, setSelectedVariantId] = useState(
-    product.selectedVariant?.variantId ?? product.variants[0]?.variantId,
-  );
-  const selectedVariant =
-    product.variants.find((v) => v.variantId === selectedVariantId) ??
-    product.selectedVariant ??
-    product.variants[0];
-  const displayProduct: WarehouseProduct = selectedVariant
-    ? {
-        ...product,
-        id: selectedVariant.inventoryId,
-        sku: selectedVariant.sku,
-        pricePerUnit: selectedVariant.pricePerUnit,
-        unit: selectedVariant.unit,
-        moq: selectedVariant.moq,
-        moqUnit: selectedVariant.unit,
-        availableQty: selectedVariant.availableQty,
-        availableUnit: `${selectedVariant.unit} Available`,
-        selectedVariant,
-      }
-    : product;
-  const stock = getStockLabel(product.stockStatus);
-
-  return createPortal(
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-in fade-in duration-200"
-      onClick={onClose}
-    >
-      <div className="absolute inset-0 bg-zinc-900/40 backdrop-blur-sm" />
-      <div
-        className="relative bg-white rounded-2xl shadow-xl max-w-xl w-full max-h-[90vh] overflow-y-auto border border-zinc-200 animate-in zoom-in-95 duration-200"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <button
-          onClick={onClose}
-          className="absolute top-3.5 right-3.5 z-10 flex h-8 w-8 items-center justify-center rounded-full bg-white/95 hover:bg-zinc-100 border border-zinc-200 transition-colors"
-        >
-          <X className="w-4 h-4 text-zinc-500" />
-        </button>
-        <div className="relative aspect-[16/9] bg-zinc-50 border-b border-zinc-100 overflow-hidden">
-          {!imageError && product.image ? (
-            <Image
-              src={product.image}
-              alt={product.name}
-              fill
-              className="object-cover"
-              onError={() => setImageError(true)}
-              unoptimized={product.image.startsWith("http")}
-            />
-          ) : (
-            <div className="w-full h-full flex items-center justify-center bg-zinc-50">
-              <Package className="w-16 h-16 text-zinc-300" />
-            </div>
-          )}
-        </div>
-        <div className="p-6">
-          <div className="mb-5">
-            <div className="flex items-center gap-2 mb-1.5 text-xs font-medium text-zinc-500">
-              {product.brand && <span>{product.brand}</span>}
-              {product.brand && displayProduct.sku && (
-                <span className="text-zinc-300">·</span>
-              )}
-              {displayProduct.sku && (
-                <span className="text-zinc-400">SKU {displayProduct.sku}</span>
-              )}
-            </div>
-            <h2 className="text-xl font-semibold tracking-tight text-zinc-900 leading-snug">
-              {product.name}
-            </h2>
-          </div>
-          <div className="flex items-center justify-between mb-6">
-            <div className="flex items-baseline gap-1.5">
-              <span className="text-2xl font-semibold text-zinc-900 tabular-nums">
-                ৳ {displayProduct.pricePerUnit}
-              </span>
-              <span className="text-sm text-zinc-500">
-                / {displayProduct.unit}
-              </span>
-            </div>
-            <span
-              className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium ${stock.color}`}
-            >
-              <span className={`w-1.5 h-1.5 rounded-full ${stock.dot}`} />
-              {stock.text}
-            </span>
-          </div>
-
-          {/* Variant selection */}
-          {product.variants.length > 1 && (
-            <div className="mb-6">
-              <span className="block mb-2 text-xs font-medium text-zinc-500">
-                Select type
-              </span>
-              <div className="flex flex-wrap gap-2">
-                {product.variants.map((variant) => {
-                  const active =
-                    variant.variantId === selectedVariant?.variantId;
-                  return (
-                    <button
-                      key={variant.variantId}
-                      type="button"
-                      onClick={() => setSelectedVariantId(variant.variantId)}
-                      className={`h-9 px-3.5 inline-flex items-center rounded-lg border text-sm font-medium transition-colors ${
-                        active
-                          ? "bg-zinc-900 text-white border-zinc-900"
-                          : "border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-50"
-                      }`}
-                    >
-                      {shortVariantLabel(variant.label, product.name)}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {/* Order specifications */}
-          <dl className="grid grid-cols-2 gap-px bg-zinc-200 border border-zinc-200 rounded-xl overflow-hidden mb-6">
-            <div className="bg-white p-4">
-              <dt className="text-xs font-medium text-zinc-500 mb-1">
-                Minimum Order Qty
-              </dt>
-              <dd className="text-sm font-medium text-zinc-900 tabular-nums">
-                {displayProduct.moq} {displayProduct.moqUnit}
-              </dd>
-            </div>
-            <div className="bg-white p-4">
-              <dt className="text-xs font-medium text-zinc-500 mb-1">
-                Available Qty
-              </dt>
-              <dd className="text-sm font-medium text-zinc-900 tabular-nums">
-                {displayProduct.availableQty} {displayProduct.unit}
-              </dd>
-            </div>
-          </dl>
-
-          <div className="flex gap-3">
-            {mode === "view-only" ? (
-              <Button
-                variant="outline"
-                className="flex-1 h-11 border-zinc-200 text-zinc-400 font-medium gap-2 rounded-lg cursor-not-allowed shadow-none"
-                disabled
-              >
-                Access Required
-              </Button>
-            ) : mode === "w2w" || mode === "retailer" ? (
-              <Button
-                className={`flex-1 h-11 text-white font-medium gap-2 rounded-lg transition-colors shadow-none ${
-                  mode === "retailer"
-                    ? "bg-blue-600 hover:bg-blue-700"
-                    : "bg-emerald-600 hover:bg-emerald-700"
-                }`}
-                onClick={() => {
-                  onAddToCart?.(displayProduct);
-                  onClose();
-                }}
-              >
-                <ShoppingCart className="w-4 h-4" />
-                Add to Cart
-              </Button>
-            ) : (
-              <Button className="flex-1 h-11 bg-zinc-900 hover:bg-zinc-800 text-white font-medium gap-2 rounded-lg transition-colors shadow-none">
-                <ShoppingCart className="w-4 h-4" />
-                Add to Cart
-              </Button>
-            )}
-            <Button
-              variant="outline"
-              className="h-11 px-6 border-zinc-200 text-zinc-600 hover:bg-zinc-50 font-medium rounded-lg transition-colors"
-              onClick={onClose}
-            >
-              Close
-            </Button>
-          </div>
-        </div>
-      </div>
-    </div>,
-    document.body,
-  );
+function buildProductDetailHref(
+  detailBasePath: string,
+  productSlug?: string | null,
+) {
+  if (!detailBasePath || !productSlug) return undefined;
+  return `${detailBasePath.replace(/\/$/, "")}/${encodeURIComponent(productSlug)}`;
 }
 
 interface WarehouseProductGridProps {
   products?: any[];
   isLoading?: boolean;
   warehouseSlug?: string;
+  detailBasePath?: string;
   pagination?: {
     page: number;
     limit: number;
@@ -322,14 +117,19 @@ interface WarehouseProductGridProps {
   onPageChange?: (page: number) => void;
   mode?: "default" | "retailer" | "w2w" | "view-only";
   cart?: any[];
-  onAddToCart?: (product: any) => void;
-  onUpdateQuantity?: (variantId: number, delta: number) => void;
+  onAddToCart?: (product: WarehouseProduct) => void;
+  onUpdateQuantity?: (
+    variantId: number,
+    delta: number,
+    cylinderSaleMode?: WarehouseCylinderSaleMode,
+  ) => void;
 }
 
 export function WarehouseProductGrid({
   products: rawProducts = [],
   isLoading = false,
   warehouseSlug = "",
+  detailBasePath = warehouseSlug ? `/w/${warehouseSlug}/products` : "",
   pagination,
   onPageChange,
   mode = "default",
@@ -337,18 +137,16 @@ export function WarehouseProductGrid({
   onAddToCart,
   onUpdateQuantity,
 }: WarehouseProductGridProps) {
-  const [selectedProduct, setSelectedProduct] =
-    useState<WarehouseProduct | null>(null);
   const [orderProduct, setOrderProduct] = useState<any>(null);
   const [orderOpen, setOrderOpen] = useState(false);
 
-  // Map API data to card shape
   const products: WarehouseProduct[] = rawProducts.map(mapApiProduct);
 
   const handleBuyNow = (cardProduct: WarehouseProduct) => {
     const selectedVariant =
       cardProduct.selectedVariant || cardProduct.variants[0];
     if (!selectedVariant) return;
+
     setOrderProduct({
       inventoryId: selectedVariant.inventoryId,
       variantId: selectedVariant.variantId,
@@ -360,6 +158,9 @@ export function WarehouseProductGrid({
       weightKg: selectedVariant.weightKg || 0,
       innerPackSizeKg: selectedVariant.innerPackSizeKg || 0,
       packType: selectedVariant.packType || selectedVariant.unit,
+      canExchange:
+        mode === "retailer" &&
+        Boolean(selectedVariant.canExchange || cardProduct.canExchange),
     });
     setOrderOpen(true);
   };
@@ -367,9 +168,9 @@ export function WarehouseProductGrid({
   if (isLoading) {
     return (
       <section className="container mx-auto px-4 py-6">
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
-          {Array.from({ length: 10 }).map((_, i) => (
-            <WarehouseProductCardSkeleton key={i} />
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4">
+          {Array.from({ length: 8 }).map((_, index) => (
+            <WarehouseProductCardSkeleton key={index} />
           ))}
         </div>
       </section>
@@ -380,7 +181,7 @@ export function WarehouseProductGrid({
     return (
       <section className="container mx-auto px-4 py-12">
         <div className="text-center">
-          <Package className="w-16 h-16 text-gray-300 mx-auto mb-3" />
+          <Package className="mx-auto mb-3 h-16 w-16 text-gray-300" />
           <p className="text-lg font-medium text-gray-600">
             No products available
           </p>
@@ -395,18 +196,18 @@ export function WarehouseProductGrid({
   return (
     <>
       <section className="container mx-auto px-4 py-6">
-        <div className="flex items-center justify-between mb-4">
+        <div className="mb-4 flex items-center justify-between">
           <h2 className="text-lg font-bold text-gray-900">Products</h2>
           <span className="text-sm text-gray-500">
             {products.length} items available
           </span>
         </div>
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4">
           {products.map((product) => (
             <WarehouseProductCard
               key={product.id}
               product={product}
-              onViewDetails={setSelectedProduct}
+              detailHref={buildProductDetailHref(detailBasePath, product.slug)}
               onBuyNow={handleBuyNow}
               mode={mode}
               cart={cart}
@@ -416,10 +217,9 @@ export function WarehouseProductGrid({
           ))}
         </div>
 
-        {/* Pagination controls */}
         {pagination && pagination.totalPages > 1 && (
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mt-10 border-t border-zinc-200 pt-6">
-            <p className="text-xs font-medium text-zinc-400 font-mono">
+          <div className="mt-10 flex flex-col items-center justify-between gap-4 border-t border-zinc-200 pt-6 sm:flex-row">
+            <p className="font-mono text-xs font-medium text-zinc-400">
               Showing page {pagination.page} of {pagination.totalPages} (
               {pagination.totalCount} products)
             </p>
@@ -429,7 +229,7 @@ export function WarehouseProductGrid({
                 size="sm"
                 disabled={pagination.page <= 1}
                 onClick={() => onPageChange?.(Math.max(1, pagination.page - 1))}
-                className="h-8 px-3 text-xs font-semibold border-zinc-200 text-zinc-600 font-mono rounded bg-white hover:bg-zinc-50"
+                className="h-8 rounded border-zinc-200 bg-white px-3 font-mono text-xs font-semibold text-zinc-600 hover:bg-zinc-50"
               >
                 Previous
               </Button>
@@ -442,7 +242,7 @@ export function WarehouseProductGrid({
                     Math.min(pagination.totalPages, pagination.page + 1),
                   )
                 }
-                className="h-8 px-3 text-xs font-semibold border-zinc-200 text-zinc-600 font-mono rounded bg-white hover:bg-zinc-50"
+                className="h-8 rounded border-zinc-200 bg-white px-3 font-mono text-xs font-semibold text-zinc-600 hover:bg-zinc-50"
               >
                 Next
               </Button>
@@ -450,15 +250,6 @@ export function WarehouseProductGrid({
           </div>
         )}
       </section>
-
-      {selectedProduct && (
-        <ProductDetailModal
-          product={selectedProduct}
-          onClose={() => setSelectedProduct(null)}
-          mode={mode}
-          onAddToCart={onAddToCart}
-        />
-      )}
 
       <WarehouseOrderDialog
         product={orderProduct}

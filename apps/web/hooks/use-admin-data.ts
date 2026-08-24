@@ -5,7 +5,7 @@ export function useAdminProducts() {
   return useQuery({
     queryKey: ["admin-products"],
     queryFn: async () => {
-      const { products } = await client.product.getAll();
+      const { products } = await client.product.getAdminWebViewProducts();
       return products;
     },
     staleTime: 1000 * 60 * 5,

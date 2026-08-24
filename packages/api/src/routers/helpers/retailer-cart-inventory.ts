@@ -1,3 +1,4 @@
+import { isWarehouseCylinderExchangeAvailable } from "@bikalpo-project/db/fulfillment";
 import { isSellableRetailerInventory } from "./retailer-inventory-sellability";
 
 export interface RetailerCartInventorySnapshot {
@@ -15,6 +16,33 @@ export interface RetailerCartInventorySnapshot {
   orderIncrement: string | null;
   exchangeEnabled: boolean;
   exchangeCreditAmount: string;
+  isReturnablePack: boolean;
+  typeFamily: string | null;
+  typeName: string | null;
+  typeSlug: string | null;
+}
+
+export function retailerCylinderExchangeAvailable(
+  snapshot:
+    | Pick<
+        RetailerCartInventorySnapshot,
+        | "isReturnablePack"
+        | "typeFamily"
+        | "typeName"
+        | "typeSlug"
+        | "exchangeEnabled"
+      >
+    | null
+    | undefined,
+) {
+  if (!snapshot) return false;
+  return isWarehouseCylinderExchangeAvailable({
+    isReturnablePack: snapshot.isReturnablePack,
+    family: snapshot.typeFamily,
+    name: snapshot.typeName,
+    slug: snapshot.typeSlug,
+    exchangeEnabled: snapshot.exchangeEnabled,
+  });
 }
 
 export type RetailerCartDecision =

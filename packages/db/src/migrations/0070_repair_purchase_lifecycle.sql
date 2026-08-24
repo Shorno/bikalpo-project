@@ -1,5 +1,5 @@
--- Migration 0050 was merged with a timestamp older than migrations already
--- applied in some environments. Re-apply its idempotent DDL at the head.
+-- Re-apply the purchase lifecycle DDL idempotently for environments that
+-- received an earlier version of the feature migration sequence.
 DO $$ BEGIN
   CREATE TYPE "inventory_movement_direction" AS ENUM ('in', 'out');
 EXCEPTION WHEN duplicate_object THEN NULL;

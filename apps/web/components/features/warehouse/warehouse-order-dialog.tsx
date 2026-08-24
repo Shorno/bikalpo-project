@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { client } from "@/utils/orpc";
+import { CylinderSaleModeToggle } from "./cylinder-sale-mode-toggle";
 
 interface OrderProduct {
   inventoryId: number;
@@ -34,6 +35,7 @@ interface OrderProduct {
   weightKg?: number;
   innerPackSizeKg?: number;
   packType?: string;
+  canExchange?: boolean;
 }
 
 interface WarehouseOrderDialogProps {
@@ -79,6 +81,9 @@ export function WarehouseOrderDialog({
 }: WarehouseOrderDialogProps) {
   const [quantity, setQuantity] = useState(1);
   const [step, setStep] = useState<"quantity" | "shipping" | "success">("quantity");
+  const [cylinderSaleMode, setCylinderSaleMode] = useState<"new" | "exchange">(
+    "new",
+  );
 
   // Shipping form
   const [shippingName, setShippingName] = useState("");
@@ -131,6 +136,7 @@ export function WarehouseOrderDialog({
         quantity,
         supplyMode: isLoose ? "loose" as const : "pack" as const,
         targetVariantId: isLoose ? undefined : product.variantId,
+        cylinderSaleMode: product.canExchange ? cylinderSaleMode : "new",
       }],
       shippingName,
       shippingPhone,
@@ -144,6 +150,7 @@ export function WarehouseOrderDialog({
   const handleClose = () => {
     setStep("quantity");
     setQuantity(moq);
+    setCylinderSaleMode("new");
     onOpenChange(false);
   };
 
@@ -303,6 +310,13 @@ export function WarehouseOrderDialog({
               </div>
 
               {/* Quantity selector */}
+              {product.canExchange && (
+                <CylinderSaleModeToggle
+                  value={cylinderSaleMode}
+                  onChange={setCylinderSaleMode}
+                />
+              )}
+
               <div>
                 <label className="text-xs font-medium text-gray-700 mb-2 block">
                   Quantity ({product.unit})

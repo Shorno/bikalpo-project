@@ -174,6 +174,20 @@ export const openOrderBidItem = pgTable(
 
         /** Seller's offered price */
         sellerPrice: decimal("seller_price", { precision: 10, scale: 2 }),
+
+        /** Retailer's listed New price snapshotted with the offer line. */
+        sellerNewPrice: decimal("seller_new_price", {
+            precision: 10,
+            scale: 2,
+        }),
+
+        /** Retailer's configured Exchange Credit snapshotted with the offer. */
+        exchangeCreditAmount: decimal("exchange_credit_amount", {
+            precision: 10,
+            scale: 2,
+        })
+            .default("0")
+            .notNull(),
     },
     (table) => [
         index("openOrderBidItem_bid_idx").on(table.bidId),

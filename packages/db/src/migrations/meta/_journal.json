@@ -328,63 +328,175 @@
       "idx": 47,
       "version": "7",
       "when": 1786600000000,
-      "tag": "0047_checkout_quote_and_payments",
+      "tag": "0047_empty_pack_stock_ledger",
       "breakpoints": true
     },
     {
       "idx": 48,
       "version": "7",
       "when": 1786700000000,
-      "tag": "0048_checkout_seller_settings",
+      "tag": "0048_warehouse_damage_management",
       "breakpoints": true
     },
     {
       "idx": 49,
       "version": "7",
       "when": 1786800000000,
-      "tag": "0049_invoice_checkout_snapshots",
+      "tag": "0049_warehouse_damage_audit",
       "breakpoints": true
     },
     {
       "idx": 50,
       "version": "7",
-      "when": 1787377662895,
-      "tag": "0050_purchase_lifecycle",
+      "when": 1786900000000,
+      "tag": "0050_retain_warehouse_damage_audit",
       "breakpoints": true
     },
     {
       "idx": 51,
       "version": "7",
-      "when": 1787385600000,
-      "tag": "0051_purchase_account_balance_backfill",
+      "when": 1787000000000,
+      "tag": "0051_warehouse_damage_drafts",
       "breakpoints": true
     },
     {
       "idx": 52,
       "version": "7",
-      "when": 1787392800001,
-      "tag": "0052_repair_checkout_setting",
+      "when": 1787100000000,
+      "tag": "0052_warehouse_damage_item_timestamps",
       "breakpoints": true
     },
     {
       "idx": 53,
       "version": "7",
-      "when": 1787400000000,
-      "tag": "0053_allow_unselected_order_payment_method",
+      "when": 1787200000000,
+      "tag": "0053_open_order_exchange_offer_snapshots",
       "breakpoints": true
     },
     {
       "idx": 54,
       "version": "7",
-      "when": 1787403600000,
-      "tag": "0054_repair_purchase_lifecycle",
+      "when": 1787300000000,
+      "tag": "0054_product_review_multiple_entries",
       "breakpoints": true
     },
     {
       "idx": 55,
       "version": "7",
+      "when": 1787392800000,
+      "tag": "0055_retailer_offer_management",
+      "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "7",
+      "when": 1787400000000,
+      "tag": "0056_tolet_property_foundation",
+      "breakpoints": true
+    },
+    {
+      "idx": 57,
+      "version": "7",
+      "when": 1787500000000,
+      "tag": "0057_tolet_unit_listing",
+      "breakpoints": true
+    },
+    {
+      "idx": 58,
+      "version": "7",
+      "when": 1787600000000,
+      "tag": "0058_tolet_booking_request",
+      "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "7",
+      "when": 1787700000000,
+      "tag": "0059_tolet_rental_lifecycle",
+      "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "7",
+      "when": 1787800000000,
+      "tag": "0060_shop_profile_branding_hours",
+      "breakpoints": true
+    },
+    {
+      "idx": 61,
+      "version": "7",
+      "when": 1787900000000,
+      "tag": "0061_consumer_shop_followers",
+      "breakpoints": true
+    },
+    {
+      "idx": 62,
+      "version": "7",
+      "when": 1788000000000,
+      "tag": "0062_repair_phone_auth_identities",
+      "breakpoints": true
+    },
+    {
+      "idx": 63,
+      "version": "7",
       "when": 1788100000000,
-      "tag": "0055_manual_purchase_transaction",
+      "tag": "0063_checkout_quote_and_payments",
+      "breakpoints": true
+    },
+    {
+      "idx": 64,
+      "version": "7",
+      "when": 1788200000000,
+      "tag": "0064_checkout_seller_settings",
+      "breakpoints": true
+    },
+    {
+      "idx": 65,
+      "version": "7",
+      "when": 1788300000000,
+      "tag": "0065_invoice_checkout_snapshots",
+      "breakpoints": true
+    },
+    {
+      "idx": 66,
+      "version": "7",
+      "when": 1788400000000,
+      "tag": "0066_purchase_lifecycle",
+      "breakpoints": true
+    },
+    {
+      "idx": 67,
+      "version": "7",
+      "when": 1788500000000,
+      "tag": "0067_purchase_account_balance_backfill",
+      "breakpoints": true
+    },
+    {
+      "idx": 68,
+      "version": "7",
+      "when": 1788600000000,
+      "tag": "0068_repair_checkout_setting",
+      "breakpoints": true
+    },
+    {
+      "idx": 69,
+      "version": "7",
+      "when": 1788700000000,
+      "tag": "0069_allow_unselected_order_payment_method",
+      "breakpoints": true
+    },
+    {
+      "idx": 70,
+      "version": "7",
+      "when": 1788800000000,
+      "tag": "0070_repair_purchase_lifecycle",
+      "breakpoints": true
+    },
+    {
+      "idx": 71,
+      "version": "7",
+      "when": 1788900000000,
+      "tag": "0071_manual_purchase_transaction",
       "breakpoints": true
     }
   ]

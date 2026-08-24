@@ -158,6 +158,15 @@ function OfferPriceBreakdown({
                   <p className="mt-0.5 text-xs text-slate-500">
                     {item?.productSize} · Qty {item?.quantity ?? 0}
                   </p>
+                  {item?.cylinderSaleMode ? (
+                    <p className="mt-1 text-[11px] font-semibold capitalize text-emerald-700">
+                      {item.cylinderSaleMode}
+                      {item.cylinderSaleMode === "exchange" &&
+                      line.exchangeCreditAmount > 0
+                        ? ` · ${money.format(line.exchangeCreditAmount)} credit each`
+                        : ""}
+                    </p>
+                  ) : null}
                 </div>
                 <p className="shrink-0 font-semibold tabular-nums text-slate-900">
                   {money.format(line.retailerPrice)}
@@ -386,27 +395,26 @@ export default function OpenOrderTrackerPage() {
           </section>
         )}
 
-        {pickupLocation &&
-          data.journey?.delivery?.status !== "delivered" && (
-            <section
-              className="rounded-2xl border border-amber-200 bg-amber-50 p-5 sm:p-6"
-              aria-labelledby="pickup-location-heading"
+        {pickupLocation && data.journey?.delivery?.status !== "delivered" && (
+          <section
+            className="rounded-2xl border border-amber-200 bg-amber-50 p-5 sm:p-6"
+            aria-labelledby="pickup-location-heading"
+          >
+            <h2
+              id="pickup-location-heading"
+              className="font-semibold text-amber-950"
             >
-              <h2
-                id="pickup-location-heading"
-                className="font-semibold text-amber-950"
-              >
-                Pickup location
-              </h2>
-              <div className="mt-3 space-y-1 text-sm text-amber-900/80">
-                <p className="font-medium text-amber-950">
-                  {pickupLocation.name || "Retailer shop"}
-                </p>
-                <p>{pickupLocation.address}</p>
-                {pickupLocation.phone && <p>Call {pickupLocation.phone}</p>}
-              </div>
-            </section>
-          )}
+              Pickup location
+            </h2>
+            <div className="mt-3 space-y-1 text-sm text-amber-900/80">
+              <p className="font-medium text-amber-950">
+                {pickupLocation.name || "Retailer shop"}
+              </p>
+              <p>{pickupLocation.address}</p>
+              {pickupLocation.phone && <p>Call {pickupLocation.phone}</p>}
+            </div>
+          </section>
+        )}
 
         {data.stage === "collecting_offers" && (
           <Card className="border-slate-200 shadow-none">
@@ -698,6 +706,12 @@ export default function OpenOrderTrackerPage() {
                   </p>
                   <p className="text-xs text-slate-500">
                     {item.productSize} · Qty {item.quantity}
+                  </p>
+                  <p className="mt-1 text-[11px] font-semibold capitalize text-emerald-700">
+                    {item.cylinderSaleMode}
+                    {item.cylinderSaleMode === "exchange"
+                      ? ` · return ${item.expectedEmptyPackQty} empty`
+                      : ""}
                   </p>
                 </div>
                 <div className="text-right">

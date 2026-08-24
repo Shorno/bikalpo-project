@@ -273,3 +273,66 @@ test(
     }
   },
 );
+
+test(
+  "admin phone edits keep phone-auth identity synchronized",
+  { skip: !runDatabaseIntegration },
+  async () => {
+    const [{ db }, schema, drizzle, routerModule, phoneIdentity] =
+      await Promise.all([
+        import("@bikalpo-project/db"),
+        import("@bikalpo-project/db/schema"),
+        import("drizzle-orm"),
+        import("./admin-user-management"),
+        import("@bikalpo-project/auth/phone-identity"),
+      ]);
+    const { user } = schema;
+    const { eq } = drizzle;
+    const { adminUserManagementRouter } = routerModule;
+    const { getPhoneAuthEmail } = phoneIdentity;
+    const suffix = randomUUID();
+    const numericSuffix = (BigInt(`0x${suffix.replaceAll("-", "")}`) % 100000000n)
+      .toString()
+      .padStart(8, "0");
+    const userId = `phone-identity-${suffix}`;
+    const originalPhone = `+88018${numericSuffix}`;
+    const nextPhone = `+88019${numericSuffix}`;
+    const nextLocalPhone = `019${numericSuffix}`;
+    const adminContext = {
+      session: { user: { id: `phone-admin-${suffix}`, role: "admin" } },
+    };
+
+    try {
+      await db.insert(user).values({
+        id: userId,
+        name: "Phone Identity Consumer",
+        email: getPhoneAuthEmail(originalPhone),
+        role: "consumer",
+        phoneNumber: originalPhone,
+        phoneNumberVerified: true,
+      });
+
+      await invokeProcedure(
+        adminUserManagementRouter.updateInfo,
+        adminContext,
+        { userId, phoneNumber: nextLocalPhone },
+      );
+
+      const updated = await db.query.user.findFirst({
+        where: eq(user.id, userId),
+        columns: {
+          email: true,
+          phoneNumber: true,
+          phoneNumberVerified: true,
+        },
+      });
+      assert.deepEqual(updated, {
+        email: getPhoneAuthEmail(nextPhone),
+        phoneNumber: nextPhone,
+        phoneNumberVerified: false,
+      });
+    } finally {
+      await db.delete(user).where(eq(user.id, userId));
+    }
+  },
+);

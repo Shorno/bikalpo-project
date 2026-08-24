@@ -4,6 +4,7 @@ import {
   Building2,
   CircleHelp,
   FileText,
+  KeyRound,
   LayoutGrid,
   MapPin,
   Menu,
@@ -24,6 +25,7 @@ const primaryLinks = [
   { label: "Products", href: "/products", icon: LayoutGrid },
   { label: "Offers", href: "/offers", icon: Tags },
   { label: "Stores", href: "/stores", icon: MapPin },
+  { label: "To-Let", href: "/to-let", icon: KeyRound },
   { label: "For business", href: "/b2b", icon: Building2 },
 ];
 

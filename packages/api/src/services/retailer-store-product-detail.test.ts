@@ -139,7 +139,12 @@ test("store details expose per-variant cylinder sale choices", () => {
       features: [],
       creatorSource: "shop",
       createdById: "shop-lpg",
-      category: { name: "LPG", slug: "lpg" },
+      isReturnablePack: true,
+      category: {
+        name: "LPG",
+        slug: "lpg",
+        type: { family: "lpg", name: "LPG", slug: "lpg" },
+      },
       subCategory: null,
       brand: { id: 2, name: "Omera", slug: "omera" },
       images: [],
@@ -201,6 +206,76 @@ test("store details expose per-variant cylinder sale choices", () => {
     defaultMode: "exchange",
   });
   assert.deepEqual(result.product.variants[1]?.cylinderSale, {
+    exchangeEnabled: false,
+    exchangeCreditAmount: 0,
+    defaultMode: "new",
+  });
+});
+
+test("store details hide Exchange when this variant is not enabled", () => {
+  const result = buildStoreProductDetail({
+    shop: {
+      id: "shop-lpg",
+      name: "LPG retailer",
+      shopName: "Cylinder House",
+      shopSlug: "cylinder-house",
+      shopAddress: "Dhaka",
+      businessType: "retail",
+      image: null,
+      shopLat: null,
+      shopLng: null,
+    },
+    product: {
+      id: 12,
+      coreProductId: 4,
+      name: "Omera LPG",
+      slug: "omera-lpg",
+      description: null,
+      shortDescription: null,
+      image: "/omera.png",
+      size: "Cylinder",
+      features: [],
+      creatorSource: "shop",
+      createdById: "shop-lpg",
+      isReturnablePack: true,
+      category: {
+        name: "LPG",
+        slug: "lpg",
+        type: { family: "lpg", name: "LPG", slug: "lpg" },
+      },
+      subCategory: null,
+      brand: { id: 2, name: "Omera", slug: "omera" },
+      images: [],
+    },
+    variants: [
+      {
+        id: 1201,
+        sku: "OMERA-12",
+        unitLabel: "12 kg Cylinder",
+        quantitySelectorLabel: null,
+        price: "1500",
+        weightKg: "12",
+        packagingType: "cylinder",
+        origin: null,
+        shelfLife: null,
+        orderMin: "1",
+        orderMax: null,
+        orderIncrement: "1",
+        orderUnit: "cylinder",
+        quantitySelectorOptions: [],
+        sortOrder: 0,
+        variantType: "retail",
+        packType: "unit",
+        isActive: true,
+        exchangeEnabled: false,
+        exchangeCreditAmount: "300",
+        inventory: { availableQty: "10", retailPrice: "1500" },
+      },
+    ],
+  });
+
+  assert.ok(result);
+  assert.deepEqual(result.product.variants[0]?.cylinderSale, {
     exchangeEnabled: false,
     exchangeCreditAmount: 0,
     defaultMode: "new",

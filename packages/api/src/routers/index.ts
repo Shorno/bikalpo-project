@@ -18,6 +18,7 @@ import { adminItemRequestRouter } from "./admin-item-request";
 import { adminLandingRouter } from "./admin-landing";
 import { adminMarketingRouter } from "./admin-marketing";
 import { adminOfferRouter } from "./admin-offer";
+import { adminOfferTemplateRouter } from "./admin-offer-template";
 import { adminOrderRouter } from "./admin-order";
 import { adminProductConfigRouter } from "./admin-product-config";
 import { adminProductTypeRouter } from "./admin-product-type";
@@ -47,6 +48,7 @@ import { dashboardRouter } from "./dashboard";
 import { deliverymanRouter } from "./deliveryman";
 import { devOtpRouter } from "./dev-otp";
 import { employeeRouter } from "./employee";
+import { emptyPackManagementRouter } from "./empty-pack-management";
 import { expenseRouter } from "./expense";
 import { financeRouter } from "./finance";
 import { inventoryRouter } from "./inventory";
@@ -58,6 +60,7 @@ import { profitLossRouter } from "./profit-loss";
 import { purchaseRouter } from "./purchase";
 import { purchaseLifecycleRouter } from "./purchase-lifecycle";
 import { retailerPosRouter } from "./retailer-pos";
+import { retailerOfferRouter } from "./retailer-offer";
 import { returnsRouter } from "./returns";
 import { salesmanRouter } from "./salesman";
 import { sellerApplicationRouter } from "./seller-application";
@@ -66,12 +69,17 @@ import { stockAdjustmentRouter } from "./stock-adjustment";
 import { stockOverviewRouter } from "./stock-overview";
 import { supplierPaymentRouter } from "./supplier-payment";
 import { adminToLetRouter, toLetRouter } from "./tolet";
+import { toLetBookingRouter } from "./tolet-booking";
+import { toLetPropertyRouter } from "./tolet-property";
+import { toLetRentalRouter } from "./tolet-rental";
+import { toLetUnitListingRouter } from "./tolet-unit-listing";
 import { userComplaintRouter } from "./user-complaint";
 import { userInviteRouter } from "./user-invite";
 import { userTicketRouter } from "./user-ticket";
 import { verifiedUserRouter } from "./verified-user";
 import { warehouseRouter } from "./warehouse";
 import { warehouseApplicationRouter } from "./warehouse-application";
+import { warehouseDamageRouter } from "./warehouse-damage";
 import { warehouseDeliveryRouter } from "./warehouse-delivery";
 import { warehouseEmployeeRouter } from "./warehouse-employee";
 import { warehouseEstimateRouter } from "./warehouse-estimate";
@@ -92,6 +100,7 @@ export const appRouter = {
   adminCoreProduct: adminCoreProductRouter,
   adminProductConfig: adminProductConfigRouter,
   adminOffer: adminOfferRouter,
+  adminOfferTemplate: adminOfferTemplateRouter,
   adminProductType: adminProductTypeRouter,
   adminVariantOption: adminVariantOptionRouter,
   adminEmployeeReport: adminEmployeeReportRouter,
@@ -118,8 +127,10 @@ export const appRouter = {
   customer: customerRouter,
   salesman: salesmanRouter,
   deliveryman: deliverymanRouter,
+  emptyPackManagement: emptyPackManagementRouter,
   returns: returnsRouter,
   retailerPos: retailerPosRouter,
+  retailerOffer: retailerOfferRouter,
   dashboard: dashboardRouter,
 
   verifiedUser: verifiedUserRouter,
@@ -130,6 +141,10 @@ export const appRouter = {
   adminLanding: adminLandingRouter,
   landing: landingRouter,
   toLet: toLetRouter,
+  toLetBooking: toLetBookingRouter,
+  toLetProperty: toLetPropertyRouter,
+  toLetRental: toLetRentalRouter,
+  toLetUnitListing: toLetUnitListingRouter,
   adminToLet: adminToLetRouter,
   adminWarehouseAssignment: adminWarehouseAssignmentRouter,
   adminShopCategoryAssignment: adminShopCategoryAssignmentRouter,
@@ -160,6 +175,7 @@ export const appRouter = {
   warehouseEmployee: warehouseEmployeeRouter,
   warehouseEstimate: warehouseEstimateRouter,
   warehouseDelivery: warehouseDeliveryRouter,
+  warehouseDamage: warehouseDamageRouter,
   stockAdjustment: stockAdjustmentRouter,
   warehousePos: warehousePosRouter,
   warehouseSales: warehouseSalesRouter,

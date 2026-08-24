@@ -30,6 +30,7 @@ import {
 import {
     carton,
     inventory,
+    invoice,
     order,
     orderItem,
     product,
@@ -45,6 +46,13 @@ import {
     ensureWarehouseBuyerTargetVariant,
 } from "./b2b-buyer-target";
 
+/** Seller reserved stock is owned by consumeB2bOrderReservations once it has run. */
+export function shouldDeductWarehouseSellerStock(order: {
+    sellerStockConsumedAt?: Date | string | null;
+}) {
+    return !order.sellerStockConsumedAt;
+}
+
 /**
  * Convert B2B order items to retail inventory upon confirmed receipt.
  * Must be called inside the receipt transaction.
@@ -55,7 +63,13 @@ export async function convertB2bOrderToRetailInventory(tx: any, orderId: number)
     // 1. Load the order to check if it's B2B and determine source warehouse
     const orderData = await tx.query.order.findFirst({
         where: eq(order.id, orderId),
-        columns: { id: true, userId: true, orderType: true, warehouseId: true },
+        columns: {
+            id: true,
+            userId: true,
+            orderType: true,
+            warehouseId: true,
+            sellerStockConsumedAt: true,
+        },
     });
 
     if (!orderData || orderData.orderType !== "b2b") {
@@ -101,6 +115,7 @@ export async function convertB2bOrderToRetailInventory(tx: any, orderId: number)
             buyerWarehouseId: orderData.userId,
             supplierWarehouseId: sourceOwnerId,
             items,
+            deductSellerStock: shouldDeductWarehouseSellerStock(orderData),
         });
         return;
     }
@@ -513,7 +528,11 @@ export async function convertB2bOrderToRetailInventory(tx: any, orderId: number)
             ),
         });
 
-        if (sourceInv) {
+        if (shouldDeductWarehouseSellerStock(orderData)) {
+            if (!sourceInv) {
+                throw new Error(`Warehouse inventory was not found for variant ${tradeVariant.id}`);
+            }
+
             // retailQty already accounts for all modes:
             //   - pack carton:  orderedQty × packsPerCarton (e.g. 1 × 20 = 20 packs)
             //   - loose carton: orderedQty × cartonWeightKg (e.g. 1 × 50 = 50 KG)
@@ -621,8 +640,6 @@ export async function convertB2bOrderToRetailInventory(tx: any, orderId: number)
                     cartonsToConsume--;
                 }
             }
-        } else {
-            throw new Error(`Warehouse inventory was not found for variant ${tradeVariant.id}`);
         }
 
         // ─── B. Upsert shop owner's RETAIL inventory ───
@@ -669,6 +686,7 @@ async function transferB2bOrderToWarehouseInventory(
         buyerWarehouseId: string;
         supplierWarehouseId: string;
         items: any[];
+        deductSellerStock: boolean;
     },
 ) {
     console.log(
@@ -793,36 +811,38 @@ async function transferB2bOrderToWarehouseInventory(
             ),
         });
 
-        if (!sourceInv) {
-            throw new Error(`Supplier inventory is missing for variant ${item.variantId}`);
-        }
+        if (input.deductSellerStock) {
+            if (!sourceInv) {
+                throw new Error(`Supplier inventory is missing for variant ${item.variantId}`);
+            }
 
-        const released = await tx
-            .update(inventory)
-            .set({
-                reservedQty: sql`${inventory.reservedQty}::numeric - ${sourceInventoryQty}`,
-                updatedAt: new Date(),
-            })
-            .where(and(eq(inventory.id, sourceInv.id), sql`${inventory.reservedQty}::numeric >= ${sourceInventoryQty}`))
-            .returning({ id: inventory.id });
-        if (released.length === 0) {
-            throw new Error(`Reserved stock changed for variant ${item.variantId}`);
-        }
+            const released = await tx
+                .update(inventory)
+                .set({
+                    reservedQty: sql`${inventory.reservedQty}::numeric - ${sourceInventoryQty}`,
+                    updatedAt: new Date(),
+                })
+                .where(and(eq(inventory.id, sourceInv.id), sql`${inventory.reservedQty}::numeric >= ${sourceInventoryQty}`))
+                .returning({ id: inventory.id });
+            if (released.length === 0) {
+                throw new Error(`Reserved stock changed for variant ${item.variantId}`);
+            }
 
-        const allocatedCartons = await tx.query.carton.findMany({
-            where: and(eq(carton.reservedForOrderItemId, item.id), inArray(carton.status, ["reserved", "dispatched"])),
-            columns: { id: true },
-        });
-        if (allocatedCartons.length > 0) {
-            await tx
-                .update(carton)
-                .set({ status: "sold" })
-                .where(
-                    inArray(
-                        carton.id,
-                        allocatedCartons.map((row: { id: number }) => row.id),
-                    ),
-                );
+            const allocatedCartons = await tx.query.carton.findMany({
+                where: and(eq(carton.reservedForOrderItemId, item.id), inArray(carton.status, ["reserved", "dispatched"])),
+                columns: { id: true },
+            });
+            if (allocatedCartons.length > 0) {
+                await tx
+                    .update(carton)
+                    .set({ status: "sold" })
+                    .where(
+                        inArray(
+                            carton.id,
+                            allocatedCartons.map((row: { id: number }) => row.id),
+                        ),
+                    );
+            }
         }
 
         const buyerInv = await tx.query.inventory.findFirst({
@@ -842,7 +862,7 @@ async function transferB2bOrderToWarehouseInventory(
                 })
                 .where(eq(inventory.id, buyerInv.id));
         } else if (targetInventoryQty > 0) {
-            const initialPrice = sourceInv.retailPrice
+            const initialPrice = sourceInv?.retailPrice
                 ? String(sourceInv.retailPrice)
                 : item.unitPrice
                   ? String(item.unitPrice)
@@ -870,4 +890,294 @@ async function transferB2bOrderToWarehouseInventory(
             `[B2B-W2W] Transferred source=${item.variantId}, target=${targetVariantId}, sourceQty=${sourceInventoryQty}, receivedQty=${targetInventoryQty}, item=${item.id}`,
         );
     }
+}
+
+/**
+ * Receive one delivered invoice shipment into the buyer warehouse inventory.
+ * Supports partial (split) invoices without closing the parent order early.
+ */
+export async function receiveB2bInvoiceShipment(
+    tx: any,
+    input: {
+        invoiceId: number;
+        buyerWarehouseId: string;
+        receivedItems?: Array<{ invoiceItemId: number; receivedQty: number }>;
+    },
+) {
+    const inv = await tx.query.invoice.findFirst({
+        where: eq(invoice.id, input.invoiceId),
+        with: { items: true, order: true },
+    });
+
+    if (!inv?.order) {
+        throw new Error("Invoice not found");
+    }
+    if (inv.order.userId !== input.buyerWarehouseId) {
+        throw new Error("Not authorized to receive this shipment");
+    }
+    if (!inv.order.warehouseId) {
+        throw new Error("Supplier warehouse not found on order");
+    }
+    if (inv.order.orderType !== "b2b") {
+        throw new Error("Only B2B supplier shipments can be received here");
+    }
+    if (inv.deliveryStatus !== "delivered") {
+        throw new Error("Shipment has not been delivered yet");
+    }
+    if (inv.receivedAt) {
+        throw new Error("Shipment has already been received");
+    }
+
+    const orderItems = await tx.query.orderItem.findMany({
+        where: eq(orderItem.orderId, inv.orderId),
+    });
+
+    const receivedByItemId = new Map(
+        (input.receivedItems ?? []).map((row) => [row.invoiceItemId, row.receivedQty]),
+    );
+
+    for (const receipt of input.receivedItems ?? []) {
+        if (!inv.items.some((item: { id: number }) => item.id === receipt.invoiceItemId)) {
+            throw new Error(`Invoice item ${receipt.invoiceItemId} does not belong to this shipment`);
+        }
+        if (receipt.receivedQty < 0) {
+            throw new Error("Received quantity cannot be negative");
+        }
+    }
+
+    const deductSellerStock = shouldDeductWarehouseSellerStock(inv.order);
+
+    for (const invoiceLine of inv.items) {
+        const shippedQty = invoiceLine.quantity;
+        const qty = receivedByItemId.has(invoiceLine.id)
+            ? receivedByItemId.get(invoiceLine.id)!
+            : shippedQty;
+
+        if (qty > shippedQty) {
+            throw new Error(
+                `Received quantity for ${invoiceLine.productName} cannot exceed shipped quantity ${shippedQty}`,
+            );
+        }
+        if (qty <= 0) continue;
+
+        const exactLinkedItem = invoiceLine.orderItemId
+            ? orderItems.find((item: typeof orderItem.$inferSelect) => item.id === invoiceLine.orderItemId)
+            : null;
+        const exactVariantItems = invoiceLine.variantId
+            ? orderItems.filter(
+                  (item: typeof orderItem.$inferSelect) => item.variantId === invoiceLine.variantId,
+              )
+            : [];
+        const matchedOrderItem =
+            exactLinkedItem ?? (exactVariantItems.length === 1 ? exactVariantItems[0] : null);
+
+        if (!matchedOrderItem?.variantId) {
+            throw new Error(`No matching order item for product ${invoiceLine.productName}`);
+        }
+
+        const approvedOrderQty = matchedOrderItem.modifiedQty ?? matchedOrderItem.quantity;
+        const previouslyReceived = Number(matchedOrderItem.receivedQty ?? 0);
+        if (previouslyReceived + qty > approvedOrderQty) {
+            throw new Error(
+                `Received quantity for ${invoiceLine.productName} exceeds approved order quantity`,
+            );
+        }
+
+        const hasMovementSnapshot =
+            matchedOrderItem.inventoryQty !== null &&
+            matchedOrderItem.inventoryQty !== undefined &&
+            matchedOrderItem.conversionFactor !== null &&
+            matchedOrderItem.conversionFactor !== undefined;
+
+        const fullSourceInventoryQty = Number(matchedOrderItem.inventoryQty ?? approvedOrderQty);
+        const sourceInventoryQty = hasMovementSnapshot
+            ? (fullSourceInventoryQty * qty) / approvedOrderQty
+            : qty;
+        const targetInventoryQty = hasMovementSnapshot
+            ? getReceivedRetailerQty({
+                  receivedOrderQty: qty,
+                  approvedOrderQty,
+                  retailerInventoryQty: approvedOrderQty * Number(matchedOrderItem.conversionFactor),
+              })
+            : qty;
+
+        if (
+            !Number.isFinite(sourceInventoryQty) ||
+            !Number.isFinite(targetInventoryQty) ||
+            sourceInventoryQty <= 0 ||
+            targetInventoryQty < 0
+        ) {
+            throw new Error(`Order item ${matchedOrderItem.id} has an invalid movement snapshot`);
+        }
+
+        const buyerTarget = await ensureWarehouseBuyerTargetVariant(tx, {
+            warehouseId: input.buyerWarehouseId,
+            sourceVariantId: matchedOrderItem.variantId,
+            requestedTargetVariantId: matchedOrderItem.targetVariantId,
+        });
+        const targetVariantId = buyerTarget.targetVariantId;
+        await assertInventoryVariantOwnedBy(tx, {
+            ownerType: "warehouse",
+            ownerId: input.buyerWarehouseId,
+            variantId: targetVariantId,
+        });
+
+        const [sourceIdentity, targetIdentity] = await Promise.all([
+            tx.query.productVariant.findFirst({
+                where: eq(productVariant.id, matchedOrderItem.variantId),
+                columns: {
+                    id: true,
+                    productId: true,
+                    brandId: true,
+                    catalogVariantId: true,
+                },
+                with: {
+                    catalogVariant: {
+                        columns: { conversionTargetCatalogVariantId: true },
+                    },
+                    product: {
+                        columns: {
+                            id: true,
+                            brandId: true,
+                            coreProductId: true,
+                        },
+                    },
+                },
+            }),
+            tx.query.productVariant.findFirst({
+                where: eq(productVariant.id, targetVariantId),
+                columns: {
+                    id: true,
+                    productId: true,
+                    brandId: true,
+                    catalogVariantId: true,
+                },
+                with: {
+                    product: {
+                        columns: {
+                            id: true,
+                            brandId: true,
+                            coreProductId: true,
+                        },
+                    },
+                },
+            }),
+        ]);
+        if (!sourceIdentity || !targetIdentity) {
+            throw new Error(`Order item ${matchedOrderItem.id} has an invalid variant mapping`);
+        }
+        assertCompatibleB2bTargetVariant(sourceIdentity, targetIdentity);
+
+        const sourceInv = await tx.query.inventory.findFirst({
+            where: and(
+                eq(inventory.ownerType, "warehouse"),
+                eq(inventory.ownerId, inv.order.warehouseId),
+                eq(inventory.variantId, matchedOrderItem.variantId),
+            ),
+        });
+
+        if (deductSellerStock) {
+            if (!sourceInv) {
+                throw new Error(`Supplier inventory is missing for variant ${matchedOrderItem.variantId}`);
+            }
+
+            const released = await tx
+                .update(inventory)
+                .set({
+                    reservedQty: sql`${inventory.reservedQty}::numeric - ${sourceInventoryQty}`,
+                    updatedAt: new Date(),
+                })
+                .where(
+                    and(
+                        eq(inventory.id, sourceInv.id),
+                        sql`${inventory.reservedQty}::numeric >= ${sourceInventoryQty}`,
+                    ),
+                )
+                .returning({ id: inventory.id });
+            if (released.length === 0) {
+                throw new Error(`Reserved stock changed for variant ${matchedOrderItem.variantId}`);
+            }
+        }
+
+        const buyerInv = await tx.query.inventory.findFirst({
+            where: and(
+                eq(inventory.ownerType, "warehouse"),
+                eq(inventory.ownerId, input.buyerWarehouseId),
+                eq(inventory.variantId, targetVariantId),
+            ),
+        });
+
+        if (targetInventoryQty > 0 && buyerInv) {
+            await tx
+                .update(inventory)
+                .set({
+                    availableQty: (Number(buyerInv.availableQty || 0) + targetInventoryQty).toFixed(2),
+                    updatedAt: new Date(),
+                })
+                .where(eq(inventory.id, buyerInv.id));
+        } else if (targetInventoryQty > 0) {
+            const initialPrice = sourceInv?.retailPrice
+                ? String(sourceInv.retailPrice)
+                : matchedOrderItem.unitPrice
+                  ? String(matchedOrderItem.unitPrice)
+                  : null;
+
+            await tx.insert(inventory).values({
+                ownerType: "warehouse" as const,
+                ownerId: input.buyerWarehouseId,
+                variantId: targetVariantId,
+                availableQty: targetInventoryQty.toFixed(2),
+                reservedQty: "0",
+                ...(initialPrice ? { retailPrice: initialPrice } : {}),
+            });
+        }
+
+        const nextReceivedQty = previouslyReceived + qty;
+        const prevConverted = Number(matchedOrderItem.convertedQty ?? 0);
+        const nextConverted = prevConverted + targetInventoryQty;
+
+        await tx
+            .update(orderItem)
+            .set({
+                targetVariantId,
+                catalogVariantId: buyerTarget.sourceCatalogVariantId,
+                globalSkuSnapshot: buyerTarget.sourceGlobalSku,
+                sourceSkuSnapshot: buyerTarget.sourceLocalSku,
+                targetSkuSnapshot: buyerTarget.targetLocalSku,
+                receivedQty: nextReceivedQty,
+                convertedQty: nextConverted.toFixed(2),
+                conversionStatus: nextReceivedQty >= approvedOrderQty ? "converted" : "pending",
+            })
+            .where(eq(orderItem.id, matchedOrderItem.id));
+
+        matchedOrderItem.receivedQty = nextReceivedQty;
+        matchedOrderItem.convertedQty = nextConverted.toFixed(2);
+    }
+
+    const claimed = await tx
+        .update(invoice)
+        .set({ receivedAt: new Date() })
+        .where(and(eq(invoice.id, inv.id), sql`${invoice.receivedAt} IS NULL`))
+        .returning({ id: invoice.id });
+    if (claimed.length === 0) {
+        throw new Error("Shipment was already received");
+    }
+
+    const allInvoices = await tx.query.invoice.findMany({
+        where: eq(invoice.orderId, inv.orderId),
+    });
+    const allReceived =
+        allInvoices.length > 0 &&
+        allInvoices.every((row: { id: number; receivedAt: Date | null }) =>
+            row.id === inv.id ? true : !!row.receivedAt,
+        );
+
+    if (allReceived && inv.order.status === "delivered") {
+        await tx
+            .update(order)
+            .set({ receivedAt: inv.order.receivedAt ?? new Date() })
+            .where(and(eq(order.id, inv.orderId), sql`${order.receivedAt} IS NULL`));
+    }
+
+    return { invoiceId: inv.id, orderId: inv.orderId, allReceived };
 }

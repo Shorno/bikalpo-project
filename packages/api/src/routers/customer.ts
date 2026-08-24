@@ -9,6 +9,7 @@
  */
 
 import { db } from "@bikalpo-project/db";
+import { isWarehouseCylinderExchangeAvailable } from "@bikalpo-project/db/fulfillment";
 import {
   address,
   announcement,
@@ -39,8 +40,12 @@ import {
   payment,
   product,
   productReview,
+  productType,
   productVariant,
+  retailerOffer,
+  retailerOfferApplication,
   sellerAreaMapping,
+  shopFollower,
   subCategory,
   supportTicket,
   supportTicketReply,
@@ -65,6 +70,7 @@ import {
   isNotNull,
   isNull,
   lte,
+  ne,
   or,
   type SQL,
   sql,
@@ -79,16 +85,16 @@ import {
   publicProcedure,
 } from "../index";
 import {
+  assertCheckoutQuoteMatches,
+  buildCheckoutQuote,
+  type CheckoutPromotionRecord,
+  normalizePromotionCode,
+} from "../services/checkout-quote";
+import {
   computeOrderAreaFields,
   findAreasForPoint,
   findSellersNearPoint,
 } from "../services/location-service";
-import {
-  assertCheckoutQuoteMatches,
-  buildCheckoutQuote,
-  normalizePromotionCode,
-  type CheckoutPromotionRecord,
-} from "../services/checkout-quote";
 import {
   getOpenOrderStage,
   isOpenOrderFulfillmentStatus,
@@ -106,6 +112,7 @@ import {
   SELECTION_WINDOW_SECONDS,
 } from "../services/open-order-matching";
 import { resolveRetailerCylinderSale } from "../services/retailer-cylinder-sale";
+import { evaluateRetailerOffer } from "../services/retailer-offer-engine";
 import { buildStoreProductDetail } from "../services/retailer-store-product-detail";
 import { buildConsumerOrderJourney } from "./helpers/consumer-order-journey";
 import {
@@ -113,9 +120,11 @@ import {
   estimateOrderAcceptSchema,
 } from "./helpers/estimate-order-conversion";
 import {
+  getReferenceCylinderPricing,
   getReferenceProductEffectivePrice,
   getReferenceSellerKey,
   isOpenOrderReferenceSelectionEligible,
+  referenceProductCanExchange,
   sortReferenceProducts,
 } from "./helpers/reference-product-catalog";
 import {
@@ -125,6 +134,7 @@ import {
   isSameCustomerCartSnapshot,
   type RetailerCartInventorySnapshot,
   resolveCustomerCartSource,
+  retailerCylinderExchangeAvailable,
 } from "./helpers/retailer-cart-inventory";
 import {
   createRetailerOrderStockWriter,
@@ -303,10 +313,16 @@ async function getRetailerCartInventorySnapshots(
       orderIncrement: productVariant.orderIncrement,
       exchangeEnabled: productVariant.exchangeEnabled,
       exchangeCreditAmount: productVariant.exchangeCreditAmount,
+      isReturnablePack: product.isReturnablePack,
+      typeFamily: productType.family,
+      typeName: productType.name,
+      typeSlug: productType.slug,
     })
     .from(inventory)
     .innerJoin(productVariant, eq(productVariant.id, inventory.variantId))
     .innerJoin(product, eq(product.id, productVariant.productId))
+    .leftJoin(category, eq(category.id, product.categoryId))
+    .leftJoin(productType, eq(productType.id, category.typeId))
     .innerJoin(user, eq(user.id, inventory.ownerId))
     .where(
       and(
@@ -323,7 +339,15 @@ async function getRetailerCartInventorySnapshots(
   );
   for (const row of rows) {
     const key = getRetailerCartInventoryKey(row);
-    if (requestedKeys.has(key)) snapshots.set(key, row);
+    if (requestedKeys.has(key)) {
+      snapshots.set(key, {
+        ...row,
+        isReturnablePack: Boolean(row.isReturnablePack),
+        typeFamily: row.typeFamily ?? null,
+        typeName: row.typeName ?? null,
+        typeSlug: row.typeSlug ?? null,
+      });
+    }
   }
 
   return snapshots;
@@ -988,6 +1012,38 @@ async function getReferenceReviewStatsMap(productIds: number[]) {
   return reviewStatsMap;
 }
 
+async function getShopProductSoldOrderCountMap(
+  shopId: string,
+  productIds: number[],
+) {
+  const soldOrderCountMap: Record<number, number> = {};
+
+  if (productIds.length === 0) return soldOrderCountMap;
+
+  const soldRows = await db
+    .select({
+      productId: orderItem.productId,
+      totalOrders: sql<number>`COUNT(DISTINCT ${order.id})::int`,
+    })
+    .from(orderItem)
+    .innerJoin(order, eq(orderItem.orderId, order.id))
+    .where(
+      and(
+        eq(order.shopId, shopId),
+        eq(order.orderType, "b2c"),
+        ne(order.status, "cancelled"),
+        inArray(orderItem.productId, productIds),
+      ),
+    )
+    .groupBy(orderItem.productId);
+
+  for (const row of soldRows) {
+    soldOrderCountMap[row.productId] = Number(row.totalOrders) || 0;
+  }
+
+  return soldOrderCountMap;
+}
+
 // ════════════════════════════════════════════════════════════════
 // QUERIES (read-only, customer-facing)
 // ════════════════════════════════════════════════════════════════
@@ -1544,6 +1600,8 @@ const queries = {
           variants: {
             columns: {
               catalogVariantId: true,
+              exchangeEnabled: true,
+              exchangeCreditAmount: true,
               id: true,
               isActive: true,
               price: true,
@@ -1593,6 +1651,10 @@ const queries = {
       let serializedProducts = referenceProducts.map((referenceProduct) => {
         const effectivePrice =
           getReferenceProductEffectivePrice(referenceProduct);
+        const cylinderPricing =
+          referenceProduct.category?.slug === "lpg"
+            ? getReferenceCylinderPricing(referenceProduct)
+            : null;
         const {
           variantPrices: _variantPrices,
           variants: _variants,
@@ -1609,6 +1671,19 @@ const queries = {
 
         return {
           ...productData,
+          canExchange: referenceProductCanExchange(referenceProduct),
+          cylinderSale: cylinderPricing
+            ? {
+                supportsNew: cylinderPricing.supportsNew,
+                exchangeAvailable: cylinderPricing.exchangeAvailable,
+              }
+            : null,
+          referencePricing: cylinderPricing
+            ? {
+                newFrom: cylinderPricing.newFrom,
+                exchangeFrom: cylinderPricing.exchangeFrom,
+              }
+            : null,
           price: effectivePrice,
           reviewStats: reviewStatsMap[referenceProduct.id] || {
             averageRating: 0,
@@ -1776,7 +1851,28 @@ const queries = {
             },
             images: true,
             variants: {
-              columns: { id: true, price: true, isActive: true },
+              columns: {
+                catalogVariantId: true,
+                exchangeEnabled: true,
+                exchangeCreditAmount: true,
+                id: true,
+                isActive: true,
+                price: true,
+                productId: true,
+                sourceVariantPriceId: true,
+                variantType: true,
+                visibilityRole: true,
+              },
+              with: {
+                catalogVariant: {
+                  columns: {
+                    brandId: true,
+                    configurationState: true,
+                    coreProductId: true,
+                    isActive: true,
+                  },
+                },
+              },
             },
           },
           orderBy: getOrderBy(),
@@ -1852,12 +1948,27 @@ const queries = {
         const basePrice = parseFloat(p.price) || 0;
         const effectivePrice =
           lowestVariantPrice > 0 ? lowestVariantPrice : basePrice;
+        const isLpg = p.category?.slug === "lpg";
+        const cylinderPricing = isLpg ? getReferenceCylinderPricing(p) : null;
 
         // Destructure to exclude variants from the response
         const { variants: _variants, ...productData } = p;
 
         return {
           ...productData,
+          canExchange: cylinderPricing?.exchangeAvailable ?? false,
+          cylinderSale: cylinderPricing
+            ? {
+                supportsNew: cylinderPricing.supportsNew,
+                exchangeAvailable: cylinderPricing.exchangeAvailable,
+              }
+            : null,
+          referencePricing: cylinderPricing
+            ? {
+                newFrom: cylinderPricing.newFrom,
+                exchangeFrom: cylinderPricing.exchangeFrom,
+              }
+            : null,
           price: effectivePrice,
           reviewStats: reviewStatsMap[p.id] || {
             averageRating: 0,
@@ -1965,9 +2076,33 @@ const queries = {
       };
       const variantsSerialized = variants.map((variant) => {
         const { catalogVariant: _catalogVariant, ...variantData } = variant;
+        const newUnitPrice = Number(variant.price);
+        const exchangeEnabled =
+          found.category?.slug === "lpg" && Boolean(variant.exchangeEnabled);
+        const exchangeCreditAmount = exchangeEnabled
+          ? Math.min(
+              newUnitPrice,
+              Math.max(0, Number(variant.exchangeCreditAmount ?? 0)),
+            )
+          : 0;
         return {
           ...variantData,
-          price: parseFloat(variant.price),
+          price: newUnitPrice,
+          cylinderSale:
+            found.category?.slug === "lpg"
+              ? {
+                  exchangeEnabled,
+                  exchangeCreditAmount,
+                  defaultMode: exchangeEnabled
+                    ? ("exchange" as const)
+                    : ("new" as const),
+                  newUnitPrice,
+                  effectiveExchangeUnitPrice: Math.max(
+                    0,
+                    newUnitPrice - exchangeCreditAmount,
+                  ),
+                }
+              : null,
         };
       });
 
@@ -2097,7 +2232,28 @@ const queries = {
                 columns: { id: true, name: true, slug: true, logo: true },
               },
               variants: {
-                columns: { id: true, price: true, isActive: true },
+                columns: {
+                  catalogVariantId: true,
+                  exchangeEnabled: true,
+                  exchangeCreditAmount: true,
+                  id: true,
+                  isActive: true,
+                  price: true,
+                  productId: true,
+                  sourceVariantPriceId: true,
+                  variantType: true,
+                  visibilityRole: true,
+                },
+                with: {
+                  catalogVariant: {
+                    columns: {
+                      brandId: true,
+                      configurationState: true,
+                      coreProductId: true,
+                      isActive: true,
+                    },
+                  },
+                },
               },
             },
             limit: prodLimit,
@@ -2165,10 +2321,27 @@ const queries = {
             const basePrice = parseFloat(p.price) || 0;
             const effectivePrice =
               lowestVariantPrice > 0 ? lowestVariantPrice : basePrice;
+            const isLpg = p.category?.slug === "lpg";
+            const cylinderPricing = isLpg
+              ? getReferenceCylinderPricing(p)
+              : null;
 
             const { variants: _variants, ...productData } = p;
             return {
               ...productData,
+              canExchange: cylinderPricing?.exchangeAvailable ?? false,
+              cylinderSale: cylinderPricing
+                ? {
+                    supportsNew: cylinderPricing.supportsNew,
+                    exchangeAvailable: cylinderPricing.exchangeAvailable,
+                  }
+                : null,
+              referencePricing: cylinderPricing
+                ? {
+                    newFrom: cylinderPricing.newFrom,
+                    exchangeFrom: cylinderPricing.exchangeFrom,
+                  }
+                : null,
               price: effectivePrice,
               reviewStats: reviewStatsMap[p.id] || {
                 averageRating: 0,
@@ -2538,10 +2711,14 @@ const queries = {
         const listedPrice =
           item.shopId && retailerDecision?.ok
             ? Number(retailerDecision.retailPrice)
-            : Number(item.price);
-        const exchangeEnabled = Boolean(
-          item.shopId && variant?.exchangeEnabled,
-        );
+            : variant
+              ? Number(variant.price)
+              : Number(item.price);
+        const exchangeEnabled = item.shopId
+          ? retailerCylinderExchangeAvailable(retailerInventory)
+          : Boolean(
+              item.product.category?.slug === "lpg" && variant?.exchangeEnabled,
+            );
         const exchangeCreditAmount = exchangeEnabled
           ? Number(variant?.exchangeCreditAmount ?? 0)
           : 0;
@@ -2572,21 +2749,22 @@ const queries = {
           shopSlug: item.shopId
             ? shopMap.get(item.shopId)?.shopSlug || null
             : null,
-          cylinderSale: item.shopId
-            ? {
-                exchangeEnabled,
-                mode: item.cylinderSaleMode,
-                defaultMode: exchangeEnabled ? "exchange" : "new",
-                exchangeCreditAmount,
-                newUnitPrice: listedPrice,
-                effectiveUnitPrice: effectivePrice,
-                expectedReturnQty:
-                  item.cylinderSaleMode === "exchange" && exchangeEnabled
-                    ? item.quantity
-                    : 0,
-                selectionValid: cylinderSelectionValid,
-              }
-            : null,
+          cylinderSale:
+            item.product.category?.slug === "lpg" && variant
+              ? {
+                  exchangeEnabled,
+                  mode: item.cylinderSaleMode,
+                  defaultMode: exchangeEnabled ? "exchange" : "new",
+                  exchangeCreditAmount,
+                  newUnitPrice: listedPrice,
+                  effectiveUnitPrice: effectivePrice,
+                  expectedReturnQty:
+                    item.cylinderSaleMode === "exchange" && exchangeEnabled
+                      ? item.quantity
+                      : 0,
+                  selectionValid: cylinderSelectionValid,
+                }
+              : null,
         };
       });
 
@@ -3630,6 +3808,42 @@ const queries = {
       };
     }),
 
+  /** Get the lightweight shop identity used by storefront navigation. */
+  getShopNavigation: publicProcedure
+    .route({
+      method: "GET",
+      path: "/customer/shops/{slug}/navigation",
+      tags: ["Customer"],
+      summary: "Get storefront navigation identity",
+    })
+    .input(z.object({ slug: z.string().trim().min(1).max(200) }))
+    .handler(async ({ input }) => {
+      const shop = await db
+        .select({
+          id: user.id,
+          name: user.name,
+          shopName: user.shopName,
+          shopSlug: user.shopSlug,
+          image: user.image,
+          shopLogo: user.shopLogo,
+        })
+        .from(user)
+        .where(
+          and(
+            eq(user.shopSlug, input.slug),
+            eq(user.role, "shop_owner"),
+            eq(user.sellerStatus, "approved"),
+          ),
+        )
+        .limit(1);
+
+      if (!shop[0]) {
+        throw new ORPCError("NOT_FOUND", { message: "Shop not found" });
+      }
+
+      return { shop: shop[0] };
+    }),
+
   /** Get a single shop by slug with their retail products */
   getShopBySlug: publicProcedure
     .route({
@@ -3650,7 +3864,7 @@ const queries = {
         limit: z.coerce.number().int().min(1).max(48).default(12),
       }),
     )
-    .handler(async ({ input }) => {
+    .handler(async ({ context, input }) => {
       // 1. Find the shop owner by slug
       const shop = await db
         .select({
@@ -3661,6 +3875,10 @@ const queries = {
           shopAddress: user.shopAddress,
           businessType: user.businessType,
           image: user.image,
+          shopLogo: user.shopLogo,
+          shopOpeningTime: user.shopOpeningTime,
+          shopClosingTime: user.shopClosingTime,
+          phoneNumber: user.phoneNumber,
           shopLat: user.shopLat,
           shopLng: user.shopLng,
         })
@@ -3680,6 +3898,22 @@ const queries = {
 
       const shopData = shop[0];
 
+      const [followerCountResult, viewerFollow] = await Promise.all([
+        db
+          .select({ count: count() })
+          .from(shopFollower)
+          .where(eq(shopFollower.shopId, shopData.id)),
+        context.session?.user.role === "consumer"
+          ? db.query.shopFollower.findFirst({
+              where: and(
+                eq(shopFollower.shopId, shopData.id),
+                eq(shopFollower.consumerId, context.session.user.id),
+              ),
+              columns: { consumerId: true },
+            })
+          : Promise.resolve(undefined),
+      ]);
+
       // 2. Get shop's retail inventory with product details
       const inventoryItems = await db.query.inventory.findMany({
         where: and(
@@ -3695,6 +3929,9 @@ const queries = {
               quantitySelectorLabel: true,
               price: true,
               isActive: true,
+              sortOrder: true,
+              exchangeEnabled: true,
+              exchangeCreditAmount: true,
             },
             with: {
               product: {
@@ -3755,17 +3992,25 @@ const queries = {
           basePrice: inv.variant?.price,
           retailPrice: inv.retailPrice,
           availableQty: inv.availableQty,
+          sortOrder: inv.variant?.sortOrder ?? 0,
+          exchangeEnabled: Boolean(inv.variant?.exchangeEnabled),
+          exchangeCreditAmount: inv.variant?.exchangeCreditAmount ?? "0",
+          canExchange: Boolean(inv.variant?.exchangeEnabled),
         });
       }
 
-      const completeCatalog = Array.from(productMap.values()).map((product) => {
-        const variants = product.variants as Array<{
-          retailPrice: string | number;
-          availableQty: string | number;
-        }>;
+      let completeCatalog = Array.from(productMap.values()).map((product) => {
+        const variants = (
+          product.variants as Array<{
+            retailPrice: string | number;
+            availableQty: string | number;
+            sortOrder?: number | null;
+          }>
+        ).sort((left, right) => (left.sortOrder ?? 0) - (right.sortOrder ?? 0));
 
         return {
           ...product,
+          variants,
           lowestRetailPrice: Math.min(
             ...variants.map((variant) => Number(variant.retailPrice)),
           ),
@@ -3776,6 +4021,75 @@ const queries = {
           ),
         };
       });
+      const allProductIds = completeCatalog.map((product) =>
+        Number(product.id),
+      );
+      const now = new Date();
+      const [soldOrderCountMap, storeOrderStats, storeReviewStats, offerRows] =
+        await Promise.all([
+          getShopProductSoldOrderCountMap(shopData.id, allProductIds),
+          db
+            .select({
+              totalCustomers: sql<number>`COUNT(DISTINCT ${order.userId})::int`,
+              totalOrders: sql<number>`COUNT(*)::int`,
+            })
+            .from(order)
+            .where(
+              and(
+                eq(order.shopId, shopData.id),
+                eq(order.orderType, "b2c"),
+                ne(order.status, "cancelled"),
+              ),
+            ),
+          allProductIds.length > 0
+            ? db
+                .select({
+                  averageRating: avg(productReview.rating),
+                  totalReviews: count(productReview.id),
+                })
+                .from(productReview)
+                .where(inArray(productReview.productId, allProductIds))
+            : Promise.resolve([]),
+          db
+            .select()
+            .from(retailerOffer)
+            .where(
+              and(
+                eq(retailerOffer.shopId, shopData.id),
+                inArray(retailerOffer.status, ["active", "scheduled"]),
+                eq(retailerOffer.targetType, "all_customers"),
+                lte(retailerOffer.startDate, now),
+                gte(retailerOffer.endDate, now),
+                isNull(retailerOffer.deactivatedAt),
+              ),
+            )
+            .orderBy(desc(retailerOffer.startDate))
+            .limit(8),
+        ]);
+
+      completeCatalog = completeCatalog.map((catalogProduct) => ({
+        ...catalogProduct,
+        soldOrderCount: soldOrderCountMap[catalogProduct.id] ?? 0,
+      }));
+      const offerUsageRows =
+        offerRows.length > 0
+          ? await db
+              .select({
+                offerId: retailerOfferApplication.retailerOfferId,
+                totalUses: sql<number>`COUNT(*)::int`,
+              })
+              .from(retailerOfferApplication)
+              .where(
+                inArray(
+                  retailerOfferApplication.retailerOfferId,
+                  offerRows.map((offer) => offer.id),
+                ),
+              )
+              .groupBy(retailerOfferApplication.retailerOfferId)
+          : [];
+      const offerUseCount = new Map(
+        offerUsageRows.map((row) => [row.offerId, Number(row.totalUses)]),
+      );
       const facets = buildRetailerStorefrontFacets(completeCatalog);
       const filteredProducts = filterAndSortRetailerStorefrontProducts(
         completeCatalog,
@@ -3791,12 +4105,97 @@ const queries = {
       const totalPages = Math.ceil(totalCount / input.limit);
       const safePage = totalPages > 0 ? Math.min(input.page, totalPages) : 1;
       const offset = (safePage - 1) * input.limit;
+      const pageProducts = filteredProducts.slice(offset, offset + input.limit);
+      const pageProductIds = pageProducts.map((product) => Number(product.id));
+      const reviewStatsMap = await getReferenceReviewStatsMap(pageProductIds);
+
+      const activeOffers = offerRows
+        .filter((offer) => {
+          if (
+            offer.maximumLimit != null &&
+            (offerUseCount.get(offer.id) ?? 0) >= offer.maximumLimit
+          ) {
+            return false;
+          }
+          if (offer.allDay) return true;
+          if (!offer.startTime || !offer.endTime) return false;
+          const currentTime = new Intl.DateTimeFormat("en-GB", {
+            timeZone: "Asia/Dhaka",
+            hour: "2-digit",
+            minute: "2-digit",
+            hour12: false,
+          }).format(now);
+          return offer.startTime <= offer.endTime
+            ? currentTime >= offer.startTime && currentTime <= offer.endTime
+            : currentTime >= offer.startTime || currentTime <= offer.endTime;
+        })
+        .map((offer) => {
+          const target =
+            offer.applyTo === "all_products"
+              ? "all products"
+              : offer.applyTo === "category"
+                ? offer.categoryName
+                : [offer.productName, offer.variantName]
+                    .filter(Boolean)
+                    .join(" · ");
+          const minimumQuantity = Number(offer.minimumQuantity);
+          let benefit = "";
+          if (offer.offerType === "percentage") {
+            benefit = `${Number(offer.discountValue ?? 0)}% off`;
+          } else if (offer.offerType === "flat") {
+            benefit = `৳${Number(offer.discountValue ?? 0).toLocaleString("en-BD")} off`;
+          } else {
+            const buyQuantity = offer.templateSnapshot.buyProducts.reduce(
+              (sum, item) => sum + item.quantity,
+              0,
+            );
+            const getQuantity = offer.templateSnapshot.getProducts.reduce(
+              (sum, item) => sum + item.quantity,
+              0,
+            );
+            benefit = `Buy ${buyQuantity || minimumQuantity}, get ${getQuantity || 1}`;
+          }
+          return {
+            id: offer.id,
+            name: offer.name,
+            summary: [
+              minimumQuantity > 1 && offer.offerType !== "buy_x_get_y"
+                ? `Buy ${minimumQuantity}+`
+                : "",
+              benefit,
+              target ? `on ${target}` : "",
+            ]
+              .filter(Boolean)
+              .join(" "),
+          };
+        });
 
       return {
         shop: shopData,
-        products: filteredProducts.slice(offset, offset + input.limit),
+        products: pageProducts.map((product) => {
+          const reviewStats = reviewStatsMap[product.id];
+          return {
+            ...product,
+            averageRating: reviewStats?.averageRating ?? 0,
+            totalReviews: reviewStats?.totalReviews ?? 0,
+            soldOrderCount: soldOrderCountMap[product.id] ?? 0,
+          };
+        }),
         facets,
+        activeOffers,
         catalogProductCount: completeCatalog.length,
+        followState: {
+          followerCount: followerCountResult[0]?.count ?? 0,
+          isFollowing: Boolean(viewerFollow),
+        },
+        storeStats: {
+          averageRating: storeReviewStats[0]?.averageRating
+            ? Number.parseFloat(storeReviewStats[0].averageRating)
+            : 0,
+          totalReviews: storeReviewStats[0]?.totalReviews ?? 0,
+          totalOrders: storeOrderStats[0]?.totalOrders ?? 0,
+          totalCustomers: storeOrderStats[0]?.totalCustomers ?? 0,
+        },
         pagination: {
           page: safePage,
           limit: input.limit,
@@ -3852,7 +4251,12 @@ const queries = {
           ...getWebViewProductConditions(),
         ),
         with: {
-          category: { columns: { name: true, slug: true } },
+          category: {
+            columns: { name: true, slug: true },
+            with: {
+              type: { columns: { family: true, name: true, slug: true } },
+            },
+          },
           subCategory: { columns: { name: true, slug: true } },
           brand: { columns: { id: true, name: true, slug: true } },
           images: { columns: { imageUrl: true } },
@@ -4092,6 +4496,63 @@ const queries = {
 // ════════════════════════════════════════════════════════════════
 
 const mutations = {
+  /** Follow or unfollow an approved retailer storefront. */
+  setShopFollow: consumerProcedure
+    .route({
+      method: "POST",
+      path: "/customer/shops/{shopId}/follow",
+      tags: ["Customer"],
+      summary: "Follow or unfollow a retailer storefront",
+    })
+    .input(
+      z.object({
+        shopId: z.string().trim().min(1),
+        follow: z.boolean(),
+      }),
+    )
+    .handler(async ({ context, input }) => {
+      const consumerId = context.session.user.id;
+      const shop = await db.query.user.findFirst({
+        where: and(
+          eq(user.id, input.shopId),
+          eq(user.role, "shop_owner"),
+          eq(user.sellerStatus, "approved"),
+        ),
+        columns: { id: true },
+      });
+
+      if (!shop) {
+        throw new ORPCError("NOT_FOUND", { message: "Shop not found" });
+      }
+
+      if (input.follow) {
+        await db
+          .insert(shopFollower)
+          .values({ consumerId, shopId: shop.id })
+          .onConflictDoNothing();
+      } else {
+        await db
+          .delete(shopFollower)
+          .where(
+            and(
+              eq(shopFollower.consumerId, consumerId),
+              eq(shopFollower.shopId, shop.id),
+            ),
+          );
+      }
+
+      const [followerCountResult] = await db
+        .select({ count: count() })
+        .from(shopFollower)
+        .where(eq(shopFollower.shopId, shop.id));
+
+      return {
+        success: true,
+        isFollowing: input.follow,
+        followerCount: followerCountResult?.count ?? 0,
+      };
+    }),
+
   // ── Cart ─────────────────────────────────────────────────────
 
   /** Add item to cart */
@@ -4131,11 +4592,19 @@ const mutations = {
 
       const productData = await db.query.product.findFirst({
         where: eq(product.id, input.productId),
+        with: {
+          category: {
+            columns: { slug: true },
+            with: {
+              type: { columns: { family: true, name: true, slug: true } },
+            },
+          },
+        },
       });
       if (!productData)
         throw new ORPCError("NOT_FOUND", { message: "Product not found" });
-      if (purchaseMode === "open_order") {
-        const referenceVariant = input.variantId
+      const referenceVariant =
+        purchaseMode === "open_order" && input.variantId
           ? await db.query.productVariant.findFirst({
               where: and(
                 eq(productVariant.id, input.variantId),
@@ -4153,6 +4622,7 @@ const mutations = {
               },
             })
           : null;
+      if (purchaseMode === "open_order") {
         if (
           !referenceVariant ||
           !isOpenOrderReferenceSelectionEligible({
@@ -4212,11 +4682,25 @@ const mutations = {
         }
       }
 
-      const cylinderSaleMode =
+      const cylinderExchangeAvailable =
         purchaseMode === "direct"
-          ? (input.cylinderSaleMode ??
-            (directVariantConfig?.exchangeEnabled ? "exchange" : "new"))
-          : "new";
+          ? isWarehouseCylinderExchangeAvailable({
+              isReturnablePack: productData.isReturnablePack,
+              family: productData.category?.type?.family,
+              name: productData.category?.type?.name,
+              slug: productData.category?.type?.slug,
+              exchangeEnabled: directVariantConfig?.exchangeEnabled,
+            })
+          : Boolean(referenceVariant?.exchangeEnabled);
+
+      const cylinderSaleMode =
+        input.cylinderSaleMode ??
+        (cylinderExchangeAvailable ? "exchange" : "new");
+      if (cylinderSaleMode === "exchange" && !cylinderExchangeAvailable) {
+        throw new ORPCError("BAD_REQUEST", {
+          message: "Exchange is not enabled for this exact variant.",
+        });
+      }
 
       let itemPrice = productData.price;
       if (purchaseMode === "open_order" && input.variantId) {
@@ -4232,7 +4716,22 @@ const mutations = {
             message: "Product option not found",
           });
         }
-        itemPrice = variantData.price;
+        try {
+          itemPrice = resolveRetailerCylinderSale({
+            newUnitPrice: variantData.price,
+            exchangeEnabled: cylinderExchangeAvailable,
+            exchangeCreditAmount: referenceVariant?.exchangeCreditAmount ?? "0",
+            requestedMode: cylinderSaleMode,
+            quantity: input.quantity,
+          }).effectiveUnitPrice;
+        } catch (error) {
+          throw new ORPCError("BAD_REQUEST", {
+            message:
+              error instanceof Error
+                ? error.message
+                : "Reference cylinder pricing is invalid.",
+          });
+        }
       }
 
       return db.transaction(async (tx) => {
@@ -4289,6 +4788,7 @@ const mutations = {
               input.shopId
                 ? eq(cartItem.shopId, input.shopId)
                 : isNull(cartItem.shopId),
+              eq(cartItem.cylinderSaleMode, cylinderSaleMode),
             ];
             existing = await tx.query.cartItem.findFirst({
               where: and(...dupConditions),
@@ -4325,7 +4825,7 @@ const mutations = {
           try {
             itemPrice = resolveRetailerCylinderSale({
               newUnitPrice: decision.retailPrice,
-              exchangeEnabled: directVariantConfig?.exchangeEnabled ?? false,
+              exchangeEnabled: cylinderExchangeAvailable,
               exchangeCreditAmount:
                 directVariantConfig?.exchangeCreditAmount ?? "0",
               requestedMode: cylinderSaleMode,
@@ -4408,7 +4908,11 @@ const mutations = {
 
         const item = await tx.query.cartItem.findFirst({
           where: eq(cartItem.id, input.cartItemId),
-          with: { cart: true },
+          with: {
+            cart: true,
+            product: true,
+            variant: { with: { catalogVariant: true } },
+          },
         });
         if (!item || item.cart.userId !== userId) {
           throw new ORPCError("NOT_FOUND", { message: "Cart item not found" });
@@ -4458,7 +4962,7 @@ const mutations = {
           try {
             retailerPrice = resolveRetailerCylinderSale({
               newUnitPrice: decision.retailPrice,
-              exchangeEnabled: snapshot?.exchangeEnabled ?? false,
+              exchangeEnabled: retailerCylinderExchangeAvailable(snapshot),
               exchangeCreditAmount: snapshot?.exchangeCreditAmount ?? "0",
               requestedMode: cylinderSaleMode,
               quantity: input.quantity,
@@ -4470,6 +4974,61 @@ const mutations = {
                   ? error.message
                   : "Cylinder sale configuration is invalid",
             });
+          }
+        } else {
+          if (
+            !item.variant ||
+            !isOpenOrderReferenceSelectionEligible({
+              product: item.product,
+              variant: item.variant,
+            })
+          ) {
+            throw new ORPCError("BAD_REQUEST", {
+              message: "This reference variant is no longer orderable.",
+            });
+          }
+          try {
+            retailerPrice = resolveRetailerCylinderSale({
+              newUnitPrice: item.variant.price,
+              exchangeEnabled: Boolean(item.variant.exchangeEnabled),
+              exchangeCreditAmount: item.variant.exchangeCreditAmount ?? "0",
+              requestedMode: cylinderSaleMode,
+              quantity: input.quantity,
+            }).effectiveUnitPrice;
+          } catch (error) {
+            throw new ORPCError("BAD_REQUEST", {
+              message:
+                error instanceof Error
+                  ? error.message
+                  : "Reference cylinder pricing is invalid.",
+            });
+          }
+        }
+
+        if (cylinderSaleMode !== item.cylinderSaleMode) {
+          const sibling = await tx.query.cartItem.findFirst({
+            where: and(
+              eq(cartItem.cartId, item.cartId),
+              eq(cartItem.productId, item.productId),
+              item.variantId
+                ? eq(cartItem.variantId, item.variantId)
+                : isNull(cartItem.variantId),
+              item.shopId
+                ? eq(cartItem.shopId, item.shopId)
+                : isNull(cartItem.shopId),
+              eq(cartItem.cylinderSaleMode, cylinderSaleMode),
+            ),
+          });
+          if (sibling) {
+            await tx
+              .update(cartItem)
+              .set({
+                quantity: sibling.quantity + input.quantity,
+                ...(retailerPrice ? { price: retailerPrice } : {}),
+              })
+              .where(eq(cartItem.id, sibling.id));
+            await tx.delete(cartItem).where(eq(cartItem.id, item.id));
+            return { success: true, message: "Cart lines merged" };
           }
         }
 
@@ -4575,10 +5134,7 @@ const mutations = {
         const existingOrder = await db.query.order.findFirst({
           where: and(
             eq(order.userId, userId),
-            eq(
-              order.checkoutIdempotencyKey,
-              input.checkout.idempotencyKey,
-            ),
+            eq(order.checkoutIdempotencyKey, input.checkout.idempotencyKey),
           ),
           columns: { id: true, orderNumber: true },
         });
@@ -4803,7 +5359,8 @@ const mutations = {
           try {
             cylinderSale = resolveRetailerCylinderSale({
               newUnitPrice: stockDecision.retailPrice,
-              exchangeEnabled: retailerInventory?.exchangeEnabled ?? false,
+              exchangeEnabled:
+                retailerCylinderExchangeAvailable(retailerInventory),
               exchangeCreditAmount:
                 retailerInventory?.exchangeCreditAmount ?? "0",
               requestedMode: item.cylinderSaleMode,
@@ -4920,8 +5477,6 @@ const mutations = {
       }
       const shippingCost =
         checkoutQuote.totals.deliveryFee + checkoutQuote.totals.shippingFee;
-      const total = checkoutQuote.totals.grandTotal;
-
       // Compute area fields from consumer location
       const consumerLat = input.shippingInfo.lat
         ? parseFloat(input.shippingInfo.lat)
@@ -4930,6 +5485,40 @@ const mutations = {
         ? parseFloat(input.shippingInfo.lng)
         : null;
       const areaFields = await computeOrderAreaFields(consumerLat, consumerLng);
+      const appliedRetailerOffer =
+        cartSource.kind === "retailer"
+          ? await evaluateRetailerOffer({
+              shopId: cartSource.shopId,
+              lines: orderItems
+                .filter(
+                  (item): item is typeof item & { variantId: number } =>
+                    item.variantId != null,
+                )
+                .map((item) => ({
+                  variantId: item.variantId,
+                  productId: item.productId,
+                  quantity: item.quantity,
+                  unitPrice: Number(item.unitPrice),
+                  lineTotal: Number(item.totalPrice),
+                })),
+              customerKey: `consumer:${userId}`,
+              areaId:
+                areaFields.matchedAreaId ?? areaFields.consumerAreaId ?? null,
+            })
+          : null;
+      const offerDiscount = appliedRetailerOffer?.discountAmount ?? 0;
+      const total = Math.max(
+        checkoutQuote.totals.grandTotal - offerDiscount,
+        0,
+      );
+      const initialPaymentAmount = Math.min(
+        checkoutQuote.initialPaymentAmount,
+        total,
+      );
+      const projectedDueAfterPayment = Math.max(
+        0,
+        total - initialPaymentAmount,
+      );
 
       // Transaction: create order, deduct stock, clear cart
       const result = await db.transaction(async (tx) => {
@@ -4971,17 +5560,20 @@ const mutations = {
             shopId: b2cShopId,
             subtotal: checkoutQuote.totals.itemsTotal.toFixed(2),
             shippingCost: shippingCost.toFixed(2),
-            discount: checkoutQuote.totals.totalDiscount.toFixed(2),
+            discount: (
+              checkoutQuote.totals.totalDiscount + offerDiscount
+            ).toFixed(2),
             total: total.toFixed(2),
-            productDiscount:
-              checkoutQuote.totals.productDiscount.toFixed(2),
+            productDiscount: (
+              checkoutQuote.totals.productDiscount + offerDiscount
+            ).toFixed(2),
             couponDiscount: checkoutQuote.totals.couponDiscount.toFixed(2),
             rewardDiscount: checkoutQuote.totals.rewardDiscount.toFixed(2),
             taxAmount: checkoutQuote.totals.taxAmount.toFixed(2),
             deliveryFee: checkoutQuote.totals.deliveryFee.toFixed(2),
             shippingFee: checkoutQuote.totals.shippingFee.toFixed(2),
             paidAmount: "0.00",
-            dueAmount: checkoutQuote.totals.grandTotal.toFixed(2),
+            dueAmount: total.toFixed(2),
             returnAmount: "0.00",
             promotionCode: checkoutQuote.promotionCode,
             status: "pending",
@@ -5043,6 +5635,16 @@ const mutations = {
             expectedEmptyPackQty: oi.expectedEmptyPackQty,
           })),
         );
+        if (appliedRetailerOffer && b2cShopId) {
+          await tx.insert(retailerOfferApplication).values({
+            retailerOfferId: appliedRetailerOffer.offerId,
+            shopId: b2cShopId,
+            orderId: newOrder!.id,
+            customerKey: `consumer:${userId}`,
+            discountAmount: appliedRetailerOffer.discountAmount.toFixed(2),
+            salesAmount: appliedRetailerOffer.salesAmount.toFixed(2),
+          });
+        }
 
         if (promotion) {
           const consumedPromotion = await tx
@@ -5072,13 +5674,12 @@ const mutations = {
             orderId: newOrder!.id,
             userId,
             codeSnapshot: checkoutQuote.promotionCode!,
-            discountAmount:
-              checkoutQuote.totals.couponDiscount.toFixed(2),
+            discountAmount: checkoutQuote.totals.couponDiscount.toFixed(2),
             metadata: JSON.stringify({ audience: "retail" }),
           });
         }
 
-        if (checkoutQuote.initialPaymentAmount > 0) {
+        if (initialPaymentAmount > 0) {
           await tx.insert(payment).values({
             orderId: newOrder!.id,
             idempotencyKey: input.checkout?.idempotencyKey
@@ -5092,7 +5693,7 @@ const mutations = {
                   ? "delivery"
                   : "sslcommerz",
             status: "pending",
-            amount: checkoutQuote.initialPaymentAmount.toFixed(2),
+            amount: initialPaymentAmount.toFixed(2),
           });
         }
 
@@ -5138,10 +5739,10 @@ const mutations = {
         order: { id: result.id, orderNumber: result.orderNumber },
         checkout: {
           quoteVersion: checkoutQuote.version,
-          grandTotal: checkoutQuote.totals.grandTotal,
-          amountToPay: checkoutQuote.initialPaymentAmount,
-          projectedDueAfterPayment: checkoutQuote.projectedDueAfterPayment,
-          paymentRequired: checkoutQuote.initialPaymentAmount > 0,
+          grandTotal: total,
+          amountToPay: initialPaymentAmount,
+          projectedDueAfterPayment,
+          paymentRequired: initialPaymentAmount > 0,
         },
       };
     }),
@@ -5191,6 +5792,9 @@ const mutations = {
             message: "Order was already updated by another request",
           });
         }
+        await tx
+          .delete(retailerOfferApplication)
+          .where(eq(retailerOfferApplication.orderId, input.orderId));
 
         // Restore the same source that was persisted on the order.
         if (orderData.shopId) {
@@ -5235,16 +5839,18 @@ const mutations = {
     })
     .input(
       z.object({
-        productId: z.number(),
-        rating: z.number().min(1).max(5),
-        title: z.string().optional(),
-        comment: z.string().min(1),
+        productId: z.number().int().positive(),
+        rating: z.number().int().min(1).max(5),
+        title: z.string().trim().max(100).optional(),
+        comment: z.string().trim().min(1).max(1000),
       }),
     )
     .handler(async ({ context, input }) => {
       const userId = context.session.user.id;
 
-      // Check if user ordered this product
+      // A purchase is no longer required to review. We still record whether
+      // the reviewer has an order for the product so verified-purchase labels
+      // remain accurate for both consumers and retailers.
       const ordered = await db
         .select({ orderId: order.id })
         .from(order)
@@ -5257,23 +5863,6 @@ const mutations = {
         )
         .limit(1);
 
-      if (ordered.length === 0)
-        throw new ORPCError("FORBIDDEN", {
-          message: "You can only review products you ordered",
-        });
-
-      // Check duplicate
-      const existing = await db.query.productReview.findFirst({
-        where: and(
-          eq(productReview.productId, input.productId),
-          eq(productReview.userId, userId),
-        ),
-      });
-      if (existing)
-        throw new ORPCError("CONFLICT", {
-          message: "You have already reviewed this product",
-        });
-
       const [review] = await db
         .insert(productReview)
         .values({
@@ -5282,9 +5871,52 @@ const mutations = {
           rating: input.rating,
           title: input.title || null,
           comment: input.comment,
-          isVerifiedPurchase: true,
+          isVerifiedPurchase: ordered.length > 0,
         })
         .returning();
+
+      return { success: true, review };
+    }),
+
+  /** Update one of the current user's product reviews */
+  updateReview: protectedProcedure
+    .route({
+      method: "PATCH",
+      path: "/customer/reviews/{reviewId}",
+      tags: ["Customer"],
+      summary: "Update product review",
+    })
+    .input(
+      z.object({
+        reviewId: z.number().int().positive(),
+        rating: z.number().int().min(1).max(5),
+        title: z.string().trim().max(100).optional(),
+        comment: z.string().trim().min(1).max(1000),
+      }),
+    )
+    .handler(async ({ context, input }) => {
+      const [review] = await db
+        .update(productReview)
+        .set({
+          rating: input.rating,
+          title: input.title || null,
+          comment: input.comment,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(productReview.id, input.reviewId),
+            eq(productReview.userId, context.session.user.id),
+          ),
+        )
+        .returning();
+
+      if (!review) {
+        throw new ORPCError("NOT_FOUND", {
+          message:
+            "Review not found or you do not have permission to update it",
+        });
+      }
 
       return { success: true, review };
     }),
@@ -5903,7 +6535,26 @@ const openOrderEndpoints = {
               message: `${item.product.name} no longer has an orderable catalog variant.`,
             });
           }
-          const totalPrice = Number(item.price) * item.quantity;
+          let referenceCylinderSale: ReturnType<
+            typeof resolveRetailerCylinderSale
+          >;
+          try {
+            referenceCylinderSale = resolveRetailerCylinderSale({
+              newUnitPrice: item.variant.price,
+              exchangeEnabled: Boolean(item.variant.exchangeEnabled),
+              exchangeCreditAmount: item.variant.exchangeCreditAmount ?? "0",
+              requestedMode: item.cylinderSaleMode,
+              quantity: item.quantity,
+            });
+          } catch (error) {
+            throw new ORPCError("BAD_REQUEST", {
+              message:
+                error instanceof Error
+                  ? `${item.product.name}: ${error.message}`
+                  : `${item.product.name} has invalid reference pricing.`,
+            });
+          }
+          const totalPrice = Number(referenceCylinderSale.lineTotal);
           referenceSubtotal += totalPrice;
           return {
             productId: item.productId,
@@ -5916,8 +6567,12 @@ const openOrderEndpoints = {
             productSize:
               item.variant.quantitySelectorLabel ?? item.product.size,
             quantity: item.quantity,
-            unitPrice: item.price,
+            unitPrice: referenceCylinderSale.effectiveUnitPrice,
             totalPrice: totalPrice.toFixed(2),
+            cylinderSaleMode: item.cylinderSaleMode,
+            newUnitPrice: referenceCylinderSale.newUnitPrice,
+            exchangeCreditAmount: referenceCylinderSale.exchangeCreditAmount,
+            expectedEmptyPackQty: referenceCylinderSale.expectedEmptyPackQty,
           };
         },
       );
@@ -5996,6 +6651,10 @@ const openOrderEndpoints = {
                 quantity: item.quantity,
                 unitPrice: item.unitPrice,
                 totalPrice: item.totalPrice,
+                cylinderSaleMode: item.cylinderSaleMode,
+                newUnitPrice: item.newUnitPrice,
+                exchangeCreditAmount: item.exchangeCreditAmount,
+                expectedEmptyPackQty: item.expectedEmptyPackQty,
               })),
             )
             .returning();
@@ -6009,6 +6668,7 @@ const openOrderEndpoints = {
               catalogVariantId: item.catalogVariantId!,
               quantity: item.quantity,
               unitPrice: item.unitPrice,
+              cylinderSaleMode: item.cylinderSaleMode,
             })),
           );
           await tx.delete(cartItem).where(eq(cartItem.cartId, userCart.id));
@@ -6187,6 +6847,8 @@ const openOrderEndpoints = {
               productImage: item.productImage,
               productSize: item.productSize,
               quantity: item.quantity,
+              cylinderSaleMode: item.cylinderSaleMode,
+              expectedEmptyPackQty: item.expectedEmptyPackQty,
             })),
           };
         }),
@@ -6274,6 +6936,8 @@ const openOrderEndpoints = {
                 orderItemId: openOrderBidItem.orderItemId,
                 platformPrice: openOrderBidItem.platformPrice,
                 sellerPrice: openOrderBidItem.sellerPrice,
+                sellerNewPrice: openOrderBidItem.sellerNewPrice,
+                exchangeCreditAmount: openOrderBidItem.exchangeCreditAmount,
               })
               .from(openOrderBidItem)
               .where(
@@ -6303,6 +6967,10 @@ const openOrderEndpoints = {
                   orderItemId: item.orderItemId,
                   referencePrice: Number(item.platformPrice),
                   retailerPrice: Number(item.sellerPrice),
+                  retailerNewPrice: Number(
+                    item.sellerNewPrice ?? item.sellerPrice,
+                  ),
+                  exchangeCreditAmount: Number(item.exchangeCreditAmount ?? 0),
                 })),
             })),
           ).map((offer, index) => ({ ...offer, isLowestTotal: index === 0 }))
@@ -6345,6 +7013,10 @@ const openOrderEndpoints = {
           productImage: item.productImage,
           productSize: item.productSize,
           quantity: item.quantity,
+          cylinderSaleMode: item.cylinderSaleMode,
+          newUnitPrice: Number(item.newUnitPrice),
+          exchangeCreditAmount: Number(item.exchangeCreditAmount),
+          expectedEmptyPackQty: item.expectedEmptyPackQty,
           referenceUnitPrice:
             referencePriceByOrderItem.get(item.id) ?? Number(item.unitPrice),
           referenceTotal:

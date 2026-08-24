@@ -195,10 +195,14 @@ function CheckoutLineItem({
                     Exchange
                   </span>
                   <span className="mt-0.5 block leading-4 text-slate-500">
-                    Return {item.quantity} empty; save{" "}
-                    {formatCheckoutPrice(
-                      item.cylinderSale.exchangeCreditAmount * item.quantity,
-                    )}
+                    {item.cylinderSale.exchangeCreditAmount > 0
+                      ? `Return ${item.quantity} empty; save ${formatCheckoutPrice(
+                          item.cylinderSale.exchangeCreditAmount *
+                            item.quantity,
+                        )}`
+                      : `Return ${item.quantity} empty cylinder${
+                          item.quantity === 1 ? "" : "s"
+                        }`}
                   </span>
                 </span>
               </Label>

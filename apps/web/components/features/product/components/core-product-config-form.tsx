@@ -841,6 +841,7 @@ export default function CoreProductConfigForm({
                     <SharedTemplateEditor
                       form={form}
                       defaults={defaultValues.template}
+                      hideDeposit={Boolean(adapter)}
                     />
                   </div>
 
@@ -1305,6 +1306,7 @@ function normalizeTemplateDetails(
   details: Partial<CoreProductConfigValues["template"]> | undefined,
   core: any,
 ): CoreProductConfigValues["template"] {
+  const expiryEnabled = details?.expiryEnabled ?? false;
   return {
     name: details?.name?.trim() || core?.name?.trim() || "Product",
     description: details?.description ?? "",
@@ -1313,9 +1315,9 @@ function normalizeTemplateDetails(
     image: details?.image || core?.image || "",
     additionalImages: details?.additionalImages ?? [],
     features: details?.features ?? [],
-    trackingType: details?.trackingType || "none",
+    trackingType: expiryEnabled ? "batch" : details?.trackingType || "none",
     returnPolicyEnabled: details?.returnPolicyEnabled ?? true,
-    expiryEnabled: details?.expiryEnabled ?? false,
+    expiryEnabled,
     damageControlEnabled: details?.damageControlEnabled ?? false,
     stockTrackingEnabled: details?.stockTrackingEnabled ?? true,
     minimumOrderEnabled: details?.minimumOrderEnabled ?? true,
@@ -1349,9 +1351,11 @@ function mergeTemplateDetails(
 function SharedTemplateEditor({
   form,
   defaults,
+  hideDeposit = false,
 }: {
   form: any;
   defaults: CoreProductConfigValues["template"];
+  hideDeposit?: boolean;
 }) {
   const units = Object.values(FULFILLMENT_UNITS);
 
@@ -1402,7 +1406,12 @@ function SharedTemplateEditor({
               >
                 <Select
                   value={field.state.value || defaults.trackingType}
-                  onValueChange={field.handleChange}
+                  onValueChange={(value) => {
+                    field.handleChange(value);
+                    if (value !== "batch") {
+                      form.setFieldValue("template.expiryEnabled", false);
+                    }
+                  }}
                 >
                   <SelectTrigger className="h-9 w-full">
                     <SelectValue />
@@ -1422,7 +1431,6 @@ function SharedTemplateEditor({
               "Return policy",
               "Allow standard product returns.",
             ],
-            ["expiryEnabled", "Expiry tracking", "Track product expiry dates."],
             [
               "damageControlEnabled",
               "Damage control",
@@ -1445,6 +1453,24 @@ function SharedTemplateEditor({
               )}
             </form.Field>
           ))}
+          <form.Field name="template.expiryEnabled">
+            {(field: any) => (
+              <TemplateRuleRow
+                label="Expiry tracking"
+                description="Track dated batches throughout warehouse inventory."
+              >
+                <Switch
+                  checked={field.state.value}
+                  onCheckedChange={(checked) => {
+                    field.handleChange(checked);
+                    if (checked) {
+                      form.setFieldValue("template.trackingType", "batch");
+                    }
+                  }}
+                />
+              </TemplateRuleRow>
+            )}
+          </form.Field>
           <form.Field name="template.minimumOrderEnabled">
             {(enabled: any) => (
               <TemplateRuleRow
@@ -1517,29 +1543,31 @@ function SharedTemplateEditor({
           <form.Field name="template.isReturnablePack">
             {(enabled: any) => (
               <TemplateRuleRow
-                label="Returnable pack"
-                description="Apply a default refundable deposit."
+                label="Empty cylinder return"
+                description="Buyers can choose New or Exchange"
               >
                 <div className="flex w-full items-center justify-end gap-3">
                   <Switch
                     checked={enabled.state.value}
                     onCheckedChange={enabled.handleChange}
                   />
-                  <form.Field name="template.defaultPackDepositAmount">
-                    {(deposit: any) => (
-                      <Input
-                        className="h-9 flex-1 text-right"
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        disabled={!enabled.state.value}
-                        value={deposit.state.value}
-                        onChange={(event) =>
-                          deposit.handleChange(event.target.value)
-                        }
-                      />
-                    )}
-                  </form.Field>
+                  {!hideDeposit && (
+                    <form.Field name="template.defaultPackDepositAmount">
+                      {(deposit: any) => (
+                        <Input
+                          className="h-9 flex-1 text-right"
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          disabled={!enabled.state.value}
+                          value={deposit.state.value}
+                          onChange={(event) =>
+                            deposit.handleChange(event.target.value)
+                          }
+                        />
+                      )}
+                    </form.Field>
+                  )}
                 </div>
               </TemplateRuleRow>
             )}

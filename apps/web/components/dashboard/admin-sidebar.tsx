@@ -180,7 +180,7 @@ function getAdminNavGroups(pendingApplications = 0): NavGroup[] {
           icon: StoreIcon,
         },
         {
-          title: "Offers",
+          title: "Offer Structures",
           url: `${ADMIN_BASE}/offers`,
           icon: GiftIcon,
         },

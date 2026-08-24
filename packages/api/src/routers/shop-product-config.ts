@@ -3,6 +3,7 @@ import {
   shouldDeactivateOmittedBrands,
   validateBrandCreationSubmission,
 } from "@bikalpo-project/db/brand-creation";
+import { shouldEnableWarehouseCylinderExchange } from "@bikalpo-project/db/fulfillment";
 import {
   adminProductGenerationTemplate,
   brand,
@@ -20,11 +21,13 @@ import { ORPCError } from "@orpc/server";
 import { and, count, eq, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
 import { shopOwnerProcedure } from "../index";
+import { recalculateOffersForShopProduct } from "../services/open-order-matching";
 import {
   isConcreteVariantOption,
   linkProductVariantsToCatalog,
   resolveConcreteVariantForConfig,
 } from "./helpers/sync-generated-variants";
+import { syncWarehouseCylinderExchange } from "./helpers/warehouse-cylinder-exchange";
 
 const configuredVariantSchema = z.object({
   variantOptionId: z.number().int().positive(),
@@ -533,7 +536,7 @@ export const shopProductConfigEndpoints = {
         }
       }
 
-      return db.transaction(async (tx) => {
+      const result = await db.transaction(async (tx) => {
         const core = await tx.query.coreProductIdentity.findFirst({
           where: and(
             eq(coreProductIdentity.id, input.coreProductId),
@@ -563,16 +566,6 @@ export const shopProductConfigEndpoints = {
           throw new ORPCError("BAD_REQUEST", {
             message:
               "Empty cylinder exchange is only available for LPG products",
-          });
-        }
-        if (
-          requestedExchangeVariants.some(
-            (variant) => Number(variant.exchangeCreditAmount) <= 0,
-          )
-        ) {
-          throw new ORPCError("BAD_REQUEST", {
-            message:
-              "Exchange Credit must be greater than zero when Exchange is enabled",
           });
         }
         const existingTemplate =
@@ -807,8 +800,40 @@ export const shopProductConfigEndpoints = {
             },
           });
 
+        const cylinderExchangeEnabled = shouldEnableWarehouseCylinderExchange({
+          isReturnablePack: input.details.isReturnablePack,
+          family: core.category?.type?.family,
+          name: core.category?.type?.name,
+          slug: core.category?.type?.slug,
+        });
+        for (const productId of new Set([...created, ...updated])) {
+          await syncWarehouseCylinderExchange(tx, {
+            productId,
+            enabled: cylinderExchangeEnabled,
+          });
+        }
+
         return { created, updated, deactivated };
       });
+      const recalculatedOrderIds = new Set<number>();
+      for (const productId of [...result.updated, ...result.deactivated]) {
+        for (const orderId of await recalculateOffersForShopProduct(
+          productId,
+          shopId,
+        )) {
+          recalculatedOrderIds.add(orderId);
+        }
+      }
+      for (const orderId of recalculatedOrderIds) {
+        context.realtime.emitToOrder(orderId, "open-order:offer-updated", {
+          orderId,
+          reason: "retailer_exchange_configuration_changed",
+        });
+      }
+      return {
+        ...result,
+        recalculatedOpenOrders: recalculatedOrderIds.size,
+      };
     }),
 
   getShopOwnedProductForEdit: shopOwnerProcedure
@@ -867,7 +892,7 @@ export const shopProductConfigEndpoints = {
           message: "A variant can only be selected once",
         });
       }
-      return db.transaction(async (tx) => {
+      const result = await db.transaction(async (tx) => {
         const existing = await tx.query.product.findFirst({
           where: and(
             eq(product.id, input.productId),
@@ -878,7 +903,9 @@ export const shopProductConfigEndpoints = {
             brand: true,
             category: {
               columns: { typeId: true },
-              with: { type: { columns: { family: true } } },
+              with: {
+                type: { columns: { family: true, name: true, slug: true } },
+              },
             },
             coreProduct: true,
             variants: true,
@@ -898,17 +925,6 @@ export const shopProductConfigEndpoints = {
               "Empty cylinder exchange is only available for LPG products",
           });
         }
-        if (
-          input.variants.some(
-            (row) =>
-              row.exchangeEnabled && Number(row.exchangeCreditAmount) <= 0,
-          )
-        ) {
-          throw new ORPCError("BAD_REQUEST", {
-            message:
-              "Exchange Credit must be greater than zero when Exchange is enabled",
-          });
-        }
         const optionMap = await loadScopedOptions(
           tx,
           optionIds,
@@ -924,6 +940,9 @@ export const shopProductConfigEndpoints = {
           optionMap,
           details: input.details,
         });
+        const anyExchangeEnabled = input.variants.some(
+          (row) => row.exchangeEnabled,
+        );
         await tx
           .update(product)
           .set({
@@ -943,7 +962,7 @@ export const shopProductConfigEndpoints = {
             conversionEnabled: input.details.conversionEnabled,
             inventoryLooseUnitEnabled: input.details.inventoryLooseUnitEnabled,
             inventoryLooseUnit: input.details.inventoryLooseUnit,
-            isReturnablePack: input.details.isReturnablePack,
+            isReturnablePack: anyExchangeEnabled,
             defaultPackDepositAmount: input.details.defaultPackDepositAmount,
             allowedPackBrands: input.details.allowedPackBrands,
             allowedPackSizes: input.details.allowedPackSizes,
@@ -964,5 +983,19 @@ export const shopProductConfigEndpoints = {
         }
         return { productId: existing.id };
       });
+      const recalculatedOrderIds = await recalculateOffersForShopProduct(
+        result.productId,
+        shopId,
+      );
+      for (const orderId of recalculatedOrderIds) {
+        context.realtime.emitToOrder(orderId, "open-order:offer-updated", {
+          orderId,
+          reason: "retailer_exchange_configuration_changed",
+        });
+      }
+      return {
+        ...result,
+        recalculatedOpenOrders: recalculatedOrderIds.length,
+      };
     }),
 };

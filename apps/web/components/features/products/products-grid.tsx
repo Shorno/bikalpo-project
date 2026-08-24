@@ -1,5 +1,4 @@
-import type { ProductWithRelations } from "@bikalpo-project/db/schema";
-import { ProductCard } from "@/components/features/products/product-card";
+import { ConsumerProductCard } from "@/components/features/products/consumer-product-card";
 import { ProductPagination } from "@/components/features/products/product-pagination";
 import { ProductsSort } from "@/components/features/products/products-sort";
 import {
@@ -65,11 +64,10 @@ export async function ProductsGrid({
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-6">
           {products.map((product) => (
-            <ProductCard
+            <ConsumerProductCard
               key={product.id}
-              product={product as ProductWithRelations}
+              product={product as any}
               previewMode={previewMode}
-              readOnly={previewMode}
             />
           ))}
         </div>

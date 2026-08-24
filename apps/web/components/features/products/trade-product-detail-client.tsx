@@ -6,6 +6,11 @@ import type {
 } from "@bikalpo-project/db/schema";
 import Link from "next/link";
 import { useMemo, useState } from "react";
+import {
+  type CylinderSaleMode,
+  CylinderTypePreview,
+  CylinderTypeRadios,
+} from "@/components/features/products/cylinder-type-radios";
 import { ProductActions } from "@/components/features/products/product-actions";
 import { ProductSellers } from "@/components/features/products/product-sellers";
 import { ProductSpecs } from "@/components/features/products/product-specs";
@@ -37,6 +42,8 @@ export interface DetailVariant {
     exchangeEnabled: boolean;
     exchangeCreditAmount: number;
     defaultMode: "new" | "exchange";
+    newUnitPrice?: number;
+    effectiveExchangeUnitPrice?: number;
   } | null;
 }
 
@@ -114,6 +121,12 @@ export function ProductDetailClient({
   const [selectedId, setSelectedId] = useState<number>(sorted[0]?.id ?? -1);
 
   const selected = sorted.find((v) => v.id === selectedId) ?? sorted[0] ?? null;
+  const [cylinderSaleMode, setCylinderSaleMode] = useState<CylinderSaleMode>(
+    sorted[0]?.cylinderSale?.defaultMode ?? "new",
+  );
+  const [selectedQuantity, setSelectedQuantity] = useState(
+    Math.max(1, Number(sorted[0]?.orderMin) || 1),
+  );
 
   // Seller selection state
   const [selectedSeller, setSelectedSeller] = useState<{
@@ -122,11 +135,18 @@ export function ProductDetailClient({
     retailPrice: number;
   } | null>(null);
 
-  const displayPrice = selectedSeller
+  const selectedBasePrice = selectedSeller
     ? selectedSeller.retailPrice
     : selected
       ? Number(selected.price)
       : Number(product.price);
+  const selectedExchangeCredit =
+    purchaseMode === "open_order" &&
+    selected?.cylinderSale?.exchangeEnabled &&
+    cylinderSaleMode === "exchange"
+      ? selected.cylinderSale.exchangeCreditAmount
+      : 0;
+  const displayPrice = Math.max(0, selectedBasePrice - selectedExchangeCredit);
   const displayStock =
     purchaseMode === "open_order"
       ? 999
@@ -183,7 +203,11 @@ export function ProductDetailClient({
                 <button
                   key={v.id}
                   type="button"
-                  onClick={() => setSelectedId(v.id)}
+                  onClick={() => {
+                    setSelectedId(v.id);
+                    setCylinderSaleMode(v.cylinderSale?.defaultMode ?? "new");
+                    setSelectedQuantity(Math.max(1, Number(v.orderMin) || 1));
+                  }}
                   className={cn(
                     "relative px-4 py-2.5 rounded-lg border-2 text-sm font-medium transition-all",
                     "hover:border-blue-400 hover:bg-blue-50/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500",
@@ -227,14 +251,43 @@ export function ProductDetailClient({
         </div>
       )}
 
+      {purchaseMode === "open_order" && selected?.cylinderSale ? (
+        <div className="mb-6">
+          {selected.cylinderSale.exchangeEnabled ? (
+            <CylinderTypeRadios
+              value={cylinderSaleMode}
+              onChange={setCylinderSaleMode}
+              hint
+              quantity={selectedQuantity}
+            />
+          ) : (
+            <CylinderTypePreview exchangeAvailable={false} />
+          )}
+          {selected.cylinderSale.exchangeEnabled ? (
+            <p className="mt-2 text-xs text-emerald-700">
+              Exchange reference credit: ৳
+              {selected.cylinderSale.exchangeCreditAmount.toLocaleString(
+                "en-BD",
+              )}{" "}
+              each. Retailer offers use each retailer&apos;s configured credit.
+            </p>
+          ) : (
+            <p className="mt-2 text-xs text-gray-500">
+              Exchange is not configured for this exact variant.
+            </p>
+          )}
+        </div>
+      ) : null}
+
       {purchaseMode === "direct" && selected?.cylinderSale?.exchangeEnabled && (
         <div className="mb-6 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-950">
           <p className="font-semibold">Exchange or buy New at checkout</p>
           <p className="mt-1 leading-5 text-emerald-800">
             Exchange is selected by default. Return one exact-match empty
-            cylinder per unit and save ৳
-            {selected.cylinderSale.exchangeCreditAmount.toLocaleString("en-BD")}{" "}
-            each.
+            cylinder per unit
+            {selected.cylinderSale.exchangeCreditAmount > 0
+              ? ` and save ৳${selected.cylinderSale.exchangeCreditAmount.toLocaleString("en-BD")} each.`
+              : "."}
           </p>
         </div>
       )}
@@ -259,6 +312,7 @@ export function ProductDetailClient({
         </div>
       ) : (
         <ProductActions
+          key={selected?.id ?? "product-actions"}
           product={{
             id: product.id,
             name: product.name,
@@ -273,6 +327,11 @@ export function ProductDetailClient({
             purchaseMode === "direct" ? directShopId : selectedSeller?.shopId
           }
           purchaseMode={purchaseMode === "open_order" ? "open_order" : "direct"}
+          cylinderSaleMode={
+            purchaseMode === "open_order" ? cylinderSaleMode : undefined
+          }
+          onQuantityChange={setSelectedQuantity}
+          variant={purchaseMode === "open_order" ? "emerald" : "default"}
           orderMin={selected?.orderMin ? Number(selected.orderMin) : undefined}
           orderMax={selected?.orderMax ? Number(selected.orderMax) : undefined}
           orderIncrement={

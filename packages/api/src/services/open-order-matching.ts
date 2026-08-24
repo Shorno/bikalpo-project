@@ -22,6 +22,7 @@ import {
   type OfferDiscountType,
 } from "./open-order-domain";
 import { isOpenOrderDeadlineAfter } from "./open-order-deadline";
+import { resolveRetailerCylinderSale } from "./retailer-cylinder-sale";
 
 export const OFFER_WINDOW_SECONDS = positiveSeconds(
   process.env.OPEN_ORDER_OFFER_WINDOW_SECONDS,
@@ -49,6 +50,10 @@ export interface CartItemForOpenOrder {
   quantity: number;
   unitPrice: string;
   totalPrice: string;
+  cylinderSaleMode: "new" | "exchange";
+  newUnitPrice: string;
+  exchangeCreditAmount: string;
+  expectedEmptyPackQty: number;
 }
 
 export interface MatchedInventory {
@@ -57,6 +62,8 @@ export interface MatchedInventory {
   catalogVariantId: number;
   availableQty: number;
   retailPrice: string | null;
+  exchangeEnabled: boolean;
+  exchangeCreditAmount: string;
 }
 
 export interface EligibleSeller {
@@ -72,6 +79,7 @@ export interface PersistedOpenOrderItem {
   catalogVariantId: number;
   quantity: number;
   unitPrice: string;
+  cylinderSaleMode: "new" | "exchange";
 }
 
 type DatabaseClient = typeof db | any;
@@ -90,12 +98,18 @@ export async function findEligibleSellers(
     : pointAreas.map((entry) => entry.areaId);
   if (areaIds.length === 0 || requestedItems.length === 0) return [];
 
-  const required = new Map<number, number>();
+  const required = new Map<
+    number,
+    { quantity: number; requiresExchange: boolean }
+  >();
   for (const item of requestedItems) {
-    required.set(
-      item.catalogVariantId,
-      (required.get(item.catalogVariantId) ?? 0) + item.quantity,
-    );
+    const current = required.get(item.catalogVariantId);
+    required.set(item.catalogVariantId, {
+      quantity: (current?.quantity ?? 0) + item.quantity,
+      requiresExchange:
+        Boolean(current?.requiresExchange) ||
+        item.cylinderSaleMode === "exchange",
+    });
   }
   const catalogVariantIds = [...required.keys()];
 
@@ -148,6 +162,8 @@ export async function findEligibleSellers(
         productStatus: product.status,
         variantActive: productVariant.isActive,
         variantType: productVariant.variantType,
+        exchangeEnabled: productVariant.exchangeEnabled,
+        exchangeCreditAmount: productVariant.exchangeCreditAmount,
       })
       .from(inventory)
       .innerJoin(productVariant, eq(productVariant.id, inventory.variantId))
@@ -191,6 +207,8 @@ export async function findEligibleSellers(
       catalogVariantId: row.catalogVariantId,
       availableQty: Number(row.availableQty),
       retailPrice: row.retailPrice,
+      exchangeEnabled: Boolean(row.exchangeEnabled),
+      exchangeCreditAmount: row.exchangeCreditAmount ?? "0",
     });
     stockByShop.set(row.shopId, rows);
   }
@@ -210,13 +228,27 @@ export async function findEligibleSellers(
 
     const candidateRows = stockByShop.get(shop.id) ?? [];
     const matchedInventory: MatchedInventory[] = [];
-    for (const [catalogVariantId, quantity] of required) {
+    for (const [catalogVariantId, requirement] of required) {
       const row = candidateRows.find(
         (candidate) =>
           candidate.catalogVariantId === catalogVariantId &&
-          candidate.availableQty >= quantity,
+          candidate.availableQty >= requirement.quantity &&
+          (!requirement.requiresExchange || candidate.exchangeEnabled),
       );
       if (!row) break;
+      if (requirement.requiresExchange) {
+        try {
+          resolveRetailerCylinderSale({
+            newUnitPrice: row.retailPrice ?? "0",
+            exchangeEnabled: row.exchangeEnabled,
+            exchangeCreditAmount: row.exchangeCreditAmount,
+            requestedMode: "exchange",
+            quantity: requirement.quantity,
+          });
+        } catch {
+          break;
+        }
+      }
       matchedInventory.push(row);
     }
     if (matchedInventory.length !== required.size) continue;
@@ -283,6 +315,12 @@ async function getOfferLines(database: DatabaseClient, bidId: number) {
       reservedQty: inventory.reservedQty,
       retailPrice: inventory.retailPrice,
       sellerPrice: openOrderBidItem.sellerPrice,
+      sellerNewPrice: openOrderBidItem.sellerNewPrice,
+      snapshottedExchangeCreditAmount:
+        openOrderBidItem.exchangeCreditAmount,
+      cylinderSaleMode: orderItem.cylinderSaleMode,
+      exchangeEnabled: productVariant.exchangeEnabled,
+      exchangeCreditAmount: productVariant.exchangeCreditAmount,
       retailerSku: productVariant.sku,
     })
     .from(openOrderBidItem)
@@ -290,6 +328,16 @@ async function getOfferLines(database: DatabaseClient, bidId: number) {
     .innerJoin(inventory, eq(inventory.id, openOrderBidItem.inventoryId))
     .innerJoin(productVariant, eq(productVariant.id, inventory.variantId))
     .where(eq(openOrderBidItem.bidId, bidId));
+}
+
+function resolveOfferLinePrice(line: any) {
+  return resolveRetailerCylinderSale({
+    newUnitPrice: line.retailPrice,
+    exchangeEnabled: Boolean(line.exchangeEnabled),
+    exchangeCreditAmount: line.exchangeCreditAmount ?? "0",
+    requestedMode: line.cylinderSaleMode,
+    quantity: line.quantity,
+  });
 }
 
 async function releaseOfferHold(
@@ -373,9 +421,10 @@ export async function submitRetailerOffer(input: {
     const lines = await getOfferLines(tx, bid.id);
     if (lines.length === 0)
       throw new Error("Offer has no matched inventory lines.");
-    const pricedLines = lines.map((line: any) => ({
+    const resolvedLines = lines.map(resolveOfferLinePrice);
+    const pricedLines = lines.map((line: any, index: number) => ({
       quantity: line.quantity,
-      unitPrice: Number(line.retailPrice),
+      unitPrice: Number(resolvedLines[index]!.effectiveUnitPrice),
     }));
     const totals = calculateOfferTotals({
       lines: pricedLines,
@@ -426,10 +475,15 @@ export async function submitRetailerOffer(input: {
       }
     }
 
-    for (const line of lines) {
+    for (const [index, line] of lines.entries()) {
+      const cylinderSale = resolvedLines[index]!;
       await tx
         .update(openOrderBidItem)
-        .set({ sellerPrice: Number(line.retailPrice).toFixed(2) })
+        .set({
+          sellerPrice: cylinderSale.effectiveUnitPrice,
+          sellerNewPrice: cylinderSale.newUnitPrice,
+          exchangeCreditAmount: cylinderSale.exchangeCreditAmount,
+        })
         .where(eq(openOrderBidItem.id, line.bidItemId));
     }
     const [updated] = await tx
@@ -502,19 +556,35 @@ export async function withdrawRetailerOffer(input: {
 async function recalculateOffer(database: DatabaseClient, bid: any) {
   if (bid.status !== "submitted" || bid.priceFrozenAt) return null;
   const lines = await getOfferLines(database, bid.id);
+  let resolvedLines: ReturnType<typeof resolveRetailerCylinderSale>[];
+  try {
+    resolvedLines = lines.map(resolveOfferLinePrice);
+  } catch {
+    await releaseOfferHold(database, bid);
+    await database
+      .update(openOrderBid)
+      .set({ status: "released", reservationHeld: false })
+      .where(eq(openOrderBid.id, bid.id));
+    return null;
+  }
   const totals = calculateOfferTotals({
-    lines: lines.map((line: any) => ({
+    lines: lines.map((line: any, index: number) => ({
       quantity: line.quantity,
-      unitPrice: Number(line.retailPrice),
+      unitPrice: Number(resolvedLines[index]!.effectiveUnitPrice),
     })),
     discountType: bid.discountType ?? "fixed",
     discountValue: Number(bid.discountValue ?? 0),
     deliveryCharge: Number(bid.deliveryCharge ?? 0),
   });
-  for (const line of lines) {
+  for (const [index, line] of lines.entries()) {
+    const cylinderSale = resolvedLines[index]!;
     await database
       .update(openOrderBidItem)
-      .set({ sellerPrice: Number(line.retailPrice).toFixed(2) })
+      .set({
+        sellerPrice: cylinderSale.effectiveUnitPrice,
+        sellerNewPrice: cylinderSale.newUnitPrice,
+        exchangeCreditAmount: cylinderSale.exchangeCreditAmount,
+      })
       .where(eq(openOrderBidItem.id, line.bidItemId));
   }
   await database
@@ -601,6 +671,30 @@ export async function recalculateOffersForInventory(
   });
 }
 
+export async function recalculateOffersForShopProduct(
+  productId: number,
+  shopId: string,
+) {
+  const inventoryRows = await db
+    .select({ id: inventory.id })
+    .from(inventory)
+    .innerJoin(productVariant, eq(productVariant.id, inventory.variantId))
+    .where(
+      and(
+        eq(inventory.ownerType, "shop"),
+        eq(inventory.ownerId, shopId),
+        eq(productVariant.productId, productId),
+      ),
+    );
+  const orderIds = new Set<number>();
+  for (const row of inventoryRows) {
+    for (const orderId of await recalculateOffersForInventory(row.id, shopId)) {
+      orderIds.add(orderId);
+    }
+  }
+  return [...orderIds];
+}
+
 export async function reconcileOpenOrder(orderId: number, now = new Date()) {
   return db.transaction(async (tx) => {
     await tx.execute(
@@ -650,7 +744,15 @@ export async function reconcileOpenOrder(orderId: number, now = new Date()) {
     }
 
     if (request.broadcastExpiresAt && now >= request.broadcastExpiresAt) {
-      const submitted = bids.filter((bid) => bid.status === "submitted");
+      for (const bid of bids.filter((entry) => entry.status === "submitted")) {
+        await recalculateOffer(tx, bid);
+      }
+      const refreshedBids = await tx.query.openOrderBid.findMany({
+        where: eq(openOrderBid.subOrderId, orderId),
+      });
+      const submitted = refreshedBids.filter(
+        (bid) => bid.status === "submitted",
+      );
       if (submitted.length === 0) {
         await tx
           .update(openOrderBid)
@@ -818,6 +920,12 @@ export async function acceptOpenOrderOffer(input: {
 
     for (const line of lines) {
       const unitPrice = Number(line.sellerPrice).toFixed(2);
+      const newUnitPrice = Number(
+        line.sellerNewPrice ?? line.sellerPrice,
+      ).toFixed(2);
+      const exchangeCreditAmount = Number(
+        line.snapshottedExchangeCreditAmount ?? 0,
+      ).toFixed(2);
       await tx
         .update(orderItem)
         .set({
@@ -825,6 +933,11 @@ export async function acceptOpenOrderOffer(input: {
           unitPrice,
           totalPrice: (Number(unitPrice) * line.quantity).toFixed(2),
           targetSkuSnapshot: line.retailerSku,
+          cylinderSaleMode: line.cylinderSaleMode,
+          newUnitPrice,
+          exchangeCreditAmount,
+          expectedEmptyPackQty:
+            line.cylinderSaleMode === "exchange" ? line.quantity : 0,
         })
         .where(eq(orderItem.id, line.orderItemId));
       const consumed = await tx

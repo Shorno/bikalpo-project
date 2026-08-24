@@ -4,11 +4,12 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, PackagePlus } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { orpc } from "@/utils/orpc";
 import { CartonConfiguration } from "./_components/carton-configuration";
+import { isCartonVariantEligible } from "./_components/carton-eligibility";
 import { CartonNotes } from "./_components/carton-notes";
 import { CartonProductPicker } from "./_components/carton-product-picker";
 import { CartonSummaryPanel } from "./_components/carton-summary-panel";
@@ -24,14 +25,10 @@ export default function CreateCartonPage() {
   const [productFilter, setProductFilter] = useState<string>("all");
   const [items, setItems] = useState<CartonItem[]>([]);
 
-  const [selectedConfigId, setSelectedConfigId] = useState<number | null>(null);
   const [storageAreaId, setStorageAreaId] = useState<string>("");
   const [note, setNote] = useState("");
   const [cartonPrice, setCartonPrice] = useState("");
   const [deliveryCost, setDeliveryCost] = useState("");
-  const [overridePrice, setOverridePrice] = useState(false);
-  const [overrideDelivery, setOverrideDelivery] = useState(false);
-  const [overrideReason, setOverrideReason] = useState("");
 
   const { data: allProductsData } = useQuery({
     queryKey: ["w", "all-products-for-filters"],
@@ -67,16 +64,6 @@ export default function CreateCartonPage() {
     enabled: hasActiveFilters,
   });
 
-  const firstVariantId = items.length > 0 ? items[0].variantId : null;
-  const { data: configsData } = useQuery({
-    queryKey: ["w", "configs", firstVariantId],
-    queryFn: () =>
-      (orpc.warehouse as any).getCartonConfigs.call({
-        variantId: firstVariantId,
-        includeInactive: true,
-      }),
-    enabled: !!firstVariantId,
-  });
   const { data: areasData } = useQuery({
     queryKey: ["w", "areas"],
     queryFn: () => (orpc.warehouse as any).getStorageAreas.call({}),
@@ -88,13 +75,7 @@ export default function CreateCartonPage() {
 
   const allProductsList = allProductsData?.products ?? [];
   const products = searchData?.products ?? [];
-  const configs = useMemo(() => configsData?.configs ?? [], [configsData]);
-  const activeConfigs = useMemo(
-    () => configs.filter((config: any) => config.isActive),
-    [configs],
-  );
   const areas = areasData?.areas ?? [];
-  const selectedConfig = configs.find((c: any) => c.id === selectedConfigId);
   const nextCartonId = nextIdData?.nextCartonId ?? "CTN-...";
 
   const allCategories = allProductsList.reduce((acc: any[], p: any) => {
@@ -125,51 +106,27 @@ export default function CreateCartonPage() {
     return acc;
   }, []);
 
-  const totalWeightKg = Number(selectedConfig?.cartonWeightKg || 0).toFixed(2);
-  const totalLoosePrice = items
-    .reduce((s, i) => s + i.packCount * i.price, 0)
+  const totalWeightKg = items
+    .reduce((sum, item) => sum + item.packCount * item.weightKg, 0)
     .toFixed(2);
-
   const hasLooseItems = items.some((i) => i.isLoose);
   const hasPackItems = items.some((i) => !i.isLoose);
 
-  const hasOverrides = overridePrice || overrideDelivery;
   const canSubmit =
     items.length > 0 &&
-    !!selectedConfig &&
     items.every((i) => i.packCount > 0 && i.packCount <= i.availableStock) &&
-    (!hasOverrides || overrideReason.trim().length >= 3);
-
-  useEffect(() => {
-    if (!firstVariantId || !configsData) return;
-    const current = activeConfigs.find(
-      (config: any) => config.id === selectedConfigId,
-    );
-    const next =
-      current || activeConfigs.find((config: any) => config.isDefault);
-    setSelectedConfigId(next?.id ?? null);
-    setItems((currentItems) =>
-      currentItems.map((item) => ({
-        ...item,
-        packCount: next?.packsPerCarton ?? 0,
-      })),
-    );
-    setCartonPrice(String(next?.cartonPrice ?? ""));
-    setDeliveryCost(String(next?.deliveryCostPerCarton ?? ""));
-    setOverridePrice(false);
-    setOverrideDelivery(false);
-    setOverrideReason("");
-  }, [firstVariantId, configsData, activeConfigs, selectedConfigId]);
+    cartonPrice !== "" &&
+    Number(cartonPrice) >= 0 &&
+    (deliveryCost === "" || Number(deliveryCost) >= 0);
 
   const addItem = (variant: any, product: any) => {
     const vid = variant.variantId || variant.id;
     if (items.find((i) => i.variantId === vid)) return;
+    const receivingMode = variant.variantOperations?.receivingMode;
     const packType = variant.packType || variant.packagingType || "other";
     const isLoose = packType === "loose";
-    if (isLoose) {
-      toast.error(
-        "Raw loose stock must be packaged as a sellable variant before carton creation",
-      );
+    if (!isCartonVariantEligible({ receivingMode, packType })) {
+      toast.error("Loose inventory cannot be placed directly inside a carton");
       return;
     }
     const totalStock = Math.max(
@@ -191,7 +148,6 @@ export default function CreateCartonPage() {
         ? `Loose · per KG`
         : `${variant.unitLabel || variant.label} · ${variant.weightKg || variant.weight}KG`,
       weightKg: parseFloat(variant.weightKg || variant.weight || "0"),
-      price: parseFloat(variant.price || "0"),
       packCount: 0,
       availableStock: isLoose
         ? availableForCarton
@@ -204,54 +160,38 @@ export default function CreateCartonPage() {
       image: product.coreProduct?.image || product.image || null,
       isLoose,
       operationalUnit: String(
-        variant.orderUnit || variant.stockUnit || packType || "unit",
+        variant.variantOperations?.operationalUnit || packType || "unit",
       ).toLowerCase(),
     };
-    setItems([newItem]);
+    setItems(() => [newItem]);
     setSearchQuery("");
-    setSelectedConfigId(null);
     setCartonPrice("");
     setDeliveryCost("");
-    setOverridePrice(false);
-    setOverrideDelivery(false);
-    setOverrideReason("");
   };
 
   const removeItem = (variantId: number) => {
-    setItems(items.filter((i) => i.variantId !== variantId));
-    setSelectedConfigId(null);
+    setItems((currentItems) =>
+      currentItems.filter((item) => item.variantId !== variantId),
+    );
     setCartonPrice("");
     setDeliveryCost("");
-    setOverridePrice(false);
-    setOverrideDelivery(false);
-    setOverrideReason("");
   };
 
-  const handleSelectConfig = (configId: number) => {
-    const config = activeConfigs.find(
-      (candidate: any) => candidate.id === configId,
+  const handlePackCountChange = (packCount: number) => {
+    setItems((currentItems) =>
+      currentItems.map((item) => ({ ...item, packCount })),
     );
-    if (!config) return;
-    setSelectedConfigId(configId);
-    setItems(
-      items.map((item) => ({ ...item, packCount: config.packsPerCarton })),
-    );
-    setCartonPrice(String(config.cartonPrice ?? ""));
-    setDeliveryCost(String(config.deliveryCostPerCarton ?? ""));
-    setOverridePrice(false);
-    setOverrideDelivery(false);
-    setOverrideReason("");
   };
 
   const createMutation = useMutation({
     mutationFn: () =>
       (orpc.warehouse as any).createCarton.call({
-        cartonConfigId: selectedConfigId,
+        variantId: items[0]?.variantId,
+        packsPerCarton: items[0]?.packCount,
+        cartonPrice,
+        deliveryCost: deliveryCost || undefined,
         storageAreaId: storageAreaId ? Number(storageAreaId) : undefined,
         note: note || undefined,
-        overrideCartonPrice: overridePrice ? cartonPrice : undefined,
-        overrideDeliveryCost: overrideDelivery ? deliveryCost : undefined,
-        overrideReason: hasOverrides ? overrideReason.trim() : undefined,
       }),
     onSuccess: (res: any) => {
       toast.success(`Carton ${res.cartonId} created!`);
@@ -265,20 +205,12 @@ export default function CreateCartonPage() {
     items,
     nextCartonId,
     totalWeightKg,
-    totalLoosePrice,
     cartonPrice,
     deliveryCost,
-    selectedConfig,
     hasLooseItems,
     hasPackItems,
     canSubmit,
     isPending: createMutation.isPending,
-    overridePrice,
-    overrideDelivery,
-    overrideReason,
-    onOverridePriceChange: setOverridePrice,
-    onOverrideDeliveryChange: setOverrideDelivery,
-    onOverrideReasonChange: setOverrideReason,
     onCartonPriceChange: setCartonPrice,
     onDeliveryCostChange: setDeliveryCost,
     onCreate: () => createMutation.mutate(),
@@ -330,7 +262,6 @@ export default function CreateCartonPage() {
                 totalWeightKg={totalWeightKg}
                 hasLooseItems={hasLooseItems}
                 hasPackItems={hasPackItems}
-                hasSelectedConfig={!!selectedConfig}
                 onSearchChange={setSearchQuery}
                 onCategoryChange={setCategoryFilter}
                 onSubCategoryChange={setSubCategoryFilter}
@@ -345,12 +276,10 @@ export default function CreateCartonPage() {
                 <div className="px-5 py-5 lg:px-7 lg:py-6">
                   <CartonConfiguration
                     items={items}
-                    configs={configs}
                     areas={areas}
-                    selectedConfigId={selectedConfigId}
                     storageAreaId={storageAreaId}
                     totalWeightKg={totalWeightKg}
-                    onSelectConfig={handleSelectConfig}
+                    onPackCountChange={handlePackCountChange}
                     onStorageAreaChange={setStorageAreaId}
                   />
                 </div>

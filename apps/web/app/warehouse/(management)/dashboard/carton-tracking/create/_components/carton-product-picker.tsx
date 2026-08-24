@@ -9,18 +9,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { isCartonVariantEligible } from "./carton-eligibility";
+import { operationalQuantityLabel } from "./carton-summary-values";
 import { SectionHeader } from "./section-header";
 import type { CartonItem } from "./types";
-
-function formatStockValue(value: number, isLoose: boolean) {
-  if (isLoose) {
-    return value.toLocaleString(undefined, {
-      minimumFractionDigits: value % 1 === 0 ? 0 : 1,
-      maximumFractionDigits: 1,
-    });
-  }
-  return Math.floor(value).toLocaleString();
-}
 
 type CartonProductPickerProps = {
   items: CartonItem[];
@@ -36,7 +28,6 @@ type CartonProductPickerProps = {
   totalWeightKg: string;
   hasLooseItems: boolean;
   hasPackItems: boolean;
-  hasSelectedConfig: boolean;
   onSearchChange: (value: string) => void;
   onCategoryChange: (value: string) => void;
   onSubCategoryChange: (value: string) => void;
@@ -59,7 +50,6 @@ export function CartonProductPicker({
   totalWeightKg,
   hasLooseItems,
   hasPackItems,
-  hasSelectedConfig,
   onSearchChange,
   onCategoryChange,
   onSubCategoryChange,
@@ -193,7 +183,18 @@ export function CartonProductPicker({
                   const alreadyAdded = items.find((i) => i.variantId === vid);
                   const isLoose =
                     (v.packType || v.packagingType || "other") === "loose";
-                  if (isLoose) return null;
+                  const receivingMode = v.variantOperations?.receivingMode;
+                  const operationalUnit =
+                    v.variantOperations?.operationalUnit ||
+                    v.packType ||
+                    "unit";
+                  if (
+                    !isCartonVariantEligible({
+                      receivingMode,
+                      packType: isLoose ? "loose" : v.packType,
+                    })
+                  )
+                    return null;
                   const totalStock = Math.max(
                     0,
                     Number(v.stock?.availableQty ?? 0),
@@ -257,22 +258,28 @@ export function CartonProductPicker({
                           <span>
                             Total:{" "}
                             <strong className="font-medium text-foreground/70">
-                              {formatStockValue(totalStock, isLoose)}{" "}
-                              {isLoose ? "KG" : "Pack"}
+                              {operationalQuantityLabel(
+                                totalStock,
+                                operationalUnit,
+                              )}
                             </strong>
                           </span>
                           <span>
                             In cartons:{" "}
                             <strong className="font-medium text-blue-600">
-                              {formatStockValue(stockInCartons, isLoose)}{" "}
-                              {isLoose ? "KG" : "Pack"}
+                              {operationalQuantityLabel(
+                                stockInCartons,
+                                operationalUnit,
+                              )}
                             </strong>
                           </span>
                           <span>
                             Ready:{" "}
                             <strong className="font-medium text-amber-600">
-                              {formatStockValue(availableForCarton, isLoose)}{" "}
-                              {isLoose ? "KG" : "Pack"}
+                              {operationalQuantityLabel(
+                                availableForCarton,
+                                operationalUnit,
+                              )}
                             </strong>
                           </span>
                         </div>
@@ -286,7 +293,7 @@ export function CartonProductPicker({
                       >
                         {outOfStock
                           ? "No stock"
-                          : `${formatStockValue(looseStock, isLoose)} ready`}
+                          : `${operationalQuantityLabel(looseStock, operationalUnit)} ready`}
                       </span>
                       {alreadyAdded ? (
                         <span className="text-xs text-emerald-700 dark:text-emerald-400 font-medium flex items-center gap-1 flex-shrink-0">
@@ -327,7 +334,7 @@ export function CartonProductPicker({
                       Available
                     </th>
                     <th className="text-center py-2.5 px-3 text-sm font-medium text-foreground/55">
-                      Template quantity
+                      Units in carton
                     </th>
                     <th className="w-12" />
                   </tr>
@@ -359,22 +366,25 @@ export function CartonProductPicker({
                         <td className="py-3.5 px-3 text-center">
                           <div className="space-y-0.5 text-xs tabular-nums">
                             <div className="font-medium text-foreground/70">
-                              {formatStockValue(item.totalStock, item.isLoose)}{" "}
-                              {item.isLoose ? "KG" : "Pack"} total
+                              {operationalQuantityLabel(
+                                item.totalStock,
+                                item.operationalUnit,
+                              )}{" "}
+                              total
                             </div>
                             <div className="text-blue-600">
-                              {formatStockValue(
+                              {operationalQuantityLabel(
                                 item.stockInCartons,
-                                item.isLoose,
+                                item.operationalUnit,
                               )}{" "}
-                              {item.isLoose ? "KG" : "Pack"} in cartons
+                              in cartons
                             </div>
                             <div className="text-amber-600">
-                              {formatStockValue(
+                              {operationalQuantityLabel(
                                 item.availableForCarton,
-                                item.isLoose,
+                                item.operationalUnit,
                               )}{" "}
-                              {item.isLoose ? "KG" : "Pack"} ready
+                              ready
                             </div>
                           </div>
                         </td>
@@ -388,17 +398,21 @@ export function CartonProductPicker({
                                     : "text-foreground/75"
                                 }`}
                               >
-                                {hasSelectedConfig
-                                  ? `${item.packCount} × ${item.operationalUnit}`
-                                  : "Select template"}
+                                {item.packCount > 0
+                                  ? operationalQuantityLabel(
+                                      item.packCount,
+                                      item.operationalUnit,
+                                    )
+                                  : "Enter below"}
                               </div>
                             </div>
                             {overLimit && (
                               <span className="text-xs text-red-600 font-medium">
                                 Max{" "}
-                                {item.isLoose
-                                  ? `${item.availableStock.toFixed(1)} KG`
-                                  : item.availableStock}
+                                {operationalQuantityLabel(
+                                  item.availableStock,
+                                  item.operationalUnit,
+                                )}
                               </span>
                             )}
                           </div>
@@ -428,15 +442,12 @@ export function CartonProductPicker({
               <div className="flex flex-wrap items-center gap-3 font-medium text-foreground">
                 {hasPackItems && (
                   <span>
-                    {items
-                      .filter((i) => !i.isLoose)
-                      .reduce((s, i) => s + i.packCount, 0)}{" "}
-                    pack
-                    {items
-                      .filter((i) => !i.isLoose)
-                      .reduce((s, i) => s + i.packCount, 0) !== 1
-                      ? "s"
-                      : ""}
+                    {operationalQuantityLabel(
+                      items
+                        .filter((item) => !item.isLoose)
+                        .reduce((sum, item) => sum + item.packCount, 0),
+                      items[0]?.operationalUnit || "unit",
+                    )}
                   </span>
                 )}
                 {hasLooseItems && (
