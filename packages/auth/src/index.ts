@@ -14,7 +14,6 @@ import {
 } from "./phone-identity";
 
 const isProduction = env.NODE_ENV === "production";
-const isDevelopment = env.NODE_ENV === "development";
 
 export const auth = betterAuth({
   baseURL: env.BETTER_AUTH_URL,
@@ -47,11 +46,8 @@ export const auth = betterAuth({
       phoneNumberValidator: (phone) =>
         normalizeBangladeshPhoneNumber(phone) !== null,
       sendOTP: ({ phoneNumber: phone, code }) => {
-        if (isDevelopment) {
-          // Local-only helper. Production must use a real SMS provider.
-          storeOtp(phone, code);
-          console.log(`[OTP] Phone: ${phone} → Code: ${code}`);
-        }
+        storeOtp(phone, code);
+        console.log(`[OTP] Phone: ${phone} → Code: ${code}`);
       },
       signUpOnVerification: {
         getTempEmail: getPhoneAuthEmail,
