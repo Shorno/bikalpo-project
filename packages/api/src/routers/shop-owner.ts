@@ -2867,40 +2867,18 @@ const orderQueries = {
 					),
 				)
 				.orderBy(desc(order.receivedAt), desc(invoice.id));
-			const manualBills = await db
-				.select({
-					amount: financialLedger.amount,
-					createdAt: financialLedger.createdAt,
-					description: financialLedger.description,
-					id: financialLedger.id,
-				})
-				.from(financialLedger)
-				.where(
-					and(
-						eq(financialLedger.ownerId, userId),
-						eq(financialLedger.ownerType, "shop"),
-						gte(financialLedger.createdAt, dateFrom),
-						lte(financialLedger.createdAt, dateTo),
-						or(
-							and(
-								eq(financialLedger.entryType, "purchase_credit"),
-								eq(financialLedger.direction, "debit"),
-							),
-							and(
-								eq(financialLedger.entryType, "adjustment"),
-								eq(financialLedger.direction, "credit"),
-								or(
-									ilike(financialLedger.description, "Bill due%"),
-									ilike(
-										financialLedger.description,
-										"Supplier bill tracker%",
-									),
-								),
-							),
-						),
-					),
-				)
-				.orderBy(desc(financialLedger.createdAt));
+			const manualBills = await db.query.purchase.findMany({
+				where: and(
+					eq(purchase.warehouseId, userId),
+					eq(purchase.ownerType, "shop"),
+					inArray(purchase.status, ["received", "cancelled"]),
+					isNotNull(purchase.receivedAt),
+					gte(purchase.receivedAt, dateFrom),
+					lte(purchase.receivedAt, dateTo),
+				),
+				orderBy: [desc(purchase.receivedAt)],
+				with: { supplier: true },
+			});
 
 			const warehouseIds = [
 				...new Set(
@@ -2966,42 +2944,24 @@ const orderQueries = {
 						),
 					};
 				});
-			const descriptionValue = (
-				description: string | null,
-				label: string,
-			) => {
-				const prefix = `${label}:`;
-				const segment = description
-					?.split("|")
-					.map((part) => part.trim())
-					.find((part) => part.startsWith(prefix));
-
-				return segment?.slice(prefix.length).trim() || null;
-			};
 			const ledgerRows = manualBills.map((bill) => {
-				const amount = Math.max(0, Number(bill.amount));
-				const supplier =
-					descriptionValue(bill.description, "Supplier") ?? "External supplier";
-				const billNo =
-					descriptionValue(bill.description, "Bill") ??
-					`DUE-${String(bill.id).padStart(6, "0")}`;
-				const reference =
-					descriptionValue(bill.description, "Reference") ?? `LEDGER-${bill.id}`;
+				const due = Math.max(0, Number(bill.dueAmount));
+				const paid = Math.max(0, Number(bill.paidAmount));
 
 				return {
-					billNo,
-					date: bill.createdAt,
-					due: amount,
+					billNo: bill.supplierInvoiceNo || bill.purchaseNumber,
+					date: bill.receivedAt!,
+					due,
 					dueDate: null,
-					id: `ledger:${bill.id}`,
+					id: `manual:${bill.id}`,
 					orderId: null,
-					orderNo: reference,
-					paid: 0,
-					paymentMethod: null,
-					status: "Unpaid" as const,
-					supplier,
-					supplierKey: `manual:${supplier.toLocaleLowerCase()}`,
-					totalBill: amount,
+					orderNo: bill.purchaseNumber,
+					paid,
+					paymentMethod: bill.paymentMethod,
+					status: (due <= 0 ? "Paid" : "Unpaid") as "Paid" | "Unpaid",
+					supplier: bill.supplier.name,
+					supplierKey: `manual:${bill.supplierId}`,
+					totalBill: Math.max(0, Number(bill.total)),
 				};
 			});
 			const allRows = [...platformRows, ...ledgerRows].sort(
