@@ -1,7 +1,17 @@
 import { db } from "@bikalpo-project/db";
-import { purchase, purchaseItem, supplier, financialLedger } from "@bikalpo-project/db/schema";
+import {
+    financialLedger,
+    inventoryMovement,
+    journalEntry,
+    journalLine,
+    payment,
+    purchase,
+    purchaseEvent,
+    purchaseItem,
+    supplier,
+} from "@bikalpo-project/db/schema";
 import { ORPCError } from "@orpc/server";
-import { and, desc, eq, ilike, sql } from "drizzle-orm";
+import { and, desc, eq, ilike, inArray, or, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { protectedProcedure } from "../index";
@@ -68,6 +78,121 @@ const manualPurchaseInput = z.object({
 });
 
 export const purchaseRouter = {
+    listManual: protectedProcedure
+        .route({
+            method: "POST",
+            path: "/purchases/manual",
+            tags: ["Purchase Management"],
+            summary: "List manual purchase history",
+        })
+        .input(z.object({ limit: z.number().int().min(1).max(100).default(50) }))
+        .handler(async ({ context, input }) => {
+            const scope = manualPurchaseScope(context.session.user);
+            return db.query.purchase.findMany({
+                where: and(
+                    eq(purchase.warehouseId, scope.ownerId),
+                    eq(purchase.ownerType, scope.ownerType),
+                ),
+                orderBy: [desc(purchase.createdAt)],
+                limit: input.limit,
+                with: { items: true, supplier: true },
+            });
+        }),
+
+    getManualDetail: protectedProcedure
+        .route({
+            method: "POST",
+            path: "/purchases/manual/detail",
+            tags: ["Purchase Management"],
+            summary: "Get separate manual purchase histories",
+        })
+        .input(z.object({ purchaseId: z.number().int().positive() }))
+        .handler(async ({ context, input }) => {
+            const scope = manualPurchaseScope(context.session.user);
+            const purchaseRecord = await db.query.purchase.findFirst({
+                where: and(
+                    eq(purchase.id, input.purchaseId),
+                    eq(purchase.warehouseId, scope.ownerId),
+                    eq(purchase.ownerType, scope.ownerType),
+                ),
+                with: {
+                    items: { with: { variant: true } },
+                    paymentAccount: true,
+                    supplier: true,
+                },
+            });
+            if (!purchaseRecord) {
+                throw new ORPCError("NOT_FOUND", {
+                    message: "Manual purchase was not found",
+                });
+            }
+
+            const [paymentHistory, purchaseHistory, inventoryHistory] =
+                await Promise.all([
+                    db.query.payment.findMany({
+                        where: eq(payment.purchaseId, input.purchaseId),
+                        orderBy: [desc(payment.createdAt)],
+                        with: { paymentAccount: true },
+                    }),
+                    db.query.purchaseEvent.findMany({
+                        where: and(
+                            eq(purchaseEvent.purchaseId, input.purchaseId),
+                            eq(purchaseEvent.ownerId, scope.ownerId),
+                        ),
+                        orderBy: [desc(purchaseEvent.occurredAt)],
+                    }),
+                    db.query.inventoryMovement.findMany({
+                        where: and(
+                            eq(inventoryMovement.purchaseId, input.purchaseId),
+                            eq(inventoryMovement.ownerId, scope.ownerId),
+                        ),
+                        orderBy: [desc(inventoryMovement.occurredAt)],
+                        with: { variant: true },
+                    }),
+                ]);
+            const paymentIds = paymentHistory.map((row) => String(row.id));
+            const accountingEntries = await db.query.journalEntry.findMany({
+                where: and(
+                    eq(journalEntry.ownerId, scope.ownerId),
+                    eq(journalEntry.ownerType, scope.ownerType),
+                    or(
+                        and(
+                            eq(journalEntry.sourceType, "purchase"),
+                            eq(journalEntry.sourceId, String(input.purchaseId)),
+                        ),
+                        paymentIds.length
+                            ? and(
+                                eq(journalEntry.sourceType, "payment"),
+                                inArray(journalEntry.sourceId, paymentIds),
+                            )
+                            : undefined,
+                    ),
+                ),
+                orderBy: [desc(journalEntry.postedAt)],
+            });
+            const entryIds = accountingEntries.map((row) => row.id);
+            const accountingLines = entryIds.length
+                ? await db.query.journalLine.findMany({
+                    where: inArray(journalLine.journalEntryId, entryIds),
+                    orderBy: [journalLine.lineOrder],
+                })
+                : [];
+            const accountingHistory = accountingEntries.map((entry) => ({
+                ...entry,
+                lines: accountingLines.filter(
+                    (line) => line.journalEntryId === entry.id,
+                ),
+            }));
+
+            return {
+                accountingHistory,
+                inventoryHistory,
+                paymentHistory,
+                purchase: purchaseRecord,
+                purchaseHistory,
+            };
+        }),
+
     saveManualDraft: protectedProcedure
         .route({
             method: "POST",
