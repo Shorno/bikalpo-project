@@ -807,8 +807,8 @@ function LoadedListingForm({
           </FormSection>
 
           <FormSection
-            title="Unit Photos & Property Video"
-            description="Upload at least one Unit photo before publishing. The Property video is optional and limited to 90 seconds."
+            title="Unit Photos & Listing Video"
+            description="Upload at least one Unit photo before publishing. The optional video can be uploaded from your device or added as a public link."
           >
             <div className="grid gap-5 lg:grid-cols-2">
               <div className="space-y-2">
@@ -824,13 +824,12 @@ function LoadedListingForm({
                 <FieldError message={errors.imageUrls} />
               </div>
               <div className="space-y-2">
-                <Label>Property Video (Optional)</Label>
+                <Label>Unit / Listing Video (Optional)</Label>
                 <PropertyVideoField
                   value={values.videoUrl}
                   onChange={(url) => update("videoUrl", url)}
                   invalid={Boolean(errors.videoUrl)}
-                  allowLink={false}
-                  subjectLabel="Property video"
+                  subjectLabel="Unit / listing video"
                 />
                 <FieldError message={errors.videoUrl} />
               </div>

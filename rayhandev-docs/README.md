@@ -757,3 +757,14 @@ restriction above. The legacy To-Let catalog remains a separate module.
 - Added pure lifecycle tests for the final-day boundary, Active/Leaving contract
   completion, and first-day monthly cycles. No database schema, migration, seed,
   or manual database command was changed or run.
+
+### To-Let video source options (2026-08-24)
+
+- Property Registration, Edit Property, and Create/Edit Listing now share the
+  same **Upload Video / Add Video Link** selector.
+- Device uploads keep using the existing signed Cloudinary video flow; public
+  YouTube, Facebook, Google Drive, or direct-video URLs use the existing
+  `videoUrl` fields.
+- The Listing label now correctly describes its media as **Unit / Listing
+  Video**. Physical Unit storage was not changed, so no schema migration, seed,
+  or manual database command was required.

@@ -34,6 +34,7 @@ import {
   PropertyErrorState,
   PropertyPageHeader,
 } from "./property-ui";
+import { PropertyVideoField } from "./property-video-field";
 import type { ToLetPropertyView } from "./types";
 
 type Errors = Record<string, string>;
@@ -442,18 +443,13 @@ function LoadedPropertyEditForm({ property }: { property: ToLetPropertyView }) {
             />
           </div>
           <div className="space-y-1.5 sm:col-span-2">
-            <Label htmlFor="edit-video">Building Video URL (optional)</Label>
-            <Input
-              id="edit-video"
-              type="url"
+            <Label>Building Video (optional)</Label>
+            <PropertyVideoField
               value={values.videoUrl}
-              onChange={(event) => update("videoUrl", event.target.value)}
-              placeholder="https://..."
-              aria-invalid={Boolean(errors.videoUrl)}
+              onChange={(url) => update("videoUrl", url)}
+              disabled={mutation.isPending}
+              invalid={Boolean(errors.videoUrl)}
             />
-            <p className="text-xs text-gray-500">
-              Public URL only. Direct video upload is not enabled yet.
-            </p>
             <EditFieldError message={errors.videoUrl} />
           </div>
         </div>

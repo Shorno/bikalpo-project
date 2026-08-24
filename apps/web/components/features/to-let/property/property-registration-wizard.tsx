@@ -931,7 +931,6 @@ export function PropertyRegistrationWizard() {
                     onChange={(url) => update("videoUrl", url)}
                     disabled={createProperty.isPending}
                     invalid={Boolean(errors.videoUrl)}
-                    allowLink={false}
                   />
                   <FieldMessage message={errors.videoUrl} />
                 </div>
