@@ -68,6 +68,7 @@ export default function WarehouseCoreProductBrandManagementPage() {
       addableBrandCount={countAddableBrands(activeBrandIds, configuredBrandIds)}
       backHref={CATALOG_URL}
       addHref={`${CATALOG_URL}/add/${coreProductId}`}
+      addActionLabel="Add"
       editConfigurationHref={`${CATALOG_URL}/add/${coreProductId}`}
       productEditHref={(productId) =>
         `/warehouse/dashboard/products/${productId}/edit`
