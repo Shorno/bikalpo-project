@@ -84,7 +84,7 @@ export async function PublicProductsGrid({
           </p>
         </div>
       ) : (
-        <div className="grid grid-cols-2 gap-x-3 gap-y-6 sm:gap-x-5 xl:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 min-[560px]:grid-cols-2 xl:grid-cols-3">
           {products.map((product) => (
             <ConsumerProductCard
               key={product.id}
