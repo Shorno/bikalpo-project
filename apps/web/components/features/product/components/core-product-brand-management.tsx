@@ -38,6 +38,7 @@ type CoreProductBrandManagementProps = {
   addableBrandCount: number;
   backHref: string;
   addHref: string;
+  addActionLabel?: string;
   editConfigurationHref: string;
   productEditHref: (productId: number) => string;
 };
@@ -48,6 +49,7 @@ export function CoreProductBrandManagement({
   addableBrandCount,
   backHref,
   addHref,
+  addActionLabel,
   editConfigurationHref,
   productEditHref,
 }: CoreProductBrandManagementProps) {
@@ -55,11 +57,11 @@ export function CoreProductBrandManagement({
   const actionHref = isSingleMode ? addHref : editConfigurationHref;
   const actionLabel = isSingleMode
     ? addableBrandCount > 0
-      ? "Add Brand"
+      ? (addActionLabel ?? "Add Brand")
       : "All Brands Added"
     : products.length > 0
       ? "Edit Configuration"
-      : "Add Brands";
+      : (addActionLabel ?? "Add Brands");
   const actionDisabled = isSingleMode && addableBrandCount === 0;
 
   return (

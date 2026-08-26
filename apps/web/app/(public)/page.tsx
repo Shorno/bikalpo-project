@@ -66,7 +66,7 @@ export default async function HomePage() {
             />
 
             {products.length > 0 ? (
-              <div className="grid grid-cols-2 gap-x-3 gap-y-6 sm:gap-x-5 md:grid-cols-3 lg:grid-cols-4">
+              <div className="grid grid-cols-1 gap-4 min-[560px]:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                 {products.map((product) => (
                   <ConsumerProductCard key={product.id} product={product} />
                 ))}

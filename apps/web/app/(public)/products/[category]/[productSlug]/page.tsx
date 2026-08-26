@@ -1,6 +1,5 @@
 import { notFound } from "next/navigation";
-import { ProductDetailsView } from "@/components/features/products/product-details-view";
-import { RelatedProducts } from "@/components/features/products/related-products";
+import { PublicProductDetailsView } from "@/components/features/products/public-product-details-view";
 import type { DetailVariant } from "@/components/features/products/trade-product-detail-client";
 import {
   isCustomerStorefrontPreview,
@@ -35,46 +34,49 @@ export default async function ProductPage({
       price: String(variant.price),
     }),
   );
-  const productsHref = withCustomerStorefrontPreview("/products", previewMode);
   const categoryHref = withCustomerStorefrontPreview(
     `/products/${product.category.slug}`,
     previewMode,
   );
 
   return (
-    <ProductDetailsView
+    <PublicProductDetailsView
       product={{
         id: product.id,
+        code: `PRD-${String(product.id).padStart(6, "0")}`,
         name: product.name,
-        price: String(product.price),
         image: product.image,
-        images: product.images?.map((image) => image.imageUrl) ?? [],
         size: product.size,
         description: product.description,
+        shortDescription: product.shortDescription,
         features: product.features,
         inStock: product.inStock,
-        stockQuantity: 0,
         category: product.category,
         subCategory: product.subCategory,
         brand: product.brand,
       }}
       variants={variants}
+      reviewStats={productData.reviewStats}
+      soldOrderCount={productData.soldOrderCount}
       breadcrumbs={[
         { label: "Home", href: "/" },
-        { label: "Products", href: productsHref },
         { label: product.category.name, href: categoryHref },
-        { label: product.name },
+        ...(product.subCategory ? [{ label: product.subCategory.name }] : []),
+        ...(product.brand
+          ? [
+              {
+                label:
+                  product.category.slug === "lpg"
+                    ? `${product.brand.name} Gas`
+                    : product.brand.name,
+              },
+            ]
+          : []),
+        { label: `PRD-${String(product.id).padStart(6, "0")}` },
       ]}
       categoryHref={categoryHref}
-      purchaseMode="open_order"
       previewMode={previewMode}
-      relatedProducts={
-        <RelatedProducts
-          categorySlug={product.category.slug}
-          currentProductId={product.id}
-          previewMode={previewMode}
-        />
-      }
+      supportPhone={process.env.NEXT_PUBLIC_SUPPORT_PHONE?.trim() || null}
     />
   );
 }

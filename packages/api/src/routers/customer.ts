@@ -42,6 +42,7 @@ import {
   productReview,
   productType,
   productVariant,
+  productVariantPrice,
   retailerOffer,
   retailerOfferApplication,
   sellerAreaMapping,
@@ -62,6 +63,7 @@ import {
   asc,
   avg,
   count,
+  countDistinct,
   desc,
   eq,
   gte,
@@ -123,6 +125,7 @@ import {
   getReferenceCylinderPricing,
   getReferenceProductEffectivePrice,
   getReferenceSellerKey,
+  getReferenceVariantUnitPrice,
   isOpenOrderReferenceSelectionEligible,
   referenceProductCanExchange,
   sortReferenceProducts,
@@ -279,6 +282,66 @@ type CustomerDbTransaction = Parameters<
   Parameters<typeof db.transaction>[0]
 >[0];
 type CustomerDbClient = typeof db | CustomerDbTransaction;
+
+type ReferenceVariantPriceSource = {
+  price: string;
+  productId: number;
+  sourceVariantPriceId?: number | null;
+  sourceVariantOptionId?: number | null;
+};
+
+async function getReferenceVariantPricesByProduct(
+  variants: ReferenceVariantPriceSource[],
+  database: CustomerDbClient = db,
+) {
+  const pricesByProduct = new Map<
+    number,
+    Array<{
+      consumerPrice: string;
+      id: number;
+      isActive: boolean;
+      variantOptionId: number | null;
+    }>
+  >();
+  const productIds = [...new Set(variants.map((variant) => variant.productId))];
+  if (productIds.length === 0) return pricesByProduct;
+
+  const priceRows = await database
+    .select({
+      consumerPrice: productVariantPrice.consumerPrice,
+      id: productVariantPrice.id,
+      isActive: productVariantPrice.isActive,
+      productId: productVariantPrice.productId,
+      variantOptionId: productVariantPrice.variantOptionId,
+    })
+    .from(productVariantPrice)
+    .where(
+      and(
+        inArray(productVariantPrice.productId, productIds),
+        eq(productVariantPrice.isActive, true),
+      ),
+    );
+
+  for (const row of priceRows) {
+    const prices = pricesByProduct.get(row.productId) ?? [];
+    prices.push(row);
+    pricesByProduct.set(row.productId, prices);
+  }
+
+  return pricesByProduct;
+}
+
+function getCanonicalReferenceVariantPrice(
+  variant: ReferenceVariantPriceSource,
+  pricesByProduct: Awaited<
+    ReturnType<typeof getReferenceVariantPricesByProduct>
+  >,
+) {
+  return getReferenceVariantUnitPrice(
+    variant,
+    pricesByProduct.get(variant.productId) ?? [],
+  );
+}
 
 function getRetailerCartInventoryKey({
   shopId,
@@ -1606,7 +1669,12 @@ const queries = {
               isActive: true,
               price: true,
               productId: true,
+              quantitySelectorLabel: true,
+              sku: true,
+              sortOrder: true,
               sourceVariantPriceId: true,
+              sourceVariantOptionId: true,
+              unitLabel: true,
               visibilityRole: true,
             },
             with: {
@@ -1625,6 +1693,7 @@ const queries = {
               consumerPrice: true,
               id: true,
               isActive: true,
+              variantOptionId: true,
             },
           },
         },
@@ -1668,6 +1737,29 @@ const queries = {
               )
             ] || 0
           : 0;
+        const cardVariants = referenceProduct.variants
+          .filter((variant) =>
+            isOpenOrderReferenceSelectionEligible({
+              product: referenceProduct,
+              variant,
+            }),
+          )
+          .sort((a, b) => a.sortOrder - b.sortOrder || a.id - b.id)
+          .map((variant) => {
+            return {
+              variantId: variant.id,
+              sku: variant.sku,
+              unitLabel: variant.unitLabel,
+              quantitySelectorLabel: variant.quantitySelectorLabel,
+              referencePrice: getReferenceVariantUnitPrice(
+                variant,
+                referenceProduct.variantPrices,
+              ),
+              sortOrder: variant.sortOrder,
+              exchangeEnabled: Boolean(variant.exchangeEnabled),
+              exchangeCreditAmount: variant.exchangeCreditAmount,
+            };
+          });
 
         return {
           ...productData,
@@ -1685,6 +1777,7 @@ const queries = {
               }
             : null,
           price: effectivePrice,
+          variants: cardVariants,
           reviewStats: reviewStatsMap[referenceProduct.id] || {
             averageRating: 0,
             totalReviews: 0,
@@ -2037,6 +2130,7 @@ const queries = {
           subCategory: { columns: { name: true } },
           brand: { columns: { id: true, name: true, slug: true, logo: true } },
           images: true,
+          variantPrices: true,
         },
       });
       if (!found)
@@ -2070,13 +2164,16 @@ const queries = {
       }
 
       // Serialize product and variants with proper price conversion
+      const { variantPrices: _variantPrices, ...foundData } = found;
       const foundSerialized = {
-        ...found,
+        ...foundData,
         price: parseFloat(found.price),
       };
       const variantsSerialized = variants.map((variant) => {
         const { catalogVariant: _catalogVariant, ...variantData } = variant;
-        const newUnitPrice = Number(variant.price);
+        const newUnitPrice = Number(
+          getReferenceVariantUnitPrice(variant, found.variantPrices),
+        );
         const exchangeEnabled =
           found.category?.slug === "lpg" && Boolean(variant.exchangeEnabled);
         const exchangeCreditAmount = exchangeEnabled
@@ -2106,14 +2203,25 @@ const queries = {
         };
       });
 
-      // Get review stats
-      const reviewStats = await db
-        .select({
-          averageRating: avg(productReview.rating),
-          totalReviews: count(productReview.id),
-        })
-        .from(productReview)
-        .where(eq(productReview.productId, found.id));
+      const [reviewStats, soldStats] = await Promise.all([
+        db
+          .select({
+            averageRating: avg(productReview.rating),
+            totalReviews: count(productReview.id),
+          })
+          .from(productReview)
+          .where(eq(productReview.productId, found.id)),
+        db
+          .select({ soldOrderCount: countDistinct(orderItem.orderId) })
+          .from(orderItem)
+          .innerJoin(order, eq(order.id, orderItem.orderId))
+          .where(
+            and(
+              eq(orderItem.productId, found.id),
+              eq(order.status, "delivered"),
+            ),
+          ),
+      ]);
 
       return {
         product: foundSerialized,
@@ -2124,6 +2232,7 @@ const queries = {
             : 0,
           totalReviews: reviewStats[0]?.totalReviews || 0,
         },
+        soldOrderCount: Number(soldStats[0]?.soldOrderCount ?? 0),
       };
     }),
 
@@ -2615,6 +2724,9 @@ const queries = {
                   sku: true,
                   exchangeEnabled: true,
                   exchangeCreditAmount: true,
+                  productId: true,
+                  sourceVariantOptionId: true,
+                  sourceVariantPriceId: true,
                 },
               },
             },
@@ -2675,6 +2787,11 @@ const queries = {
             : [],
         ),
       );
+      const referencePricesByProduct = await getReferenceVariantPricesByProduct(
+        userCart.items.flatMap((item) =>
+          !item.shopId && item.variant ? [item.variant] : [],
+        ),
+      );
 
       const items = userCart.items.map((item) => {
         const variant = item.variant;
@@ -2703,17 +2820,21 @@ const queries = {
           ? `${item.product.name} — ${variant.unitLabel}`
           : item.product.name;
         const displaySize = variant ? variant.unitLabel : item.product.size;
+        const referenceUnitPrice = variant
+          ? Number(
+              getCanonicalReferenceVariantPrice(
+                variant,
+                referencePricesByProduct,
+              ),
+            )
+          : Number(item.product.price);
         const currentPrice = item.shopId
           ? Number(retailerInventory?.retailPrice ?? item.price)
-          : variant
-            ? Number(variant.price)
-            : Number(item.product.price);
+          : referenceUnitPrice;
         const listedPrice =
           item.shopId && retailerDecision?.ok
             ? Number(retailerDecision.retailPrice)
-            : variant
-              ? Number(variant.price)
-              : Number(item.price);
+            : referenceUnitPrice;
         const exchangeEnabled = item.shopId
           ? retailerCylinderExchangeAvailable(retailerInventory)
           : Boolean(
@@ -4704,21 +4825,19 @@ const mutations = {
 
       let itemPrice = productData.price;
       if (purchaseMode === "open_order" && input.variantId) {
-        const variantData = await db.query.productVariant.findFirst({
-          where: and(
-            eq(productVariant.id, input.variantId),
-            eq(productVariant.productId, input.productId),
-          ),
-          columns: { price: true },
-        });
-        if (!variantData) {
+        if (!referenceVariant) {
           throw new ORPCError("NOT_FOUND", {
             message: "Product option not found",
           });
         }
+        const referencePricesByProduct =
+          await getReferenceVariantPricesByProduct([referenceVariant]);
         try {
           itemPrice = resolveRetailerCylinderSale({
-            newUnitPrice: variantData.price,
+            newUnitPrice: getCanonicalReferenceVariantPrice(
+              referenceVariant,
+              referencePricesByProduct,
+            ),
             exchangeEnabled: cylinderExchangeAvailable,
             exchangeCreditAmount: referenceVariant?.exchangeCreditAmount ?? "0",
             requestedMode: cylinderSaleMode,
@@ -4933,7 +5052,7 @@ const mutations = {
           return { success: true, message: "Item removed from cart" };
         }
 
-        let retailerPrice: string | undefined;
+        let effectiveUnitPrice: string | undefined;
         const cylinderSaleMode =
           input.cylinderSaleMode ?? item.cylinderSaleMode;
         if (item.shopId) {
@@ -4960,7 +5079,7 @@ const mutations = {
             }),
           );
           try {
-            retailerPrice = resolveRetailerCylinderSale({
+            effectiveUnitPrice = resolveRetailerCylinderSale({
               newUnitPrice: decision.retailPrice,
               exchangeEnabled: retailerCylinderExchangeAvailable(snapshot),
               exchangeCreditAmount: snapshot?.exchangeCreditAmount ?? "0",
@@ -4987,9 +5106,14 @@ const mutations = {
               message: "This reference variant is no longer orderable.",
             });
           }
+          const referencePricesByProduct =
+            await getReferenceVariantPricesByProduct([item.variant], tx);
           try {
-            retailerPrice = resolveRetailerCylinderSale({
-              newUnitPrice: item.variant.price,
+            effectiveUnitPrice = resolveRetailerCylinderSale({
+              newUnitPrice: getCanonicalReferenceVariantPrice(
+                item.variant,
+                referencePricesByProduct,
+              ),
               exchangeEnabled: Boolean(item.variant.exchangeEnabled),
               exchangeCreditAmount: item.variant.exchangeCreditAmount ?? "0",
               requestedMode: cylinderSaleMode,
@@ -5024,7 +5148,7 @@ const mutations = {
               .update(cartItem)
               .set({
                 quantity: sibling.quantity + input.quantity,
-                ...(retailerPrice ? { price: retailerPrice } : {}),
+                ...(effectiveUnitPrice ? { price: effectiveUnitPrice } : {}),
               })
               .where(eq(cartItem.id, sibling.id));
             await tx.delete(cartItem).where(eq(cartItem.id, item.id));
@@ -5036,7 +5160,7 @@ const mutations = {
           .update(cartItem)
           .set({
             quantity: input.quantity,
-            ...(retailerPrice ? { price: retailerPrice } : {}),
+            ...(effectiveUnitPrice ? { price: effectiveUnitPrice } : {}),
             cylinderSaleMode,
           })
           .where(eq(cartItem.id, input.cartItemId));
@@ -6519,6 +6643,10 @@ const openOrderEndpoints = {
         });
       }
 
+      const referencePricesByProduct = await getReferenceVariantPricesByProduct(
+        userCart.items.flatMap((item) => (item.variant ? [item.variant] : [])),
+      );
+
       let referenceSubtotal = 0;
       const requestedItems: CartItemForOpenOrder[] = userCart.items.map(
         (item) => {
@@ -6540,7 +6668,10 @@ const openOrderEndpoints = {
           >;
           try {
             referenceCylinderSale = resolveRetailerCylinderSale({
-              newUnitPrice: item.variant.price,
+              newUnitPrice: getCanonicalReferenceVariantPrice(
+                item.variant,
+                referencePricesByProduct,
+              ),
               exchangeEnabled: Boolean(item.variant.exchangeEnabled),
               exchangeCreditAmount: item.variant.exchangeCreditAmount ?? "0",
               requestedMode: item.cylinderSaleMode,

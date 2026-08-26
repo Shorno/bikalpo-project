@@ -66,6 +66,7 @@ export default function RetailerCoreProductBrandManagementPage() {
       addableBrandCount={countAddableBrands(activeBrandIds, configuredBrandIds)}
       backHref={CATALOG_URL}
       addHref={`${CATALOG_URL}/add/${coreProductId}`}
+      addActionLabel="Add"
       editConfigurationHref={`${CATALOG_URL}/add/${coreProductId}`}
       productEditHref={(productId) => `/dashboard/products/${productId}/edit`}
     />

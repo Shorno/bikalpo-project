@@ -142,9 +142,18 @@ function ProductsGridSkeleton() {
   return (
     <div className="space-y-6">
       <Skeleton className="h-10 w-full" />
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
+      <div className="grid grid-cols-1 gap-4 min-[560px]:grid-cols-2 xl:grid-cols-3">
         {Array.from({ length: 9 }).map((_, i) => (
-          <Skeleton key={i} className="h-80 w-full" />
+          <div key={i} className="overflow-hidden rounded-lg border bg-white">
+            <Skeleton className="aspect-[4/3] w-full rounded-none" />
+            <div className="space-y-3 p-4">
+              <Skeleton className="h-3 w-24" />
+              <Skeleton className="h-10 w-full" />
+              <Skeleton className="h-7 w-28" />
+              <Skeleton className="h-4 w-32" />
+              <Skeleton className="h-9 w-full" />
+            </div>
+          </div>
         ))}
       </div>
     </div>
