@@ -269,7 +269,7 @@ export function Navbar() {
                 href="/account/to-let/properties"
                 className="inline-flex h-10 items-center gap-1.5 px-3 text-xs font-medium text-blue-50 transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-white"
               >
-                <Building2 className="size-3.5" /> Sell
+                <Building2 className="size-3.5" /> Seller
               </ToLetAccountLink>
               <Link
                 href="/to-let"
