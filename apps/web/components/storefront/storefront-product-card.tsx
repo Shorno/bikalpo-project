@@ -12,6 +12,10 @@ import {
 import { Button } from "@/components/ui/button";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import type { CartItem } from "@/hooks/use-orpc-cart";
+import {
+  findProductCardCartItem,
+  getProductCardSelectionKey,
+} from "@/lib/product-card-cart-item";
 import { getRetailerProductHref } from "@/lib/retailer-storefront-url";
 import { cn } from "@/lib/utils";
 
@@ -56,9 +60,11 @@ interface ProductCardProps {
   shopSlug?: string;
   shopId?: string | null;
   previewMode?: boolean;
+  cartReady?: boolean;
   isAdding?: boolean;
   cartItems?: CartItem[];
   pendingCartItemIds?: ReadonlySet<number>;
+  pendingAddSelectionKeys?: ReadonlySet<string>;
   onQuickAdd?: (
     product: StorefrontProduct,
     selection: StorefrontAddSelection,
@@ -73,9 +79,11 @@ export function StorefrontProductCard({
   shopSlug = "",
   shopId,
   previewMode = false,
+  cartReady = true,
   isAdding = false,
   cartItems = [],
   pendingCartItemIds,
+  pendingAddSelectionKeys,
   onQuickAdd,
   onUpdateQuantity,
   mode = "storefront",
@@ -119,29 +127,47 @@ export function StorefrontProductCard({
     .filter(Boolean)
     .join(" / ");
   const unitLabel = selectedVariant?.unitLabel;
-  const selectedPrice = Number(
+  const selectedNewPrice = Number(
     selectedVariant?.displayPrice ??
       selectedVariant?.retailPrice ??
       product.lowestDisplayPrice ??
       product.lowestRetailPrice ??
       0,
   );
+  const exchangeCreditAmount = Number(
+    selectedVariant?.exchangeCreditAmount ?? 0,
+  );
+  const selectedPrice =
+    effectiveCylinderSaleMode === "exchange"
+      ? Math.max(0, selectedNewPrice - exchangeCreditAmount)
+      : selectedNewPrice;
   const selectedAvailableQty = Number(
     selectedVariant?.availableQty ?? product.totalAvailableQty,
   );
   const cartItem =
-    mode === "storefront" && shopId && selectedVariant
-      ? cartItems.find(
-          (item) =>
-            item.productId === product.id &&
-            item.variantId === selectedVariant.variantId &&
-            item.shopId === shopId &&
-            (item.cylinderSale?.mode ?? "new") === effectiveCylinderSaleMode,
-        )
+    selectedVariant && (mode === "reference" || shopId)
+      ? findProductCardCartItem(cartItems, {
+          productId: product.id,
+          variantId: selectedVariant.variantId,
+          shopId: mode === "storefront" ? (shopId ?? null) : null,
+          cylinderSaleMode: effectiveCylinderSaleMode,
+        })
       : undefined;
   const isUpdating = cartItem
     ? pendingCartItemIds?.has(cartItem.id) === true
     : false;
+  const isSelectionAdding =
+    isAdding ||
+    (selectedVariant
+      ? pendingAddSelectionKeys?.has(
+          getProductCardSelectionKey({
+            productId: product.id,
+            variantId: selectedVariant.variantId,
+            shopId: mode === "storefront" ? (shopId ?? null) : null,
+            cylinderSaleMode: effectiveCylinderSaleMode,
+          }),
+        ) === true
+      : false);
   const totalReviews = product.totalReviews ?? 0;
   const soldOrderCount = product.soldOrderCount ?? 0;
   const averageRating = product.averageRating ?? 0;
@@ -291,14 +317,7 @@ export function StorefrontProductCard({
         ) : null}
 
         <div className="mt-auto flex items-center gap-2 pt-4">
-          {mode === "reference" ? (
-            <Button asChild className="h-9 flex-1 text-xs">
-              <Link href={detailHref}>
-                <Eye className="size-3.5" aria-hidden="true" />
-                View details
-              </Link>
-            </Button>
-          ) : previewMode ? (
+          {previewMode ? (
             <Button
               type="button"
               className="h-9 flex-1 text-xs"
@@ -342,7 +361,9 @@ export function StorefrontProductCard({
                   void onUpdateQuantity(cartItem.id, cartItem.quantity + 1)
                 }
                 disabled={
-                  isUpdating || cartItem.quantity >= selectedAvailableQty
+                  isUpdating ||
+                  (mode === "storefront" &&
+                    cartItem.quantity >= selectedAvailableQty)
                 }
                 aria-label={`Increase ${product.name} quantity`}
               >
@@ -354,9 +375,10 @@ export function StorefrontProductCard({
               type="button"
               className="h-9 flex-1 text-xs"
               disabled={
-                isAdding ||
+                isSelectionAdding ||
+                !cartReady ||
                 !selectedVariant ||
-                selectedAvailableQty <= 0 ||
+                (mode === "storefront" && selectedAvailableQty <= 0) ||
                 !onQuickAdd
               }
               onClick={() => {
@@ -369,7 +391,7 @@ export function StorefrontProductCard({
               aria-label={`Add ${product.name} to cart`}
             >
               <ShoppingCart className="size-3.5" aria-hidden="true" />
-              {isAdding ? "Adding…" : "Add to cart"}
+              {isSelectionAdding ? "Adding…" : "Add to cart"}
             </Button>
           )}
           {mode === "storefront" ? (

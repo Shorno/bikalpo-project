@@ -12,6 +12,7 @@ export type ReferenceCatalogVariant = {
   price: string | number;
   productId?: number | null;
   sourceVariantPriceId?: number | null;
+  sourceVariantOptionId?: number | null;
   variantType?: string | null;
   visibilityRole?: string | null;
 };
@@ -20,12 +21,13 @@ export type ReferenceCatalogVariantPrice = {
   consumerPrice: string | number;
   id: number;
   isActive?: boolean | null;
+  variantOptionId?: number | null;
 };
 
 export type ReferenceCatalogPriceSource = OpenOrderReferenceProduct & {
   price: string | number;
-  variantPrices?: ReferenceCatalogVariantPrice[] | null;
-  variants?: ReferenceCatalogVariant[] | null;
+  variantPrices?: readonly ReferenceCatalogVariantPrice[] | null;
+  variants?: readonly ReferenceCatalogVariant[] | null;
 };
 
 export type OpenOrderReferenceProduct = {
@@ -95,6 +97,29 @@ function asNumber(value: unknown): number {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+export function getReferenceVariantUnitPrice(
+  variant: Pick<
+    ReferenceCatalogVariant,
+    "price" | "sourceVariantPriceId" | "sourceVariantOptionId"
+  >,
+  variantPrices: readonly ReferenceCatalogVariantPrice[],
+): string | number {
+  const activePrices = variantPrices.filter(
+    (price) => price.isActive !== false,
+  );
+  const linkedPrice =
+    (variant.sourceVariantPriceId != null
+      ? activePrices.find((price) => price.id === variant.sourceVariantPriceId)
+      : undefined) ??
+    (variant.sourceVariantOptionId != null
+      ? activePrices.find(
+          (price) => price.variantOptionId === variant.sourceVariantOptionId,
+        )
+      : undefined);
+
+  return linkedPrice?.consumerPrice ?? variant.price;
+}
+
 function isCanonicalReferenceVariant(
   variant: ReferenceCatalogVariant,
 ): boolean {
@@ -138,14 +163,20 @@ export function getReferenceCylinderPricing(
       : isCanonicalReferenceVariant(variant),
   );
   const newPrices = listedVariants
-    .map((variant) => asNumber(variant.price))
+    .map((variant) =>
+      asNumber(
+        getReferenceVariantUnitPrice(variant, product.variantPrices ?? []),
+      ),
+    )
     .filter((price) => price > 0);
   const exchangePrices = listedVariants
     .filter((variant) => Boolean(variant.exchangeEnabled))
     .map((variant) =>
       Math.max(
         0,
-        asNumber(variant.price) - asNumber(variant.exchangeCreditAmount),
+        asNumber(
+          getReferenceVariantUnitPrice(variant, product.variantPrices ?? []),
+        ) - asNumber(variant.exchangeCreditAmount),
       ),
     );
 

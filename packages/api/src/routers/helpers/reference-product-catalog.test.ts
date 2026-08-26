@@ -5,10 +5,58 @@ import {
   getReferenceCylinderPricing,
   getReferenceProductEffectivePrice,
   getReferenceSellerKey,
+  getReferenceVariantUnitPrice,
   isOpenOrderReferenceSelectionEligible,
   referenceProductCanExchange,
   sortReferenceProducts,
 } from "./reference-product-catalog";
+
+test("an exact active consumer price is the canonical reference variant price", () => {
+  const variant = {
+    price: "1480.00",
+    sourceVariantPriceId: 4,
+    sourceVariantOptionId: 9,
+  };
+
+  assert.equal(
+    getReferenceVariantUnitPrice(variant, [
+      {
+        id: 4,
+        variantOptionId: 9,
+        consumerPrice: "1520.00",
+        isActive: true,
+      },
+    ]),
+    "1520.00",
+  );
+});
+
+test("reference variant pricing falls back by option, then to the variant snapshot", () => {
+  const variant = {
+    price: "1480.00",
+    sourceVariantPriceId: 4,
+    sourceVariantOptionId: 9,
+  };
+
+  assert.equal(
+    getReferenceVariantUnitPrice(variant, [
+      {
+        id: 4,
+        variantOptionId: 9,
+        consumerPrice: "1300.00",
+        isActive: false,
+      },
+      {
+        id: 5,
+        variantOptionId: 9,
+        consumerPrice: "1510.00",
+        isActive: true,
+      },
+    ]),
+    "1510.00",
+  );
+  assert.equal(getReferenceVariantUnitPrice(variant, []), "1480.00");
+});
 
 test("canonical Open Order eligibility ignores the legacy channel type", () => {
   const product = {
@@ -380,5 +428,51 @@ test("reference cylinder pricing exposes New and Exchange from prices", () => {
     exchangeAvailable: true,
     newFrom: 1200,
     exchangeFrom: 1200,
+  });
+});
+
+test("reference cylinder pricing uses the active linked consumer price", () => {
+  const product = {
+    brandId: 16,
+    coreProductId: 1,
+    creatorSource: "admin",
+    id: 2,
+    price: "1900.00",
+    scheduledAt: null,
+    status: "active",
+    visibility: "public",
+    variantPrices: [
+      {
+        id: 4,
+        variantOptionId: 9,
+        consumerPrice: "1520.00",
+        isActive: true,
+      },
+    ],
+    variants: [
+      {
+        catalogVariant: {
+          brandId: 16,
+          configurationState: "configured",
+          coreProductId: 1,
+          isActive: true,
+        },
+        catalogVariantId: 5,
+        exchangeEnabled: true,
+        exchangeCreditAmount: "300",
+        isActive: true,
+        price: "1480",
+        productId: 2,
+        sourceVariantPriceId: 4,
+        sourceVariantOptionId: 9,
+      },
+    ],
+  } as const;
+
+  assert.deepEqual(getReferenceCylinderPricing(product), {
+    supportsNew: true,
+    exchangeAvailable: true,
+    newFrom: 1520,
+    exchangeFrom: 1220,
   });
 });

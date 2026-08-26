@@ -35,6 +35,7 @@ import {
   useUpdateCartItem,
 } from "@/hooks/use-customer-api";
 import { authClient } from "@/lib/auth-client";
+import { getProductCardSelectionKey } from "@/lib/product-card-cart-item";
 
 export interface CartItem {
   id: number;
@@ -88,6 +89,8 @@ export interface CartContextType {
   totalPrice: number;
   isHydrated: boolean;
   isLoading: boolean;
+  pendingAddSelectionKeys: ReadonlySet<string>;
+  pendingCartItemIds: ReadonlySet<number>;
 }
 
 export const CartContext = createContext<CartContextType | undefined>(
@@ -95,9 +98,16 @@ export const CartContext = createContext<CartContextType | undefined>(
 );
 
 export function OrpcCartProvider({ children }: { children: ReactNode }) {
-  const { data: session } = authClient.useSession();
+  const { data: session, isPending: isSessionPending } =
+    authClient.useSession();
   const { showLoginModal } = useLoginRequired();
   const [replacementOpen, setReplacementOpen] = useState(false);
+  const [pendingAddSelectionKeys, setPendingAddSelectionKeys] = useState<
+    ReadonlySet<string>
+  >(() => new Set());
+  const [pendingCartItemIds, setPendingCartItemIds] = useState<
+    ReadonlySet<number>
+  >(() => new Set());
   const replacementResolver = useRef<((replace: boolean) => void) | null>(null);
 
   const {
@@ -142,6 +152,15 @@ export function OrpcCartProvider({ children }: { children: ReactNode }) {
       showLoginModal();
       return;
     }
+    const selectionKey =
+      variantId != null
+        ? getProductCardSelectionKey({
+            productId,
+            variantId,
+            shopId: shopId ?? null,
+            cylinderSaleMode: cylinderSaleMode ?? "new",
+          })
+        : null;
     const request = {
       productId,
       quantity,
@@ -152,6 +171,11 @@ export function OrpcCartProvider({ children }: { children: ReactNode }) {
         (shopId ? ("direct" as const) : ("open_order" as const)),
       ...(cylinderSaleMode ? { cylinderSaleMode } : {}),
     };
+    if (selectionKey) {
+      setPendingAddSelectionKeys((current) =>
+        new Set(current).add(selectionKey),
+      );
+    }
     try {
       await addToCartMutation.mutateAsync({ ...request, replaceCart: false });
     } catch (error) {
@@ -167,6 +191,14 @@ export function OrpcCartProvider({ children }: { children: ReactNode }) {
       });
       if (!replace) return;
       await addToCartMutation.mutateAsync({ ...request, replaceCart: true });
+    } finally {
+      if (selectionKey) {
+        setPendingAddSelectionKeys((current) => {
+          const next = new Set(current);
+          next.delete(selectionKey);
+          return next;
+        });
+      }
     }
   };
 
@@ -175,11 +207,20 @@ export function OrpcCartProvider({ children }: { children: ReactNode }) {
   };
 
   const updateQuantity = async (cartItemId: number, quantity: number) => {
-    if (quantity <= 0) {
-      await removeItem(cartItemId);
-      return;
+    setPendingCartItemIds((current) => new Set(current).add(cartItemId));
+    try {
+      if (quantity <= 0) {
+        await removeItem(cartItemId);
+        return;
+      }
+      await updateMutation.mutateAsync({ cartItemId, quantity });
+    } finally {
+      setPendingCartItemIds((current) => {
+        const next = new Set(current);
+        next.delete(cartItemId);
+        return next;
+      });
     }
-    await updateMutation.mutateAsync({ cartItemId, quantity });
   };
 
   const updateCylinderSaleMode = async (
@@ -223,8 +264,10 @@ export function OrpcCartProvider({ children }: { children: ReactNode }) {
         refreshCart,
         totalItems,
         totalPrice,
-        isHydrated: isFetched || !session,
+        isHydrated: !isSessionPending && (isFetched || !session),
         isLoading,
+        pendingAddSelectionKeys,
+        pendingCartItemIds,
       }}
     >
       {children}

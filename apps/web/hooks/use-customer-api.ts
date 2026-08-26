@@ -191,7 +191,7 @@ export function useAddToCart() {
     ...orpc.customer.addToCart.mutationOptions(),
     onSuccess: (data) => {
       toast.success(data.message);
-      qc.invalidateQueries({ queryKey: orpc.customer.getCart.key() });
+      return qc.invalidateQueries({ queryKey: orpc.customer.getCart.key() });
     },
   });
 }
@@ -214,7 +214,7 @@ export function useRemoveFromCart() {
     ...orpc.customer.removeFromCart.mutationOptions(),
     onSuccess: () => {
       toast.success("Item removed from cart");
-      qc.invalidateQueries({ queryKey: orpc.customer.getCart.key() });
+      return qc.invalidateQueries({ queryKey: orpc.customer.getCart.key() });
     },
     onError: (err) => toast.error(err.message),
   });

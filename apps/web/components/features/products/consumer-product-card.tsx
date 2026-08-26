@@ -1,7 +1,13 @@
 "use client";
 
-import { StorefrontProductCard } from "@/components/storefront/storefront-product-card";
+import {
+  type StorefrontAddSelection,
+  type StorefrontProduct,
+  StorefrontProductCard,
+} from "@/components/storefront/storefront-product-card";
+import { useCart } from "@/hooks/use-orpc-cart";
 import { withCustomerStorefrontPreview } from "@/lib/customer-storefront-preview";
+import { addReferenceProductToCart } from "@/lib/reference-quick-add";
 
 interface ConsumerProductCardProps {
   product: {
@@ -47,6 +53,14 @@ export function ConsumerProductCard({
   product,
   previewMode = false,
 }: ConsumerProductCardProps) {
+  const {
+    addItem,
+    isHydrated: isCartHydrated,
+    items: cartItems,
+    pendingAddSelectionKeys,
+    pendingCartItemIds,
+    updateQuantity,
+  } = useCart();
   const categorySlug = product.category?.slug ?? "all";
   const productHref = withCustomerStorefrontPreview(
     `/products/${categorySlug}/${product.slug}`,
@@ -68,11 +82,34 @@ export function ConsumerProductCard({
         }))
       : [];
 
+  const handleQuickAdd = async (
+    selectedProduct: StorefrontProduct,
+    selection: StorefrontAddSelection,
+  ) => {
+    if (previewMode) return;
+
+    await addReferenceProductToCart(addItem, {
+      productId: selectedProduct.id,
+      variantId: selection.variantId,
+      cylinderSaleMode: selection.cylinderSaleMode,
+    });
+  };
+
+  const handleQuantityUpdate = async (cartItemId: number, quantity: number) => {
+    await updateQuantity(cartItemId, quantity);
+  };
+
   return (
     <StorefrontProductCard
       mode="reference"
       detailHref={productHref}
       previewMode={previewMode}
+      cartReady={isCartHydrated}
+      cartItems={cartItems}
+      pendingAddSelectionKeys={pendingAddSelectionKeys}
+      pendingCartItemIds={pendingCartItemIds}
+      onQuickAdd={handleQuickAdd}
+      onUpdateQuantity={handleQuantityUpdate}
       product={{
         id: product.id,
         name: product.name,
