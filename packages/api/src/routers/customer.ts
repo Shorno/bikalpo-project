@@ -42,6 +42,7 @@ import {
   productReview,
   productType,
   productVariant,
+  productVariantPrice,
   retailerOffer,
   retailerOfferApplication,
   sellerAreaMapping,
@@ -4796,21 +4797,41 @@ const mutations = {
 
       let itemPrice = productData.price;
       if (purchaseMode === "open_order" && input.variantId) {
-        const variantData = await db.query.productVariant.findFirst({
-          where: and(
-            eq(productVariant.id, input.variantId),
-            eq(productVariant.productId, input.productId),
-          ),
-          columns: { price: true },
-        });
-        if (!variantData) {
+        if (!referenceVariant) {
           throw new ORPCError("NOT_FOUND", {
             message: "Product option not found",
           });
         }
+        const linkedReferencePrice =
+          referenceVariant.sourceVariantPriceId != null
+            ? await db.query.productVariantPrice.findFirst({
+                where: and(
+                  eq(
+                    productVariantPrice.id,
+                    referenceVariant.sourceVariantPriceId,
+                  ),
+                  eq(productVariantPrice.productId, input.productId),
+                  eq(productVariantPrice.isActive, true),
+                ),
+                columns: { consumerPrice: true },
+              })
+            : referenceVariant.sourceVariantOptionId != null
+              ? await db.query.productVariantPrice.findFirst({
+                  where: and(
+                    eq(
+                      productVariantPrice.variantOptionId,
+                      referenceVariant.sourceVariantOptionId,
+                    ),
+                    eq(productVariantPrice.productId, input.productId),
+                    eq(productVariantPrice.isActive, true),
+                  ),
+                  columns: { consumerPrice: true },
+                })
+              : null;
         try {
           itemPrice = resolveRetailerCylinderSale({
-            newUnitPrice: variantData.price,
+            newUnitPrice:
+              linkedReferencePrice?.consumerPrice ?? referenceVariant.price,
             exchangeEnabled: cylinderExchangeAvailable,
             exchangeCreditAmount: referenceVariant?.exchangeCreditAmount ?? "0",
             requestedMode: cylinderSaleMode,

@@ -422,14 +422,14 @@ export function PublicProductDetailsView({
                           Call
                         </a>
                       ) : (
-                        <span
-                          aria-disabled="true"
-                          className="inline-flex h-12 min-w-28 cursor-not-allowed items-center justify-center gap-2 rounded-md border border-zinc-200 px-5 text-base font-semibold text-zinc-400"
-                          title="Support phone is not configured"
+                        <Link
+                          className="inline-flex h-12 min-w-28 items-center justify-center gap-2 rounded-md border border-zinc-300 px-5 text-base font-semibold text-zinc-900 hover:bg-zinc-50"
+                          href="/contact"
+                          title="Contact support"
                         >
                           <Phone aria-hidden="true" className="size-4" />
                           Call
-                        </span>
+                        </Link>
                       )
                     }
                     variantId={selectedVariant.id}
