@@ -2091,6 +2091,7 @@ const queries = {
           subCategory: { columns: { name: true } },
           brand: { columns: { id: true, name: true, slug: true, logo: true } },
           images: true,
+          variantPrices: true,
         },
       });
       if (!found)
@@ -2124,13 +2125,38 @@ const queries = {
       }
 
       // Serialize product and variants with proper price conversion
+      const activeVariantPrices = found.variantPrices.filter(
+        (variantPrice) => variantPrice.isActive,
+      );
+      const activeVariantPricesById = new Map(
+        activeVariantPrices.map((variantPrice) => [
+          variantPrice.id,
+          variantPrice,
+        ]),
+      );
+      const activeVariantPricesByOptionId = new Map(
+        activeVariantPrices.map((variantPrice) => [
+          variantPrice.variantOptionId,
+          variantPrice,
+        ]),
+      );
+      const { variantPrices: _variantPrices, ...foundData } = found;
       const foundSerialized = {
-        ...found,
+        ...foundData,
         price: parseFloat(found.price),
       };
       const variantsSerialized = variants.map((variant) => {
         const { catalogVariant: _catalogVariant, ...variantData } = variant;
-        const newUnitPrice = Number(variant.price);
+        const linkedVariantPrice =
+          (variant.sourceVariantPriceId != null
+            ? activeVariantPricesById.get(variant.sourceVariantPriceId)
+            : undefined) ??
+          (variant.sourceVariantOptionId != null
+            ? activeVariantPricesByOptionId.get(variant.sourceVariantOptionId)
+            : undefined);
+        const newUnitPrice = Number(
+          linkedVariantPrice?.consumerPrice ?? variant.price,
+        );
         const exchangeEnabled =
           found.category?.slug === "lpg" && Boolean(variant.exchangeEnabled);
         const exchangeCreditAmount = exchangeEnabled

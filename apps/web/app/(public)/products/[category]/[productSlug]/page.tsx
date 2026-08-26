@@ -76,6 +76,7 @@ export default async function ProductPage({
       ]}
       categoryHref={categoryHref}
       previewMode={previewMode}
+      supportPhone={process.env.NEXT_PUBLIC_SUPPORT_PHONE?.trim() || null}
     />
   );
 }

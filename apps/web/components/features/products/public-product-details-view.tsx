@@ -35,6 +35,7 @@ type PublicProductDetailsViewProps = {
   breadcrumbs: Array<{ label: string; href?: string }>;
   categoryHref: string;
   previewMode?: boolean;
+  supportPhone?: string | null;
 };
 
 type CylinderSaleMode = "new" | "exchange";
@@ -91,6 +92,7 @@ export function PublicProductDetailsView({
   breadcrumbs,
   categoryHref,
   previewMode = false,
+  supportPhone,
 }: PublicProductDetailsViewProps) {
   const sortedVariants = useMemo(
     () =>
@@ -111,9 +113,6 @@ export function PublicProductDetailsView({
     sortedVariants[0];
   const [saleMode, setSaleMode] = useState<CylinderSaleMode>(
     selectedVariant?.cylinderSale?.defaultMode ?? "new",
-  );
-  const [selectedQuantity, setSelectedQuantity] = useState(
-    Math.max(1, Number(selectedVariant?.orderMin) || 1),
   );
   const [activeTab, setActiveTab] = useState<DetailTab>("description");
 
@@ -200,7 +199,6 @@ export function PublicProductDetailsView({
   const selectVariant = (variant: DetailVariant) => {
     setSelectedVariantId(variant.id);
     setSaleMode(variant.cylinderSale?.defaultMode ?? "new");
-    setSelectedQuantity(Math.max(1, Number(variant.orderMin) || 1));
   };
 
   return (
@@ -392,7 +390,6 @@ export function PublicProductDetailsView({
                     categoryName={product.category.name}
                     cylinderSaleMode={isLpg ? effectiveSaleMode : undefined}
                     key={`${selectedVariant.id}-${effectiveSaleMode}`}
-                    onQuantityChange={setSelectedQuantity}
                     orderIncrement={Number(selectedVariant.orderIncrement) || 1}
                     orderMax={
                       selectedVariant.orderMax
@@ -416,25 +413,29 @@ export function PublicProductDetailsView({
                     }}
                     purchaseMode="open_order"
                     secondaryAction={
-                      <a
-                        className="inline-flex h-12 min-w-28 items-center justify-center gap-2 rounded-md border border-zinc-300 px-5 text-base font-semibold text-zinc-900 hover:bg-zinc-50"
-                        href="tel:+8801234567890"
-                      >
-                        <Phone aria-hidden="true" className="size-4" />
-                        Call
-                      </a>
+                      supportPhone ? (
+                        <a
+                          className="inline-flex h-12 min-w-28 items-center justify-center gap-2 rounded-md border border-zinc-300 px-5 text-base font-semibold text-zinc-900 hover:bg-zinc-50"
+                          href={`tel:${supportPhone}`}
+                        >
+                          <Phone aria-hidden="true" className="size-4" />
+                          Call
+                        </a>
+                      ) : (
+                        <span
+                          aria-disabled="true"
+                          className="inline-flex h-12 min-w-28 cursor-not-allowed items-center justify-center gap-2 rounded-md border border-zinc-200 px-5 text-base font-semibold text-zinc-400"
+                          title="Support phone is not configured"
+                        >
+                          <Phone aria-hidden="true" className="size-4" />
+                          Call
+                        </span>
+                      )
                     }
                     variantId={selectedVariant.id}
                   />
                 )}
               </div>
-
-              {exchangeAvailable && effectiveSaleMode === "exchange" && (
-                <p className="mt-3 text-xs text-zinc-500">
-                  Return {selectedQuantity} empty cylinder
-                  {selectedQuantity === 1 ? "" : "s"} with this Open Order.
-                </p>
-              )}
             </div>
           </div>
         </section>
