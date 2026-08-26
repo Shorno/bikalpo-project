@@ -14,6 +14,7 @@ interface StoreIdentity {
   image: string | null;
   shopLat: string | null;
   shopLng: string | null;
+  phoneNumber?: string | null;
 }
 
 interface StoreProduct {
@@ -131,6 +132,11 @@ export function buildStoreProductDetail({
           defaultMode: exchangeEnabled
             ? ("exchange" as const)
             : ("new" as const),
+          newUnitPrice: retailPrice,
+          effectiveExchangeUnitPrice: Math.max(
+            0,
+            retailPrice - exchangeCreditAmount,
+          ),
         },
       };
     });

@@ -4357,6 +4357,7 @@ const queries = {
           image: true,
           shopLat: true,
           shopLng: true,
+          phoneNumber: true,
         },
       });
 
@@ -4438,7 +4439,19 @@ const queries = {
         });
       }
 
-      return detail;
+      const [reviewStatsMap, soldOrderCountMap] = await Promise.all([
+        getReferenceReviewStatsMap([foundProduct.id]),
+        getShopProductSoldOrderCountMap(shop.id, [foundProduct.id]),
+      ]);
+
+      return {
+        ...detail,
+        reviewStats: reviewStatsMap[foundProduct.id] ?? {
+          averageRating: 0,
+          totalReviews: 0,
+        },
+        soldOrderCount: soldOrderCountMap[foundProduct.id] ?? 0,
+      };
     }),
 
   /** Get all sellers who have a specific product in stock */

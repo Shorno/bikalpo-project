@@ -1,9 +1,9 @@
 import { notFound } from "next/navigation";
-import { ProductDetailsView } from "@/components/features/products/product-details-view";
+import { SellerProductDetailsView } from "@/components/features/products/public-product-details-view";
 import type { DetailVariant } from "@/components/features/products/trade-product-detail-client";
 import { getWarehouseProductDetail } from "@/lib/public-data";
+import { formatProductCode } from "@/lib/seller-product-details";
 import type { WarehouseStorefrontProductDetail } from "@/types/warehouse-storefront";
-import { WarehouseProductDetailActions } from "./warehouse-product-detail-actions";
 
 interface WarehouseProductDetailPageProps {
   warehouseSlug: string;
@@ -28,6 +28,7 @@ export async function WarehouseProductDetailPage({
   const warehouseName =
     detail.warehouse.warehouseName || detail.warehouse.name || "Warehouse";
   const categoryHref = `${storefrontPath}?category=${encodeURIComponent(product.category.slug)}`;
+  const productCode = formatProductCode(product.id);
   const variants: DetailVariant[] = product.variants.map((variant) => ({
     id: variant.id,
     sku: variant.sku,
@@ -48,22 +49,30 @@ export async function WarehouseProductDetailPage({
     variantType: variant.variantType,
     packType: variant.packType,
     isActive: variant.isActive,
-    cylinderSale: variant.cylinderSale,
+    cylinderSale: variant.cylinderSale
+      ? {
+          ...variant.cylinderSale,
+          newUnitPrice: variant.retailPrice,
+          effectiveExchangeUnitPrice: Math.max(
+            0,
+            variant.retailPrice - variant.cylinderSale.exchangeCreditAmount,
+          ),
+        }
+      : null,
   }));
 
   return (
-    <ProductDetailsView
+    <SellerProductDetailsView
       product={{
         id: product.id,
+        code: productCode,
         name: product.name,
-        price: String(product.lowestPrice),
         image: product.image,
-        images: product.images,
         size: product.size || variants[0]?.unitLabel || "Unit",
         description: product.description,
+        shortDescription: product.shortDescription,
         features: product.features,
         inStock: product.inStock,
-        stockQuantity: product.stockQuantity,
         category: product.category,
         subCategory: product.subCategory,
         brand: product.brand,
@@ -73,18 +82,17 @@ export async function WarehouseProductDetailPage({
         { label: "Home", href: "/" },
         { label: warehouseName, href: storefrontPath },
         { label: product.category.name, href: categoryHref },
-        { label: product.name },
+        { label: productCode },
       ]}
       categoryHref={categoryHref}
-      purchaseMode="direct"
-      actionSlot={
-        <WarehouseProductDetailActions
-          product={product}
-          warehouseSlug={warehouseSlug}
-          storefrontPath={storefrontPath}
-          cartPath={cartPath}
-        />
-      }
+      purchase={{
+        kind: "warehouse",
+        product,
+        warehouseSlug,
+        cartPath,
+      }}
+      reviewStats={detail.reviewStats}
+      soldOrderCount={detail.soldOrderCount}
     />
   );
 }

@@ -30,6 +30,7 @@ import {
   orderItem,
   payment,
   product,
+  productReview,
   shopWarehouseConnection,
   user,
   warehouseWarehouseConnection,
@@ -41,7 +42,9 @@ import {
 import { ORPCError } from "@orpc/server";
 import {
   and,
+  avg,
   count,
+  countDistinct,
   desc,
   eq,
   gte,
@@ -665,8 +668,37 @@ const storefrontQueries = {
         0,
       );
 
+      const [reviewRows, soldRows] = await Promise.all([
+        db
+          .select({
+            averageRating: avg(productReview.rating),
+            totalReviews: count(productReview.id),
+          })
+          .from(productReview)
+          .where(eq(productReview.productId, foundProduct.id)),
+        db
+          .select({ soldOrderCount: countDistinct(order.id) })
+          .from(orderItem)
+          .innerJoin(order, eq(orderItem.orderId, order.id))
+          .where(
+            and(
+              eq(order.warehouseId, warehouse.id),
+              eq(order.orderType, "b2b"),
+              ne(order.status, "cancelled"),
+              eq(orderItem.productId, foundProduct.id),
+            ),
+          ),
+      ]);
+
       return {
         warehouse,
+        reviewStats: {
+          averageRating: reviewRows[0]?.averageRating
+            ? Number.parseFloat(reviewRows[0].averageRating)
+            : 0,
+          totalReviews: reviewRows[0]?.totalReviews ?? 0,
+        },
+        soldOrderCount: Number(soldRows[0]?.soldOrderCount) || 0,
         product: {
           id: foundProduct.id,
           name: foundProduct.name,
