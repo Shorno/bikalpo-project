@@ -1094,7 +1094,7 @@ async function getShopProductSoldOrderCountMap(
       and(
         eq(order.shopId, shopId),
         eq(order.orderType, "b2c"),
-        ne(order.status, "cancelled"),
+        eq(order.status, "delivered"),
         inArray(orderItem.productId, productIds),
       ),
     )
@@ -2174,8 +2174,7 @@ const queries = {
         const newUnitPrice = Number(
           getReferenceVariantUnitPrice(variant, found.variantPrices),
         );
-        const exchangeEnabled =
-          found.category?.slug === "lpg" && Boolean(variant.exchangeEnabled);
+        const exchangeEnabled = Boolean(variant.exchangeEnabled);
         const exchangeCreditAmount = exchangeEnabled
           ? Math.min(
               newUnitPrice,
@@ -2186,7 +2185,7 @@ const queries = {
           ...variantData,
           price: newUnitPrice,
           cylinderSale:
-            found.category?.slug === "lpg"
+            found.isReturnablePack || exchangeEnabled
               ? {
                   exchangeEnabled,
                   exchangeCreditAmount,
@@ -2837,9 +2836,7 @@ const queries = {
             : referenceUnitPrice;
         const exchangeEnabled = item.shopId
           ? retailerCylinderExchangeAvailable(retailerInventory)
-          : Boolean(
-              item.product.category?.slug === "lpg" && variant?.exchangeEnabled,
-            );
+          : Boolean(variant?.exchangeEnabled);
         const exchangeCreditAmount = exchangeEnabled
           ? Number(variant?.exchangeCreditAmount ?? 0)
           : 0;
@@ -2871,7 +2868,8 @@ const queries = {
             ? shopMap.get(item.shopId)?.shopSlug || null
             : null,
           cylinderSale:
-            item.product.category?.slug === "lpg" && variant
+            variant &&
+            (item.product.category?.slug === "lpg" || exchangeEnabled)
               ? {
                   exchangeEnabled,
                   mode: item.cylinderSaleMode,

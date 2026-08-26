@@ -179,7 +179,11 @@ export function StorefrontProductDetailsView({
     Number(selectedVariant.stockQuantity ?? 0),
   );
   const features = getFeatureMap(product.features);
-  const descriptionRows = isLpg
+  const descriptionRows: Array<{
+    label: string;
+    value: string;
+    metric?: boolean;
+  }> = isLpg
     ? [
         {
           label: "Cylinder Type",
@@ -194,7 +198,7 @@ export function StorefrontProductDetailsView({
           value:
             getFeature(features, "gas type") ?? "Liquefied Petroleum Gas (LPG)",
         },
-        { label: "Capacity", value: selectedLabel },
+        { label: "Capacity", metric: true, value: selectedLabel },
         {
           label: "Cylinder Condition",
           value: getFeature(features, "cylinder condition") ?? "Filled",
@@ -228,7 +232,7 @@ export function StorefrontProductDetailsView({
       ]
     : [
         { label: "Product Type", value: product.category.name },
-        { label: "Variant", value: selectedLabel },
+        { label: "Variant", metric: true, value: selectedLabel },
         { label: "Brand", value: product.brand?.name ?? "—" },
         {
           label: "Country Origin",
@@ -387,7 +391,9 @@ export function StorefrontProductDetailsView({
                           type="radio"
                           value={variant.id}
                         />
-                        {variantLabel}
+                        <span className="font-mono tabular-nums">
+                          {variantLabel}
+                        </span>
                       </label>
                     );
                   })}
@@ -544,7 +550,14 @@ export function StorefrontProductDetailsView({
                     key={row.label}
                   >
                     <dt className="font-medium text-zinc-600">{row.label}</dt>
-                    <dd className="text-zinc-950">: {row.value}</dd>
+                    <dd
+                      className={cn(
+                        "text-zinc-950",
+                        row.metric && "font-mono tabular-nums",
+                      )}
+                    >
+                      : {row.value}
+                    </dd>
                   </div>
                 ))}
               </dl>
