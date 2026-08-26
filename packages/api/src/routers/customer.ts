@@ -1714,9 +1714,7 @@ const queries = {
               referencePrice:
                 linkedVariantPrice?.consumerPrice ?? variant.price,
               sortOrder: variant.sortOrder,
-              exchangeEnabled:
-                referenceProduct.category?.slug === "lpg" &&
-                Boolean(variant.exchangeEnabled),
+              exchangeEnabled: Boolean(variant.exchangeEnabled),
               exchangeCreditAmount: variant.exchangeCreditAmount,
             };
           });

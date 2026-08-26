@@ -60,32 +60,13 @@ export function ConsumerProductCard({
           sku: variant.sku ?? null,
           unitLabel: variant.unitLabel ?? null,
           quantitySelectorLabel: variant.quantitySelectorLabel ?? null,
-          basePrice: null,
-          retailPrice: String(asPrice(variant.referencePrice)),
-          availableQty: "0",
+          displayPrice: String(asPrice(variant.referencePrice)),
           sortOrder: variant.sortOrder,
           exchangeEnabled: Boolean(variant.exchangeEnabled),
           exchangeCreditAmount: variant.exchangeCreditAmount ?? 0,
           canExchange: Boolean(variant.exchangeEnabled),
         }))
-      : [
-          {
-            variantId: product.id,
-            sku: null,
-            unitLabel: product.size ?? null,
-            quantitySelectorLabel: product.size ?? null,
-            basePrice: null,
-            retailPrice: String(fallbackPrice),
-            availableQty: "0",
-            exchangeEnabled: Boolean(
-              product.cylinderSale?.exchangeAvailable ?? product.canExchange,
-            ),
-            exchangeCreditAmount: 0,
-            canExchange: Boolean(
-              product.cylinderSale?.exchangeAvailable ?? product.canExchange,
-            ),
-          },
-        ];
+      : [];
 
   return (
     <StorefrontProductCard
@@ -110,7 +91,7 @@ export function ConsumerProductCard({
               slug: product.subCategory.slug ?? "",
             }
           : null,
-        lowestRetailPrice: fallbackPrice,
+        lowestDisplayPrice: fallbackPrice,
         variantCount: variants.length,
         totalAvailableQty: 0,
         averageRating: product.reviewStats?.averageRating ?? 0,

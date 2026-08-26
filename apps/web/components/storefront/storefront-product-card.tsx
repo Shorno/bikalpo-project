@@ -23,7 +23,8 @@ export interface StorefrontProduct {
   images: Array<{ imageUrl: string }>;
   category: { name: string; slug: string } | null;
   subCategory: { name: string; slug: string } | null;
-  lowestRetailPrice: number;
+  lowestRetailPrice?: number;
+  lowestDisplayPrice?: number;
   variantCount: number;
   totalAvailableQty: number;
   averageRating?: number;
@@ -34,9 +35,10 @@ export interface StorefrontProduct {
     sku: string | null;
     unitLabel: string | null;
     quantitySelectorLabel: string | null;
-    basePrice: string | null;
-    retailPrice: string;
-    availableQty: string;
+    basePrice?: string | null;
+    retailPrice?: string;
+    displayPrice?: string;
+    availableQty?: string;
     sortOrder?: number;
     exchangeEnabled?: boolean;
     exchangeCreditAmount?: string | number;
@@ -118,7 +120,11 @@ export function StorefrontProductCard({
     .join(" / ");
   const unitLabel = selectedVariant?.unitLabel;
   const selectedPrice = Number(
-    selectedVariant?.retailPrice ?? product.lowestRetailPrice,
+    selectedVariant?.displayPrice ??
+      selectedVariant?.retailPrice ??
+      product.lowestDisplayPrice ??
+      product.lowestRetailPrice ??
+      0,
   );
   const selectedAvailableQty = Number(
     selectedVariant?.availableQty ?? product.totalAvailableQty,
@@ -188,7 +194,7 @@ export function StorefrontProductCard({
             shouldHideCategoryContext ? "mt-0" : "mt-1.5",
           )}
         >
-          <h2 className="line-clamp-2 min-h-10 text-sm font-semibold leading-5 text-slate-950 transition-colors hover:text-primary group-focus-within:text-primary">
+          <h2 className="line-clamp-2 min-h-10 text-sm font-semibold leading-5 text-slate-950 transition-colors hover:text-slate-600 group-focus-within:text-slate-600">
             {product.name}
           </h2>
         </Link>
@@ -197,17 +203,17 @@ export function StorefrontProductCard({
           <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-slate-500">
             {showRatings && (
               <span className="inline-flex items-center gap-1">
-                <Star className="size-3 fill-amber-400 text-amber-400" />
-                <span className="font-medium tabular-nums text-slate-700">
+                <Star className="size-3 fill-slate-500 text-slate-500" />
+                <span className="font-mono font-medium tabular-nums text-slate-700">
                   {averageRating.toFixed(1)}
                 </span>
-                <span className="text-slate-400">
+                <span className="font-mono tabular-nums text-slate-400">
                   ({totalReviews.toLocaleString("en-BD")})
                 </span>
               </span>
             )}
             {showSold && (
-              <span className="tabular-nums">
+              <span className="font-mono tabular-nums">
                 Sold {soldOrderCount.toLocaleString("en-BD")}{" "}
                 {soldOrderCount === 1 ? "order" : "orders"}
               </span>
