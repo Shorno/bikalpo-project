@@ -4802,7 +4802,7 @@ const mutations = {
             message: "Product option not found",
           });
         }
-        const linkedReferencePrice =
+        let linkedReferencePrice =
           referenceVariant.sourceVariantPriceId != null
             ? await db.query.productVariantPrice.findFirst({
                 where: and(
@@ -4815,19 +4815,23 @@ const mutations = {
                 ),
                 columns: { consumerPrice: true },
               })
-            : referenceVariant.sourceVariantOptionId != null
-              ? await db.query.productVariantPrice.findFirst({
-                  where: and(
-                    eq(
-                      productVariantPrice.variantOptionId,
-                      referenceVariant.sourceVariantOptionId,
-                    ),
-                    eq(productVariantPrice.productId, input.productId),
-                    eq(productVariantPrice.isActive, true),
-                  ),
-                  columns: { consumerPrice: true },
-                })
-              : null;
+            : null;
+        if (
+          !linkedReferencePrice &&
+          referenceVariant.sourceVariantOptionId != null
+        ) {
+          linkedReferencePrice = await db.query.productVariantPrice.findFirst({
+            where: and(
+              eq(
+                productVariantPrice.variantOptionId,
+                referenceVariant.sourceVariantOptionId,
+              ),
+              eq(productVariantPrice.productId, input.productId),
+              eq(productVariantPrice.isActive, true),
+            ),
+            columns: { consumerPrice: true },
+          });
+        }
         try {
           itemPrice = resolveRetailerCylinderSale({
             newUnitPrice:
