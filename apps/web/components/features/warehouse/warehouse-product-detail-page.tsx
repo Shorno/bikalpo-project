@@ -1,8 +1,8 @@
 import { notFound } from "next/navigation";
-import { SellerProductDetailsView } from "@/components/features/products/public-product-details-view";
+import { StorefrontProductDetailsView } from "@/components/features/products/public-product-details-view";
 import type { DetailVariant } from "@/components/features/products/trade-product-detail-client";
 import { getWarehouseProductDetail } from "@/lib/public-data";
-import { formatProductCode } from "@/lib/seller-product-details";
+import { formatProductCode } from "@/lib/storefront-product-details";
 import type { WarehouseStorefrontProductDetail } from "@/types/warehouse-storefront";
 
 interface WarehouseProductDetailPageProps {
@@ -62,7 +62,7 @@ export async function WarehouseProductDetailPage({
   }));
 
   return (
-    <SellerProductDetailsView
+    <StorefrontProductDetailsView
       product={{
         id: product.id,
         code: productCode,

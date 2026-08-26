@@ -1,10 +1,10 @@
-# Shared Seller Product Details View Research
+# Shared Storefront Product Details View Research
 
 **Scope.** Repository sources only. This note covers the public reference-product detail, retailer storefront detail, and warehouse storefront detail. No application code was changed.
 
 ## Conclusion
 
-Retailer and warehouse details should use the public detail page's **exact visual structure through one controlled shared shell**, while separate adapters retain each surface's existing commerce flow. Copying `PublicProductDetailsView` or routing every seller through `ProductActions` in Open Order mode would create visual drift or incorrect orders.
+Retailer and warehouse details should use the public detail page's **exact visual structure through one controlled shared shell**, while separate adapters retain each surface's existing commerce flow. Copying the public component or routing every storefront through `ProductActions` in Open Order mode would create visual drift or incorrect orders.
 
 The public view already contains the required breadcrumb, Back/title row, image and service notes, Product ID/Name/Brand facts, selected price with rating/sold figures, variant and New/Exchange radios, action area, and Description/Reviews tabs (`apps/web/components/features/products/public-product-details-view.tsx:204-315`, `:317-441`, `:443-512`). Retailer and warehouse currently render the older `ProductDetailsView`, whose gallery, badges, trust blocks, and separate description/features/reviews layout are visibly different (`apps/web/components/features/products/product-details-view.tsx:52-180`, `:182-229`).
 
@@ -19,11 +19,11 @@ The public view already contains the required breadcrumb, Back/title row, image 
 
 Both warehouse URLs already converge on `WarehouseProductDetailPage`, which currently injects `WarehouseProductDetailActions` into the old shared view (`apps/web/components/features/warehouse/warehouse-product-detail-page.tsx:54-88`). One change at that source covers both warehouse detail URLs.
 
-The shop-owner portal's role-aware product page is separate from these public seller storefronts. Shop-subdomain paths are authenticated and rewritten into `/shop` (`apps/web/proxy.ts:166-223`); redesigning that portal page should not be inferred from this storefront requirement.
+The Shop Owner portal's role-aware product page is separate from these public storefronts. Shop-subdomain paths are authenticated and rewritten into `/shop` (`apps/web/proxy.ts:166-223`); redesigning that portal page should not be inferred from this storefront requirement.
 
 ## Shared-shell recommendation
 
-Extract the markup and selection state from `PublicProductDetailsView` into a seller-neutral component, for example `SellerProductDetailsView`. It should be the single owner of:
+Extract the markup and selection state from the public view into a storefront-neutral component, `StorefrontProductDetailsView`. It should be the single owner of:
 
 - selected variant;
 - selected New/Exchange mode;
@@ -64,14 +64,14 @@ Today retailer detail defers New/Exchange until checkout and does not pass `cyli
 
 ### Warehouse storefront / B2B orders
 
-Warehouse detail returns only active variants backed by positive inventory owned by the exact warehouse, including live price, stock, order constraints, fulfillment metadata, and Exchange capability (`packages/api/src/routers/warehouse.ts:565-655`). Its action modes are role-specific: Shop Owner -> retailer buyer; connected Warehouse Owner -> warehouse-to-warehouse; unconnected Warehouse Owner -> view-only; others -> login (`apps/web/components/features/warehouse/warehouse-product-detail-actions.tsx:41-47`, `:210-249`).
+Warehouse detail returns only active variants backed by positive inventory owned by the exact warehouse, including live price, stock, order constraints, fulfillment metadata, and Exchange capability (`packages/api/src/routers/warehouse.ts:565-655`). Its action modes are role-specific: Shop Owner purchase; connected Warehouse Owner purchase; unconnected Warehouse Owner view-only; others login-only (`apps/web/components/features/warehouse/warehouse-product-detail-actions.tsx:41-47`, `:210-249`).
 
-Warehouse carts are scoped by buyer mode, user, and warehouse, and New/Exchange are distinct line identities (`apps/web/lib/warehouse-storefront-cart.ts:23-40`, `:65-100`). Exchange is available only to Shop Owner buyers when the exact variant permits it; warehouse-to-warehouse is forced to New (`apps/web/components/features/warehouse/warehouse-product-detail-actions.tsx:120-140`, `:181-208`). Checkout dispatches retailer buyers to `shopOwner.placeWarehouseOrder` and warehouse buyers to `warehouse.placeWarehouseSupplierOrder` (`apps/web/app/w/[slug]/page.tsx:291-335`). These paths must not be replaced with customer cart or Open Order mutations.
+Warehouse carts are scoped by order mode, user, and warehouse, and New/Exchange are distinct line identities (`apps/web/lib/warehouse-storefront-cart.ts:23-40`, `:65-100`). Exchange is available only to Shop Owner buyers when the exact variant permits it; warehouse-to-warehouse is forced to New (`apps/web/components/features/warehouse/warehouse-product-detail-actions.tsx:120-140`, `:181-208`). Checkout dispatches Shop Owner purchases to `shopOwner.placeWarehouseOrder` and Warehouse Owner purchases to `warehouse.placeWarehouseSupplierOrder` (`apps/web/app/w/[slug]/page.tsx:291-335`). These paths must not be replaced with customer cart or Open Order mutations.
 
-## Data gaps and risks
+## Data policies and risks
 
-- Public detail already supplies review aggregates and delivered-order count (`packages/api/src/routers/customer.ts:2206-2235`). Retailer detail does not return those aggregates, although its product payload already preserves `shortDescription` (`packages/api/src/services/retailer-store-product-detail.ts:19-44`, `:147-161`).
-- Warehouse detail/type contains product and variants but no review or sold aggregates (`packages/api/src/routers/warehouse.ts:668-704`; `apps/web/types/warehouse-storefront.ts:44-60`). Define whether warehouse “Sold” means completed retailer-to-warehouse orders, warehouse-to-warehouse orders, or both before showing non-zero social proof.
+- Public detail supplies product review aggregates and delivered-order count (`packages/api/src/routers/customer.ts:2206-2235`). Retailer detail uses product reviews and shop-scoped non-cancelled Direct Orders.
+- Warehouse “Sold” is defined as delivered B2B orders supplied by the exact warehouse, across both Shop Owner and connected Warehouse Owner purchase flows. Pending, cancelled, and returned orders are excluded.
 - Current warehouse UI displays full `retailPrice` even for Exchange (`apps/web/components/features/warehouse/warehouse-product-detail-actions.tsx:253-310`), while warehouse order placement subtracts the exchange credit (`packages/api/src/routers/shop-owner.ts:7925-7940`). Shared visible price and submitted mode must agree.
 - Public structure shows one primary image; retailer/warehouse payloads have image galleries. Strict “not more or less” parity means omitting old thumbnails unless the public canonical design is changed first (`apps/web/components/features/products/public-product-details-view.tsx:252-269`).
 - Existing retailer related-products, old trust badges, standalone Features/Reviews, and duplicate warehouse specs are additional sections. Keep them only if the client explicitly relaxes the exact-structure requirement.
@@ -79,7 +79,7 @@ Warehouse carts are scoped by buyer mode, user, and warehouse, and New/Exchange 
 
 ## Migration order
 
-1. Extract and test the public markup/selection controller as the seller-neutral shared shell without changing public behavior.
+1. Extract and test the public markup/selection controller as the storefront-neutral shared shell without changing public behavior.
 2. Add the shared `PRD-######` formatter and normalize public, retailer, and warehouse route models.
 3. Add retailer review/sold aggregates and define/add truthful warehouse review/sold aggregates.
 4. Migrate retailer detail to the shell and connect its direct-cart adapter, including exact selected New/Exchange mode.
@@ -91,7 +91,7 @@ Warehouse carts are scoped by buyer mode, user, and warehouse, and New/Exchange 
 
 - Public, retailer, and both warehouse detail URLs render the same breadcrumb, Back/title row, image/facts layout, `PRD-######`, price/rating/sold row, selectors, action position, and Description/Reviews tabs from one component.
 - Variant and New/Exchange changes update visible price, description facts, allowed quantity, and submitted payload from one selected state.
-- Public Add remains `open_order`, has no shop, uses Reference Price semantics, and ignores seller inventory caps.
+- Public Add remains `open_order`, has no shop, uses Reference Price semantics, and ignores owner inventory caps.
 - Retailer Add remains `direct`, uses exact `shopId`, owner variant, live stock/price, order constraints, and selected cylinder mode.
 - Shop Owner warehouse buyers retain retailer-to-warehouse cart/order behavior; connected Warehouse Owner buyers retain warehouse-supplier cart/order behavior.
 - Unconnected warehouse buyers remain view-only; guests remain login-only; warehouse-to-warehouse remains New-only.

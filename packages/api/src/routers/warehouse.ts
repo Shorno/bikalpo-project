@@ -641,11 +641,14 @@ const storefrontQueries = {
             fulfillmentMode: fulfillmentProfile.defaultMode,
             targetVariantId: variant.linkedRetailVariantId ?? null,
             canExchange,
-            cylinderSale: {
-              exchangeEnabled: canExchange,
-              exchangeCreditAmount,
-              defaultMode: canExchange ? "exchange" : "new",
-            },
+            cylinderSale:
+              foundProduct.isReturnablePack || canExchange
+                ? {
+                    exchangeEnabled: canExchange,
+                    exchangeCreditAmount,
+                    defaultMode: canExchange ? "exchange" : "new",
+                  }
+                : null,
           };
         })
         .filter(
@@ -684,7 +687,9 @@ const storefrontQueries = {
             and(
               eq(order.warehouseId, warehouse.id),
               eq(order.orderType, "b2b"),
-              ne(order.status, "cancelled"),
+              // Storefront "Sold" means delivered B2B orders supplied by this
+              // warehouse, across both Shop Owner and Warehouse Owner buyers.
+              eq(order.status, "delivered"),
               eq(orderItem.productId, foundProduct.id),
             ),
           ),

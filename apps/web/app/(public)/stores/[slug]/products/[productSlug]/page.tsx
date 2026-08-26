@@ -1,12 +1,12 @@
 import { notFound } from "next/navigation";
-import { SellerProductDetailsView } from "@/components/features/products/public-product-details-view";
+import { StorefrontProductDetailsView } from "@/components/features/products/public-product-details-view";
 import type { DetailVariant } from "@/components/features/products/trade-product-detail-client";
 import {
   isCustomerStorefrontPreview,
   withCustomerStorefrontPreview,
 } from "@/lib/customer-storefront-preview";
 import { getStoreProductDetail } from "@/lib/public-data";
-import { formatProductCode } from "@/lib/seller-product-details";
+import { formatProductCode } from "@/lib/storefront-product-details";
 
 interface StoreProductDetailsPageProps {
   params: Promise<{ slug: string; productSlug: string }>;
@@ -65,7 +65,7 @@ export default async function StoreProductDetailsPage({
   const productCode = formatProductCode(product.id);
 
   return (
-    <SellerProductDetailsView
+    <StorefrontProductDetailsView
       product={{
         id: product.id,
         code: productCode,

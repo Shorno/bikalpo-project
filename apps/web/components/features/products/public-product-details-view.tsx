@@ -12,15 +12,17 @@ import { CustomerPreviewBanner } from "@/components/storefront/customer-preview-
 import { Skeleton } from "@/components/ui/skeleton";
 import { useProductReviews } from "@/hooks/use-customer-api";
 import {
-  resolveSellerProductSelection,
-  type SellerCylinderSaleMode,
-} from "@/lib/seller-product-details";
+  resolveProductActionsPurchase,
+  resolveStorefrontProductSelection,
+  type StorefrontCylinderSaleMode,
+  supportsEmptyPackReturn,
+} from "@/lib/storefront-product-details";
 import { cn } from "@/lib/utils";
 import type { WarehouseStorefrontProductDetail } from "@/types/warehouse-storefront";
 import { shortVariantLabel } from "./cylinder-type-radios";
 import type { DetailVariant } from "./trade-product-detail-client";
 
-type SellerProductDetailsViewProps = {
+type StorefrontProductDetailsViewProps = {
   product: {
     id: number;
     code: string;
@@ -105,7 +107,7 @@ function descriptionToPlainText(description: string) {
     .trim();
 }
 
-export function SellerProductDetailsView({
+export function StorefrontProductDetailsView({
   product,
   variants,
   reviewStats,
@@ -115,14 +117,14 @@ export function SellerProductDetailsView({
   previewMode = false,
   supportPhone,
   purchase,
-}: SellerProductDetailsViewProps) {
+}: StorefrontProductDetailsViewProps) {
   const purchaseContext = purchase ?? {
     kind: "open_order" as const,
     supportPhone,
   };
   const initialSelection = useMemo(
     () =>
-      resolveSellerProductSelection({
+      resolveStorefrontProductSelection({
         variants,
         selectedVariantId: -1,
         requestedSaleMode: "new",
@@ -133,25 +135,24 @@ export function SellerProductDetailsView({
   const [selectedVariantId, setSelectedVariantId] = useState(
     initialSelection.selectedVariant?.id ?? -1,
   );
-  const [saleMode, setSaleMode] = useState<SellerCylinderSaleMode>(
+  const [saleMode, setSaleMode] = useState<StorefrontCylinderSaleMode>(
     initialSelection.selectedVariant?.cylinderSale?.defaultMode ?? "new",
   );
   const [activeTab, setActiveTab] = useState<DetailTab>("description");
   const [warehouseExchangeAllowed, setWarehouseExchangeAllowed] =
     useState(false);
   const isLpg = product.category.slug === "lpg";
+  const hasEmptyPackReturn = supportsEmptyPackReturn(variants);
   const selection = useMemo(
     () =>
-      resolveSellerProductSelection({
+      resolveStorefrontProductSelection({
         variants,
         selectedVariantId,
         requestedSaleMode: saleMode,
         exchangeAllowed:
-          isLpg &&
-          (purchaseContext.kind !== "warehouse" || warehouseExchangeAllowed),
+          purchaseContext.kind !== "warehouse" || warehouseExchangeAllowed,
       }),
     [
-      isLpg,
       purchaseContext.kind,
       saleMode,
       selectedVariantId,
@@ -173,6 +174,10 @@ export function SellerProductDetailsView({
   if (!selectedVariant) return null;
 
   const selectedLabel = formatVariantLabel(selectedVariant, product.name);
+  const productActionsPurchase = resolveProductActionsPurchase(
+    purchaseContext,
+    Number(selectedVariant.stockQuantity ?? 0),
+  );
   const features = getFeatureMap(product.features);
   const descriptionRows = isLpg
     ? [
@@ -304,7 +309,13 @@ export function SellerProductDetailsView({
 
               <div className="mt-5 space-y-2 text-sm text-zinc-700">
                 <p>Home Delivery Available</p>
-                {exchangeAvailable && <p>Empty Cylinder Exchange Available</p>}
+                {exchangeAvailable && (
+                  <p>
+                    {isLpg
+                      ? "Empty Cylinder Exchange Available"
+                      : "Empty Pack Exchange Available"}
+                  </p>
+                )}
               </div>
             </div>
 
@@ -383,10 +394,10 @@ export function SellerProductDetailsView({
                 </div>
               </fieldset>
 
-              {isLpg && (
+              {hasEmptyPackReturn && (
                 <fieldset className="mt-7">
                   <legend className="text-sm font-semibold text-zinc-900">
-                    Cylinder Type
+                    {isLpg ? "Cylinder Type" : "Purchase Type"}
                   </legend>
                   <div className="mt-3 flex flex-wrap gap-x-5 gap-y-3">
                     {exchangeAvailable && (
@@ -438,7 +449,9 @@ export function SellerProductDetailsView({
                     actionLabel="Add Cart"
                     brandName={product.brand?.name ?? undefined}
                     categoryName={product.category.name}
-                    cylinderSaleMode={isLpg ? effectiveSaleMode : undefined}
+                    cylinderSaleMode={
+                      hasEmptyPackReturn ? effectiveSaleMode : undefined
+                    }
                     key={`${selectedVariant.id}-${effectiveSaleMode}`}
                     orderIncrement={Number(selectedVariant.orderIncrement) || 1}
                     orderMax={
@@ -450,28 +463,19 @@ export function SellerProductDetailsView({
                     product={{
                       id: product.id,
                       image: product.image,
-                      inStock:
-                        purchaseContext.kind === "open_order" ||
-                        Number(selectedVariant.stockQuantity ?? 0) > 0,
+                      inStock: productActionsPurchase?.inStock ?? false,
                       name: product.name,
                       price: selectedPrice,
                       size:
-                        isLpg && effectiveSaleMode === "exchange"
-                          ? `${selectedLabel} - Exchange Cylinder`
-                          : isLpg
-                            ? `${selectedLabel} - New Cylinder`
+                        hasEmptyPackReturn && effectiveSaleMode === "exchange"
+                          ? `${selectedLabel} - Exchange ${isLpg ? "Cylinder" : "Pack"}`
+                          : hasEmptyPackReturn
+                            ? `${selectedLabel} - New ${isLpg ? "Cylinder" : "Pack"}`
                             : selectedLabel,
-                      stockQuantity:
-                        purchaseContext.kind === "open_order"
-                          ? 999
-                          : Number(selectedVariant.stockQuantity ?? 0),
+                      stockQuantity: productActionsPurchase?.stockQuantity ?? 0,
                     }}
-                    purchaseMode={purchaseContext.kind}
-                    shopId={
-                      purchaseContext.kind === "direct"
-                        ? purchaseContext.shopId
-                        : undefined
-                    }
+                    purchaseMode={productActionsPurchase?.purchaseMode}
+                    shopId={productActionsPurchase?.shopId}
                     secondaryAction={
                       purchaseContext.supportPhone ? (
                         <a
@@ -563,7 +567,7 @@ export function SellerProductDetailsView({
               )}
             </div>
           ) : (
-            <PublicProductReviews
+            <ProductReviewsPanel
               averageRating={reviewStats.averageRating}
               productId={product.id}
               totalReviews={reviewStats.totalReviews}
@@ -575,7 +579,7 @@ export function SellerProductDetailsView({
   );
 }
 
-function PublicProductReviews({
+function ProductReviewsPanel({
   productId,
   averageRating,
   totalReviews,

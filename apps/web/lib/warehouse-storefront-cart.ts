@@ -2,6 +2,37 @@ import type { FulfillmentMode } from "@bikalpo-project/db/fulfillment";
 
 export type WarehouseStorefrontOrderMode = "retailer" | "w2w";
 export type WarehouseStorefrontSaleMode = "new" | "exchange";
+export type WarehouseStorefrontViewMode =
+  | "login-only"
+  | "shop-owner"
+  | "warehouse-to-warehouse"
+  | "view-only";
+
+export function resolveWarehouseStorefrontBuyerContext(
+  role: string | undefined,
+  isConnectedSupplier: boolean,
+): {
+  viewMode: WarehouseStorefrontViewMode;
+  orderMode: WarehouseStorefrontOrderMode | null;
+} {
+  if (role === "shop_owner") {
+    return { viewMode: "shop-owner", orderMode: "retailer" };
+  }
+  if (role === "warehouse") {
+    return isConnectedSupplier
+      ? { viewMode: "warehouse-to-warehouse", orderMode: "w2w" }
+      : { viewMode: "view-only", orderMode: null };
+  }
+  return { viewMode: "login-only", orderMode: null };
+}
+
+export function getWarehouseStorefrontCheckoutTarget(
+  mode: WarehouseStorefrontOrderMode,
+) {
+  return mode === "retailer"
+    ? ("shop_owner.placeWarehouseOrder" as const)
+    : ("warehouse.placeWarehouseSupplierOrder" as const);
+}
 
 export interface WarehouseStorefrontCartItem {
   variantId: number;

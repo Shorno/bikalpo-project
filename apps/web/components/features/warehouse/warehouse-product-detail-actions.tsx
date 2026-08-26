@@ -11,15 +11,13 @@ import {
   getWarehouseStorefrontCartKey,
   mergeWarehouseStorefrontCart,
   readWarehouseStorefrontCart,
+  resolveWarehouseStorefrontBuyerContext,
   type WarehouseStorefrontCartItem,
-  type WarehouseStorefrontOrderMode,
   type WarehouseStorefrontSaleMode,
   writeWarehouseStorefrontCart,
 } from "@/lib/warehouse-storefront-cart";
 import type { WarehouseStorefrontProductDetail } from "@/types/warehouse-storefront";
 import { orpc } from "@/utils/orpc";
-
-type WarehouseBuyerMode = "default" | "retailer" | "w2w" | "view-only";
 
 interface WarehouseProductDetailActionsProps {
   product: WarehouseStorefrontProductDetail;
@@ -33,15 +31,6 @@ interface WarehouseProductDetailActionsProps {
 function toNumber(value: string | number | null | undefined, fallback = 0) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
-}
-
-function getBuyerMode(
-  role: string | undefined,
-  isConnectedSupplier: boolean,
-): WarehouseBuyerMode {
-  if (role === "shop_owner") return "retailer";
-  if (role === "warehouse") return isConnectedSupplier ? "w2w" : "view-only";
-  return "default";
 }
 
 export function WarehouseProductDetailActions({
@@ -70,9 +59,10 @@ export function WarehouseProductDetailActions({
       item.warehouseSlug === warehouseSlug ||
       item.warehouseId === warehouseSlug,
   );
-  const mode = getBuyerMode(role, Boolean(activeConnection));
-  const orderMode: WarehouseStorefrontOrderMode | null =
-    mode === "retailer" || mode === "w2w" ? mode : null;
+  const { viewMode, orderMode } = resolveWarehouseStorefrontBuyerContext(
+    role,
+    Boolean(activeConnection),
+  );
   const storageKey = orderMode
     ? getWarehouseStorefrontCartKey(
         orderMode,
@@ -109,7 +99,7 @@ export function WarehouseProductDetailActions({
   );
   const canExchange = Boolean(selectedVariant?.canExchange);
   const effectiveSaleMode: WarehouseStorefrontSaleMode =
-    mode === "retailer" && canExchange ? cylinderSaleMode : "new";
+    viewMode === "shop-owner" && canExchange ? cylinderSaleMode : "new";
   const cartCount = cart.reduce((total, item) => total + item.quantity, 0);
 
   useEffect(() => {
@@ -126,8 +116,8 @@ export function WarehouseProductDetailActions({
   }, [minimumSelectableQuantity, selectedVariantId]);
 
   useEffect(() => {
-    onExchangeAvailabilityChange(mode === "retailer" && canExchange);
-  }, [canExchange, mode, onExchangeAvailabilityChange]);
+    onExchangeAvailabilityChange(viewMode === "shop-owner" && canExchange);
+  }, [canExchange, onExchangeAvailabilityChange, viewMode]);
 
   const adjustQuantity = (delta: number) => {
     setQuantity((current) =>
@@ -159,7 +149,7 @@ export function WarehouseProductDetailActions({
       fulfillmentMode: selectedVariant.fulfillmentMode,
       supplyMode: selectedVariant.fulfillmentMode,
       targetVariantId: selectedVariant.targetVariantId ?? null,
-      canExchange: mode === "retailer" && canExchange,
+      canExchange: viewMode === "shop-owner" && canExchange,
       cylinderSaleMode: effectiveSaleMode,
     };
     const nextCart = mergeWarehouseStorefrontCart(
@@ -177,12 +167,12 @@ export function WarehouseProductDetailActions({
     return <div className="h-28 animate-pulse rounded-md bg-zinc-100" />;
   }
 
-  if (mode === "view-only") {
+  if (viewMode === "view-only") {
     return (
       <div className="space-y-4">
-        <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-950">
+        <div className="rounded-md border border-zinc-200 bg-zinc-50 px-4 py-3 text-sm leading-6 text-zinc-900">
           <p className="font-semibold">Supplier connection required</p>
-          <p className="text-amber-800">
+          <p className="text-zinc-600">
             Connect with this warehouse before ordering its products.
           </p>
         </div>
@@ -196,10 +186,10 @@ export function WarehouseProductDetailActions({
     );
   }
 
-  if (mode === "default") {
+  if (viewMode === "login-only") {
     return (
       <div className="space-y-4">
-        <div className="rounded-md border border-blue-200 bg-blue-50 px-4 py-3 text-sm leading-6 text-blue-950">
+        <div className="rounded-md border border-zinc-200 bg-zinc-50 px-4 py-3 text-sm leading-6 text-zinc-700">
           Log in as a Shop Owner or connected Warehouse Owner to order from this
           storefront.
         </div>

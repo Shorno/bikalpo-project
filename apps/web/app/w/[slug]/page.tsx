@@ -65,9 +65,11 @@ import { Textarea } from "@/components/ui/textarea";
 import { authClient } from "@/lib/auth-client";
 import {
   getWarehouseStorefrontCartKey,
+  getWarehouseStorefrontCheckoutTarget,
   mergeWarehouseStorefrontCart,
   readWarehouseStorefrontCart,
   removeWarehouseStorefrontCartItem,
+  resolveWarehouseStorefrontBuyerContext,
   updateWarehouseStorefrontCartQuantity,
   type WarehouseStorefrontCartItem,
   warehouseCartLineKey,
@@ -131,16 +133,18 @@ export default function WarehouseStorefrontPage() {
     (item: any) => item.warehouseSlug === slug || item.warehouseId === slug,
   );
   const isConnectedSupplier = !!activeConnection;
+  const buyerContext = resolveWarehouseStorefrontBuyerContext(
+    sessionData?.user?.role ?? undefined,
+    isConnectedSupplier,
+  );
+  const checkoutTarget = buyerContext.orderMode
+    ? getWarehouseStorefrontCheckoutTarget(buyerContext.orderMode)
+    : null;
 
   // Grid mode evaluation
   const gridMode: "default" | "retailer" | "w2w" | "view-only" =
-    isWarehouseBuyer
-      ? isConnectedSupplier
-        ? "w2w"
-        : "view-only"
-      : isRetailerBuyer
-        ? "retailer"
-        : "default";
+    buyerContext.orderMode ??
+    (buyerContext.viewMode === "view-only" ? "view-only" : "default");
   const hasCartAccess = gridMode === "w2w" || gridMode === "retailer";
 
   // Cart key in local storage
@@ -327,7 +331,7 @@ export default function WarehouseStorefrontPage() {
     }) => {
       const { warehouseKey, ...orderInput } = input;
 
-      return isRetailerBuyer
+      return checkoutTarget === "shop_owner.placeWarehouseOrder"
         ? orpc.shopOwner.placeWarehouseOrder.call({
             ...orderInput,
             warehouseSlug: warehouseKey,

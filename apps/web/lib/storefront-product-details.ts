@@ -1,6 +1,6 @@
-export type SellerCylinderSaleMode = "new" | "exchange";
+export type StorefrontCylinderSaleMode = "new" | "exchange";
 
-interface SellerDetailVariant {
+interface StorefrontDetailVariant {
   id: number;
   price: string | number;
   sortOrder?: number | null;
@@ -8,7 +8,7 @@ interface SellerDetailVariant {
   cylinderSale?: {
     exchangeEnabled: boolean;
     exchangeCreditAmount: number;
-    defaultMode: SellerCylinderSaleMode;
+    defaultMode: StorefrontCylinderSaleMode;
     newUnitPrice?: number;
     effectiveExchangeUnitPrice?: number;
   } | null;
@@ -18,8 +18,36 @@ export function formatProductCode(productId: number) {
   return `PRD-${String(productId).padStart(6, "0")}`;
 }
 
-export function resolveSellerProductSelection<
-  TVariant extends SellerDetailVariant,
+export function supportsEmptyPackReturn(
+  variants: readonly StorefrontDetailVariant[],
+) {
+  return variants.some(
+    (variant) =>
+      variant.isActive !== false &&
+      variant.cylinderSale !== null &&
+      variant.cylinderSale !== undefined,
+  );
+}
+
+export function resolveProductActionsPurchase(
+  purchase:
+    | { kind: "open_order" }
+    | { kind: "direct"; shopId: string }
+    | { kind: "warehouse" },
+  stockQuantity: number,
+) {
+  if (purchase.kind === "warehouse") return null;
+
+  return {
+    purchaseMode: purchase.kind,
+    shopId: purchase.kind === "direct" ? purchase.shopId : undefined,
+    inStock: purchase.kind === "open_order" || stockQuantity > 0,
+    stockQuantity: purchase.kind === "open_order" ? 999 : stockQuantity,
+  };
+}
+
+export function resolveStorefrontProductSelection<
+  TVariant extends StorefrontDetailVariant,
 >({
   variants,
   selectedVariantId,
@@ -28,7 +56,7 @@ export function resolveSellerProductSelection<
 }: {
   variants: readonly TVariant[];
   selectedVariantId: number;
-  requestedSaleMode: SellerCylinderSaleMode;
+  requestedSaleMode: StorefrontCylinderSaleMode;
   exchangeAllowed: boolean;
 }) {
   const sortedVariants = variants
@@ -43,7 +71,7 @@ export function resolveSellerProductSelection<
   const exchangeAvailable = Boolean(
     exchangeAllowed && selectedVariant?.cylinderSale?.exchangeEnabled,
   );
-  const effectiveSaleMode: SellerCylinderSaleMode = exchangeAvailable
+  const effectiveSaleMode: StorefrontCylinderSaleMode = exchangeAvailable
     ? requestedSaleMode
     : "new";
   const newPrice = Number(

@@ -112,6 +112,7 @@ test("store details preserve a retailer-only product without an admin identity",
     result.product.variants.map((variant) => variant.id),
     [501, 502],
   );
+  assert.equal(result.product.variants[0]?.cylinderSale, null);
 });
 
 test("store details expose per-variant cylinder sale choices", () => {

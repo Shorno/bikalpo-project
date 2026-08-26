@@ -126,18 +126,21 @@ export function buildStoreProductDetail({
           availableQty,
           retailPrice,
         },
-        cylinderSale: {
-          exchangeEnabled,
-          exchangeCreditAmount,
-          defaultMode: exchangeEnabled
-            ? ("exchange" as const)
-            : ("new" as const),
-          newUnitPrice: retailPrice,
-          effectiveExchangeUnitPrice: Math.max(
-            0,
-            retailPrice - exchangeCreditAmount,
-          ),
-        },
+        cylinderSale:
+          product.isReturnablePack || exchangeEnabled
+            ? {
+                exchangeEnabled,
+                exchangeCreditAmount,
+                defaultMode: exchangeEnabled
+                  ? ("exchange" as const)
+                  : ("new" as const),
+                newUnitPrice: retailPrice,
+                effectiveExchangeUnitPrice: Math.max(
+                  0,
+                  retailPrice - exchangeCreditAmount,
+                ),
+              }
+            : null,
       };
     });
 

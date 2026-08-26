@@ -2,8 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   formatProductCode,
-  resolveSellerProductSelection,
-} from "./seller-product-details";
+  resolveProductActionsPurchase,
+  resolveStorefrontProductSelection,
+  supportsEmptyPackReturn,
+} from "./storefront-product-details";
 
 const variants = [
   {
@@ -39,13 +41,13 @@ const variants = [
   },
 ];
 
-test("seller details use one stable PRD code format", () => {
+test("storefront details use one stable PRD code format", () => {
   assert.equal(formatProductCode(405218), "PRD-405218");
   assert.equal(formatProductCode(27), "PRD-000027");
 });
 
-test("seller details resolve the exact active variant and exchange price", () => {
-  const selection = resolveSellerProductSelection({
+test("storefront details resolve the exact active variant and exchange price", () => {
+  const selection = resolveStorefrontProductSelection({
     variants,
     selectedVariantId: 12,
     requestedSaleMode: "exchange",
@@ -61,8 +63,8 @@ test("seller details resolve the exact active variant and exchange price", () =>
   assert.equal(selection.selectedPrice, 940);
 });
 
-test("seller policy can force New without changing the selected variant", () => {
-  const selection = resolveSellerProductSelection({
+test("storefront policy can force New without changing the selected variant", () => {
+  const selection = resolveStorefrontProductSelection({
     variants,
     selectedVariantId: 12,
     requestedSaleMode: "exchange",
@@ -73,4 +75,28 @@ test("seller policy can force New without changing the selected variant", () => 
   assert.equal(selection.exchangeAvailable, false);
   assert.equal(selection.effectiveSaleMode, "new");
   assert.equal(selection.selectedPrice, 1940);
+});
+
+test("returnable variants expose New and Exchange independently of category", () => {
+  assert.equal(supportsEmptyPackReturn(variants), true);
+  assert.equal(supportsEmptyPackReturn([variants[2]!]), false);
+});
+
+test("public and shop storefront actions preserve their order boundaries", () => {
+  assert.deepEqual(resolveProductActionsPurchase({ kind: "open_order" }, 0), {
+    purchaseMode: "open_order",
+    shopId: undefined,
+    inStock: true,
+    stockQuantity: 999,
+  });
+  assert.deepEqual(
+    resolveProductActionsPurchase({ kind: "direct", shopId: "shop-1" }, 4),
+    {
+      purchaseMode: "direct",
+      shopId: "shop-1",
+      inStock: true,
+      stockQuantity: 4,
+    },
+  );
+  assert.equal(resolveProductActionsPurchase({ kind: "warehouse" }, 10), null);
 });
