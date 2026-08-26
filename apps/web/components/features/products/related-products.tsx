@@ -35,7 +35,7 @@ export async function RelatedProducts({
         <h2 className="text-2xl font-bold text-gray-900 mb-6">
           Related Products
         </h2>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div className="grid grid-cols-1 gap-4 min-[560px]:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {relatedProducts.map((prod) => (
             <ConsumerProductCard
               key={prod.id}
