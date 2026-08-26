@@ -62,6 +62,7 @@ import {
   asc,
   avg,
   count,
+  countDistinct,
   desc,
   eq,
   gte,
@@ -2159,14 +2160,25 @@ const queries = {
         };
       });
 
-      // Get review stats
-      const reviewStats = await db
-        .select({
-          averageRating: avg(productReview.rating),
-          totalReviews: count(productReview.id),
-        })
-        .from(productReview)
-        .where(eq(productReview.productId, found.id));
+      const [reviewStats, soldStats] = await Promise.all([
+        db
+          .select({
+            averageRating: avg(productReview.rating),
+            totalReviews: count(productReview.id),
+          })
+          .from(productReview)
+          .where(eq(productReview.productId, found.id)),
+        db
+          .select({ soldOrderCount: countDistinct(orderItem.orderId) })
+          .from(orderItem)
+          .innerJoin(order, eq(order.id, orderItem.orderId))
+          .where(
+            and(
+              eq(orderItem.productId, found.id),
+              eq(order.status, "delivered"),
+            ),
+          ),
+      ]);
 
       return {
         product: foundSerialized,
@@ -2177,6 +2189,7 @@ const queries = {
             : 0,
           totalReviews: reviewStats[0]?.totalReviews || 0,
         },
+        soldOrderCount: Number(soldStats[0]?.soldOrderCount ?? 0),
       };
     }),
 

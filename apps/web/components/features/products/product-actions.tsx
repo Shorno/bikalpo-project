@@ -1,7 +1,7 @@
 "use client";
 
 import { Loader2, Minus, PackagePlus, Plus, ShoppingCart } from "lucide-react";
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
 import { RequestFormModal } from "@/components/features/item-request/request-form-modal";
 import { Button } from "@/components/ui/button";
 import { useCart } from "@/hooks/use-orpc-cart";
@@ -27,6 +27,8 @@ interface ProductActionsProps {
   purchaseMode?: "open_order" | "direct";
   cylinderSaleMode?: "new" | "exchange";
   onQuantityChange?: (quantity: number) => void;
+  actionLabel?: string;
+  secondaryAction?: ReactNode;
 }
 
 export function ProductActions({
@@ -42,6 +44,8 @@ export function ProductActions({
   purchaseMode = shopId ? "direct" : "open_order",
   cylinderSaleMode,
   onQuantityChange,
+  actionLabel,
+  secondaryAction,
 }: ProductActionsProps) {
   const effectiveMin = Math.max(1, orderMin);
   const effectiveMax =
@@ -106,7 +110,7 @@ export function ProductActions({
               size="icon"
               className="h-10 w-10 rounded-r-none"
               onClick={handleDecrement}
-              disabled={quantity <= 1 || isAdding}
+              disabled={quantity <= effectiveMin || isAdding}
               aria-label="Decrease quantity"
             >
               <Minus className="h-4 w-4" />
@@ -164,11 +168,13 @@ export function ProductActions({
               ? "Choose a retailer"
               : isAdding
                 ? "Adding..."
-                : purchaseMode === "open_order"
-                  ? "Add to open order"
-                  : "Add to cart"}
+                : (actionLabel ??
+                  (purchaseMode === "open_order"
+                    ? "Add to open order"
+                    : "Add to cart"))}
           </Button>
         )}
+        {secondaryAction}
       </div>
 
       {/* Total Price - Only shown when in stock for authenticated customers */}
