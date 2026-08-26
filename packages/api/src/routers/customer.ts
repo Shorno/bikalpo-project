@@ -1674,18 +1674,20 @@ const queries = {
               )
             ] || 0
           : 0;
+        const activeVariantPrices = referenceProduct.variantPrices.filter(
+          (variantPrice) => variantPrice.isActive,
+        );
         const activeVariantPricesById = new Map(
-          referenceProduct.variantPrices
-            .filter((variantPrice) => variantPrice.isActive)
-            .map((variantPrice) => [variantPrice.id, variantPrice]),
+          activeVariantPrices.map((variantPrice) => [
+            variantPrice.id,
+            variantPrice,
+          ]),
         );
         const activeVariantPricesByOptionId = new Map(
-          referenceProduct.variantPrices
-            .filter((variantPrice) => variantPrice.isActive)
-            .map((variantPrice) => [
-              variantPrice.variantOptionId,
-              variantPrice,
-            ]),
+          activeVariantPrices.map((variantPrice) => [
+            variantPrice.variantOptionId,
+            variantPrice,
+          ]),
         );
         const cardVariants = referenceProduct.variants
           .filter((variant) =>
