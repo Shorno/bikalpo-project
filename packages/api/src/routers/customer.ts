@@ -1606,7 +1606,12 @@ const queries = {
               isActive: true,
               price: true,
               productId: true,
+              quantitySelectorLabel: true,
+              sku: true,
+              sortOrder: true,
               sourceVariantPriceId: true,
+              sourceVariantOptionId: true,
+              unitLabel: true,
               visibilityRole: true,
             },
             with: {
@@ -1625,6 +1630,7 @@ const queries = {
               consumerPrice: true,
               id: true,
               isActive: true,
+              variantOptionId: true,
             },
           },
         },
@@ -1668,6 +1674,52 @@ const queries = {
               )
             ] || 0
           : 0;
+        const activeVariantPricesById = new Map(
+          referenceProduct.variantPrices
+            .filter((variantPrice) => variantPrice.isActive)
+            .map((variantPrice) => [variantPrice.id, variantPrice]),
+        );
+        const activeVariantPricesByOptionId = new Map(
+          referenceProduct.variantPrices
+            .filter((variantPrice) => variantPrice.isActive)
+            .map((variantPrice) => [
+              variantPrice.variantOptionId,
+              variantPrice,
+            ]),
+        );
+        const cardVariants = referenceProduct.variants
+          .filter((variant) =>
+            isOpenOrderReferenceSelectionEligible({
+              product: referenceProduct,
+              variant,
+            }),
+          )
+          .sort((a, b) => a.sortOrder - b.sortOrder || a.id - b.id)
+          .map((variant) => {
+            const linkedVariantPrice =
+              (variant.sourceVariantPriceId != null
+                ? activeVariantPricesById.get(variant.sourceVariantPriceId)
+                : undefined) ??
+              (variant.sourceVariantOptionId != null
+                ? activeVariantPricesByOptionId.get(
+                    variant.sourceVariantOptionId,
+                  )
+                : undefined);
+
+            return {
+              variantId: variant.id,
+              sku: variant.sku,
+              unitLabel: variant.unitLabel,
+              quantitySelectorLabel: variant.quantitySelectorLabel,
+              referencePrice:
+                linkedVariantPrice?.consumerPrice ?? variant.price,
+              sortOrder: variant.sortOrder,
+              exchangeEnabled:
+                referenceProduct.category?.slug === "lpg" &&
+                Boolean(variant.exchangeEnabled),
+              exchangeCreditAmount: variant.exchangeCreditAmount,
+            };
+          });
 
         return {
           ...productData,
@@ -1685,6 +1737,7 @@ const queries = {
               }
             : null,
           price: effectivePrice,
+          variants: cardVariants,
           reviewStats: reviewStatsMap[referenceProduct.id] || {
             averageRating: 0,
             totalReviews: 0,
