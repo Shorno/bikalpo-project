@@ -222,11 +222,6 @@ export function StorefrontProductCard({
         )}
 
         <div className="mt-3">
-          {mode === "reference" ? (
-            <p className="mb-0.5 text-[11px] font-medium text-slate-400">
-              Reference price
-            </p>
-          ) : null}
           <p className="font-mono text-lg font-semibold tabular-nums text-slate-950">
             ৳{selectedPrice.toLocaleString("en-BD")}
             {unitLabel ? (
