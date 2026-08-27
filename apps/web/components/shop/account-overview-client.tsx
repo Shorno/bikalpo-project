@@ -12,6 +12,7 @@ import {
   User,
 } from "lucide-react";
 import Link from "next/link";
+import type { AccountAudience } from "@/components/account/account-navigation";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -23,7 +24,11 @@ import { useToLetPropertyNavigation } from "@/hooks/use-to-let-property-api";
 import { getConsumerPhasePresentationForMode } from "@/lib/consumer-order-presentation";
 import { formatPrice } from "@/utils/currency";
 
-export function AccountOverviewClient() {
+export function AccountOverviewClient({
+  audience,
+}: {
+  audience: AccountAudience;
+}) {
   const {
     data: ordersData,
     isLoading: ordersLoading,
@@ -82,18 +87,22 @@ export function AccountOverviewClient() {
       href: "/account/open-orders",
       icon: ReceiptText,
     },
-    {
-      label: "Estimates",
-      description: "Review quotes and convert approved estimates",
-      href: "/account/estimates",
-      icon: FileText,
-    },
-    {
-      label: "Requested Items",
-      description: "Follow items you asked Bikalpo to source",
-      href: "/account/requests",
-      icon: FileQuestion,
-    },
+    ...(audience === "shop"
+      ? [
+          {
+            label: "Estimates",
+            description: "Review quotes and convert approved estimates",
+            href: "/account/estimates",
+            icon: FileText,
+          },
+          {
+            label: "Requested Items",
+            description: "Follow items you asked Bikalpo to source",
+            href: "/account/requests",
+            icon: FileQuestion,
+          },
+        ]
+      : []),
     ...(propertyNavigation.isConsumer
       ? [
           {

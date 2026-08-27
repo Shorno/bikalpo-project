@@ -119,11 +119,17 @@ export function getAccountNavigation(
   }));
 
   if (audience === "consumer") {
+    const activityIndex = sections.findIndex(
+      (section) => section.id === "activity",
+    );
+    if (activityIndex >= 0) sections.splice(activityIndex, 1);
+
     sections
       .find((section) => section.id === "help")
       ?.items.unshift(...consumerHelpItems);
+    const helpIndex = sections.findIndex((section) => section.id === "help");
     sections.splice(
-      3,
+      helpIndex >= 0 ? helpIndex : sections.length,
       0,
       ...consumerOnlySections.map((section) => ({
         ...section,
