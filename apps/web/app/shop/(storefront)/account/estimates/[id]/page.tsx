@@ -207,7 +207,7 @@ export default function EstimateDetailsPage() {
             <div className="lg:sticky lg:top-4">
               <ConvertOrderForm
                 estimateId={estimate.id}
-                redirectPath="/shop/account/orders"
+                redirectPath="/account/orders"
               />
             </div>
           ) : (
@@ -221,7 +221,7 @@ export default function EstimateDetailsPage() {
                     This estimate has been converted to an order.
                   </p>
                   <Button asChild variant="outline" size="sm" className="mt-3">
-                    <Link href="/shop/account/orders">View Orders</Link>
+                    <Link href="/account/orders">View Orders</Link>
                   </Button>
                 </div>
               ) : estimate.status === "rejected" ? (
