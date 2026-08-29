@@ -4,17 +4,25 @@ import type { ProductFeatureGroup } from "@bikalpo-project/db/schema";
 import { ArrowLeft, Phone, Star } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { ProductActions } from "@/components/features/products/product-actions";
 import { StarRating } from "@/components/features/reviews/star-rating";
+import { WarehouseProductDetailActions } from "@/components/features/warehouse/warehouse-product-detail-actions";
 import { CustomerPreviewBanner } from "@/components/storefront/customer-preview-banner";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useProductReviews } from "@/hooks/use-customer-api";
+import {
+  resolveProductActionsPurchase,
+  resolveStorefrontProductSelection,
+  type StorefrontCylinderSaleMode,
+  supportsEmptyPackReturn,
+} from "@/lib/storefront-product-details";
 import { cn } from "@/lib/utils";
+import type { WarehouseStorefrontProductDetail } from "@/types/warehouse-storefront";
 import { shortVariantLabel } from "./cylinder-type-radios";
 import type { DetailVariant } from "./trade-product-detail-client";
 
-type PublicProductDetailsViewProps = {
+type StorefrontProductDetailsViewProps = {
   product: {
     id: number;
     code: string;
@@ -36,9 +44,24 @@ type PublicProductDetailsViewProps = {
   categoryHref: string;
   previewMode?: boolean;
   supportPhone?: string | null;
+  purchase?:
+    | {
+        kind: "open_order";
+        supportPhone?: string | null;
+      }
+    | {
+        kind: "direct";
+        shopId: string;
+        supportPhone?: string | null;
+      }
+    | {
+        kind: "warehouse";
+        product: WarehouseStorefrontProductDetail;
+        warehouseSlug: string;
+        cartPath: string;
+      };
 };
 
-type CylinderSaleMode = "new" | "exchange";
 type DetailTab = "description" | "reviews";
 
 function formatMoney(value: number) {
@@ -84,7 +107,7 @@ function descriptionToPlainText(description: string) {
     .trim();
 }
 
-export function PublicProductDetailsView({
+export function StorefrontProductDetailsView({
   product,
   variants,
   reviewStats,
@@ -93,52 +116,74 @@ export function PublicProductDetailsView({
   categoryHref,
   previewMode = false,
   supportPhone,
-}: PublicProductDetailsViewProps) {
-  const sortedVariants = useMemo(
+  purchase,
+}: StorefrontProductDetailsViewProps) {
+  const purchaseContext = purchase ?? {
+    kind: "open_order" as const,
+    supportPhone,
+  };
+  const initialSelection = useMemo(
     () =>
-      variants
-        .filter((variant) => variant.isActive !== false)
-        .sort((left, right) =>
-          (left.sortOrder ?? 0) !== (right.sortOrder ?? 0)
-            ? (left.sortOrder ?? 0) - (right.sortOrder ?? 0)
-            : left.id - right.id,
-        ),
+      resolveStorefrontProductSelection({
+        variants,
+        selectedVariantId: -1,
+        requestedSaleMode: "new",
+        exchangeAllowed: true,
+      }),
     [variants],
   );
   const [selectedVariantId, setSelectedVariantId] = useState(
-    sortedVariants[0]?.id ?? -1,
+    initialSelection.selectedVariant?.id ?? -1,
   );
-  const selectedVariant =
-    sortedVariants.find((variant) => variant.id === selectedVariantId) ??
-    sortedVariants[0];
-  const [saleMode, setSaleMode] = useState<CylinderSaleMode>(
-    selectedVariant?.cylinderSale?.defaultMode ?? "new",
+  const [saleMode, setSaleMode] = useState<StorefrontCylinderSaleMode>(
+    initialSelection.selectedVariant?.cylinderSale?.defaultMode ?? "new",
   );
   const [activeTab, setActiveTab] = useState<DetailTab>("description");
+  const [warehouseExchangeAllowed, setWarehouseExchangeAllowed] =
+    useState(false);
+  const isLpg = product.category.slug === "lpg";
+  const hasEmptyPackReturn = supportsEmptyPackReturn(variants);
+  const selection = useMemo(
+    () =>
+      resolveStorefrontProductSelection({
+        variants,
+        selectedVariantId,
+        requestedSaleMode: saleMode,
+        exchangeAllowed:
+          purchaseContext.kind !== "warehouse" || warehouseExchangeAllowed,
+      }),
+    [
+      purchaseContext.kind,
+      saleMode,
+      selectedVariantId,
+      variants,
+      warehouseExchangeAllowed,
+    ],
+  );
+  const {
+    effectiveSaleMode,
+    exchangeAvailable,
+    selectedPrice,
+    selectedVariant,
+    sortedVariants,
+  } = selection;
+  const handleWarehouseExchangeAllowed = useCallback((allowed: boolean) => {
+    setWarehouseExchangeAllowed(allowed);
+  }, []);
 
   if (!selectedVariant) return null;
 
-  const isLpg = product.category.slug === "lpg";
-  const exchangeAvailable = Boolean(
-    isLpg && selectedVariant.cylinderSale?.exchangeEnabled,
-  );
-  const effectiveSaleMode = exchangeAvailable ? saleMode : "new";
-  const newPrice = Number(
-    selectedVariant.cylinderSale?.newUnitPrice ?? selectedVariant.price,
-  );
-  const exchangePrice = Math.max(
-    0,
-    Number(
-      selectedVariant.cylinderSale?.effectiveExchangeUnitPrice ??
-        newPrice -
-          Number(selectedVariant.cylinderSale?.exchangeCreditAmount ?? 0),
-    ),
-  );
-  const selectedPrice =
-    effectiveSaleMode === "exchange" ? exchangePrice : newPrice;
   const selectedLabel = formatVariantLabel(selectedVariant, product.name);
+  const productActionsPurchase = resolveProductActionsPurchase(
+    purchaseContext,
+    Number(selectedVariant.stockQuantity ?? 0),
+  );
   const features = getFeatureMap(product.features);
-  const descriptionRows = isLpg
+  const descriptionRows: Array<{
+    label: string;
+    value: string;
+    metric?: boolean;
+  }> = isLpg
     ? [
         {
           label: "Cylinder Type",
@@ -153,7 +198,7 @@ export function PublicProductDetailsView({
           value:
             getFeature(features, "gas type") ?? "Liquefied Petroleum Gas (LPG)",
         },
-        { label: "Capacity", value: selectedLabel },
+        { label: "Capacity", metric: true, value: selectedLabel },
         {
           label: "Cylinder Condition",
           value: getFeature(features, "cylinder condition") ?? "Filled",
@@ -187,7 +232,7 @@ export function PublicProductDetailsView({
       ]
     : [
         { label: "Product Type", value: product.category.name },
-        { label: "Variant", value: selectedLabel },
+        { label: "Variant", metric: true, value: selectedLabel },
         { label: "Brand", value: product.brand?.name ?? "—" },
         {
           label: "Country Origin",
@@ -199,6 +244,9 @@ export function PublicProductDetailsView({
   const selectVariant = (variant: DetailVariant) => {
     setSelectedVariantId(variant.id);
     setSaleMode(variant.cylinderSale?.defaultMode ?? "new");
+    if (purchaseContext.kind === "warehouse") {
+      setWarehouseExchangeAllowed(false);
+    }
   };
 
   return (
@@ -265,7 +313,13 @@ export function PublicProductDetailsView({
 
               <div className="mt-5 space-y-2 text-sm text-zinc-700">
                 <p>Home Delivery Available</p>
-                {exchangeAvailable && <p>Empty Cylinder Exchange Available</p>}
+                {exchangeAvailable && (
+                  <p>
+                    {isLpg
+                      ? "Empty Cylinder Exchange Available"
+                      : "Empty Pack Exchange Available"}
+                  </p>
+                )}
               </div>
             </div>
 
@@ -337,17 +391,19 @@ export function PublicProductDetailsView({
                           type="radio"
                           value={variant.id}
                         />
-                        {variantLabel}
+                        <span className="font-mono tabular-nums">
+                          {variantLabel}
+                        </span>
                       </label>
                     );
                   })}
                 </div>
               </fieldset>
 
-              {isLpg && (
+              {hasEmptyPackReturn && (
                 <fieldset className="mt-7">
                   <legend className="text-sm font-semibold text-zinc-900">
-                    Cylinder Type
+                    {isLpg ? "Cylinder Type" : "Purchase Type"}
                   </legend>
                   <div className="mt-3 flex flex-wrap gap-x-5 gap-y-3">
                     {exchangeAvailable && (
@@ -383,12 +439,25 @@ export function PublicProductDetailsView({
                   <div className="rounded-md border border-zinc-200 bg-zinc-50 px-4 py-3 text-sm text-zinc-600">
                     Ordering is disabled in customer preview.
                   </div>
+                ) : purchaseContext.kind === "warehouse" ? (
+                  <WarehouseProductDetailActions
+                    cartPath={purchaseContext.cartPath}
+                    cylinderSaleMode={effectiveSaleMode}
+                    onExchangeAvailabilityChange={
+                      handleWarehouseExchangeAllowed
+                    }
+                    product={purchaseContext.product}
+                    selectedVariantId={selectedVariant.id}
+                    warehouseSlug={purchaseContext.warehouseSlug}
+                  />
                 ) : (
                   <ProductActions
                     actionLabel="Add Cart"
                     brandName={product.brand?.name ?? undefined}
                     categoryName={product.category.name}
-                    cylinderSaleMode={isLpg ? effectiveSaleMode : undefined}
+                    cylinderSaleMode={
+                      hasEmptyPackReturn ? effectiveSaleMode : undefined
+                    }
                     key={`${selectedVariant.id}-${effectiveSaleMode}`}
                     orderIncrement={Number(selectedVariant.orderIncrement) || 1}
                     orderMax={
@@ -400,23 +469,24 @@ export function PublicProductDetailsView({
                     product={{
                       id: product.id,
                       image: product.image,
-                      inStock: true,
+                      inStock: productActionsPurchase?.inStock ?? false,
                       name: product.name,
                       price: selectedPrice,
                       size:
-                        isLpg && effectiveSaleMode === "exchange"
-                          ? `${selectedLabel} - Exchange Cylinder`
-                          : isLpg
-                            ? `${selectedLabel} - New Cylinder`
+                        hasEmptyPackReturn && effectiveSaleMode === "exchange"
+                          ? `${selectedLabel} - Exchange ${isLpg ? "Cylinder" : "Pack"}`
+                          : hasEmptyPackReturn
+                            ? `${selectedLabel} - New ${isLpg ? "Cylinder" : "Pack"}`
                             : selectedLabel,
-                      stockQuantity: 999,
+                      stockQuantity: productActionsPurchase?.stockQuantity ?? 0,
                     }}
-                    purchaseMode="open_order"
+                    purchaseMode={productActionsPurchase?.purchaseMode}
+                    shopId={productActionsPurchase?.shopId}
                     secondaryAction={
-                      supportPhone ? (
+                      purchaseContext.supportPhone ? (
                         <a
                           className="inline-flex h-12 min-w-28 items-center justify-center gap-2 rounded-md border border-zinc-300 px-5 text-base font-semibold text-zinc-900 hover:bg-zinc-50"
-                          href={`tel:${supportPhone}`}
+                          href={`tel:${purchaseContext.supportPhone}`}
                         >
                           <Phone aria-hidden="true" className="size-4" />
                           Call
@@ -480,7 +550,14 @@ export function PublicProductDetailsView({
                     key={row.label}
                   >
                     <dt className="font-medium text-zinc-600">{row.label}</dt>
-                    <dd className="text-zinc-950">: {row.value}</dd>
+                    <dd
+                      className={cn(
+                        "text-zinc-950",
+                        row.metric && "font-mono tabular-nums",
+                      )}
+                    >
+                      : {row.value}
+                    </dd>
                   </div>
                 ))}
               </dl>
@@ -503,7 +580,7 @@ export function PublicProductDetailsView({
               )}
             </div>
           ) : (
-            <PublicProductReviews
+            <ProductReviewsPanel
               averageRating={reviewStats.averageRating}
               productId={product.id}
               totalReviews={reviewStats.totalReviews}
@@ -515,7 +592,7 @@ export function PublicProductDetailsView({
   );
 }
 
-function PublicProductReviews({
+function ProductReviewsPanel({
   productId,
   averageRating,
   totalReviews,

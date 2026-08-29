@@ -1,12 +1,12 @@
 import { notFound } from "next/navigation";
-import { ProductDetailsView } from "@/components/features/products/product-details-view";
-import { StoreRelatedProducts } from "@/components/features/products/store-related-products";
+import { StorefrontProductDetailsView } from "@/components/features/products/public-product-details-view";
 import type { DetailVariant } from "@/components/features/products/trade-product-detail-client";
 import {
   isCustomerStorefrontPreview,
   withCustomerStorefrontPreview,
 } from "@/lib/customer-storefront-preview";
 import { getStoreProductDetail } from "@/lib/public-data";
+import { formatProductCode } from "@/lib/storefront-product-details";
 
 interface StoreProductDetailsPageProps {
   params: Promise<{ slug: string; productSlug: string }>;
@@ -62,20 +62,20 @@ export default async function StoreProductDetailsPage({
     previewMode,
   );
   const storeName = shop.shopName || shop.name;
+  const productCode = formatProductCode(product.id);
 
   return (
-    <ProductDetailsView
+    <StorefrontProductDetailsView
       product={{
         id: product.id,
+        code: productCode,
         name: product.name,
-        price: String(product.lowestRetailPrice),
         image: product.image || "",
-        images: product.images,
         size: product.size || variants[0]?.unitLabel || "Retail unit",
         description: product.description,
+        shortDescription: product.shortDescription,
         features: product.features,
         inStock: product.inStock,
-        stockQuantity: product.totalAvailableQty,
         category: product.category,
         subCategory: product.subCategory,
         brand: product.brand,
@@ -88,21 +88,17 @@ export default async function StoreProductDetailsPage({
           href: withCustomerStorefrontPreview("/stores", previewMode),
         },
         { label: storeName, href: storeHref },
-        { label: product.name },
+        { label: productCode },
       ]}
       categoryHref={categoryHref}
-      purchaseMode="direct"
-      directShopId={shop.id}
       previewMode={previewMode}
-      relatedProducts={
-        <StoreRelatedProducts
-          shopId={shop.id}
-          shopSlug={slug}
-          categorySlug={product.category.slug}
-          currentProductId={product.id}
-          previewMode={previewMode}
-        />
-      }
+      purchase={{
+        kind: "direct",
+        shopId: shop.id,
+        supportPhone: shop.phoneNumber,
+      }}
+      reviewStats={detail.reviewStats}
+      soldOrderCount={detail.soldOrderCount}
     />
   );
 }

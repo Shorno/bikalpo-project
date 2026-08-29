@@ -31,15 +31,12 @@ export function AddressList({ addresses }: AddressListProps) {
     <div>
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-3">
-          <MapPin className="h-6 w-6 text-emerald-600" />
+          <MapPin className="h-6 w-6 text-primary" />
           <h2 className="text-xl font-semibold text-gray-900">
             Your Addresses
           </h2>
         </div>
-        <Button
-          onClick={() => setIsAdding(true)}
-          className="gap-2 bg-emerald-600 hover:bg-emerald-700"
-        >
+        <Button onClick={() => setIsAdding(true)} className="gap-2">
           <Plus className="h-4 w-4" />
           Add Address
         </Button>
@@ -52,10 +49,7 @@ export function AddressList({ addresses }: AddressListProps) {
           <p className="text-gray-400 text-sm mb-6">
             Add a delivery address to make checkout faster
           </p>
-          <Button
-            onClick={() => setIsAdding(true)}
-            className="gap-2 bg-emerald-600 hover:bg-emerald-700"
-          >
+          <Button onClick={() => setIsAdding(true)} className="gap-2">
             <Plus className="h-4 w-4" />
             Add Your First Address
           </Button>

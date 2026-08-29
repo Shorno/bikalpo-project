@@ -112,6 +112,7 @@ test("store details preserve a retailer-only product without an admin identity",
     result.product.variants.map((variant) => variant.id),
     [501, 502],
   );
+  assert.equal(result.product.variants[0]?.cylinderSale, null);
 });
 
 test("store details expose per-variant cylinder sale choices", () => {
@@ -204,11 +205,15 @@ test("store details expose per-variant cylinder sale choices", () => {
     exchangeEnabled: true,
     exchangeCreditAmount: 300,
     defaultMode: "exchange",
+    newUnitPrice: 1500,
+    effectiveExchangeUnitPrice: 1200,
   });
   assert.deepEqual(result.product.variants[1]?.cylinderSale, {
     exchangeEnabled: false,
     exchangeCreditAmount: 0,
     defaultMode: "new",
+    newUnitPrice: 4000,
+    effectiveExchangeUnitPrice: 4000,
   });
 });
 
@@ -279,5 +284,7 @@ test("store details hide Exchange when this variant is not enabled", () => {
     exchangeEnabled: false,
     exchangeCreditAmount: 0,
     defaultMode: "new",
+    newUnitPrice: 1500,
+    effectiveExchangeUnitPrice: 1500,
   });
 });

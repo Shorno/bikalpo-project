@@ -1,18 +1,13 @@
 "use client";
 
-import {
-  CreditCard,
-  LayoutDashboard,
-  LogOut,
-  MapPin,
-  Package,
-  Receipt,
-  Store,
-  UserCircle,
-} from "lucide-react";
+import { LayoutDashboard, LogOut, Store } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import * as React from "react";
+import {
+  type AccountAudience,
+  getQuickAccountLinks,
+} from "@/components/account/account-navigation";
 import { useLoginRequired } from "@/components/features/auth/login-required-modal";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -38,6 +33,7 @@ const STAFF_ROLES = ["admin", "salesman", "deliveryman"];
 export function UserDropdown() {
   const { data: session, isPending } = authClient.useSession();
   const [isMounted, setIsMounted] = React.useState(false);
+  const [isLoggingOut, setIsLoggingOut] = React.useState(false);
   const { showLoginModal } = useLoginRequired();
   const pathname = usePathname();
 
@@ -81,6 +77,14 @@ export function UserDropdown() {
     : process.env.NEXT_PUBLIC_SHOP_SUBDOMAIN_URL
       ? `${process.env.NEXT_PUBLIC_SHOP_SUBDOMAIN_URL}/dashboard`
       : `${window.location.protocol}//shop.${window.location.host}/dashboard`;
+  const shopAccountOrigin = isOnShopSubdomain
+    ? ""
+    : process.env.NEXT_PUBLIC_SHOP_SUBDOMAIN_URL ||
+      `${window.location.protocol}//shop.${window.location.host}`;
+  const accountAudience: AccountAudience = isSeller ? "shop" : "consumer";
+  const accountLinks = getQuickAccountLinks(accountAudience);
+  const resolveAccountHref = (href: string) =>
+    isSeller ? `${shopAccountOrigin}${href}` : href;
 
   const initials = user.name
     ? user.name
@@ -92,20 +96,31 @@ export function UserDropdown() {
     : "U";
 
   const handleLogout = async () => {
+    if (isLoggingOut) return;
+
+    setIsLoggingOut(true);
     // Cart will be cleared automatically by the CartProvider when the session changes
-    await authClient.signOut({
-      fetchOptions: {
-        onSuccess: () => {
-          redirectToRootLogin();
+    try {
+      await authClient.signOut({
+        fetchOptions: {
+          onSuccess: () => {
+            redirectToRootLogin();
+          },
         },
-      },
-    });
+      });
+    } finally {
+      setIsLoggingOut(false);
+    }
   };
 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" className="relative h-10 w-10 rounded-full">
+        <Button
+          variant="ghost"
+          className="relative h-10 w-10 rounded-full"
+          aria-label="Open account menu"
+        >
           <Avatar className="h-10 w-10">
             <AvatarImage
               src={user.image || undefined}
@@ -134,92 +149,54 @@ export function UserDropdown() {
               Dashboard
             </Link>
           </DropdownMenuItem>
-        ) : isSeller ? (
-          // Shop owner who is a seller - show shop dashboard + account links
-          <>
-            <DropdownMenuItem asChild>
-              <a href={shopDashboardUrl} className="cursor-pointer">
-                <LayoutDashboard className="mr-2 h-4 w-4" />
-                Shop Dashboard
-              </a>
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem asChild>
-              <Link href="/shop/account" className="cursor-pointer">
-                <UserCircle className="mr-2 h-4 w-4" />
-                My Account
-              </Link>
-            </DropdownMenuItem>
-            <DropdownMenuItem asChild>
-              <Link href="/shop/account/orders" className="cursor-pointer">
-                <Package className="mr-2 h-4 w-4" />
-                Orders
-              </Link>
-            </DropdownMenuItem>
-            <DropdownMenuItem asChild>
-              <Link href="/shop/account/estimates" className="cursor-pointer">
-                <Receipt className="mr-2 h-4 w-4" />
-                Estimates
-              </Link>
-            </DropdownMenuItem>
-            <DropdownMenuItem asChild>
-              <Link href="/shop/account/payments" className="cursor-pointer">
-                <CreditCard className="mr-2 h-4 w-4" />
-                Payments
-              </Link>
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-          </>
         ) : (
-          // Consumer role - show account navigation + become a seller link
           <>
-            <DropdownMenuItem asChild>
-              <Link href="/account" className="cursor-pointer">
-                <UserCircle className="mr-2 h-4 w-4" />
-                My Account
-              </Link>
-            </DropdownMenuItem>
-            <DropdownMenuItem asChild>
-              <Link href="/account/orders" className="cursor-pointer">
-                <Package className="mr-2 h-4 w-4" />
-                Orders
-              </Link>
-            </DropdownMenuItem>
-            <DropdownMenuItem asChild>
-              <Link href="/account/estimates" className="cursor-pointer">
-                <Receipt className="mr-2 h-4 w-4" />
-                Estimates
-              </Link>
-            </DropdownMenuItem>
-            <DropdownMenuItem asChild>
-              <Link href="/account/payments" className="cursor-pointer">
-                <CreditCard className="mr-2 h-4 w-4" />
-                Payments
-              </Link>
-            </DropdownMenuItem>
-            <DropdownMenuItem asChild>
-              <Link href="/account/addresses" className="cursor-pointer">
-                <MapPin className="mr-2 h-4 w-4" />
-                Addresses
-              </Link>
-            </DropdownMenuItem>
+            {isSeller && (
+              <>
+                <DropdownMenuItem asChild>
+                  <a href={shopDashboardUrl} className="cursor-pointer">
+                    <LayoutDashboard className="mr-2 h-4 w-4" />
+                    Shop Dashboard
+                  </a>
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+              </>
+            )}
+            {accountLinks.map((item) => {
+              const Icon = item.icon;
+              return (
+                <DropdownMenuItem key={item.href} asChild>
+                  <Link
+                    href={resolveAccountHref(item.href)}
+                    className="cursor-pointer"
+                  >
+                    <Icon className="mr-2 h-4 w-4" />
+                    {item.label}
+                  </Link>
+                </DropdownMenuItem>
+              );
+            })}
             <DropdownMenuSeparator />
-            <DropdownMenuItem asChild>
-              <Link href="/b2b/register" className="cursor-pointer">
-                <Store className="mr-2 h-4 w-4" />
-                Become a Seller
-              </Link>
-            </DropdownMenuItem>
+            {!isSeller && (
+              <DropdownMenuItem asChild>
+                <Link href="/b2b/register" className="cursor-pointer">
+                  <Store className="mr-2 h-4 w-4" />
+                  Sell on Bikalpo
+                </Link>
+              </DropdownMenuItem>
+            )}
           </>
         )}
 
         <DropdownMenuSeparator />
         <DropdownMenuItem
           onClick={handleLogout}
-          className="cursor-pointer text-red-600"
+          disabled={isLoggingOut}
+          aria-busy={isLoggingOut}
+          className="cursor-pointer text-red-600 disabled:cursor-wait"
         >
           <LogOut className="mr-2 h-4 w-4" />
-          Logout
+          {isLoggingOut ? "Logging out…" : "Logout"}
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

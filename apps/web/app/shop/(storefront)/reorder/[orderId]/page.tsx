@@ -271,7 +271,7 @@ export default function ReorderPage({
             reordering.
           </p>
           <Button asChild className="bg-emerald-600 hover:bg-emerald-700">
-            <Link href="/shop/account/orders">Back to Orders</Link>
+            <Link href="/account/orders">Back to Orders</Link>
           </Button>
         </div>
       </div>
@@ -320,7 +320,7 @@ export default function ReorderPage({
         {/* Header */}
         <div className="mb-6">
           <Link
-            href="/shop/account/orders"
+            href="/account/orders"
             className="inline-flex items-center text-sm text-gray-500 hover:text-emerald-600 mb-3 transition-colors"
           >
             <ArrowLeft className="h-4 w-4 mr-1.5" />

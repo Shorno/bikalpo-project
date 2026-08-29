@@ -16,7 +16,7 @@ export function ProfileClient() {
 
   useEffect(() => {
     if (isError) {
-      router.push("/login?redirect=/shop/account/profile");
+      router.push("/login?redirect=/account/profile");
     }
   }, [isError, router]);
 
@@ -48,8 +48,8 @@ export function ProfileClient() {
       {/* Header */}
       <div className="bg-white rounded-lg border border-gray-200 p-6">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-emerald-50 rounded-full flex items-center justify-center">
-            <User className="h-5 w-5 text-emerald-600" />
+          <div className="w-10 h-10 bg-primary/10 rounded-full flex items-center justify-center">
+            <User className="h-5 w-5 text-primary" />
           </div>
           <div>
             <h1 className="text-xl font-semibold text-gray-900">

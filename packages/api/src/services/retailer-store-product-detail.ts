@@ -14,6 +14,7 @@ interface StoreIdentity {
   image: string | null;
   shopLat: string | null;
   shopLng: string | null;
+  phoneNumber?: string | null;
 }
 
 interface StoreProduct {
@@ -125,13 +126,21 @@ export function buildStoreProductDetail({
           availableQty,
           retailPrice,
         },
-        cylinderSale: {
-          exchangeEnabled,
-          exchangeCreditAmount,
-          defaultMode: exchangeEnabled
-            ? ("exchange" as const)
-            : ("new" as const),
-        },
+        cylinderSale:
+          product.isReturnablePack || exchangeEnabled
+            ? {
+                exchangeEnabled,
+                exchangeCreditAmount,
+                defaultMode: exchangeEnabled
+                  ? ("exchange" as const)
+                  : ("new" as const),
+                newUnitPrice: retailPrice,
+                effectiveExchangeUnitPrice: Math.max(
+                  0,
+                  retailPrice - exchangeCreditAmount,
+                ),
+              }
+            : null,
       };
     });
 
