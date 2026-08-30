@@ -34,12 +34,15 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { type NavGroup, NavGrouped } from "@/components/dashboard/nav-grouped";
+import { NavUser } from "@/components/dashboard/nav-user";
+import UserNavSkeleton from "@/components/dashboard/user-nav-skeleton";
 import {
   Sidebar,
   SidebarContent,
   SidebarFooter,
   SidebarHeader,
 } from "@/components/ui/sidebar";
+import { authClient } from "@/lib/auth-client";
 
 const D = "/dashboard";
 
@@ -318,6 +321,8 @@ const shopOwnerNavGroups: NavGroup[] = [
 ];
 
 export function ShopOwnerSidebar(props: React.ComponentProps<typeof Sidebar>) {
+  const { data, isPending } = authClient.useSession();
+
   return (
     <Sidebar collapsible="offcanvas" {...props}>
       <SidebarHeader className="p-4">
@@ -343,7 +348,13 @@ export function ShopOwnerSidebar(props: React.ComponentProps<typeof Sidebar>) {
       <SidebarContent className="mt-4 thin-scrollbar">
         <NavGrouped groups={shopOwnerNavGroups} />
       </SidebarContent>
-      <SidebarFooter />
+      <SidebarFooter>
+        {isPending || !data ? (
+          <UserNavSkeleton />
+        ) : (
+          <NavUser session={data as any} />
+        )}
+      </SidebarFooter>
     </Sidebar>
   );
 }
