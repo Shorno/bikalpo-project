@@ -29,12 +29,16 @@ export type LoginSecurityPreferences = z.infer<
   typeof loginSecurityPreferencesSchema
 >;
 
-export function normalizeLoginSecurityPreferences(values: {
+export type StoredLoginSecurityPreferences = {
   loginVerification?: string | null;
   rememberTrustedDevice?: boolean | null;
   autoLogoutMinutes?: number | null;
   allowMultipleLoginDevices?: boolean | null;
-}): LoginSecurityPreferences {
+};
+
+export function normalizeLoginSecurityPreferences(
+  values: StoredLoginSecurityPreferences,
+): LoginSecurityPreferences {
   const result = loginSecurityPreferencesSchema.safeParse(values);
   if (result.success) return result.data;
 
@@ -44,6 +48,10 @@ export function normalizeLoginSecurityPreferences(values: {
     autoLogoutMinutes: 30,
     allowMultipleLoginDevices: false,
   };
+}
+
+export function shouldApplyLoginSecurityPreferences(role?: string | null) {
+  return role === "shop_owner";
 }
 
 export function loginSecurityPreferencesAreEqual(

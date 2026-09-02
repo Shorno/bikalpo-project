@@ -136,7 +136,7 @@ export function LoginSecurityPreferencesPanel() {
 
       <PreferenceRow
         label="Auto logout"
-        description="End new sessions after the selected duration."
+        description="End the current and future sessions after this duration."
       >
         <Select
           value={String(preferences.autoLogoutMinutes)}

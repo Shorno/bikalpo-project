@@ -14,6 +14,8 @@ import {
 import {
   getLoginSessionExpiresAt,
   normalizeLoginSecurityPreferences,
+  shouldApplyLoginSecurityPreferences,
+  type StoredLoginSecurityPreferences,
 } from "./login-security-policy";
 import { storeOtp } from "./otp-store";
 import {
@@ -241,13 +243,12 @@ export const auth = betterAuth({
           );
           if (!sessionUser) return;
 
+          const role = (sessionUser as typeof sessionUser & { role?: string })
+            .role;
+          if (!shouldApplyLoginSecurityPreferences(role)) return;
+
           const preferences = normalizeLoginSecurityPreferences(
-            sessionUser as typeof sessionUser & {
-              loginVerification?: string | null;
-              rememberTrustedDevice?: boolean | null;
-              autoLogoutMinutes?: number | null;
-              allowMultipleLoginDevices?: boolean | null;
-            },
+            sessionUser as typeof sessionUser & StoredLoginSecurityPreferences,
           );
           if (!preferences.allowMultipleLoginDevices) {
             await ctx.context.internalAdapter.deleteSessions(newSession.userId);

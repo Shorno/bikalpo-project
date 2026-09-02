@@ -5,6 +5,7 @@ import {
   loginSecurityPreferencesAreEqual,
   loginSecurityPreferencesSchema,
   normalizeLoginSecurityPreferences,
+  shouldApplyLoginSecurityPreferences,
 } from "@bikalpo-project/auth/login-security-policy";
 
 test("accepts supported login security preferences", () => {
@@ -56,4 +57,11 @@ test("calculates the selected session lifetime", () => {
     getLoginSessionExpiresAt(30, Date.UTC(2026, 8, 3)).toISOString(),
     "2026-09-03T00:30:00.000Z",
   );
+});
+
+test("applies retailer login preferences only to shop-owner sessions", () => {
+  assert.equal(shouldApplyLoginSecurityPreferences("shop_owner"), true);
+  assert.equal(shouldApplyLoginSecurityPreferences("admin"), false);
+  assert.equal(shouldApplyLoginSecurityPreferences("warehouse"), false);
+  assert.equal(shouldApplyLoginSecurityPreferences(undefined), false);
 });
