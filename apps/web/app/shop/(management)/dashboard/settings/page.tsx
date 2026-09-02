@@ -364,8 +364,6 @@ export default function ShopSettingsPage() {
         </ProfileSection>
       </section>
 
-      <FinancialSettingsSection />
-
       <section
         id="storefront-settings"
         className="overflow-hidden rounded-xl border bg-white"
@@ -492,6 +490,8 @@ export default function ShopSettingsPage() {
           </div>
         </div>
       </section>
+
+      <FinancialSettingsSection />
     </div>
   );
 }

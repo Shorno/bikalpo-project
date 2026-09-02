@@ -238,6 +238,17 @@ function normalizePaymentAccountLookup(value: string | number) {
     .replace(/\s+/g, " ");
 }
 
+function isUsableCashBankPaymentAccount(
+  account:
+    | { isActive: boolean; type: "bank" | "cash" | "mobile_banking" }
+    | null
+    | undefined,
+) {
+  return Boolean(
+    account?.isActive && (account.type === "cash" || account.type === "bank"),
+  );
+}
+
 async function resolvePaymentAccountId(input: {
   ownerId: string;
   ownerType: AccountingOwnerType;
@@ -2586,11 +2597,7 @@ export const financeRouter = {
           ),
       });
 
-      if (
-        !paymentAccount ||
-        !paymentAccount.isActive ||
-        (paymentAccount.type !== "cash" && paymentAccount.type !== "bank")
-      ) {
+      if (!isUsableCashBankPaymentAccount(paymentAccount)) {
         throw new ORPCError("NOT_FOUND", {
           message: "Cash or bank account not found",
         });
@@ -3728,11 +3735,7 @@ export const financeRouter = {
           ),
       });
 
-      if (
-        !paymentAccount ||
-        !paymentAccount.isActive ||
-        (paymentAccount.type !== "cash" && paymentAccount.type !== "bank")
-      ) {
+      if (!isUsableCashBankPaymentAccount(paymentAccount)) {
         throw new ORPCError("NOT_FOUND", {
           message: "Cash or bank payment account not found",
         });
@@ -3953,11 +3956,7 @@ export const financeRouter = {
           ),
       });
 
-      if (
-        !paymentAccount ||
-        !paymentAccount.isActive ||
-        (paymentAccount.type !== "cash" && paymentAccount.type !== "bank")
-      ) {
+      if (!isUsableCashBankPaymentAccount(paymentAccount)) {
         throw new ORPCError("NOT_FOUND", {
           message: "Cash or bank payment account not found",
         });
@@ -4161,11 +4160,7 @@ export const financeRouter = {
           });
         }
 
-        if (
-          !paymentAccount ||
-          !paymentAccount.isActive ||
-          (paymentAccount.type !== "cash" && paymentAccount.type !== "bank")
-        ) {
+        if (!isUsableCashBankPaymentAccount(paymentAccount)) {
           throw new ORPCError("NOT_FOUND", {
             message: "Cash or bank payment account not found",
           });
@@ -4443,11 +4438,7 @@ export const financeRouter = {
           });
         }
 
-        if (
-          !paymentAccount ||
-          !paymentAccount.isActive ||
-          (paymentAccount.type !== "cash" && paymentAccount.type !== "bank")
-        ) {
+        if (!isUsableCashBankPaymentAccount(paymentAccount)) {
           throw new ORPCError("NOT_FOUND", {
             message: "Cash or bank payment account not found",
           });
@@ -4638,11 +4629,7 @@ export const financeRouter = {
           ),
       });
 
-      if (
-        !paymentAccount ||
-        !paymentAccount.isActive ||
-        (paymentAccount.type !== "cash" && paymentAccount.type !== "bank")
-      ) {
+      if (!isUsableCashBankPaymentAccount(paymentAccount)) {
         throw new ORPCError("NOT_FOUND", {
           message: "Cash or bank deposit account not found",
         });
@@ -4808,11 +4795,7 @@ export const financeRouter = {
           ),
       });
 
-      if (
-        !paymentAccount ||
-        !paymentAccount.isActive ||
-        (paymentAccount.type !== "cash" && paymentAccount.type !== "bank")
-      ) {
+      if (!isUsableCashBankPaymentAccount(paymentAccount)) {
         throw new ORPCError("NOT_FOUND", {
           message: "Cash or bank payment account not found",
         });
