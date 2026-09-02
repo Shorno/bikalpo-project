@@ -10,6 +10,11 @@
  */
 
 import { auth, setCredentialPassword } from "@bikalpo-project/auth";
+import {
+  getLoginSessionExpiresAt,
+  loginSecurityPreferencesSchema,
+  normalizeLoginSecurityPreferences,
+} from "@bikalpo-project/auth/login-security-policy";
 import { db } from "@bikalpo-project/db";
 import { countAddableBrands } from "@bikalpo-project/db/brand-creation";
 import {
@@ -18,6 +23,7 @@ import {
   FULFILLMENT_MODES,
 } from "@bikalpo-project/db/fulfillment";
 import {
+  account,
   area,
   brand,
   carton,
@@ -52,6 +58,7 @@ import {
   purchase,
   sellerApplication,
   sellerAreaMapping,
+  session,
   shopCategoryAssignment,
   shopWarehouseConnection,
   stockAdjustment,
@@ -82,6 +89,7 @@ import {
   isNull,
   lte,
   min,
+  ne,
   or,
   type SQL,
   sql,
@@ -2239,6 +2247,85 @@ const mutations = {
         .where(eq(sellerApplication.id, application.id));
 
       return { success: true, message: "Plan information updated" };
+    }),
+
+  getLoginSecurityPreferences: shopOwnerProcedure
+    .route({
+      method: "GET",
+      path: "/shop-owner/login-security-preferences",
+      tags: ["Shop Owner", "Security"],
+      summary: "Get login security preferences",
+    })
+    .handler(async ({ context }) => {
+      const preferences = await db.query.user.findFirst({
+        where: eq(user.id, context.session.user.id),
+        columns: {
+          loginVerification: true,
+          rememberTrustedDevice: true,
+          autoLogoutMinutes: true,
+          allowMultipleLoginDevices: true,
+        },
+      });
+
+      if (!preferences) throw new ORPCError("NOT_FOUND");
+      return normalizeLoginSecurityPreferences(preferences);
+    }),
+
+  updateLoginSecurityPreferences: shopOwnerProcedure
+    .route({
+      method: "POST",
+      path: "/shop-owner/login-security-preferences",
+      tags: ["Shop Owner", "Security"],
+      summary: "Update login security preferences",
+    })
+    .input(loginSecurityPreferencesSchema)
+    .handler(async ({ context, input }) => {
+      const userId = context.session.user.id;
+
+      if (input.loginVerification !== "otp_only") {
+        const credential = await db.query.account.findFirst({
+          where: and(
+            eq(account.userId, userId),
+            eq(account.providerId, "credential"),
+            isNotNull(account.password),
+          ),
+          columns: { id: true },
+        });
+        if (!credential) {
+          throw new ORPCError("BAD_REQUEST", {
+            message:
+              "Create a password with OTP before enabling password login.",
+          });
+        }
+      }
+
+      await db.transaction(async (tx) => {
+        await tx.update(user).set(input).where(eq(user.id, userId));
+
+        await tx
+          .update(session)
+          .set({
+            expiresAt: getLoginSessionExpiresAt(input.autoLogoutMinutes),
+          })
+          .where(eq(session.id, context.session.session.id));
+
+        if (!input.allowMultipleLoginDevices) {
+          await tx
+            .delete(session)
+            .where(
+              and(
+                eq(session.userId, userId),
+                ne(session.id, context.session.session.id),
+              ),
+            );
+        }
+      });
+
+      return {
+        success: true,
+        message: "Login security preferences updated",
+        preferences: input,
+      };
     }),
 
   // ── Purchase Order Actions ───────────────────────────────

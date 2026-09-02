@@ -5,7 +5,16 @@ import { env } from "@bikalpo-project/env/server";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { APIError, createAuthMiddleware } from "better-auth/api";
-import { admin as adminPlugin, bearer, openAPI, phoneNumber } from "better-auth/plugins";
+import {
+  admin as adminPlugin,
+  bearer,
+  openAPI,
+  phoneNumber,
+} from "better-auth/plugins";
+import {
+  getLoginSessionExpiresAt,
+  normalizeLoginSecurityPreferences,
+} from "./login-security-policy";
 import { storeOtp } from "./otp-store";
 import {
   getPasswordPolicyError,
@@ -13,7 +22,15 @@ import {
   PASSWORD_MIN_LENGTH,
   passwordValidation,
 } from "./password-policy";
-import { ac, admin as adminRole, consumer, deliveryman, salesman, shop_owner, warehouse } from "./permissions";
+import {
+  ac,
+  admin as adminRole,
+  consumer,
+  deliveryman,
+  salesman,
+  shop_owner,
+  warehouse,
+} from "./permissions";
 import {
   getPhoneAuthEmail,
   normalizeBangladeshPhoneNumber,
@@ -79,6 +96,30 @@ export const auth = betterAuth({
       phoneNumber: {
         type: "string",
         required: false,
+        input: false,
+      },
+      loginVerification: {
+        type: "string",
+        required: false,
+        defaultValue: "otp_only",
+        input: false,
+      },
+      rememberTrustedDevice: {
+        type: "boolean",
+        required: false,
+        defaultValue: true,
+        input: false,
+      },
+      autoLogoutMinutes: {
+        type: "number",
+        required: false,
+        defaultValue: 30,
+        input: false,
+      },
+      allowMultipleLoginDevices: {
+        type: "boolean",
+        required: false,
+        defaultValue: false,
         input: false,
       },
       // Shop owner capability flags (set by admin on approval)
@@ -188,6 +229,40 @@ export const auth = betterAuth({
     crossSubDomainCookies: {
       enabled: true,
       domain: env.COOKIE_DOMAIN,
+    },
+  },
+  databaseHooks: {
+    session: {
+      create: {
+        before: async (newSession, ctx) => {
+          if (!ctx) return;
+          const sessionUser = await ctx.context.internalAdapter.findUserById(
+            newSession.userId,
+          );
+          if (!sessionUser) return;
+
+          const preferences = normalizeLoginSecurityPreferences(
+            sessionUser as typeof sessionUser & {
+              loginVerification?: string | null;
+              rememberTrustedDevice?: boolean | null;
+              autoLogoutMinutes?: number | null;
+              allowMultipleLoginDevices?: boolean | null;
+            },
+          );
+          if (!preferences.allowMultipleLoginDevices) {
+            await ctx.context.internalAdapter.deleteSessions(newSession.userId);
+          }
+
+          return {
+            data: {
+              ...newSession,
+              expiresAt: getLoginSessionExpiresAt(
+                preferences.autoLogoutMinutes,
+              ),
+            },
+          };
+        },
+      },
     },
   },
   trustedOrigins: [

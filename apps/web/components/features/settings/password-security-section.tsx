@@ -1,5 +1,6 @@
 import { ShieldCheck } from "lucide-react";
 import { ChangePasswordForm } from "@/components/account/change-password-form";
+import { LoginSecurityPreferencesPanel } from "@/components/account/login-security-preferences-panel";
 import { PasswordResetOtpDialog } from "@/components/account/password-reset-otp-dialog";
 
 export function PasswordSecuritySection({
@@ -32,8 +33,17 @@ export function PasswordSecuritySection({
         <PasswordResetOtpDialog phoneNumber={phoneNumber} />
       </div>
 
-      <div className="max-w-2xl p-6">
-        <ChangePasswordForm />
+      <div className="grid lg:grid-cols-2">
+        <div className="p-6 lg:border-r">
+          <h3 className="mb-5 text-sm font-semibold text-gray-950">Password</h3>
+          <ChangePasswordForm />
+        </div>
+        <div className="border-t p-6 lg:border-t-0">
+          <h3 className="mb-5 text-sm font-semibold text-gray-950">
+            Login preferences
+          </h3>
+          <LoginSecurityPreferencesPanel />
+        </div>
       </div>
     </section>
   );

@@ -512,6 +512,13 @@
       "when": 1789100000000,
       "tag": "0073_payment_account_numbers",
       "breakpoints": true
+    },
+    {
+      "idx": 74,
+      "version": "7",
+      "when": 1789200000000,
+      "tag": "0074_login_security_preferences",
+      "breakpoints": true
     }
   ]
 }
