@@ -1,218 +1,246 @@
 "use client";
 
-import { useForm } from "@tanstack/react-form";
-import { CheckCircle, Eye, EyeOff, Loader2 } from "lucide-react";
+import { Eye, EyeOff, Loader2 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
-import { z } from "zod";
 import { Button } from "@/components/ui/button";
-import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { authClient } from "@/lib/auth-client";
-import { passwordValidation } from "@/schema/auth.schema";
+import {
+  type ChangePasswordValues,
+  changePasswordSchema,
+  getPasswordChangeErrorMessage,
+} from "@/lib/password-security";
 
-const passwordSchema = z
-  .object({
-    currentPassword: z.string().min(1, "Current password is required"),
-    newPassword: passwordValidation,
-    confirmPassword: z.string().min(1, "Please confirm your password"),
-  })
-  .refine((data) => data.newPassword === data.confirmPassword, {
-    message: "Passwords do not match",
-    path: ["confirmPassword"],
-  });
+const INITIAL_VALUES: ChangePasswordValues = {
+  confirmPassword: "",
+  currentPassword: "",
+  newPassword: "",
+};
+
+type PasswordFieldName = keyof ChangePasswordValues;
+type PasswordFieldErrors = Partial<Record<PasswordFieldName, string>>;
 
 export function ChangePasswordForm() {
-  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
-  const [showNewPassword, setShowNewPassword] = useState(false);
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [values, setValues] = useState(INITIAL_VALUES);
+  const [visibleFields, setVisibleFields] = useState<
+    Partial<Record<PasswordFieldName, boolean>>
+  >({});
+  const [fieldErrors, setFieldErrors] = useState<PasswordFieldErrors>({});
+  const [formMessage, setFormMessage] = useState<{
+    tone: "error" | "success";
+    text: string;
+  } | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isSuccess, setIsSuccess] = useState(false);
 
-  const form = useForm({
-    defaultValues: {
-      currentPassword: "",
-      newPassword: "",
-      confirmPassword: "",
-    },
-    validators: {
-      onSubmit: passwordSchema,
-    },
-    onSubmit: async ({ value }) => {
-      // Validate with zod
-      const result = passwordSchema.safeParse(value);
-      if (!result.success) {
-        toast.error(result.error.issues[0]?.message || "Validation failed");
+  const updateValue = (field: PasswordFieldName, value: string) => {
+    setValues((current) => ({ ...current, [field]: value }));
+    setFieldErrors((current) => ({ ...current, [field]: undefined }));
+    setFormMessage(null);
+  };
+
+  const toggleVisibility = (field: PasswordFieldName) => {
+    setVisibleFields((current) => ({
+      ...current,
+      [field]: !current[field],
+    }));
+  };
+
+  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (isSubmitting) return;
+
+    const result = changePasswordSchema.safeParse(values);
+    if (!result.success) {
+      const nextErrors: PasswordFieldErrors = {};
+      for (const issue of result.error.issues) {
+        const field = issue.path[0] as PasswordFieldName | undefined;
+        if (field && !nextErrors[field]) nextErrors[field] = issue.message;
+      }
+      setFieldErrors(nextErrors);
+      setFormMessage(null);
+      return;
+    }
+
+    setIsSubmitting(true);
+    setFormMessage(null);
+
+    try {
+      const { error } = await authClient.changePassword({
+        currentPassword: result.data.currentPassword,
+        newPassword: result.data.newPassword,
+        revokeOtherSessions: true,
+      });
+
+      if (error) {
+        const message = getPasswordChangeErrorMessage(error);
+        setFormMessage({ tone: "error", text: message });
+        toast.error(message);
         return;
       }
 
-      setIsSubmitting(true);
-      try {
-        const { error } = await authClient.changePassword({
-          currentPassword: value.currentPassword,
-          newPassword: value.newPassword,
-          revokeOtherSessions: false,
-        });
-
-        if (error) {
-          toast.error(error.message || "Failed to change password");
-          return;
-        }
-
-        setIsSuccess(true);
-        toast.success("Password changed successfully!");
-        form.reset();
-
-        // Reset success state after a delay
-        setTimeout(() => setIsSuccess(false), 3000);
-      } catch {
-        toast.error("An unexpected error occurred");
-      } finally {
-        setIsSubmitting(false);
-      }
-    },
-  });
-
-  if (isSuccess) {
-    return (
-      <div className="bg-green-50 rounded-lg p-8 text-center">
-        <CheckCircle className="h-12 w-12 text-green-500 mx-auto mb-4" />
-        <h3 className="text-lg font-semibold text-green-800 mb-2">
-          Password Updated Successfully
-        </h3>
-        <p className="text-green-600 text-sm">
-          Your password has been changed. All other sessions have been logged
-          out.
-        </p>
-      </div>
-    );
-  }
+      setValues(INITIAL_VALUES);
+      setVisibleFields({});
+      setFieldErrors({});
+      setFormMessage({
+        tone: "success",
+        text: "Password changed. Other signed-in devices have been signed out.",
+      });
+      toast.success("Password changed successfully");
+    } catch {
+      const message =
+        "Password could not be changed. Check your connection and retry.";
+      setFormMessage({ tone: "error", text: message });
+      toast.error(message);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   return (
-    <form
-      onSubmit={(e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        form.handleSubmit();
-      }}
-      className="space-y-6"
-    >
-      {/* Current Password */}
-      <form.Field name="currentPassword">
-        {(field) => {
-          const isInvalid =
-            field.state.meta.isTouched && !field.state.meta.isValid;
-          return (
-            <Field data-invalid={isInvalid}>
-              <FieldLabel htmlFor={field.name}>Current Password</FieldLabel>
-              <div className="relative">
-                <Input
-                  id={field.name}
-                  type={showCurrentPassword ? "text" : "password"}
-                  value={field.state.value}
-                  onChange={(e) => field.handleChange(e.target.value)}
-                  placeholder="Enter your current password"
-                  className="pr-10"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowCurrentPassword(!showCurrentPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                >
-                  {showCurrentPassword ? (
-                    <EyeOff className="h-4 w-4" />
-                  ) : (
-                    <Eye className="h-4 w-4" />
-                  )}
-                </button>
-              </div>
-              {isInvalid && <FieldError errors={field.state.meta.errors} />}
-            </Field>
-          );
-        }}
-      </form.Field>
-
-      {/* New Password */}
-      <form.Field name="newPassword">
-        {(field) => {
-          const isInvalid =
-            field.state.meta.isTouched && !field.state.meta.isValid;
-          return (
-            <Field data-invalid={isInvalid}>
-              <FieldLabel htmlFor={field.name}>New Password</FieldLabel>
-              <div className="relative">
-                <Input
-                  id={field.name}
-                  type={showNewPassword ? "text" : "password"}
-                  value={field.state.value}
-                  onChange={(e) => field.handleChange(e.target.value)}
-                  placeholder="Enter your new password"
-                  className="pr-10"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowNewPassword(!showNewPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                >
-                  {showNewPassword ? (
-                    <EyeOff className="h-4 w-4" />
-                  ) : (
-                    <Eye className="h-4 w-4" />
-                  )}
-                </button>
-              </div>
-              <p className="text-xs text-gray-500 mt-1">
-                At least 8 characters with uppercase, lowercase, and number
-              </p>
-              {isInvalid && <FieldError errors={field.state.meta.errors} />}
-            </Field>
-          );
-        }}
-      </form.Field>
-
-      {/* Confirm New Password */}
-      <form.Field name="confirmPassword">
-        {(field) => {
-          const isInvalid =
-            field.state.meta.isTouched && !field.state.meta.isValid;
-          return (
-            <Field data-invalid={isInvalid}>
-              <FieldLabel htmlFor={field.name}>Confirm New Password</FieldLabel>
-              <div className="relative">
-                <Input
-                  id={field.name}
-                  type={showConfirmPassword ? "text" : "password"}
-                  value={field.state.value}
-                  onChange={(e) => field.handleChange(e.target.value)}
-                  placeholder="Confirm your new password"
-                  className="pr-10"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                >
-                  {showConfirmPassword ? (
-                    <EyeOff className="h-4 w-4" />
-                  ) : (
-                    <Eye className="h-4 w-4" />
-                  )}
-                </button>
-              </div>
-              {isInvalid && <FieldError errors={field.state.meta.errors} />}
-            </Field>
-          );
-        }}
-      </form.Field>
-
-      <Button
-        type="submit"
+    <form onSubmit={handleSubmit} className="space-y-5" noValidate>
+      <PasswordField
+        id="current-password"
+        label="Current password"
+        value={values.currentPassword}
+        visible={Boolean(visibleFields.currentPassword)}
+        onChange={(value) => updateValue("currentPassword", value)}
+        onToggleVisibility={() => toggleVisibility("currentPassword")}
+        autoComplete="current-password"
+        error={fieldErrors.currentPassword}
         disabled={isSubmitting}
-        className="w-full sm:w-auto bg-emerald-600 hover:bg-emerald-700"
-      >
-        {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-        {isSubmitting ? "Updating..." : "Update Password"}
-      </Button>
+      />
+
+      <PasswordField
+        id="new-password"
+        label="New password"
+        value={values.newPassword}
+        visible={Boolean(visibleFields.newPassword)}
+        onChange={(value) => updateValue("newPassword", value)}
+        onToggleVisibility={() => toggleVisibility("newPassword")}
+        autoComplete="new-password"
+        error={fieldErrors.newPassword}
+        hint="Use 8–128 characters with uppercase, lowercase, and a number."
+        disabled={isSubmitting}
+      />
+
+      <PasswordField
+        id="confirm-password"
+        label="Confirm new password"
+        value={values.confirmPassword}
+        visible={Boolean(visibleFields.confirmPassword)}
+        onChange={(value) => updateValue("confirmPassword", value)}
+        onToggleVisibility={() => toggleVisibility("confirmPassword")}
+        autoComplete="new-password"
+        error={fieldErrors.confirmPassword}
+        disabled={isSubmitting}
+      />
+
+      {formMessage && (
+        <p
+          className={`rounded-lg px-3 py-2.5 text-sm ${
+            formMessage.tone === "success"
+              ? "bg-emerald-50 text-emerald-800"
+              : "bg-red-50 text-red-700"
+          }`}
+          role={formMessage.tone === "error" ? "alert" : "status"}
+        >
+          {formMessage.text}
+        </p>
+      )}
+
+      <div className="flex flex-col-reverse gap-3 border-t pt-5 sm:flex-row sm:items-center sm:justify-between">
+        <p className="text-xs leading-5 text-gray-500">
+          Other signed-in devices will be signed out after this change.
+        </p>
+        <Button
+          type="submit"
+          className="w-full bg-emerald-600 hover:bg-emerald-700 sm:w-auto"
+          disabled={isSubmitting}
+        >
+          {isSubmitting && (
+            <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+          )}
+          {isSubmitting ? "Changing password..." : "Change password"}
+        </Button>
+      </div>
     </form>
+  );
+}
+
+function PasswordField({
+  autoComplete,
+  disabled,
+  error,
+  hint,
+  id,
+  label,
+  onChange,
+  onToggleVisibility,
+  value,
+  visible,
+}: {
+  autoComplete: "current-password" | "new-password";
+  disabled: boolean;
+  error?: string;
+  hint?: string;
+  id: string;
+  label: string;
+  onChange: (value: string) => void;
+  onToggleVisibility: () => void;
+  value: string;
+  visible: boolean;
+}) {
+  const descriptionId = error ? `${id}-error` : hint ? `${id}-hint` : undefined;
+
+  return (
+    <div className="space-y-2">
+      <Label htmlFor={id}>{label}</Label>
+      <div className="relative">
+        <Input
+          id={id}
+          type={visible ? "text" : "password"}
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          autoComplete={autoComplete}
+          autoCapitalize="none"
+          autoCorrect="off"
+          spellCheck={false}
+          minLength={autoComplete === "new-password" ? 8 : undefined}
+          maxLength={128}
+          aria-invalid={Boolean(error)}
+          aria-describedby={descriptionId}
+          disabled={disabled}
+          className="h-11 pr-11 text-base sm:text-sm"
+          required
+        />
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-sm"
+          onClick={onToggleVisibility}
+          disabled={disabled}
+          className="absolute top-1/2 right-2 -translate-y-1/2 text-gray-500"
+          aria-label={`${visible ? "Hide" : "Show"} ${label.toLowerCase()}`}
+          aria-pressed={visible}
+        >
+          {visible ? (
+            <EyeOff className="size-4" aria-hidden="true" />
+          ) : (
+            <Eye className="size-4" aria-hidden="true" />
+          )}
+        </Button>
+      </div>
+      {error ? (
+        <p id={`${id}-error`} className="text-xs text-red-600" role="alert">
+          {error}
+        </p>
+      ) : hint ? (
+        <p id={`${id}-hint`} className="text-xs leading-5 text-gray-500">
+          {hint}
+        </p>
+      ) : null}
+    </div>
   );
 }

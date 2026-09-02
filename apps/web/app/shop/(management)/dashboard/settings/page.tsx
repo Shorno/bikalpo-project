@@ -19,6 +19,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { LocationPickerSection } from "@/components/features/onboarding/location-picker-section";
 import { FinancialSettingsSection } from "@/components/features/settings/financial-settings-section";
+import { PasswordSecuritySection } from "@/components/features/settings/password-security-section";
 import ImageUploader from "@/components/ImageUploader";
 import { Button } from "@/components/ui/button";
 import {
@@ -285,6 +286,12 @@ export default function ShopSettingsPage() {
         >
           Financial settings
         </a>
+        <a
+          href="#password-security"
+          className="shrink-0 border-b-2 border-transparent px-4 py-3 text-sm font-medium text-gray-600 transition-colors hover:border-gray-300 hover:text-gray-950 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-emerald-600"
+        >
+          Password &amp; security
+        </a>
         <Link
           href="/dashboard/user-roles"
           className="shrink-0 border-b-2 border-transparent px-4 py-3 text-sm font-medium text-gray-600 transition-colors hover:border-gray-300 hover:text-gray-950 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-emerald-600"
@@ -492,6 +499,7 @@ export default function ShopSettingsPage() {
       </section>
 
       <FinancialSettingsSection />
+      <PasswordSecuritySection />
     </div>
   );
 }
