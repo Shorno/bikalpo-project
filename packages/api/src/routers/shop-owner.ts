@@ -50,6 +50,7 @@ import {
   productType,
   productVariant,
   purchase,
+  sellerApplication,
   sellerAreaMapping,
   shopCategoryAssignment,
   shopWarehouseConnection,
@@ -88,6 +89,7 @@ import {
 } from "drizzle-orm";
 import { z } from "zod";
 
+import { SHOP_OWNER_BUSINESS_NATURES } from "../business-registration";
 import { publicProcedure, shopOwnerProcedure } from "../index";
 import { assertCheckoutPaymentSelectionAllowed } from "../services/checkout-domain";
 import { assertCheckoutQuoteMatches } from "../services/checkout-quote";
@@ -110,6 +112,7 @@ import {
   getWholesalePaymentDueAt,
   wholesaleCheckoutSubmissionSchema,
 } from "../services/wholesale-checkout";
+import { resolveActiveProductType } from "./helpers/application-fields";
 import { ensureShopBuyerTargetVariant } from "./helpers/b2b-buyer-target";
 import { convertB2bOrderToRetailInventory } from "./helpers/b2b-conversion";
 import {
@@ -2075,6 +2078,167 @@ const mutations = {
         message: "Shop location updated",
         location: { lat: input.lat, lng: input.lng },
       };
+    }),
+
+  /** Update the business identity and location fields captured at registration. */
+  updateBusinessInformation: shopOwnerProcedure
+    .route({
+      method: "POST",
+      path: "/shop-owner/update-business-information",
+      tags: ["Shop Owner"],
+      summary: "Update retailer business information",
+    })
+    .input(
+      z
+        .object({
+          shopName: z.string().trim().min(2).max(150),
+          ownerName: z.string().trim().min(2).max(100),
+          businessType: z.enum(["retail", "restaurant"]),
+          productTypeId: z.number().int().positive().nullable(),
+          businessNature: z.enum(SHOP_OWNER_BUSINESS_NATURES).nullable(),
+          shopAddress: z.string().trim().min(5).max(500),
+          area: z.string().trim().max(100).nullable(),
+          district: z.string().trim().max(100).nullable(),
+          division: z.string().trim().max(100).nullable(),
+          postCode: z.string().trim().max(20).nullable(),
+          latitude: z.number().min(20.5).max(26.7).nullable(),
+          longitude: z.number().min(87.9).max(92.7).nullable(),
+        })
+        .refine(
+          (value) => (value.latitude === null) === (value.longitude === null),
+          {
+            message: "Latitude and longitude must be provided together",
+            path: ["longitude"],
+          },
+        ),
+    )
+    .handler(async ({ input, context }) => {
+      const userId = context.session.user.id;
+      const application = await db.query.sellerApplication.findFirst({
+        where: eq(sellerApplication.userId, userId),
+        orderBy: [desc(sellerApplication.createdAt)],
+        columns: { id: true },
+      });
+
+      if (!application) {
+        throw new ORPCError("NOT_FOUND", {
+          message: "Your business registration record could not be found",
+        });
+      }
+
+      const selectedProductType = input.productTypeId
+        ? await resolveActiveProductType(input.productTypeId)
+        : null;
+
+      await db.transaction(async (tx) => {
+        await tx
+          .update(sellerApplication)
+          .set({
+            shopName: input.shopName,
+            ownerName: input.ownerName,
+            businessType: input.businessType,
+            productTypeId: selectedProductType?.id ?? null,
+            businessCategory: selectedProductType?.name ?? null,
+            businessNature: input.businessNature,
+            shopAddress: input.shopAddress,
+            area: input.area,
+            district: input.district,
+            division: input.division,
+            postCode: input.postCode,
+            latitude: input.latitude?.toString() ?? null,
+            longitude: input.longitude?.toString() ?? null,
+          })
+          .where(eq(sellerApplication.id, application.id));
+
+        await tx
+          .update(user)
+          .set({
+            shopName: input.shopName,
+            ownerName: input.ownerName,
+            businessType: input.businessType,
+            shopAddress: input.shopAddress,
+            shopLat: input.latitude?.toString() ?? null,
+            shopLng: input.longitude?.toString() ?? null,
+          })
+          .where(eq(user.id, userId));
+      });
+
+      return { success: true, message: "Business information updated" };
+    }),
+
+  /** Update business contact channels captured at registration. */
+  updateBusinessContactInformation: shopOwnerProcedure
+    .route({
+      method: "POST",
+      path: "/shop-owner/update-business-contact-information",
+      tags: ["Shop Owner"],
+      summary: "Update retailer business contact information",
+    })
+    .input(
+      z.object({
+        phoneNumber: z.string().trim().min(10).max(20),
+        email: z.string().trim().email().max(320).nullable(),
+        whatsappNumber: z.string().trim().max(20).nullable(),
+        facebookUrl: z.string().trim().url().max(2048).nullable(),
+        instagramUrl: z.string().trim().url().max(2048).nullable(),
+        websiteUrl: z.string().trim().url().max(2048).nullable(),
+      }),
+    )
+    .handler(async ({ input, context }) => {
+      const application = await db.query.sellerApplication.findFirst({
+        where: eq(sellerApplication.userId, context.session.user.id),
+        orderBy: [desc(sellerApplication.createdAt)],
+        columns: { id: true },
+      });
+
+      if (!application) {
+        throw new ORPCError("NOT_FOUND", {
+          message: "Your business registration record could not be found",
+        });
+      }
+
+      await db
+        .update(sellerApplication)
+        .set(input)
+        .where(eq(sellerApplication.id, application.id));
+
+      return { success: true, message: "Contact information updated" };
+    }),
+
+  /** Update registration plan preference and business-size answers. */
+  updateBusinessPlanInformation: shopOwnerProcedure
+    .route({
+      method: "POST",
+      path: "/shop-owner/update-business-plan-information",
+      tags: ["Shop Owner"],
+      summary: "Update retailer plan information",
+    })
+    .input(
+      z.object({
+        selectedPlan: z.enum(["free_trial", "starter", "growth"]),
+        yearsInBusiness: z.string().trim().max(100).nullable(),
+        monthlyRevenue: z.string().trim().max(100).nullable(),
+      }),
+    )
+    .handler(async ({ input, context }) => {
+      const application = await db.query.sellerApplication.findFirst({
+        where: eq(sellerApplication.userId, context.session.user.id),
+        orderBy: [desc(sellerApplication.createdAt)],
+        columns: { id: true },
+      });
+
+      if (!application) {
+        throw new ORPCError("NOT_FOUND", {
+          message: "Your business registration record could not be found",
+        });
+      }
+
+      await db
+        .update(sellerApplication)
+        .set(input)
+        .where(eq(sellerApplication.id, application.id));
+
+      return { success: true, message: "Plan information updated" };
     }),
 
   // ── Purchase Order Actions ───────────────────────────────

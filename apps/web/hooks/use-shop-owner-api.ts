@@ -644,6 +644,51 @@ export function useUpdateShopProfile() {
   });
 }
 
+export function useUpdateBusinessInformation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    ...orpc.shopOwner.updateBusinessInformation.mutationOptions(),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({
+        queryKey: orpc.sellerApplication.getMyApplication.key(),
+      });
+      toast.success("Business information updated");
+    },
+    onError: (err) => toast.error(err.message),
+  });
+}
+
+export function useUpdateBusinessContactInformation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    ...orpc.shopOwner.updateBusinessContactInformation.mutationOptions(),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({
+        queryKey: orpc.sellerApplication.getMyApplication.key(),
+      });
+      toast.success("Contact information updated");
+    },
+    onError: (err) => toast.error(err.message),
+  });
+}
+
+export function useUpdateBusinessPlanInformation() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    ...orpc.shopOwner.updateBusinessPlanInformation.mutationOptions(),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({
+        queryKey: orpc.sellerApplication.getMyApplication.key(),
+      });
+      toast.success("Plan information updated");
+    },
+    onError: (err) => toast.error(err.message),
+  });
+}
+
 // ────────────────────────────────────────────────────────────────
 // INCOMING B2C ORDER HOOKS
 // ────────────────────────────────────────────────────────────────

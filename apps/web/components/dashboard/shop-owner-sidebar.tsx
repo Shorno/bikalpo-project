@@ -12,7 +12,6 @@ import {
   ExternalLinkIcon,
   FileTextIcon,
   GiftIcon,
-  HeadphonesIcon,
   LayoutDashboardIcon,
   MegaphoneIcon,
   PackageIcon,
@@ -20,7 +19,6 @@ import {
   PlusCircleIcon,
   ReceiptIcon,
   SettingsIcon,
-  ShieldIcon,
   ShoppingCartIcon,
   SmartphoneIcon,
   StoreIcon,
@@ -303,19 +301,19 @@ const shopOwnerNavGroups: NavGroup[] = [
   {
     label: "Settings",
     items: [
-      { title: "Business Profile", url: `${D}/settings`, icon: SettingsIcon },
       {
-        title: "Payment Accounts",
-        url: `${D}/payment-accounts`,
-        icon: CreditCardIcon,
+        title: "Settings",
+        url: `${D}/settings`,
+        icon: SettingsIcon,
+        items: [
+          { title: "General Settings", url: `${D}/settings` },
+          {
+            title: "User Roles and Permissions",
+            url: `${D}/user-roles`,
+          },
+          { title: "System Control", url: `${D}/system-control` },
+        ],
       },
-      { title: "User Roles", url: `${D}/user-roles`, icon: ShieldIcon },
-      {
-        title: "Invoice Settings",
-        url: `${D}/invoice-settings`,
-        icon: FileTextIcon,
-      },
-      { title: "Support", url: `${D}/support`, icon: HeadphonesIcon },
     ],
   },
 ];
