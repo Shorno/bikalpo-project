@@ -18,6 +18,7 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { LocationPickerSection } from "@/components/features/onboarding/location-picker-section";
+import { FinancialSettingsSection } from "@/components/features/settings/financial-settings-section";
 import ImageUploader from "@/components/ImageUploader";
 import { Button } from "@/components/ui/button";
 import {
@@ -40,11 +41,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  BUSINESS_NATURES,
-  MONTHLY_SALES_VOLUME,
-  YEARS_IN_BUSINESS,
-} from "@/constants/seller-registration";
+import { BUSINESS_NATURES } from "@/constants/seller-registration";
 import {
   useUpdateBusinessContactInformation,
   useUpdateBusinessInformation,
@@ -282,6 +279,12 @@ export default function ShopSettingsPage() {
         >
           Settings
         </a>
+        <a
+          href="#financial-settings"
+          className="shrink-0 border-b-2 border-transparent px-4 py-3 text-sm font-medium text-gray-600 transition-colors hover:border-gray-300 hover:text-gray-950 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-emerald-600"
+        >
+          Financial settings
+        </a>
         <Link
           href="/dashboard/user-roles"
           className="shrink-0 border-b-2 border-transparent px-4 py-3 text-sm font-medium text-gray-600 transition-colors hover:border-gray-300 hover:text-gray-950 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-emerald-600"
@@ -357,25 +360,11 @@ export default function ShopSettingsPage() {
             label="Selected plan"
             value={formatLabel(application?.selectedPlan)}
           />
-          <DetailRow label="Business status" value={formatLabel(status)} />
-          <DetailRow
-            label="Application number"
-            value={application?.applicationNumber}
-          />
-          <DetailRow
-            label="Application date"
-            value={formatDate(application?.createdAt)}
-          />
-          <DetailRow
-            label="Years in business"
-            value={application?.yearsInBusiness}
-          />
-          <DetailRow
-            label="Monthly revenue"
-            value={application?.monthlyRevenue}
-          />
+          <DetailRow label="Subscription status" value={formatLabel(status)} />
         </ProfileSection>
       </section>
+
+      <FinancialSettingsSection />
 
       <section
         id="storefront-settings"
@@ -970,31 +959,19 @@ function ContactInformationDialog({
 function PlanInformationDialog({ application }: { application: any }) {
   const [open, setOpen] = useState(false);
   const mutation = useUpdateBusinessPlanInformation();
-  const [form, setForm] = useState({
-    selectedPlan: "",
-    yearsInBusiness: "",
-    monthlyRevenue: "",
-  });
+  const [selectedPlan, setSelectedPlan] = useState("");
 
   useEffect(() => {
     if (!open) return;
-    setForm({
-      selectedPlan: application?.selectedPlan || "",
-      yearsInBusiness: application?.yearsInBusiness || "",
-      monthlyRevenue: application?.monthlyRevenue || "",
-    });
+    setSelectedPlan(application?.selectedPlan || "");
   }, [application, open]);
-
-  const update = (field: keyof typeof form, value: string) => {
-    setForm((current) => ({ ...current, [field]: value }));
-  };
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     await mutation.mutateAsync({
-      selectedPlan: form.selectedPlan as "free_trial" | "starter" | "growth",
-      yearsInBusiness: nullable(form.yearsInBusiness),
-      monthlyRevenue: nullable(form.monthlyRevenue),
+      selectedPlan: selectedPlan as "free_trial" | "starter" | "growth",
+      yearsInBusiness: application?.yearsInBusiness || null,
+      monthlyRevenue: application?.monthlyRevenue || null,
     });
     setOpen(false);
   };
@@ -1009,18 +986,15 @@ function PlanInformationDialog({ application }: { application: any }) {
       ) : (
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>Edit user plan information</DialogTitle>
+            <DialogTitle>Edit selected plan</DialogTitle>
             <DialogDescription>
-              Update the preferences saved with your registration. Changing this
-              selection does not activate billing or a subscription.
+              Update the plan preference saved with your registration. Changing
+              this selection does not activate billing or a subscription.
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleSubmit} className="space-y-4">
-            <Field id="registration-plan" label="Registration plan preference">
-              <Select
-                value={form.selectedPlan}
-                onValueChange={(value) => update("selectedPlan", value)}
-              >
+            <Field id="registration-plan" label="Selected plan">
+              <Select value={selectedPlan} onValueChange={setSelectedPlan}>
                 <SelectTrigger id="registration-plan" className="h-9 w-full">
                   <SelectValue placeholder="Select a plan preference" />
                 </SelectTrigger>
@@ -1028,56 +1002,6 @@ function PlanInformationDialog({ application }: { application: any }) {
                   {PLAN_OPTIONS.map((plan) => (
                     <SelectItem key={plan.value} value={plan.value}>
                       {plan.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </Field>
-            <Field id="years-in-business" label="Years in business">
-              <Select
-                value={form.yearsInBusiness || NOT_PROVIDED_VALUE}
-                onValueChange={(value) =>
-                  update(
-                    "yearsInBusiness",
-                    value === NOT_PROVIDED_VALUE ? "" : value,
-                  )
-                }
-              >
-                <SelectTrigger id="years-in-business" className="h-9 w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent position="popper">
-                  <SelectItem value={NOT_PROVIDED_VALUE}>
-                    Not provided
-                  </SelectItem>
-                  {YEARS_IN_BUSINESS.map((option) => (
-                    <SelectItem key={option} value={option}>
-                      {option}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </Field>
-            <Field id="monthly-revenue" label="Monthly sales volume">
-              <Select
-                value={form.monthlyRevenue || NOT_PROVIDED_VALUE}
-                onValueChange={(value) =>
-                  update(
-                    "monthlyRevenue",
-                    value === NOT_PROVIDED_VALUE ? "" : value,
-                  )
-                }
-              >
-                <SelectTrigger id="monthly-revenue" className="h-9 w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent position="popper">
-                  <SelectItem value={NOT_PROVIDED_VALUE}>
-                    Not provided
-                  </SelectItem>
-                  {MONTHLY_SALES_VOLUME.map((option) => (
-                    <SelectItem key={option} value={option}>
-                      {option}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -1091,7 +1015,7 @@ function PlanInformationDialog({ application }: { application: any }) {
               </DialogClose>
               <Button
                 type="submit"
-                disabled={mutation.isPending || !form.selectedPlan}
+                disabled={mutation.isPending || !selectedPlan}
                 className="bg-emerald-600 hover:bg-emerald-700"
               >
                 {mutation.isPending && (

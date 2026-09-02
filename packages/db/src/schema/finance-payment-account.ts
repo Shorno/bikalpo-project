@@ -27,6 +27,7 @@ export const financePaymentAccount = pgTable(
     id: serial("id").primaryKey(),
     code: varchar("code", { length: 80 }).notNull(),
     name: varchar("name", { length: 180 }).notNull(),
+    providerName: varchar("provider_name", { length: 120 }),
     type: financePaymentAccountTypeEnum("type").notNull(),
     financeAccountId: integer("finance_account_id")
       .notNull()

@@ -255,6 +255,7 @@ async function resolvePaymentAccountId(input: {
       andFn(
         eqFn(table.ownerId, input.ownerId),
         eqFn(table.ownerType, input.ownerType),
+        eqFn(table.isActive, true),
       ),
   });
 
@@ -2254,7 +2255,9 @@ export const financeRouter = {
       return {
         paymentAccounts: paymentAccounts
           .filter(
-            (account) => account.type === "cash" || account.type === "bank",
+            (account) =>
+              account.isActive &&
+              (account.type === "cash" || account.type === "bank"),
           )
           .map((account) => ({
             balance: parseMoney(account.currentBalance),
@@ -2264,6 +2267,266 @@ export const financeRouter = {
             type: account.type as "cash" | "bank",
           })),
       };
+    }),
+
+  getFinancialSettingsAccounts: protectedProcedure
+    .route({
+      method: "POST",
+      path: "/finance/settings/payment-accounts",
+      tags: ["Finance"],
+      summary: "Get bank and mobile banking settings",
+    })
+    .input(z.object({}).optional())
+    .handler(async ({ context }) => {
+      const ownerId = context.session.user.id;
+      const ownerType = resolveOwnerScope(context.session.user.role);
+
+      await ensurePaymentAccountsReady({ ownerId, ownerType });
+
+      const accounts = await db.query.financePaymentAccount.findMany({
+        where: (table, { and: andFn, eq: eqFn, inArray: inArrayFn }) =>
+          andFn(
+            eqFn(table.ownerId, ownerId),
+            eqFn(table.ownerType, ownerType),
+            inArrayFn(table.type, ["bank", "mobile_banking"]),
+          ),
+        orderBy: (table, { asc: ascFn }) => [
+          ascFn(table.type),
+          ascFn(table.providerName),
+          ascFn(table.name),
+        ],
+      });
+
+      return {
+        accounts: accounts.map((account) => ({
+          accountName: account.name,
+          id: String(account.id),
+          isActive: account.isActive,
+          providerName: account.providerName || account.name,
+          type: account.type as "bank" | "mobile_banking",
+        })),
+      };
+    }),
+
+  createFinancialSettingsAccount: protectedProcedure
+    .route({
+      method: "POST",
+      path: "/finance/settings/payment-accounts/create",
+      tags: ["Finance"],
+      summary: "Create a bank or mobile banking account",
+    })
+    .input(
+      z.object({
+        accountName: z.string().max(180).optional(),
+        isActive: z.boolean().default(true),
+        providerName: z.string().min(1).max(120),
+        type: z.enum(["bank", "mobile_banking"]),
+      }),
+    )
+    .handler(async ({ context, input }) => {
+      const ownerId = context.session.user.id;
+      const ownerType = resolveOwnerScope(context.session.user.role);
+      const providerName = input.providerName.trim();
+      const accountName = input.accountName?.trim() || providerName;
+
+      if (
+        !providerName ||
+        (input.type === "bank" && !input.accountName?.trim())
+      ) {
+        throw new ORPCError("BAD_REQUEST", {
+          message:
+            input.type === "bank"
+              ? "Bank name and account name are required"
+              : "Provider name is required",
+        });
+      }
+
+      await ensureDefaultFinanceAccounts();
+
+      const cashBankCategory = await db.query.financeCategory.findFirst({
+        where: (table, { and: andFn, eq: eqFn, isNull: isNullFn }) =>
+          andFn(
+            eqFn(table.code, "asset-cash-bank"),
+            isNullFn(table.ownerId),
+            isNullFn(table.ownerType),
+          ),
+      });
+
+      if (!cashBankCategory) {
+        throw new ORPCError("INTERNAL_SERVER_ERROR", {
+          message: "Cash and bank category is not configured",
+        });
+      }
+
+      const duplicate = await db.query.financePaymentAccount.findFirst({
+        where: (table, { and: andFn, eq: eqFn }) =>
+          andFn(
+            eqFn(table.ownerId, ownerId),
+            eqFn(table.ownerType, ownerType),
+            eqFn(table.type, input.type),
+            eqFn(table.providerName, providerName),
+            eqFn(table.name, accountName),
+          ),
+      });
+
+      if (duplicate) {
+        throw new ORPCError("CONFLICT", {
+          message: "This financial account already exists",
+        });
+      }
+
+      const accountCode = await generateUniqueCode(
+        financeAccount,
+        ownerId,
+        ownerType,
+        `asset-${slugify(providerName)}-${slugify(accountName)}`.slice(0, 72),
+      );
+      const paymentCode = await generateUniquePaymentAccountCode(
+        ownerId,
+        ownerType,
+        `payment-${input.type}-${slugify(providerName)}`.slice(0, 72),
+      );
+
+      const created = await db.transaction(async (tx) => {
+        const [linkedAccount] = await tx
+          .insert(financeAccount)
+          .values({
+            accountType: "asset",
+            balanceSheetLine: "cash_and_bank",
+            categoryId: cashBankCategory.id,
+            code: accountCode,
+            currentBalance: "0",
+            description: `${providerName} financial settings account`,
+            isActive: input.isActive,
+            isPaymentAccount: true,
+            isSystem: false,
+            name: accountName,
+            normalBalance: "debit",
+            openingBalance: "0",
+            ownerId,
+            ownerType,
+            sortOrder: 900,
+          })
+          .returning({ id: financeAccount.id });
+
+        if (!linkedAccount) {
+          throw new ORPCError("INTERNAL_SERVER_ERROR", {
+            message: "Failed to create finance account",
+          });
+        }
+
+        const [paymentAccount] = await tx
+          .insert(financePaymentAccount)
+          .values({
+            code: paymentCode,
+            financeAccountId: linkedAccount.id,
+            isActive: input.isActive,
+            isDefault: false,
+            name: accountName,
+            ownerId,
+            ownerType,
+            providerName,
+            type: input.type,
+          })
+          .returning({ id: financePaymentAccount.id });
+
+        return paymentAccount;
+      });
+
+      if (!created) {
+        throw new ORPCError("INTERNAL_SERVER_ERROR", {
+          message: "Failed to create financial account",
+        });
+      }
+
+      return { id: String(created.id), message: "Financial account created" };
+    }),
+
+  updateFinancialSettingsAccount: protectedProcedure
+    .route({
+      method: "POST",
+      path: "/finance/settings/payment-accounts/update",
+      tags: ["Finance"],
+      summary: "Update a bank or mobile banking account",
+    })
+    .input(
+      z.object({
+        accountName: z.string().max(180).optional(),
+        id: z.union([z.string(), z.number()]),
+        isActive: z.boolean(),
+        providerName: z.string().min(1).max(120),
+      }),
+    )
+    .handler(async ({ context, input }) => {
+      const ownerId = context.session.user.id;
+      const ownerType = resolveOwnerScope(context.session.user.role);
+      const id = Number(input.id);
+
+      if (!Number.isFinite(id)) {
+        throw new ORPCError("BAD_REQUEST", {
+          message: "Select a valid financial account",
+        });
+      }
+
+      const account = await db.query.financePaymentAccount.findFirst({
+        where: (table, { and: andFn, eq: eqFn, inArray: inArrayFn }) =>
+          andFn(
+            eqFn(table.id, id),
+            eqFn(table.ownerId, ownerId),
+            eqFn(table.ownerType, ownerType),
+            inArrayFn(table.type, ["bank", "mobile_banking"]),
+          ),
+        with: { financeAccount: true },
+      });
+
+      if (!account) {
+        throw new ORPCError("NOT_FOUND", {
+          message: "Financial account not found",
+        });
+      }
+
+      const providerName = input.providerName.trim();
+      const accountName = input.accountName?.trim() || providerName;
+
+      if (
+        !providerName ||
+        (account.type === "bank" && !input.accountName?.trim())
+      ) {
+        throw new ORPCError("BAD_REQUEST", {
+          message:
+            account.type === "bank"
+              ? "Bank name and account name are required"
+              : "Provider name is required",
+        });
+      }
+
+      await db.transaction(async (tx) => {
+        await tx
+          .update(financePaymentAccount)
+          .set({
+            isActive: input.isActive,
+            name: accountName,
+            providerName,
+            updatedAt: new Date(),
+          })
+          .where(eq(financePaymentAccount.id, account.id));
+
+        if (
+          account.financeAccount.ownerId === ownerId &&
+          account.financeAccount.ownerType === ownerType
+        ) {
+          await tx
+            .update(financeAccount)
+            .set({
+              isActive: input.isActive,
+              name: accountName,
+              updatedAt: new Date(),
+            })
+            .where(eq(financeAccount.id, account.financeAccountId));
+        }
+      });
+
+      return { message: "Financial account updated" };
     }),
 
   createMoneyMovement: protectedProcedure
@@ -2325,6 +2588,7 @@ export const financeRouter = {
 
       if (
         !paymentAccount ||
+        !paymentAccount.isActive ||
         (paymentAccount.type !== "cash" && paymentAccount.type !== "bank")
       ) {
         throw new ORPCError("NOT_FOUND", {
@@ -3466,6 +3730,7 @@ export const financeRouter = {
 
       if (
         !paymentAccount ||
+        !paymentAccount.isActive ||
         (paymentAccount.type !== "cash" && paymentAccount.type !== "bank")
       ) {
         throw new ORPCError("NOT_FOUND", {
@@ -3690,6 +3955,7 @@ export const financeRouter = {
 
       if (
         !paymentAccount ||
+        !paymentAccount.isActive ||
         (paymentAccount.type !== "cash" && paymentAccount.type !== "bank")
       ) {
         throw new ORPCError("NOT_FOUND", {
@@ -3897,6 +4163,7 @@ export const financeRouter = {
 
         if (
           !paymentAccount ||
+          !paymentAccount.isActive ||
           (paymentAccount.type !== "cash" && paymentAccount.type !== "bank")
         ) {
           throw new ORPCError("NOT_FOUND", {
@@ -4178,6 +4445,7 @@ export const financeRouter = {
 
         if (
           !paymentAccount ||
+          !paymentAccount.isActive ||
           (paymentAccount.type !== "cash" && paymentAccount.type !== "bank")
         ) {
           throw new ORPCError("NOT_FOUND", {
@@ -4372,6 +4640,7 @@ export const financeRouter = {
 
       if (
         !paymentAccount ||
+        !paymentAccount.isActive ||
         (paymentAccount.type !== "cash" && paymentAccount.type !== "bank")
       ) {
         throw new ORPCError("NOT_FOUND", {
@@ -4541,6 +4810,7 @@ export const financeRouter = {
 
       if (
         !paymentAccount ||
+        !paymentAccount.isActive ||
         (paymentAccount.type !== "cash" && paymentAccount.type !== "bank")
       ) {
         throw new ORPCError("NOT_FOUND", {

@@ -498,6 +498,13 @@
       "when": 1788900000000,
       "tag": "0071_manual_purchase_transaction",
       "breakpoints": true
+    },
+    {
+      "idx": 72,
+      "version": "7",
+      "when": 1789000000000,
+      "tag": "0072_financial_settings_accounts",
+      "breakpoints": true
     }
   ]
 }
