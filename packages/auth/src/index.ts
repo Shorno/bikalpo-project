@@ -63,6 +63,11 @@ export const auth = betterAuth({
         storeOtp(phone, code);
         console.log(`[OTP] Phone: ${phone} → Code: ${code}`);
       },
+      sendPasswordResetOTP: ({ phoneNumber: phone, code }) => {
+        if (isProduction) return;
+        storeOtp(phone, code);
+        console.log(`[Password reset OTP] Phone: ${phone} → Code: ${code}`);
+      },
       signUpOnVerification: {
         getTempEmail: getPhoneAuthEmail,
         getTempName: (phone) => phone,

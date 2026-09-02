@@ -499,7 +499,9 @@ export default function ShopSettingsPage() {
       </section>
 
       <FinancialSettingsSection />
-      <PasswordSecuritySection />
+      <PasswordSecuritySection
+        phoneNumber={user?.phoneNumberVerified ? user.phoneNumber : null}
+      />
     </div>
   );
 }

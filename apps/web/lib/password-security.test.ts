@@ -3,6 +3,9 @@ import test from "node:test";
 import {
   changePasswordSchema,
   getPasswordChangeErrorMessage,
+  getPasswordResetErrorMessage,
+  maskPhoneNumber,
+  resetPasswordWithOtpSchema,
 } from "./password-security";
 
 test("accepts a strong new password that matches its confirmation", () => {
@@ -83,4 +86,40 @@ test("maps Better Auth failures to actionable messages", () => {
     getPasswordChangeErrorMessage({ message: "Request failed" }),
     "Request failed",
   );
+});
+
+test("accepts a six-digit OTP with a matching strong password", () => {
+  const result = resetPasswordWithOtpSchema.safeParse({
+    otp: "123456",
+    newPassword: "NewSecurePass2",
+    confirmPassword: "NewSecurePass2",
+  });
+
+  assert.equal(result.success, true);
+});
+
+test("rejects an incomplete OTP and mismatched reset password", () => {
+  const result = resetPasswordWithOtpSchema.safeParse({
+    otp: "123",
+    newPassword: "NewSecurePass2",
+    confirmPassword: "DifferentPass3",
+  });
+
+  assert.equal(result.success, false);
+  assert.deepEqual(
+    result.error?.issues.map((issue) => issue.path[0]),
+    ["otp", "confirmPassword"],
+  );
+});
+
+test("maps OTP reset errors and masks the account phone number", () => {
+  assert.equal(
+    getPasswordResetErrorMessage({ code: "INVALID_OTP" }),
+    "That OTP is incorrect. Check the code and try again.",
+  );
+  assert.equal(
+    getPasswordResetErrorMessage({ code: "TOO_MANY_ATTEMPTS" }),
+    "Too many incorrect attempts. Request a new OTP.",
+  );
+  assert.equal(maskPhoneNumber("+8801841151827"), "+880 •••••• 1827");
 });

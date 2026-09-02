@@ -1,11 +1,10 @@
 "use client";
 
-import { Eye, EyeOff, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
+import { PasswordInputField } from "@/components/account/password-input-field";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { authClient } from "@/lib/auth-client";
 import {
   type ChangePasswordValues,
@@ -99,7 +98,7 @@ export function ChangePasswordForm() {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-5" noValidate>
-      <PasswordField
+      <PasswordInputField
         id="current-password"
         label="Current password"
         value={values.currentPassword}
@@ -111,7 +110,7 @@ export function ChangePasswordForm() {
         disabled={isSubmitting}
       />
 
-      <PasswordField
+      <PasswordInputField
         id="new-password"
         label="New password"
         value={values.newPassword}
@@ -124,7 +123,7 @@ export function ChangePasswordForm() {
         disabled={isSubmitting}
       />
 
-      <PasswordField
+      <PasswordInputField
         id="confirm-password"
         label="Confirm new password"
         value={values.confirmPassword}
@@ -162,81 +161,5 @@ export function ChangePasswordForm() {
         </Button>
       </div>
     </form>
-  );
-}
-
-function PasswordField({
-  autoComplete,
-  disabled,
-  error,
-  hint,
-  id,
-  label,
-  onChange,
-  onToggleVisibility,
-  value,
-  visible,
-}: {
-  autoComplete: "current-password" | "new-password";
-  disabled: boolean;
-  error?: string;
-  hint?: string;
-  id: string;
-  label: string;
-  onChange: (value: string) => void;
-  onToggleVisibility: () => void;
-  value: string;
-  visible: boolean;
-}) {
-  const descriptionId = error ? `${id}-error` : hint ? `${id}-hint` : undefined;
-
-  return (
-    <div className="space-y-2">
-      <Label htmlFor={id}>{label}</Label>
-      <div className="relative">
-        <Input
-          id={id}
-          type={visible ? "text" : "password"}
-          value={value}
-          onChange={(event) => onChange(event.target.value)}
-          autoComplete={autoComplete}
-          autoCapitalize="none"
-          autoCorrect="off"
-          spellCheck={false}
-          minLength={autoComplete === "new-password" ? 8 : undefined}
-          maxLength={128}
-          aria-invalid={Boolean(error)}
-          aria-describedby={descriptionId}
-          disabled={disabled}
-          className="h-11 pr-11 text-base sm:text-sm"
-          required
-        />
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon-sm"
-          onClick={onToggleVisibility}
-          disabled={disabled}
-          className="absolute top-1/2 right-2 -translate-y-1/2 text-gray-500"
-          aria-label={`${visible ? "Hide" : "Show"} ${label.toLowerCase()}`}
-          aria-pressed={visible}
-        >
-          {visible ? (
-            <EyeOff className="size-4" aria-hidden="true" />
-          ) : (
-            <Eye className="size-4" aria-hidden="true" />
-          )}
-        </Button>
-      </div>
-      {error ? (
-        <p id={`${id}-error`} className="text-xs text-red-600" role="alert">
-          {error}
-        </p>
-      ) : hint ? (
-        <p id={`${id}-hint`} className="text-xs leading-5 text-gray-500">
-          {hint}
-        </p>
-      ) : null}
-    </div>
   );
 }
