@@ -238,12 +238,12 @@ function normalizePaymentAccountLookup(value: string | number) {
     .replace(/\s+/g, " ");
 }
 
-function isUsableCashBankPaymentAccount(
-  account:
-    | { isActive: boolean; type: "bank" | "cash" | "mobile_banking" }
-    | null
-    | undefined,
-) {
+function isUsableCashBankPaymentAccount<
+  T extends {
+    isActive: boolean;
+    type: "bank" | "cash" | "mobile_banking";
+  },
+>(account: T | null | undefined): account is T & { type: "bank" | "cash" } {
   return Boolean(
     account?.isActive && (account.type === "cash" || account.type === "bank"),
   );
@@ -2311,6 +2311,7 @@ export const financeRouter = {
       return {
         accounts: accounts.map((account) => ({
           accountName: account.name,
+          accountNumber: account.accountNumber,
           id: String(account.id),
           isActive: account.isActive,
           providerName: account.providerName || account.name,
@@ -2329,6 +2330,7 @@ export const financeRouter = {
     .input(
       z.object({
         accountName: z.string().max(180).optional(),
+        accountNumber: z.string().trim().min(1).max(80),
         isActive: z.boolean().default(true),
         providerName: z.string().min(1).max(120),
         type: z.enum(["bank", "mobile_banking"]),
@@ -2430,6 +2432,7 @@ export const financeRouter = {
           .insert(financePaymentAccount)
           .values({
             code: paymentCode,
+            accountNumber: input.accountNumber,
             financeAccountId: linkedAccount.id,
             isActive: input.isActive,
             isDefault: false,
@@ -2463,6 +2466,7 @@ export const financeRouter = {
     .input(
       z.object({
         accountName: z.string().max(180).optional(),
+        accountNumber: z.string().max(80).optional(),
         id: z.union([z.string(), z.number()]),
         isActive: z.boolean(),
         providerName: z.string().min(1).max(120),
@@ -2498,6 +2502,7 @@ export const financeRouter = {
 
       const providerName = input.providerName.trim();
       const accountName = input.accountName?.trim() || providerName;
+      const accountNumber = input.accountNumber?.trim();
 
       if (
         !providerName ||
@@ -2511,10 +2516,20 @@ export const financeRouter = {
         });
       }
 
+      if (input.accountNumber !== undefined && !accountNumber) {
+        throw new ORPCError("BAD_REQUEST", {
+          message: "Account number is required",
+        });
+      }
+
       await db.transaction(async (tx) => {
         await tx
           .update(financePaymentAccount)
           .set({
+            accountNumber:
+              input.accountNumber === undefined
+                ? account.accountNumber
+                : accountNumber,
             isActive: input.isActive,
             name: accountName,
             providerName,

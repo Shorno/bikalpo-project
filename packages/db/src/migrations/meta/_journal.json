@@ -505,6 +505,13 @@
       "when": 1789000000000,
       "tag": "0072_financial_settings_accounts",
       "breakpoints": true
+    },
+    {
+      "idx": 73,
+      "version": "7",
+      "when": 1789100000000,
+      "tag": "0073_payment_account_numbers",
+      "breakpoints": true
     }
   ]
 }

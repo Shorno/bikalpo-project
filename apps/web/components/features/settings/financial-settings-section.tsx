@@ -31,6 +31,7 @@ type FinancialAccountType = "bank" | "mobile_banking";
 
 type FinancialAccount = {
   accountName: string;
+  accountNumber: string | null;
   id: string;
   isActive: boolean;
   providerName: string;
@@ -39,6 +40,7 @@ type FinancialAccount = {
 
 type AccountDraft = {
   accountName: string;
+  accountNumber: string;
   id: string | null;
   isActive: boolean;
   providerName: string;
@@ -46,6 +48,7 @@ type AccountDraft = {
 
 const EMPTY_DRAFT: AccountDraft = {
   accountName: "",
+  accountNumber: "",
   id: null,
   isActive: true,
   providerName: "",
@@ -170,29 +173,57 @@ function FinancialAccountPanel({
         ) : (
           <div className="divide-y">
             <div
-              className={`grid gap-3 pb-2 text-[11px] font-semibold tracking-wide text-gray-400 uppercase ${isBank ? "grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]" : "grid-cols-[minmax(0,1fr)_auto]"}`}
+              className={`hidden gap-3 pb-2 text-[11px] font-semibold tracking-wide text-gray-400 uppercase sm:grid ${isBank ? "grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(7.5rem,1fr)_auto]" : "grid-cols-[minmax(0,1fr)_minmax(7.5rem,1fr)_auto]"}`}
             >
               <span>{isBank ? "Bank name" : "Provider"}</span>
               {isBank && <span>Account name</span>}
+              <span>Account number</span>
               <span>Status</span>
             </div>
             {accounts.map((account) => (
-              <div
-                key={account.id}
-                className={`grid items-center gap-3 py-3 text-sm ${isBank ? "grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]" : "grid-cols-[minmax(0,1fr)_auto]"}`}
-              >
-                <span className="truncate font-medium text-gray-900">
-                  {account.providerName}
-                </span>
-                {isBank && (
-                  <span className="truncate text-gray-600">
-                    {account.accountName}
+              <div key={account.id} className="py-3 text-sm">
+                <div className="flex items-start justify-between gap-4 sm:hidden">
+                  <div className="min-w-0">
+                    <p className="truncate font-semibold text-gray-900">
+                      {account.providerName}
+                    </p>
+                    {isBank && (
+                      <p className="mt-0.5 truncate text-xs text-gray-500">
+                        {account.accountName}
+                      </p>
+                    )}
+                    <p className="mt-2 text-[11px] font-medium tracking-wide text-gray-400 uppercase">
+                      Account number
+                    </p>
+                    <p className="mt-0.5 break-all font-mono text-xs text-gray-700">
+                      {account.accountNumber || "Not provided"}
+                    </p>
+                  </div>
+                  <StatusBadge
+                    active={account.isActive}
+                    activeLabel={isBank ? "Active" : "Enabled"}
+                  />
+                </div>
+
+                <div
+                  className={`hidden items-center gap-3 sm:grid ${isBank ? "grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(7.5rem,1fr)_auto]" : "grid-cols-[minmax(0,1fr)_minmax(7.5rem,1fr)_auto]"}`}
+                >
+                  <span className="truncate font-medium text-gray-900">
+                    {account.providerName}
                   </span>
-                )}
-                <StatusBadge
-                  active={account.isActive}
-                  activeLabel={isBank ? "Active" : "Enabled"}
-                />
+                  {isBank && (
+                    <span className="truncate text-gray-600">
+                      {account.accountName}
+                    </span>
+                  )}
+                  <span className="truncate font-mono text-xs text-gray-700">
+                    {account.accountNumber || "Not provided"}
+                  </span>
+                  <StatusBadge
+                    active={account.isActive}
+                    activeLabel={isBank ? "Active" : "Enabled"}
+                  />
+                </div>
               </div>
             ))}
           </div>
@@ -213,11 +244,13 @@ function StatusBadge({
   active: boolean;
   activeLabel: "Active" | "Enabled";
 }) {
+  const badgeAppearance = active
+    ? "bg-emerald-50 text-emerald-700"
+    : "bg-gray-100 text-gray-600";
+
   return (
     <span
-      className={`inline-flex w-fit items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ${
-        active ? "bg-emerald-50 text-emerald-700" : "bg-gray-100 text-gray-500"
-      }`}
+      className={`inline-flex w-fit items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ${badgeAppearance}`}
     >
       <span
         className={`size-1.5 rounded-full ${active ? "bg-emerald-500" : "bg-gray-400"}`}
@@ -272,6 +305,7 @@ function ManageFinancialAccountsDialog({
   const edit = (account: FinancialAccount) => {
     setDraft({
       accountName: account.accountName,
+      accountNumber: account.accountNumber || "",
       id: account.id,
       isActive: account.isActive,
       providerName: account.providerName,
@@ -284,6 +318,7 @@ function ManageFinancialAccountsDialog({
 
     const input = {
       accountName: isBank ? draft.accountName : draft.providerName,
+      accountNumber: draft.accountNumber,
       isActive: draft.isActive,
       providerName: draft.providerName,
     };
@@ -375,6 +410,9 @@ function ManageFinancialAccountsDialog({
                         {account.accountName}
                       </p>
                     )}
+                    <p className="mt-1 truncate font-mono text-xs text-gray-500">
+                      {account.accountNumber || "Account number not provided"}
+                    </p>
                   </div>
                   <div className="flex items-center gap-3">
                     <Switch
@@ -427,7 +465,7 @@ function ManageFinancialAccountsDialog({
               </div>
             </div>
 
-            <div className={isBank ? "grid gap-4 sm:grid-cols-2" : ""}>
+            <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
                 <Label htmlFor={`${type}-provider`}>
                   {isBank ? "Bank name" : "Provider name"}
@@ -467,6 +505,30 @@ function ManageFinancialAccountsDialog({
                   />
                 </div>
               )}
+              <div className={`space-y-2 ${isBank ? "sm:col-span-2" : ""}`}>
+                <Label htmlFor={`${type}-account-number`}>Account number</Label>
+                <Input
+                  id={`${type}-account-number`}
+                  value={draft.accountNumber}
+                  onChange={(event) =>
+                    setDraft((current) =>
+                      current
+                        ? { ...current, accountNumber: event.target.value }
+                        : current,
+                    )
+                  }
+                  placeholder={
+                    isBank
+                      ? "Enter bank account number"
+                      : "Enter mobile account number"
+                  }
+                  inputMode={isBank ? "text" : "tel"}
+                  autoComplete="off"
+                  maxLength={80}
+                  className="font-mono"
+                  required
+                />
+              </div>
             </div>
 
             <div className="flex justify-end gap-2">
@@ -484,6 +546,7 @@ function ManageFinancialAccountsDialog({
                 disabled={
                   isSaving ||
                   !draft.providerName.trim() ||
+                  !draft.accountNumber.trim() ||
                   (isBank && !draft.accountName.trim())
                 }
               >
