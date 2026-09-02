@@ -4,9 +4,15 @@ import * as schema from "@bikalpo-project/db/schema";
 import { env } from "@bikalpo-project/env/server";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
-import { createAuthMiddleware } from "better-auth/api";
+import { APIError, createAuthMiddleware } from "better-auth/api";
 import { admin as adminPlugin, bearer, openAPI, phoneNumber } from "better-auth/plugins";
 import { storeOtp } from "./otp-store";
+import {
+  getPasswordPolicyError,
+  PASSWORD_MAX_LENGTH,
+  PASSWORD_MIN_LENGTH,
+  passwordValidation,
+} from "./password-policy";
 import { ac, admin as adminRole, consumer, deliveryman, salesman, shop_owner, warehouse } from "./permissions";
 import {
   getPhoneAuthEmail,
@@ -14,6 +20,12 @@ import {
 } from "./phone-identity";
 
 const isProduction = env.NODE_ENV === "production";
+const passwordFieldByPath = new Map<string, "password" | "newPassword">([
+  ["/sign-up/email", "password"],
+  ["/change-password", "newPassword"],
+  ["/reset-password", "newPassword"],
+  ["/phone-number/reset-password", "newPassword"],
+]);
 
 export const auth = betterAuth({
   baseURL: env.BETTER_AUTH_URL,
@@ -24,8 +36,8 @@ export const auth = betterAuth({
   }),
   emailAndPassword: {
     enabled: true,
-    minPasswordLength: 8,
-    maxPasswordLength: 128,
+    minPasswordLength: PASSWORD_MIN_LENGTH,
+    maxPasswordLength: PASSWORD_MAX_LENGTH,
   },
   plugins: [
     expo(),
@@ -189,6 +201,19 @@ export const auth = betterAuth({
       : []),
   ].filter(Boolean) as string[],
   hooks: {
+    before: createAuthMiddleware(async (ctx) => {
+      const passwordField = passwordFieldByPath.get(ctx.path);
+      if (!passwordField) return;
+
+      const body = ctx.body as Record<string, unknown> | undefined;
+      const policyError = getPasswordPolicyError(body?.[passwordField]);
+      if (policyError) {
+        throw APIError.from("BAD_REQUEST", {
+          code: "PASSWORD_POLICY_FAILED",
+          message: policyError,
+        });
+      }
+    }),
     after: createAuthMiddleware(async (ctx) => {
       const domain = env.COOKIE_DOMAIN || ".localhost";
 
@@ -230,8 +255,9 @@ export async function setCredentialPassword(
   userId: string,
   newPassword: string,
 ) {
+  const password = passwordValidation.parse(newPassword);
   const context = await auth.$context;
-  const hashedPassword = await context.password.hash(newPassword);
+  const hashedPassword = await context.password.hash(password);
   const accounts = await context.internalAdapter.findAccounts(userId);
   const credentialAccount = accounts.find(
     (account) => account.providerId === "credential",

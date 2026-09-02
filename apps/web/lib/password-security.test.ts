@@ -52,6 +52,24 @@ test("rejects a confirmation that does not match", () => {
   );
 });
 
+test("rejects passwords that do not meet the shared server policy", () => {
+  const result = changePasswordSchema.safeParse({
+    currentPassword: "CurrentPass1",
+    newPassword: "lowercaseonly",
+    confirmPassword: "lowercaseonly",
+  });
+
+  assert.equal(result.success, false);
+  assert.equal(
+    result.error?.issues.some(
+      (issue) =>
+        issue.path[0] === "newPassword" &&
+        issue.message === "Password must contain at least one uppercase letter",
+    ),
+    true,
+  );
+});
+
 test("maps Better Auth failures to actionable messages", () => {
   assert.equal(
     getPasswordChangeErrorMessage({ code: "INVALID_PASSWORD" }),

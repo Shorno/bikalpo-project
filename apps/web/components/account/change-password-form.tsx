@@ -70,7 +70,6 @@ export function ChangePasswordForm() {
       const { error } = await authClient.changePassword({
         currentPassword: result.data.currentPassword,
         newPassword: result.data.newPassword,
-        revokeOtherSessions: true,
       });
 
       if (error) {
@@ -85,7 +84,7 @@ export function ChangePasswordForm() {
       setFieldErrors({});
       setFormMessage({
         tone: "success",
-        text: "Password changed. Other signed-in devices have been signed out.",
+        text: "Your password has been changed successfully.",
       });
       toast.success("Password changed successfully");
     } catch {
@@ -150,10 +149,7 @@ export function ChangePasswordForm() {
         </p>
       )}
 
-      <div className="flex flex-col-reverse gap-3 border-t pt-5 sm:flex-row sm:items-center sm:justify-between">
-        <p className="text-xs leading-5 text-gray-500">
-          Other signed-in devices will be signed out after this change.
-        </p>
+      <div className="flex justify-end border-t pt-5">
         <Button
           type="submit"
           className="w-full bg-emerald-600 hover:bg-emerald-700 sm:w-auto"
