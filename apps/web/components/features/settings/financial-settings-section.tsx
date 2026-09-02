@@ -19,7 +19,6 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -142,11 +141,78 @@ function FinancialAccountPanel({
   title: string;
   type: FinancialAccountType;
 }) {
+  const queryClient = useQueryClient();
+  const [draft, setDraft] = useState<AccountDraft | null>(null);
   const isBank = type === "bank";
+  const accountLabel = isBank ? "bank account" : "mobile banking account";
+
+  const refresh = async () => {
+    await queryClient.invalidateQueries({
+      queryKey: orpc.finance.getFinancialSettingsAccounts.key(),
+    });
+  };
+
+  const createMutation = useMutation(
+    orpc.finance.createFinancialSettingsAccount.mutationOptions({
+      onSuccess: async () => {
+        await refresh();
+        setDraft(null);
+        toast.success(isBank ? "Bank account added" : "Mobile banking added");
+      },
+      onError: (error) => toast.error(errorMessage(error)),
+    }),
+  );
+
+  const updateMutation = useMutation(
+    orpc.finance.updateFinancialSettingsAccount.mutationOptions({
+      onSuccess: async () => {
+        await refresh();
+        setDraft(null);
+        toast.success("Financial account updated");
+      },
+      onError: (error) => toast.error(errorMessage(error)),
+    }),
+  );
+
+  const isSaving = createMutation.isPending || updateMutation.isPending;
+
+  const openCreate = () => setDraft({ ...EMPTY_DRAFT });
+
+  const openEdit = (account: FinancialAccount) => {
+    setDraft({
+      accountName: account.accountName,
+      accountNumber: account.accountNumber || "",
+      id: account.id,
+      isActive: account.isActive,
+      providerName: account.providerName,
+    });
+  };
+
+  const saveDraft = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!draft) return;
+
+    const input = {
+      accountName: isBank ? draft.accountName : draft.providerName,
+      accountNumber: draft.accountNumber,
+      isActive: draft.isActive,
+      providerName: draft.providerName,
+    };
+
+    try {
+      if (draft.id) {
+        await updateMutation.mutateAsync({ ...input, id: draft.id });
+      } else {
+        await createMutation.mutateAsync({ ...input, type });
+      }
+    } catch {
+      // The mutation callback presents the server error and keeps the form open.
+    }
+  };
 
   return (
     <div className="flex min-h-72 flex-col p-6">
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex flex-col items-start justify-between gap-4 sm:flex-row">
         <div>
           <h3 className="flex items-center gap-2 text-sm font-semibold tracking-wide text-gray-950 uppercase">
             <Icon className="size-4 text-emerald-700" aria-hidden="true" />
@@ -154,9 +220,15 @@ function FinancialAccountPanel({
           </h3>
           <p className="mt-1 text-xs leading-5 text-gray-500">{description}</p>
         </div>
-        <span className="rounded-full bg-gray-100 px-2.5 py-1 text-xs font-semibold text-gray-600">
-          {accounts.length}
-        </span>
+        <Button
+          type="button"
+          size="sm"
+          className="w-full sm:w-auto"
+          onClick={openCreate}
+        >
+          <Plus className="size-4" aria-hidden="true" />
+          Add {isBank ? "bank account" : "mobile banking"}
+        </Button>
       </div>
 
       <div className="mt-5 flex-1">
@@ -167,18 +239,19 @@ function FinancialAccountPanel({
               No {isBank ? "bank accounts" : "mobile banking providers"} added
             </p>
             <p className="mt-1 text-xs text-gray-500">
-              Use Manage to add the first one.
+              Use Add {accountLabel} to create the first one.
             </p>
           </div>
         ) : (
           <div className="divide-y">
             <div
-              className={`hidden gap-3 pb-2 text-[11px] font-semibold tracking-wide text-gray-400 uppercase sm:grid ${isBank ? "grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(7.5rem,1fr)_auto]" : "grid-cols-[minmax(0,1fr)_minmax(7.5rem,1fr)_auto]"}`}
+              className={`hidden gap-3 pb-2 text-[11px] font-semibold tracking-wide text-gray-400 uppercase sm:grid ${isBank ? "grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(7.5rem,1fr)_auto_auto]" : "grid-cols-[minmax(0,1fr)_minmax(7.5rem,1fr)_auto_auto]"}`}
             >
               <span>{isBank ? "Bank name" : "Provider"}</span>
               {isBank && <span>Account name</span>}
               <span>Account number</span>
               <span>Status</span>
+              <span className="sr-only">Actions</span>
             </div>
             {accounts.map((account) => (
               <div key={account.id} className="py-3 text-sm">
@@ -199,14 +272,25 @@ function FinancialAccountPanel({
                       {account.accountNumber || "Not provided"}
                     </p>
                   </div>
-                  <StatusBadge
-                    active={account.isActive}
-                    activeLabel={isBank ? "Active" : "Enabled"}
-                  />
+                  <div className="flex shrink-0 flex-col items-end gap-2">
+                    <StatusBadge
+                      active={account.isActive}
+                      activeLabel={isBank ? "Active" : "Enabled"}
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => openEdit(account)}
+                    >
+                      <Pencil className="size-3.5" aria-hidden="true" />
+                      Edit
+                    </Button>
+                  </div>
                 </div>
 
                 <div
-                  className={`hidden items-center gap-3 sm:grid ${isBank ? "grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(7.5rem,1fr)_auto]" : "grid-cols-[minmax(0,1fr)_minmax(7.5rem,1fr)_auto]"}`}
+                  className={`hidden items-center gap-3 sm:grid ${isBank ? "grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(7.5rem,1fr)_auto_auto]" : "grid-cols-[minmax(0,1fr)_minmax(7.5rem,1fr)_auto_auto]"}`}
                 >
                   <span className="truncate font-medium text-gray-900">
                     {account.providerName}
@@ -223,6 +307,15 @@ function FinancialAccountPanel({
                     active={account.isActive}
                     activeLabel={isBank ? "Active" : "Enabled"}
                   />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => openEdit(account)}
+                  >
+                    <Pencil className="size-3.5" aria-hidden="true" />
+                    Edit
+                  </Button>
                 </div>
               </div>
             ))}
@@ -230,9 +323,13 @@ function FinancialAccountPanel({
         )}
       </div>
 
-      <div className="mt-5 flex justify-end border-t pt-5">
-        <ManageFinancialAccountsDialog type={type} accounts={accounts} />
-      </div>
+      <AccountEditorDialog
+        draft={draft}
+        isBank={isBank}
+        isSaving={isSaving}
+        onDraftChange={setDraft}
+        onSubmit={saveDraft}
+      />
     </div>
   );
 }
@@ -261,224 +358,78 @@ function StatusBadge({
   );
 }
 
-function ManageFinancialAccountsDialog({
-  accounts,
-  type,
+function AccountEditorDialog({
+  draft,
+  isBank,
+  isSaving,
+  onDraftChange,
+  onSubmit,
 }: {
-  accounts: FinancialAccount[];
-  type: FinancialAccountType;
+  draft: AccountDraft | null;
+  isBank: boolean;
+  isSaving: boolean;
+  onDraftChange: (draft: AccountDraft | null) => void;
+  onSubmit: (event: React.FormEvent<HTMLFormElement>) => void;
 }) {
-  const queryClient = useQueryClient();
-  const [open, setOpen] = useState(false);
-  const [draft, setDraft] = useState<AccountDraft | null>(null);
-  const isBank = type === "bank";
-  const label = isBank ? "bank accounts" : "mobile banking";
-
-  const refresh = async () => {
-    await queryClient.invalidateQueries({
-      queryKey: orpc.finance.getFinancialSettingsAccounts.key(),
-    });
-  };
-
-  const createMutation = useMutation(
-    orpc.finance.createFinancialSettingsAccount.mutationOptions({
-      onSuccess: async () => {
-        await refresh();
-        toast.success(isBank ? "Bank account added" : "Mobile banking added");
-      },
-      onError: (error) => toast.error(errorMessage(error)),
-    }),
-  );
-
-  const updateMutation = useMutation(
-    orpc.finance.updateFinancialSettingsAccount.mutationOptions({
-      onSuccess: async () => {
-        await refresh();
-        toast.success("Financial account updated");
-      },
-      onError: (error) => toast.error(errorMessage(error)),
-    }),
-  );
-
-  const isSaving = createMutation.isPending || updateMutation.isPending;
-
-  const edit = (account: FinancialAccount) => {
-    setDraft({
-      accountName: account.accountName,
-      accountNumber: account.accountNumber || "",
-      id: account.id,
-      isActive: account.isActive,
-      providerName: account.providerName,
-    });
-  };
-
-  const saveDraft = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (!draft) return;
-
-    const input = {
-      accountName: isBank ? draft.accountName : draft.providerName,
-      accountNumber: draft.accountNumber,
-      isActive: draft.isActive,
-      providerName: draft.providerName,
-    };
-
-    try {
-      if (draft.id) {
-        await updateMutation.mutateAsync({ ...input, id: draft.id });
-      } else {
-        await createMutation.mutateAsync({ ...input, type });
-      }
-      setDraft(null);
-    } catch {
-      // The mutation callback presents the server error and keeps the form open.
-    }
-  };
-
-  const toggleStatus = (account: FinancialAccount, active: boolean) => {
-    updateMutation.mutate({
-      accountName: account.accountName,
-      id: account.id,
-      isActive: active,
-      providerName: account.providerName,
-    });
-  };
-
   return (
     <Dialog
-      open={open}
+      open={draft !== null}
       onOpenChange={(nextOpen) => {
-        setOpen(nextOpen);
-        if (!nextOpen) setDraft(null);
+        if (!nextOpen && !isSaving) onDraftChange(null);
       }}
     >
-      <DialogTrigger asChild>
-        <Button type="button" variant="outline" size="sm">
-          Manage {isBank ? "bank accounts" : "mobile banking"}
-        </Button>
-      </DialogTrigger>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
+      <DialogContent
+        className="max-h-[90vh] overflow-y-auto sm:max-w-xl"
+        onInteractOutside={(event) => {
+          if (isSaving) event.preventDefault();
+        }}
+      >
         <DialogHeader>
-          <DialogTitle className="capitalize">Manage {label}</DialogTitle>
+          <DialogTitle>
+            {draft?.id ? "Edit" : "Add"}{" "}
+            {isBank ? "bank account" : "mobile banking"}
+          </DialogTitle>
           <DialogDescription>
-            Add accounts, update their details, or control whether they are
-            available to the business.
+            {draft?.id
+              ? "Update the account details and availability."
+              : "Enter the account details to connect it to this business."}
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-3">
-          <div className="flex items-center justify-between gap-4">
-            <p className="text-xs font-semibold tracking-wide text-gray-500 uppercase">
-              Saved {label}
-            </p>
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              onClick={() => setDraft({ ...EMPTY_DRAFT })}
-              disabled={isSaving}
-            >
-              <Plus className="size-4" aria-hidden="true" />
-              Add new
-            </Button>
-          </div>
-
-          {accounts.length === 0 ? (
-            <div className="rounded-lg border border-dashed bg-gray-50 p-6 text-center text-sm text-gray-500">
-              Nothing has been added yet.
-            </div>
-          ) : (
-            <div className="divide-y rounded-lg border">
-              {accounts.map((account) => (
-                <div
-                  key={account.id}
-                  className="flex items-center gap-3 p-3 sm:p-4"
-                >
-                  <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-700">
-                    {isBank ? (
-                      <Landmark className="size-4" aria-hidden="true" />
-                    ) : (
-                      <Smartphone className="size-4" aria-hidden="true" />
-                    )}
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-semibold text-gray-900">
-                      {account.providerName}
-                    </p>
-                    {isBank && (
-                      <p className="truncate text-xs text-gray-500">
-                        {account.accountName}
-                      </p>
-                    )}
-                    <p className="mt-1 truncate font-mono text-xs text-gray-500">
-                      {account.accountNumber || "Account number not provided"}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <Switch
-                      checked={account.isActive}
-                      onCheckedChange={(checked) =>
-                        toggleStatus(account, checked)
-                      }
-                      disabled={isSaving}
-                      aria-label={`${account.isActive ? "Disable" : "Enable"} ${account.providerName}`}
-                    />
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon-sm"
-                      onClick={() => edit(account)}
-                      disabled={isSaving}
-                      aria-label={`Edit ${account.providerName}`}
-                    >
-                      <Pencil className="size-4" aria-hidden="true" />
-                    </Button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
         {draft && (
-          <form
-            onSubmit={saveDraft}
-            className="space-y-4 rounded-xl border border-emerald-200 bg-emerald-50/40 p-4"
-          >
+          <form onSubmit={onSubmit} className="space-y-5">
             <div className="flex items-center justify-between gap-3">
-              <h3 className="text-sm font-semibold text-gray-950">
-                {draft.id ? "Edit account" : "Add account"}
-              </h3>
+              <Label htmlFor={`${isBank ? "bank" : "mobile"}-active`}>
+                Account status
+              </Label>
               <div className="flex items-center gap-2">
-                <Label htmlFor={`${type}-active`} className="text-xs">
-                  Active
-                </Label>
+                <span className="text-sm text-gray-600">
+                  {draft.isActive ? "Active" : "Disabled"}
+                </span>
                 <Switch
-                  id={`${type}-active`}
+                  id={`${isBank ? "bank" : "mobile"}-active`}
                   checked={draft.isActive}
                   onCheckedChange={(checked) =>
-                    setDraft((current) =>
-                      current ? { ...current, isActive: checked } : current,
-                    )
+                    onDraftChange({ ...draft, isActive: checked })
                   }
+                  disabled={isSaving}
                 />
               </div>
             </div>
 
-            <div className="grid gap-4 sm:grid-cols-2">
+            <div className="grid gap-4">
               <div className="space-y-2">
-                <Label htmlFor={`${type}-provider`}>
+                <Label htmlFor={`${isBank ? "bank" : "mobile"}-provider`}>
                   {isBank ? "Bank name" : "Provider name"}
                 </Label>
                 <Input
-                  id={`${type}-provider`}
+                  id={`${isBank ? "bank" : "mobile"}-provider`}
                   value={draft.providerName}
                   onChange={(event) =>
-                    setDraft((current) =>
-                      current
-                        ? { ...current, providerName: event.target.value }
-                        : current,
-                    )
+                    onDraftChange({
+                      ...draft,
+                      providerName: event.target.value,
+                    })
                   }
                   placeholder={isBank ? "Enter bank name" : "Enter provider"}
                   maxLength={120}
@@ -488,16 +439,15 @@ function ManageFinancialAccountsDialog({
               </div>
               {isBank && (
                 <div className="space-y-2">
-                  <Label htmlFor={`${type}-account-name`}>Account name</Label>
+                  <Label htmlFor="bank-account-name">Account name</Label>
                   <Input
-                    id={`${type}-account-name`}
+                    id="bank-account-name"
                     value={draft.accountName}
                     onChange={(event) =>
-                      setDraft((current) =>
-                        current
-                          ? { ...current, accountName: event.target.value }
-                          : current,
-                      )
+                      onDraftChange({
+                        ...draft,
+                        accountName: event.target.value,
+                      })
                     }
                     placeholder="Enter account name"
                     maxLength={180}
@@ -505,17 +455,18 @@ function ManageFinancialAccountsDialog({
                   />
                 </div>
               )}
-              <div className={`space-y-2 ${isBank ? "sm:col-span-2" : ""}`}>
-                <Label htmlFor={`${type}-account-number`}>Account number</Label>
+              <div className="space-y-2">
+                <Label htmlFor={`${isBank ? "bank" : "mobile"}-account-number`}>
+                  Account number
+                </Label>
                 <Input
-                  id={`${type}-account-number`}
+                  id={`${isBank ? "bank" : "mobile"}-account-number`}
                   value={draft.accountNumber}
                   onChange={(event) =>
-                    setDraft((current) =>
-                      current
-                        ? { ...current, accountNumber: event.target.value }
-                        : current,
-                    )
+                    onDraftChange({
+                      ...draft,
+                      accountNumber: event.target.value,
+                    })
                   }
                   placeholder={
                     isBank
@@ -531,11 +482,11 @@ function ManageFinancialAccountsDialog({
               </div>
             </div>
 
-            <div className="flex justify-end gap-2">
+            <DialogFooter>
               <Button
                 type="button"
-                variant="ghost"
-                onClick={() => setDraft(null)}
+                variant="outline"
+                onClick={() => onDraftChange(null)}
                 disabled={isSaving}
               >
                 Cancel
@@ -555,19 +506,9 @@ function ManageFinancialAccountsDialog({
                 )}
                 {draft.id ? "Save changes" : "Add account"}
               </Button>
-            </div>
+            </DialogFooter>
           </form>
         )}
-
-        <DialogFooter>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => setOpen(false)}
-          >
-            Done
-          </Button>
-        </DialogFooter>
       </DialogContent>
     </Dialog>
   );
