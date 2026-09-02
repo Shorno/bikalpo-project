@@ -1,24 +1,11 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import {
-  Building2,
-  Eye,
-  KeyRound,
-  LayoutGrid,
-  MapPin,
-  MoreVertical,
-  Search,
-  Store,
-  Tags,
-  UserCircle,
-  X,
-} from "lucide-react";
+import { Eye, MoreVertical, Search, Store, UserCircle, X } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { ToLetAccountLink } from "@/components/features/to-let/to-let-account-link";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -35,15 +22,8 @@ import { orpc } from "@/utils/orpc";
 import { CartButton } from "./cart-button";
 import { MobileMenu } from "./mobile-menu";
 import { NavbarSearch } from "./navbar-search";
+import { publicNavigationLinks } from "./public-navigation";
 import { UserDropdown } from "./user-dropdown";
-
-const storefrontLinks = [
-  { label: "Products", href: "/products", icon: LayoutGrid },
-  { label: "Offers", href: "/offers", icon: Tags },
-  { label: "Stores", href: "/stores", icon: MapPin },
-  { label: "To-Let", href: "/to-let", icon: KeyRound },
-  { label: "For business", href: "/b2b", icon: Building2 },
-];
 
 function RetailerStoreSearch({ storePath }: { storePath: string }) {
   const router = useRouter();
@@ -257,49 +237,29 @@ export function Navbar() {
 
       <div className="border-t border-white/15 bg-[oklch(0.43_0.19_265)]">
         <div className="mx-auto hidden h-10 max-w-7xl items-center gap-1 px-4 sm:px-6 md:flex lg:px-8">
-          {isToLetPage ? (
-            <>
-              <Link
-                href="/products"
-                className="inline-flex h-10 items-center gap-1.5 px-3 text-xs font-medium text-blue-50 transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-white"
-              >
-                <LayoutGrid className="size-3.5" /> Products
-              </Link>
-              <ToLetAccountLink
-                href="/account/to-let/properties"
-                className="inline-flex h-10 items-center gap-1.5 px-3 text-xs font-medium text-blue-50 transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-white"
-              >
-                <Building2 className="size-3.5" /> Seller
-              </ToLetAccountLink>
-              <Link
-                href="/to-let"
-                aria-current="page"
-                className="inline-flex h-10 items-center gap-1.5 border-b-2 border-white bg-white/10 px-3 text-xs font-semibold text-white focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-white"
-              >
-                <KeyRound className="size-3.5" /> To-Let
-              </Link>
-            </>
-          ) : (
-            storefrontLinks.map(({ label, href, icon: Icon }) => (
+          {publicNavigationLinks.map(({ label, href, icon: Icon }) => {
+            const isActive =
+              pathname === href || pathname.startsWith(`${href}/`);
+
+            return (
               <Link
                 key={href}
                 href={withCustomerStorefrontPreview(
                   href,
-                  previewMode && (href === "/products" || href === "/stores"),
+                  previewMode && href === "/products",
                 )}
-                className="inline-flex h-10 items-center gap-1.5 px-3 text-xs font-medium text-blue-50 transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-white"
+                aria-current={isActive ? "page" : undefined}
+                className={
+                  isActive
+                    ? "inline-flex h-10 items-center gap-1.5 border-b-2 border-white bg-white/10 px-3 text-xs font-semibold text-white focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-white"
+                    : "inline-flex h-10 items-center gap-1.5 px-3 text-xs font-medium text-blue-50 transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-white"
+                }
               >
                 <Icon className="size-3.5" />
                 {label}
               </Link>
-            ))
-          )}
-          <Link
-            href="/contact"
-            className="ml-auto text-xs font-medium text-blue-100 hover:text-white hover:underline hover:underline-offset-4"
-          >
-            Contact
-          </Link>
+            );
+          })}
         </div>
 
         <div className="px-4 py-2 md:hidden">

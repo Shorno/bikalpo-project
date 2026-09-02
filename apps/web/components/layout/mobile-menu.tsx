@@ -1,15 +1,6 @@
 "use client";
 
-import {
-  Building2,
-  CircleHelp,
-  FileText,
-  KeyRound,
-  LayoutGrid,
-  MapPin,
-  Menu,
-  Tags,
-} from "lucide-react";
+import { Menu } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import {
@@ -20,19 +11,7 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 import { withCustomerStorefrontPreview } from "@/lib/customer-storefront-preview";
-
-const primaryLinks = [
-  { label: "Products", href: "/products", icon: LayoutGrid },
-  { label: "Offers", href: "/offers", icon: Tags },
-  { label: "Stores", href: "/stores", icon: MapPin },
-  { label: "To-Let", href: "/to-let", icon: KeyRound },
-  { label: "For business", href: "/b2b", icon: Building2 },
-];
-
-const supportLinks = [
-  { label: "Contact", href: "/contact", icon: CircleHelp },
-  { label: "Terms and conditions", href: "/terms", icon: FileText },
-];
+import { publicNavigationLinks } from "./public-navigation";
 
 export function MobileMenu({ previewMode = false }: { previewMode?: boolean }) {
   return (
@@ -54,31 +33,16 @@ export function MobileMenu({ previewMode = false }: { previewMode?: boolean }) {
 
         <nav aria-label="Mobile navigation" className="p-3">
           <div className="space-y-1">
-            {primaryLinks.map(({ label, href, icon: Icon }) => (
+            {publicNavigationLinks.map(({ label, href, icon: Icon }) => (
               <Link
                 key={href}
                 href={withCustomerStorefrontPreview(
                   href,
-                  previewMode && (href === "/products" || href === "/stores"),
+                  previewMode && href === "/products",
                 )}
                 className="flex min-h-11 items-center gap-3 rounded-md px-3 text-sm font-medium text-foreground transition-colors hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
               >
                 <Icon className="size-4 text-muted-foreground" />
-                {label}
-              </Link>
-            ))}
-          </div>
-
-          <div className="my-3 border-t" />
-
-          <div className="space-y-1">
-            {supportLinks.map(({ label, href, icon: Icon }) => (
-              <Link
-                key={href}
-                href={href}
-                className="flex min-h-11 items-center gap-3 rounded-md px-3 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
-              >
-                <Icon className="size-4" />
                 {label}
               </Link>
             ))}
