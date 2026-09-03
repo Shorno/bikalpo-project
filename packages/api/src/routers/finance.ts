@@ -37,6 +37,7 @@ import {
 import { z } from "zod";
 
 import { protectedProcedure } from "../index";
+import { shopOrWarehouseOwnerScope } from "../shop-portal-scope";
 import { localDateStamp } from "../utils/date";
 
 const UI_ACCOUNT_TYPES = [
@@ -134,8 +135,8 @@ type ProductSaleItem = {
   saleAmount: number;
 };
 
-function resolveOwnerScope(role?: string | null): AccountingOwnerType {
-  return role === "warehouse" ? "warehouse" : "shop";
+function resolveOwnerScope(user: { id: string; role?: string | null }) {
+  return shopOrWarehouseOwnerScope(user, "finance");
 }
 
 function toUiAccountType(accountType: AccountingAccountType): UIAccountType {
@@ -2150,8 +2151,7 @@ export const financeRouter = {
     })
     .input(z.object({}).optional())
     .handler(async ({ context }) => {
-      const ownerId = context.session.user.id;
-      const ownerType = resolveOwnerScope(context.session.user.role);
+      const { ownerId, ownerType } = resolveOwnerScope(context.session.user);
 
       await ensureDefaultFinanceAccounts();
 
@@ -2227,8 +2227,7 @@ export const financeRouter = {
     })
     .input(z.object({}).optional())
     .handler(async ({ context }) => {
-      const ownerId = context.session.user.id;
-      const ownerType = resolveOwnerScope(context.session.user.role);
+      const { ownerId, ownerType } = resolveOwnerScope(context.session.user);
 
       await ensurePaymentAccountsReady({ ownerId, ownerType });
 
@@ -2289,8 +2288,7 @@ export const financeRouter = {
     })
     .input(z.object({}).optional())
     .handler(async ({ context }) => {
-      const ownerId = context.session.user.id;
-      const ownerType = resolveOwnerScope(context.session.user.role);
+      const { ownerId, ownerType } = resolveOwnerScope(context.session.user);
 
       await ensurePaymentAccountsReady({ ownerId, ownerType });
 
@@ -2337,8 +2335,7 @@ export const financeRouter = {
       }),
     )
     .handler(async ({ context, input }) => {
-      const ownerId = context.session.user.id;
-      const ownerType = resolveOwnerScope(context.session.user.role);
+      const { ownerId, ownerType } = resolveOwnerScope(context.session.user);
       const providerName = input.providerName.trim();
       const accountName = input.accountName?.trim() || providerName;
 
@@ -2473,8 +2470,7 @@ export const financeRouter = {
       }),
     )
     .handler(async ({ context, input }) => {
-      const ownerId = context.session.user.id;
-      const ownerType = resolveOwnerScope(context.session.user.role);
+      const { ownerId, ownerType } = resolveOwnerScope(context.session.user);
       const id = Number(input.id);
 
       if (!Number.isFinite(id)) {
@@ -2590,8 +2586,7 @@ export const financeRouter = {
       }),
     )
     .handler(async ({ context, input }) => {
-      const ownerId = context.session.user.id;
-      const ownerType = resolveOwnerScope(context.session.user.role);
+      const { ownerId, ownerType } = resolveOwnerScope(context.session.user);
       const paymentAccountId = Number(input.paymentAccountId);
 
       if (!Number.isFinite(paymentAccountId)) {
@@ -2920,8 +2915,7 @@ export const financeRouter = {
       }),
     )
     .handler(async ({ context, input }) => {
-      const ownerId = context.session.user.id;
-      const ownerType = resolveOwnerScope(context.session.user.role);
+      const { ownerId, ownerType } = resolveOwnerScope(context.session.user);
       const ledgerCreatedAt = new Date(`${input.openingDate}T12:00:00.000`);
       const ownerCapital = await resolveOwnerCapitalAccount({
         ownerId,
@@ -3075,8 +3069,7 @@ export const financeRouter = {
       }),
     )
     .handler(async ({ context, input }) => {
-      const ownerId = context.session.user.id;
-      const ownerType = resolveOwnerScope(context.session.user.role);
+      const { ownerId, ownerType } = resolveOwnerScope(context.session.user);
       const startDateTime = new Date(`${input.startDate}T00:00:00.000`);
       const endDateTime = new Date(`${input.endDate}T23:59:59.999`);
       const selectedAccountId =
@@ -3401,8 +3394,7 @@ export const financeRouter = {
       }),
     )
     .handler(async ({ context, input }) => {
-      const ownerId = context.session.user.id;
-      const ownerType = resolveOwnerScope(context.session.user.role);
+      const { ownerId, ownerType } = resolveOwnerScope(context.session.user);
       const nextAmount = parseMoney(input.amount);
 
       if (nextAmount <= 0) {
@@ -3527,8 +3519,7 @@ export const financeRouter = {
     })
     .input(z.object({ id: z.number().int().positive() }))
     .handler(async ({ context, input }) => {
-      const ownerId = context.session.user.id;
-      const ownerType = resolveOwnerScope(context.session.user.role);
+      const { ownerId, ownerType } = resolveOwnerScope(context.session.user);
       const row = await db.query.financialLedger.findFirst({
         where: (table, { and: andFn, eq: eqFn }) =>
           andFn(
@@ -3609,8 +3600,7 @@ export const financeRouter = {
     })
     .input(z.object({}).optional())
     .handler(async ({ context }) => {
-      const ownerId = context.session.user.id;
-      const ownerType = resolveOwnerScope(context.session.user.role);
+      const { ownerId, ownerType } = resolveOwnerScope(context.session.user);
       const categoryId = await resolveFixedAssetCategoryId();
 
       const accounts = await db.query.financeAccount.findMany({
@@ -3655,8 +3645,7 @@ export const financeRouter = {
     })
     .input(z.object({}).optional())
     .handler(async ({ context }) => {
-      const ownerId = context.session.user.id;
-      const ownerType = resolveOwnerScope(context.session.user.role);
+      const { ownerId, ownerType } = resolveOwnerScope(context.session.user);
       const categoryIds = await resolveLoanPayableCategoryIds({
         ownerId,
         ownerType,
@@ -3725,8 +3714,7 @@ export const financeRouter = {
       }),
     )
     .handler(async ({ context, input }) => {
-      const ownerId = context.session.user.id;
-      const ownerType = resolveOwnerScope(context.session.user.role);
+      const { ownerId, ownerType } = resolveOwnerScope(context.session.user);
       const directPaymentAccountId = Number(input.paymentAccountId);
       const paymentAccountId =
         Number.isFinite(directPaymentAccountId) && directPaymentAccountId > 0
@@ -3950,8 +3938,7 @@ export const financeRouter = {
       }),
     )
     .handler(async ({ context, input }) => {
-      const ownerId = context.session.user.id;
-      const ownerType = resolveOwnerScope(context.session.user.role);
+      const { ownerId, ownerType } = resolveOwnerScope(context.session.user);
       const paymentAccountId = Number(input.paymentAccountId);
 
       if (!Number.isFinite(paymentAccountId)) {
@@ -4150,8 +4137,7 @@ export const financeRouter = {
       }),
     )
     .handler(async ({ context, input }) => {
-      const ownerId = context.session.user.id;
-      const ownerType = resolveOwnerScope(context.session.user.role);
+      const { ownerId, ownerType } = resolveOwnerScope(context.session.user);
       const isDuePurchase = input.paymentType === "due";
       const paymentAccountId = Number(input.paymentAccountId);
 
@@ -4428,8 +4414,7 @@ export const financeRouter = {
       }),
     )
     .handler(async ({ context, input }) => {
-      const ownerId = context.session.user.id;
-      const ownerType = resolveOwnerScope(context.session.user.role);
+      const { ownerId, ownerType } = resolveOwnerScope(context.session.user);
       const isDueSale = input.paymentType === "due";
       const paymentAccountId = Number(input.paymentAccountId);
 
@@ -4623,8 +4608,7 @@ export const financeRouter = {
       }),
     )
     .handler(async ({ context, input }) => {
-      const ownerId = context.session.user.id;
-      const ownerType = resolveOwnerScope(context.session.user.role);
+      const { ownerId, ownerType } = resolveOwnerScope(context.session.user);
       const paymentAccountId = Number(input.paymentAccountId);
 
       if (!Number.isFinite(paymentAccountId)) {
@@ -4782,8 +4766,7 @@ export const financeRouter = {
       }),
     )
     .handler(async ({ context, input }) => {
-      const ownerId = context.session.user.id;
-      const ownerType = resolveOwnerScope(context.session.user.role);
+      const { ownerId, ownerType } = resolveOwnerScope(context.session.user);
       const paymentAccountId = Number(input.paymentAccountId);
       const amount = parseMoney(input.amount);
 
@@ -4914,8 +4897,7 @@ export const financeRouter = {
       }),
     )
     .handler(async ({ context, input }) => {
-      const ownerId = context.session.user.id;
-      const ownerType = resolveOwnerScope(context.session.user.role);
+      const { ownerId, ownerType } = resolveOwnerScope(context.session.user);
       const depositAccountId = Number(input.depositAccountId);
       const amount = parseMoney(input.amount);
 
@@ -5040,8 +5022,7 @@ export const financeRouter = {
       }),
     )
     .handler(async ({ context, input }) => {
-      const ownerId = context.session.user.id;
-      const ownerType = resolveOwnerScope(context.session.user.role);
+      const { ownerId, ownerType } = resolveOwnerScope(context.session.user);
       const accountType = toDbAccountType(input.accountType);
       const name = input.name.trim();
       const baseCode = `${accountType}-${slugify(name)}`;
@@ -5131,8 +5112,7 @@ export const financeRouter = {
       }),
     )
     .handler(async ({ context, input }) => {
-      const ownerId = context.session.user.id;
-      const ownerType = resolveOwnerScope(context.session.user.role);
+      const { ownerId, ownerType } = resolveOwnerScope(context.session.user);
       const parsedCategoryId = Number(input.categoryId);
       if (!Number.isFinite(parsedCategoryId)) {
         throw new ORPCError("BAD_REQUEST", {
@@ -5311,8 +5291,7 @@ export const financeRouter = {
       }),
     )
     .handler(async ({ context, input }) => {
-      const ownerId = context.session.user.id;
-      const ownerType = resolveOwnerScope(context.session.user.role);
+      const { ownerId, ownerType } = resolveOwnerScope(context.session.user);
       const parsedAccountId = Number(input.id);
       const parsedCategoryId = Number(input.categoryId);
 

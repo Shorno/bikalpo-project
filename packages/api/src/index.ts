@@ -1,9 +1,11 @@
 import { ORPCError, os } from "@orpc/server";
 
 import { shopPortalShopId } from "@bikalpo-project/auth/shop-staff-access";
+import type { ShopModule } from "@bikalpo-project/auth/shop-staff-access";
 
 import { isCatalogRequesterRole } from "./catalog-requester-role";
 import type { Context } from "./context";
+import { requireShopModule, shopSessionUser } from "./shop-portal-scope";
 
 export const o = os.$context<Context>();
 
@@ -118,7 +120,7 @@ const requireShopPortal = o.middleware(async ({ context, next }) => {
   if (!context.session?.user) {
     throw new ORPCError("UNAUTHORIZED");
   }
-  if (!shopPortalShopId(context.session.user)) {
+  if (!shopPortalShopId(shopSessionUser(context.session.user))) {
     throw new ORPCError("FORBIDDEN", {
       message: "Shop dashboard access required",
     });
@@ -132,6 +134,21 @@ const requireShopPortal = o.middleware(async ({ context, next }) => {
 });
 
 export const shopPortalProcedure = publicProcedure.use(requireShopPortal);
+
+export function shopModuleProcedure(module: ShopModule) {
+  return publicProcedure.use(async ({ context, next }) => {
+    if (!context.session?.user) {
+      throw new ORPCError("UNAUTHORIZED");
+    }
+    requireShopModule(context.session.user, module);
+    return next({
+      context: {
+        ...context,
+        session: context.session,
+      },
+    });
+  });
+}
 
 // Warehouse procedure - requires authenticated user with warehouse role
 const requireWarehouse = o.middleware(async ({ context, next }) => {
@@ -205,13 +222,16 @@ const requireFulfillmentManager = o.middleware(async ({ context, next }) => {
     throw new ORPCError("UNAUTHORIZED");
   }
   if (
-    !["warehouse", "shop_owner", "admin"].includes(
+    !["warehouse", "shop_owner", "shop_staff", "admin"].includes(
       context.session.user.role ?? "",
     )
   ) {
     throw new ORPCError("FORBIDDEN", {
       message: "Fulfillment manager access required",
     });
+  }
+  if (context.session.user.role === "shop_staff") {
+    requireShopModule(context.session.user, "fulfillment");
   }
   return next({
     context: {

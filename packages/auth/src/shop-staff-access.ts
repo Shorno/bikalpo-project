@@ -107,6 +107,31 @@ export function shopPortalShopId(user: {
   return null;
 }
 
+export function resolveShopPortalActor(user: {
+  id: string;
+  role: string | null | undefined;
+  shopId?: string | null;
+  shopFunction?: string | null;
+}): { shopId: string; actor: ShopActor } | null {
+  const shopId = shopPortalShopId(user);
+  const actor = resolveShopFunctionForUser(user);
+  if (!shopId || !actor) return null;
+  return { shopId, actor };
+}
+
+export function canShopUserAccessModule(
+  user: {
+    id: string;
+    role: string | null | undefined;
+    shopId?: string | null;
+    shopFunction?: string | null;
+  },
+  module: ShopModule,
+): boolean {
+  const portal = resolveShopPortalActor(user);
+  return portal != null && canShopActorAccessModule(portal.actor, module);
+}
+
 export function canManageShopStaff(actor: ShopActor): boolean {
   return actor === "owner";
 }

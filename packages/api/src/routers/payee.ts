@@ -5,6 +5,7 @@ import { and, eq, ilike } from "drizzle-orm";
 import { z } from "zod";
 
 import { protectedProcedure } from "../index";
+import { shopOrWarehouseOwnerScope } from "../shop-portal-scope";
 
 export const payeeRouter = {
     /** Create a new payee */
@@ -31,7 +32,7 @@ export const payeeRouter = {
                 .insert(payee)
                 .values({
                     ...input,
-                    addedBy: context.session.user.id,
+                    addedBy: shopOrWarehouseOwnerScope(context.session.user, "contacts").ownerId,
                 })
                 .returning();
             return { payee: created, message: "Payee created successfully" };
@@ -59,7 +60,7 @@ export const payeeRouter = {
         .handler(async ({ context, input }) => {
             const { id, ...data } = input;
             const existing = await db.query.payee.findFirst({
-                where: and(eq(payee.id, id), eq(payee.addedBy, context.session.user.id)),
+                where: and(eq(payee.id, id), eq(payee.addedBy, shopOrWarehouseOwnerScope(context.session.user, "contacts").ownerId)),
             });
             if (!existing) throw new ORPCError("NOT_FOUND", { message: "Payee not found" });
 
@@ -81,7 +82,7 @@ export const payeeRouter = {
         .input(z.object({ search: z.string().optional() }).optional())
         .handler(async ({ context, input }) => {
             const conditions = [
-                eq(payee.addedBy, context.session.user.id),
+                eq(payee.addedBy, shopOrWarehouseOwnerScope(context.session.user, "contacts").ownerId),
                 eq(payee.isActive, true),
             ];
             if (input?.search?.trim()) {
@@ -104,7 +105,7 @@ export const payeeRouter = {
         .input(z.object({ id: z.number().int() }))
         .handler(async ({ context, input }) => {
             const existing = await db.query.payee.findFirst({
-                where: and(eq(payee.id, input.id), eq(payee.addedBy, context.session.user.id)),
+                where: and(eq(payee.id, input.id), eq(payee.addedBy, shopOrWarehouseOwnerScope(context.session.user, "contacts").ownerId)),
             });
             if (!existing) throw new ORPCError("NOT_FOUND", { message: "Payee not found" });
 

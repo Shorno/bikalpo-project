@@ -12,7 +12,8 @@ import { ORPCError } from "@orpc/server";
 import { and, asc, desc, eq, inArray, lte, sql } from "drizzle-orm";
 import { z } from "zod";
 
-import { shopOwnerProcedure } from "../index";
+import { shopModuleProcedure } from "../index";
+import { shopTenantId } from "../shop-portal-scope";
 import { getOwnerPosCatalog } from "../services/owner-pos-store";
 import { resolveTemplateProductIdentities } from "../services/retailer-offer-variant-identity";
 
@@ -414,7 +415,7 @@ function toEditableValues(input: z.infer<typeof editableOfferSchema>) {
 }
 
 export const retailerOfferRouter = {
-  getCreationOptions: shopOwnerProcedure
+  getCreationOptions: shopModuleProcedure("marketing")
     .route({
       method: "GET",
       path: "/retailer-offers/creation-options",
@@ -423,7 +424,7 @@ export const retailerOfferRouter = {
     })
     .input(z.object({}).optional())
     .handler(async ({ context }) => {
-      const shopId = context.session.user.id;
+      const shopId = shopTenantId(context.session.user);
       const [templates, catalog, assignedAreas, history] = await Promise.all([
         db
           .select()
@@ -551,7 +552,7 @@ export const retailerOfferRouter = {
       };
     }),
 
-  getDashboard: shopOwnerProcedure
+  getDashboard: shopModuleProcedure("marketing")
     .route({
       method: "GET",
       path: "/retailer-offers",
@@ -569,7 +570,7 @@ export const retailerOfferRouter = {
         .optional(),
     )
     .handler(async ({ context, input }) => {
-      const shopId = context.session.user.id;
+      const shopId = shopTenantId(context.session.user);
       await syncLifecycle(shopId);
       const [allOffers, applications] = await Promise.all([
         db
@@ -666,7 +667,7 @@ export const retailerOfferRouter = {
       };
     }),
 
-  getDetail: shopOwnerProcedure
+  getDetail: shopModuleProcedure("marketing")
     .route({
       method: "GET",
       path: "/retailer-offers/{id}",
@@ -675,7 +676,7 @@ export const retailerOfferRouter = {
     })
     .input(z.object({ id: z.number().int().positive() }))
     .handler(async ({ context, input }) => {
-      const shopId = context.session.user.id;
+      const shopId = shopTenantId(context.session.user);
       await syncLifecycle(shopId);
       const offer = await db.query.retailerOffer.findFirst({
         where: and(
@@ -711,7 +712,7 @@ export const retailerOfferRouter = {
       };
     }),
 
-  create: shopOwnerProcedure
+  create: shopModuleProcedure("marketing")
     .route({
       method: "POST",
       path: "/retailer-offers",
@@ -725,7 +726,7 @@ export const retailerOfferRouter = {
       }),
     )
     .handler(async ({ context, input }) => {
-      const shopId = context.session.user.id;
+      const shopId = shopTenantId(context.session.user);
       const template = await db.query.offerTemplate.findFirst({
         where: and(
           eq(offerTemplate.id, input.templateId),
@@ -823,7 +824,7 @@ export const retailerOfferRouter = {
       return { message: "Offer saved", offer: created };
     }),
 
-  update: shopOwnerProcedure
+  update: shopModuleProcedure("marketing")
     .route({
       method: "PUT",
       path: "/retailer-offers/{id}",
@@ -837,7 +838,7 @@ export const retailerOfferRouter = {
       }),
     )
     .handler(async ({ context, input }) => {
-      const shopId = context.session.user.id;
+      const shopId = shopTenantId(context.session.user);
       const existing = await db.query.retailerOffer.findFirst({
         where: and(
           eq(retailerOffer.id, input.id),
@@ -885,7 +886,7 @@ export const retailerOfferRouter = {
       return { message: "Offer updated", offer: updated };
     }),
 
-  setAction: shopOwnerProcedure
+  setAction: shopModuleProcedure("marketing")
     .route({
       method: "PATCH",
       path: "/retailer-offers/{id}/action",
@@ -899,7 +900,7 @@ export const retailerOfferRouter = {
       }),
     )
     .handler(async ({ context, input }) => {
-      const shopId = context.session.user.id;
+      const shopId = shopTenantId(context.session.user);
       const existing = await db.query.retailerOffer.findFirst({
         where: and(
           eq(retailerOffer.id, input.id),

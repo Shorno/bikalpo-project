@@ -20,7 +20,8 @@ import {
 import { ORPCError } from "@orpc/server";
 import { and, count, eq, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
-import { shopOwnerProcedure } from "../index";
+import { shopModuleProcedure } from "../index";
+import { shopTenantId } from "../shop-portal-scope";
 import { recalculateOffersForShopProduct } from "../services/open-order-matching";
 import {
   isConcreteVariantOption,
@@ -384,10 +385,10 @@ async function syncProductVariants({
 }
 
 export const shopProductConfigEndpoints = {
-  getShopCoreConfiguration: shopOwnerProcedure
+  getShopCoreConfiguration: shopModuleProcedure("inventory")
     .input(z.object({ coreProductId: z.number().int().positive() }))
     .handler(async ({ context, input }) => {
-      const shopId = context.session.user.id;
+      const shopId = shopTenantId(context.session.user);
       const core = await db.query.coreProductIdentity.findFirst({
         where: and(
           eq(coreProductIdentity.id, input.coreProductId),
@@ -517,10 +518,10 @@ export const shopProductConfigEndpoints = {
       };
     }),
 
-  configureShopCoreProducts: shopOwnerProcedure
+  configureShopCoreProducts: shopModuleProcedure("inventory")
     .input(configureSchema)
     .handler(async ({ context, input }) => {
-      const shopId = context.session.user.id;
+      const shopId = shopTenantId(context.session.user);
       const brandIds = input.brands.map((row) => row.brandId);
       if (new Set(brandIds).size !== brandIds.length) {
         throw new ORPCError("BAD_REQUEST", {
@@ -836,10 +837,10 @@ export const shopProductConfigEndpoints = {
       };
     }),
 
-  getShopOwnedProductForEdit: shopOwnerProcedure
+  getShopOwnedProductForEdit: shopModuleProcedure("inventory")
     .input(z.object({ productId: z.number().int().positive() }))
     .handler(async ({ context, input }) => {
-      const shopId = context.session.user.id;
+      const shopId = shopTenantId(context.session.user);
       const found = await db.query.product.findFirst({
         where: and(
           eq(product.id, input.productId),
@@ -882,10 +883,10 @@ export const shopProductConfigEndpoints = {
       return { product: found, options: { variantOptions: options } };
     }),
 
-  updateShopOwnedProduct: shopOwnerProcedure
+  updateShopOwnedProduct: shopModuleProcedure("inventory")
     .input(updateSchema)
     .handler(async ({ context, input }) => {
-      const shopId = context.session.user.id;
+      const shopId = shopTenantId(context.session.user);
       const optionIds = input.variants.map((row) => row.variantOptionId);
       if (new Set(optionIds).size !== optionIds.length) {
         throw new ORPCError("BAD_REQUEST", {

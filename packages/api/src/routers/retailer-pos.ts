@@ -25,7 +25,8 @@ import {
 } from "drizzle-orm";
 import { z } from "zod";
 
-import { shopOwnerProcedure } from "../index";
+import { shopModuleProcedure } from "../index";
+import { shopTenantId } from "../shop-portal-scope";
 import {
   calculatePosCheckout,
   normalizePosPhone,
@@ -68,8 +69,8 @@ const cartItemSchema = z.object({
 
 const paymentMethodSchema = z.enum(["cash", "bkash", "nagad", "bank"]);
 
-function shopOwner(context: { session: { user: { id: string } } }): PosOwner {
-  return { kind: "shop", id: context.session.user.id };
+function shopOwner(context: { session: { user: { id: string; role?: string | null } } }): PosOwner {
+  return { kind: "shop", id: shopTenantId(context.session.user) };
 }
 
 function money(value: number | string | null | undefined) {
@@ -144,7 +145,7 @@ async function getOwnedPosCustomer(shopId: string, customerId: number) {
 }
 
 export const retailerPosRouter = {
-  getBootstrap: shopOwnerProcedure
+  getBootstrap: shopModuleProcedure("sales")
     .route({
       method: "GET",
       path: "/retailer-pos/bootstrap",
@@ -174,7 +175,7 @@ export const retailerPosRouter = {
       };
     }),
 
-  getCatalog: shopOwnerProcedure
+  getCatalog: shopModuleProcedure("sales")
     .route({
       method: "GET",
       path: "/retailer-pos/catalog",
@@ -265,7 +266,7 @@ export const retailerPosRouter = {
       };
     }),
 
-  searchCustomers: shopOwnerProcedure
+  searchCustomers: shopModuleProcedure("sales")
     .route({
       method: "GET",
       path: "/retailer-pos/customers",
@@ -343,7 +344,7 @@ export const retailerPosRouter = {
       return { customers: customers.slice(0, 100) };
     }),
 
-  createCustomer: shopOwnerProcedure
+  createCustomer: shopModuleProcedure("sales")
     .route({
       method: "POST",
       path: "/retailer-pos/customers",
@@ -377,7 +378,7 @@ export const retailerPosRouter = {
       }) };
     }),
 
-  getCustomerDetail: shopOwnerProcedure
+  getCustomerDetail: shopModuleProcedure("sales")
     .route({
       method: "GET",
       path: "/retailer-pos/customers/{customerKey}",
@@ -538,7 +539,7 @@ export const retailerPosRouter = {
       };
     }),
 
-  listHeldCarts: shopOwnerProcedure
+  listHeldCarts: shopModuleProcedure("sales")
     .route({ method: "GET", path: "/retailer-pos/held-carts", tags: ["Retailer POS"] })
     .input(z.object({}).optional())
     .handler(async ({ context }) => ({
@@ -550,7 +551,7 @@ export const retailerPosRouter = {
       }),
     })),
 
-  holdCart: shopOwnerProcedure
+  holdCart: shopModuleProcedure("sales")
     .route({ method: "POST", path: "/retailer-pos/held-carts", tags: ["Retailer POS"] })
     .input(z.object({
       customerId: z.number().int().positive().optional(),
@@ -594,7 +595,7 @@ export const retailerPosRouter = {
       return { cart };
     }),
 
-  cancelHeldCart: shopOwnerProcedure
+  cancelHeldCart: shopModuleProcedure("sales")
     .route({ method: "DELETE", path: "/retailer-pos/held-carts/{cartId}", tags: ["Retailer POS"] })
     .input(z.object({ cartId: z.number().int().positive() }))
     .handler(async ({ context, input }) => {
@@ -608,7 +609,7 @@ export const retailerPosRouter = {
       return { cart };
     }),
 
-  completeSale: shopOwnerProcedure
+  completeSale: shopModuleProcedure("sales")
     .route({ method: "POST", path: "/retailer-pos/sales", tags: ["Retailer POS"] })
     .input(z.object({
       checkoutRequestId: z.string().trim().min(8).max(80),
@@ -802,7 +803,7 @@ export const retailerPosRouter = {
       };
     }),
 
-  getSale: shopOwnerProcedure
+  getSale: shopModuleProcedure("sales")
     .route({ method: "GET", path: "/retailer-pos/sales/{saleId}", tags: ["Retailer POS"] })
     .input(z.object({ saleId: z.number().int().positive() }))
     .handler(async ({ context, input }) => {
@@ -827,7 +828,7 @@ export const retailerPosRouter = {
       };
     }),
 
-  listSales: shopOwnerProcedure
+  listSales: shopModuleProcedure("sales")
     .route({ method: "GET", path: "/retailer-pos/sales", tags: ["Retailer POS"] })
     .input(z.object({
       search: z.string().trim().max(100).optional(),
@@ -932,7 +933,7 @@ export const retailerPosRouter = {
       };
     }),
 
-  listReceivables: shopOwnerProcedure
+  listReceivables: shopModuleProcedure("sales")
     .route({ method: "GET", path: "/retailer-pos/receivables", tags: ["Retailer POS"] })
     .input(z.object({ search: z.string().trim().max(100).optional() }).optional())
     .handler(async ({ context, input }) => {
@@ -971,7 +972,7 @@ export const retailerPosRouter = {
       };
     }),
 
-  collectDue: shopOwnerProcedure
+  collectDue: shopModuleProcedure("sales")
     .route({ method: "POST", path: "/retailer-pos/receivables/{saleId}/payments", tags: ["Retailer POS"] })
     .input(z.object({
       saleId: z.number().int().positive(),
@@ -1022,7 +1023,7 @@ export const retailerPosRouter = {
       });
     }),
 
-  voidSale: shopOwnerProcedure
+  voidSale: shopModuleProcedure("sales")
     .route({ method: "POST", path: "/retailer-pos/sales/{saleId}/void", tags: ["Retailer POS"] })
     .input(z.object({ saleId: z.number().int().positive(), reason: z.string().trim().min(5).max(500) }))
     .handler(async ({ context, input }) => {

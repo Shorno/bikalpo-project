@@ -98,7 +98,8 @@ import {
 import { z } from "zod";
 
 import { SHOP_OWNER_BUSINESS_NATURES } from "../business-registration";
-import { publicProcedure, shopOwnerProcedure } from "../index";
+import { publicProcedure, shopModuleProcedure, shopOwnerProcedure } from "../index";
+import { shopTenantId } from "../shop-portal-scope";
 import { assertCheckoutPaymentSelectionAllowed } from "../services/checkout-domain";
 import { assertCheckoutQuoteMatches } from "../services/checkout-quote";
 import { resolveRetailerOfferLinePrice } from "../services/open-order-domain";
@@ -317,9 +318,15 @@ function getConnectedSupplierActivityStatus(
   return diffMs <= activeWindowMs ? ("active" as const) : ("inactive" as const);
 }
 
-// ────────────────────────────────────────────────────────────────
-// B2B Queries (Shop Owner as Buyer — TRADE variants)
-// ────────────────────────────────────────────────────────────────
+const overviewProcedure = shopModuleProcedure("overview");
+const inventoryProcedure = shopModuleProcedure("inventory");
+const purchaseProcedure = shopModuleProcedure("purchase");
+const salesProcedure = shopModuleProcedure("sales");
+const fulfillmentProcedure = shopModuleProcedure("fulfillment");
+const deliveryProcedure = shopModuleProcedure("delivery");
+const networkProcedure = shopModuleProcedure("network");
+const contactsProcedure = shopModuleProcedure("contacts");
+
 
 const b2bQueries = {
   /**
@@ -327,7 +334,7 @@ const b2bQueries = {
    * Same as customer.getCustomerProducts but products only shown
    * if they have TRADE variants visible to shop_owner.
    */
-  getProducts: shopOwnerProcedure
+  getProducts: purchaseProcedure
     .route({
       method: "GET",
       path: "/shop-owner/products",
@@ -526,7 +533,7 @@ const b2bQueries = {
   /**
    * Get product details with TRADE variants only (for shop owner B2B buying).
    */
-  getProductDetails: shopOwnerProcedure
+  getProductDetails: purchaseProcedure
     .route({
       method: "GET",
       path: "/shop-owner/products/{slug}",
@@ -600,8 +607,8 @@ const managementQueries = {
    * Aggregated Stock Overview KPIs for the shop dashboard.
    * Returns all metrics in a single call to avoid multiple round-trips.
    */
-  getStockOverview: shopOwnerProcedure.handler(async ({ context }) => {
-    const userId = context.session.user.id;
+  getStockOverview: inventoryProcedure.handler(async ({ context }) => {
+    const userId = shopTenantId(context.session.user);
 
     // 1. Fetch all inventory for this shop with variant + product + category + brand
     const shopInventory = await db.query.inventory.findMany({
@@ -783,7 +790,7 @@ const managementQueries = {
    * Shows pack (carton-packed) vs loose breakdown at product level,
    * with variant-level detail for the expanded view.
    */
-  getRealtimeStock: shopOwnerProcedure
+  getRealtimeStock: inventoryProcedure
     .input(
       z.object({
         search: z.string().optional(),
@@ -794,7 +801,7 @@ const managementQueries = {
       }),
     )
     .handler(async ({ context, input }) => {
-      const userId = context.session.user.id;
+      const userId = shopTenantId(context.session.user);
 
       // 1. Fetch all inventory for this shop
       const shopInventory = await db.query.inventory.findMany({
@@ -970,8 +977,8 @@ const managementQueries = {
    * Low stock products — only products with variants below their reorderLevel.
    * Classifies as "low" or "critical" (≤ 50% of threshold).
    */
-  getLowStockProducts: shopOwnerProcedure.handler(async ({ context }) => {
-    const userId = context.session.user.id;
+  getLowStockProducts: inventoryProcedure.handler(async ({ context }) => {
+    const userId = shopTenantId(context.session.user);
     const DEFAULT_THRESHOLD = 5;
 
     // Fetch inventory with variant + product + brand
@@ -1172,8 +1179,8 @@ const managementQueries = {
    * Expired products — damage entries with type 'expired',
    * plus expiry-enabled products as a watchlist.
    */
-  getExpiredProducts: shopOwnerProcedure.handler(async ({ context }) => {
-    const userId = context.session.user.id;
+  getExpiredProducts: inventoryProcedure.handler(async ({ context }) => {
+    const userId = shopTenantId(context.session.user);
 
     // 1. Get all expired damage entries for this shop
     const expiredEntries = await db.query.damageEntry.findMany({
@@ -1376,8 +1383,8 @@ const managementQueries = {
    * Empty pack management — aggregates empty pack collections,
    * condition breakdown, and return tracking.
    */
-  getEmptyPackSummary: shopOwnerProcedure.handler(async ({ context }) => {
-    const userId = context.session.user.id;
+  getEmptyPackSummary: inventoryProcedure.handler(async ({ context }) => {
+    const userId = shopTenantId(context.session.user);
 
     // 1. Get all empty pack records linked to this shop's deliveries
     // empty_pack is delivery-scoped, so we need to find packs
@@ -1593,7 +1600,7 @@ const managementQueries = {
   }),
 
   /** B2B → B2C conversion history for the shop owner */
-  getConversionHistory: shopOwnerProcedure
+  getConversionHistory: inventoryProcedure
     .route({
       method: "GET",
       path: "/shop-owner/conversion-history",
@@ -1601,7 +1608,7 @@ const managementQueries = {
       summary: "Get B2B to B2C stock conversion history",
     })
     .handler(async ({ context }) => {
-      const userId = context.session.user.id;
+      const userId = shopTenantId(context.session.user);
 
       // Get all B2B orders for this shop
       const b2bOrders = await db.query.order.findMany({
@@ -1721,7 +1728,7 @@ const managementQueries = {
    * Get shop owner's retail products (what they sell to consumers).
    * Shows RETAIL variants with inventory info.
    */
-  getMyRetailProducts: shopOwnerProcedure
+  getMyRetailProducts: salesProcedure
     .route({
       method: "GET",
       path: "/shop-owner/retail-products",
@@ -1736,7 +1743,7 @@ const managementQueries = {
       }),
     )
     .handler(async ({ input, context }) => {
-      const userId = context.session.user.id;
+      const userId = shopTenantId(context.session.user);
       const { search, page, limit } = input;
       const offset = (page - 1) * limit;
 
@@ -1852,7 +1859,7 @@ const managementQueries = {
   /**
    * Get shop owner's inventory summary.
    */
-  getMyInventory: shopOwnerProcedure
+  getMyInventory: inventoryProcedure
     .route({
       method: "GET",
       path: "/shop-owner/inventory",
@@ -1860,7 +1867,7 @@ const managementQueries = {
       summary: "Get shop owner inventory",
     })
     .handler(async ({ context }) => {
-      const userId = context.session.user.id;
+      const userId = shopTenantId(context.session.user);
 
       const items = await db.query.inventory.findMany({
         where: and(
@@ -1908,7 +1915,7 @@ const managementQueries = {
   /**
    * Get areas assigned to this shop owner.
    */
-  getMyAssignedAreas: shopOwnerProcedure
+  getMyAssignedAreas: salesProcedure
     .route({
       method: "GET",
       path: "/shop-owner/my-areas",
@@ -1916,7 +1923,7 @@ const managementQueries = {
       summary: "Get areas assigned to this shop owner",
     })
     .handler(async ({ context }) => {
-      const userId = context.session.user.id;
+      const userId = shopTenantId(context.session.user);
 
       const mappings = await db
         .select({
@@ -1954,7 +1961,7 @@ const mutations = {
    * Update retail selling price for a product in the shop owner's inventory.
    * Validates that the price meets the minimum margin requirement.
    */
-  updateRetailPrice: shopOwnerProcedure
+  updateRetailPrice: salesProcedure
     .route({
       method: "POST",
       path: "/shop-owner/update-price",
@@ -1972,7 +1979,7 @@ const mutations = {
       }),
     )
     .handler(async ({ input, context }) => {
-      const userId = context.session.user.id;
+      const userId = shopTenantId(context.session.user);
       const newPrice = Number(input.retailPrice);
 
       // 1. Get the inventory record and verify ownership
@@ -2071,7 +2078,7 @@ const mutations = {
       }),
     )
     .handler(async ({ input, context }) => {
-      const userId = context.session.user.id;
+      const userId = shopTenantId(context.session.user);
 
       await db
         .update(user)
@@ -2121,7 +2128,7 @@ const mutations = {
         ),
     )
     .handler(async ({ input, context }) => {
-      const userId = context.session.user.id;
+      const userId = shopTenantId(context.session.user);
       const application = await db.query.sellerApplication.findFirst({
         where: eq(sellerApplication.userId, userId),
         orderBy: [desc(sellerApplication.createdAt)],
@@ -2280,7 +2287,7 @@ const mutations = {
     })
     .input(loginSecurityPreferencesSchema)
     .handler(async ({ context, input }) => {
-      const userId = context.session.user.id;
+      const userId = shopTenantId(context.session.user);
 
       if (input.loginVerification !== "otp_only") {
         const credential = await db.query.account.findFirst({
@@ -2373,7 +2380,7 @@ const mutations = {
         }),
     )
     .handler(async ({ input, context }) => {
-      const userId = context.session.user.id;
+      const userId = shopTenantId(context.session.user);
 
       await db
         .update(user)
@@ -2402,7 +2409,7 @@ const mutations = {
    * Optionally adjust received quantities per item.
    * Triggers B2B → Retail inventory conversion.
    */
-  markPurchaseReceived: shopOwnerProcedure
+  markPurchaseReceived: purchaseProcedure
     .route({
       method: "POST",
       path: "/shop-owner/purchase-orders/receive",
@@ -2424,7 +2431,7 @@ const mutations = {
       }),
     )
     .handler(async ({ context, input }) => {
-      const userId = context.session.user.id;
+      const userId = shopTenantId(context.session.user);
 
       const existingOrder = await db.query.order.findFirst({
         where: and(eq(order.id, input.orderId), eq(order.userId, userId)),
@@ -2573,7 +2580,7 @@ const mutations = {
    * Cancel a pending/confirmed purchase order.
    * Restores warehouse inventory for deducted items.
    */
-  cancelPurchaseOrder: shopOwnerProcedure
+  cancelPurchaseOrder: purchaseProcedure
     .route({
       method: "POST",
       path: "/shop-owner/purchase-orders/cancel",
@@ -2582,7 +2589,7 @@ const mutations = {
     })
     .input(z.object({ orderId: z.number() }))
     .handler(async ({ context, input }) => {
-      const userId = context.session.user.id;
+      const userId = shopTenantId(context.session.user);
 
       const existingOrder = await db.query.order.findFirst({
         where: and(eq(order.id, input.orderId), eq(order.userId, userId)),
@@ -2685,7 +2692,7 @@ const orderQueries = {
   /**
    * Get shop owner's own orders (B2B purchases from admin).
    */
-  getMyOrders: shopOwnerProcedure
+  getMyOrders: purchaseProcedure
     .route({
       method: "GET",
       path: "/shop-owner/my-orders",
@@ -2700,7 +2707,7 @@ const orderQueries = {
       }),
     )
     .handler(async ({ context, input }) => {
-      const userId = context.session.user.id;
+      const userId = shopTenantId(context.session.user);
       const page = input.page;
       const limit = input.limit;
       const offset = (page - 1) * limit;
@@ -2757,7 +2764,7 @@ const orderQueries = {
   /**
    * Get shop owner's purchase orders with search, filters, and warehouse info.
    */
-  getPurchaseOrders: shopOwnerProcedure
+  getPurchaseOrders: purchaseProcedure
     .route({
       method: "POST",
       path: "/shop-owner/purchase-orders",
@@ -2775,7 +2782,7 @@ const orderQueries = {
       }),
     )
     .handler(async ({ context, input }) => {
-      const userId = context.session.user.id;
+      const userId = shopTenantId(context.session.user);
       const { page, limit, search, status, dateFrom, dateTo } = input;
       const offset = (page - 1) * limit;
 
@@ -2950,7 +2957,7 @@ const orderQueries = {
    * Get purchases recognized when stock was received.
    * This keeps the purchase report aligned with inventory and payable posting.
    */
-  getPurchaseReport: shopOwnerProcedure
+  getPurchaseReport: purchaseProcedure
     .route({
       method: "POST",
       path: "/shop-owner/purchase-report",
@@ -2965,7 +2972,7 @@ const orderQueries = {
       }),
     )
     .handler(async ({ context, input }) => {
-      const userId = context.session.user.id;
+      const userId = shopTenantId(context.session.user);
       const dateFrom = new Date(`${input.dateFrom}T00:00:00.000Z`);
       const dateTo = new Date(`${input.dateTo}T23:59:59.999Z`);
 
@@ -3132,7 +3139,7 @@ const orderQueries = {
     }),
 
   /** Get supplier invoices recognized after B2B purchases are received. */
-  getAccountsPayableReport: shopOwnerProcedure
+  getAccountsPayableReport: purchaseProcedure
     .route({
       method: "POST",
       path: "/shop-owner/accounts-payable-report",
@@ -3147,7 +3154,7 @@ const orderQueries = {
       }),
     )
     .handler(async ({ context, input }) => {
-      const userId = context.session.user.id;
+      const userId = shopTenantId(context.session.user);
       const dateFrom = new Date(`${input.dateFrom}T00:00:00.000Z`);
       const dateTo = new Date(`${input.dateTo}T23:59:59.999Z`);
 
@@ -3321,7 +3328,7 @@ const orderQueries = {
   /**
    * Get full details for a single purchase order.
    */
-  getPurchaseOrderDetail: shopOwnerProcedure
+  getPurchaseOrderDetail: purchaseProcedure
     .route({
       method: "POST",
       path: "/shop-owner/purchase-order-detail",
@@ -3330,7 +3337,7 @@ const orderQueries = {
     })
     .input(z.object({ orderId: z.number() }))
     .handler(async ({ context, input }) => {
-      const userId = context.session.user.id;
+      const userId = shopTenantId(context.session.user);
 
       const result = await db.query.order.findFirst({
         where: and(eq(order.id, input.orderId), eq(order.userId, userId)),
@@ -3530,7 +3537,7 @@ const orderQueries = {
    * Get purchase orders with tracking-focused data:
    * ordered vs received quantities, modification flags, 8-step timeline, alerts.
    */
-  getPurchaseTracking: shopOwnerProcedure
+  getPurchaseTracking: purchaseProcedure
     .route({
       method: "POST",
       path: "/shop-owner/purchase-tracking",
@@ -3548,7 +3555,7 @@ const orderQueries = {
       }),
     )
     .handler(async ({ context, input }) => {
-      const userId = context.session.user.id;
+      const userId = shopTenantId(context.session.user);
       const { page, limit, search, status, dateFrom, dateTo } = input;
       const offset = (page - 1) * limit;
 
@@ -3788,7 +3795,7 @@ const orderQueries = {
   /**
    * Retailer accepts wholesaler's quantity modifications.
    */
-  acceptPurchaseModification: shopOwnerProcedure
+  acceptPurchaseModification: purchaseProcedure
     .route({
       method: "POST",
       path: "/shop-owner/purchase-orders/accept-modification",
@@ -3797,7 +3804,7 @@ const orderQueries = {
     })
     .input(z.object({ orderId: z.number() }))
     .handler(async ({ context, input }) => {
-      const userId = context.session.user.id;
+      const userId = shopTenantId(context.session.user);
 
       const existingOrder = await db.query.order.findFirst({
         where: and(eq(order.id, input.orderId), eq(order.userId, userId)),
@@ -3843,7 +3850,7 @@ const orderQueries = {
   /**
    * Retailer rejects wholesaler's modifications → order cancelled, inventory restored.
    */
-  rejectPurchaseModification: shopOwnerProcedure
+  rejectPurchaseModification: purchaseProcedure
     .route({
       method: "POST",
       path: "/shop-owner/purchase-orders/reject-modification",
@@ -3852,7 +3859,7 @@ const orderQueries = {
     })
     .input(z.object({ orderId: z.number() }))
     .handler(async ({ context, input }) => {
-      const userId = context.session.user.id;
+      const userId = shopTenantId(context.session.user);
 
       const existingOrder = await db.query.order.findFirst({
         where: and(eq(order.id, input.orderId), eq(order.userId, userId)),
@@ -3930,7 +3937,7 @@ const orderQueries = {
    * Get completed/past purchase orders with stock impact, payment info,
    * invoice data, and 7-day trend.
    */
-  getPurchaseHistory: shopOwnerProcedure
+  getPurchaseHistory: purchaseProcedure
     .route({
       method: "POST",
       path: "/shop-owner/purchase-history",
@@ -3949,7 +3956,7 @@ const orderQueries = {
       }),
     )
     .handler(async ({ context, input }) => {
-      const userId = context.session.user.id;
+      const userId = shopTenantId(context.session.user);
       const { page, limit, search, status, warehouseId, dateFrom, dateTo } =
         input;
       const offset = (page - 1) * limit;
@@ -4176,7 +4183,7 @@ const orderQueries = {
   /**
    * List active platform-connected suppliers with network insights.
    */
-  getConnectedSuppliers: shopOwnerProcedure
+  getConnectedSuppliers: networkProcedure
     .route({
       method: "POST",
       path: "/shop-owner/connected-suppliers",
@@ -4191,7 +4198,7 @@ const orderQueries = {
       }),
     )
     .handler(async ({ context, input }) => {
-      const shopId = context.session.user.id;
+      const shopId = shopTenantId(context.session.user);
 
       const connections = await db
         .select({
@@ -4512,7 +4519,7 @@ const orderQueries = {
   /**
    * Full detail for a platform-connected supplier.
    */
-  getConnectedSupplierDetail: shopOwnerProcedure
+  getConnectedSupplierDetail: networkProcedure
     .route({
       method: "POST",
       path: "/shop-owner/connected-supplier-detail",
@@ -4521,7 +4528,7 @@ const orderQueries = {
     })
     .input(z.object({ warehouseId: z.string() }))
     .handler(async ({ context, input }) => {
-      const shopId = context.session.user.id;
+      const shopId = shopTenantId(context.session.user);
       const warehouseId = input.warehouseId;
 
       const [shopUser] = await db
@@ -5260,7 +5267,7 @@ const orderQueries = {
   /**
    * List all warehouses this shop has ordered from (= suppliers).
    */
-  getMySuppliers: shopOwnerProcedure
+  getMySuppliers: contactsProcedure
     .route({
       method: "POST",
       path: "/shop-owner/my-suppliers",
@@ -5274,7 +5281,7 @@ const orderQueries = {
       }),
     )
     .handler(async ({ context, input }) => {
-      const userId = context.session.user.id;
+      const userId = shopTenantId(context.session.user);
 
       const supplierOrders = await db
         .select({
@@ -5485,7 +5492,7 @@ const orderQueries = {
    * Full supplier detail: financial summary, order stats, pending orders,
    * recent history, top products, performance metrics.
    */
-  getSupplierDetail: shopOwnerProcedure
+  getSupplierDetail: contactsProcedure
     .route({
       method: "POST",
       path: "/shop-owner/supplier-detail",
@@ -5494,7 +5501,7 @@ const orderQueries = {
     })
     .input(z.object({ warehouseId: z.string() }))
     .handler(async ({ context, input }) => {
-      const userId = context.session.user.id;
+      const userId = shopTenantId(context.session.user);
       const whId = input.warehouseId;
 
       const [shopUser] = await db
@@ -6017,7 +6024,7 @@ const orderQueries = {
   /**
    * Get dashboard summary stats for the shop owner.
    */
-  getDashboardStats: shopOwnerProcedure
+  getDashboardStats: overviewProcedure
     .route({
       method: "GET",
       path: "/shop-owner/dashboard-stats",
@@ -6025,7 +6032,7 @@ const orderQueries = {
       summary: "Get shop owner dashboard summary stats",
     })
     .handler(async ({ context }) => {
-      const userId = context.session.user.id;
+      const userId = shopTenantId(context.session.user);
 
       // Total B2B orders placed
       const [orderStats] = await db
@@ -6088,7 +6095,7 @@ const supplierFormSchema = z.object({
 });
 
 const retailerSupplierQueries = {
-  getSuppliers: shopOwnerProcedure
+  getSuppliers: contactsProcedure
     .route({
       method: "POST",
       path: "/shop-owner/suppliers",
@@ -6103,7 +6110,7 @@ const retailerSupplierQueries = {
       }),
     )
     .handler(async ({ context, input }) => {
-      const userId = context.session.user.id;
+      const userId = shopTenantId(context.session.user);
       const conditions: SQL[] = [eq(supplier.addedBy, userId)];
 
       if (input.search) {
@@ -6161,7 +6168,7 @@ const retailerSupplierQueries = {
       };
     }),
 
-  getSupplierStats: shopOwnerProcedure
+  getSupplierStats: contactsProcedure
     .route({
       method: "POST",
       path: "/shop-owner/suppliers/stats",
@@ -6169,7 +6176,7 @@ const retailerSupplierQueries = {
       summary: "Get retailer external supplier stats",
     })
     .handler(async ({ context }) => {
-      const userId = context.session.user.id;
+      const userId = shopTenantId(context.session.user);
 
       const allSuppliers = await db.query.supplier.findMany({
         where: eq(supplier.addedBy, userId),
@@ -6208,7 +6215,7 @@ const retailerSupplierQueries = {
       };
     }),
 
-  getExternalSupplierDetail: shopOwnerProcedure
+  getExternalSupplierDetail: contactsProcedure
     .route({
       method: "POST",
       path: "/shop-owner/suppliers/detail",
@@ -6217,7 +6224,7 @@ const retailerSupplierQueries = {
     })
     .input(z.object({ id: z.number().int() }))
     .handler(async ({ context, input }) => {
-      const userId = context.session.user.id;
+      const userId = shopTenantId(context.session.user);
 
       const sup = await db.query.supplier.findFirst({
         where: and(eq(supplier.id, input.id), eq(supplier.addedBy, userId)),
@@ -6398,7 +6405,7 @@ const retailerSupplierQueries = {
       };
     }),
 
-  getSupplierCategories: shopOwnerProcedure
+  getSupplierCategories: contactsProcedure
     .route({
       method: "POST",
       path: "/shop-owner/suppliers/categories",
@@ -6419,7 +6426,7 @@ const retailerSupplierQueries = {
       return { categories };
     }),
 
-  createSupplier: shopOwnerProcedure
+  createSupplier: contactsProcedure
     .route({
       method: "POST",
       path: "/shop-owner/suppliers/create",
@@ -6428,7 +6435,7 @@ const retailerSupplierQueries = {
     })
     .input(supplierFormSchema)
     .handler(async ({ context, input }) => {
-      const userId = context.session.user.id;
+      const userId = shopTenantId(context.session.user);
 
       const [created] = await db
         .insert(supplier)
@@ -6450,7 +6457,7 @@ const retailerSupplierQueries = {
       return { supplier: created };
     }),
 
-  recordSupplierBill: shopOwnerProcedure
+  recordSupplierBill: purchaseProcedure
     .route({
       method: "POST",
       path: "/shop-owner/suppliers/record-bill",
@@ -6466,7 +6473,7 @@ const retailerSupplierQueries = {
       }),
     )
     .handler(async ({ context, input }) => {
-      const userId = context.session.user.id;
+      const userId = shopTenantId(context.session.user);
 
       const sup = await db.query.supplier.findFirst({
         where: and(
@@ -6517,7 +6524,7 @@ const retailerSupplierQueries = {
       };
     }),
 
-  updateSupplier: shopOwnerProcedure
+  updateSupplier: contactsProcedure
     .route({
       method: "POST",
       path: "/shop-owner/suppliers/update",
@@ -6532,7 +6539,7 @@ const retailerSupplierQueries = {
       }),
     )
     .handler(async ({ context, input }) => {
-      const userId = context.session.user.id;
+      const userId = shopTenantId(context.session.user);
       const updateData: Record<string, any> = { name: input.name };
 
       if (input.company !== undefined)
@@ -6568,7 +6575,7 @@ const retailerSupplierQueries = {
       return { supplier: updated };
     }),
 
-  deleteSupplier: shopOwnerProcedure
+  deleteSupplier: contactsProcedure
     .route({
       method: "POST",
       path: "/shop-owner/suppliers/delete",
@@ -6577,7 +6584,7 @@ const retailerSupplierQueries = {
     })
     .input(z.object({ id: z.number().int() }))
     .handler(async ({ context, input }) => {
-      const userId = context.session.user.id;
+      const userId = shopTenantId(context.session.user);
 
       await db
         .delete(supplier)
@@ -6645,7 +6652,7 @@ async function approveRetailerOrder(shopId: string, orderId: number) {
 
 const incomingOrderQueries = {
   /** List B2C consumer orders placed to this shop */
-  getIncomingOrders: shopOwnerProcedure
+  getIncomingOrders: salesProcedure
     .route({
       method: "GET",
       path: "/shop-owner/incoming-orders",
@@ -6672,7 +6679,7 @@ const incomingOrderQueries = {
       }),
     )
     .handler(async ({ context, input }) => {
-      const userId = context.session.user.id;
+      const userId = shopTenantId(context.session.user);
       const page = input.page;
       const limit = input.limit;
       const offset = (page - 1) * limit;
@@ -6822,7 +6829,7 @@ const incomingOrderQueries = {
     }),
 
   /** Full owner-scoped detail for retailer order review. */
-  getIncomingOrderById: shopOwnerProcedure
+  getIncomingOrderById: salesProcedure
     .route({
       method: "GET",
       path: "/shop-owner/incoming-orders/{orderId}",
@@ -6831,7 +6838,7 @@ const incomingOrderQueries = {
     })
     .input(z.object({ orderId: z.number() }))
     .handler(async ({ context, input }) => {
-      const shopId = context.session.user.id;
+      const shopId = shopTenantId(context.session.user);
       const detail = await db.query.order.findFirst({
         where: and(
           eq(order.id, input.orderId),
@@ -6880,7 +6887,7 @@ const incomingOrderQueries = {
     }),
 
   /** Canonical operational approval. Consumer tracking still projects this as Store confirmed. */
-  approveIncomingOrder: shopOwnerProcedure
+  approveIncomingOrder: salesProcedure
     .route({
       method: "POST",
       path: "/shop-owner/incoming-orders/{orderId}/approve",
@@ -6889,11 +6896,11 @@ const incomingOrderQueries = {
     })
     .input(z.object({ orderId: z.number() }))
     .handler(({ context, input }) =>
-      approveRetailerOrder(context.session.user.id, input.orderId),
+      approveRetailerOrder(shopTenantId(context.session.user), input.orderId),
     ),
 
   /** Compatibility wrapper for clients that still call confirmation. */
-  confirmIncomingOrder: shopOwnerProcedure
+  confirmIncomingOrder: salesProcedure
     .route({
       method: "POST",
       path: "/shop-owner/incoming-orders/{orderId}/confirm",
@@ -6902,11 +6909,11 @@ const incomingOrderQueries = {
     })
     .input(z.object({ orderId: z.number() }))
     .handler(({ context, input }) =>
-      approveRetailerOrder(context.session.user.id, input.orderId),
+      approveRetailerOrder(shopTenantId(context.session.user), input.orderId),
     ),
 
   /** Cancel a retailer order before invoicing and restore reserved stock. */
-  cancelIncomingOrder: shopOwnerProcedure
+  cancelIncomingOrder: salesProcedure
     .route({
       method: "POST",
       path: "/shop-owner/incoming-orders/{orderId}/cancel",
@@ -6915,7 +6922,7 @@ const incomingOrderQueries = {
     })
     .input(z.object({ orderId: z.number() }))
     .handler(async ({ context, input }) => {
-      const shopId = context.session.user.id;
+      const shopId = shopTenantId(context.session.user);
 
       return db.transaction(async (tx) => {
         await tx.execute(sql`SELECT pg_advisory_xact_lock(${input.orderId})`);
@@ -6979,7 +6986,7 @@ const incomingOrderQueries = {
     }),
 
   /** Create the one full invoice for a retailer order. */
-  createIncomingOrderInvoice: shopOwnerProcedure
+  createIncomingOrderInvoice: salesProcedure
     .route({
       method: "POST",
       path: "/shop-owner/incoming-orders/{orderId}/invoice",
@@ -7002,7 +7009,7 @@ const incomingOrderQueries = {
       });
     }),
 
-  configureIncomingOrderFulfillment: shopOwnerProcedure
+  configureIncomingOrderFulfillment: fulfillmentProcedure
     .route({
       method: "POST",
       path: "/shop-owner/incoming-orders/fulfillment",
@@ -7034,7 +7041,7 @@ const incomingOrderQueries = {
       };
     }),
 
-  verifyIncomingSelfPickup: shopOwnerProcedure
+  verifyIncomingSelfPickup: fulfillmentProcedure
     .route({
       method: "POST",
       path: "/shop-owner/incoming-orders/self-pickup/verify",
@@ -7073,7 +7080,7 @@ const incomingOrderQueries = {
     ),
 
   /** Orders shown at the retailer dispatch desk. */
-  getRetailDispatchOrders: shopOwnerProcedure
+  getRetailDispatchOrders: fulfillmentProcedure
     .route({
       method: "GET",
       path: "/shop-owner/dispatch-orders",
@@ -7146,7 +7153,7 @@ const incomingOrderQueries = {
     }),
 
   /** Full invoices used by retailer Delivery Management. */
-  getRetailDeliveryInvoices: shopOwnerProcedure
+  getRetailDeliveryInvoices: fulfillmentProcedure
     .route({
       method: "GET",
       path: "/shop-owner/delivery-management/invoices",
@@ -7215,7 +7222,7 @@ const incomingOrderQueries = {
     }),
 
   /** Owner-scoped groups and rider KPIs shared by both assignment lenses. */
-  getRetailAssignmentOverview: shopOwnerProcedure
+  getRetailAssignmentOverview: fulfillmentProcedure
     .route({
       method: "GET",
       path: "/shop-owner/delivery-team/assignments",
@@ -7223,7 +7230,7 @@ const incomingOrderQueries = {
       summary: "Get retailer assignment overview",
     })
     .handler(async ({ context }) => {
-      const shopId = context.session.user.id;
+      const shopId = shopTenantId(context.session.user);
       const [groups, riders] = await Promise.all([
         db.query.deliveryGroup.findMany({
           where: eq(deliveryGroup.shopId, shopId),
@@ -7279,7 +7286,7 @@ const incomingOrderQueries = {
     }),
 
   /** List riders employed by this retailer store. */
-  getRetailDeliverymen: shopOwnerProcedure
+  getRetailDeliverymen: deliveryProcedure
     .route({
       method: "GET",
       path: "/shop-owner/delivery-team",
@@ -7287,7 +7294,7 @@ const incomingOrderQueries = {
       summary: "Get retailer delivery team",
     })
     .handler(async ({ context }) => {
-      const shopId = context.session.user.id;
+      const shopId = shopTenantId(context.session.user);
       const deliverymen = await db
         .select({
           id: user.id,
@@ -7333,7 +7340,7 @@ const incomingOrderQueries = {
       };
     }),
 
-  getRetailDeliverymanById: shopOwnerProcedure
+  getRetailDeliverymanById: deliveryProcedure
     .route({
       method: "GET",
       path: "/shop-owner/delivery-team/{deliverymanId}",
@@ -7342,7 +7349,7 @@ const incomingOrderQueries = {
     })
     .input(z.object({ deliverymanId: z.string() }))
     .handler(async ({ context, input }) => {
-      const shopId = context.session.user.id;
+      const shopId = shopTenantId(context.session.user);
       const rider = await db.query.user.findFirst({
         where: and(
           eq(user.id, input.deliverymanId),
@@ -7365,7 +7372,7 @@ const incomingOrderQueries = {
       return { rider, groups };
     }),
 
-  updateRetailDeliveryman: shopOwnerProcedure
+  updateRetailDeliveryman: deliveryProcedure
     .route({
       method: "PATCH",
       path: "/shop-owner/delivery-team/{deliverymanId}",
@@ -7403,7 +7410,7 @@ const incomingOrderQueries = {
       return { success: true };
     }),
 
-  resetRetailDeliverymanPassword: shopOwnerProcedure
+  resetRetailDeliverymanPassword: deliveryProcedure
     .route({
       method: "POST",
       path: "/shop-owner/delivery-team/{deliverymanId}/reset-password",
@@ -7433,7 +7440,7 @@ const incomingOrderQueries = {
       return { success: true };
     }),
 
-  toggleRetailDeliverymanBan: shopOwnerProcedure
+  toggleRetailDeliverymanBan: deliveryProcedure
     .route({
       method: "POST",
       path: "/shop-owner/delivery-team/{deliverymanId}/ban",
@@ -7480,7 +7487,7 @@ const incomingOrderQueries = {
       return { success: true };
     }),
 
-  deleteRetailDeliveryman: shopOwnerProcedure
+  deleteRetailDeliveryman: deliveryProcedure
     .route({
       method: "DELETE",
       path: "/shop-owner/delivery-team/{deliverymanId}",
@@ -7489,7 +7496,7 @@ const incomingOrderQueries = {
     })
     .input(z.object({ deliverymanId: z.string() }))
     .handler(async ({ context, input }) => {
-      const shopId = context.session.user.id;
+      const shopId = shopTenantId(context.session.user);
       const rider = await db.query.user.findFirst({
         where: and(
           eq(user.id, input.deliverymanId),
@@ -7530,7 +7537,7 @@ const incomingOrderQueries = {
     }),
 
   /** Create a rider account owned by this retailer store. */
-  createRetailDeliveryman: shopOwnerProcedure
+  createRetailDeliveryman: deliveryProcedure
     .route({
       method: "POST",
       path: "/shop-owner/delivery-team",
@@ -7547,7 +7554,7 @@ const incomingOrderQueries = {
       }),
     )
     .handler(async ({ context, input }) => {
-      const shopId = context.session.user.id;
+      const shopId = shopTenantId(context.session.user);
       const newUser = await auth.api.createUser({
         body: {
           email: input.email,
@@ -7584,7 +7591,7 @@ const incomingOrderQueries = {
     }),
 
   /** Put an invoiced consumer order into a retailer-owned delivery group. */
-  createIncomingDeliveryGroup: shopOwnerProcedure
+  createIncomingDeliveryGroup: fulfillmentProcedure
     .route({
       method: "POST",
       path: "/shop-owner/incoming-orders/{orderId}/delivery-group",
@@ -7600,7 +7607,7 @@ const incomingOrderQueries = {
       }),
     )
     .handler(async ({ context, input }) => {
-      const shopId = context.session.user.id;
+      const shopId = shopTenantId(context.session.user);
       return db.transaction(async (tx) => {
         await tx.execute(sql`SELECT pg_advisory_xact_lock(${input.orderId})`);
         const existingInvoice = await tx.query.invoice.findFirst({
@@ -7687,7 +7694,7 @@ const incomingOrderQueries = {
     }),
 
   /** Assign or reassign a store rider before the trip starts. */
-  assignIncomingDeliveryman: shopOwnerProcedure
+  assignIncomingDeliveryman: fulfillmentProcedure
     .route({
       method: "POST",
       path: "/shop-owner/delivery-groups/{groupId}/assign",
@@ -7701,7 +7708,7 @@ const incomingOrderQueries = {
       }),
     )
     .handler(async ({ context, input }) => {
-      const shopId = context.session.user.id;
+      const shopId = shopTenantId(context.session.user);
       return db.transaction(async (tx) => {
         await tx.execute(sql`SELECT pg_advisory_xact_lock(${input.groupId})`);
         const group = await tx.query.deliveryGroup.findFirst({
@@ -7789,7 +7796,7 @@ const incomingOrderQueries = {
     }),
 
   /** Return a failed consumer delivery to the retailer assignment queue. */
-  retryIncomingDelivery: shopOwnerProcedure
+  retryIncomingDelivery: fulfillmentProcedure
     .route({
       method: "POST",
       path: "/shop-owner/incoming-orders/{orderId}/retry-delivery",
@@ -7798,7 +7805,7 @@ const incomingOrderQueries = {
     })
     .input(z.object({ orderId: z.number() }))
     .handler(async ({ context, input }) => {
-      const shopId = context.session.user.id;
+      const shopId = shopTenantId(context.session.user);
       return db.transaction(async (tx) => {
         await tx.execute(sql`SELECT pg_advisory_xact_lock(${input.orderId})`);
         const failedInvoice = await tx.query.invoice.findFirst({
@@ -7849,7 +7856,7 @@ const warehouseOrderQueries = {
    * Place an order to a warehouse.
    * Creates order + items. Warehouse inventory is reserved during approval.
    */
-  placeWarehouseOrder: shopOwnerProcedure
+  placeWarehouseOrder: purchaseProcedure
     .input(
       z.object({
         warehouseSlug: z.string(),
@@ -7879,7 +7886,7 @@ const warehouseOrderQueries = {
       }),
     )
     .handler(async ({ context, input }) => {
-      const userId = context.session.user.id;
+      const userId = shopTenantId(context.session.user);
       if (input.checkout?.idempotencyKey) {
         const existingOrder = await db.query.order.findFirst({
           where: and(
@@ -8534,7 +8541,7 @@ const warehouseOrderQueries = {
   /**
    * Get orders the shop placed to warehouses.
    */
-  getMyWarehouseOrders: shopOwnerProcedure
+  getMyWarehouseOrders: purchaseProcedure
     .input(
       z.object({
         status: z
@@ -8551,7 +8558,7 @@ const warehouseOrderQueries = {
       }),
     )
     .handler(async ({ context, input }) => {
-      const userId = context.session.user.id;
+      const userId = shopTenantId(context.session.user);
       const { page, limit } = input;
       const offset = (page - 1) * limit;
 
@@ -8636,7 +8643,7 @@ const warehouseOrderQueries = {
 
 const openOrderEndpoints = {
   /** Active requests and submitted offers, with no customer PII before acceptance. */
-  getOpenOrderPool: shopOwnerProcedure
+  getOpenOrderPool: purchaseProcedure
     .route({
       method: "GET",
       path: "/shop-owner/open-orders/pool",
@@ -8644,7 +8651,7 @@ const openOrderEndpoints = {
       summary: "List active open-order offers",
     })
     .handler(async ({ context }) => {
-      const shopId = context.session.user.id;
+      const shopId = shopTenantId(context.session.user);
       const candidates = await db
         .select({ orderId: openOrderBid.subOrderId })
         .from(openOrderBid)
@@ -8808,7 +8815,7 @@ const openOrderEndpoints = {
       return { pool, activeCount: pool.length };
     }),
 
-  getOpenOrderHistory: shopOwnerProcedure
+  getOpenOrderHistory: purchaseProcedure
     .route({
       method: "GET",
       path: "/shop-owner/open-orders/history",
@@ -8816,7 +8823,7 @@ const openOrderEndpoints = {
       summary: "List completed open-order offer outcomes",
     })
     .handler(async ({ context }) => {
-      const shopId = context.session.user.id;
+      const shopId = shopTenantId(context.session.user);
       const history = await db
         .select({
           offerId: openOrderBid.id,
@@ -8858,7 +8865,7 @@ const openOrderEndpoints = {
     }),
 
   /** Submit or revise discount and delivery; line prices always come from inventory. */
-  submitOffer: shopOwnerProcedure
+  submitOffer: purchaseProcedure
     .route({
       method: "POST",
       path: "/shop-owner/open-orders/submit",
@@ -8911,7 +8918,7 @@ const openOrderEndpoints = {
       }
     }),
 
-  withdrawOpenOrder: shopOwnerProcedure
+  withdrawOpenOrder: purchaseProcedure
     .route({
       method: "POST",
       path: "/shop-owner/open-orders/withdraw",
@@ -8952,7 +8959,7 @@ const warehouseConnectionEndpoints = {
   /**
    * Preview warehouse details before connecting
    */
-  lookupWarehouseByCode: shopOwnerProcedure
+  lookupWarehouseByCode: networkProcedure
     .route({
       method: "GET",
       path: "/shop-owner/lookup-warehouse",
@@ -9015,7 +9022,7 @@ const warehouseConnectionEndpoints = {
    * Connect to a warehouse (Request Access).
    * Always creates a pending request requiring manual approval.
    */
-  connectToWarehouse: shopOwnerProcedure
+  connectToWarehouse: networkProcedure
     .route({
       method: "POST",
       path: "/shop-owner/connect-to-warehouse",
@@ -9028,7 +9035,7 @@ const warehouseConnectionEndpoints = {
       }),
     )
     .handler(async ({ context, input }) => {
-      const shopId = context.session.user.id;
+      const shopId = shopTenantId(context.session.user);
 
       // 1. Validate warehouse exists
       const warehouseUser = await db
@@ -9113,7 +9120,7 @@ const warehouseConnectionEndpoints = {
   /**
    * Get all connected/pending warehouses for this shop
    */
-  getMyWarehouses: shopOwnerProcedure
+  getMyWarehouses: networkProcedure
     .route({
       method: "GET",
       path: "/shop-owner/my-warehouses",
@@ -9130,7 +9137,7 @@ const warehouseConnectionEndpoints = {
         .optional(),
     )
     .handler(async ({ context, input }) => {
-      const shopId = context.session.user.id;
+      const shopId = shopTenantId(context.session.user);
       const statusFilter = input?.status || "all";
 
       const conditions: SQL[] = [eq(shopWarehouseConnection.shopId, shopId)];
@@ -9190,7 +9197,7 @@ const warehouseConnectionEndpoints = {
   /**
    * Cancel a pending warehouse connection request
    */
-  cancelWarehouseRequest: shopOwnerProcedure
+  cancelWarehouseRequest: networkProcedure
     .route({
       method: "POST",
       path: "/shop-owner/cancel-warehouse-request",
@@ -9203,7 +9210,7 @@ const warehouseConnectionEndpoints = {
       }),
     )
     .handler(async ({ context, input }) => {
-      const shopId = context.session.user.id;
+      const shopId = shopTenantId(context.session.user);
 
       const existingConn = await db.query.shopWarehouseConnection.findFirst({
         where: and(
@@ -9229,7 +9236,7 @@ const warehouseConnectionEndpoints = {
   /**
    * Disconnect from an active warehouse
    */
-  disconnectWarehouse: shopOwnerProcedure
+  disconnectWarehouse: networkProcedure
     .route({
       method: "POST",
       path: "/shop-owner/disconnect-warehouse",
@@ -9242,7 +9249,7 @@ const warehouseConnectionEndpoints = {
       }),
     )
     .handler(async ({ context, input }) => {
-      const shopId = context.session.user.id;
+      const shopId = shopTenantId(context.session.user);
 
       const existingConn = await db.query.shopWarehouseConnection.findFirst({
         where: and(
@@ -9270,7 +9277,7 @@ const warehouseConnectionEndpoints = {
    * Step 7: Get recently connected warehouses (smart memory).
    * Sorted by lastOrderedAt descending. (Alias for backwards compatibility)
    */
-  getConnectedWarehouses: shopOwnerProcedure
+  getConnectedWarehouses: networkProcedure
     .route({
       method: "GET",
       path: "/shop-owner/connected-warehouses",
@@ -9278,7 +9285,7 @@ const warehouseConnectionEndpoints = {
       summary: "Get recently connected warehouses (smart memory)",
     })
     .handler(async ({ context }) => {
-      const shopId = context.session.user.id;
+      const shopId = shopTenantId(context.session.user);
 
       const connections = await db
         .select({
@@ -9331,7 +9338,7 @@ const warehouseConnectionEndpoints = {
    * Products in shop's allowed categories → canOrder: true
    * Products outside → canOrder: false ("Request Access")
    */
-  getWarehouseProductsFiltered: shopOwnerProcedure
+  getWarehouseProductsFiltered: purchaseProcedure
     .route({
       method: "GET",
       path: "/shop-owner/warehouse-products-filtered",
@@ -9347,7 +9354,7 @@ const warehouseConnectionEndpoints = {
       }),
     )
     .handler(async ({ context, input }) => {
-      const shopId = context.session.user.id;
+      const shopId = shopTenantId(context.session.user);
 
       // Find warehouse
       const warehouseUser = await db
@@ -10056,7 +10063,7 @@ const publicCatalogEndpoints = {
    * Get the full product hierarchy: Type → Category → SubCategory → Core Identity.
    * Public-facing, no auth required. Used for the catalog browse page.
    */
-  getShopCatalogHierarchy: shopOwnerProcedure
+  getShopCatalogHierarchy: inventoryProcedure
     .input(
       z.object({
         typeId: z.number().nullish(),
@@ -10071,7 +10078,7 @@ const publicCatalogEndpoints = {
       const page = input.page ?? 1;
       const limit = input.limit ?? 50;
       const offset = (page - 1) * limit;
-      const shopId = context.session.user.id;
+      const shopId = shopTenantId(context.session.user);
 
       // 1. Build conditions for core products
       const conditions: SQL[] = [
@@ -10449,7 +10456,7 @@ const publicCatalogEndpoints = {
    * Submit a product identity request (shop owner only).
    * Used when a shop owner can't find a product in the catalog.
    */
-  submitProductIdentityRequest: shopOwnerProcedure
+  submitProductIdentityRequest: inventoryProcedure
     .input(
       z.object({
         typeName: z.string().optional(),
@@ -10461,7 +10468,7 @@ const publicCatalogEndpoints = {
       }),
     )
     .handler(async ({ context, input }) => {
-      const userId = context.session.user.id;
+      const userId = shopTenantId(context.session.user);
 
       const [created] = await db
         .insert(productIdentityRequest)
@@ -10487,14 +10494,14 @@ const publicCatalogEndpoints = {
   /**
    * Get my product identity requests (shop owner only).
    */
-  getMyProductRequests: shopOwnerProcedure
+  getMyProductRequests: inventoryProcedure
     .input(
       z.object({
         status: z.enum(["pending", "approved", "rejected"]).optional(),
       }),
     )
     .handler(async ({ context, input }) => {
-      const userId = context.session.user.id;
+      const userId = shopTenantId(context.session.user);
 
       const conditions: SQL[] = [
         eq(productIdentityRequest.requestedBy, userId),
@@ -10625,8 +10632,8 @@ async function loadRetailerProductStockSnapshot(ownerId: string) {
 }
 
 const shopProductEndpoints = {
-  getShopInventoryIntegrity: shopOwnerProcedure.handler(async ({ context }) => {
-    const userId = context.session.user.id;
+  getShopInventoryIntegrity: inventoryProcedure.handler(async ({ context }) => {
+    const userId = shopTenantId(context.session.user);
     const rows = await db
       .select({
         inventoryId: inventory.id,
@@ -10658,7 +10665,7 @@ const shopProductEndpoints = {
   /**
    * Get the retailer's brand products with unit-safe structured stock.
    */
-  getShopProducts: shopOwnerProcedure
+  getShopProducts: inventoryProcedure
     .input(
       z.object({
         search: z.string().optional(),
@@ -10679,7 +10686,7 @@ const shopProductEndpoints = {
       }),
     )
     .handler(async ({ input, context }) => {
-      const userId = context.session.user.id;
+      const userId = shopTenantId(context.session.user);
       const { search, categoryId, stockStatus, brandId, page, limit } = input;
       const offset = (page - 1) * limit;
       const snapshot = await loadRetailerProductStockSnapshot(userId);
@@ -10735,8 +10742,8 @@ const shopProductEndpoints = {
   /**
    * Product and variant summary derived from the same structured snapshot.
    */
-  getShopProductKPIs: shopOwnerProcedure.handler(async ({ context }) => {
-    const userId = context.session.user.id;
+  getShopProductKPIs: inventoryProcedure.handler(async ({ context }) => {
+    const userId = shopTenantId(context.session.user);
     const snapshot = await loadRetailerProductStockSnapshot(userId);
     return {
       activeProducts: snapshot.products.length,
@@ -10750,10 +10757,10 @@ const shopProductEndpoints = {
   /**
    * Detailed view of a retailer brand product using canonical variants.
    */
-  getShopProductDetail: shopOwnerProcedure
+  getShopProductDetail: inventoryProcedure
     .input(z.object({ productId: z.number() }))
     .handler(async ({ input, context }) => {
-      const userId = context.session.user.id;
+      const userId = shopTenantId(context.session.user);
       const snapshot = await loadRetailerProductStockSnapshot(userId);
       const productGroup = snapshot.products.find(
         (item) => item.productId === input.productId,
@@ -10847,7 +10854,7 @@ const shopProductEndpoints = {
    * Get options for the Create Product form (cascading selects).
    * Returns types, categories, subcategories, core products, brands, variant options.
    */
-  getCreateProductOptions: shopOwnerProcedure
+  getCreateProductOptions: inventoryProcedure
     .input(
       z.object({
         typeId: z.number().optional(),
@@ -10958,14 +10965,14 @@ const shopProductEndpoints = {
    * Create a new shop product — full 8-step data.
    * Creates product, product_brand links, product_variants, and initial inventory.
    */
-  createShopProduct: shopOwnerProcedure.input(z.unknown()).handler(async () => {
+  createShopProduct: inventoryProcedure.input(z.unknown()).handler(async () => {
     throw new ORPCError("BAD_REQUEST", {
       message: "Retailer products must be configured from Product Catalog",
     });
   }),
 
-  getMyStorePreview: shopOwnerProcedure.handler(async ({ context }) => {
-    const userId = context.session.user.id;
+  getMyStorePreview: salesProcedure.handler(async ({ context }) => {
+    const userId = shopTenantId(context.session.user);
 
     // 1. Get store identity from user row
     const storeUser = await db.query.user.findFirst({
@@ -11181,8 +11188,8 @@ const shopProductEndpoints = {
   /**
    * Get store KPI stats: total orders, customers, avg rating.
    */
-  getMyStoreStats: shopOwnerProcedure.handler(async ({ context }) => {
-    const userId = context.session.user.id;
+  getMyStoreStats: salesProcedure.handler(async ({ context }) => {
+    const userId = shopTenantId(context.session.user);
 
     // Count B2C orders for this shop
     const [orderStats] = await db
@@ -11240,7 +11247,7 @@ const shopProductEndpoints = {
    * Search shop products for stock entry — returns products with their variants
    * and current inventory quantities for the logged-in shop owner.
    */
-  getShopProductsForStock: shopOwnerProcedure
+  getShopProductsForStock: inventoryProcedure
     .input(
       z.object({
         search: z.string().optional(),
@@ -11248,7 +11255,7 @@ const shopProductEndpoints = {
       }),
     )
     .handler(async ({ context, input }) => {
-      const userId = context.session.user.id;
+      const userId = shopTenantId(context.session.user);
 
       // Get all inventory for this shop, grouped by product
       const shopInventory = await db.query.inventory.findMany({
@@ -11382,7 +11389,7 @@ const shopProductEndpoints = {
   /**
    * Add stock to shop inventory — supports adding to multiple variants at once.
    */
-  addShopStock: shopOwnerProcedure
+  addShopStock: inventoryProcedure
     .input(
       z.object({
         entries: z
@@ -11400,7 +11407,7 @@ const shopProductEndpoints = {
       }),
     )
     .handler(async ({ context, input }) => {
-      const userId = context.session.user.id;
+      const userId = shopTenantId(context.session.user);
 
       // Validate all inventory rows belong to this shop
       const inventoryIds = input.entries.map((e) => e.inventoryId);
@@ -11490,7 +11497,7 @@ const shopProductEndpoints = {
    * Search shop inventory variants for the adjustment product picker.
    * Returns variant-level results with current stock.
    */
-  searchShopVariantsForAdjustment: shopOwnerProcedure
+  searchShopVariantsForAdjustment: inventoryProcedure
     .input(
       z.object({
         search: z.string().optional(),
@@ -11498,7 +11505,7 @@ const shopProductEndpoints = {
       }),
     )
     .handler(async ({ context, input }) => {
-      const userId = context.session.user.id;
+      const userId = shopTenantId(context.session.user);
 
       const baseConditions = and(
         eq(inventory.ownerType, "shop"),
@@ -11571,7 +11578,7 @@ const shopProductEndpoints = {
    * Create a stock adjustment for the shop — auto-submitted, applies to inventory.
    * Uses "actual stock" input: adjustQty = actualQty - currentQty.
    */
-  createShopAdjustment: shopOwnerProcedure
+  createShopAdjustment: inventoryProcedure
     .input(
       z.object({
         adjustmentType: z.enum([
@@ -11603,7 +11610,7 @@ const shopProductEndpoints = {
       }),
     )
     .handler(async ({ context, input }) => {
-      const userId = context.session.user.id;
+      const userId = shopTenantId(context.session.user);
 
       // 1. Validate all inventory rows belong to this shop
       const inventoryIds = input.items.map((i) => i.inventoryId);
@@ -11757,7 +11764,7 @@ const shopProductEndpoints = {
   /**
    * List shop adjustment history (paginated).
    */
-  getShopAdjustments: shopOwnerProcedure
+  getShopAdjustments: inventoryProcedure
     .input(
       z.object({
         search: z.string().optional(),
@@ -11769,7 +11776,7 @@ const shopProductEndpoints = {
       }),
     )
     .handler(async ({ context, input }) => {
-      const userId = context.session.user.id;
+      const userId = shopTenantId(context.session.user);
       const offset = (input.page - 1) * input.pageSize;
 
       const conditions: SQL[] = [eq(stockAdjustment.warehouseId, userId)];
@@ -11829,7 +11836,7 @@ const shopProductEndpoints = {
   /**
    * Create a damage entry — deducts inventory, calculates financial loss.
    */
-  createDamageEntry: shopOwnerProcedure
+  createDamageEntry: inventoryProcedure
     .input(
       z.object({
         damageType: z.enum(["physical", "expired", "lost"]),
@@ -11850,7 +11857,7 @@ const shopProductEndpoints = {
       }),
     )
     .handler(async ({ context, input }) => {
-      const userId = context.session.user.id;
+      const userId = shopTenantId(context.session.user);
 
       // 1. Validate all inventory rows belong to this shop
       const inventoryIds = input.items.map((i) => i.inventoryId);
@@ -11984,7 +11991,7 @@ const shopProductEndpoints = {
   /**
    * List damage entries (paginated, filterable).
    */
-  getDamageEntries: shopOwnerProcedure
+  getDamageEntries: inventoryProcedure
     .input(
       z.object({
         search: z.string().optional(),
@@ -11994,7 +12001,7 @@ const shopProductEndpoints = {
       }),
     )
     .handler(async ({ context, input }) => {
-      const userId = context.session.user.id;
+      const userId = shopTenantId(context.session.user);
       const offset = (input.page - 1) * input.pageSize;
 
       const conditions: SQL[] = [
@@ -12049,10 +12056,10 @@ const shopProductEndpoints = {
   /**
    * Get single damage entry detail with line items.
    */
-  getDamageEntryDetail: shopOwnerProcedure
+  getDamageEntryDetail: inventoryProcedure
     .input(z.object({ id: z.number().int() }))
     .handler(async ({ context, input }) => {
-      const userId = context.session.user.id;
+      const userId = shopTenantId(context.session.user);
 
       const entry = await db
         .select()
@@ -12101,10 +12108,10 @@ const shopProductEndpoints = {
   /**
    * KPI summary for damage management.
    */
-  getDamageSummary: shopOwnerProcedure
+  getDamageSummary: inventoryProcedure
     .input(z.void())
     .handler(async ({ context }) => {
-      const userId = context.session.user.id;
+      const userId = shopTenantId(context.session.user);
 
       const [result] = await db
         .select({

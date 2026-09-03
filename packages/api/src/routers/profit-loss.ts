@@ -12,6 +12,7 @@ import { and, eq, gte, inArray, isNotNull, lte, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { protectedProcedure } from "../index";
+import { shopOrWarehouseOwnerScope } from "../shop-portal-scope";
 
 const ACTIVE_ORDER_STATUSES = ["confirmed", "processing", "delivered"] as const;
 const PAID_INVOICE_STATUSES = new Set(["collected", "settled"]);
@@ -100,9 +101,10 @@ export const profitLossRouter = {
         dateValue(input.year, month, endOfMonth(input.year, month));
       const startDateTime = new Date(`${startDate}T00:00:00.000`);
       const endDateTime = new Date(`${endDate}T23:59:59.999`);
-      const ownerId = context.session.user.id;
-      const role = context.session.user.role;
-      const ownerType = role === "warehouse" ? "warehouse" : "shop";
+      const { ownerId, ownerType } = shopOrWarehouseOwnerScope(
+        context.session.user,
+        "finance",
+      );
       const isCashBasis = input.reportType === "cash";
       const expenseRows = await db
         .select({
@@ -220,7 +222,7 @@ export const profitLossRouter = {
       let productSales = 0;
       let productPurchase = 0;
 
-      if (role === "warehouse") {
+      if (ownerType === "warehouse") {
         const [orderRevenueRows, posRevenueRows] = await Promise.all([
             db
               .select({

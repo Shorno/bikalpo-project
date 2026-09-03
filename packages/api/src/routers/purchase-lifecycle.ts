@@ -25,6 +25,7 @@ import {
 } from "drizzle-orm";
 import { z } from "zod";
 import { protectedProcedure } from "../index";
+import { shopOrWarehouseOwnerScope } from "../shop-portal-scope";
 import { postPurchaseJournal } from "../services/purchase-accounting";
 import { appendOrderPurchaseEvent } from "../services/purchase-history";
 import { classifyPurchasePayment } from "../services/purchase-lifecycle";
@@ -36,12 +37,8 @@ import {
 import { localDateString } from "../utils/date";
 import { returnReceivedPurchase } from "../services/purchase-return";
 
-function ownerTypeForRole(role?: string | null) {
-  if (role === "shop_owner") return "shop" as const;
-  if (role === "warehouse") return "warehouse" as const;
-  throw new ORPCError("FORBIDDEN", {
-    message: "Purchase payments require a shop or warehouse account",
-  });
+function purchaseOwnerScope(user: { id: string; role?: string | null }) {
+  return shopOrWarehouseOwnerScope(user, "purchase");
 }
 
 export const purchaseLifecycleRouter = {
@@ -72,8 +69,7 @@ export const purchaseLifecycleRouter = {
       }),
     )
     .handler(async ({ context, input }) => {
-      const ownerId = context.session.user.id;
-      ownerTypeForRole(context.session.user.role);
+      const { ownerId } = purchaseOwnerScope(context.session.user);
       const conditions: any[] = [
         eq(order.userId, ownerId),
         eq(order.orderType, "b2b"),
@@ -259,8 +255,7 @@ export const purchaseLifecycleRouter = {
     })
     .input(z.object({ orderId: z.number().int().positive() }))
     .handler(async ({ context, input }) => {
-      const ownerId = context.session.user.id;
-      ownerTypeForRole(context.session.user.role);
+      const { ownerId } = purchaseOwnerScope(context.session.user);
       const purchaseOrder = await db.query.order.findFirst({
         where: and(
           eq(order.id, input.orderId),
@@ -382,8 +377,7 @@ export const purchaseLifecycleRouter = {
       }),
     )
     .handler(async ({ context, input }) => {
-      const ownerId = context.session.user.id;
-      const ownerType = ownerTypeForRole(context.session.user.role);
+      const { ownerId, ownerType } = purchaseOwnerScope(context.session.user);
       const orderData = await db.query.order.findFirst({
         where: and(
           eq(order.id, input.orderId),
@@ -589,8 +583,7 @@ export const purchaseLifecycleRouter = {
       }),
     )
     .handler(async ({ context, input }) => {
-      const ownerId = context.session.user.id;
-      const ownerType = ownerTypeForRole(context.session.user.role);
+      const { ownerId, ownerType } = purchaseOwnerScope(context.session.user);
       try {
         const result = await db.transaction(async (tx) => {
           await tx.execute(sql`SELECT pg_advisory_xact_lock(${input.orderId})`);
@@ -627,7 +620,7 @@ export const purchaseLifecycleRouter = {
       }),
     )
     .handler(async ({ context, input }) => {
-      const ownerId = context.session.user.id;
+      const { ownerId } = purchaseOwnerScope(context.session.user);
       const paid = await db.query.payment.findFirst({
         where: eq(payment.id, input.paymentId),
         with: { order: true },
@@ -686,7 +679,7 @@ export const purchaseLifecycleRouter = {
     })
     .input(z.object({ paymentId: z.number().int().positive() }))
     .handler(async ({ context, input }) => {
-      const ownerId = context.session.user.id;
+      const { ownerId } = purchaseOwnerScope(context.session.user);
       const paid = await db.query.payment.findFirst({
         where: eq(payment.id, input.paymentId),
         with: { order: true },
@@ -741,7 +734,7 @@ export const purchaseLifecycleRouter = {
     })
     .input(z.object({ paymentId: z.number().int().positive() }))
     .handler(async ({ context, input }) => {
-      const ownerId = context.session.user.id;
+      const { ownerId } = purchaseOwnerScope(context.session.user);
       const paid = await db.query.payment.findFirst({
         where: eq(payment.id, input.paymentId),
         with: { order: true },
@@ -798,7 +791,7 @@ export const purchaseLifecycleRouter = {
     })
     .input(z.object({ paymentId: z.number().int().positive() }))
     .handler(async ({ context, input }) => {
-      const ownerId = context.session.user.id;
+      const { ownerId } = purchaseOwnerScope(context.session.user);
       const paid = await db.query.payment.findFirst({
         where: eq(payment.id, input.paymentId),
         with: { order: true },
@@ -862,8 +855,7 @@ export const purchaseLifecycleRouter = {
       }),
     )
     .handler(async ({ context, input }) => {
-      const ownerId = context.session.user.id;
-      const ownerType = ownerTypeForRole(context.session.user.role);
+      const { ownerId, ownerType } = purchaseOwnerScope(context.session.user);
       const paid = await db.query.payment.findFirst({
         where: eq(payment.id, input.paymentId),
         with: { order: true },

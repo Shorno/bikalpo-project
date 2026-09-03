@@ -11,7 +11,9 @@ import {
   SHOP_STAFF_PLATFORM_ROLE,
   shopFunctionAccessLevel,
   shopFunctionLabel,
+  canShopUserAccessModule,
   modulesForShopActor,
+  resolveShopPortalActor,
   shopPortalShopId,
 } from "./shop-staff-access";
 
@@ -131,6 +133,49 @@ test("shop portal tenancy is the owner id or the staff shopId", () => {
     }),
     null,
   );
+});
+
+test("shop portal actors resolve tenant shopId without using the staff user id", () => {
+  assert.deepEqual(
+    resolveShopPortalActor({
+      id: "shop-1",
+      role: "shop_owner",
+      shopId: null,
+      shopFunction: null,
+    }),
+    { shopId: "shop-1", actor: "owner" },
+  );
+  assert.deepEqual(
+    resolveShopPortalActor({
+      id: "staff-1",
+      role: SHOP_STAFF_PLATFORM_ROLE,
+      shopId: "shop-1",
+      shopFunction: "inventory",
+    }),
+    { shopId: "shop-1", actor: "inventory" },
+  );
+  assert.equal(
+    resolveShopPortalActor({
+      id: "staff-1",
+      role: SHOP_STAFF_PLATFORM_ROLE,
+      shopId: "shop-1",
+      shopFunction: null,
+    }),
+    null,
+  );
+});
+
+test("purchase staff may use purchase APIs and not sales or inventory APIs", () => {
+  const purchaseStaff = {
+    id: "staff-1",
+    role: SHOP_STAFF_PLATFORM_ROLE,
+    shopId: "shop-1",
+    shopFunction: "purchase_manager" as const,
+  };
+  assert.equal(canShopUserAccessModule(purchaseStaff, "purchase"), true);
+  assert.equal(canShopUserAccessModule(purchaseStaff, "sales"), false);
+  assert.equal(canShopUserAccessModule(purchaseStaff, "inventory"), false);
+  assert.equal(canShopUserAccessModule(purchaseStaff, "staff"), false);
 });
 
 test("module bundles for the catalog are closed sets per function", () => {

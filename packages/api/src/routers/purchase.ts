@@ -15,6 +15,7 @@ import { and, desc, eq, ilike, inArray, or, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { protectedProcedure } from "../index";
+import { shopOrWarehouseOwnerScope } from "../shop-portal-scope";
 import {
     advanceManualPurchaseRefund,
     cancelManualPurchase,
@@ -40,9 +41,6 @@ async function generatePurchaseNumber(warehouseId: string): Promise<string> {
 }
 
 function manualPurchaseScope(user: { id: string; role?: string | null }) {
-    if (user.role === "shop_owner") {
-        return { actorId: user.id, ownerId: user.id, ownerType: "shop" as const };
-    }
     if (user.role === "warehouse") {
         return {
             actorId: user.id,
@@ -50,9 +48,12 @@ function manualPurchaseScope(user: { id: string; role?: string | null }) {
             ownerType: "warehouse" as const,
         };
     }
-    throw new ORPCError("FORBIDDEN", {
-        message: "Manual purchases require a shop or warehouse account",
-    });
+    const shop = shopOrWarehouseOwnerScope(user, "purchase");
+    return {
+        actorId: user.id,
+        ownerId: shop.ownerId,
+        ownerType: shop.ownerType,
+    };
 }
 
 const manualPurchaseInput = z.object({

@@ -5,6 +5,7 @@ import { and, desc, eq, gt } from "drizzle-orm";
 import { z } from "zod";
 
 import { protectedProcedure } from "../index";
+import { shopOrWarehouseOwnerScope } from "../shop-portal-scope";
 
 export const supplierPaymentRouter = {
     /** Pay a supplier — reduces currentPayable + creates ledger entry */
@@ -32,11 +33,16 @@ export const supplierPaymentRouter = {
                 throw new ORPCError("BAD_REQUEST", { message: "Amount must be greater than 0" });
             }
 
-            // Verify supplier exists and belongs to this user
+            const { ownerId } = shopOrWarehouseOwnerScope(
+                context.session.user,
+                "purchase",
+            );
+
+            // Verify supplier exists and belongs to this shop or warehouse
             const sup = await db.query.supplier.findFirst({
                 where: and(
                     eq(supplier.id, input.supplierId),
-                    eq(supplier.addedBy, context.session.user.id),
+                    eq(supplier.addedBy, ownerId),
                 ),
             });
             if (!sup) throw new ORPCError("NOT_FOUND", { message: "Supplier not found" });
@@ -63,7 +69,7 @@ export const supplierPaymentRouter = {
                 referenceType: "supplier_payment",
                 referenceId: input.supplierId,
                 description: `Supplier payment: ${sup.name} — ৳${amount} (${input.paymentMethod})`,
-                ownerId: context.session.user.id,
+                ownerId,
                 ownerType: input.ownerType,
             });
 
@@ -85,7 +91,7 @@ export const supplierPaymentRouter = {
         .handler(async ({ context, input }) => {
             return db.query.financialLedger.findMany({
                 where: and(
-                    eq(financialLedger.ownerId, context.session.user.id),
+                    eq(financialLedger.ownerId, shopOrWarehouseOwnerScope(context.session.user, "purchase").ownerId),
                     eq(financialLedger.referenceType, "supplier_payment"),
                     eq(financialLedger.referenceId, input.supplierId),
                 ),
@@ -104,7 +110,7 @@ export const supplierPaymentRouter = {
         .handler(async ({ context }) => {
             const suppliers = await db.query.supplier.findMany({
                 where: and(
-                    eq(supplier.addedBy, context.session.user.id),
+                    eq(supplier.addedBy, shopOrWarehouseOwnerScope(context.session.user, "purchase").ownerId),
                     eq(supplier.isActive, true),
                     gt(supplier.currentPayable, "0"),
                 ),

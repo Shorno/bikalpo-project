@@ -5,6 +5,7 @@ import { and, desc, eq, gte, ilike, lte, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { protectedProcedure } from "../index";
+import { shopOrWarehouseOwnerScope } from "../shop-portal-scope";
 import { localDateStamp, localDateString } from "../utils/date";
 
 /** Generate unique expense number: EXP-YYYYMMDD-NNN */
@@ -70,7 +71,7 @@ export const expenseRouter = {
             });
             if (!cat) throw new ORPCError("NOT_FOUND", { message: "Expense category not found" });
 
-            const expenseNumber = await generateExpenseNumber(context.session.user.id);
+            const expenseNumber = await generateExpenseNumber(shopOrWarehouseOwnerScope(context.session.user, "finance").ownerId);
 
             // Insert expense (always paid)
             const [created] = await db
@@ -86,7 +87,7 @@ export const expenseRouter = {
                     referenceNo: input.referenceNo || null,
                     attachment: input.attachment || null,
                     note: input.note || null,
-                    ownerId: context.session.user.id,
+                    ownerId: shopOrWarehouseOwnerScope(context.session.user, "finance").ownerId,
                     ownerType: input.ownerType,
                 })
                 .returning();
@@ -99,7 +100,7 @@ export const expenseRouter = {
                 referenceType: "expense",
                 referenceId: created!.id,
                 description: `Expense: ${input.title} (${cat.name})`,
-                ownerId: context.session.user.id,
+                ownerId: shopOrWarehouseOwnerScope(context.session.user, "finance").ownerId,
                 ownerType: input.ownerType,
             });
 
@@ -128,7 +129,7 @@ export const expenseRouter = {
             const page = input?.page ?? 1;
             const limit = input?.limit ?? 20;
             const conditions = [
-                eq(expense.ownerId, context.session.user.id),
+                eq(expense.ownerId, shopOrWarehouseOwnerScope(context.session.user, "finance").ownerId),
                 eq(expense.isVoided, false),
             ];
 
@@ -176,7 +177,7 @@ export const expenseRouter = {
         .input(z.object({ id: z.number().int() }))
         .handler(async ({ context, input }) => {
             const found = await db.query.expense.findFirst({
-                where: and(eq(expense.id, input.id), eq(expense.ownerId, context.session.user.id)),
+                where: and(eq(expense.id, input.id), eq(expense.ownerId, shopOrWarehouseOwnerScope(context.session.user, "finance").ownerId)),
                 with: {
                     category: true,
                     payeeRef: true,
@@ -205,7 +206,7 @@ export const expenseRouter = {
             const existing = await db.query.expense.findFirst({
                 where: and(
                     eq(expense.id, input.id),
-                    eq(expense.ownerId, context.session.user.id),
+                    eq(expense.ownerId, shopOrWarehouseOwnerScope(context.session.user, "finance").ownerId),
                     eq(expense.isVoided, false),
                 ),
             });
@@ -225,7 +226,7 @@ export const expenseRouter = {
                 referenceType: "adjustment",
                 referenceId: existing.id,
                 description: `VOID: ${existing.title} — ${input.reason}`,
-                ownerId: context.session.user.id,
+                ownerId: shopOrWarehouseOwnerScope(context.session.user, "finance").ownerId,
                 ownerType: existing.ownerType,
             });
 
@@ -261,7 +262,7 @@ export const expenseRouter = {
             // Return system + user's custom categories
             return db.query.expenseCategory.findMany({
                 where: (c, { eq: eq2, or, isNull }) =>
-                    or(eq2(c.isSystem, true), eq2(c.ownerId, context.session.user.id), isNull(c.ownerId)),
+                    or(eq2(c.isSystem, true), eq2(c.ownerId, shopOrWarehouseOwnerScope(context.session.user, "finance").ownerId), isNull(c.ownerId)),
                 orderBy: (c, { asc }) => [asc(c.name)],
             });
         }),
@@ -287,7 +288,7 @@ export const expenseRouter = {
                     name: input.name,
                     slug: input.slug,
                     isSystem: false,
-                    ownerId: context.session.user.id,
+                    ownerId: shopOrWarehouseOwnerScope(context.session.user, "finance").ownerId,
                 })
                 .returning();
             return { category: created, message: "Category created" };

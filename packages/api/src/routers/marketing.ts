@@ -96,7 +96,7 @@ export const marketingRouter = {
             const role = context.session.user.role;
             let userType = "retailer";
             if (role === "warehouse") userType = "warehouse";
-            else if (role === "shop_owner") {
+            else if (role === "shop_owner" || role === "shop_staff") {
                 // For shop owners we default to retailer; could be wholesaler based on business type
                 userType = "retailer";
             }
