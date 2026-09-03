@@ -40,6 +40,13 @@ import {
   SidebarFooter,
   SidebarHeader,
 } from "@/components/ui/sidebar";
+import {
+  canManageShopStaff,
+  canShopActorAccessModule,
+  resolveShopFunctionForUser,
+  type ShopActor,
+  type ShopModule,
+} from "@bikalpo-project/auth/shop-staff-access";
 import { authClient } from "@/lib/auth-client";
 
 const D = "/dashboard";
@@ -318,8 +325,55 @@ const shopOwnerNavGroups: NavGroup[] = [
   },
 ];
 
+const SHOP_NAV_GROUP_MODULE: Record<string, ShopModule> = {
+  Overview: "overview",
+  "Inventory Management": "inventory",
+  "Supply & Purchasing": "purchase",
+  Sales: "sales",
+  "Finance & Accounts": "finance",
+  "Contacts & Locations": "contacts",
+  Network: "network",
+  "E-Commerce & Fulfillment": "fulfillment",
+  "Team Management": "delivery",
+  Marketing: "marketing",
+  Reports: "reports",
+  Referral: "referral",
+  Settings: "settings",
+};
+
+function visibleShopNavGroups(actor: ShopActor | null): NavGroup[] {
+  const effectiveActor = actor ?? "owner";
+  return shopOwnerNavGroups.flatMap((group) => {
+    const module = SHOP_NAV_GROUP_MODULE[group.label];
+    if (module && !canShopActorAccessModule(effectiveActor, module)) {
+      return [];
+    }
+    if (group.label !== "Settings" || canManageShopStaff(effectiveActor)) {
+      return [group];
+    }
+    return [
+      {
+        ...group,
+        items: group.items.map((item) => ({
+          ...item,
+          items: item.items?.filter(
+            (sub) =>
+              sub.url !== `${D}/user-roles` &&
+              sub.url !== `${D}/system-control`,
+          ),
+        })),
+      },
+    ];
+  });
+}
+
 export function ShopOwnerSidebar(props: React.ComponentProps<typeof Sidebar>) {
   const { data, isPending } = authClient.useSession();
+  const actor = resolveShopFunctionForUser({
+    role: data?.user.role,
+    shopFunction: data?.user.shopFunction,
+  });
+  const groups = isPending ? shopOwnerNavGroups : visibleShopNavGroups(actor);
 
   return (
     <Sidebar collapsible="offcanvas" {...props}>
@@ -344,7 +398,7 @@ export function ShopOwnerSidebar(props: React.ComponentProps<typeof Sidebar>) {
         </a>
       </SidebarHeader>
       <SidebarContent className="mt-4 thin-scrollbar">
-        <NavGrouped groups={shopOwnerNavGroups} />
+        <NavGrouped groups={groups} />
       </SidebarContent>
       <SidebarFooter>
         {isPending || !data ? (

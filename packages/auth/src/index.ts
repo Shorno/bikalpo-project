@@ -31,6 +31,7 @@ import {
   deliveryman,
   salesman,
   shop_owner,
+  shop_staff,
   warehouse,
 } from "./permissions";
 import {
@@ -70,6 +71,7 @@ export const auth = betterAuth({
         admin: adminRole,
         salesman,
         deliveryman,
+        shop_staff,
         warehouse,
       },
       defaultRole: "consumer",
@@ -188,6 +190,11 @@ export const auth = betterAuth({
       shopId: {
         type: "string",
         required: false,
+      },
+      shopFunction: {
+        type: "string",
+        required: false,
+        input: false,
       },
       // === Warehouse fields ===
       warehouseName: {
@@ -358,4 +365,4 @@ export async function setCredentialPassword(
 }
 
 // Re-export permissions for client usage
-export { ac, admin as adminRole, consumer, deliveryman, salesman, shop_owner, warehouse } from "./permissions";
+export { ac, admin as adminRole, consumer, deliveryman, salesman, shop_owner, shop_staff, warehouse } from "./permissions";

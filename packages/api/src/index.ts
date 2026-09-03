@@ -1,5 +1,7 @@
 import { ORPCError, os } from "@orpc/server";
 
+import { shopPortalShopId } from "@bikalpo-project/auth/shop-staff-access";
+
 import { isCatalogRequesterRole } from "./catalog-requester-role";
 import type { Context } from "./context";
 
@@ -111,6 +113,25 @@ const requireShopOwner = o.middleware(async ({ context, next }) => {
 });
 
 export const shopOwnerProcedure = publicProcedure.use(requireShopOwner);
+
+const requireShopPortal = o.middleware(async ({ context, next }) => {
+  if (!context.session?.user) {
+    throw new ORPCError("UNAUTHORIZED");
+  }
+  if (!shopPortalShopId(context.session.user)) {
+    throw new ORPCError("FORBIDDEN", {
+      message: "Shop dashboard access required",
+    });
+  }
+  return next({
+    context: {
+      ...context,
+      session: context.session,
+    },
+  });
+});
+
+export const shopPortalProcedure = publicProcedure.use(requireShopPortal);
 
 // Warehouse procedure - requires authenticated user with warehouse role
 const requireWarehouse = o.middleware(async ({ context, next }) => {

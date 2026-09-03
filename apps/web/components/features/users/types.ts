@@ -7,6 +7,7 @@ export type { User };
 export type UserRole =
   | "consumer"
   | "shop_owner"
+  | "shop_staff"
   | "admin"
   | "salesman"
   | "deliveryman";
@@ -35,6 +36,10 @@ export const roleConfig: Record<UserRole, { label: string; color: string }> = {
   shop_owner: {
     label: "Shop Owner",
     color: "bg-teal-100 text-teal-800 hover:bg-teal-100",
+  },
+  shop_staff: {
+    label: "Shop Staff",
+    color: "bg-emerald-100 text-emerald-800 hover:bg-emerald-100",
   },
   admin: {
     label: "Admin",

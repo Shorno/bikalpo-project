@@ -65,6 +65,8 @@ export const user = pgTable("user", {
     warehouseId: text("warehouse_id").references((): AnyPgColumn => user.id),
     // Links retailer delivery staff to their parent shop owner
     shopId: text("shop_id").references((): AnyPgColumn => user.id),
+    /** Shop-internal function for `shop_staff` (and optional for shop riders). */
+    shopFunction: text("shop_function"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at")
         .defaultNow()

@@ -89,6 +89,20 @@ export const admin = ac.newRole({
 });
 
 /**
+ * Shop staff role - shop dashboard employee (not the shop owner).
+ * Module access is decided by `shopFunction`, not this platform role.
+ */
+export const shop_staff = ac.newRole({
+    order: ["create", "read", "update", "list"],
+    product: ["read", "list"],
+    delivery: ["read", "list"],
+    estimate: ["create", "read", "update", "list"],
+    shop: ["read", "update"],
+    inventory: ["read", "list"],
+    seller_application: [],
+});
+
+/**
  * Warehouse role - product supply source
  * Can sell to shop owners and other warehouses, manage inventory and orders
  */
