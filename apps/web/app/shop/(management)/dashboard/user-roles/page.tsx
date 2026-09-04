@@ -341,7 +341,7 @@ export default function UserRolesPage() {
                         {module.pages.length} pages
                       </span>
                     </div>
-                    <Table>
+                    <Table className="min-w-[760px] table-fixed">
                       <TableHeader>
                         <TableRow>
                           <TableHead className="w-[42%]">Page</TableHead>
@@ -371,11 +371,15 @@ export default function UserRolesPage() {
                                 page.actions as readonly ShopPermissionAction[]
                               ).includes(action);
                               return (
-                                <TableCell className="text-center" key={action}>
+                                <TableCell
+                                  className="px-2 text-center [&:has([role=checkbox])]:pr-2"
+                                  key={action}
+                                >
                                   {supported ? (
                                     <Checkbox
                                       aria-label={`${page.label}: ${action}`}
                                       checked={hasGrant(page.resource, action)}
+                                      className="mx-auto"
                                       onCheckedChange={(checked) =>
                                         toggleGrant(
                                           page.resource,
