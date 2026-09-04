@@ -15,7 +15,7 @@ import {
 import { ORPCError } from "@orpc/server";
 import { and, eq, inArray, or, sql } from "drizzle-orm";
 import { z } from "zod";
-import { protectedProcedure } from "../index";
+import { shopOrWarehousePermissionProcedure } from "../index";
 import { shopOrWarehouseOwnerScope } from "../shop-portal-scope";
 
 function resolveOwner(user: { id: string; role?: string | null }) {
@@ -25,7 +25,11 @@ function resolveOwner(user: { id: string; role?: string | null }) {
 const actionSchema = z.enum(["damage", "supplier_return", "sale_application"]);
 
 export const emptyPackManagementRouter = {
-  getSummary: protectedProcedure.handler(async ({ context }) => {
+  getSummary: shopOrWarehousePermissionProcedure(
+    "shop_stock",
+    "view",
+    "inventory",
+  ).handler(async ({ context }) => {
     const { ownerId, ownerType } = resolveOwner(context.session.user);
     const [owner] = await db
       .select({
@@ -278,7 +282,11 @@ export const emptyPackManagementRouter = {
     };
   }),
 
-  recordAction: protectedProcedure
+  recordAction: shopOrWarehousePermissionProcedure(
+    "shop_stock",
+    "update",
+    "inventory",
+  )
     .input(
       z.object({
         variantId: z.number().int().positive(),

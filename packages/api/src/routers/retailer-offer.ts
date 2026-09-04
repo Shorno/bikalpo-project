@@ -12,10 +12,10 @@ import { ORPCError } from "@orpc/server";
 import { and, asc, desc, eq, inArray, lte, sql } from "drizzle-orm";
 import { z } from "zod";
 
-import { shopModuleProcedure } from "../index";
-import { shopTenantId } from "../shop-portal-scope";
+import { shopPermissionProcedure } from "../index";
 import { getOwnerPosCatalog } from "../services/owner-pos-store";
 import { resolveTemplateProductIdentities } from "../services/retailer-offer-variant-identity";
+import { shopTenantId } from "../shop-portal-scope";
 
 const statusSchema = z.enum(["active", "scheduled", "expired", "draft"]);
 const typeSchema = z.enum(["percentage", "flat", "buy_x_get_y"]);
@@ -415,7 +415,7 @@ function toEditableValues(input: z.infer<typeof editableOfferSchema>) {
 }
 
 export const retailerOfferRouter = {
-  getCreationOptions: shopModuleProcedure("marketing")
+  getCreationOptions: shopPermissionProcedure("shop_promotions", "view")
     .route({
       method: "GET",
       path: "/retailer-offers/creation-options",
@@ -552,7 +552,7 @@ export const retailerOfferRouter = {
       };
     }),
 
-  getDashboard: shopModuleProcedure("marketing")
+  getDashboard: shopPermissionProcedure("shop_promotions", "view")
     .route({
       method: "GET",
       path: "/retailer-offers",
@@ -667,7 +667,7 @@ export const retailerOfferRouter = {
       };
     }),
 
-  getDetail: shopModuleProcedure("marketing")
+  getDetail: shopPermissionProcedure("shop_promotions", "view")
     .route({
       method: "GET",
       path: "/retailer-offers/{id}",
@@ -712,7 +712,7 @@ export const retailerOfferRouter = {
       };
     }),
 
-  create: shopModuleProcedure("marketing")
+  create: shopPermissionProcedure("shop_promotions", "create")
     .route({
       method: "POST",
       path: "/retailer-offers",
@@ -824,7 +824,7 @@ export const retailerOfferRouter = {
       return { message: "Offer saved", offer: created };
     }),
 
-  update: shopModuleProcedure("marketing")
+  update: shopPermissionProcedure("shop_promotions", "update")
     .route({
       method: "PUT",
       path: "/retailer-offers/{id}",
@@ -886,7 +886,7 @@ export const retailerOfferRouter = {
       return { message: "Offer updated", offer: updated };
     }),
 
-  setAction: shopModuleProcedure("marketing")
+  setAction: shopPermissionProcedure("shop_promotions", "update")
     .route({
       method: "PATCH",
       path: "/retailer-offers/{id}/action",

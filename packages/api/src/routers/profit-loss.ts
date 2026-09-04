@@ -11,7 +11,7 @@ import {
 import { and, eq, gte, inArray, isNotNull, lte, sql } from "drizzle-orm";
 import { z } from "zod";
 
-import { protectedProcedure } from "../index";
+import { shopOrWarehousePermissionProcedure } from "../index";
 import { shopOrWarehouseOwnerScope } from "../shop-portal-scope";
 
 const ACTIVE_ORDER_STATUSES = ["confirmed", "processing", "delivered"] as const;
@@ -69,7 +69,11 @@ function signedProfitLossAmount(input: {
 
 export const profitLossRouter = {
   /** Date range Profit & Loss report */
-  getMonthlyPnL: protectedProcedure
+  getMonthlyPnL: shopOrWarehousePermissionProcedure(
+    "shop_profit_loss",
+    "view",
+    "finance",
+  )
     .route({
       method: "POST",
       path: "/profit-loss/monthly",
@@ -224,44 +228,44 @@ export const profitLossRouter = {
 
       if (ownerType === "warehouse") {
         const [orderRevenueRows, posRevenueRows] = await Promise.all([
-            db
-              .select({
-                total: order.total,
-                paymentStatus: order.paymentStatus,
-                invoicePaymentStatus: invoice.paymentStatus,
-              })
-              .from(order)
-              .leftJoin(
-                invoice,
-                and(
-                  eq(invoice.orderId, order.id),
-                  eq(invoice.invoiceType, "main"),
-                ),
-              )
-              .where(
-                and(
-                  eq(order.warehouseId, ownerId),
-                  eq(order.orderType, "b2b"),
-                  inArray(order.status, ACTIVE_ORDER_STATUSES),
-                  gte(order.createdAt, startDateTime),
-                  lte(order.createdAt, endDateTime),
-                ),
+          db
+            .select({
+              total: order.total,
+              paymentStatus: order.paymentStatus,
+              invoicePaymentStatus: invoice.paymentStatus,
+            })
+            .from(order)
+            .leftJoin(
+              invoice,
+              and(
+                eq(invoice.orderId, order.id),
+                eq(invoice.invoiceType, "main"),
               ),
-            db
-              .select({
-                paid: warehousePosSale.paid,
-                total: warehousePosSale.total,
-              })
-              .from(warehousePosSale)
-              .where(
-                and(
-                  eq(warehousePosSale.warehouseId, ownerId),
-                  eq(warehousePosSale.status, "completed"),
-                  gte(warehousePosSale.createdAt, startDateTime),
-                  lte(warehousePosSale.createdAt, endDateTime),
-                ),
+            )
+            .where(
+              and(
+                eq(order.warehouseId, ownerId),
+                eq(order.orderType, "b2b"),
+                inArray(order.status, ACTIVE_ORDER_STATUSES),
+                gte(order.createdAt, startDateTime),
+                lte(order.createdAt, endDateTime),
               ),
-          ]);
+            ),
+          db
+            .select({
+              paid: warehousePosSale.paid,
+              total: warehousePosSale.total,
+            })
+            .from(warehousePosSale)
+            .where(
+              and(
+                eq(warehousePosSale.warehouseId, ownerId),
+                eq(warehousePosSale.status, "completed"),
+                gte(warehousePosSale.createdAt, startDateTime),
+                lte(warehousePosSale.createdAt, endDateTime),
+              ),
+            ),
+        ]);
 
         productSales += orderRevenueRows.reduce((sum, row) => {
           if (
@@ -287,10 +291,7 @@ export const profitLossRouter = {
           .from(order)
           .leftJoin(
             invoice,
-            and(
-              eq(invoice.orderId, order.id),
-              eq(invoice.invoiceType, "main"),
-            ),
+            and(eq(invoice.orderId, order.id), eq(invoice.invoiceType, "main")),
           )
           .where(
             and(

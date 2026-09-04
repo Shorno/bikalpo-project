@@ -1,7 +1,10 @@
 import { auth, setCredentialPassword } from "@bikalpo-project/auth";
 import { passwordValidation } from "@bikalpo-project/auth/password-policy";
 import {
-  canManageShopStaff,
+  authorizeShopPermission,
+  SHOP_PERMISSION_PAGES,
+} from "@bikalpo-project/auth/shop-permissions";
+import {
   isShopFunction,
   listAssignableShopFunctions,
   modulesForShopActor,
@@ -12,15 +15,17 @@ import {
   SHOP_STAFF_PLATFORM_ROLE,
   shopFunctionAccessLevel,
   shopFunctionLabel,
-  shopPortalShopId,
 } from "@bikalpo-project/auth/shop-staff-access";
 import { db } from "@bikalpo-project/db";
-import { user } from "@bikalpo-project/db/schema";
+import { shopRole, shopUserRole, user } from "@bikalpo-project/db/schema";
 import { ORPCError } from "@orpc/server";
 import { and, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 
 import { shopOwnerProcedure, shopPortalProcedure } from "../index";
+import { resolveShopAuthorization } from "../shop-authorization";
+import { databaseShopRoleGrantRepository } from "../shop-role-grant-repository";
+import { ensureDefaultShopRoles } from "../shop-role-store";
 
 const shopFunctionSchema = z.enum(SHOP_FUNCTIONS);
 
@@ -113,7 +118,9 @@ async function findShopStaffOrThrow(shopId: string, staffId: string) {
     );
 
   if (!staff) {
-    throw new ORPCError("NOT_FOUND", { message: "Shop staff member not found" });
+    throw new ORPCError("NOT_FOUND", {
+      message: "Shop staff member not found",
+    });
   }
 
   return staff;
@@ -128,31 +135,43 @@ export const shopStaffRouter = {
       summary: "Current shop dashboard access for the signed-in owner or staff",
     })
     .handler(async ({ context }) => {
-      const user = context.session.user;
-      const actor = resolveShopFunctionForUser({
-        role: user.role,
-        shopFunction: (user as { shopFunction?: string | null }).shopFunction,
-      });
-      const shopId = shopPortalShopId({
-        id: user.id,
-        role: user.role,
-        shopId: (user as { shopId?: string | null }).shopId,
-      });
-      if (!actor || !shopId) {
-        throw new ORPCError("FORBIDDEN", {
-          message: "Shop dashboard access required",
-        });
-      }
+      const access = await resolveShopAuthorization(
+        context.session.user,
+        databaseShopRoleGrantRepository,
+      );
+      const visibleModules = [
+        ...new Set(
+          SHOP_PERMISSION_PAGES.filter((page) =>
+            authorizeShopPermission(access.permissions, page.resource, "view"),
+          ).map((page) => page.module),
+        ),
+      ];
 
       return {
-        actor,
-        shopId,
+        actor: access.actor,
+        shopId: access.shopId,
+        source: access.source,
+        role: access.role,
         roleLabel:
-          actor === "owner" ? "Super Admin" : shopFunctionLabel(actor),
+          access.actor === "owner"
+            ? "Super Admin"
+            : (access.role?.name ??
+              (access.actor === "custom"
+                ? "Custom Role"
+                : shopFunctionLabel(access.actor))),
         accessLevel:
-          actor === "owner" ? "Full Control" : shopFunctionAccessLevel(actor),
-        modules: modulesForShopActor(actor),
-        canManageStaff: canManageShopStaff(actor),
+          access.actor === "owner"
+            ? "Full Control"
+            : access.actor === "custom"
+              ? "Custom"
+              : shopFunctionAccessLevel(access.actor),
+        modules: visibleModules,
+        permissions: access.permissions,
+        canManageStaff: authorizeShopPermission(
+          access.permissions,
+          "shop_staff",
+          "manage",
+        ),
       };
     }),
 
@@ -229,20 +248,52 @@ export const shopStaffRouter = {
       summary: "Create shop staff and assign a function",
     })
     .input(
-      z.object({
-        name: z.string().trim().min(2).max(100),
-        email: z.string().trim().email(),
-        password: passwordValidation,
-        phoneNumber: z.string().trim().max(20).optional(),
-        shopFunction: shopFunctionSchema,
-        serviceArea: z.string().trim().max(200).optional(),
-      }),
+      z
+        .object({
+          name: z.string().trim().min(2).max(100),
+          email: z.string().trim().email(),
+          password: passwordValidation,
+          phoneNumber: z.string().trim().max(20).optional(),
+          shopFunction: shopFunctionSchema.optional(),
+          roleId: z.number().int().positive().optional(),
+          serviceArea: z.string().trim().max(200).optional(),
+        })
+        .refine((input) => input.roleId || input.shopFunction, {
+          message: "Select a role",
+          path: ["roleId"],
+        }),
     )
     .handler(async ({ context, input }) => {
       const shopId = context.session.user.id;
-      const platformRole = platformRoleForShopFunction(input.shopFunction);
+      await ensureDefaultShopRoles(shopId);
+      const [assignedRole] = input.roleId
+        ? await db
+            .select()
+            .from(shopRole)
+            .where(
+              and(eq(shopRole.id, input.roleId), eq(shopRole.shopId, shopId)),
+            )
+            .limit(1)
+        : [];
+      if (input.roleId && !assignedRole) {
+        throw new ORPCError("BAD_REQUEST", { message: "Shop role not found" });
+      }
+      const assignedFunction = assignedRole
+        ? isShopFunction(assignedRole.legacyFunction)
+          ? assignedRole.legacyFunction
+          : "custom"
+        : input.shopFunction;
+      if (!assignedFunction) {
+        throw new ORPCError("BAD_REQUEST", { message: "Select a role" });
+      }
+      const platformRole =
+        assignedFunction === "custom"
+          ? SHOP_STAFF_PLATFORM_ROLE
+          : platformRoleForShopFunction(assignedFunction);
 
-      let created: { user: { id: string; name: string; email: string; createdAt: Date } };
+      let created: {
+        user: { id: string; name: string; email: string; createdAt: Date };
+      };
       try {
         created = await auth.api.createUser({
           body: {
@@ -257,7 +308,9 @@ export const shopStaffRouter = {
         });
       } catch (error) {
         const message =
-          error instanceof Error ? error.message : "Failed to create shop staff";
+          error instanceof Error
+            ? error.message
+            : "Failed to create shop staff";
         throw new ORPCError("BAD_REQUEST", { message });
       }
 
@@ -272,11 +325,18 @@ export const shopStaffRouter = {
         .set({
           shopId,
           warehouseId: null,
-          shopFunction: input.shopFunction,
+          shopFunction: assignedFunction,
           serviceArea:
-            input.shopFunction === "delivery" ? input.serviceArea || null : null,
+            assignedFunction === "delivery" ? input.serviceArea || null : null,
         })
         .where(eq(user.id, created.user.id));
+      if (assignedRole) {
+        await db.insert(shopUserRole).values({
+          userId: created.user.id,
+          shopId,
+          roleId: assignedRole.id,
+        });
+      }
 
       const staff = await findShopStaffOrThrow(shopId, created.user.id);
       return {
@@ -308,15 +368,44 @@ export const shopStaffRouter = {
 
       const staff = await findShopStaffOrThrow(shopId, input.staffId);
       const nextRole = platformRoleForShopFunction(input.shopFunction);
-      await db
-        .update(user)
-        .set({
-          role: nextRole,
-          shopFunction: input.shopFunction,
-          serviceArea:
-            input.shopFunction === "delivery" ? staff.serviceArea : null,
-        })
-        .where(eq(user.id, staff.id));
+      await ensureDefaultShopRoles(shopId);
+      const [defaultRole] =
+        input.shopFunction === "delivery"
+          ? []
+          : await db
+              .select({ id: shopRole.id })
+              .from(shopRole)
+              .where(
+                and(
+                  eq(shopRole.shopId, shopId),
+                  eq(shopRole.legacyFunction, input.shopFunction),
+                ),
+              )
+              .limit(1);
+      await db.transaction(async (tx) => {
+        await tx
+          .update(user)
+          .set({
+            role: nextRole,
+            shopFunction: input.shopFunction,
+            serviceArea:
+              input.shopFunction === "delivery" ? staff.serviceArea : null,
+          })
+          .where(eq(user.id, staff.id));
+        if (defaultRole) {
+          await tx
+            .insert(shopUserRole)
+            .values({ userId: staff.id, shopId, roleId: defaultRole.id })
+            .onConflictDoUpdate({
+              target: shopUserRole.userId,
+              set: { shopId, roleId: defaultRole.id },
+            });
+        } else {
+          await tx
+            .delete(shopUserRole)
+            .where(eq(shopUserRole.userId, staff.id));
+        }
+      });
 
       const updated = await findShopStaffOrThrow(shopId, staff.id);
       return {
@@ -431,7 +520,9 @@ export const shopStaffRouter = {
         .update(user)
         .set({
           banned: input.banned,
-          banReason: input.banned ? input.reason || "Banned by shop owner" : null,
+          banReason: input.banned
+            ? input.reason || "Banned by shop owner"
+            : null,
           banExpires: null,
         })
         .where(eq(user.id, input.staffId));

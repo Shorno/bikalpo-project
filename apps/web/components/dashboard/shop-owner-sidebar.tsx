@@ -1,5 +1,7 @@
 "use client";
 
+import type { ShopPermissionMap } from "@bikalpo-project/auth/shop-permissions";
+import { canPermissionMapAccessPath } from "@bikalpo-project/auth/shop-permissions";
 import {
   AlertTriangleIcon,
   ArrowRightLeftIcon,
@@ -40,13 +42,7 @@ import {
   SidebarFooter,
   SidebarHeader,
 } from "@/components/ui/sidebar";
-import {
-  canManageShopStaff,
-  canShopActorAccessModule,
-  resolveShopFunctionForUser,
-  type ShopActor,
-  type ShopModule,
-} from "@bikalpo-project/auth/shop-staff-access";
+import { useShopMyAccess } from "@/hooks/use-shop-staff-api";
 import { authClient } from "@/lib/auth-client";
 
 const D = "/dashboard";
@@ -325,55 +321,25 @@ const shopOwnerNavGroups: NavGroup[] = [
   },
 ];
 
-const SHOP_NAV_GROUP_MODULE: Record<string, ShopModule> = {
-  Overview: "overview",
-  "Inventory Management": "inventory",
-  "Supply & Purchasing": "purchase",
-  Sales: "sales",
-  "Finance & Accounts": "finance",
-  "Contacts & Locations": "contacts",
-  Network: "network",
-  "E-Commerce & Fulfillment": "fulfillment",
-  "Team Management": "delivery",
-  Marketing: "marketing",
-  Reports: "reports",
-  Referral: "referral",
-  Settings: "settings",
-};
-
-function visibleShopNavGroups(actor: ShopActor | null): NavGroup[] {
-  const effectiveActor = actor ?? "owner";
+function visibleShopNavGroups(permissions: ShopPermissionMap): NavGroup[] {
   return shopOwnerNavGroups.flatMap((group) => {
-    const module = SHOP_NAV_GROUP_MODULE[group.label];
-    if (module && !canShopActorAccessModule(effectiveActor, module)) {
-      return [];
-    }
-    if (group.label !== "Settings" || canManageShopStaff(effectiveActor)) {
-      return [group];
-    }
-    return [
-      {
-        ...group,
-        items: group.items.map((item) => ({
-          ...item,
-          items: item.items?.filter(
-            (sub) =>
-              sub.url !== `${D}/user-roles` &&
-              sub.url !== `${D}/system-control`,
-          ),
-        })),
-      },
-    ];
+    const items = group.items.flatMap((item) => {
+      const children = item.items?.filter((child) =>
+        canPermissionMapAccessPath(permissions, child.url),
+      );
+      const mayOpen = canPermissionMapAccessPath(permissions, item.url);
+      return mayOpen || children?.length ? [{ ...item, items: children }] : [];
+    });
+    return items.length ? [{ ...group, items }] : [];
   });
 }
 
 export function ShopOwnerSidebar(props: React.ComponentProps<typeof Sidebar>) {
   const { data, isPending } = authClient.useSession();
-  const actor = resolveShopFunctionForUser({
-    role: data?.user.role,
-    shopFunction: data?.user.shopFunction,
-  });
-  const groups = isPending ? shopOwnerNavGroups : visibleShopNavGroups(actor);
+  const access = useShopMyAccess();
+  const groups = access.data
+    ? visibleShopNavGroups(access.data.permissions)
+    : [];
 
   return (
     <Sidebar collapsible="offcanvas" {...props}>

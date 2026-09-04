@@ -13,7 +13,24 @@ export type ShopSessionUser = {
   shopFunction: string | null;
 };
 
-export function shopSessionUser(user: { id: string; role?: string | null }): ShopSessionUser {
+const authorizedModules = Symbol("authorizedShopModules");
+type AuthorizedUser = {
+  [authorizedModules]?: Set<ShopModule>;
+};
+
+export function markShopModuleAuthorized(
+  user: { id: string; role?: string | null },
+  module: ShopModule,
+) {
+  const target = user as AuthorizedUser;
+  target[authorizedModules] ??= new Set();
+  target[authorizedModules]?.add(module);
+}
+
+export function shopSessionUser(user: {
+  id: string;
+  role?: string | null;
+}): ShopSessionUser {
   const extra = user as {
     shopId?: string | null;
     shopFunction?: string | null;
@@ -26,7 +43,10 @@ export function shopSessionUser(user: { id: string; role?: string | null }): Sho
   };
 }
 
-export function requireShopPortalActor(user: { id: string; role?: string | null }): {
+export function requireShopPortalActor(user: {
+  id: string;
+  role?: string | null;
+}): {
   shopId: string;
   actor: ShopActor;
 } {
@@ -39,7 +59,10 @@ export function requireShopPortalActor(user: { id: string; role?: string | null 
   return portal;
 }
 
-export function shopTenantId(user: { id: string; role?: string | null }): string {
+export function shopTenantId(user: {
+  id: string;
+  role?: string | null;
+}): string {
   return requireShopPortalActor(user).shopId;
 }
 
@@ -48,7 +71,10 @@ export function requireShopModule(
   module: ShopModule,
 ): { shopId: string; actor: ShopActor } {
   const portal = requireShopPortalActor(user);
-  if (!canShopActorAccessModule(portal.actor, module)) {
+  const wasAuthorized = (user as AuthorizedUser)[authorizedModules]?.has(
+    module,
+  );
+  if (!wasAuthorized && !canShopActorAccessModule(portal.actor, module)) {
     throw new ORPCError("FORBIDDEN", {
       message: `Shop ${module} access required`,
     });

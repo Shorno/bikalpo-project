@@ -20,9 +20,9 @@ import {
 import { ORPCError } from "@orpc/server";
 import { and, count, eq, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
-import { shopModuleProcedure } from "../index";
-import { shopTenantId } from "../shop-portal-scope";
+import { shopPermissionProcedure } from "../index";
 import { recalculateOffersForShopProduct } from "../services/open-order-matching";
+import { shopTenantId } from "../shop-portal-scope";
 import {
   isConcreteVariantOption,
   linkProductVariantsToCatalog,
@@ -385,7 +385,10 @@ async function syncProductVariants({
 }
 
 export const shopProductConfigEndpoints = {
-  getShopCoreConfiguration: shopModuleProcedure("inventory")
+  getShopCoreConfiguration: shopPermissionProcedure(
+    "shop_product_catalog",
+    "view",
+  )
     .input(z.object({ coreProductId: z.number().int().positive() }))
     .handler(async ({ context, input }) => {
       const shopId = shopTenantId(context.session.user);
@@ -518,7 +521,10 @@ export const shopProductConfigEndpoints = {
       };
     }),
 
-  configureShopCoreProducts: shopModuleProcedure("inventory")
+  configureShopCoreProducts: shopPermissionProcedure(
+    "shop_product_catalog",
+    "update",
+  )
     .input(configureSchema)
     .handler(async ({ context, input }) => {
       const shopId = shopTenantId(context.session.user);
@@ -837,7 +843,7 @@ export const shopProductConfigEndpoints = {
       };
     }),
 
-  getShopOwnedProductForEdit: shopModuleProcedure("inventory")
+  getShopOwnedProductForEdit: shopPermissionProcedure("shop_products", "view")
     .input(z.object({ productId: z.number().int().positive() }))
     .handler(async ({ context, input }) => {
       const shopId = shopTenantId(context.session.user);
@@ -883,7 +889,7 @@ export const shopProductConfigEndpoints = {
       return { product: found, options: { variantOptions: options } };
     }),
 
-  updateShopOwnedProduct: shopModuleProcedure("inventory")
+  updateShopOwnedProduct: shopPermissionProcedure("shop_products", "update")
     .input(updateSchema)
     .handler(async ({ context, input }) => {
       const shopId = shopTenantId(context.session.user);

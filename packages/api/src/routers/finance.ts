@@ -36,7 +36,7 @@ import {
 } from "drizzle-orm";
 import { z } from "zod";
 
-import { protectedProcedure } from "../index";
+import { shopOrWarehousePermissionProcedure } from "../index";
 import { shopOrWarehouseOwnerScope } from "../shop-portal-scope";
 import { localDateStamp } from "../utils/date";
 
@@ -2142,7 +2142,11 @@ async function resolveAccountsPayableAccount(input: {
 }
 
 export const financeRouter = {
-  getChartOfAccounts: protectedProcedure
+  getChartOfAccounts: shopOrWarehousePermissionProcedure(
+    "shop_accounts",
+    "view",
+    "finance",
+  )
     .route({
       method: "POST",
       path: "/finance/chart-of-accounts",
@@ -2218,7 +2222,11 @@ export const financeRouter = {
       };
     }),
 
-  getPaymentAccounts: protectedProcedure
+  getPaymentAccounts: shopOrWarehousePermissionProcedure(
+    "shop_accounts",
+    "view",
+    "finance",
+  )
     .route({
       method: "POST",
       path: "/finance/payment-accounts",
@@ -2279,7 +2287,11 @@ export const financeRouter = {
       };
     }),
 
-  getFinancialSettingsAccounts: protectedProcedure
+  getFinancialSettingsAccounts: shopOrWarehousePermissionProcedure(
+    "shop_accounts",
+    "view",
+    "finance",
+  )
     .route({
       method: "POST",
       path: "/finance/settings/payment-accounts",
@@ -2318,7 +2330,11 @@ export const financeRouter = {
       };
     }),
 
-  createFinancialSettingsAccount: protectedProcedure
+  createFinancialSettingsAccount: shopOrWarehousePermissionProcedure(
+    "shop_accounts",
+    "create",
+    "finance",
+  )
     .route({
       method: "POST",
       path: "/finance/settings/payment-accounts/create",
@@ -2453,7 +2469,11 @@ export const financeRouter = {
       return { id: String(created.id), message: "Financial account created" };
     }),
 
-  updateFinancialSettingsAccount: protectedProcedure
+  updateFinancialSettingsAccount: shopOrWarehousePermissionProcedure(
+    "shop_accounts",
+    "update",
+    "finance",
+  )
     .route({
       method: "POST",
       path: "/finance/settings/payment-accounts/update",
@@ -2551,7 +2571,11 @@ export const financeRouter = {
       return { message: "Financial account updated" };
     }),
 
-  createMoneyMovement: protectedProcedure
+  createMoneyMovement: shopOrWarehousePermissionProcedure(
+    "shop_transactions",
+    "create",
+    "finance",
+  )
     .route({
       method: "POST",
       path: "/finance/money-movements/create",
@@ -2884,7 +2908,11 @@ export const financeRouter = {
       };
     }),
 
-  createOpeningStock: protectedProcedure
+  createOpeningStock: shopOrWarehousePermissionProcedure(
+    "shop_transactions",
+    "create",
+    "finance",
+  )
     .route({
       method: "POST",
       path: "/finance/opening-stock/create",
@@ -3053,7 +3081,11 @@ export const financeRouter = {
       };
     }),
 
-  getGeneralLedger: protectedProcedure
+  getGeneralLedger: shopOrWarehousePermissionProcedure(
+    "shop_ledger",
+    "view",
+    "finance",
+  )
     .route({
       method: "POST",
       path: "/finance/general-ledger",
@@ -3375,7 +3407,11 @@ export const financeRouter = {
       };
     }),
 
-  updateLedgerTransaction: protectedProcedure
+  updateLedgerTransaction: shopOrWarehousePermissionProcedure(
+    "shop_ledger",
+    "update",
+    "finance",
+  )
     .route({
       method: "POST",
       path: "/finance/general-ledger/transactions/update",
@@ -3510,7 +3546,11 @@ export const financeRouter = {
       };
     }),
 
-  deleteLedgerTransaction: protectedProcedure
+  deleteLedgerTransaction: shopOrWarehousePermissionProcedure(
+    "shop_ledger",
+    "delete",
+    "finance",
+  )
     .route({
       method: "POST",
       path: "/finance/general-ledger/transactions/delete",
@@ -3591,7 +3631,11 @@ export const financeRouter = {
       return { message: "Ledger transaction deleted" };
     }),
 
-  getFixedAssetAccounts: protectedProcedure
+  getFixedAssetAccounts: shopOrWarehousePermissionProcedure(
+    "shop_accounts",
+    "view",
+    "finance",
+  )
     .route({
       method: "POST",
       path: "/finance/fixed-asset-accounts",
@@ -3636,7 +3680,11 @@ export const financeRouter = {
       };
     }),
 
-  getLoanAccounts: protectedProcedure
+  getLoanAccounts: shopOrWarehousePermissionProcedure(
+    "shop_accounts",
+    "view",
+    "finance",
+  )
     .route({
       method: "POST",
       path: "/finance/loan-accounts",
@@ -3684,7 +3732,11 @@ export const financeRouter = {
       };
     }),
 
-  createDaybookExpense: protectedProcedure
+  createDaybookExpense: shopOrWarehousePermissionProcedure(
+    "shop_expenses",
+    "create",
+    "finance",
+  )
     .route({
       method: "POST",
       path: "/finance/daybook-expenses/create",
@@ -3904,7 +3956,11 @@ export const financeRouter = {
       };
     }),
 
-  createFixedAssetPurchase: protectedProcedure
+  createFixedAssetPurchase: shopOrWarehousePermissionProcedure(
+    "shop_transactions",
+    "create",
+    "finance",
+  )
     .route({
       method: "POST",
       path: "/finance/fixed-asset-purchases/create",
@@ -4095,7 +4151,11 @@ export const financeRouter = {
       };
     }),
 
-  createProductPurchase: protectedProcedure
+  createProductPurchase: shopOrWarehousePermissionProcedure(
+    "shop_transactions",
+    "create",
+    "finance",
+  )
     .route({
       method: "POST",
       path: "/finance/product-purchases/create",
@@ -4379,7 +4439,11 @@ export const financeRouter = {
       };
     }),
 
-  createProductSale: protectedProcedure
+  createProductSale: shopOrWarehousePermissionProcedure(
+    "shop_transactions",
+    "create",
+    "finance",
+  )
     .route({
       method: "POST",
       path: "/finance/product-sales/create",
@@ -4579,7 +4643,11 @@ export const financeRouter = {
       };
     }),
 
-  createLoanReceived: protectedProcedure
+  createLoanReceived: shopOrWarehousePermissionProcedure(
+    "shop_transactions",
+    "create",
+    "finance",
+  )
     .route({
       method: "POST",
       path: "/finance/loans/received/create",
@@ -4744,7 +4812,11 @@ export const financeRouter = {
       };
     }),
 
-  createSupplierAdvancePayment: protectedProcedure
+  createSupplierAdvancePayment: shopOrWarehousePermissionProcedure(
+    "shop_transactions",
+    "create",
+    "finance",
+  )
     .route({
       method: "POST",
       path: "/finance/supplier-advances/create",
@@ -4873,7 +4945,11 @@ export const financeRouter = {
       };
     }),
 
-  createCustomerAdvancePayment: protectedProcedure
+  createCustomerAdvancePayment: shopOrWarehousePermissionProcedure(
+    "shop_transactions",
+    "create",
+    "finance",
+  )
     .route({
       method: "POST",
       path: "/finance/customer-advances/create",
@@ -5008,7 +5084,11 @@ export const financeRouter = {
       };
     }),
 
-  createCategory: protectedProcedure
+  createCategory: shopOrWarehousePermissionProcedure(
+    "shop_finance_categories",
+    "create",
+    "finance",
+  )
     .route({
       method: "POST",
       path: "/finance/categories/create",
@@ -5093,7 +5173,11 @@ export const financeRouter = {
       };
     }),
 
-  createAccount: protectedProcedure
+  createAccount: shopOrWarehousePermissionProcedure(
+    "shop_accounts",
+    "create",
+    "finance",
+  )
     .route({
       method: "POST",
       path: "/finance/accounts/create",
@@ -5271,7 +5355,11 @@ export const financeRouter = {
       };
     }),
 
-  updateAccount: protectedProcedure
+  updateAccount: shopOrWarehousePermissionProcedure(
+    "shop_accounts",
+    "update",
+    "finance",
+  )
     .route({
       method: "POST",
       path: "/finance/accounts/update",

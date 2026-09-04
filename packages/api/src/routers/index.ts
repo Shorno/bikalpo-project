@@ -65,6 +65,7 @@ import { returnsRouter } from "./returns";
 import { salesmanRouter } from "./salesman";
 import { sellerApplicationRouter } from "./seller-application";
 import { shopOwnerRouter } from "./shop-owner";
+import { shopRoleRouter } from "./shop-role";
 import { shopStaffRouter } from "./shop-staff";
 import { stockAdjustmentRouter } from "./stock-adjustment";
 import { stockOverviewRouter } from "./stock-overview";
@@ -137,6 +138,7 @@ export const appRouter = {
   verifiedUser: verifiedUserRouter,
   sellerApplication: sellerApplicationRouter,
   shopOwner: shopOwnerRouter,
+  shopRole: shopRoleRouter,
   shopStaff: shopStaffRouter,
   warehouseApplication: warehouseApplicationRouter,
   warehouse: warehouseRouter,

@@ -3,17 +3,17 @@ import test from "node:test";
 import {
   canManageShopStaff,
   canShopActorAccessModule,
+  canShopUserAccessModule,
   isShopPortalRole,
   listAssignableShopFunctions,
+  modulesForShopActor,
   platformRoleForShopFunction,
   presentShopDirectoryMember,
   resolveShopFunctionForUser,
+  resolveShopPortalActor,
   SHOP_STAFF_PLATFORM_ROLE,
   shopFunctionAccessLevel,
   shopFunctionLabel,
-  canShopUserAccessModule,
-  modulesForShopActor,
-  resolveShopPortalActor,
   shopPortalShopId,
 } from "./shop-staff-access";
 
@@ -25,8 +25,9 @@ test("assignable shop functions stay off the platform role column", () => {
     "delivery",
     "inventory",
   ]);
-  assert.equal(listAssignableShopFunctions().includes("shop_owner"), false);
-  assert.equal(listAssignableShopFunctions().includes("admin"), false);
+  const functions = new Set<string>(listAssignableShopFunctions());
+  assert.equal(functions.has("shop_owner"), false);
+  assert.equal(functions.has("admin"), false);
 });
 
 test("shop functions map to display labels and access levels from the store wireframe", () => {
@@ -46,7 +47,10 @@ test("purchase manager may use purchase modules and not sales or staff", () => {
   assert.equal(canShopActorAccessModule("purchase_manager", "purchase"), true);
   assert.equal(canShopActorAccessModule("purchase_manager", "overview"), true);
   assert.equal(canShopActorAccessModule("purchase_manager", "sales"), false);
-  assert.equal(canShopActorAccessModule("purchase_manager", "inventory"), false);
+  assert.equal(
+    canShopActorAccessModule("purchase_manager", "inventory"),
+    false,
+  );
   assert.equal(canShopActorAccessModule("purchase_manager", "staff"), false);
 });
 
@@ -79,7 +83,10 @@ test("delivery stays on the deliveryman portal; other functions use shop_staff",
     platformRoleForShopFunction("purchase_manager"),
     SHOP_STAFF_PLATFORM_ROLE,
   );
-  assert.equal(platformRoleForShopFunction("shop_admin"), SHOP_STAFF_PLATFORM_ROLE);
+  assert.equal(
+    platformRoleForShopFunction("shop_admin"),
+    SHOP_STAFF_PLATFORM_ROLE,
+  );
   assert.equal(isShopPortalRole("shop_owner"), true);
   assert.equal(isShopPortalRole(SHOP_STAFF_PLATFORM_ROLE), true);
   assert.equal(isShopPortalRole("deliveryman"), false);
@@ -102,6 +109,17 @@ test("stored users resolve to shop functions without rewriting platform role", (
     resolveShopFunctionForUser({ role: "shop_owner", shopFunction: null }),
     "owner",
   );
+});
+
+test("database-backed custom roles enter the shop portal without legacy grants", () => {
+  assert.equal(
+    resolveShopFunctionForUser({
+      role: "shop_staff",
+      shopFunction: "custom",
+    }),
+    "custom",
+  );
+  assert.equal(canShopActorAccessModule("custom", "overview"), false);
 });
 
 test("shop portal tenancy is the owner id or the staff shopId", () => {

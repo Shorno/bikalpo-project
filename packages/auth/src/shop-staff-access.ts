@@ -29,7 +29,7 @@ export const SHOP_MODULES = [
 
 export type ShopModule = (typeof SHOP_MODULES)[number];
 
-export type ShopActor = "owner" | ShopFunction;
+export type ShopActor = "owner" | "custom" | ShopFunction;
 
 export type ShopAccessLevel =
   | "Full Control"
@@ -37,7 +37,8 @@ export type ShopAccessLevel =
   | "Purchase"
   | "Sales"
   | "Delivery"
-  | "Inventory";
+  | "Inventory"
+  | "Custom";
 
 const SHOP_FUNCTION_LABELS: Record<ShopFunction, string> = {
   shop_admin: "Admin",
@@ -88,11 +89,14 @@ export function canShopActorAccessModule(
   module: ShopModule,
 ): boolean {
   if (actor === "owner") return OWNER_MODULES.has(module);
+  if (actor === "custom") return false;
   return FUNCTION_MODULES[actor].has(module);
 }
 
 export function modulesForShopActor(actor: ShopActor): ShopModule[] {
-  return SHOP_MODULES.filter((module) => canShopActorAccessModule(actor, module));
+  return SHOP_MODULES.filter((module) =>
+    canShopActorAccessModule(actor, module),
+  );
 }
 
 export function shopPortalShopId(user: {
@@ -158,7 +162,16 @@ export function resolveShopFunctionForUser(user: {
 }): ShopActor | null {
   if (user.role === "shop_owner") return "owner";
   if (user.role === "deliveryman") return "delivery";
-  if (user.role === SHOP_STAFF_PLATFORM_ROLE && isShopFunction(user.shopFunction)) {
+  if (
+    user.role === SHOP_STAFF_PLATFORM_ROLE &&
+    user.shopFunction === "custom"
+  ) {
+    return "custom";
+  }
+  if (
+    user.role === SHOP_STAFF_PLATFORM_ROLE &&
+    isShopFunction(user.shopFunction)
+  ) {
     return user.shopFunction;
   }
   return null;
@@ -185,12 +198,25 @@ export function presentShopDirectoryMember(user: {
     };
   }
 
-  if (actor) {
+  if (actor && actor !== "custom") {
     return {
       id: user.id,
       name: user.name,
       roleLabel: shopFunctionLabel(actor),
       accessLevel: shopFunctionAccessLevel(actor),
+      isOwner: false,
+      canOpenProfile: true,
+      banned: Boolean(user.banned),
+      actor,
+    };
+  }
+
+  if (actor === "custom") {
+    return {
+      id: user.id,
+      name: user.name,
+      roleLabel: "Custom Role",
+      accessLevel: "Custom" as const,
       isOwner: false,
       canOpenProfile: true,
       banned: Boolean(user.banned),

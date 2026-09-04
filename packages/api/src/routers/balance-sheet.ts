@@ -13,7 +13,7 @@ import {
 import { and, asc, eq, gte, inArray, isNotNull, lte, sql } from "drizzle-orm";
 import { z } from "zod";
 
-import { protectedProcedure } from "../index";
+import { shopOrWarehousePermissionProcedure } from "../index";
 import { shopOrWarehouseOwnerScope } from "../shop-portal-scope";
 
 const ACTIVE_SALE_STATUSES = new Set(["confirmed", "processing", "delivered"]);
@@ -80,7 +80,11 @@ function withinActiveSales(status: string | null | undefined) {
 }
 
 export const balanceSheetRouter = {
-  getBalanceSheet: protectedProcedure
+  getBalanceSheet: shopOrWarehousePermissionProcedure(
+    "shop_balance_sheet",
+    "view",
+    "finance",
+  )
     .route({
       method: "POST",
       path: "/balance-sheet",
