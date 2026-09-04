@@ -13,7 +13,6 @@ import {
 } from "drizzle-orm/pg-core";
 
 import { user } from "./auth-schema";
-import { timestamps } from "./columns.helpers";
 
 /** A retailer-defined named role scoped to exactly one shop. */
 export const shopRole = pgTable(
@@ -27,7 +26,8 @@ export const shopRole = pgTable(
     description: text("description"),
     isSystem: boolean("is_system").default(false).notNull(),
     legacyFunction: text("legacy_function"),
-    ...timestamps,
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
   (table) => [
     uniqueIndex("shopRole_shop_name_unique").on(table.shopId, table.name),
@@ -73,7 +73,8 @@ export const shopUserRole = pgTable(
     roleId: integer("role_id")
       .notNull()
       .references(() => shopRole.id, { onDelete: "restrict" }),
-    ...timestamps,
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
   (table) => [
     index("shopUserRole_shop_idx").on(table.shopId),
