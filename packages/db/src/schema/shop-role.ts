@@ -1,4 +1,4 @@
-import { relations } from "drizzle-orm";
+import { relations, sql } from "drizzle-orm";
 import {
   boolean,
   index,
@@ -34,7 +34,7 @@ export const shopRole = pgTable(
     uniqueIndex("shopRole_shop_legacy_function_unique").on(
       table.shopId,
       table.legacyFunction,
-    ),
+    ).where(sql`${table.legacyFunction} is not null`),
     index("shopRole_shop_idx").on(table.shopId),
   ],
 );

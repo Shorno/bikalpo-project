@@ -75,6 +75,12 @@ export type ShopPermissionMap = Partial<{
   [Resource in ShopPermissionResource]: ShopPermissionAction[];
 }>;
 
+export const SHOP_OWNER_ONLY_RESOURCES = [
+  "shop_settings",
+  "shop_staff",
+  "shop_system_control",
+] as const satisfies readonly ShopPermissionResource[];
+
 export type ShopPermissionModule =
   | "overview"
   | "inventory"
@@ -175,6 +181,10 @@ export const SHOP_PERMISSION_PAGES: readonly ShopPermissionPage[] = [
     "Stock Control",
     "/dashboard/stock",
     "Stock overview, receipts, expiry, and conversions.",
+    [
+      { pattern: "/dashboard/stock" },
+      { pattern: "/dashboard/inventory" },
+    ],
   ),
   page(
     "shop_stock_adjustment",
@@ -477,6 +487,10 @@ export const SHOP_PERMISSION_PAGES: readonly ShopPermissionPage[] = [
     "General Settings",
     "/dashboard/settings",
     "Business and login preferences.",
+    [
+      { pattern: "/dashboard/settings" },
+      { pattern: "/dashboard/invoice-settings" },
+    ],
   ),
   page(
     "shop_staff",

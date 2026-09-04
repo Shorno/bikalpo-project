@@ -5,6 +5,7 @@ import {
   SHOP_PERMISSION_MODULE_LABELS,
   SHOP_PERMISSION_PAGES,
   SHOP_PERMISSION_STATEMENT,
+  SHOP_OWNER_ONLY_RESOURCES,
   type ShopPermissionMap,
 } from "@bikalpo-project/auth/shop-permissions";
 import { isShopFunction } from "@bikalpo-project/auth/shop-staff-access";
@@ -37,11 +38,14 @@ function validatedPermissionMap(
     rows.map((row) => [row.resource, row.actions]),
   );
   const normalized = normalizeShopPermissionMap(raw);
-  if ("shop_staff" in raw || !isValidShopPermissionMapInput(raw)) {
+  const ownerOnlyResource = SHOP_OWNER_ONLY_RESOURCES.find(
+    (resource) => resource in raw,
+  );
+  if (ownerOnlyResource || !isValidShopPermissionMapInput(raw)) {
     throw new ORPCError("BAD_REQUEST", {
       message:
-        "shop_staff" in raw
-          ? "Role management is reserved for the shop owner"
+        ownerOnlyResource
+          ? "Settings, system control, and role management are reserved for the shop owner"
           : "The role contains an unknown page or action",
     });
   }
@@ -110,12 +114,16 @@ export const shopRoleRouter = {
     .handler(() => ({
       actions: SHOP_PERMISSION_ACTIONS,
       modules: Object.entries(SHOP_PERMISSION_MODULE_LABELS)
-        .filter(([id]) => id !== "staff")
+        .filter(([id]) => !["staff", "settings"].includes(id))
         .map(([id, label]) => ({
           id,
           label,
           pages: SHOP_PERMISSION_PAGES.filter(
-            (page) => page.module === id && page.resource !== "shop_staff",
+              (page) =>
+                page.module === id &&
+                !SHOP_OWNER_ONLY_RESOURCES.some(
+                  (resource) => resource === page.resource,
+                ),
           ).map((page) => ({
             resource: page.resource,
             label: page.label,

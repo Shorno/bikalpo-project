@@ -43,41 +43,44 @@ export async function ensureDefaultShopRoles(shopId: string) {
 
   for (const shopFunction of SHOP_FUNCTIONS) {
     if (shopFunction === "delivery" || byFunction.has(shopFunction)) continue;
-    const [created] = await db
-      .insert(shopRole)
-      .values({
-        shopId,
-        name: DEFAULT_ROLE_NAMES[shopFunction],
-        description:
-          "Editable default role migrated from the previous access model.",
-        isSystem: true,
-        legacyFunction: shopFunction,
-      })
-      .onConflictDoNothing()
-      .returning();
-    const role =
-      created ??
-      (
-        await db
-          .select()
-          .from(shopRole)
-          .where(
-            and(
-              eq(shopRole.shopId, shopId),
-              eq(shopRole.legacyFunction, shopFunction),
-            ),
-          )
-          .limit(1)
-      )[0];
+    const role = await db.transaction(async (tx) => {
+      const [created] = await tx
+        .insert(shopRole)
+        .values({
+          shopId,
+          name: DEFAULT_ROLE_NAMES[shopFunction],
+          description:
+            "Editable default role migrated from the previous access model.",
+          isSystem: true,
+          legacyFunction: shopFunction,
+        })
+        .onConflictDoNothing()
+        .returning();
+      const stored =
+        created ??
+        (
+          await tx
+            .select()
+            .from(shopRole)
+            .where(
+              and(
+                eq(shopRole.shopId, shopId),
+                eq(shopRole.legacyFunction, shopFunction),
+              ),
+            )
+            .limit(1)
+        )[0];
+      if (created && stored) {
+        const rows = permissionRows(
+          stored.id,
+          normalizeShopPermissionMap(permissionMapForShopActor(shopFunction)),
+        );
+        if (rows.length) await tx.insert(shopRolePermission).values(rows);
+      }
+      return stored;
+    });
     if (!role) continue;
     byFunction.set(shopFunction, role);
-    if (created) {
-      const rows = permissionRows(
-        role.id,
-        normalizeShopPermissionMap(permissionMapForShopActor(shopFunction)),
-      );
-      if (rows.length) await db.insert(shopRolePermission).values(rows);
-    }
   }
 
   const unassignedStaff = await db

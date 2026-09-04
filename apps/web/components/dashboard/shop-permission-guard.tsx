@@ -21,7 +21,8 @@ export function ShopPermissionGuard({
   if (
     access.isError ||
     !access.data ||
-    !canPermissionMapAccessPath(access.data.permissions, pathname)
+    (access.data.actor !== "owner" &&
+      !canPermissionMapAccessPath(access.data.permissions, pathname))
   ) {
     return (
       <div className="mx-auto flex min-h-[420px] max-w-xl flex-col items-center justify-center rounded-2xl border bg-card p-10 text-center shadow-sm">

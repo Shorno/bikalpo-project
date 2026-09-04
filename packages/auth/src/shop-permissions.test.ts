@@ -78,6 +78,20 @@ test("direct page access requires the registered view permission", () => {
   );
 });
 
+test("alias and report overview routes inherit their page grants", () => {
+  assert.equal(
+    canPermissionMapAccessPath({ shop_stock: ["view"] }, "/dashboard/inventory"),
+    true,
+  );
+  assert.equal(
+    canPermissionMapAccessPath(
+      { shop_purchase_report: ["view"] },
+      "/dashboard/reports",
+    ),
+    true,
+  );
+});
+
 test("the owner template includes sensitive staff management", () => {
   const owner = permissionMapForShopActor("owner");
   assert.equal(authorizeShopPermission(owner, "shop_staff", "manage"), true);

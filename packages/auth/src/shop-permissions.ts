@@ -1,6 +1,7 @@
 import { ac } from "./permissions";
 import {
   ALL_SHOP_PERMISSION_STATEMENTS,
+  SHOP_OWNER_ONLY_RESOURCES,
   SHOP_PERMISSION_PAGES,
   SHOP_PERMISSION_STATEMENT,
   type ShopPermissionAction,
@@ -18,8 +19,9 @@ const LEGACY_ACTOR_RESOURCES: Record<
   custom: [],
   shop_admin: SHOP_PERMISSION_PAGES.filter(
     (entry) =>
-      entry.resource !== "shop_staff" &&
-      entry.resource !== "shop_system_control",
+      !SHOP_OWNER_ONLY_RESOURCES.some(
+        (resource) => resource === entry.resource,
+      ),
   ).map((entry) => entry.resource),
   purchase_manager: [
     "shop_dashboard",
@@ -156,6 +158,9 @@ export function canPermissionMapAccessPath(
   permissionMap: ShopPermissionMap,
   pathname: string,
 ): boolean {
+  if (pathname === "/dashboard/reports") {
+    return canPermissionMapAccessModule(permissionMap, "reports");
+  }
   const page = permissionPageForPath(pathname);
   return page
     ? authorizeShopPermission(permissionMap, page.resource, "view")

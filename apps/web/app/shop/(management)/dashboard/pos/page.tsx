@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
+import { authorizeShopPermission } from "@bikalpo-project/auth/shop-permissions";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -34,6 +35,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { useShopMyAccess } from "@/hooks/use-shop-staff-api";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -105,6 +107,20 @@ function receiptHtml(detail: any) {
 
 export default function RetailerPosPage() {
   const queryClient = useQueryClient();
+  const access = useShopMyAccess();
+  const canCreateSale = access.data
+    ? authorizeShopPermission(access.data.permissions, "shop_pos", "create")
+    : false;
+  const canDeleteHeldCart = access.data
+    ? authorizeShopPermission(access.data.permissions, "shop_pos", "delete")
+    : false;
+  const canCreateCustomer = access.data
+    ? authorizeShopPermission(
+        access.data.permissions,
+        "shop_customers",
+        "create",
+      )
+    : false;
   const [search, setSearch] = useState("");
   const [filters, setFilters] = useState(emptyFilters);
   const [cart, setCart] = useState<CartLine[]>([]);
@@ -548,6 +564,7 @@ export default function RetailerPosPage() {
                     size="icon"
                     variant="ghost"
                     className="h-8 w-8 text-amber-900"
+                    disabled={!canDeleteHeldCart}
                     onClick={() => cancelHeldMutation.mutate(held.id)}
                   >
                     <X className="h-4 w-4" />
@@ -732,6 +749,7 @@ export default function RetailerPosPage() {
                   variant="ghost"
                   size="sm"
                   className="h-7 text-xs text-emerald-800"
+                  disabled={!canCreateCustomer}
                   onClick={() => setCustomerDialog(true)}
                 >
                   <UserPlus className="mr-1 h-3.5 w-3.5" /> Add
@@ -857,14 +875,18 @@ export default function RetailerPosPage() {
               <Button
                 variant="outline"
                 className="flex-1"
-                disabled={cart.length === 0 || holdMutation.isPending}
+                disabled={
+                  !canCreateSale || cart.length === 0 || holdMutation.isPending
+                }
                 onClick={() => holdMutation.mutate()}
               >
                 <BookmarkPlus className="mr-2 h-4 w-4" /> Hold
               </Button>
               <Button
                 className="flex-[1.6] bg-emerald-700 text-white hover:bg-emerald-800"
-                disabled={!canComplete || checkoutMutation.isPending}
+                disabled={
+                  !canCreateSale || !canComplete || checkoutMutation.isPending
+                }
                 onClick={() => checkoutMutation.mutate()}
               >
                 <Check className="mr-2 h-4 w-4" />{" "}
@@ -930,6 +952,7 @@ export default function RetailerPosPage() {
               disabled={
                 customerForm.name.trim().length < 2 ||
                 customerForm.phone.trim().length < 7 ||
+                !canCreateCustomer ||
                 createCustomerMutation.isPending
               }
               onClick={() => createCustomerMutation.mutate(customerForm)}
