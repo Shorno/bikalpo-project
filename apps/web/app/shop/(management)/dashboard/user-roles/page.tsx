@@ -1,20 +1,21 @@
 "use client";
 
-import type { ShopPermissionAction } from "@bikalpo-project/auth/shop-permissions";
+import type { LucideIcon } from "lucide-react";
 import {
-  CheckIcon,
-  ChevronRightIcon,
+  ArrowUpRightIcon,
+  EyeIcon,
+  LockKeyholeIcon,
   PlusIcon,
-  SaveIcon,
   ShieldCheckIcon,
-  Trash2Icon,
-  UserPlusIcon,
+  ShoppingCartIcon,
   UsersIcon,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { useMemo, useState } from "react";
 import { toast } from "sonner";
+
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -32,6 +33,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import {
   Table,
   TableBody,
@@ -40,33 +42,62 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Textarea } from "@/components/ui/textarea";
 import {
-  useAssignShopRole,
-  useCreateShopRole,
   useCreateShopStaff,
-  useDeleteShopRole,
-  useShopRoleCatalog,
   useShopRoles,
   useShopStaffMembers,
-  useUpdateShopRole,
 } from "@/hooks/use-shop-staff-api";
-
-type PermissionRow = {
-  resource: string;
-  actions: ShopPermissionAction[];
-};
 
 type EditableRole = {
   id: number;
   name: string;
-  description: string | null;
-  isSystem: boolean;
-  legacyFunction: string | null;
-  memberCount: number;
   memberIds: string[];
-  permissions: PermissionRow[];
+  permissions: { resource: string; actions: string[] }[];
 };
+
+const APPROVAL_CONTROLS = [
+  {
+    title: "Expense approval",
+    description: "Require approval when an expense reaches a set amount.",
+    enabled: false,
+    threshold: "2,000",
+    suffix: "BDT",
+  },
+  {
+    title: "Discount approval",
+    description: "Require approval for manual discounts above a percentage.",
+    enabled: false,
+    threshold: "0",
+    suffix: "%",
+  },
+  {
+    title: "Stock adjustment approval",
+    description: "Review inventory corrections before stock is changed.",
+    enabled: false,
+  },
+  {
+    title: "Return approval",
+    description: "Review sales returns before refunding or restocking.",
+    enabled: true,
+  },
+] as const;
+
+const ORDER_CONTROLS = [
+  {
+    title: "Minimum order quantity",
+    description: "Set the minimum quantity accepted for an order.",
+    enabled: false,
+    threshold: "10",
+    suffix: "units",
+  },
+  {
+    title: "Minimum order amount",
+    description: "Set the minimum merchandise value accepted at checkout.",
+    enabled: false,
+    threshold: "2,000",
+    suffix: "BDT",
+  },
+] as const;
 
 function generateStaffPassword() {
   const upper = "ABCDEFGHJKLMNPQRSTUVWXYZ";
@@ -85,25 +116,21 @@ function generateStaffPassword() {
     .join("");
 }
 
+function shortUserId(id: string) {
+  return id.slice(-8).toUpperCase();
+}
+
 function permissionCount(role: EditableRole) {
   return role.permissions.reduce((total, row) => total + row.actions.length, 0);
 }
 
-export default function UserRolesPage() {
+export default function UserManagementPage() {
   const rolesQuery = useShopRoles();
-  const catalogQuery = useShopRoleCatalog();
   const membersQuery = useShopStaffMembers();
-  const createRole = useCreateShopRole();
-  const updateRole = useUpdateShopRole();
-  const deleteRole = useDeleteShopRole();
-  const assignRole = useAssignShopRole();
   const createStaff = useCreateShopStaff();
   const roles = (rolesQuery.data ?? []) as EditableRole[];
-  const [selectedId, setSelectedId] = useState<number>();
-  const [draft, setDraft] = useState<EditableRole>();
-  const [roleDialog, setRoleDialog] = useState(false);
+  const members = membersQuery.data?.members ?? [];
   const [staffDialog, setStaffDialog] = useState(false);
-  const [newRole, setNewRole] = useState({ name: "", description: "" });
   const [staff, setStaff] = useState({
     name: "",
     email: "",
@@ -112,326 +139,105 @@ export default function UserRolesPage() {
     roleId: "",
   });
 
-  useEffect(() => {
-    if (!selectedId && roles[0]) setSelectedId(roles[0].id);
-  }, [roles, selectedId]);
-
-  useEffect(() => {
-    const selected = roles.find((role) => role.id === selectedId);
-    if (selected) {
-      setDraft({
-        ...selected,
-        permissions: selected.permissions.map((row) => ({
-          ...row,
-          actions: [...row.actions],
-        })),
-      });
-    }
-  }, [roles, selectedId]);
-
-  const assignmentByMember = useMemo(
+  const roleByMember = useMemo(
     () =>
       new Map(
         roles.flatMap((role) =>
-          role.memberIds.map((memberId) => [memberId, role.id] as const),
+          role.memberIds.map((memberId) => [memberId, role] as const),
         ),
       ),
     [roles],
   );
 
-  const toggleGrant = (
-    resource: string,
-    action: ShopPermissionAction,
-    checked: boolean,
-  ) => {
-    setDraft((current) => {
-      if (!current) return current;
-      const map = new Map(
-        current.permissions.map((row) => [row.resource, [...row.actions]]),
-      );
-      const actions = map.get(resource) ?? [];
-      if (!checked && action === "view") {
-        map.delete(resource);
-      } else {
-        map.set(
-          resource,
-          checked
-            ? [...new Set([...actions, "view" as const, action])]
-            : actions.filter((entry) => entry !== action),
-        );
-      }
-      return {
-        ...current,
-        permissions: [...map.entries()]
-          .filter(([, entries]) => entries.length)
-          .map(([entryResource, entries]) => ({
-            resource: entryResource,
-            actions: entries,
-          })),
-      };
+  const openStaffDialog = () => {
+    setStaff({
+      name: "",
+      email: "",
+      phoneNumber: "",
+      password: generateStaffPassword(),
+      roleId: roles[0]?.id.toString() ?? "",
     });
+    setStaffDialog(true);
   };
 
-  const hasGrant = (resource: string, action: ShopPermissionAction) =>
-    draft?.permissions
-      .find((row) => row.resource === resource)
-      ?.actions.includes(action) ?? false;
-
-  const saveRole = () => {
-    if (!draft) return;
-    updateRole.mutate(
-      {
-        roleId: draft.id,
-        name: draft.name,
-        description: draft.description,
-        permissions: draft.permissions,
-      },
-      {
-        onSuccess: () => toast.success("Role permissions saved"),
-        onError: (error) => toast.error(error.message),
-      },
-    );
-  };
-
-  if (rolesQuery.isPending || catalogQuery.isPending) {
+  if (rolesQuery.isPending || membersQuery.isPending) {
     return (
-      <div className="h-[620px] animate-pulse rounded-2xl border bg-muted/40" />
+      <div className="h-[620px] animate-pulse rounded-xl border bg-muted/40" />
     );
   }
-  if (rolesQuery.isError || catalogQuery.isError || !catalogQuery.data) {
+
+  if (rolesQuery.isError || membersQuery.isError) {
     return (
       <p className="rounded-xl border bg-card p-8 text-center text-destructive">
-        Could not load roles and permissions.
+        Could not load shop users. Try refreshing the page.
       </p>
     );
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col gap-4 border-b pb-5 lg:flex-row lg:items-end lg:justify-between">
+    <div className="space-y-8">
+      <header className="flex flex-col gap-4 border-b pb-5 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-emerald-700">
-            <ShieldCheckIcon className="size-4" /> Access control
+            <UsersIcon className="size-4" /> Shop administration
           </div>
           <h1 className="text-2xl font-semibold tracking-tight">
-            Roles & permissions
+            User management
           </h1>
           <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-            Give each named role access page by page. API actions use the same
-            grants, so hiding a page never becomes the only security boundary.
+            Add staff, review their access, and open an individual profile for
+            account changes.
           </p>
         </div>
-        <div className="flex gap-2">
-          <Button
-            variant="outline"
-            onClick={() => {
-              setStaff({
-                name: "",
-                email: "",
-                phoneNumber: "",
-                password: generateStaffPassword(),
-                roleId: roles[0]?.id.toString() ?? "",
-              });
-              setStaffDialog(true);
-            }}
-          >
-            <UserPlusIcon className="mr-2 size-4" /> Add staff
+        <div className="flex flex-wrap gap-2">
+          <Button asChild variant="outline">
+            <Link href="/dashboard/user-roles/permissions">
+              <ShieldCheckIcon className="mr-2 size-4" /> Manage roles &amp;
+              permissions
+            </Link>
           </Button>
           <Button
             className="bg-emerald-700 hover:bg-emerald-800"
-            onClick={() => setRoleDialog(true)}
+            onClick={openStaffDialog}
           >
-            <PlusIcon className="mr-2 size-4" /> New role
+            <PlusIcon className="mr-2 size-4" /> Add new user
           </Button>
         </div>
-      </div>
+      </header>
 
-      <div className="grid min-h-[560px] overflow-hidden rounded-2xl border bg-card shadow-sm lg:grid-cols-[260px_minmax(0,1fr)]">
-        <aside className="border-b bg-muted/25 p-3 lg:border-r lg:border-b-0">
-          <p className="px-3 py-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-            Shop roles
-          </p>
-          <div className="space-y-1">
-            {roles.map((role) => (
-              <button
-                className={`flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left transition ${selectedId === role.id ? "bg-background shadow-sm ring-1 ring-border" : "hover:bg-background/70"}`}
-                key={role.id}
-                onClick={() => setSelectedId(role.id)}
-                type="button"
-              >
-                <div
-                  className={`grid size-9 place-items-center rounded-lg ${selectedId === role.id ? "bg-emerald-100 text-emerald-800" : "bg-muted text-muted-foreground"}`}
-                >
-                  <UsersIcon className="size-4" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium">{role.name}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {role.memberCount} members · {permissionCount(role)} grants
-                  </p>
-                </div>
-                <ChevronRightIcon className="size-4 text-muted-foreground" />
-              </button>
-            ))}
-          </div>
-        </aside>
-
-        <section className="min-w-0">
-          {draft ? (
-            <>
-              <div className="flex flex-col gap-4 border-b p-5 xl:flex-row xl:items-end xl:justify-between">
-                <div className="grid flex-1 gap-3 sm:grid-cols-2">
-                  <div className="grid gap-1.5">
-                    <Label htmlFor="role-name">Role name</Label>
-                    <Input
-                      id="role-name"
-                      value={draft.name}
-                      onChange={(event) =>
-                        setDraft({ ...draft, name: event.target.value })
-                      }
-                    />
-                  </div>
-                  <div className="grid gap-1.5">
-                    <Label htmlFor="role-description">Description</Label>
-                    <Input
-                      id="role-description"
-                      value={draft.description ?? ""}
-                      onChange={(event) =>
-                        setDraft({ ...draft, description: event.target.value })
-                      }
-                      placeholder="What should this role be used for?"
-                    />
-                  </div>
-                </div>
-                <div className="flex gap-2">
-                  {!draft.isSystem ? (
-                    <Button
-                      variant="outline"
-                      className="text-destructive hover:text-destructive"
-                      disabled={deleteRole.isPending || draft.memberCount > 0}
-                      onClick={() =>
-                        deleteRole.mutate(
-                          { roleId: draft.id },
-                          {
-                            onSuccess: () => {
-                              setSelectedId(undefined);
-                              toast.success("Role deleted");
-                            },
-                            onError: (error) => toast.error(error.message),
-                          },
-                        )
-                      }
-                    >
-                      <Trash2Icon className="mr-2 size-4" /> Delete
-                    </Button>
-                  ) : null}
-                  <Button disabled={updateRole.isPending} onClick={saveRole}>
-                    <SaveIcon className="mr-2 size-4" />
-                    {updateRole.isPending ? "Saving…" : "Save changes"}
-                  </Button>
-                </div>
-              </div>
-
-              <div className="max-h-[680px] overflow-auto">
-                {catalogQuery.data.modules.map((module) => (
-                  <div className="border-b last:border-0" key={module.id}>
-                    <div className="sticky top-0 z-10 flex items-center justify-between bg-muted/90 px-5 py-2.5 backdrop-blur">
-                      <h2 className="text-sm font-semibold">{module.label}</h2>
-                      <span className="text-xs text-muted-foreground">
-                        {module.pages.length} pages
-                      </span>
-                    </div>
-                    <Table className="min-w-[760px] table-fixed">
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead className="w-[42%]">Page</TableHead>
-                          {catalogQuery.data.actions.map((action) => (
-                            <TableHead
-                              className="text-center text-[11px] capitalize"
-                              key={action}
-                            >
-                              {action}
-                            </TableHead>
-                          ))}
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {module.pages.map((page) => (
-                          <TableRow key={page.resource}>
-                            <TableCell>
-                              <p className="text-sm font-medium">
-                                {page.label}
-                              </p>
-                              <p className="mt-0.5 text-xs text-muted-foreground">
-                                {page.description}
-                              </p>
-                            </TableCell>
-                            {catalogQuery.data.actions.map((action) => {
-                              const supported = (
-                                page.actions as readonly ShopPermissionAction[]
-                              ).includes(action);
-                              return (
-                                <TableCell
-                                  className="px-2 text-center [&:has([role=checkbox])]:pr-2"
-                                  key={action}
-                                >
-                                  {supported ? (
-                                    <Checkbox
-                                      aria-label={`${page.label}: ${action}`}
-                                      checked={hasGrant(page.resource, action)}
-                                      className="mx-auto"
-                                      onCheckedChange={(checked) =>
-                                        toggleGrant(
-                                          page.resource,
-                                          action,
-                                          checked === true,
-                                        )
-                                      }
-                                    />
-                                  ) : (
-                                    <span className="text-muted-foreground/35">
-                                      —
-                                    </span>
-                                  )}
-                                </TableCell>
-                              );
-                            })}
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </div>
-                ))}
-              </div>
-            </>
-          ) : (
-            <p className="p-10 text-center text-sm text-muted-foreground">
-              Select a role to edit.
-            </p>
-          )}
-        </section>
-      </div>
-
-      <section className="overflow-hidden rounded-2xl border bg-card shadow-sm">
+      <section className="overflow-hidden rounded-xl border bg-card">
         <div className="border-b px-5 py-4">
-          <h2 className="font-semibold">Staff assignments</h2>
+          <h2 className="font-semibold">Shop users</h2>
           <p className="text-sm text-muted-foreground">
-            A staff account has one role. Changes apply on its next request.
+            {members.length} {members.length === 1 ? "account" : "accounts"}
+            connected to this shop.
           </p>
         </div>
-        <Table>
+        <Table className="min-w-[760px]">
           <TableHeader>
             <TableRow>
-              <TableHead>Staff member</TableHead>
+              <TableHead className="w-[130px]">User ID</TableHead>
+              <TableHead>User name</TableHead>
+              <TableHead>Role</TableHead>
+              <TableHead>Access level</TableHead>
               <TableHead>Status</TableHead>
-              <TableHead className="w-[300px]">Assigned role</TableHead>
+              <TableHead className="w-[100px] text-right">Action</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {(membersQuery.data?.members ?? [])
-              .filter((member) => member.platformRole === "shop_staff")
-              .map((member) => (
+            {members.map((member) => {
+              const assignedRole = roleByMember.get(member.id);
+              const roleName = assignedRole?.name ?? member.roleLabel;
+              const accessLevel =
+                member.accessLevel === "Custom" && assignedRole
+                  ? `${permissionCount(assignedRole)} grants`
+                  : member.accessLevel;
+
+              return (
                 <TableRow key={member.id}>
+                  <TableCell className="font-mono text-xs tabular-nums text-muted-foreground">
+                    {shortUserId(member.id)}
+                  </TableCell>
                   <TableCell>
                     <p className="font-medium">{member.name}</p>
                     <p className="text-xs text-muted-foreground">
@@ -439,109 +245,64 @@ export default function UserRolesPage() {
                     </p>
                   </TableCell>
                   <TableCell>
-                    {member.banned ? "Suspended" : "Active"}
+                    {assignedRole ? (
+                      <Link
+                        className="inline-flex items-center gap-1 font-medium text-emerald-700 hover:underline"
+                        href={`/dashboard/user-roles/permissions?role=${assignedRole.id}`}
+                      >
+                        {roleName}
+                        <ArrowUpRightIcon className="size-3.5" />
+                      </Link>
+                    ) : (
+                      <span className="font-medium">{roleName}</span>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {accessLevel}
                   </TableCell>
                   <TableCell>
-                    <Select
-                      value={
-                        assignmentByMember.get(member.id)?.toString() ?? ""
-                      }
-                      onValueChange={(value) =>
-                        assignRole.mutate(
-                          { roleId: Number(value), staffId: member.id },
-                          {
-                            onSuccess: () =>
-                              toast.success(`${member.name}'s role updated`),
-                            onError: (error) => toast.error(error.message),
-                          },
-                        )
-                      }
+                    <Badge
+                      variant={member.banned ? "destructive" : "secondary"}
                     >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select role" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {roles.map((role) => (
-                          <SelectItem key={role.id} value={role.id.toString()}>
-                            {role.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                      {member.banned ? "Suspended" : "Active"}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <Button asChild size="sm" variant="ghost">
+                      <Link
+                        aria-label={`View ${member.name}'s profile`}
+                        href={`/dashboard/user-roles/${member.id}`}
+                      >
+                        <EyeIcon className="mr-1.5 size-4" /> View
+                      </Link>
+                    </Button>
                   </TableCell>
                 </TableRow>
-              ))}
+              );
+            })}
           </TableBody>
         </Table>
       </section>
 
-      <Dialog open={roleDialog} onOpenChange={setRoleDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Create a named role</DialogTitle>
-            <DialogDescription>
-              Start empty, then select the exact pages and actions this role
-              needs.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="grid gap-4">
-            <div className="grid gap-2">
-              <Label htmlFor="new-role-name">Role name</Label>
-              <Input
-                id="new-role-name"
-                value={newRole.name}
-                onChange={(event) =>
-                  setNewRole({ ...newRole, name: event.target.value })
-                }
-                placeholder="e.g. Branch Cashier"
-              />
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="new-role-description">Description</Label>
-              <Textarea
-                id="new-role-description"
-                value={newRole.description}
-                onChange={(event) =>
-                  setNewRole({ ...newRole, description: event.target.value })
-                }
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setRoleDialog(false)}>
-              Cancel
-            </Button>
-            <Button
-              disabled={createRole.isPending || newRole.name.trim().length < 2}
-              onClick={() =>
-                createRole.mutate(
-                  {
-                    name: newRole.name,
-                    description: newRole.description || null,
-                    permissions: [],
-                  },
-                  {
-                    onSuccess: (result) => {
-                      setRoleDialog(false);
-                      setNewRole({ name: "", description: "" });
-                      setSelectedId(result.role.id);
-                      toast.success("Role created");
-                    },
-                    onError: (error) => toast.error(error.message),
-                  },
-                )
-              }
-            >
-              <CheckIcon className="mr-2 size-4" /> Create role
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <div id="operational-controls" className="grid gap-6 xl:grid-cols-2">
+        <ControlSection
+          controls={APPROVAL_CONTROLS}
+          description="Approval policies from the retailer operations specification."
+          icon={LockKeyholeIcon}
+          title="Approval controls"
+        />
+        <ControlSection
+          controls={ORDER_CONTROLS}
+          description="Shop-wide checkout limits from the retailer operations specification."
+          icon={ShoppingCartIcon}
+          title="Order controls"
+        />
+      </div>
 
       <Dialog open={staffDialog} onOpenChange={setStaffDialog}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Add shop staff</DialogTitle>
+            <DialogTitle>Add a new shop user</DialogTitle>
             <DialogDescription>
               Create the login and assign its first named role.
             </DialogDescription>
@@ -625,18 +386,97 @@ export default function UserRolesPage() {
                   {
                     onSuccess: () => {
                       setStaffDialog(false);
-                      toast.success("Staff account created");
+                      toast.success("Shop user created");
                     },
                     onError: (error) => toast.error(error.message),
                   },
                 )
               }
             >
-              <UserPlusIcon className="mr-2 size-4" /> Create staff
+              <PlusIcon className="mr-2 size-4" />
+              {createStaff.isPending ? "Creating…" : "Create user"}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
+  );
+}
+
+type Control = {
+  title: string;
+  description: string;
+  enabled: boolean;
+  threshold?: string;
+  suffix?: string;
+};
+
+function ControlSection({
+  controls,
+  description,
+  icon: Icon,
+  title,
+}: {
+  controls: readonly Control[];
+  description: string;
+  icon: LucideIcon;
+  title: string;
+}) {
+  return (
+    <section className="overflow-hidden rounded-xl border bg-card">
+      <div className="flex items-start justify-between gap-4 border-b px-5 py-4">
+        <div>
+          <div className="flex items-center gap-2">
+            <Icon className="size-4 text-emerald-700" />
+            <h2 className="font-semibold">{title}</h2>
+          </div>
+          <p className="mt-1 text-sm text-muted-foreground">{description}</p>
+        </div>
+        <Badge variant="outline">Backend required</Badge>
+      </div>
+      <div className="divide-y">
+        {controls.map((control) => (
+          <div
+            className="grid gap-3 px-5 py-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"
+            key={control.title}
+          >
+            <div>
+              <Label className="text-sm font-medium">{control.title}</Label>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                {control.description}
+              </p>
+            </div>
+            <div className="flex items-center gap-3">
+              <Switch
+                aria-label={control.title}
+                defaultChecked={control.enabled}
+                disabled
+              />
+              {control.threshold ? (
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-muted-foreground">
+                    At least
+                  </span>
+                  <Input
+                    aria-label={`${control.title} threshold`}
+                    className="h-8 w-20 text-right font-mono text-xs tabular-nums"
+                    disabled
+                    value={control.threshold}
+                    readOnly
+                  />
+                  <span className="w-8 text-xs text-muted-foreground">
+                    {control.suffix}
+                  </span>
+                </div>
+              ) : null}
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="border-t bg-muted/30 px-5 py-3 text-xs text-muted-foreground">
+        These controls stay locked until their server-side approval and checkout
+        rules are connected.
+      </div>
+    </section>
   );
 }

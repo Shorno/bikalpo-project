@@ -5,7 +5,6 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
-import type { ShopFunction } from "@bikalpo-project/auth/shop-staff-access";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import {
@@ -16,8 +15,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
-  useAssignShopStaffFunction,
-  useShopStaffFunctions,
+  useAssignShopRole,
+  useShopRoles,
   useShopStaffMember,
 } from "@/hooks/use-shop-staff-api";
 import { authClient } from "@/lib/auth-client";
@@ -30,9 +29,9 @@ export default function UserRoleProfilePage() {
   const params = useParams<{ id: string }>();
   const { data: session } = authClient.useSession();
   const query = useShopStaffMember(params.id);
-  const functionsQuery = useShopStaffFunctions();
-  const assignFunction = useAssignShopStaffFunction();
-  const [shopFunction, setShopFunction] = useState<string>("");
+  const rolesQuery = useShopRoles();
+  const assignRole = useAssignShopRole();
+  const [roleId, setRoleId] = useState("");
   const isOwnerViewer = session?.user.role === "shop_owner";
 
   if (query.isLoading) {
@@ -55,8 +54,9 @@ export default function UserRoleProfilePage() {
   }
 
   const member = query.data;
-  const functions = functionsQuery.data?.functions ?? [];
-  const selectedFunction = shopFunction || member.shopFunction || "";
+  const roles = rolesQuery.data ?? [];
+  const assignedRole = roles.find((role) => role.memberIds.includes(member.id));
+  const selectedRoleId = roleId || assignedRole?.id.toString() || "";
 
   return (
     <div className="space-y-6">
@@ -76,8 +76,14 @@ export default function UserRoleProfilePage() {
         <ProfileRow label="Account ID" value={member.id} />
         <ProfileRow label="User name" value={member.name} />
         <ProfileRow label="Email" value={member.email} />
-        <ProfileRow label="Phone" value={member.phoneNumber || "Not provided"} />
-        <ProfileRow label="Role" value={member.roleLabel} />
+        <ProfileRow
+          label="Phone"
+          value={member.phoneNumber || "Not provided"}
+        />
+        <ProfileRow
+          label="Role"
+          value={assignedRole?.name ?? member.roleLabel}
+        />
         <ProfileRow label="Access level" value={member.accessLevel} />
         <ProfileRow
           label="Status"
@@ -87,18 +93,20 @@ export default function UserRoleProfilePage() {
           <ProfileRow label="Service area" value={member.serviceArea} />
         ) : null}
       </div>
-      {isOwnerViewer && !member.isOwner ? (
+      {isOwnerViewer &&
+      !member.isOwner &&
+      member.platformRole === "shop_staff" ? (
         <div className="grid gap-3 rounded-lg border bg-white p-6 shadow-sm">
           <div className="grid gap-2">
             <Label htmlFor="assign-role">Assign role</Label>
-            <Select value={selectedFunction} onValueChange={setShopFunction}>
+            <Select value={selectedRoleId} onValueChange={setRoleId}>
               <SelectTrigger id="assign-role">
                 <SelectValue placeholder="Select a role" />
               </SelectTrigger>
               <SelectContent>
-                {functions.map((entry) => (
-                  <SelectItem key={entry.id} value={entry.id}>
-                    {entry.label} — {entry.accessLevel}
+                {roles.map((role) => (
+                  <SelectItem key={role.id} value={role.id.toString()}>
+                    {role.name}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -107,15 +115,15 @@ export default function UserRoleProfilePage() {
           <Button
             className="w-fit bg-emerald-600 hover:bg-emerald-700"
             disabled={
-              assignFunction.isPending ||
-              !selectedFunction ||
-              selectedFunction === member.shopFunction
+              assignRole.isPending ||
+              !selectedRoleId ||
+              selectedRoleId === assignedRole?.id.toString()
             }
             onClick={() => {
-              assignFunction.mutate(
+              assignRole.mutate(
                 {
                   staffId: member.id,
-                  shopFunction: selectedFunction as ShopFunction,
+                  roleId: Number(selectedRoleId),
                 },
                 {
                   onSuccess: () => {
@@ -127,7 +135,7 @@ export default function UserRoleProfilePage() {
               );
             }}
           >
-            {assignFunction.isPending ? "Saving…" : "Save role"}
+            {assignRole.isPending ? "Saving…" : "Save role"}
           </Button>
         </div>
       ) : null}

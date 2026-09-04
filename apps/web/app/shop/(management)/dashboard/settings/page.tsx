@@ -296,13 +296,13 @@ export default function ShopSettingsPage() {
           href="/dashboard/user-roles"
           className="shrink-0 border-b-2 border-transparent px-4 py-3 text-sm font-medium text-gray-600 transition-colors hover:border-gray-300 hover:text-gray-950 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-emerald-600"
         >
-          Roles and permissions
+          User management
         </Link>
         <Link
-          href="/dashboard/system-control"
+          href="/dashboard/user-roles#operational-controls"
           className="shrink-0 border-b-2 border-transparent px-4 py-3 text-sm font-medium text-gray-600 transition-colors hover:border-gray-300 hover:text-gray-950 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-emerald-600"
         >
-          System control
+          Operational controls
         </Link>
       </nav>
 

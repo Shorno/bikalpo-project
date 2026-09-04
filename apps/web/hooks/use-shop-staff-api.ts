@@ -25,6 +25,9 @@ function useInvalidateShopRoles() {
     void queryClient.invalidateQueries({ queryKey: orpc.shopRole.list.key() });
     void queryClient.invalidateQueries({ queryKey: orpc.shopStaff.list.key() });
     void queryClient.invalidateQueries({
+      queryKey: orpc.shopStaff.getById.key(),
+    });
+    void queryClient.invalidateQueries({
       queryKey: orpc.shopStaff.myAccess.key(),
     });
   };
@@ -81,6 +84,9 @@ export function useCreateShopStaff() {
         });
         void queryClient.invalidateQueries({
           queryKey: orpc.shopStaff.getById.key(),
+        });
+        void queryClient.invalidateQueries({
+          queryKey: orpc.shopRole.list.key(),
         });
       },
     }),
