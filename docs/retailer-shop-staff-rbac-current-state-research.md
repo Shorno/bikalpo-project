@@ -1,6 +1,6 @@
 # Retailer Shop Staff Roles and Permissions: Current State and Recommended Direction
 
-**Research date:** 2026-09-04  
+**Research date:** 2026-09-04
 **Scope:** retailer/shop staff only; primary sources in this repository; no application behavior changed.
 
 ## Executive finding
