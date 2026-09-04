@@ -108,3 +108,38 @@ export function useAssignShopStaffFunction() {
     }),
   );
 }
+
+function useInvalidateShopStaff() {
+  const queryClient = useQueryClient();
+  return () => {
+    void queryClient.invalidateQueries({ queryKey: orpc.shopStaff.list.key() });
+    void queryClient.invalidateQueries({
+      queryKey: orpc.shopStaff.getById.key(),
+    });
+  };
+}
+
+export function useUpdateShopStaff() {
+  const invalidate = useInvalidateShopStaff();
+  return useMutation(
+    orpc.shopStaff.update.mutationOptions({ onSuccess: invalidate }),
+  );
+}
+
+export function useResetShopStaffPassword() {
+  return useMutation(orpc.shopStaff.resetPassword.mutationOptions());
+}
+
+export function useToggleShopStaffBan() {
+  const invalidate = useInvalidateShopStaff();
+  return useMutation(
+    orpc.shopStaff.toggleBan.mutationOptions({ onSuccess: invalidate }),
+  );
+}
+
+export function useRemoveShopStaff() {
+  const invalidate = useInvalidateShopStaff();
+  return useMutation(
+    orpc.shopStaff.remove.mutationOptions({ onSuccess: invalidate }),
+  );
+}

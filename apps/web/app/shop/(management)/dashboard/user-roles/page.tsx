@@ -11,7 +11,7 @@ import {
   UsersIcon,
 } from "lucide-react";
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
@@ -59,26 +59,20 @@ const APPROVAL_CONTROLS = [
   {
     title: "Expense approval",
     description: "Require approval when an expense reaches a set amount.",
-    enabled: false,
-    threshold: "2,000",
-    suffix: "BDT",
+    hasThreshold: true,
   },
   {
     title: "Discount approval",
     description: "Require approval for manual discounts above a percentage.",
-    enabled: false,
-    threshold: "0",
-    suffix: "%",
+    hasThreshold: true,
   },
   {
     title: "Stock adjustment approval",
     description: "Review inventory corrections before stock is changed.",
-    enabled: false,
   },
   {
     title: "Return approval",
     description: "Review sales returns before refunding or restocking.",
-    enabled: true,
   },
 ] as const;
 
@@ -86,16 +80,12 @@ const ORDER_CONTROLS = [
   {
     title: "Minimum order quantity",
     description: "Set the minimum quantity accepted for an order.",
-    enabled: false,
-    threshold: "10",
-    suffix: "units",
+    hasThreshold: true,
   },
   {
     title: "Minimum order amount",
     description: "Set the minimum merchandise value accepted at checkout.",
-    enabled: false,
-    threshold: "2,000",
-    suffix: "BDT",
+    hasThreshold: true,
   },
 ] as const;
 
@@ -117,11 +107,7 @@ function generateStaffPassword() {
 }
 
 function shortUserId(id: string) {
-  return id.slice(-8).toUpperCase();
-}
-
-function permissionCount(role: EditableRole) {
-  return role.permissions.reduce((total, row) => total + row.actions.length, 0);
+  return `USR-${id.slice(-8).toUpperCase()}`;
 }
 
 export default function UserManagementPage() {
@@ -138,16 +124,6 @@ export default function UserManagementPage() {
     password: "",
     roleId: "",
   });
-
-  const roleByMember = useMemo(
-    () =>
-      new Map(
-        roles.flatMap((role) =>
-          role.memberIds.map((memberId) => [memberId, role] as const),
-        ),
-      ),
-    [roles],
-  );
 
   const openStaffDialog = () => {
     setStaff({
@@ -178,10 +154,8 @@ export default function UserManagementPage() {
     <div className="space-y-8">
       <header className="flex flex-col gap-4 border-b pb-5 lg:flex-row lg:items-end lg:justify-between">
         <div>
-          <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-emerald-700">
-            <UsersIcon className="size-4" /> Shop administration
-          </div>
-          <h1 className="text-2xl font-semibold tracking-tight">
+          <h1 className="flex items-center gap-2 text-3xl font-bold tracking-tight">
+            <UsersIcon className="size-6 text-blue-700" />
             User management
           </h1>
           <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
@@ -197,7 +171,7 @@ export default function UserManagementPage() {
             </Link>
           </Button>
           <Button
-            className="bg-emerald-700 hover:bg-emerald-800"
+            className="bg-blue-700 hover:bg-blue-800"
             onClick={openStaffDialog}
           >
             <PlusIcon className="mr-2 size-4" /> Add new user
@@ -205,11 +179,12 @@ export default function UserManagementPage() {
         </div>
       </header>
 
-      <section className="overflow-hidden rounded-xl border bg-card">
+      <section className="overflow-hidden rounded-lg border bg-card">
         <div className="border-b px-5 py-4">
           <h2 className="font-semibold">Shop users</h2>
           <p className="text-sm text-muted-foreground">
-            {members.length} {members.length === 1 ? "account" : "accounts"}
+            <span className="font-mono tabular-nums">{members.length}</span>{" "}
+            {members.length === 1 ? "account" : "accounts"}
             connected to this shop.
           </p>
         </div>
@@ -226,12 +201,12 @@ export default function UserManagementPage() {
           </TableHeader>
           <TableBody>
             {members.map((member) => {
-              const assignedRole = roleByMember.get(member.id);
+              const assignedRole = member.assignedRole;
               const roleName = assignedRole?.name ?? member.roleLabel;
               const accessLevel =
-                member.accessLevel === "Custom" && assignedRole
-                  ? `${permissionCount(assignedRole)} grants`
-                  : member.accessLevel;
+                member.platformRole === "deliveryman"
+                  ? "Delivery portal"
+                  : (assignedRole?.accessLevel ?? member.accessLevel);
 
               return (
                 <TableRow key={member.id}>
@@ -247,7 +222,7 @@ export default function UserManagementPage() {
                   <TableCell>
                     {assignedRole ? (
                       <Link
-                        className="inline-flex items-center gap-1 font-medium text-emerald-700 hover:underline"
+                        className="inline-flex items-center gap-1 font-medium text-blue-700 hover:underline"
                         href={`/dashboard/user-roles/permissions?role=${assignedRole.id}`}
                       >
                         {roleName}
@@ -406,9 +381,7 @@ export default function UserManagementPage() {
 type Control = {
   title: string;
   description: string;
-  enabled: boolean;
-  threshold?: string;
-  suffix?: string;
+  hasThreshold?: boolean;
 };
 
 function ControlSection({
@@ -423,11 +396,11 @@ function ControlSection({
   title: string;
 }) {
   return (
-    <section className="overflow-hidden rounded-xl border bg-card">
+    <section className="overflow-hidden rounded-lg border bg-card">
       <div className="flex items-start justify-between gap-4 border-b px-5 py-4">
         <div>
           <div className="flex items-center gap-2">
-            <Icon className="size-4 text-emerald-700" />
+            <Icon className="size-4 text-blue-700" />
             <h2 className="font-semibold">{title}</h2>
           </div>
           <p className="mt-1 text-sm text-muted-foreground">{description}</p>
@@ -447,28 +420,13 @@ function ControlSection({
               </p>
             </div>
             <div className="flex items-center gap-3">
-              <Switch
-                aria-label={control.title}
-                defaultChecked={control.enabled}
-                disabled
-              />
-              {control.threshold ? (
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-muted-foreground">
-                    At least
-                  </span>
-                  <Input
-                    aria-label={`${control.title} threshold`}
-                    className="h-8 w-20 text-right font-mono text-xs tabular-nums"
-                    disabled
-                    value={control.threshold}
-                    readOnly
-                  />
-                  <span className="w-8 text-xs text-muted-foreground">
-                    {control.suffix}
-                  </span>
-                </div>
+              <Switch aria-label={control.title} disabled />
+              {control.hasThreshold ? (
+                <span className="font-mono text-xs text-muted-foreground">
+                  Threshold not set
+                </span>
               ) : null}
+              <Badge variant="secondary">Not configured</Badge>
             </div>
           </div>
         ))}

@@ -153,7 +153,7 @@ export default function UserRolesPage() {
 
   if (rolesQuery.isPending || catalogQuery.isPending) {
     return (
-      <div className="h-[620px] animate-pulse rounded-2xl border bg-muted/40" />
+      <div className="h-[620px] animate-pulse rounded-lg border bg-muted/40" />
     );
   }
   if (rolesQuery.isError || catalogQuery.isError || !catalogQuery.data) {
@@ -168,10 +168,8 @@ export default function UserRolesPage() {
     <div className="space-y-6">
       <div className="flex flex-col gap-4 border-b pb-5 lg:flex-row lg:items-end lg:justify-between">
         <div>
-          <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-emerald-700">
-            <ShieldCheckIcon className="size-4" /> Access control
-          </div>
-          <h1 className="text-2xl font-semibold tracking-tight">
+          <h1 className="flex items-center gap-2 text-3xl font-bold tracking-tight">
+            <ShieldCheckIcon className="size-6 text-blue-700" />
             Roles & permissions
           </h1>
           <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
@@ -186,7 +184,7 @@ export default function UserRolesPage() {
             </Link>
           </Button>
           <Button
-            className="bg-emerald-700 hover:bg-emerald-800"
+            className="bg-blue-700 hover:bg-blue-800"
             onClick={() => setRoleDialog(true)}
           >
             <PlusIcon className="mr-2 size-4" /> New role
@@ -194,7 +192,7 @@ export default function UserRolesPage() {
         </div>
       </div>
 
-      <div className="grid min-h-[560px] overflow-hidden rounded-2xl border bg-card shadow-sm lg:grid-cols-[260px_minmax(0,1fr)]">
+      <div className="grid min-h-[560px] overflow-hidden rounded-lg border bg-card lg:grid-cols-[260px_minmax(0,1fr)]">
         <aside className="border-b bg-muted/25 p-3 lg:border-r lg:border-b-0">
           <p className="px-3 py-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
             Shop roles
@@ -202,19 +200,19 @@ export default function UserRolesPage() {
           <div className="space-y-1">
             {roles.map((role) => (
               <button
-                className={`flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left transition ${selectedId === role.id ? "bg-background shadow-sm ring-1 ring-border" : "hover:bg-background/70"}`}
+                className={`flex w-full items-center gap-3 rounded-lg px-3 py-3 text-left transition ${selectedId === role.id ? "bg-background ring-1 ring-border" : "hover:bg-background/70"}`}
                 key={role.id}
                 onClick={() => setSelectedId(role.id)}
                 type="button"
               >
                 <div
-                  className={`grid size-9 place-items-center rounded-lg ${selectedId === role.id ? "bg-emerald-100 text-emerald-800" : "bg-muted text-muted-foreground"}`}
+                  className={`grid size-9 place-items-center rounded-lg ${selectedId === role.id ? "bg-blue-100 text-blue-800" : "bg-muted text-muted-foreground"}`}
                 >
                   <UsersIcon className="size-4" />
                 </div>
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-medium">{role.name}</p>
-                  <p className="text-xs text-muted-foreground">
+                  <p className="font-mono text-xs tabular-nums text-muted-foreground">
                     {role.memberCount} members · {permissionCount(role)} grants
                   </p>
                 </div>
@@ -283,9 +281,9 @@ export default function UserRolesPage() {
               <div className="max-h-[680px] overflow-auto">
                 {catalogQuery.data.modules.map((module) => (
                   <div className="border-b last:border-0" key={module.id}>
-                    <div className="sticky top-0 z-10 flex items-center justify-between bg-muted/90 px-5 py-2.5 backdrop-blur">
+                    <div className="sticky top-0 z-10 flex items-center justify-between bg-muted px-5 py-2.5">
                       <h2 className="text-sm font-semibold">{module.label}</h2>
-                      <span className="text-xs text-muted-foreground">
+                      <span className="font-mono text-xs tabular-nums text-muted-foreground">
                         {module.pages.length} pages
                       </span>
                     </div>

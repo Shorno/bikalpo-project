@@ -81,6 +81,7 @@ function presentMember(
     serviceArea: string | null;
   },
   isOwner: boolean,
+  assignedRole?: { id: number; name: string; legacyFunction: string | null },
 ) {
   const presented = presentShopDirectoryMember({
     id: row.id,
@@ -102,7 +103,30 @@ function presentMember(
     shopFunction: actor && actor !== "owner" ? actor : null,
     createdAt: row.createdAt,
     serviceArea: row.serviceArea,
+    assignedRole: assignedRole
+      ? {
+          id: assignedRole.id,
+          name: assignedRole.name,
+          accessLevel: isShopFunction(assignedRole.legacyFunction)
+            ? shopFunctionAccessLevel(assignedRole.legacyFunction)
+            : "Custom permissions",
+        }
+      : null,
   };
+}
+
+async function assignedRolesForShop(shopId: string) {
+  const rows = await db
+    .select({
+      userId: shopUserRole.userId,
+      id: shopRole.id,
+      name: shopRole.name,
+      legacyFunction: shopRole.legacyFunction,
+    })
+    .from(shopUserRole)
+    .innerJoin(shopRole, eq(shopRole.id, shopUserRole.roleId))
+    .where(eq(shopUserRole.shopId, shopId));
+  return new Map(rows.map(({ userId, ...role }) => [userId, role]));
 }
 
 async function findShopStaffOrThrow(shopId: string, staffId: string) {
@@ -203,6 +227,7 @@ export const shopStaffRouter = {
     })
     .handler(async ({ context }) => {
       const owner = context.session.user;
+      await ensureDefaultShopRoles(owner.id);
       const staff = await db
         .select(staffColumns)
         .from(user)
@@ -213,11 +238,14 @@ export const shopStaffRouter = {
           ),
         )
         .orderBy(user.name);
+      const assignedRoles = await assignedRolesForShop(owner.id);
 
       return {
         members: [
           presentOwner(owner),
-          ...staff.map((row) => presentMember(row, false)),
+          ...staff.map((row) =>
+            presentMember(row, false, assignedRoles.get(row.id)),
+          ),
         ],
       };
     }),
@@ -237,7 +265,8 @@ export const shopStaffRouter = {
       }
 
       const staff = await findShopStaffOrThrow(owner.id, input.staffId);
-      return presentMember(staff, false);
+      const assignedRoles = await assignedRolesForShop(owner.id);
+      return presentMember(staff, false, assignedRoles.get(staff.id));
     }),
 
   create: shopOwnerProcedure
@@ -341,7 +370,7 @@ export const shopStaffRouter = {
       const staff = await findShopStaffOrThrow(shopId, created.user.id);
       return {
         message: "Staff member created",
-        member: presentMember(staff, false),
+        member: presentMember(staff, false, assignedRole),
       };
     }),
 
