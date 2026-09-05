@@ -2,7 +2,7 @@ import { withCustomerStorefrontPreview } from "./customer-storefront-preview";
 
 export function storeFooterAnchor(
   slug: string,
-  section: "store-information" | "store-products",
+  section: "store-information" | "store-products" | "available-brands",
   previewMode: boolean,
 ) {
   return withCustomerStorefrontPreview(

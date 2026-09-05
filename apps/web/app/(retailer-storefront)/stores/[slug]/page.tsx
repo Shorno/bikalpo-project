@@ -18,6 +18,7 @@ import {
   StorefrontSkeleton,
   StoreHeader,
 } from "@/components/storefront/retailer-storefront";
+import { StoreBrands } from "@/components/storefront/store-brands";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -491,6 +492,7 @@ export default function ShopStorePage({
             )}
           </div>
         </section>
+        <StoreBrands slug={slug} />
       </main>
     </div>
   );

@@ -17,6 +17,13 @@ test("footer anchors return to the shop root from product pages and retain previ
   );
 });
 
+test("available brands link keeps the store and preview context from product pages", () => {
+  assert.equal(
+    storeFooterAnchor("shorno-xyz", "available-brands", true),
+    "/stores/shorno-xyz?preview=customer#available-brands",
+  );
+});
+
 test("public social URLs reject executable or invalid destinations", () => {
   assert.equal(
     publicSocialUrl(" https://www.instagram.com/example/ "),

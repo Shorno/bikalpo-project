@@ -89,6 +89,19 @@ export function ShopFooter({ slug }: { slug: string }) {
                     Our Products
                   </a>
                 </li>
+                {!!data?.availableBrands?.length && (
+                  <li>
+                    <a
+                      href={storeFooterAnchor(
+                        slug,
+                        "available-brands",
+                        previewMode,
+                      )}
+                    >
+                      Available Brands
+                    </a>
+                  </li>
+                )}
               </ul>
             </nav>
             {socialLinks.length > 0 && (

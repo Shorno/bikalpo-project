@@ -124,6 +124,10 @@ import {
   estimateOrderAcceptSchema,
 } from "./helpers/estimate-order-conversion";
 import {
+  collectAvailableRetailerBrands,
+  isAvailableRetailerStock,
+} from "./helpers/retailer-stock-availability";
+import {
   getReferenceCylinderPricing,
   getReferenceProductEffectivePrice,
   getReferenceSellerKey,
@@ -3941,7 +3945,7 @@ const queries = {
       method: "GET",
       path: "/customer/shops/{slug}/navigation",
       tags: ["Customer"],
-      summary: "Get storefront navigation identity",
+      summary: "Get storefront identity and available brands",
     })
     .input(z.object({ slug: z.string().trim().min(1).max(200) }))
     .handler(async ({ input }) => {
@@ -3988,7 +3992,38 @@ const queries = {
         },
       });
 
+      // This inventory projection intentionally has no catalog search or pagination.
+      const brandStock = await db.query.inventory.findMany({
+        where: and(
+          eq(inventory.ownerType, "shop"),
+          eq(inventory.ownerId, shop[0].id),
+        ),
+        columns: { availableQty: true, retailPrice: true },
+        with: {
+          variant: {
+            columns: { isActive: true },
+            with: {
+              product: {
+                columns: {
+                  status: true,
+                  visibility: true,
+                  creatorSource: true,
+                  createdById: true,
+                  scheduledAt: true,
+                },
+                with: {
+                  brand: { columns: { id: true, name: true, slug: true, logo: true } },
+                },
+              },
+            },
+          },
+        },
+      });
+
       return {
+        availableBrands: collectAvailableRetailerBrands(
+          brandStock, shop[0].id, new Date(),
+        ),
         shop: {
           ...shop[0],
           phoneNumber: contacts?.phoneNumber || shop[0].phoneNumber,
@@ -4120,19 +4155,10 @@ const queries = {
 
       // 3. Transform into product-centric view with shop prices
       const productMap = new Map<number, any>();
+      const availabilityTime = new Date();
       for (const inv of inventoryItems) {
         const prod = inv.variant?.product;
-        if (
-          !prod ||
-          !inv.variant?.isActive ||
-          prod.status !== "active" ||
-          prod.visibility !== "public" ||
-          prod.creatorSource !== "shop" ||
-          prod.createdById !== shopData.id ||
-          (prod.scheduledAt != null && prod.scheduledAt > new Date()) ||
-          Number(inv.availableQty || 0) <= 0 ||
-          Number(inv.retailPrice || 0) <= 0
-        ) {
+        if (!prod || !isAvailableRetailerStock(inv, shopData.id, availabilityTime)) {
           continue;
         }
 
