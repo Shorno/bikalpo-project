@@ -20,6 +20,7 @@ import { publicSocialUrl, storeFooterAnchor } from "@/lib/shop-footer-links";
 import { formatStoreTime } from "@/lib/store-hours";
 import { storePolicyHref, storePolicyLinks } from "@/lib/store-policy-links";
 import { orpc } from "@/utils/orpc";
+import { StoreReportDialog } from "../store-report-dialog";
 import styles from "./shop-footer.module.css";
 
 const platformLinks = [
@@ -131,6 +132,15 @@ export function ShopFooter({ slug }: { slug: string }) {
             <nav aria-labelledby="shop-footer-support">
               <h2 id="shop-footer-support">Customer support</h2>
               <ul className={styles.links}>
+                {shop && name && (
+                  <li>
+                    <StoreReportDialog
+                      key={shop.id}
+                      shopId={shop.id}
+                      name={name}
+                    />
+                  </li>
+                )}
                 <li>
                   <Link href="/account/support">Support tickets</Link>
                 </li>
