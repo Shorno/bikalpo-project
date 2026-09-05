@@ -150,6 +150,17 @@ export function ShopFooter({ slug }: { slug: string }) {
                       `/stores/${encodeURIComponent(slug)}/track`,
                       previewMode,
                     )}
+                    scroll={false}
+                    onNavigate={() => {
+                      window.scrollTo({
+                        top: 0,
+                        behavior: window.matchMedia(
+                          "(prefers-reduced-motion: reduce)",
+                        ).matches
+                          ? "instant"
+                          : "smooth",
+                      });
+                    }}
                   >
                     Track order
                   </Link>
