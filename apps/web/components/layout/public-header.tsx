@@ -1,8 +1,10 @@
 "use client";
 import { Eye, Search } from "lucide-react";
+import Form from "next/form";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
+import { ToLetSearchButton } from "@/components/features/to-let/to-let-search-button";
 import { useIsMobile } from "@/hooks/use-mobile";
 import {
   isCustomerStorefrontPreview,
@@ -118,7 +120,7 @@ export function PublicHeader() {
 
 function ToLetHeaderSearch() {
   return (
-    <form
+    <Form
       action="/to-let#listings"
       role="search"
       className="flex h-11 items-center gap-2 rounded-full border border-[var(--header-line)] bg-white px-4 text-[var(--header-ink)] focus-within:outline-2 focus-within:outline-[var(--header-brand)]"
@@ -130,12 +132,7 @@ function ToLetHeaderSearch() {
         placeholder="Search your listings"
         className="min-w-0 flex-1 border-0 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
       />
-      <button
-        type="submit"
-        className="inline-flex min-h-11 items-center rounded-full px-3 text-xs font-semibold text-primary hover:bg-primary/5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
-      >
-        Search
-      </button>
-    </form>
+      <ToLetSearchButton className="inline-flex min-h-11 items-center gap-2 rounded-full px-3 text-xs font-semibold text-primary hover:bg-primary/5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:opacity-60" />
+    </Form>
   );
 }

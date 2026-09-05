@@ -18,6 +18,7 @@ import {
   Warehouse,
 } from "lucide-react";
 import type { Metadata } from "next";
+import Form from "next/form";
 import Image from "next/image";
 import Link from "next/link";
 import type { CSSProperties, ReactNode } from "react";
@@ -26,6 +27,7 @@ import { ToLetAccountLink } from "@/components/features/to-let/to-let-account-li
 import { ToLetAlertDialog } from "@/components/features/to-let/to-let-alert-dialog";
 import { ToLetCommunityReviews } from "@/components/features/to-let/to-let-community-reviews";
 import { ToLetLocationExplorer } from "@/components/features/to-let/to-let-location-explorer";
+import { ToLetSearchButton } from "@/components/features/to-let/to-let-search-button";
 import { Button } from "@/components/ui/button";
 import { listPublicToLetUnitListings } from "@/lib/public-data";
 import {
@@ -385,7 +387,7 @@ function ToLetHero({
               Booking Request online.
             </p>
 
-            <form
+            <Form
               key={`${query}:${selectedType ?? "all"}`}
               action="/to-let#listings"
               className="mt-8 grid gap-2 rounded-xl border border-white/25 bg-white p-2 sm:grid-cols-[minmax(0,1fr)_12rem_auto]"
@@ -417,10 +419,8 @@ function ToLetHero({
                   ))}
                 </select>
               </label>
-              <Button type="submit" size="lg" className="h-11 rounded-lg px-5">
-                Search <ArrowRight className="size-4" />
-              </Button>
-            </form>
+              <ToLetSearchButton className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-primary px-5 text-sm font-medium text-primary-foreground disabled:opacity-60 focus-visible:outline-2 focus-visible:outline-offset-2" />
+            </Form>
 
             <div className="mt-6 flex flex-wrap gap-3">
               <Button asChild size="lg" className="min-h-11 rounded-lg">

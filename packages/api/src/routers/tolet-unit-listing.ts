@@ -259,26 +259,6 @@ function publicMarketplaceListingScope(now = new Date()) {
   );
 }
 
-function publicListingStatusScope(now = new Date()) {
-  const cutoff = toLetListingCutoff(now);
-  return or(
-    and(
-      eq(toletUnitListing.status, "active"),
-      or(
-        gt(toletUnitListing.publishedAt, cutoff),
-        and(
-          isNull(toletUnitListing.publishedAt),
-          gt(toletUnitListing.createdAt, cutoff),
-        ),
-      ),
-    ),
-    and(
-      eq(toletUnitListing.status, "closed"),
-      gt(toletUnitListing.closedAt, cutoff),
-    ),
-  );
-}
-
 function publicListingDto(row: JoinedListing, now = new Date()) {
   const { listing, unit, property } = row;
   const marketplaceStatus = toLetMarketplaceStatus(
@@ -471,6 +451,46 @@ function assertListingWritable(row: JoinedListing) {
       message: "This listing is closed and cannot be changed",
     });
   }
+}
+
+type PublicDetailInput = { listingCode: string; qrToken?: string };
+
+function publicDetailScope(input: PublicDetailInput, now = new Date()) {
+  const publicNumber = parseListingCode(input.listingCode);
+  if (formatListingCode({ publicNumber }) !== input.listingCode) {
+    throw new ORPCError("NOT_FOUND", { message: "Listing not found" });
+  }
+  return and(
+    eq(toletUnitListing.publicNumber, publicNumber),
+    eq(toletProperty.status, "active"),
+    input.qrToken
+      ? and(
+          eq(toletProperty.qrToken, input.qrToken),
+          eq(toletUnitListing.status, "active"),
+          eq(toletUnit.status, "vacant"),
+        )
+      : and(
+          eq(toletUnitListing.visibility, "public"),
+          publicMarketplaceListingScope(now),
+        ),
+  );
+}
+
+async function readPublicListing(input: PublicDetailInput) {
+  const now = new Date();
+  const [row] = await db
+    .select({
+      listing: toletUnitListing,
+      unit: toletUnit,
+      property: toletProperty,
+    })
+    .from(toletUnitListing)
+    .innerJoin(toletUnit, eq(toletUnitListing.unitId, toletUnit.id))
+    .innerJoin(toletProperty, eq(toletUnit.propertyId, toletProperty.id))
+    .where(publicDetailScope(input, now))
+    .limit(1);
+  if (!row) throw new ORPCError("NOT_FOUND", { message: "Listing not found" });
+  return publicListingDto(row, now);
 }
 
 export const toLetUnitListingRouter = {
@@ -1104,140 +1124,62 @@ export const toLetUnitListingRouter = {
       method: "GET",
       path: "/to-let/marketplace/listings/{listingCode}",
       tags: ["To-Let Marketplace"],
-      summary: "Get a current public unit listing by its Listing ID",
+      summary: "Read a public listing",
     })
     .input(z.object({ listingCode: listingCodeSchema }).strict())
-    .handler(async ({ input }) => {
-      const listingPublicNumber = parseListingCode(input.listingCode);
-      const now = new Date();
-
-      return db.transaction(async (tx) => {
-        const [row] = await tx
-          .select({
-            listing: toletUnitListing,
-            unit: toletUnit,
-            property: toletProperty,
-          })
-          .from(toletUnitListing)
-          .innerJoin(toletUnit, eq(toletUnitListing.unitId, toletUnit.id))
-          .innerJoin(toletProperty, eq(toletUnit.propertyId, toletProperty.id))
-          .where(
-            and(
-              eq(toletUnitListing.publicNumber, listingPublicNumber),
-              eq(toletUnitListing.visibility, "public"),
-              publicMarketplaceListingScope(now),
-              eq(toletProperty.status, "active"),
-            ),
-          )
-          .limit(1)
-          .for("update");
-
-        if (!row || formatListingCode(row.listing) !== input.listingCode) {
-          throw new ORPCError("NOT_FOUND", { message: "Listing not found" });
-        }
-
-        const [viewed] = await tx
-          .update(toletUnitListing)
-          .set({
-            viewCount: sql`${toletUnitListing.viewCount} + 1`,
-            updatedAt: row.listing.updatedAt,
-          })
-          .where(
-            and(
-              eq(toletUnitListing.id, row.listing.id),
-              eq(toletUnitListing.visibility, "public"),
-              publicListingStatusScope(now),
-            ),
-          )
-          .returning({ viewCount: toletUnitListing.viewCount });
-
-        if (!viewed) {
-          throw new ORPCError("NOT_FOUND", { message: "Listing not found" });
-        }
-
-        return {
-          listing: publicListingDto(
-            {
-              ...row,
-              listing: { ...row.listing, viewCount: viewed.viewCount },
-            },
-            now,
-          ),
-        };
-      });
-    }),
+    .handler(async ({ input }) => ({
+      listing: await readPublicListing(input),
+    })),
 
   getQrListingByCode: publicProcedure
     .route({
       method: "GET",
       path: "/to-let/qr/properties/{qrToken}/listings/{listingCode}",
       tags: ["To-Let Property QR"],
-      summary: "Get an active listing through its permanent property QR token",
+      summary: "Read an available QR listing",
+    })
+    .input(
+      z
+        .object({ qrToken: qrTokenSchema, listingCode: listingCodeSchema })
+        .strict(),
+    )
+    .handler(async ({ input }) => ({
+      listing: await readPublicListing(input),
+    })),
+
+  recordListingView: publicProcedure
+    .route({
+      method: "POST",
+      path: "/to-let/listing-views",
+      tags: ["To-Let Marketplace"],
+      summary: "Record a displayed listing",
     })
     .input(
       z
         .object({
-          qrToken: qrTokenSchema,
           listingCode: listingCodeSchema,
+          qrToken: qrTokenSchema.optional(),
         })
         .strict(),
     )
     .handler(async ({ input }) => {
-      const listingPublicNumber = parseListingCode(input.listingCode);
-
-      return db.transaction(async (tx) => {
-        const [row] = await tx
-          .select({
-            listing: toletUnitListing,
-            unit: toletUnit,
-            property: toletProperty,
-          })
-          .from(toletUnitListing)
-          .innerJoin(toletUnit, eq(toletUnitListing.unitId, toletUnit.id))
-          .innerJoin(toletProperty, eq(toletUnit.propertyId, toletProperty.id))
-          .where(
-            and(
-              eq(toletUnitListing.publicNumber, listingPublicNumber),
-              eq(toletProperty.qrToken, input.qrToken),
-              eq(toletUnitListing.status, "active"),
-              eq(toletUnit.status, "vacant"),
-              eq(toletProperty.status, "active"),
-            ),
-          )
-          .limit(1)
-          .for("update");
-
-        if (!row || formatListingCode(row.listing) !== input.listingCode) {
-          throw new ORPCError("NOT_FOUND", { message: "Listing not found" });
-        }
-
-        const [viewed] = await tx
-          .update(toletUnitListing)
-          .set({
-            viewCount: sql`${toletUnitListing.viewCount} + 1`,
-            // Viewing a listing is not a content edit. Preserve the timestamp used
-            // by booking offer freshness checks.
-            updatedAt: row.listing.updatedAt,
-          })
-          .where(
-            and(
-              eq(toletUnitListing.id, row.listing.id),
-              eq(toletUnitListing.status, "active"),
-            ),
-          )
-          .returning({ viewCount: toletUnitListing.viewCount });
-
-        if (!viewed) {
-          throw new ORPCError("NOT_FOUND", { message: "Listing not found" });
-        }
-
-        return {
-          listing: publicListingDto({
-            ...row,
-            listing: { ...row.listing, viewCount: viewed.viewCount },
-          }),
-        };
-      });
+      const eligible = db
+        .select({ id: toletUnitListing.id })
+        .from(toletUnitListing)
+        .innerJoin(toletUnit, eq(toletUnitListing.unitId, toletUnit.id))
+        .innerJoin(toletProperty, eq(toletUnit.propertyId, toletProperty.id))
+        .where(publicDetailScope(input));
+      const [viewed] = await db
+        .update(toletUnitListing)
+        .set({
+          viewCount: sql`${toletUnitListing.viewCount} + 1`,
+          updatedAt: sql`${toletUnitListing.updatedAt}`,
+        })
+        .where(inArray(toletUnitListing.id, eligible))
+        .returning({ viewCount: toletUnitListing.viewCount });
+      if (!viewed)
+        throw new ORPCError("NOT_FOUND", { message: "Listing not found" });
+      return viewed;
     }),
 
   getQrProperty: publicProcedure

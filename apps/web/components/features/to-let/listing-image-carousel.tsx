@@ -155,7 +155,6 @@ export function ListingImageCarousel({
       {galleryHref ? (
         <Link
           href={galleryHref}
-          prefetch={false}
           className="absolute bottom-3 right-3 z-10 inline-flex h-9 min-w-12 items-center justify-center gap-1 rounded-lg bg-zinc-950/90 px-2.5 text-white transition-colors after:absolute after:-inset-1 hover:bg-zinc-950 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
           aria-label={`Open ${alt} photo gallery`}
         >

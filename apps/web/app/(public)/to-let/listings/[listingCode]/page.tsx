@@ -21,6 +21,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { RequestBookingButton } from "@/components/features/to-let/booking/request-booking-dialog";
+import { ListingViewRecorder } from "@/components/features/to-let/listing-view-recorder";
 import { PublicListingGallery } from "@/components/features/to-let/public-listing-gallery";
 import {
   getPublicToLetUnitListingByCode,
@@ -163,6 +164,11 @@ export default async function PublicListingPage({
 
   return (
     <div className="min-h-screen bg-muted/20">
+      <ListingViewRecorder
+        key={`${listingCode}:${qrToken ?? "public"}`}
+        listingCode={listingCode}
+        qrToken={qrToken}
+      />
       <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 sm:py-8 lg:px-8 lg:py-10">
         <Link
           href={qrToken ? `/to-let/qr/${qrToken}` : "/to-let"}
