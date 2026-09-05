@@ -145,7 +145,14 @@ export function ShopFooter({ slug }: { slug: string }) {
                   <Link href="/account/support">Support tickets</Link>
                 </li>
                 <li>
-                  <Link href="/account/track">Track order</Link>
+                  <Link
+                    href={withCustomerStorefrontPreview(
+                      `/stores/${encodeURIComponent(slug)}/track`,
+                      previewMode,
+                    )}
+                  >
+                    Track order
+                  </Link>
                 </li>
                 <li>
                   <Link href="/account/requests">My item requests</Link>

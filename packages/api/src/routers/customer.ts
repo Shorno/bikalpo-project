@@ -2689,6 +2689,51 @@ const queries = {
       };
     }),
 
+  /** Active retail orders placed by this customer with one store. */
+  getStoreActiveOrders: protectedProcedure
+    .route({
+      method: "GET",
+      path: "/customer/stores/{shopId}/active-orders",
+      tags: ["Customer"],
+      summary: "Get active orders for a store",
+    })
+    .input(
+      z.object({
+        shopId: z.string().min(1),
+        page: z.number().int().min(1).default(1),
+      }),
+    )
+    .handler(async ({ context, input }) => {
+      const where = and(
+        eq(order.userId, context.session.user.id),
+        eq(order.shopId, input.shopId),
+        eq(order.orderType, "b2c"),
+        eq(order.isOpenOrder, false),
+        sql`${order.status} NOT IN ('delivered', 'cancelled', 'returned')`,
+      );
+      const [orders, totals] = await Promise.all([
+        db
+          .select({
+            orderNumber: order.orderNumber,
+            status: order.status,
+            createdAt: order.createdAt,
+            total: order.total,
+          })
+          .from(order)
+          .where(where)
+          .orderBy(desc(order.createdAt), desc(order.id))
+          .limit(20)
+          .offset((input.page - 1) * 20),
+        db.select({ total: count() }).from(order).where(where),
+      ]);
+      return {
+        orders,
+        total: totals[0]?.total ?? 0,
+        page: input.page,
+        pageSize: 20,
+      };
+    }),
+
   // ── Cart (authenticated customer) ────────────────────────────
 
   /** Get current cart */
