@@ -8,6 +8,7 @@
  * - Location-based filtering where applicable
  */
 
+import { isPhoneAuthEmail } from "@bikalpo-project/auth/phone-identity";
 import { db } from "@bikalpo-project/db";
 import { isWarehouseCylinderExchangeAvailable } from "@bikalpo-project/db/fulfillment";
 import {
@@ -45,6 +46,7 @@ import {
   productVariantPrice,
   retailerOffer,
   retailerOfferApplication,
+  sellerApplication,
   sellerAreaMapping,
   shopFollower,
   subCategory,
@@ -3933,7 +3935,7 @@ const queries = {
       };
     }),
 
-  /** Get the lightweight shop identity used by storefront navigation. */
+  /** Get public identity and business contacts shared by the storefront shell. */
   getShopNavigation: publicProcedure
     .route({
       method: "GET",
@@ -3951,6 +3953,9 @@ const queries = {
           shopSlug: user.shopSlug,
           image: user.image,
           shopLogo: user.shopLogo,
+          phoneNumber: user.phoneNumber,
+          shopOpeningTime: user.shopOpeningTime,
+          shopClosingTime: user.shopClosingTime,
         })
         .from(user)
         .where(
@@ -3966,7 +3971,36 @@ const queries = {
         throw new ORPCError("NOT_FOUND", { message: "Shop not found" });
       }
 
-      return { shop: shop[0] };
+      // Publish only business contact channels, never the full application or login email.
+      const contacts = await db.query.sellerApplication.findFirst({
+        where: and(
+          eq(sellerApplication.userId, shop[0].id),
+          eq(sellerApplication.status, "approved"),
+        ),
+        orderBy: [desc(sellerApplication.createdAt)],
+        columns: {
+          phoneNumber: true,
+          email: true,
+          facebookUrl: true,
+          instagramUrl: true,
+          tiktokUrl: true,
+          twitterUrl: true,
+        },
+      });
+
+      return {
+        shop: {
+          ...shop[0],
+          phoneNumber: contacts?.phoneNumber || shop[0].phoneNumber,
+          businessEmail: contacts?.email && !isPhoneAuthEmail(contacts.email)
+            ? contacts.email
+            : null,
+          facebookUrl: contacts?.facebookUrl ?? null,
+          instagramUrl: contacts?.instagramUrl ?? null,
+          tiktokUrl: contacts?.tiktokUrl ?? null,
+          twitterUrl: contacts?.twitterUrl ?? null,
+        },
+      };
     }),
 
   /** Get a single shop by slug with their retail products */

@@ -14,7 +14,7 @@ export default async function RetailerStorefrontLayout({
     <>
       <ShopHeader key={slug} slug={slug} />
       <main>{children}</main>
-      <ShopFooter />
+      <ShopFooter key={slug} slug={slug} />
     </>
   );
 }

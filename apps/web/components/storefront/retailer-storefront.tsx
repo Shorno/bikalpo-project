@@ -28,6 +28,7 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
+import { formatStoreTime } from "@/lib/store-hours";
 import { cn } from "@/lib/utils";
 
 export type {
@@ -114,7 +115,7 @@ export function StoreHeader({
   }>;
 
   return (
-    <header className="border-b bg-white">
+    <header id="store-information" className="scroll-mt-20 border-b bg-white">
       <div className="mx-auto max-w-7xl px-3 py-6 sm:px-6 md:py-8 lg:px-8">
         <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
           <div className="min-w-0">
@@ -196,13 +197,6 @@ export function StoreHeader({
       </div>
     </header>
   );
-}
-
-function formatStoreTime(value: string) {
-  const [hours = 0, minutes = 0] = value.split(":").map(Number);
-  const period = hours >= 12 ? "PM" : "AM";
-  const displayHours = hours % 12 || 12;
-  return `${displayHours}:${String(minutes).padStart(2, "0")} ${period}`;
 }
 
 export interface StorefrontOffer {

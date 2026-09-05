@@ -137,6 +137,17 @@ export default function ShopStorePage({
     }
   }, [data?.pagination, isFetching, page, updateUrl]);
 
+  useEffect(() => {
+    if (!data?.shop.id) return;
+    // Store content may mount after Next's initial product-to-store anchor scroll.
+    const section = window.location.hash.slice(1);
+    if (section !== "store-information" && section !== "store-products") return;
+    const frame = requestAnimationFrame(() =>
+      document.getElementById(section)?.scrollIntoView({ block: "start" }),
+    );
+    return () => cancelAnimationFrame(frame);
+  }, [data?.shop.id]);
+
   const clearCatalogFilters = () => {
     updateUrl({ q: null, category: null, subcategory: null, page: null });
   };
@@ -445,11 +456,12 @@ export default function ShopStorePage({
           </div>
 
           <div
-            className={
+            id="store-products"
+            className={`scroll-mt-20 ${
               isFetching
                 ? "opacity-60 transition-opacity"
                 : "transition-opacity"
-            }
+            }`}
           >
             {products.length === 0 ? (
               <StorefrontEmptyState
