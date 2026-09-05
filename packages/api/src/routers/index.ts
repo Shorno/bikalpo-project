@@ -43,6 +43,7 @@ import {
 import { categoryRouter } from "./category";
 import { cloudinaryRouter } from "./cloudinary";
 import { customerRouter } from "./customer";
+import { sellerDirectoryRouter } from "./seller-directory";
 import { customerManagementRouter } from "./customer-management";
 import { dashboardRouter } from "./dashboard";
 import { deliverymanRouter } from "./deliveryman";
@@ -127,6 +128,7 @@ export const appRouter = {
   inventory: inventoryRouter,
   product: productRouter,
   customer: customerRouter,
+  sellerDirectory: sellerDirectoryRouter,
   salesman: salesmanRouter,
   deliveryman: deliverymanRouter,
   emptyPackManagement: emptyPackManagementRouter,

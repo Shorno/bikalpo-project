@@ -15,8 +15,8 @@ import {
 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { CustomerPreviewBanner } from "@/components/storefront/customer-preview-banner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -44,11 +44,25 @@ type LocationState =
 
 export default function StoresPage() {
   const searchParams = useSearchParams();
+  const router = useRouter();
+  const locationFilter =
+    searchParams.get("location")?.trim().slice(0, 100) || "";
+  const didAutoRequestLocation = useRef(false);
+  const previousLocationFilter = useRef(locationFilter);
   const previewMode = isCustomerStorefrontPreview(searchParams.get("preview"));
   const [search, setSearch] = useState("");
   const [areaId, setAreaId] = useState<number | undefined>();
   const [page, setPage] = useState(1);
   const [location, setLocation] = useState<LocationState>({ status: "idle" });
+
+  const clearLocationFilter = () => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete("location");
+    router.replace(`/stores${params.size ? `?${params.toString()}` : ""}`, {
+      scroll: false,
+    });
+    setPage(1);
+  };
 
   const requestLocation = useCallback(() => {
     if (!navigator.geolocation) {
@@ -72,12 +86,21 @@ export default function StoresPage() {
     );
   }, []);
 
-  // Auto-request location on mount
+  // An explicit footer destination takes precedence over nearby discovery.
   useEffect(() => {
-    requestLocation();
-  }, [requestLocation]);
+    if (didAutoRequestLocation.current) return;
+    didAutoRequestLocation.current = true;
+    if (!locationFilter) requestLocation();
+  }, [requestLocation, locationFilter]);
 
-  const isLocated = location.status === "granted";
+  useEffect(() => {
+    if (previousLocationFilter.current !== locationFilter) {
+      previousLocationFilter.current = locationFilter;
+      setPage(1);
+    }
+  }, [locationFilter]);
+
+  const isLocated = location.status === "granted" && !locationFilter;
 
   const { data: areasData } = useQuery(
     orpc.customer.getAreas.queryOptions({
@@ -90,6 +113,7 @@ export default function StoresPage() {
     orpc.customer.getShops.queryOptions({
       input: {
         search: search || undefined,
+        location: locationFilter || undefined,
         areaId,
         lat: isLocated ? location.lat : undefined,
         lng: isLocated ? location.lng : undefined,
@@ -103,7 +127,8 @@ export default function StoresPage() {
   const shops = data?.shops ?? [];
   const pagination = data?.pagination;
   const areas = areasData?.areas ?? [];
-  const hasActiveFilters = !!search || !!areaId || isLocated;
+  const hasActiveFilters =
+    !!search || !!areaId || isLocated || !!locationFilter;
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-50/80 to-white">
@@ -114,7 +139,9 @@ export default function StoresPage() {
         <div className="container mx-auto px-4 py-14 relative">
           <div className="max-w-2xl">
             <h1 className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight">
-              Discover Local Shops
+              {locationFilter
+                ? `Retailers in ${locationFilter}`
+                : "Discover Local Shops"}
             </h1>
             <p className="text-emerald-100/90 mt-3 text-base sm:text-lg leading-relaxed">
               Browse verified sellers near you and explore their catalogs. Find
@@ -136,11 +163,15 @@ export default function StoresPage() {
             )}
 
             {/* Location status */}
-            {location.status === "idle" ||
+            {locationFilter ||
+            location.status === "idle" ||
             location.status === "denied" ||
             location.status === "unavailable" ? (
               <button
-                onClick={requestLocation}
+                onClick={() => {
+                  if (locationFilter) clearLocationFilter();
+                  requestLocation();
+                }}
                 className="flex items-center gap-1.5 text-sm text-white/80 hover:text-white bg-white/10 hover:bg-white/20 px-3 py-1.5 rounded-lg transition-all"
               >
                 <Locate className="w-4 h-4" />
@@ -206,6 +237,18 @@ export default function StoresPage() {
           {hasActiveFilters && (
             <div className="flex items-center gap-2 mt-3 pt-3 border-t border-gray-100">
               <span className="text-xs text-gray-400">Filters:</span>
+              {locationFilter && (
+                <button
+                  type="button"
+                  onClick={clearLocationFilter}
+                  aria-label={`Remove ${locationFilter} location filter`}
+                  className="inline-flex items-center gap-1 rounded-md bg-secondary px-2 py-0.5 text-xs text-secondary-foreground"
+                >
+                  <MapPin className="h-3 w-3" />
+                  {locationFilter}
+                  <X className="h-3 w-3" />
+                </button>
+              )}
               {search && (
                 <Badge
                   variant="secondary"
@@ -242,6 +285,8 @@ export default function StoresPage() {
                   setSearch("");
                   setAreaId(undefined);
                   setLocation({ status: "idle" });
+                  if (locationFilter) clearLocationFilter();
+                  setPage(1);
                 }}
                 className="text-xs text-gray-400 hover:text-gray-600 ml-auto"
               >
@@ -293,6 +338,9 @@ export default function StoresPage() {
                 onClick={() => {
                   setSearch("");
                   setAreaId(undefined);
+                  setLocation({ status: "idle" });
+                  if (locationFilter) clearLocationFilter();
+                  setPage(1);
                 }}
               >
                 Clear filters

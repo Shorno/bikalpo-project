@@ -94,16 +94,17 @@ export function NavbarSearch({
   return (
     <div ref={wrapperRef} className={`relative ${className ?? ""}`}>
       {/* Search input */}
-      <div className="flex items-center bg-white rounded-full h-10 px-4 gap-2 shadow-sm">
-        <Search className="size-4 text-gray-400 shrink-0" />
+      <div className="flex items-center bg-white rounded-full h-11 px-4 gap-2 border border-[var(--header-line,#b8d7d1)] focus-within:outline-2 focus-within:outline-[var(--header-brand,#2455c6)]">
+        <Search className="size-4 text-[#466572] shrink-0" />
         <input
           ref={inputRef}
           type="text"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onFocus={() => setFocused(true)}
+          aria-label="Search for products"
           placeholder="Search for products..."
-          className="flex-1 bg-transparent text-sm text-gray-800 placeholder:text-gray-400 outline-none border-none"
+          className="min-w-0 flex-1 bg-transparent text-sm text-[#244459] placeholder:text-[#466572] outline-none border-none"
         />
         {query && (
           <button
@@ -111,7 +112,8 @@ export function NavbarSearch({
               setQuery("");
               inputRef.current?.focus();
             }}
-            className="shrink-0 text-gray-400 hover:text-gray-600"
+            aria-label="Clear search"
+            className="flex size-8 shrink-0 items-center justify-center text-[#466572] hover:text-[#2455c6]"
           >
             <X className="size-4" />
           </button>

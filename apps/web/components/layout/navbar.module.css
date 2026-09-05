@@ -1,0 +1,42 @@
+.header {
+  --header-brand: #2455c6;
+  --header-hover: #1b419b;
+  --header-surface: #e4f3ef;
+  --header-ink: #244459;
+  --header-line: #b8d7d1;
+  background: var(--header-surface);
+  color: var(--header-ink);
+  border-bottom: 1px solid var(--header-line);
+}
+
+.navigation {
+  background: var(--header-brand);
+  color: white;
+}
+
+.navigation a:hover,
+.navigation a[aria-current="page"] {
+  background: var(--header-hover);
+}
+
+.actions button,
+.actions a {
+  color: var(--header-brand);
+}
+
+.actions button:hover,
+.actions a:hover {
+  background: #cee7e0;
+  color: var(--header-hover);
+}
+
+.mobileSearch {
+  background: var(--header-surface);
+  border-top: 1px solid var(--header-line);
+  border-bottom: 3px solid var(--header-brand);
+}
+
+.header [data-slot="avatar-fallback"] {
+  background: white;
+  color: var(--header-brand);
+}

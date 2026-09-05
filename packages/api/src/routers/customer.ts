@@ -3828,6 +3828,7 @@ const queries = {
     .input(
       z.object({
         search: z.string().optional(),
+        location: z.string().trim().max(100).optional(),
         areaId: z.number().optional(),
         lat: z.string().optional(),
         lng: z.string().optional(),
@@ -3853,6 +3854,11 @@ const queries = {
             ilike(user.name, `%${input.search}%`),
           )!,
         );
+      }
+
+      // City links match the retailer's public address.
+      if (input.location) {
+        conditions.push(ilike(user.shopAddress, `%${input.location}%`));
       }
 
       // Location-based filter: find sellers near the consumer's location

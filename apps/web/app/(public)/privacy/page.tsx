@@ -1,34 +1,33 @@
 import type { Metadata } from "next";
+import { CompanyPage } from "@/components/features/landing/company-page";
 
 export const metadata: Metadata = {
-  title: "Privacy Policy | Bikalpo",
+  title: { absolute: "Privacy Policy | Bikalpo" },
+  description:
+    "An overview of the topics the Bikalpo privacy policy will cover.",
 };
 
-export default function PrivacyPage() {
+export default function Page() {
   return (
-    <div className="container mx-auto px-4 py-16">
-      <h1 className="text-4xl font-bold mb-8">Privacy Policy</h1>
-      <div className="prose max-w-none text-gray-600">
-        <p className="mb-4">
-          Your privacy is important to us. It is Bikalpo's policy to respect
-          your privacy regarding any information we may collect.
+    <CompanyPage
+      title="Privacy Policy"
+      intro="An overview of the topics the Bikalpo privacy policy will cover."
+    >
+      <section>
+        <h2>Account and order information</h2>
+        <p>
+          The final policy will describe what information is collected when you
+          create an account, browse the platform, or place an order.
         </p>
-        <h2 className="text-xl font-bold text-gray-900 mt-6 mb-3">
-          Information We Collect
-        </h2>
-        <p className="mb-4">
-          We only ask for personal information when we truly need it to provide
-          a service to you.
+      </section>
+      <section>
+        <h2>Data use and your choices</h2>
+        <p>
+          Details about storage, sharing, retention, and privacy requests are
+          being prepared. This draft does not define the final privacy
+          practices.
         </p>
-        <h2 className="text-xl font-bold text-gray-900 mt-6 mb-3">Security</h2>
-        <p className="mb-4">
-          We don't share any personally identifying information publicly or with
-          third-parties, except when required to by law.
-        </p>
-        <p className="mt-8 text-sm text-gray-400">
-          (This is a placeholder page)
-        </p>
-      </div>
-    </div>
+      </section>
+    </CompanyPage>
   );
 }
