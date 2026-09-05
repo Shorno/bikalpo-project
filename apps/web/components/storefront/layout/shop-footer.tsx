@@ -18,6 +18,7 @@ import {
 } from "@/lib/customer-storefront-preview";
 import { publicSocialUrl, storeFooterAnchor } from "@/lib/shop-footer-links";
 import { formatStoreTime } from "@/lib/store-hours";
+import { storePolicyHref, storePolicyLinks } from "@/lib/store-policy-links";
 import { orpc } from "@/utils/orpc";
 import styles from "./shop-footer.module.css";
 
@@ -166,8 +167,18 @@ export function ShopFooter({ slug }: { slug: string }) {
             <nav aria-labelledby="shop-footer-policies">
               <h2 id="shop-footer-policies">Policies</h2>
               <ul className={styles.links}>
+                {storePolicyLinks.map((policy) => (
+                  <li key={policy.id}>
+                    <Link href={storePolicyHref(slug, policy.id, previewMode)}>
+                      {policy.label}
+                    </Link>
+                  </li>
+                ))}
                 <li>
                   <Link href="/terms">Terms &amp; Conditions</Link>
+                </li>
+                <li>
+                  <Link href="/privacy">Privacy Policy</Link>
                 </li>
               </ul>
             </nav>

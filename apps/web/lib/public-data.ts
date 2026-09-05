@@ -95,6 +95,16 @@ export async function getActiveBrands(revalidate = 600) {
   return result.brands ?? [];
 }
 
+export async function getPublicStoreIdentity(slug: string) {
+  try {
+    const result = await getPublicOrpcClient(0).customer.getShopNavigation({ slug });
+    return result.shop;
+  } catch (error) {
+    if (isNotFoundError(error)) return null;
+    throw error;
+  }
+}
+
 export async function getActiveOffers(limit = 4, revalidate = 60) {
   const client = getPublicOrpcClient(revalidate);
 
