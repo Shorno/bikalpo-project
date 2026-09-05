@@ -166,7 +166,24 @@ export function ShopFooter({ slug }: { slug: string }) {
                   </Link>
                 </li>
                 <li>
-                  <Link href="/account/requests">My item requests</Link>
+                  <Link
+                    href={withCustomerStorefrontPreview(
+                      `/stores/${encodeURIComponent(slug)}/requests?request=new`,
+                      previewMode,
+                    )}
+                  >
+                    Request an item
+                  </Link>
+                </li>
+                <li>
+                  <Link
+                    href={withCustomerStorefrontPreview(
+                      `/stores/${encodeURIComponent(slug)}/requests`,
+                      previewMode,
+                    )}
+                  >
+                    My item requests
+                  </Link>
                 </li>
               </ul>
             </nav>

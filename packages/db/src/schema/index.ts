@@ -71,6 +71,7 @@ export * from "./shop-warehouse-connection";
 export * from "./stock-adjustment";
 export * from "./stock-entry";
 export * from "./stock-receipt";
+export * from "./store-item-request";
 export * from "./supplier";
 export * from "./support";
 export * from "./tolet-booking";

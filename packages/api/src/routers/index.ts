@@ -43,7 +43,6 @@ import {
 import { categoryRouter } from "./category";
 import { cloudinaryRouter } from "./cloudinary";
 import { customerRouter } from "./customer";
-import { sellerDirectoryRouter } from "./seller-directory";
 import { customerManagementRouter } from "./customer-management";
 import { dashboardRouter } from "./dashboard";
 import { deliverymanRouter } from "./deliveryman";
@@ -60,16 +59,18 @@ import { productRouter } from "./product";
 import { profitLossRouter } from "./profit-loss";
 import { purchaseRouter } from "./purchase";
 import { purchaseLifecycleRouter } from "./purchase-lifecycle";
-import { retailerPosRouter } from "./retailer-pos";
 import { retailerOfferRouter } from "./retailer-offer";
+import { retailerPosRouter } from "./retailer-pos";
 import { returnsRouter } from "./returns";
 import { salesmanRouter } from "./salesman";
 import { sellerApplicationRouter } from "./seller-application";
+import { sellerDirectoryRouter } from "./seller-directory";
 import { shopOwnerRouter } from "./shop-owner";
 import { shopRoleRouter } from "./shop-role";
 import { shopStaffRouter } from "./shop-staff";
 import { stockAdjustmentRouter } from "./stock-adjustment";
 import { stockOverviewRouter } from "./stock-overview";
+import { storeItemRequestRouter } from "./store-item-request";
 import { supplierPaymentRouter } from "./supplier-payment";
 import { adminToLetRouter, toLetRouter } from "./tolet";
 import { toLetBookingRouter } from "./tolet-booking";
@@ -114,6 +115,7 @@ export const appRouter = {
   adminEstimate: adminEstimateRouter,
   adminInvoice: adminInvoiceRouter,
   adminItemRequest: adminItemRequestRouter,
+  storeItemRequest: storeItemRequestRouter,
   adminOrder: adminOrderRouter,
   adminProductVariant: adminProductVariantRouter,
   adminSalesReport: adminSalesReportRouter,

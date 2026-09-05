@@ -302,6 +302,11 @@ const shopOwnerNavGroups: NavGroup[] = [
     label: "Support",
     items: [
       { title: "Support Center", url: `${D}/support`, icon: HeadphonesIcon },
+      {
+        title: "Item Requests",
+        url: `${D}/support/item-requests`,
+        icon: ClipboardListIcon,
+      },
     ],
   },
   {
