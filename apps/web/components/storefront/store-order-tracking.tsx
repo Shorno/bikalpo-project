@@ -3,8 +3,11 @@
 import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, ArrowRight, PackageSearch } from "lucide-react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import {
+  OrderDetailClient,
+  OrderDetailSkeleton,
+} from "@/components/shop/order-detail-client";
 import { Button } from "@/components/ui/button";
 import { storeTrackingOrderHref } from "@/lib/store-tracking-links";
 import { orpc } from "@/utils/orpc";
@@ -23,7 +26,6 @@ export function StoreOrderTracking({
   trackingHref: string;
 }) {
   const [page, setPage] = useState(1);
-  const router = useRouter();
   const options = orpc.customer.getStoreActiveOrders.queryOptions({
     input: { shopId, page },
   });
@@ -34,12 +36,28 @@ export function StoreOrderTracking({
   const singleOrder =
     data?.total === 1 ? data.orders[0]?.orderNumber : undefined;
   useEffect(() => {
-    if (singleOrder)
-      router.replace(storeTrackingOrderHref(trackingHref, singleOrder));
-  }, [singleOrder, router, trackingHref]);
-  useEffect(() => {
     if (data && page > 1 && data.orders.length === 0) setPage(1);
   }, [data, page]);
+
+  if (isPending) {
+    return (
+      <div className="px-4 py-8 sm:px-6">
+        <OrderDetailSkeleton />
+      </div>
+    );
+  }
+
+  if (singleOrder && !isError) {
+    return (
+      <div className="px-4 py-8 sm:px-6">
+        <OrderDetailClient
+          key={`${shopId}-${viewerId}-${singleOrder}`}
+          orderNumber={singleOrder}
+          store={{ shopId, viewerId, name, backHref: storeHref }}
+        />
+      </div>
+    );
+  }
 
   return (
     <section
@@ -60,11 +78,7 @@ export function StoreOrderTracking({
         Track your order
       </h1>
       <p className="mt-3 text-muted-foreground">Active orders from {name}.</p>
-      {isPending || singleOrder ? (
-        <p role="status" className="py-12 text-muted-foreground">
-          {singleOrder ? "Opening your order…" : "Loading your orders…"}
-        </p>
-      ) : isError ? (
+      {isError ? (
         <div className="mt-8 space-y-4">
           <p role="alert">
             We couldn’t load your orders. Please try again. If your session has

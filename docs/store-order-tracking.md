@@ -1,6 +1,6 @@
 # Store-specific order tracking
 
-The user approved extending the shop footer's Track order action to show only the current consumer's active orders with that store. One active order opens its tracking page automatically. Multiple active orders show a dated, status-labelled picker with pagination. Zero active orders show an honest empty state and a link back to that store.
+The user approved extending the shop footer's Track order action to show only the current consumer's active orders with that store. One active order renders its details directly on `/stores/[slug]/track`, without automatic navigation. Multiple active orders show a dated, status-labelled picker with pagination. Zero active orders show an honest empty state and a link back to that store. Route loading, active-order lookup and detail loading use the same order-shaped skeleton instead of redirect messaging.
 
 The approved follow-up keeps order details at `/stores/[slug]/track/[orderNumber]`, within the shop header/footer. Reuse the existing order details and journey presentation, with a store return link. The order API accepts an optional shop constraint and enforces both shop and customer ownership before loading the journey. Existing account routes keep their behavior. Preserve preview through detail links and sign-in redirects; historical orders may still be read through direct links. Report real request failures with retry, rather than treating every outage as a missing order.
 

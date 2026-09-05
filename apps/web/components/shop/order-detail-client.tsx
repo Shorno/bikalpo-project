@@ -68,9 +68,13 @@ const money = new Intl.NumberFormat("en-BD", {
   maximumFractionDigits: 0,
 });
 
-function OrderDetailSkeleton() {
+export function OrderDetailSkeleton() {
   return (
-    <div className="mx-auto max-w-6xl space-y-6">
+    <div
+      className="mx-auto max-w-6xl space-y-6"
+      role="status"
+      aria-label="Loading order details"
+    >
       <Skeleton className="h-5 w-28" />
       <div className="space-y-3">
         <Skeleton className="h-9 w-72" />
