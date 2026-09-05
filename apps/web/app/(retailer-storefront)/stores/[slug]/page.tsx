@@ -492,8 +492,8 @@ export default function ShopStorePage({
             )}
           </div>
         </section>
-        <StoreBrands slug={slug} />
       </main>
+      <StoreBrands slug={slug} />
     </div>
   );
 }
