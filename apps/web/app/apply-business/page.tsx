@@ -4,7 +4,7 @@ import { Loader2 } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect } from "react";
 import { BusinessApplicationForm } from "@/components/features/auth/business-application-form";
-import { Navbar } from "@/components/layout/navbar";
+import { PublicHeader } from "@/components/layout/public-header";
 import { orpc } from "@/utils/orpc";
 
 function ApplyBusinessContent() {
@@ -26,7 +26,7 @@ function ApplyBusinessContent() {
   if (isLoading) {
     return (
       <>
-        <Navbar />
+        <PublicHeader />
         <div className="flex min-h-[calc(100dvh-80px)] items-center justify-center bg-[#FAF6F6]">
           <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
         </div>
@@ -38,7 +38,7 @@ function ApplyBusinessContent() {
   if (data?.status && !isEditMode) {
     return (
       <>
-        <Navbar />
+        <PublicHeader />
         <div className="flex min-h-[calc(100dvh-80px)] items-center justify-center bg-[#FAF6F6]">
           <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
         </div>
@@ -68,7 +68,7 @@ function ApplyBusinessContent() {
 
   return (
     <>
-      <Navbar />
+      <PublicHeader />
       <div className="flex min-h-[calc(100dvh-80px)] flex-col items-center bg-[#FAF6F6] px-4 py-8 pt-24 md:px-8">
         <div className="mb-6 text-center">
           <h1 className="text-2xl font-bold tracking-tight md:text-3xl">
@@ -92,7 +92,7 @@ function ApplyBusinessContent() {
 function LoadingFallback() {
   return (
     <>
-      <Navbar />
+      <PublicHeader />
       <div className="flex min-h-[calc(100dvh-80px)] items-center justify-center bg-[#FAF6F6]">
         <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
       </div>

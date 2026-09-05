@@ -39,7 +39,7 @@ const toLetAboutLinks = [
   { href: "/faqs", label: "Help Center" },
 ] as const;
 
-export function Footer() {
+export function PublicFooter() {
   const pathname = usePathname();
 
   if (pathname.startsWith("/to-let")) {
