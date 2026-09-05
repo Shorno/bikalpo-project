@@ -14,6 +14,7 @@ import {
   ExternalLinkIcon,
   FileTextIcon,
   GiftIcon,
+  HeadphonesIcon,
   LayoutDashboardIcon,
   MegaphoneIcon,
   PackageIcon,
@@ -294,6 +295,17 @@ const shopOwnerNavGroups: NavGroup[] = [
             icon: FileTextIcon,
           },
         ],
+      },
+    ],
+  },
+  {
+    label: "Support",
+    items: [
+      { title: "Support Center", url: `${D}/support`, icon: HeadphonesIcon },
+      {
+        title: "Item Requests",
+        url: `${D}/support/item-requests`,
+        icon: ClipboardListIcon,
       },
     ],
   },

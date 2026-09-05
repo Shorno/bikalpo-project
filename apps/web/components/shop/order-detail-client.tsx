@@ -52,6 +52,7 @@ import { client } from "@/utils/orpc";
 
 interface OrderDetailClientProps {
   orderNumber: string;
+  store?: { shopId: string; viewerId: string; backHref: string; name: string };
 }
 
 const paymentMethodLabels: Record<string, string> = {
@@ -67,9 +68,13 @@ const money = new Intl.NumberFormat("en-BD", {
   maximumFractionDigits: 0,
 });
 
-function OrderDetailSkeleton() {
+export function OrderDetailSkeleton() {
   return (
-    <div className="mx-auto max-w-6xl space-y-6">
+    <div
+      className="mx-auto max-w-6xl space-y-6"
+      role="status"
+      aria-label="Loading order details"
+    >
       <Skeleton className="h-5 w-28" />
       <div className="space-y-3">
         <Skeleton className="h-9 w-72" />
@@ -84,8 +89,14 @@ function OrderDetailSkeleton() {
   );
 }
 
-export function OrderDetailClient({ orderNumber }: OrderDetailClientProps) {
-  const { data, isLoading, isError } = useOrderByNumber(orderNumber);
+export function OrderDetailClient({
+  orderNumber,
+  store,
+}: OrderDetailClientProps) {
+  const { data, isLoading, isError, error, refetch } = useOrderByNumber(
+    orderNumber,
+    store,
+  );
   const [reportOpen, setReportOpen] = useState(false);
   const [reportLoading, setReportLoading] = useState(false);
   const [reportType, setReportType] = useState<
@@ -98,10 +109,24 @@ export function OrderDetailClient({ orderNumber }: OrderDetailClientProps) {
   const [reportComment, setReportComment] = useState("");
 
   useEffect(() => {
-    if (isError) notFound();
-  }, [isError]);
+    if (
+      isError &&
+      (!store || (error as { code?: string })?.code === "NOT_FOUND")
+    )
+      notFound();
+  }, [isError, error, store]);
 
   if (isLoading) return <OrderDetailSkeleton />;
+  if (isError && store)
+    return (
+      <div className="mx-auto max-w-3xl space-y-4 py-10">
+        <p role="alert">We couldn’t load this order. Please try again.</p>
+        <Button onClick={() => void refetch()}>Try again</Button>
+        <Link href={store.backHref} className="ml-4 text-primary underline">
+          Back to {store.name}
+        </Link>
+      </div>
+    );
   if (!data?.order || !data.journey) return null;
 
   const { order, journey } = data;
@@ -150,11 +175,11 @@ export function OrderDetailClient({ orderNumber }: OrderDetailClientProps) {
     <div className="mx-auto max-w-6xl space-y-7 pb-12">
       <header>
         <Link
-          href="/account/orders"
+          href={store?.backHref ?? "/account/orders"}
           className="inline-flex min-h-10 items-center gap-2 text-sm font-medium text-slate-600 outline-none transition-colors hover:text-blue-700 focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2"
         >
           <ArrowLeft className="h-4 w-4" />
-          All orders
+          {store ? `Back to ${store.name}` : "All orders"}
         </Link>
         <div className="mt-3 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div>
@@ -496,7 +521,8 @@ export function OrderDetailClient({ orderNumber }: OrderDetailClientProps) {
             <h2 className="font-semibold text-slate-950">Payment</h2>
             <p className="mt-2 text-sm text-slate-600">
               {order.paymentMethod
-                ? paymentMethodLabels[order.paymentMethod] || order.paymentMethod
+                ? paymentMethodLabels[order.paymentMethod] ||
+                  order.paymentMethod
                 : "Not selected"}
             </p>
           </div>

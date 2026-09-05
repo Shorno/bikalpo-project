@@ -2,7 +2,7 @@
 
 import { isShopPortalRole } from "@bikalpo-project/auth/shop-staff-access";
 import { AuthModal } from "@/components/features/auth/auth-modal";
-import { Navbar } from "@/components/layout/navbar";
+import { PublicHeader } from "@/components/layout/public-header";
 import { authClient } from "@/lib/auth-client";
 import { getDeliverySubdomainUrl } from "@/lib/delivery-routing";
 import { getSalesSubdomainUrl } from "@/lib/sales-routing";
@@ -65,7 +65,7 @@ export function LoginPageClient() {
 
   return (
     <>
-      <Navbar />
+      <PublicHeader />
       <div className="flex h-[calc(100vh-105px)] items-center justify-center bg-[#FAF6F6] p-4 md:p-10">
         <AuthModal isOpen={true} onClose={handleComplete} embedded />
       </div>

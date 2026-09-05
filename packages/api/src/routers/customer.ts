@@ -8,6 +8,7 @@
  * - Location-based filtering where applicable
  */
 
+import { isPhoneAuthEmail } from "@bikalpo-project/auth/phone-identity";
 import { db } from "@bikalpo-project/db";
 import { isWarehouseCylinderExchangeAvailable } from "@bikalpo-project/db/fulfillment";
 import {
@@ -45,6 +46,7 @@ import {
   productVariantPrice,
   retailerOffer,
   retailerOfferApplication,
+  sellerApplication,
   sellerAreaMapping,
   shopFollower,
   subCategory,
@@ -121,6 +123,10 @@ import {
   convertEstimateToB2bOrder,
   estimateOrderAcceptSchema,
 } from "./helpers/estimate-order-conversion";
+import {
+  collectAvailableRetailerBrands,
+  isAvailableRetailerStock,
+} from "./helpers/retailer-stock-availability";
 import {
   getReferenceCylinderPricing,
   getReferenceProductEffectivePrice,
@@ -2585,7 +2591,7 @@ const queries = {
       tags: ["Customer"],
       summary: "Get order by order number",
     })
-    .input(z.object({ orderNumber: z.string() }))
+    .input(z.object({ orderNumber: z.string(), shopId: z.string().min(1).optional() }))
     .handler(async ({ context, input }) => {
       const userId = context.session.user.id;
       const found = await db.query.order.findFirst({
@@ -2593,6 +2599,8 @@ const queries = {
           eq(order.orderNumber, input.orderNumber),
           eq(order.userId, userId),
           eq(order.isOpenOrder, false),
+          input.shopId ? eq(order.shopId, input.shopId) : undefined,
+          input.shopId ? eq(order.orderType, "b2c") : undefined,
         ),
         with: { items: true },
       });
@@ -2680,6 +2688,51 @@ const queries = {
               pickupLocation: journey.pickupLocation,
             }
           : null,
+      };
+    }),
+
+  /** Active retail orders placed by this customer with one store. */
+  getStoreActiveOrders: protectedProcedure
+    .route({
+      method: "GET",
+      path: "/customer/stores/{shopId}/active-orders",
+      tags: ["Customer"],
+      summary: "Get active orders for a store",
+    })
+    .input(
+      z.object({
+        shopId: z.string().min(1),
+        page: z.number().int().min(1).default(1),
+      }),
+    )
+    .handler(async ({ context, input }) => {
+      const where = and(
+        eq(order.userId, context.session.user.id),
+        eq(order.shopId, input.shopId),
+        eq(order.orderType, "b2c"),
+        eq(order.isOpenOrder, false),
+        sql`${order.status} NOT IN ('delivered', 'cancelled', 'returned')`,
+      );
+      const [orders, totals] = await Promise.all([
+        db
+          .select({
+            orderNumber: order.orderNumber,
+            status: order.status,
+            createdAt: order.createdAt,
+            total: order.total,
+          })
+          .from(order)
+          .where(where)
+          .orderBy(desc(order.createdAt), desc(order.id))
+          .limit(20)
+          .offset((input.page - 1) * 20),
+        db.select({ total: count() }).from(order).where(where),
+      ]);
+      return {
+        orders,
+        total: totals[0]?.total ?? 0,
+        page: input.page,
+        pageSize: 20,
       };
     }),
 
@@ -3828,6 +3881,7 @@ const queries = {
     .input(
       z.object({
         search: z.string().optional(),
+        location: z.string().trim().max(100).optional(),
         areaId: z.number().optional(),
         lat: z.string().optional(),
         lng: z.string().optional(),
@@ -3853,6 +3907,11 @@ const queries = {
             ilike(user.name, `%${input.search}%`),
           )!,
         );
+      }
+
+      // City links match the retailer's public address.
+      if (input.location) {
+        conditions.push(ilike(user.shopAddress, `%${input.location}%`));
       }
 
       // Location-based filter: find sellers near the consumer's location
@@ -3927,13 +3986,13 @@ const queries = {
       };
     }),
 
-  /** Get the lightweight shop identity used by storefront navigation. */
+  /** Get public identity and business contacts shared by the storefront shell. */
   getShopNavigation: publicProcedure
     .route({
       method: "GET",
       path: "/customer/shops/{slug}/navigation",
       tags: ["Customer"],
-      summary: "Get storefront navigation identity",
+      summary: "Get storefront identity and available brands",
     })
     .input(z.object({ slug: z.string().trim().min(1).max(200) }))
     .handler(async ({ input }) => {
@@ -3945,6 +4004,9 @@ const queries = {
           shopSlug: user.shopSlug,
           image: user.image,
           shopLogo: user.shopLogo,
+          phoneNumber: user.phoneNumber,
+          shopOpeningTime: user.shopOpeningTime,
+          shopClosingTime: user.shopClosingTime,
         })
         .from(user)
         .where(
@@ -3960,7 +4022,67 @@ const queries = {
         throw new ORPCError("NOT_FOUND", { message: "Shop not found" });
       }
 
-      return { shop: shop[0] };
+      // Publish only business contact channels, never the full application or login email.
+      const contacts = await db.query.sellerApplication.findFirst({
+        where: and(
+          eq(sellerApplication.userId, shop[0].id),
+          eq(sellerApplication.status, "approved"),
+        ),
+        orderBy: [desc(sellerApplication.createdAt)],
+        columns: {
+          phoneNumber: true,
+          email: true,
+          facebookUrl: true,
+          instagramUrl: true,
+          tiktokUrl: true,
+          twitterUrl: true,
+        },
+      });
+
+      // This inventory projection intentionally has no catalog search or pagination.
+      const brandStock = await db.query.inventory.findMany({
+        where: and(
+          eq(inventory.ownerType, "shop"),
+          eq(inventory.ownerId, shop[0].id),
+        ),
+        columns: { availableQty: true, retailPrice: true },
+        with: {
+          variant: {
+            columns: { isActive: true },
+            with: {
+              product: {
+                columns: {
+                  status: true,
+                  visibility: true,
+                  creatorSource: true,
+                  createdById: true,
+                  scheduledAt: true,
+                },
+                with: {
+                  brand: { columns: { id: true, name: true, slug: true, logo: true } },
+                },
+              },
+            },
+          },
+        },
+      });
+
+      return {
+        availableBrands: collectAvailableRetailerBrands(
+          brandStock, shop[0].id, new Date(),
+        ),
+        shop: {
+          ...shop[0],
+          phoneNumber: contacts?.phoneNumber || shop[0].phoneNumber,
+          businessEmail: contacts?.email && !isPhoneAuthEmail(contacts.email)
+            ? contacts.email
+            : null,
+          facebookUrl: contacts?.facebookUrl ?? null,
+          instagramUrl: contacts?.instagramUrl ?? null,
+          tiktokUrl: contacts?.tiktokUrl ?? null,
+          twitterUrl: contacts?.twitterUrl ?? null,
+        },
+      };
     }),
 
   /** Get a single shop by slug with their retail products */
@@ -4080,19 +4202,10 @@ const queries = {
 
       // 3. Transform into product-centric view with shop prices
       const productMap = new Map<number, any>();
+      const availabilityTime = new Date();
       for (const inv of inventoryItems) {
         const prod = inv.variant?.product;
-        if (
-          !prod ||
-          !inv.variant?.isActive ||
-          prod.status !== "active" ||
-          prod.visibility !== "public" ||
-          prod.creatorSource !== "shop" ||
-          prod.createdById !== shopData.id ||
-          (prod.scheduledAt != null && prod.scheduledAt > new Date()) ||
-          Number(inv.availableQty || 0) <= 0 ||
-          Number(inv.retailPrice || 0) <= 0
-        ) {
+        if (!prod || !isAvailableRetailerStock(inv, shopData.id, availabilityTime)) {
           continue;
         }
 

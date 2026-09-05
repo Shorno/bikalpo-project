@@ -179,7 +179,6 @@ export function PublicUnitListingCard({
           {detailHref ? (
             <Link
               href={detailHref}
-              prefetch={false}
               aria-label={`View details for ${listing.title}`}
               className="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-primary-foreground transition-colors hover:bg-primary/90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
             >
