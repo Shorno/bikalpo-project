@@ -12,9 +12,9 @@ export default async function RetailerStorefrontLayout({
   const { slug } = await params;
   return (
     <>
-      <ShopHeader key={slug} slug={slug} />
+      <ShopHeader key={`header-${slug}`} slug={slug} />
       <main>{children}</main>
-      <ShopFooter key={slug} slug={slug} />
+      <ShopFooter key={`footer-${slug}`} slug={slug} />
     </>
   );
 }
