@@ -1,10 +1,12 @@
 "use client";
 
+import { isShopPortalRole } from "@bikalpo-project/auth/shop-staff-access";
 import { AuthModal } from "@/components/features/auth/auth-modal";
 import { Navbar } from "@/components/layout/navbar";
 import { authClient } from "@/lib/auth-client";
 import { getDeliverySubdomainUrl } from "@/lib/delivery-routing";
 import { getSalesSubdomainUrl } from "@/lib/sales-routing";
+import { getShopSubdomainUrl } from "@/lib/shop-routing";
 
 function getSafeConsumerRedirect() {
   const redirect = new URLSearchParams(window.location.search).get("redirect");
@@ -46,8 +48,8 @@ export function LoginPageClient() {
       /* cookie fallback */
     }
 
-    if (role === "shop_owner") {
-      window.location.href = "http://shop.bikalpo.localhost:3001/dashboard";
+    if (isShopPortalRole(role)) {
+      window.location.href = `${getShopSubdomainUrl()}/dashboard`;
     } else if (role === "salesman") {
       window.location.href = `${getSalesSubdomainUrl()}/dashboard`;
     } else if (role === "deliveryman" && warehouseId) {

@@ -10,6 +10,11 @@
  */
 
 import { auth, setCredentialPassword } from "@bikalpo-project/auth";
+import {
+  getLoginSessionExpiresAt,
+  loginSecurityPreferencesSchema,
+  normalizeLoginSecurityPreferences,
+} from "@bikalpo-project/auth/login-security-policy";
 import { db } from "@bikalpo-project/db";
 import { countAddableBrands } from "@bikalpo-project/db/brand-creation";
 import {
@@ -18,6 +23,7 @@ import {
   FULFILLMENT_MODES,
 } from "@bikalpo-project/db/fulfillment";
 import {
+  account,
   area,
   brand,
   carton,
@@ -50,7 +56,9 @@ import {
   productType,
   productVariant,
   purchase,
+  sellerApplication,
   sellerAreaMapping,
+  session,
   shopCategoryAssignment,
   shopWarehouseConnection,
   stockAdjustment,
@@ -81,6 +89,7 @@ import {
   isNull,
   lte,
   min,
+  ne,
   or,
   type SQL,
   sql,
@@ -88,7 +97,12 @@ import {
 } from "drizzle-orm";
 import { z } from "zod";
 
-import { publicProcedure, shopOwnerProcedure } from "../index";
+import { SHOP_OWNER_BUSINESS_NATURES } from "../business-registration";
+import {
+  publicProcedure,
+  shopOwnerProcedure,
+  shopPermissionProcedure,
+} from "../index";
 import { assertCheckoutPaymentSelectionAllowed } from "../services/checkout-domain";
 import { assertCheckoutQuoteMatches } from "../services/checkout-quote";
 import { resolveRetailerOfferLinePrice } from "../services/open-order-domain";
@@ -110,6 +124,8 @@ import {
   getWholesalePaymentDueAt,
   wholesaleCheckoutSubmissionSchema,
 } from "../services/wholesale-checkout";
+import { shopTenantId } from "../shop-portal-scope";
+import { resolveActiveProductType } from "./helpers/application-fields";
 import { ensureShopBuyerTargetVariant } from "./helpers/b2b-buyer-target";
 import { convertB2bOrderToRetailInventory } from "./helpers/b2b-conversion";
 import {
@@ -306,9 +322,7 @@ function getConnectedSupplierActivityStatus(
   return diffMs <= activeWindowMs ? ("active" as const) : ("inactive" as const);
 }
 
-// ────────────────────────────────────────────────────────────────
-// B2B Queries (Shop Owner as Buyer — TRADE variants)
-// ────────────────────────────────────────────────────────────────
+const permission = shopPermissionProcedure;
 
 const b2bQueries = {
   /**
@@ -316,7 +330,7 @@ const b2bQueries = {
    * Same as customer.getCustomerProducts but products only shown
    * if they have TRADE variants visible to shop_owner.
    */
-  getProducts: shopOwnerProcedure
+  getProducts: permission("shop_warehouses", "view")
     .route({
       method: "GET",
       path: "/shop-owner/products",
@@ -515,7 +529,7 @@ const b2bQueries = {
   /**
    * Get product details with TRADE variants only (for shop owner B2B buying).
    */
-  getProductDetails: shopOwnerProcedure
+  getProductDetails: permission("shop_warehouses", "view")
     .route({
       method: "GET",
       path: "/shop-owner/products/{slug}",
@@ -589,190 +603,192 @@ const managementQueries = {
    * Aggregated Stock Overview KPIs for the shop dashboard.
    * Returns all metrics in a single call to avoid multiple round-trips.
    */
-  getStockOverview: shopOwnerProcedure.handler(async ({ context }) => {
-    const userId = context.session.user.id;
+  getStockOverview: permission("shop_stock", "view").handler(
+    async ({ context }) => {
+      const userId = shopTenantId(context.session.user);
 
-    // 1. Fetch all inventory for this shop with variant + product + category + brand
-    const shopInventory = await db.query.inventory.findMany({
-      where: and(
-        eq(inventory.ownerType, "shop"),
-        eq(inventory.ownerId, userId),
-      ),
-      with: {
-        variant: {
-          with: {
-            catalogVariant: {
-              columns: { id: true, globalSku: true },
-            },
-            product: {
-              with: {
-                category: { columns: { id: true, name: true } },
+      // 1. Fetch all inventory for this shop with variant + product + category + brand
+      const shopInventory = await db.query.inventory.findMany({
+        where: and(
+          eq(inventory.ownerType, "shop"),
+          eq(inventory.ownerId, userId),
+        ),
+        with: {
+          variant: {
+            with: {
+              catalogVariant: {
+                columns: { id: true, globalSku: true },
               },
+              product: {
+                with: {
+                  category: { columns: { id: true, name: true } },
+                },
+              },
+              brand: { columns: { id: true, name: true } },
+              sourceVariantOption: true,
             },
-            brand: { columns: { id: true, name: true } },
-            sourceVariantOption: true,
           },
         },
-      },
-    });
+      });
 
-    // 2. Aggregate metrics
-    const LOW_STOCK_THRESHOLD = 5;
-    const AT_RISK_THRESHOLD = 2;
+      // 2. Aggregate metrics
+      const LOW_STOCK_THRESHOLD = 5;
+      const AT_RISK_THRESHOLD = 2;
 
-    let totalSKUs = 0;
-    let inStockCount = 0;
-    let lowStockCount = 0;
-    let outOfStockCount = 0;
-    let totalStockValue = 0;
-    let atRiskCount = 0;
+      let totalSKUs = 0;
+      let inStockCount = 0;
+      let lowStockCount = 0;
+      let outOfStockCount = 0;
+      let totalStockValue = 0;
+      let atRiskCount = 0;
 
-    const productSet = new Set<number>();
-    const categoryMap = new Map<string, { variantCount: number }>();
-    const productStockMap = new Map<
-      number,
-      {
-        name: string;
-        totalQty: number;
-        stockLines: string[];
-        image: string | null;
+      const productSet = new Set<number>();
+      const categoryMap = new Map<string, { variantCount: number }>();
+      const productStockMap = new Map<
+        number,
+        {
+          name: string;
+          totalQty: number;
+          stockLines: string[];
+          image: string | null;
+        }
+      >();
+
+      for (const inv of shopInventory) {
+        if (!inv.variant?.product || !inv.variant.sourceVariantOption) continue;
+        let semantics;
+        try {
+          semantics = resolveVariantStockSemantics(
+            inv.variant.sourceVariantOption,
+          );
+        } catch {
+          continue;
+        }
+
+        totalSKUs++;
+        const qty = parseFloat(inv.availableQty || "0");
+        const retailPrice = parseFloat(inv.retailPrice || "0");
+        const variantPrice = parseFloat(inv.variant.price || "0");
+        const effectivePrice = retailPrice > 0 ? retailPrice : variantPrice;
+
+        totalStockValue += qty * effectivePrice;
+        productSet.add(inv.variant.product.id);
+
+        // Stock status
+        if (qty <= 0) outOfStockCount++;
+        else if (qty <= LOW_STOCK_THRESHOLD) lowStockCount++;
+        else inStockCount++;
+
+        // At risk
+        if (qty > 0 && qty <= AT_RISK_THRESHOLD) atRiskCount++;
+
+        // Category snapshot
+        const catName = inv.variant.product.category?.name || "Uncategorized";
+        const existing = categoryMap.get(catName);
+        if (existing) {
+          existing.variantCount += 1;
+        } else {
+          categoryMap.set(catName, { variantCount: 1 });
+        }
+
+        // Product stock aggregation for top products
+        const pid = inv.variant.product.id;
+        const pEntry = productStockMap.get(pid);
+        if (pEntry) {
+          pEntry.totalQty += qty;
+          pEntry.stockLines.push(formatVariantStockQuantity(semantics, qty));
+        } else {
+          productStockMap.set(pid, {
+            name: inv.variant.product.name,
+            totalQty: qty,
+            stockLines: [formatVariantStockQuantity(semantics, qty)],
+            image: inv.variant.product.image,
+          });
+        }
       }
-    >();
 
-    for (const inv of shopInventory) {
-      if (!inv.variant?.product || !inv.variant.sourceVariantOption) continue;
-      let semantics;
-      try {
-        semantics = resolveVariantStockSemantics(
-          inv.variant.sourceVariantOption,
+      // 3. Category snapshot — top 6 categories
+      const categorySnapshot = Array.from(categoryMap.entries())
+        .map(([name, data]) => ({
+          categoryName: name,
+          totalQty: data.variantCount,
+          unit: "variant SKUs",
+        }))
+        .sort((a, b) => b.totalQty - a.totalQty)
+        .slice(0, 6);
+
+      // 4. Top products — top 5 by stock qty
+      const topProducts = Array.from(productStockMap.values())
+        .sort((a, b) => b.totalQty - a.totalQty)
+        .slice(0, 5)
+        .map((p) => ({
+          productName: p.name,
+          totalQty: Math.round(p.totalQty * 100) / 100,
+          unit: "",
+          stockDisplay: p.stockLines.join(" + "),
+          image: p.image,
+          status:
+            p.totalQty > 20
+              ? ("high" as const)
+              : p.totalQty > 5
+                ? ("available" as const)
+                : ("low" as const),
+        }));
+
+      // 5. Damage alert — count active damage entries in last 30 days
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+      const [damageResult] = await db
+        .select({ count: count() })
+        .from(damageEntry)
+        .where(
+          and(
+            eq(damageEntry.shopId, userId),
+            eq(damageEntry.status, "active"),
+            gte(damageEntry.createdAt, thirtyDaysAgo),
+          ),
         );
-      } catch {
-        continue;
-      }
 
-      totalSKUs++;
-      const qty = parseFloat(inv.availableQty || "0");
-      const retailPrice = parseFloat(inv.retailPrice || "0");
-      const variantPrice = parseFloat(inv.variant.price || "0");
-      const effectivePrice = retailPrice > 0 ? retailPrice : variantPrice;
+      return {
+        // Main KPIs
+        totalProducts: productSet.size,
+        totalSKUs,
+        totalStockValue: Math.round(totalStockValue * 100) / 100,
 
-      totalStockValue += qty * effectivePrice;
-      productSet.add(inv.variant.product.id);
+        // Stock Status
+        inStockCount,
+        lowStockCount,
+        outOfStockCount,
 
-      // Stock status
-      if (qty <= 0) outOfStockCount++;
-      else if (qty <= LOW_STOCK_THRESHOLD) lowStockCount++;
-      else inStockCount++;
+        // Category Snapshot
+        categorySnapshot,
 
-      // At risk
-      if (qty > 0 && qty <= AT_RISK_THRESHOLD) atRiskCount++;
+        // Alert Summary
+        alerts: {
+          lowStock: lowStockCount,
+          expiringSoon: 0, // No expiry field yet
+          damaged: damageResult?.count ?? 0,
+        },
 
-      // Category snapshot
-      const catName = inv.variant.product.category?.name || "Uncategorized";
-      const existing = categoryMap.get(catName);
-      if (existing) {
-        existing.variantCount += 1;
-      } else {
-        categoryMap.set(catName, { variantCount: 1 });
-      }
+        // Top Products
+        topProducts,
 
-      // Product stock aggregation for top products
-      const pid = inv.variant.product.id;
-      const pEntry = productStockMap.get(pid);
-      if (pEntry) {
-        pEntry.totalQty += qty;
-        pEntry.stockLines.push(formatVariantStockQuantity(semantics, qty));
-      } else {
-        productStockMap.set(pid, {
-          name: inv.variant.product.name,
-          totalQty: qty,
-          stockLines: [formatVariantStockQuantity(semantics, qty)],
-          image: inv.variant.product.image,
-        });
-      }
-    }
-
-    // 3. Category snapshot — top 6 categories
-    const categorySnapshot = Array.from(categoryMap.entries())
-      .map(([name, data]) => ({
-        categoryName: name,
-        totalQty: data.variantCount,
-        unit: "variant SKUs",
-      }))
-      .sort((a, b) => b.totalQty - a.totalQty)
-      .slice(0, 6);
-
-    // 4. Top products — top 5 by stock qty
-    const topProducts = Array.from(productStockMap.values())
-      .sort((a, b) => b.totalQty - a.totalQty)
-      .slice(0, 5)
-      .map((p) => ({
-        productName: p.name,
-        totalQty: Math.round(p.totalQty * 100) / 100,
-        unit: "",
-        stockDisplay: p.stockLines.join(" + "),
-        image: p.image,
-        status:
-          p.totalQty > 20
-            ? ("high" as const)
-            : p.totalQty > 5
-              ? ("available" as const)
-              : ("low" as const),
-      }));
-
-    // 5. Damage alert — count active damage entries in last 30 days
-    const thirtyDaysAgo = new Date();
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-    const [damageResult] = await db
-      .select({ count: count() })
-      .from(damageEntry)
-      .where(
-        and(
-          eq(damageEntry.shopId, userId),
-          eq(damageEntry.status, "active"),
-          gte(damageEntry.createdAt, thirtyDaysAgo),
-        ),
-      );
-
-    return {
-      // Main KPIs
-      totalProducts: productSet.size,
-      totalSKUs,
-      totalStockValue: Math.round(totalStockValue * 100) / 100,
-
-      // Stock Status
-      inStockCount,
-      lowStockCount,
-      outOfStockCount,
-
-      // Category Snapshot
-      categorySnapshot,
-
-      // Alert Summary
-      alerts: {
-        lowStock: lowStockCount,
-        expiringSoon: 0, // No expiry field yet
-        damaged: damageResult?.count ?? 0,
-      },
-
-      // Top Products
-      topProducts,
-
-      // Insights
-      insights: {
-        fastMoving: null as string | null, // Needs sales data
-        slowMoving: null as string | null, // Needs sales data
-        atRiskCount,
-      },
-    };
-  }),
+        // Insights
+        insights: {
+          fastMoving: null as string | null, // Needs sales data
+          slowMoving: null as string | null, // Needs sales data
+          atRiskCount,
+        },
+      };
+    },
+  ),
 
   /**
    * Real-time stock view grouped by product.
    * Shows pack (carton-packed) vs loose breakdown at product level,
    * with variant-level detail for the expanded view.
    */
-  getRealtimeStock: shopOwnerProcedure
+  getRealtimeStock: permission("shop_stock", "view")
     .input(
       z.object({
         search: z.string().optional(),
@@ -783,7 +799,7 @@ const managementQueries = {
       }),
     )
     .handler(async ({ context, input }) => {
-      const userId = context.session.user.id;
+      const userId = shopTenantId(context.session.user);
 
       // 1. Fetch all inventory for this shop
       const shopInventory = await db.query.inventory.findMany({
@@ -959,630 +975,638 @@ const managementQueries = {
    * Low stock products — only products with variants below their reorderLevel.
    * Classifies as "low" or "critical" (≤ 50% of threshold).
    */
-  getLowStockProducts: shopOwnerProcedure.handler(async ({ context }) => {
-    const userId = context.session.user.id;
-    const DEFAULT_THRESHOLD = 5;
+  getLowStockProducts: permission("shop_stock", "view").handler(
+    async ({ context }) => {
+      const userId = shopTenantId(context.session.user);
+      const DEFAULT_THRESHOLD = 5;
 
-    // Fetch inventory with variant + product + brand
-    const shopInventory = await db.query.inventory.findMany({
-      where: and(
-        eq(inventory.ownerType, "shop"),
-        eq(inventory.ownerId, userId),
-      ),
-      with: {
-        variant: {
-          with: {
-            product: {
-              with: {
-                category: { columns: { id: true, name: true } },
+      // Fetch inventory with variant + product + brand
+      const shopInventory = await db.query.inventory.findMany({
+        where: and(
+          eq(inventory.ownerType, "shop"),
+          eq(inventory.ownerId, userId),
+        ),
+        with: {
+          variant: {
+            with: {
+              product: {
+                with: {
+                  category: { columns: { id: true, name: true } },
+                },
               },
+              brand: { columns: { id: true, name: true } },
+              sourceVariantOption: true,
             },
-            brand: { columns: { id: true, name: true } },
-            sourceVariantOption: true,
           },
         },
-      },
-    });
-
-    // Classify each variant
-    type VariantInfo = {
-      variantId: number;
-      brandName: string | null;
-      unitLabel: string;
-      operationalUnit: string;
-      stockDisplay: string;
-      availableQty: number;
-      inCartonQty: number;
-      looseQty: number;
-      reorderLevel: number;
-      status: "ok" | "low" | "critical" | "out_of_stock";
-    };
-
-    type ProductLow = {
-      productId: number;
-      productName: string;
-      productImage: string | null;
-      sku: string | null;
-      issueLabel: string;
-      status: "low" | "critical";
-      variants: VariantInfo[];
-      minimumLevels: { label: string; minimum: number; unit: string }[];
-      alertReasons: string[];
-    };
-
-    const productMap = new Map<number, ProductLow>();
-    let criticalItems = 0;
-    let shortageVariants = 0;
-
-    for (const inv of shopInventory) {
-      if (
-        !inv.variant?.product ||
-        !inv.variant.sourceVariantOption ||
-        !inv.variant.isActive
-      )
-        continue;
-      let semantics;
-      try {
-        semantics = resolveVariantStockSemantics(
-          inv.variant.sourceVariantOption,
-        );
-      } catch {
-        continue;
-      }
-
-      const prod = inv.variant.product;
-      const pid = prod.id;
-      const qty = parseFloat(inv.availableQty || "0");
-      const cartonQty = parseFloat(inv.inCartonQty || "0");
-      const threshold =
-        inv.variant.reorderLevel > 0
-          ? inv.variant.reorderLevel
-          : prod.reorderLevel > 0
-            ? prod.reorderLevel
-            : DEFAULT_THRESHOLD;
-
-      // Classify variant
-      let variantStatus: "ok" | "low" | "critical" | "out_of_stock";
-      if (qty <= 0) variantStatus = "out_of_stock";
-      else if (qty <= threshold * 0.5) variantStatus = "critical";
-      else if (qty <= threshold) variantStatus = "low";
-      else variantStatus = "ok";
-
-      // Skip healthy variants for the low stock page aggregation
-      const isLow = variantStatus !== "ok";
-
-      const variantInfo: VariantInfo = {
-        variantId: inv.variant.id,
-        brandName: inv.variant.brand?.name ?? null,
-        unitLabel: semantics.displayLabel,
-        operationalUnit: semantics.operationalUnit,
-        stockDisplay: formatVariantStockQuantity(semantics, qty),
-        availableQty: qty,
-        inCartonQty: cartonQty,
-        looseQty: Math.max(0, qty - cartonQty),
-        reorderLevel: threshold,
-        status: variantStatus,
-      };
-
-      // Track KPI metrics for low/critical variants
-      if (isLow) {
-        if (variantStatus === "critical") criticalItems++;
-        shortageVariants++;
-      }
-
-      // Group by product — include all variants for expanded detail
-      if (!productMap.has(pid)) {
-        productMap.set(pid, {
-          productId: pid,
-          productName: prod.name,
-          productImage: prod.image,
-          sku: prod.sku,
-          issueLabel: "",
-          status: "low",
-          variants: [],
-          minimumLevels: [],
-          alertReasons: [],
-        });
-      }
-
-      const group = productMap.get(pid)!;
-      group.variants.push(variantInfo);
-
-      // Build minimum level config
-      group.minimumLevels.push({
-        label: semantics.displayLabel,
-        minimum: threshold,
-        unit: semantics.operationalUnit,
       });
 
-      // Track alert reasons for low variants
-      if (isLow) {
-        const reason = `${semantics.displayLabel} ${variantStatus === "critical" ? "Critical" : "Low"}`;
-        group.alertReasons.push(reason);
-      }
-    }
+      // Classify each variant
+      type VariantInfo = {
+        variantId: number;
+        brandName: string | null;
+        unitLabel: string;
+        operationalUnit: string;
+        stockDisplay: string;
+        availableQty: number;
+        inCartonQty: number;
+        looseQty: number;
+        reorderLevel: number;
+        status: "ok" | "low" | "critical" | "out_of_stock";
+      };
 
-    // Filter to only products that have at least 1 low/critical variant
-    const lowProducts: ProductLow[] = [];
+      type ProductLow = {
+        productId: number;
+        productName: string;
+        productImage: string | null;
+        sku: string | null;
+        issueLabel: string;
+        status: "low" | "critical";
+        variants: VariantInfo[];
+        minimumLevels: { label: string; minimum: number; unit: string }[];
+        alertReasons: string[];
+      };
 
-    for (const group of productMap.values()) {
-      const hasLowVariant = group.variants.some(
-        (v) =>
-          v.status === "low" ||
-          v.status === "critical" ||
-          v.status === "out_of_stock",
-      );
-      if (!hasLowVariant) continue;
+      const productMap = new Map<number, ProductLow>();
+      let criticalItems = 0;
+      let shortageVariants = 0;
 
-      // Determine product-level status and issue label
-      const hasCritical = group.variants.some(
-        (v) => v.status === "critical" || v.status === "out_of_stock",
-      );
-      group.status = hasCritical ? "critical" : "low";
-
-      // Build issue label from the most urgent variant
-      const worstVariant = group.variants
-        .filter((v) => v.status !== "ok")
-        .sort((a, b) => {
-          const order = {
-            out_of_stock: 0,
-            critical: 1,
-            low: 2,
-            ok: 3,
-          };
-          return order[a.status] - order[b.status];
-        })[0];
-
-      if (worstVariant) {
-        group.issueLabel = `${worstVariant.unitLabel} ${worstVariant.status === "critical" ? "Critical" : "Low"}`;
-      }
-
-      lowProducts.push(group);
-    }
-
-    // Sort: critical first, then low
-    lowProducts.sort((a, b) => {
-      if (a.status === "critical" && b.status !== "critical") return -1;
-      if (a.status !== "critical" && b.status === "critical") return 1;
-      return a.productName.localeCompare(b.productName);
-    });
-
-    return {
-      summary: {
-        lowProducts: lowProducts.length,
-        criticalItems,
-        shortageVariants,
-      },
-      products: lowProducts,
-    };
-  }),
-
-  /**
-   * Expired products — damage entries with type 'expired',
-   * plus expiry-enabled products as a watchlist.
-   */
-  getExpiredProducts: shopOwnerProcedure.handler(async ({ context }) => {
-    const userId = context.session.user.id;
-
-    // 1. Get all expired damage entries for this shop
-    const expiredEntries = await db.query.damageEntry.findMany({
-      where: and(
-        eq(damageEntry.shopId, userId),
-        eq(damageEntry.damageType, "expired"),
-        eq(damageEntry.status, "active"),
-      ),
-      with: {
-        items: {
-          with: {
-            variant: {
-              with: {
-                sourceVariantOption: true,
-                product: {
-                  columns: {
-                    id: true,
-                    name: true,
-                    image: true,
-                    sku: true,
-                  },
-                },
-                brand: { columns: { id: true, name: true } },
-              },
-            },
-          },
-        },
-      },
-      orderBy: [desc(damageEntry.entryDate)],
-    });
-
-    // 2. Group expired items by product
-    type ExpiredVariant = {
-      variantId: number;
-      brandName: string | null;
-      unitLabel: string;
-      operationalUnit: string;
-      stockDisplay: string;
-      qty: number;
-      unitPrice: number;
-      totalValue: number;
-      entryDate: string;
-    };
-
-    type ExpiredProduct = {
-      productId: number;
-      productName: string;
-      productImage: string | null;
-      lastExpiryDate: string;
-      status: "expired";
-      lossValue: number;
-      variants: ExpiredVariant[];
-    };
-
-    const productMap = new Map<number, ExpiredProduct>();
-    let totalLoss = 0;
-
-    for (const entry of expiredEntries) {
-      for (const item of entry.items) {
-        if (!item.variant?.product || !item.variant.sourceVariantOption)
+      for (const inv of shopInventory) {
+        if (
+          !inv.variant?.product ||
+          !inv.variant.sourceVariantOption ||
+          !inv.variant.isActive
+        )
           continue;
         let semantics;
         try {
           semantics = resolveVariantStockSemantics(
-            item.variant.sourceVariantOption,
+            inv.variant.sourceVariantOption,
           );
         } catch {
           continue;
         }
 
-        const prod = item.variant.product;
+        const prod = inv.variant.product;
         const pid = prod.id;
-        const qty = item.qty;
-        const unitPrice = parseFloat(item.unitPrice || "0");
-        const totalValue = parseFloat(item.totalValue || "0");
+        const qty = parseFloat(inv.availableQty || "0");
+        const cartonQty = parseFloat(inv.inCartonQty || "0");
+        const threshold =
+          inv.variant.reorderLevel > 0
+            ? inv.variant.reorderLevel
+            : prod.reorderLevel > 0
+              ? prod.reorderLevel
+              : DEFAULT_THRESHOLD;
 
-        totalLoss += totalValue;
+        // Classify variant
+        let variantStatus: "ok" | "low" | "critical" | "out_of_stock";
+        if (qty <= 0) variantStatus = "out_of_stock";
+        else if (qty <= threshold * 0.5) variantStatus = "critical";
+        else if (qty <= threshold) variantStatus = "low";
+        else variantStatus = "ok";
 
+        // Skip healthy variants for the low stock page aggregation
+        const isLow = variantStatus !== "ok";
+
+        const variantInfo: VariantInfo = {
+          variantId: inv.variant.id,
+          brandName: inv.variant.brand?.name ?? null,
+          unitLabel: semantics.displayLabel,
+          operationalUnit: semantics.operationalUnit,
+          stockDisplay: formatVariantStockQuantity(semantics, qty),
+          availableQty: qty,
+          inCartonQty: cartonQty,
+          looseQty: Math.max(0, qty - cartonQty),
+          reorderLevel: threshold,
+          status: variantStatus,
+        };
+
+        // Track KPI metrics for low/critical variants
+        if (isLow) {
+          if (variantStatus === "critical") criticalItems++;
+          shortageVariants++;
+        }
+
+        // Group by product — include all variants for expanded detail
         if (!productMap.has(pid)) {
           productMap.set(pid, {
             productId: pid,
             productName: prod.name,
             productImage: prod.image,
-            lastExpiryDate: entry.entryDate,
-            status: "expired",
-            lossValue: 0,
+            sku: prod.sku,
+            issueLabel: "",
+            status: "low",
             variants: [],
+            minimumLevels: [],
+            alertReasons: [],
           });
         }
 
         const group = productMap.get(pid)!;
-        group.lossValue += totalValue;
+        group.variants.push(variantInfo);
 
-        // Keep the most recent entry date
-        if (entry.entryDate > group.lastExpiryDate) {
-          group.lastExpiryDate = entry.entryDate;
+        // Build minimum level config
+        group.minimumLevels.push({
+          label: semantics.displayLabel,
+          minimum: threshold,
+          unit: semantics.operationalUnit,
+        });
+
+        // Track alert reasons for low variants
+        if (isLow) {
+          const reason = `${semantics.displayLabel} ${variantStatus === "critical" ? "Critical" : "Low"}`;
+          group.alertReasons.push(reason);
+        }
+      }
+
+      // Filter to only products that have at least 1 low/critical variant
+      const lowProducts: ProductLow[] = [];
+
+      for (const group of productMap.values()) {
+        const hasLowVariant = group.variants.some(
+          (v) =>
+            v.status === "low" ||
+            v.status === "critical" ||
+            v.status === "out_of_stock",
+        );
+        if (!hasLowVariant) continue;
+
+        // Determine product-level status and issue label
+        const hasCritical = group.variants.some(
+          (v) => v.status === "critical" || v.status === "out_of_stock",
+        );
+        group.status = hasCritical ? "critical" : "low";
+
+        // Build issue label from the most urgent variant
+        const worstVariant = group.variants
+          .filter((v) => v.status !== "ok")
+          .sort((a, b) => {
+            const order = {
+              out_of_stock: 0,
+              critical: 1,
+              low: 2,
+              ok: 3,
+            };
+            return order[a.status] - order[b.status];
+          })[0];
+
+        if (worstVariant) {
+          group.issueLabel = `${worstVariant.unitLabel} ${worstVariant.status === "critical" ? "Critical" : "Low"}`;
         }
 
-        group.variants.push({
-          variantId: item.variant.id,
-          brandName: item.variant.brand?.name ?? null,
-          unitLabel: semantics.displayLabel,
-          operationalUnit: semantics.operationalUnit,
-          stockDisplay: formatVariantStockQuantity(semantics, qty),
-          qty,
-          unitPrice,
-          totalValue,
-          entryDate: entry.entryDate,
-        });
+        lowProducts.push(group);
       }
-    }
 
-    const expiredProducts = Array.from(productMap.values()).sort((a, b) =>
-      b.lastExpiryDate.localeCompare(a.lastExpiryDate),
-    );
+      // Sort: critical first, then low
+      lowProducts.sort((a, b) => {
+        if (a.status === "critical" && b.status !== "critical") return -1;
+        if (a.status !== "critical" && b.status === "critical") return 1;
+        return a.productName.localeCompare(b.productName);
+      });
 
-    // 3. Get expiry-enabled products in shop inventory (watchlist)
-    const shopInventory = await db.query.inventory.findMany({
-      where: and(
-        eq(inventory.ownerType, "shop"),
-        eq(inventory.ownerId, userId),
-      ),
-      with: {
-        variant: {
-          with: {
-            product: {
-              columns: {
-                id: true,
-                name: true,
-                image: true,
-                expiryEnabled: true,
+      return {
+        summary: {
+          lowProducts: lowProducts.length,
+          criticalItems,
+          shortageVariants,
+        },
+        products: lowProducts,
+      };
+    },
+  ),
+
+  /**
+   * Expired products — damage entries with type 'expired',
+   * plus expiry-enabled products as a watchlist.
+   */
+  getExpiredProducts: permission("shop_stock", "view").handler(
+    async ({ context }) => {
+      const userId = shopTenantId(context.session.user);
+
+      // 1. Get all expired damage entries for this shop
+      const expiredEntries = await db.query.damageEntry.findMany({
+        where: and(
+          eq(damageEntry.shopId, userId),
+          eq(damageEntry.damageType, "expired"),
+          eq(damageEntry.status, "active"),
+        ),
+        with: {
+          items: {
+            with: {
+              variant: {
+                with: {
+                  sourceVariantOption: true,
+                  product: {
+                    columns: {
+                      id: true,
+                      name: true,
+                      image: true,
+                      sku: true,
+                    },
+                  },
+                  brand: { columns: { id: true, name: true } },
+                },
               },
             },
-            sourceVariantOption: true,
           },
         },
-      },
-    });
+        orderBy: [desc(damageEntry.entryDate)],
+      });
 
-    const watchlistMap = new Map<
-      number,
-      {
+      // 2. Group expired items by product
+      type ExpiredVariant = {
+        variantId: number;
+        brandName: string | null;
+        unitLabel: string;
+        operationalUnit: string;
+        stockDisplay: string;
+        qty: number;
+        unitPrice: number;
+        totalValue: number;
+        entryDate: string;
+      };
+
+      type ExpiredProduct = {
         productId: number;
         productName: string;
         productImage: string | null;
-        configuredVariants: number;
-        expiryEnabled: boolean;
-        shelfLife: string | null;
+        lastExpiryDate: string;
+        status: "expired";
+        lossValue: number;
+        variants: ExpiredVariant[];
+      };
+
+      const productMap = new Map<number, ExpiredProduct>();
+      let totalLoss = 0;
+
+      for (const entry of expiredEntries) {
+        for (const item of entry.items) {
+          if (!item.variant?.product || !item.variant.sourceVariantOption)
+            continue;
+          let semantics;
+          try {
+            semantics = resolveVariantStockSemantics(
+              item.variant.sourceVariantOption,
+            );
+          } catch {
+            continue;
+          }
+
+          const prod = item.variant.product;
+          const pid = prod.id;
+          const qty = item.qty;
+          const unitPrice = parseFloat(item.unitPrice || "0");
+          const totalValue = parseFloat(item.totalValue || "0");
+
+          totalLoss += totalValue;
+
+          if (!productMap.has(pid)) {
+            productMap.set(pid, {
+              productId: pid,
+              productName: prod.name,
+              productImage: prod.image,
+              lastExpiryDate: entry.entryDate,
+              status: "expired",
+              lossValue: 0,
+              variants: [],
+            });
+          }
+
+          const group = productMap.get(pid)!;
+          group.lossValue += totalValue;
+
+          // Keep the most recent entry date
+          if (entry.entryDate > group.lastExpiryDate) {
+            group.lastExpiryDate = entry.entryDate;
+          }
+
+          group.variants.push({
+            variantId: item.variant.id,
+            brandName: item.variant.brand?.name ?? null,
+            unitLabel: semantics.displayLabel,
+            operationalUnit: semantics.operationalUnit,
+            stockDisplay: formatVariantStockQuantity(semantics, qty),
+            qty,
+            unitPrice,
+            totalValue,
+            entryDate: entry.entryDate,
+          });
+        }
       }
-    >();
 
-    for (const inv of shopInventory) {
-      if (
-        !inv.variant?.product?.expiryEnabled ||
-        !inv.variant.sourceVariantOption ||
-        !inv.variant.isActive
-      )
-        continue;
-      try {
-        resolveVariantStockSemantics(inv.variant.sourceVariantOption);
-      } catch {
-        continue;
+      const expiredProducts = Array.from(productMap.values()).sort((a, b) =>
+        b.lastExpiryDate.localeCompare(a.lastExpiryDate),
+      );
+
+      // 3. Get expiry-enabled products in shop inventory (watchlist)
+      const shopInventory = await db.query.inventory.findMany({
+        where: and(
+          eq(inventory.ownerType, "shop"),
+          eq(inventory.ownerId, userId),
+        ),
+        with: {
+          variant: {
+            with: {
+              product: {
+                columns: {
+                  id: true,
+                  name: true,
+                  image: true,
+                  expiryEnabled: true,
+                },
+              },
+              sourceVariantOption: true,
+            },
+          },
+        },
+      });
+
+      const watchlistMap = new Map<
+        number,
+        {
+          productId: number;
+          productName: string;
+          productImage: string | null;
+          configuredVariants: number;
+          expiryEnabled: boolean;
+          shelfLife: string | null;
+        }
+      >();
+
+      for (const inv of shopInventory) {
+        if (
+          !inv.variant?.product?.expiryEnabled ||
+          !inv.variant.sourceVariantOption ||
+          !inv.variant.isActive
+        )
+          continue;
+        try {
+          resolveVariantStockSemantics(inv.variant.sourceVariantOption);
+        } catch {
+          continue;
+        }
+
+        const prod = inv.variant.product;
+        const pid = prod.id;
+        const qty = parseFloat(inv.availableQty || "0");
+
+        if (qty <= 0) continue;
+
+        if (!watchlistMap.has(pid)) {
+          watchlistMap.set(pid, {
+            productId: pid,
+            productName: prod.name,
+            productImage: prod.image,
+            configuredVariants: 0,
+            expiryEnabled: true,
+            shelfLife: inv.variant.shelfLife,
+          });
+        }
+
+        const w = watchlistMap.get(pid)!;
+        w.configuredVariants++;
       }
 
-      const prod = inv.variant.product;
-      const pid = prod.id;
-      const qty = parseFloat(inv.availableQty || "0");
+      const expiryEnabledProducts = Array.from(watchlistMap.values());
 
-      if (qty <= 0) continue;
-
-      if (!watchlistMap.has(pid)) {
-        watchlistMap.set(pid, {
-          productId: pid,
-          productName: prod.name,
-          productImage: prod.image,
-          configuredVariants: 0,
-          expiryEnabled: true,
-          shelfLife: inv.variant.shelfLife,
-        });
-      }
-
-      const w = watchlistMap.get(pid)!;
-      w.configuredVariants++;
-    }
-
-    const expiryEnabledProducts = Array.from(watchlistMap.values());
-
-    return {
-      summary: {
-        expiredProducts: expiredProducts.length,
-        expiringSoon: expiryEnabledProducts.length,
-        lossValue: Math.round(totalLoss * 100) / 100,
-      },
-      expiredProducts,
-      expiryEnabledProducts,
-    };
-  }),
+      return {
+        summary: {
+          expiredProducts: expiredProducts.length,
+          expiringSoon: expiryEnabledProducts.length,
+          lossValue: Math.round(totalLoss * 100) / 100,
+        },
+        expiredProducts,
+        expiryEnabledProducts,
+      };
+    },
+  ),
 
   /**
    * Empty pack management — aggregates empty pack collections,
    * condition breakdown, and return tracking.
    */
-  getEmptyPackSummary: shopOwnerProcedure.handler(async ({ context }) => {
-    const userId = context.session.user.id;
+  getEmptyPackSummary: permission("shop_stock", "view").handler(
+    async ({ context }) => {
+      const userId = shopTenantId(context.session.user);
 
-    // 1. Get all empty pack records linked to this shop's deliveries
-    // empty_pack is delivery-scoped, so we need to find packs
-    // from deliveries belonging to this shop owner
-    const allPacks = await db.query.emptyPack.findMany({
-      where: eq(emptyPack.shopId, userId),
-      with: {
-        variant: {
-          with: {
-            product: {
-              columns: { id: true, name: true, image: true },
+      // 1. Get all empty pack records linked to this shop's deliveries
+      // empty_pack is delivery-scoped, so we need to find packs
+      // from deliveries belonging to this shop owner
+      const allPacks = await db.query.emptyPack.findMany({
+        where: eq(emptyPack.shopId, userId),
+        with: {
+          variant: {
+            with: {
+              product: {
+                columns: { id: true, name: true, image: true },
+              },
+              brand: { columns: { id: true, name: true } },
             },
-            brand: { columns: { id: true, name: true } },
+          },
+          brand: { columns: { id: true, name: true } },
+        },
+      });
+
+      // 2. Get pack rules for this shop
+      const packRules = await db.query.productPackRule.findMany({
+        where: and(
+          eq(productPackRule.ownerType, "shop"),
+          eq(productPackRule.ownerId, userId),
+          eq(productPackRule.isActive, true),
+        ),
+      });
+      const ruleMap = new Map(packRules.map((r) => [r.productId, r]));
+
+      // 3. Get return pack quantities from purchases
+      const shopPurchases = await db.query.purchase.findMany({
+        where: eq(purchase.warehouseId, userId),
+        with: {
+          items: {
+            columns: {
+              variantId: true,
+              returnPackQty: true,
+              productName: true,
+            },
+          },
+          supplier: {
+            columns: {
+              id: true,
+              name: true,
+              returnPackAgreement: true,
+            },
           },
         },
-        brand: { columns: { id: true, name: true } },
-      },
-    });
+      });
 
-    // 2. Get pack rules for this shop
-    const packRules = await db.query.productPackRule.findMany({
-      where: and(
-        eq(productPackRule.ownerType, "shop"),
-        eq(productPackRule.ownerId, userId),
-        eq(productPackRule.isActive, true),
-      ),
-    });
-    const ruleMap = new Map(packRules.map((r) => [r.productId, r]));
+      // Build return tracking from purchases
+      const returnedByVariant = new Map<number, number>();
+      const supplierByProduct = new Map<
+        number,
+        { name: string; hasAgreement: boolean }
+      >();
 
-    // 3. Get return pack quantities from purchases
-    const shopPurchases = await db.query.purchase.findMany({
-      where: eq(purchase.warehouseId, userId),
-      with: {
-        items: {
-          columns: {
-            variantId: true,
-            returnPackQty: true,
-            productName: true,
-          },
-        },
-        supplier: {
-          columns: {
-            id: true,
-            name: true,
-            returnPackAgreement: true,
-          },
-        },
-      },
-    });
-
-    // Build return tracking from purchases
-    const returnedByVariant = new Map<number, number>();
-    const supplierByProduct = new Map<
-      number,
-      { name: string; hasAgreement: boolean }
-    >();
-
-    for (const p of shopPurchases) {
-      for (const item of p.items) {
-        if (item.variantId && parseFloat(item.returnPackQty || "0") > 0) {
-          const prev = returnedByVariant.get(item.variantId) || 0;
-          returnedByVariant.set(
-            item.variantId,
-            prev + parseFloat(item.returnPackQty),
-          );
-        }
-      }
-      if (p.supplier) {
-        // We don't have productId directly, but we can track supplier info
+      for (const p of shopPurchases) {
         for (const item of p.items) {
-          if (item.variantId) {
-            supplierByProduct.set(item.variantId, {
-              name: p.supplier.name,
-              hasAgreement: p.supplier.returnPackAgreement,
-            });
+          if (item.variantId && parseFloat(item.returnPackQty || "0") > 0) {
+            const prev = returnedByVariant.get(item.variantId) || 0;
+            returnedByVariant.set(
+              item.variantId,
+              prev + parseFloat(item.returnPackQty),
+            );
+          }
+        }
+        if (p.supplier) {
+          // We don't have productId directly, but we can track supplier info
+          for (const item of p.items) {
+            if (item.variantId) {
+              supplierByProduct.set(item.variantId, {
+                name: p.supplier.name,
+                hasAgreement: p.supplier.returnPackAgreement,
+              });
+            }
           }
         }
       }
-    }
 
-    // 4. Group empty packs by product
-    type PackVariant = {
-      variantId: number | null;
-      brandName: string | null;
-      packDescription: string;
-      collected: number;
-      verified: number;
-      rejected: number;
-      condition: "reusable" | "damaged" | "pending";
-    };
+      // 4. Group empty packs by product
+      type PackVariant = {
+        variantId: number | null;
+        brandName: string | null;
+        packDescription: string;
+        collected: number;
+        verified: number;
+        rejected: number;
+        condition: "reusable" | "damaged" | "pending";
+      };
 
-    type PackProduct = {
-      productId: number;
-      productName: string;
-      productImage: string | null;
-      emptyQty: number;
-      packType: string;
-      isReturnable: boolean;
-      status: "reusable" | "return_pending";
-      variants: PackVariant[];
-      totalCollected: number;
-      totalVerified: number;
-      totalRejected: number;
-      totalReturned: number;
-    };
+      type PackProduct = {
+        productId: number;
+        productName: string;
+        productImage: string | null;
+        emptyQty: number;
+        packType: string;
+        isReturnable: boolean;
+        status: "reusable" | "return_pending";
+        variants: PackVariant[];
+        totalCollected: number;
+        totalVerified: number;
+        totalRejected: number;
+        totalReturned: number;
+      };
 
-    const productMap = new Map<number, PackProduct>();
-    let totalPacks = 0;
-    let returnPending = 0;
-    let reusable = 0;
+      const productMap = new Map<number, PackProduct>();
+      let totalPacks = 0;
+      let returnPending = 0;
+      let reusable = 0;
 
-    for (const pack of allPacks) {
-      const prod = pack.variant?.product;
-      if (!prod) continue;
+      for (const pack of allPacks) {
+        const prod = pack.variant?.product;
+        if (!prod) continue;
 
-      const pid = prod.id;
-      const qty = pack.quantityCollected;
-      totalPacks += qty;
+        const pid = prod.id;
+        const qty = pack.quantityCollected;
+        totalPacks += qty;
 
-      if (pack.status === "verified") reusable += qty;
-      else if (pack.status === "collected" || pack.status === "submitted")
-        returnPending += qty;
+        if (pack.status === "verified") reusable += qty;
+        else if (pack.status === "collected" || pack.status === "submitted")
+          returnPending += qty;
 
-      if (!productMap.has(pid)) {
-        const rule = ruleMap.get(pid);
-        productMap.set(pid, {
-          productId: pid,
-          productName: prod.name,
-          productImage: prod.image,
-          emptyQty: 0,
-          packType: pack.packDescription || "Pack",
-          isReturnable:
-            rule?.isEmptyPackReturnable ??
-            pack.variant?.isPackReturnRequired ??
-            false,
-          status: "reusable",
-          variants: [],
-          totalCollected: 0,
-          totalVerified: 0,
-          totalRejected: 0,
-          totalReturned: 0,
+        if (!productMap.has(pid)) {
+          const rule = ruleMap.get(pid);
+          productMap.set(pid, {
+            productId: pid,
+            productName: prod.name,
+            productImage: prod.image,
+            emptyQty: 0,
+            packType: pack.packDescription || "Pack",
+            isReturnable:
+              rule?.isEmptyPackReturnable ??
+              pack.variant?.isPackReturnRequired ??
+              false,
+            status: "reusable",
+            variants: [],
+            totalCollected: 0,
+            totalVerified: 0,
+            totalRejected: 0,
+            totalReturned: 0,
+          });
+        }
+
+        const group = productMap.get(pid)!;
+        group.emptyQty += qty;
+        group.totalCollected += qty;
+
+        if (pack.status === "verified") group.totalVerified += qty;
+        if (pack.status === "rejected") group.totalRejected += qty;
+
+        // Add returned qty from purchases
+        if (pack.variantId) {
+          group.totalReturned = returnedByVariant.get(pack.variantId) || 0;
+        }
+
+        const brandName = pack.brand?.name ?? pack.variant?.brand?.name ?? null;
+
+        group.variants.push({
+          variantId: pack.variantId,
+          brandName,
+          packDescription: pack.packDescription || "Pack",
+          collected: qty,
+          verified: pack.status === "verified" ? qty : 0,
+          rejected: pack.status === "rejected" ? qty : 0,
+          condition:
+            pack.status === "rejected"
+              ? "damaged"
+              : pack.status === "verified"
+                ? "reusable"
+                : "pending",
         });
       }
 
-      const group = productMap.get(pid)!;
-      group.emptyQty += qty;
-      group.totalCollected += qty;
-
-      if (pack.status === "verified") group.totalVerified += qty;
-      if (pack.status === "rejected") group.totalRejected += qty;
-
-      // Add returned qty from purchases
-      if (pack.variantId) {
-        group.totalReturned = returnedByVariant.get(pack.variantId) || 0;
+      // Determine product-level status
+      for (const group of productMap.values()) {
+        const hasPending = group.variants.some(
+          (v) => v.condition === "pending",
+        );
+        group.status = hasPending ? "return_pending" : "reusable";
       }
 
-      const brandName = pack.brand?.name ?? pack.variant?.brand?.name ?? null;
+      const products = Array.from(productMap.values()).sort(
+        (a, b) => b.emptyQty - a.emptyQty,
+      );
 
-      group.variants.push({
-        variantId: pack.variantId,
-        brandName,
-        packDescription: pack.packDescription || "Pack",
-        collected: qty,
-        verified: pack.status === "verified" ? qty : 0,
-        rejected: pack.status === "rejected" ? qty : 0,
-        condition:
-          pack.status === "rejected"
-            ? "damaged"
-            : pack.status === "verified"
-              ? "reusable"
-              : "pending",
-      });
-    }
+      // 5. Build return tracking list
+      const returnTracking = products
+        .filter((p) => p.isReturnable && p.status === "return_pending")
+        .map((p) => {
+          const firstVariant = p.variants[0];
+          const supplierInfo = firstVariant?.variantId
+            ? supplierByProduct.get(firstVariant.variantId)
+            : null;
 
-    // Determine product-level status
-    for (const group of productMap.values()) {
-      const hasPending = group.variants.some((v) => v.condition === "pending");
-      group.status = hasPending ? "return_pending" : "reusable";
-    }
+          return {
+            productId: p.productId,
+            productName: p.productName,
+            pendingReturn: p.totalCollected - p.totalReturned,
+            supplierName: supplierInfo?.name ?? null,
+            hasReturnAgreement: supplierInfo?.hasAgreement ?? false,
+          };
+        })
+        .filter((r) => r.pendingReturn > 0);
 
-    const products = Array.from(productMap.values()).sort(
-      (a, b) => b.emptyQty - a.emptyQty,
-    );
-
-    // 5. Build return tracking list
-    const returnTracking = products
-      .filter((p) => p.isReturnable && p.status === "return_pending")
-      .map((p) => {
-        const firstVariant = p.variants[0];
-        const supplierInfo = firstVariant?.variantId
-          ? supplierByProduct.get(firstVariant.variantId)
-          : null;
-
-        return {
-          productId: p.productId,
-          productName: p.productName,
-          pendingReturn: p.totalCollected - p.totalReturned,
-          supplierName: supplierInfo?.name ?? null,
-          hasReturnAgreement: supplierInfo?.hasAgreement ?? false,
-        };
-      })
-      .filter((r) => r.pendingReturn > 0);
-
-    return {
-      summary: {
-        totalEmptyPacks: totalPacks,
-        returnPending,
-        reusableStock: reusable,
-      },
-      products,
-      returnTracking,
-    };
-  }),
+      return {
+        summary: {
+          totalEmptyPacks: totalPacks,
+          returnPending,
+          reusableStock: reusable,
+        },
+        products,
+        returnTracking,
+      };
+    },
+  ),
 
   /** B2B → B2C conversion history for the shop owner */
-  getConversionHistory: shopOwnerProcedure
+  getConversionHistory: permission("shop_stock", "view")
     .route({
       method: "GET",
       path: "/shop-owner/conversion-history",
@@ -1590,7 +1614,7 @@ const managementQueries = {
       summary: "Get B2B to B2C stock conversion history",
     })
     .handler(async ({ context }) => {
-      const userId = context.session.user.id;
+      const userId = shopTenantId(context.session.user);
 
       // Get all B2B orders for this shop
       const b2bOrders = await db.query.order.findMany({
@@ -1710,7 +1734,7 @@ const managementQueries = {
    * Get shop owner's retail products (what they sell to consumers).
    * Shows RETAIL variants with inventory info.
    */
-  getMyRetailProducts: shopOwnerProcedure
+  getMyRetailProducts: permission("shop_products", "view")
     .route({
       method: "GET",
       path: "/shop-owner/retail-products",
@@ -1725,7 +1749,7 @@ const managementQueries = {
       }),
     )
     .handler(async ({ input, context }) => {
-      const userId = context.session.user.id;
+      const userId = shopTenantId(context.session.user);
       const { search, page, limit } = input;
       const offset = (page - 1) * limit;
 
@@ -1841,7 +1865,7 @@ const managementQueries = {
   /**
    * Get shop owner's inventory summary.
    */
-  getMyInventory: shopOwnerProcedure
+  getMyInventory: permission("shop_stock", "view")
     .route({
       method: "GET",
       path: "/shop-owner/inventory",
@@ -1849,7 +1873,7 @@ const managementQueries = {
       summary: "Get shop owner inventory",
     })
     .handler(async ({ context }) => {
-      const userId = context.session.user.id;
+      const userId = shopTenantId(context.session.user);
 
       const items = await db.query.inventory.findMany({
         where: and(
@@ -1897,7 +1921,7 @@ const managementQueries = {
   /**
    * Get areas assigned to this shop owner.
    */
-  getMyAssignedAreas: shopOwnerProcedure
+  getMyAssignedAreas: permission("shop_store", "view")
     .route({
       method: "GET",
       path: "/shop-owner/my-areas",
@@ -1905,7 +1929,7 @@ const managementQueries = {
       summary: "Get areas assigned to this shop owner",
     })
     .handler(async ({ context }) => {
-      const userId = context.session.user.id;
+      const userId = shopTenantId(context.session.user);
 
       const mappings = await db
         .select({
@@ -1943,7 +1967,7 @@ const mutations = {
    * Update retail selling price for a product in the shop owner's inventory.
    * Validates that the price meets the minimum margin requirement.
    */
-  updateRetailPrice: shopOwnerProcedure
+  updateRetailPrice: permission("shop_products", "update")
     .route({
       method: "POST",
       path: "/shop-owner/update-price",
@@ -1961,7 +1985,7 @@ const mutations = {
       }),
     )
     .handler(async ({ input, context }) => {
-      const userId = context.session.user.id;
+      const userId = shopTenantId(context.session.user);
       const newPrice = Number(input.retailPrice);
 
       // 1. Get the inventory record and verify ownership
@@ -2060,7 +2084,7 @@ const mutations = {
       }),
     )
     .handler(async ({ input, context }) => {
-      const userId = context.session.user.id;
+      const userId = shopTenantId(context.session.user);
 
       await db
         .update(user)
@@ -2074,6 +2098,246 @@ const mutations = {
         success: true,
         message: "Shop location updated",
         location: { lat: input.lat, lng: input.lng },
+      };
+    }),
+
+  /** Update the business identity and location fields captured at registration. */
+  updateBusinessInformation: shopOwnerProcedure
+    .route({
+      method: "POST",
+      path: "/shop-owner/update-business-information",
+      tags: ["Shop Owner"],
+      summary: "Update retailer business information",
+    })
+    .input(
+      z
+        .object({
+          shopName: z.string().trim().min(2).max(150),
+          ownerName: z.string().trim().min(2).max(100),
+          businessType: z.enum(["retail", "restaurant"]),
+          productTypeId: z.number().int().positive().nullable(),
+          businessNature: z.enum(SHOP_OWNER_BUSINESS_NATURES).nullable(),
+          shopAddress: z.string().trim().min(5).max(500),
+          area: z.string().trim().max(100).nullable(),
+          district: z.string().trim().max(100).nullable(),
+          division: z.string().trim().max(100).nullable(),
+          postCode: z.string().trim().max(20).nullable(),
+          latitude: z.number().min(20.5).max(26.7).nullable(),
+          longitude: z.number().min(87.9).max(92.7).nullable(),
+        })
+        .refine(
+          (value) => (value.latitude === null) === (value.longitude === null),
+          {
+            message: "Latitude and longitude must be provided together",
+            path: ["longitude"],
+          },
+        ),
+    )
+    .handler(async ({ input, context }) => {
+      const userId = shopTenantId(context.session.user);
+      const application = await db.query.sellerApplication.findFirst({
+        where: eq(sellerApplication.userId, userId),
+        orderBy: [desc(sellerApplication.createdAt)],
+        columns: { id: true },
+      });
+
+      if (!application) {
+        throw new ORPCError("NOT_FOUND", {
+          message: "Your business registration record could not be found",
+        });
+      }
+
+      const selectedProductType = input.productTypeId
+        ? await resolveActiveProductType(input.productTypeId)
+        : null;
+
+      await db.transaction(async (tx) => {
+        await tx
+          .update(sellerApplication)
+          .set({
+            shopName: input.shopName,
+            ownerName: input.ownerName,
+            businessType: input.businessType,
+            productTypeId: selectedProductType?.id ?? null,
+            businessCategory: selectedProductType?.name ?? null,
+            businessNature: input.businessNature,
+            shopAddress: input.shopAddress,
+            area: input.area,
+            district: input.district,
+            division: input.division,
+            postCode: input.postCode,
+            latitude: input.latitude?.toString() ?? null,
+            longitude: input.longitude?.toString() ?? null,
+          })
+          .where(eq(sellerApplication.id, application.id));
+
+        await tx
+          .update(user)
+          .set({
+            shopName: input.shopName,
+            ownerName: input.ownerName,
+            businessType: input.businessType,
+            shopAddress: input.shopAddress,
+            shopLat: input.latitude?.toString() ?? null,
+            shopLng: input.longitude?.toString() ?? null,
+          })
+          .where(eq(user.id, userId));
+      });
+
+      return { success: true, message: "Business information updated" };
+    }),
+
+  /** Update business contact channels captured at registration. */
+  updateBusinessContactInformation: shopOwnerProcedure
+    .route({
+      method: "POST",
+      path: "/shop-owner/update-business-contact-information",
+      tags: ["Shop Owner"],
+      summary: "Update retailer business contact information",
+    })
+    .input(
+      z.object({
+        phoneNumber: z.string().trim().min(10).max(20),
+        email: z.string().trim().email().max(320).nullable(),
+        whatsappNumber: z.string().trim().max(20).nullable(),
+        facebookUrl: z.string().trim().url().max(2048).nullable(),
+        instagramUrl: z.string().trim().url().max(2048).nullable(),
+        websiteUrl: z.string().trim().url().max(2048).nullable(),
+      }),
+    )
+    .handler(async ({ input, context }) => {
+      const application = await db.query.sellerApplication.findFirst({
+        where: eq(sellerApplication.userId, context.session.user.id),
+        orderBy: [desc(sellerApplication.createdAt)],
+        columns: { id: true },
+      });
+
+      if (!application) {
+        throw new ORPCError("NOT_FOUND", {
+          message: "Your business registration record could not be found",
+        });
+      }
+
+      await db
+        .update(sellerApplication)
+        .set(input)
+        .where(eq(sellerApplication.id, application.id));
+
+      return { success: true, message: "Contact information updated" };
+    }),
+
+  /** Update registration plan preference and business-size answers. */
+  updateBusinessPlanInformation: shopOwnerProcedure
+    .route({
+      method: "POST",
+      path: "/shop-owner/update-business-plan-information",
+      tags: ["Shop Owner"],
+      summary: "Update retailer plan information",
+    })
+    .input(
+      z.object({
+        selectedPlan: z.enum(["free_trial", "starter", "growth"]),
+        yearsInBusiness: z.string().trim().max(100).nullable(),
+        monthlyRevenue: z.string().trim().max(100).nullable(),
+      }),
+    )
+    .handler(async ({ input, context }) => {
+      const application = await db.query.sellerApplication.findFirst({
+        where: eq(sellerApplication.userId, context.session.user.id),
+        orderBy: [desc(sellerApplication.createdAt)],
+        columns: { id: true },
+      });
+
+      if (!application) {
+        throw new ORPCError("NOT_FOUND", {
+          message: "Your business registration record could not be found",
+        });
+      }
+
+      await db
+        .update(sellerApplication)
+        .set(input)
+        .where(eq(sellerApplication.id, application.id));
+
+      return { success: true, message: "Plan information updated" };
+    }),
+
+  getLoginSecurityPreferences: shopOwnerProcedure
+    .route({
+      method: "GET",
+      path: "/shop-owner/login-security-preferences",
+      tags: ["Shop Owner", "Security"],
+      summary: "Get login security preferences",
+    })
+    .handler(async ({ context }) => {
+      const preferences = await db.query.user.findFirst({
+        where: eq(user.id, context.session.user.id),
+        columns: {
+          loginVerification: true,
+          rememberTrustedDevice: true,
+          autoLogoutMinutes: true,
+          allowMultipleLoginDevices: true,
+        },
+      });
+
+      if (!preferences) throw new ORPCError("NOT_FOUND");
+      return normalizeLoginSecurityPreferences(preferences);
+    }),
+
+  updateLoginSecurityPreferences: shopOwnerProcedure
+    .route({
+      method: "POST",
+      path: "/shop-owner/login-security-preferences",
+      tags: ["Shop Owner", "Security"],
+      summary: "Update login security preferences",
+    })
+    .input(loginSecurityPreferencesSchema)
+    .handler(async ({ context, input }) => {
+      const userId = shopTenantId(context.session.user);
+
+      if (input.loginVerification !== "otp_only") {
+        const credential = await db.query.account.findFirst({
+          where: and(
+            eq(account.userId, userId),
+            eq(account.providerId, "credential"),
+            isNotNull(account.password),
+          ),
+          columns: { id: true },
+        });
+        if (!credential) {
+          throw new ORPCError("BAD_REQUEST", {
+            message:
+              "Create a password with OTP before enabling password login.",
+          });
+        }
+      }
+
+      await db.transaction(async (tx) => {
+        await tx.update(user).set(input).where(eq(user.id, userId));
+
+        await tx
+          .update(session)
+          .set({
+            expiresAt: getLoginSessionExpiresAt(input.autoLogoutMinutes),
+          })
+          .where(eq(session.id, context.session.session.id));
+
+        if (!input.allowMultipleLoginDevices) {
+          await tx
+            .delete(session)
+            .where(
+              and(
+                eq(session.userId, userId),
+                ne(session.id, context.session.session.id),
+              ),
+            );
+        }
+      });
+
+      return {
+        success: true,
+        message: "Login security preferences updated",
+        preferences: input,
       };
     }),
 
@@ -2122,7 +2386,7 @@ const mutations = {
         }),
     )
     .handler(async ({ input, context }) => {
-      const userId = context.session.user.id;
+      const userId = shopTenantId(context.session.user);
 
       await db
         .update(user)
@@ -2151,7 +2415,7 @@ const mutations = {
    * Optionally adjust received quantities per item.
    * Triggers B2B → Retail inventory conversion.
    */
-  markPurchaseReceived: shopOwnerProcedure
+  markPurchaseReceived: permission("shop_purchase_orders", "approve")
     .route({
       method: "POST",
       path: "/shop-owner/purchase-orders/receive",
@@ -2173,7 +2437,7 @@ const mutations = {
       }),
     )
     .handler(async ({ context, input }) => {
-      const userId = context.session.user.id;
+      const userId = shopTenantId(context.session.user);
 
       const existingOrder = await db.query.order.findFirst({
         where: and(eq(order.id, input.orderId), eq(order.userId, userId)),
@@ -2322,7 +2586,7 @@ const mutations = {
    * Cancel a pending/confirmed purchase order.
    * Restores warehouse inventory for deducted items.
    */
-  cancelPurchaseOrder: shopOwnerProcedure
+  cancelPurchaseOrder: permission("shop_purchase_orders", "delete")
     .route({
       method: "POST",
       path: "/shop-owner/purchase-orders/cancel",
@@ -2331,7 +2595,7 @@ const mutations = {
     })
     .input(z.object({ orderId: z.number() }))
     .handler(async ({ context, input }) => {
-      const userId = context.session.user.id;
+      const userId = shopTenantId(context.session.user);
 
       const existingOrder = await db.query.order.findFirst({
         where: and(eq(order.id, input.orderId), eq(order.userId, userId)),
@@ -2434,7 +2698,7 @@ const orderQueries = {
   /**
    * Get shop owner's own orders (B2B purchases from admin).
    */
-  getMyOrders: shopOwnerProcedure
+  getMyOrders: permission("shop_purchase_orders", "view")
     .route({
       method: "GET",
       path: "/shop-owner/my-orders",
@@ -2449,7 +2713,7 @@ const orderQueries = {
       }),
     )
     .handler(async ({ context, input }) => {
-      const userId = context.session.user.id;
+      const userId = shopTenantId(context.session.user);
       const page = input.page;
       const limit = input.limit;
       const offset = (page - 1) * limit;
@@ -2506,7 +2770,7 @@ const orderQueries = {
   /**
    * Get shop owner's purchase orders with search, filters, and warehouse info.
    */
-  getPurchaseOrders: shopOwnerProcedure
+  getPurchaseOrders: permission("shop_purchase_orders", "view")
     .route({
       method: "POST",
       path: "/shop-owner/purchase-orders",
@@ -2524,7 +2788,7 @@ const orderQueries = {
       }),
     )
     .handler(async ({ context, input }) => {
-      const userId = context.session.user.id;
+      const userId = shopTenantId(context.session.user);
       const { page, limit, search, status, dateFrom, dateTo } = input;
       const offset = (page - 1) * limit;
 
@@ -2699,7 +2963,7 @@ const orderQueries = {
    * Get purchases recognized when stock was received.
    * This keeps the purchase report aligned with inventory and payable posting.
    */
-  getPurchaseReport: shopOwnerProcedure
+  getPurchaseReport: permission("shop_purchase_report", "view")
     .route({
       method: "POST",
       path: "/shop-owner/purchase-report",
@@ -2714,7 +2978,7 @@ const orderQueries = {
       }),
     )
     .handler(async ({ context, input }) => {
-      const userId = context.session.user.id;
+      const userId = shopTenantId(context.session.user);
       const dateFrom = new Date(`${input.dateFrom}T00:00:00.000Z`);
       const dateTo = new Date(`${input.dateTo}T23:59:59.999Z`);
 
@@ -2881,7 +3145,7 @@ const orderQueries = {
     }),
 
   /** Get supplier invoices recognized after B2B purchases are received. */
-  getAccountsPayableReport: shopOwnerProcedure
+  getAccountsPayableReport: permission("shop_accounts_payable_report", "view")
     .route({
       method: "POST",
       path: "/shop-owner/accounts-payable-report",
@@ -2896,7 +3160,7 @@ const orderQueries = {
       }),
     )
     .handler(async ({ context, input }) => {
-      const userId = context.session.user.id;
+      const userId = shopTenantId(context.session.user);
       const dateFrom = new Date(`${input.dateFrom}T00:00:00.000Z`);
       const dateTo = new Date(`${input.dateTo}T23:59:59.999Z`);
 
@@ -3070,7 +3334,7 @@ const orderQueries = {
   /**
    * Get full details for a single purchase order.
    */
-  getPurchaseOrderDetail: shopOwnerProcedure
+  getPurchaseOrderDetail: permission("shop_purchase_orders", "view")
     .route({
       method: "POST",
       path: "/shop-owner/purchase-order-detail",
@@ -3079,7 +3343,7 @@ const orderQueries = {
     })
     .input(z.object({ orderId: z.number() }))
     .handler(async ({ context, input }) => {
-      const userId = context.session.user.id;
+      const userId = shopTenantId(context.session.user);
 
       const result = await db.query.order.findFirst({
         where: and(eq(order.id, input.orderId), eq(order.userId, userId)),
@@ -3279,7 +3543,7 @@ const orderQueries = {
    * Get purchase orders with tracking-focused data:
    * ordered vs received quantities, modification flags, 8-step timeline, alerts.
    */
-  getPurchaseTracking: shopOwnerProcedure
+  getPurchaseTracking: permission("shop_purchase_orders", "view")
     .route({
       method: "POST",
       path: "/shop-owner/purchase-tracking",
@@ -3297,7 +3561,7 @@ const orderQueries = {
       }),
     )
     .handler(async ({ context, input }) => {
-      const userId = context.session.user.id;
+      const userId = shopTenantId(context.session.user);
       const { page, limit, search, status, dateFrom, dateTo } = input;
       const offset = (page - 1) * limit;
 
@@ -3537,7 +3801,7 @@ const orderQueries = {
   /**
    * Retailer accepts wholesaler's quantity modifications.
    */
-  acceptPurchaseModification: shopOwnerProcedure
+  acceptPurchaseModification: permission("shop_purchase_orders", "approve")
     .route({
       method: "POST",
       path: "/shop-owner/purchase-orders/accept-modification",
@@ -3546,7 +3810,7 @@ const orderQueries = {
     })
     .input(z.object({ orderId: z.number() }))
     .handler(async ({ context, input }) => {
-      const userId = context.session.user.id;
+      const userId = shopTenantId(context.session.user);
 
       const existingOrder = await db.query.order.findFirst({
         where: and(eq(order.id, input.orderId), eq(order.userId, userId)),
@@ -3592,7 +3856,7 @@ const orderQueries = {
   /**
    * Retailer rejects wholesaler's modifications → order cancelled, inventory restored.
    */
-  rejectPurchaseModification: shopOwnerProcedure
+  rejectPurchaseModification: permission("shop_purchase_orders", "approve")
     .route({
       method: "POST",
       path: "/shop-owner/purchase-orders/reject-modification",
@@ -3601,7 +3865,7 @@ const orderQueries = {
     })
     .input(z.object({ orderId: z.number() }))
     .handler(async ({ context, input }) => {
-      const userId = context.session.user.id;
+      const userId = shopTenantId(context.session.user);
 
       const existingOrder = await db.query.order.findFirst({
         where: and(eq(order.id, input.orderId), eq(order.userId, userId)),
@@ -3679,7 +3943,7 @@ const orderQueries = {
    * Get completed/past purchase orders with stock impact, payment info,
    * invoice data, and 7-day trend.
    */
-  getPurchaseHistory: shopOwnerProcedure
+  getPurchaseHistory: permission("shop_purchase_orders", "view")
     .route({
       method: "POST",
       path: "/shop-owner/purchase-history",
@@ -3698,7 +3962,7 @@ const orderQueries = {
       }),
     )
     .handler(async ({ context, input }) => {
-      const userId = context.session.user.id;
+      const userId = shopTenantId(context.session.user);
       const { page, limit, search, status, warehouseId, dateFrom, dateTo } =
         input;
       const offset = (page - 1) * limit;
@@ -3925,7 +4189,7 @@ const orderQueries = {
   /**
    * List active platform-connected suppliers with network insights.
    */
-  getConnectedSuppliers: shopOwnerProcedure
+  getConnectedSuppliers: permission("shop_connections", "view")
     .route({
       method: "POST",
       path: "/shop-owner/connected-suppliers",
@@ -3940,7 +4204,7 @@ const orderQueries = {
       }),
     )
     .handler(async ({ context, input }) => {
-      const shopId = context.session.user.id;
+      const shopId = shopTenantId(context.session.user);
 
       const connections = await db
         .select({
@@ -4261,7 +4525,7 @@ const orderQueries = {
   /**
    * Full detail for a platform-connected supplier.
    */
-  getConnectedSupplierDetail: shopOwnerProcedure
+  getConnectedSupplierDetail: permission("shop_connections", "view")
     .route({
       method: "POST",
       path: "/shop-owner/connected-supplier-detail",
@@ -4270,7 +4534,7 @@ const orderQueries = {
     })
     .input(z.object({ warehouseId: z.string() }))
     .handler(async ({ context, input }) => {
-      const shopId = context.session.user.id;
+      const shopId = shopTenantId(context.session.user);
       const warehouseId = input.warehouseId;
 
       const [shopUser] = await db
@@ -5009,7 +5273,7 @@ const orderQueries = {
   /**
    * List all warehouses this shop has ordered from (= suppliers).
    */
-  getMySuppliers: shopOwnerProcedure
+  getMySuppliers: permission("shop_suppliers", "view")
     .route({
       method: "POST",
       path: "/shop-owner/my-suppliers",
@@ -5023,7 +5287,7 @@ const orderQueries = {
       }),
     )
     .handler(async ({ context, input }) => {
-      const userId = context.session.user.id;
+      const userId = shopTenantId(context.session.user);
 
       const supplierOrders = await db
         .select({
@@ -5234,7 +5498,7 @@ const orderQueries = {
    * Full supplier detail: financial summary, order stats, pending orders,
    * recent history, top products, performance metrics.
    */
-  getSupplierDetail: shopOwnerProcedure
+  getSupplierDetail: permission("shop_suppliers", "view")
     .route({
       method: "POST",
       path: "/shop-owner/supplier-detail",
@@ -5243,7 +5507,7 @@ const orderQueries = {
     })
     .input(z.object({ warehouseId: z.string() }))
     .handler(async ({ context, input }) => {
-      const userId = context.session.user.id;
+      const userId = shopTenantId(context.session.user);
       const whId = input.warehouseId;
 
       const [shopUser] = await db
@@ -5766,7 +6030,7 @@ const orderQueries = {
   /**
    * Get dashboard summary stats for the shop owner.
    */
-  getDashboardStats: shopOwnerProcedure
+  getDashboardStats: permission("shop_dashboard", "view")
     .route({
       method: "GET",
       path: "/shop-owner/dashboard-stats",
@@ -5774,7 +6038,7 @@ const orderQueries = {
       summary: "Get shop owner dashboard summary stats",
     })
     .handler(async ({ context }) => {
-      const userId = context.session.user.id;
+      const userId = shopTenantId(context.session.user);
 
       // Total B2B orders placed
       const [orderStats] = await db
@@ -5837,7 +6101,7 @@ const supplierFormSchema = z.object({
 });
 
 const retailerSupplierQueries = {
-  getSuppliers: shopOwnerProcedure
+  getSuppliers: permission("shop_suppliers", "view")
     .route({
       method: "POST",
       path: "/shop-owner/suppliers",
@@ -5852,7 +6116,7 @@ const retailerSupplierQueries = {
       }),
     )
     .handler(async ({ context, input }) => {
-      const userId = context.session.user.id;
+      const userId = shopTenantId(context.session.user);
       const conditions: SQL[] = [eq(supplier.addedBy, userId)];
 
       if (input.search) {
@@ -5910,7 +6174,7 @@ const retailerSupplierQueries = {
       };
     }),
 
-  getSupplierStats: shopOwnerProcedure
+  getSupplierStats: permission("shop_suppliers", "view")
     .route({
       method: "POST",
       path: "/shop-owner/suppliers/stats",
@@ -5918,7 +6182,7 @@ const retailerSupplierQueries = {
       summary: "Get retailer external supplier stats",
     })
     .handler(async ({ context }) => {
-      const userId = context.session.user.id;
+      const userId = shopTenantId(context.session.user);
 
       const allSuppliers = await db.query.supplier.findMany({
         where: eq(supplier.addedBy, userId),
@@ -5957,7 +6221,7 @@ const retailerSupplierQueries = {
       };
     }),
 
-  getExternalSupplierDetail: shopOwnerProcedure
+  getExternalSupplierDetail: permission("shop_suppliers", "view")
     .route({
       method: "POST",
       path: "/shop-owner/suppliers/detail",
@@ -5966,7 +6230,7 @@ const retailerSupplierQueries = {
     })
     .input(z.object({ id: z.number().int() }))
     .handler(async ({ context, input }) => {
-      const userId = context.session.user.id;
+      const userId = shopTenantId(context.session.user);
 
       const sup = await db.query.supplier.findFirst({
         where: and(eq(supplier.id, input.id), eq(supplier.addedBy, userId)),
@@ -6147,7 +6411,7 @@ const retailerSupplierQueries = {
       };
     }),
 
-  getSupplierCategories: shopOwnerProcedure
+  getSupplierCategories: permission("shop_suppliers", "view")
     .route({
       method: "POST",
       path: "/shop-owner/suppliers/categories",
@@ -6168,7 +6432,7 @@ const retailerSupplierQueries = {
       return { categories };
     }),
 
-  createSupplier: shopOwnerProcedure
+  createSupplier: permission("shop_suppliers", "create")
     .route({
       method: "POST",
       path: "/shop-owner/suppliers/create",
@@ -6177,7 +6441,7 @@ const retailerSupplierQueries = {
     })
     .input(supplierFormSchema)
     .handler(async ({ context, input }) => {
-      const userId = context.session.user.id;
+      const userId = shopTenantId(context.session.user);
 
       const [created] = await db
         .insert(supplier)
@@ -6199,7 +6463,7 @@ const retailerSupplierQueries = {
       return { supplier: created };
     }),
 
-  recordSupplierBill: shopOwnerProcedure
+  recordSupplierBill: permission("shop_purchase_orders", "create")
     .route({
       method: "POST",
       path: "/shop-owner/suppliers/record-bill",
@@ -6215,7 +6479,7 @@ const retailerSupplierQueries = {
       }),
     )
     .handler(async ({ context, input }) => {
-      const userId = context.session.user.id;
+      const userId = shopTenantId(context.session.user);
 
       const sup = await db.query.supplier.findFirst({
         where: and(
@@ -6266,7 +6530,7 @@ const retailerSupplierQueries = {
       };
     }),
 
-  updateSupplier: shopOwnerProcedure
+  updateSupplier: permission("shop_suppliers", "update")
     .route({
       method: "POST",
       path: "/shop-owner/suppliers/update",
@@ -6281,7 +6545,7 @@ const retailerSupplierQueries = {
       }),
     )
     .handler(async ({ context, input }) => {
-      const userId = context.session.user.id;
+      const userId = shopTenantId(context.session.user);
       const updateData: Record<string, any> = { name: input.name };
 
       if (input.company !== undefined)
@@ -6317,7 +6581,7 @@ const retailerSupplierQueries = {
       return { supplier: updated };
     }),
 
-  deleteSupplier: shopOwnerProcedure
+  deleteSupplier: permission("shop_suppliers", "delete")
     .route({
       method: "POST",
       path: "/shop-owner/suppliers/delete",
@@ -6326,7 +6590,7 @@ const retailerSupplierQueries = {
     })
     .input(z.object({ id: z.number().int() }))
     .handler(async ({ context, input }) => {
-      const userId = context.session.user.id;
+      const userId = shopTenantId(context.session.user);
 
       await db
         .delete(supplier)
@@ -6394,7 +6658,7 @@ async function approveRetailerOrder(shopId: string, orderId: number) {
 
 const incomingOrderQueries = {
   /** List B2C consumer orders placed to this shop */
-  getIncomingOrders: shopOwnerProcedure
+  getIncomingOrders: permission("shop_incoming_orders", "view")
     .route({
       method: "GET",
       path: "/shop-owner/incoming-orders",
@@ -6421,7 +6685,7 @@ const incomingOrderQueries = {
       }),
     )
     .handler(async ({ context, input }) => {
-      const userId = context.session.user.id;
+      const userId = shopTenantId(context.session.user);
       const page = input.page;
       const limit = input.limit;
       const offset = (page - 1) * limit;
@@ -6571,7 +6835,7 @@ const incomingOrderQueries = {
     }),
 
   /** Full owner-scoped detail for retailer order review. */
-  getIncomingOrderById: shopOwnerProcedure
+  getIncomingOrderById: permission("shop_incoming_orders", "view")
     .route({
       method: "GET",
       path: "/shop-owner/incoming-orders/{orderId}",
@@ -6580,7 +6844,7 @@ const incomingOrderQueries = {
     })
     .input(z.object({ orderId: z.number() }))
     .handler(async ({ context, input }) => {
-      const shopId = context.session.user.id;
+      const shopId = shopTenantId(context.session.user);
       const detail = await db.query.order.findFirst({
         where: and(
           eq(order.id, input.orderId),
@@ -6629,7 +6893,7 @@ const incomingOrderQueries = {
     }),
 
   /** Canonical operational approval. Consumer tracking still projects this as Store confirmed. */
-  approveIncomingOrder: shopOwnerProcedure
+  approveIncomingOrder: permission("shop_incoming_orders", "approve")
     .route({
       method: "POST",
       path: "/shop-owner/incoming-orders/{orderId}/approve",
@@ -6638,11 +6902,11 @@ const incomingOrderQueries = {
     })
     .input(z.object({ orderId: z.number() }))
     .handler(({ context, input }) =>
-      approveRetailerOrder(context.session.user.id, input.orderId),
+      approveRetailerOrder(shopTenantId(context.session.user), input.orderId),
     ),
 
   /** Compatibility wrapper for clients that still call confirmation. */
-  confirmIncomingOrder: shopOwnerProcedure
+  confirmIncomingOrder: permission("shop_incoming_orders", "approve")
     .route({
       method: "POST",
       path: "/shop-owner/incoming-orders/{orderId}/confirm",
@@ -6651,11 +6915,11 @@ const incomingOrderQueries = {
     })
     .input(z.object({ orderId: z.number() }))
     .handler(({ context, input }) =>
-      approveRetailerOrder(context.session.user.id, input.orderId),
+      approveRetailerOrder(shopTenantId(context.session.user), input.orderId),
     ),
 
   /** Cancel a retailer order before invoicing and restore reserved stock. */
-  cancelIncomingOrder: shopOwnerProcedure
+  cancelIncomingOrder: permission("shop_incoming_orders", "update")
     .route({
       method: "POST",
       path: "/shop-owner/incoming-orders/{orderId}/cancel",
@@ -6664,7 +6928,7 @@ const incomingOrderQueries = {
     })
     .input(z.object({ orderId: z.number() }))
     .handler(async ({ context, input }) => {
-      const shopId = context.session.user.id;
+      const shopId = shopTenantId(context.session.user);
 
       return db.transaction(async (tx) => {
         await tx.execute(sql`SELECT pg_advisory_xact_lock(${input.orderId})`);
@@ -6728,7 +6992,7 @@ const incomingOrderQueries = {
     }),
 
   /** Create the one full invoice for a retailer order. */
-  createIncomingOrderInvoice: shopOwnerProcedure
+  createIncomingOrderInvoice: permission("shop_incoming_orders", "update")
     .route({
       method: "POST",
       path: "/shop-owner/incoming-orders/{orderId}/invoice",
@@ -6745,13 +7009,16 @@ const incomingOrderQueries = {
     )
     .handler(async ({ context, input }) => {
       return createRetailerDispatchInvoiceForOrder({
-        shopId: context.session.user.id,
+        shopId: shopTenantId(context.session.user),
         orderId: input.orderId,
         fulfillmentMode: input.fulfillmentMode,
       });
     }),
 
-  configureIncomingOrderFulfillment: shopOwnerProcedure
+  configureIncomingOrderFulfillment: permission(
+    "shop_delivery_management",
+    "update",
+  )
     .route({
       method: "POST",
       path: "/shop-owner/incoming-orders/fulfillment",
@@ -6766,7 +7033,7 @@ const incomingOrderQueries = {
     )
     .handler(async ({ context, input }) => {
       const result = await configureExistingInvoiceFulfillmentForOwner({
-        owner: { kind: "shop", id: context.session.user.id },
+        owner: { kind: "shop", id: shopTenantId(context.session.user) },
         invoiceId: input.invoiceId,
         fulfillmentMode: input.fulfillmentMode,
       });
@@ -6783,7 +7050,7 @@ const incomingOrderQueries = {
       };
     }),
 
-  verifyIncomingSelfPickup: shopOwnerProcedure
+  verifyIncomingSelfPickup: permission("shop_delivery_management", "update")
     .route({
       method: "POST",
       path: "/shop-owner/incoming-orders/self-pickup/verify",
@@ -6809,7 +7076,7 @@ const incomingOrderQueries = {
     )
     .handler(async ({ context, input }) =>
       completeSelfPickupInvoice({
-        owner: { kind: "shop", id: context.session.user.id },
+        owner: { kind: "shop", id: shopTenantId(context.session.user) },
         invoiceId: input.invoiceId,
         otp: input.otp,
         paymentStatus: "collected",
@@ -6822,7 +7089,7 @@ const incomingOrderQueries = {
     ),
 
   /** Orders shown at the retailer dispatch desk. */
-  getRetailDispatchOrders: shopOwnerProcedure
+  getRetailDispatchOrders: permission("shop_dispatch_orders", "view")
     .route({
       method: "GET",
       path: "/shop-owner/dispatch-orders",
@@ -6839,7 +7106,7 @@ const incomingOrderQueries = {
     )
     .handler(async ({ context, input }) => {
       const shopProfile = await db.query.user.findFirst({
-        where: eq(user.id, context.session.user.id),
+        where: eq(user.id, shopTenantId(context.session.user)),
         columns: {
           shopName: true,
           name: true,
@@ -6848,7 +7115,7 @@ const incomingOrderQueries = {
         },
       });
       const conditions: SQL[] = [
-        eq(order.shopId, context.session.user.id),
+        eq(order.shopId, shopTenantId(context.session.user)),
         eq(order.orderType, "b2c"),
         inArray(order.status, getRetailerDispatchQueryStatuses(input.view)),
       ];
@@ -6895,7 +7162,7 @@ const incomingOrderQueries = {
     }),
 
   /** Full invoices used by retailer Delivery Management. */
-  getRetailDeliveryInvoices: shopOwnerProcedure
+  getRetailDeliveryInvoices: permission("shop_dispatch_orders", "view")
     .route({
       method: "GET",
       path: "/shop-owner/delivery-management/invoices",
@@ -6923,7 +7190,7 @@ const incomingOrderQueries = {
         sql`EXISTS (
                     SELECT 1 FROM "order" scoped_order
                     WHERE scoped_order."id" = ${invoice.orderId}
-                      AND scoped_order."shop_id" = ${context.session.user.id}
+                      AND scoped_order."shop_id" = ${shopTenantId(context.session.user)}
                       AND scoped_order."order_type" = 'b2c'
                 )`,
       ];
@@ -6964,7 +7231,7 @@ const incomingOrderQueries = {
     }),
 
   /** Owner-scoped groups and rider KPIs shared by both assignment lenses. */
-  getRetailAssignmentOverview: shopOwnerProcedure
+  getRetailAssignmentOverview: permission("shop_delivery_management", "view")
     .route({
       method: "GET",
       path: "/shop-owner/delivery-team/assignments",
@@ -6972,7 +7239,7 @@ const incomingOrderQueries = {
       summary: "Get retailer assignment overview",
     })
     .handler(async ({ context }) => {
-      const shopId = context.session.user.id;
+      const shopId = shopTenantId(context.session.user);
       const [groups, riders] = await Promise.all([
         db.query.deliveryGroup.findMany({
           where: eq(deliveryGroup.shopId, shopId),
@@ -7028,7 +7295,7 @@ const incomingOrderQueries = {
     }),
 
   /** List riders employed by this retailer store. */
-  getRetailDeliverymen: shopOwnerProcedure
+  getRetailDeliverymen: permission("shop_delivery_team", "view")
     .route({
       method: "GET",
       path: "/shop-owner/delivery-team",
@@ -7036,7 +7303,7 @@ const incomingOrderQueries = {
       summary: "Get retailer delivery team",
     })
     .handler(async ({ context }) => {
-      const shopId = context.session.user.id;
+      const shopId = shopTenantId(context.session.user);
       const deliverymen = await db
         .select({
           id: user.id,
@@ -7082,7 +7349,7 @@ const incomingOrderQueries = {
       };
     }),
 
-  getRetailDeliverymanById: shopOwnerProcedure
+  getRetailDeliverymanById: permission("shop_delivery_team", "view")
     .route({
       method: "GET",
       path: "/shop-owner/delivery-team/{deliverymanId}",
@@ -7091,7 +7358,7 @@ const incomingOrderQueries = {
     })
     .input(z.object({ deliverymanId: z.string() }))
     .handler(async ({ context, input }) => {
-      const shopId = context.session.user.id;
+      const shopId = shopTenantId(context.session.user);
       const rider = await db.query.user.findFirst({
         where: and(
           eq(user.id, input.deliverymanId),
@@ -7114,7 +7381,7 @@ const incomingOrderQueries = {
       return { rider, groups };
     }),
 
-  updateRetailDeliveryman: shopOwnerProcedure
+  updateRetailDeliveryman: permission("shop_delivery_team", "update")
     .route({
       method: "PATCH",
       path: "/shop-owner/delivery-team/{deliverymanId}",
@@ -7140,7 +7407,7 @@ const incomingOrderQueries = {
         .where(
           and(
             eq(user.id, input.deliverymanId),
-            eq(user.shopId, context.session.user.id),
+            eq(user.shopId, shopTenantId(context.session.user)),
             eq(user.role, "deliveryman"),
           ),
         )
@@ -7152,7 +7419,7 @@ const incomingOrderQueries = {
       return { success: true };
     }),
 
-  resetRetailDeliverymanPassword: shopOwnerProcedure
+  resetRetailDeliverymanPassword: permission("shop_delivery_team", "manage")
     .route({
       method: "POST",
       path: "/shop-owner/delivery-team/{deliverymanId}/reset-password",
@@ -7169,7 +7436,7 @@ const incomingOrderQueries = {
       const rider = await db.query.user.findFirst({
         where: and(
           eq(user.id, input.deliverymanId),
-          eq(user.shopId, context.session.user.id),
+          eq(user.shopId, shopTenantId(context.session.user)),
           eq(user.role, "deliveryman"),
         ),
         columns: { id: true },
@@ -7182,7 +7449,7 @@ const incomingOrderQueries = {
       return { success: true };
     }),
 
-  toggleRetailDeliverymanBan: shopOwnerProcedure
+  toggleRetailDeliverymanBan: permission("shop_delivery_team", "manage")
     .route({
       method: "POST",
       path: "/shop-owner/delivery-team/{deliverymanId}/ban",
@@ -7200,7 +7467,7 @@ const incomingOrderQueries = {
       const rider = await db.query.user.findFirst({
         where: and(
           eq(user.id, input.deliverymanId),
-          eq(user.shopId, context.session.user.id),
+          eq(user.shopId, shopTenantId(context.session.user)),
           eq(user.role, "deliveryman"),
         ),
         columns: { id: true },
@@ -7229,7 +7496,7 @@ const incomingOrderQueries = {
       return { success: true };
     }),
 
-  deleteRetailDeliveryman: shopOwnerProcedure
+  deleteRetailDeliveryman: permission("shop_delivery_team", "delete")
     .route({
       method: "DELETE",
       path: "/shop-owner/delivery-team/{deliverymanId}",
@@ -7238,7 +7505,7 @@ const incomingOrderQueries = {
     })
     .input(z.object({ deliverymanId: z.string() }))
     .handler(async ({ context, input }) => {
-      const shopId = context.session.user.id;
+      const shopId = shopTenantId(context.session.user);
       const rider = await db.query.user.findFirst({
         where: and(
           eq(user.id, input.deliverymanId),
@@ -7279,7 +7546,7 @@ const incomingOrderQueries = {
     }),
 
   /** Create a rider account owned by this retailer store. */
-  createRetailDeliveryman: shopOwnerProcedure
+  createRetailDeliveryman: permission("shop_delivery_team", "create")
     .route({
       method: "POST",
       path: "/shop-owner/delivery-team",
@@ -7296,7 +7563,7 @@ const incomingOrderQueries = {
       }),
     )
     .handler(async ({ context, input }) => {
-      const shopId = context.session.user.id;
+      const shopId = shopTenantId(context.session.user);
       const newUser = await auth.api.createUser({
         body: {
           email: input.email,
@@ -7333,7 +7600,7 @@ const incomingOrderQueries = {
     }),
 
   /** Put an invoiced consumer order into a retailer-owned delivery group. */
-  createIncomingDeliveryGroup: shopOwnerProcedure
+  createIncomingDeliveryGroup: permission("shop_delivery_management", "create")
     .route({
       method: "POST",
       path: "/shop-owner/incoming-orders/{orderId}/delivery-group",
@@ -7349,7 +7616,7 @@ const incomingOrderQueries = {
       }),
     )
     .handler(async ({ context, input }) => {
-      const shopId = context.session.user.id;
+      const shopId = shopTenantId(context.session.user);
       return db.transaction(async (tx) => {
         await tx.execute(sql`SELECT pg_advisory_xact_lock(${input.orderId})`);
         const existingInvoice = await tx.query.invoice.findFirst({
@@ -7436,7 +7703,7 @@ const incomingOrderQueries = {
     }),
 
   /** Assign or reassign a store rider before the trip starts. */
-  assignIncomingDeliveryman: shopOwnerProcedure
+  assignIncomingDeliveryman: permission("shop_delivery_management", "update")
     .route({
       method: "POST",
       path: "/shop-owner/delivery-groups/{groupId}/assign",
@@ -7450,7 +7717,7 @@ const incomingOrderQueries = {
       }),
     )
     .handler(async ({ context, input }) => {
-      const shopId = context.session.user.id;
+      const shopId = shopTenantId(context.session.user);
       return db.transaction(async (tx) => {
         await tx.execute(sql`SELECT pg_advisory_xact_lock(${input.groupId})`);
         const group = await tx.query.deliveryGroup.findFirst({
@@ -7538,7 +7805,7 @@ const incomingOrderQueries = {
     }),
 
   /** Return a failed consumer delivery to the retailer assignment queue. */
-  retryIncomingDelivery: shopOwnerProcedure
+  retryIncomingDelivery: permission("shop_delivery_management", "update")
     .route({
       method: "POST",
       path: "/shop-owner/incoming-orders/{orderId}/retry-delivery",
@@ -7547,7 +7814,7 @@ const incomingOrderQueries = {
     })
     .input(z.object({ orderId: z.number() }))
     .handler(async ({ context, input }) => {
-      const shopId = context.session.user.id;
+      const shopId = shopTenantId(context.session.user);
       return db.transaction(async (tx) => {
         await tx.execute(sql`SELECT pg_advisory_xact_lock(${input.orderId})`);
         const failedInvoice = await tx.query.invoice.findFirst({
@@ -7598,7 +7865,7 @@ const warehouseOrderQueries = {
    * Place an order to a warehouse.
    * Creates order + items. Warehouse inventory is reserved during approval.
    */
-  placeWarehouseOrder: shopOwnerProcedure
+  placeWarehouseOrder: permission("shop_purchase_orders", "create")
     .input(
       z.object({
         warehouseSlug: z.string(),
@@ -7628,7 +7895,7 @@ const warehouseOrderQueries = {
       }),
     )
     .handler(async ({ context, input }) => {
-      const userId = context.session.user.id;
+      const userId = shopTenantId(context.session.user);
       if (input.checkout?.idempotencyKey) {
         const existingOrder = await db.query.order.findFirst({
           where: and(
@@ -8283,7 +8550,7 @@ const warehouseOrderQueries = {
   /**
    * Get orders the shop placed to warehouses.
    */
-  getMyWarehouseOrders: shopOwnerProcedure
+  getMyWarehouseOrders: permission("shop_purchase_orders", "view")
     .input(
       z.object({
         status: z
@@ -8300,7 +8567,7 @@ const warehouseOrderQueries = {
       }),
     )
     .handler(async ({ context, input }) => {
-      const userId = context.session.user.id;
+      const userId = shopTenantId(context.session.user);
       const { page, limit } = input;
       const offset = (page - 1) * limit;
 
@@ -8385,7 +8652,7 @@ const warehouseOrderQueries = {
 
 const openOrderEndpoints = {
   /** Active requests and submitted offers, with no customer PII before acceptance. */
-  getOpenOrderPool: shopOwnerProcedure
+  getOpenOrderPool: permission("shop_open_orders", "view")
     .route({
       method: "GET",
       path: "/shop-owner/open-orders/pool",
@@ -8393,7 +8660,7 @@ const openOrderEndpoints = {
       summary: "List active open-order offers",
     })
     .handler(async ({ context }) => {
-      const shopId = context.session.user.id;
+      const shopId = shopTenantId(context.session.user);
       const candidates = await db
         .select({ orderId: openOrderBid.subOrderId })
         .from(openOrderBid)
@@ -8557,7 +8824,7 @@ const openOrderEndpoints = {
       return { pool, activeCount: pool.length };
     }),
 
-  getOpenOrderHistory: shopOwnerProcedure
+  getOpenOrderHistory: permission("shop_open_orders", "view")
     .route({
       method: "GET",
       path: "/shop-owner/open-orders/history",
@@ -8565,7 +8832,7 @@ const openOrderEndpoints = {
       summary: "List completed open-order offer outcomes",
     })
     .handler(async ({ context }) => {
-      const shopId = context.session.user.id;
+      const shopId = shopTenantId(context.session.user);
       const history = await db
         .select({
           offerId: openOrderBid.id,
@@ -8607,7 +8874,7 @@ const openOrderEndpoints = {
     }),
 
   /** Submit or revise discount and delivery; line prices always come from inventory. */
-  submitOffer: shopOwnerProcedure
+  submitOffer: permission("shop_open_orders", "create")
     .route({
       method: "POST",
       path: "/shop-owner/open-orders/submit",
@@ -8626,7 +8893,7 @@ const openOrderEndpoints = {
       try {
         const offer = await submitRetailerOffer({
           ...input,
-          shopId: context.session.user.id,
+          shopId: shopTenantId(context.session.user),
         });
         context.realtime.emitToOrder(
           offer.subOrderId,
@@ -8660,7 +8927,7 @@ const openOrderEndpoints = {
       }
     }),
 
-  withdrawOpenOrder: shopOwnerProcedure
+  withdrawOpenOrder: permission("shop_open_orders", "delete")
     .route({
       method: "POST",
       path: "/shop-owner/open-orders/withdraw",
@@ -8672,7 +8939,7 @@ const openOrderEndpoints = {
       try {
         const result = await withdrawRetailerOffer({
           bidId: input.bidId,
-          shopId: context.session.user.id,
+          shopId: shopTenantId(context.session.user),
         });
         context.realtime.emitToOrder(
           result.orderId,
@@ -8701,7 +8968,7 @@ const warehouseConnectionEndpoints = {
   /**
    * Preview warehouse details before connecting
    */
-  lookupWarehouseByCode: shopOwnerProcedure
+  lookupWarehouseByCode: permission("shop_connections", "view")
     .route({
       method: "GET",
       path: "/shop-owner/lookup-warehouse",
@@ -8764,7 +9031,7 @@ const warehouseConnectionEndpoints = {
    * Connect to a warehouse (Request Access).
    * Always creates a pending request requiring manual approval.
    */
-  connectToWarehouse: shopOwnerProcedure
+  connectToWarehouse: permission("shop_connections", "create")
     .route({
       method: "POST",
       path: "/shop-owner/connect-to-warehouse",
@@ -8777,7 +9044,7 @@ const warehouseConnectionEndpoints = {
       }),
     )
     .handler(async ({ context, input }) => {
-      const shopId = context.session.user.id;
+      const shopId = shopTenantId(context.session.user);
 
       // 1. Validate warehouse exists
       const warehouseUser = await db
@@ -8862,7 +9129,7 @@ const warehouseConnectionEndpoints = {
   /**
    * Get all connected/pending warehouses for this shop
    */
-  getMyWarehouses: shopOwnerProcedure
+  getMyWarehouses: permission("shop_connections", "view")
     .route({
       method: "GET",
       path: "/shop-owner/my-warehouses",
@@ -8879,7 +9146,7 @@ const warehouseConnectionEndpoints = {
         .optional(),
     )
     .handler(async ({ context, input }) => {
-      const shopId = context.session.user.id;
+      const shopId = shopTenantId(context.session.user);
       const statusFilter = input?.status || "all";
 
       const conditions: SQL[] = [eq(shopWarehouseConnection.shopId, shopId)];
@@ -8939,7 +9206,7 @@ const warehouseConnectionEndpoints = {
   /**
    * Cancel a pending warehouse connection request
    */
-  cancelWarehouseRequest: shopOwnerProcedure
+  cancelWarehouseRequest: permission("shop_connections", "delete")
     .route({
       method: "POST",
       path: "/shop-owner/cancel-warehouse-request",
@@ -8952,7 +9219,7 @@ const warehouseConnectionEndpoints = {
       }),
     )
     .handler(async ({ context, input }) => {
-      const shopId = context.session.user.id;
+      const shopId = shopTenantId(context.session.user);
 
       const existingConn = await db.query.shopWarehouseConnection.findFirst({
         where: and(
@@ -8978,7 +9245,7 @@ const warehouseConnectionEndpoints = {
   /**
    * Disconnect from an active warehouse
    */
-  disconnectWarehouse: shopOwnerProcedure
+  disconnectWarehouse: permission("shop_connections", "delete")
     .route({
       method: "POST",
       path: "/shop-owner/disconnect-warehouse",
@@ -8991,7 +9258,7 @@ const warehouseConnectionEndpoints = {
       }),
     )
     .handler(async ({ context, input }) => {
-      const shopId = context.session.user.id;
+      const shopId = shopTenantId(context.session.user);
 
       const existingConn = await db.query.shopWarehouseConnection.findFirst({
         where: and(
@@ -9019,7 +9286,7 @@ const warehouseConnectionEndpoints = {
    * Step 7: Get recently connected warehouses (smart memory).
    * Sorted by lastOrderedAt descending. (Alias for backwards compatibility)
    */
-  getConnectedWarehouses: shopOwnerProcedure
+  getConnectedWarehouses: permission("shop_connections", "view")
     .route({
       method: "GET",
       path: "/shop-owner/connected-warehouses",
@@ -9027,7 +9294,7 @@ const warehouseConnectionEndpoints = {
       summary: "Get recently connected warehouses (smart memory)",
     })
     .handler(async ({ context }) => {
-      const shopId = context.session.user.id;
+      const shopId = shopTenantId(context.session.user);
 
       const connections = await db
         .select({
@@ -9080,7 +9347,7 @@ const warehouseConnectionEndpoints = {
    * Products in shop's allowed categories → canOrder: true
    * Products outside → canOrder: false ("Request Access")
    */
-  getWarehouseProductsFiltered: shopOwnerProcedure
+  getWarehouseProductsFiltered: permission("shop_warehouses", "view")
     .route({
       method: "GET",
       path: "/shop-owner/warehouse-products-filtered",
@@ -9096,7 +9363,7 @@ const warehouseConnectionEndpoints = {
       }),
     )
     .handler(async ({ context, input }) => {
-      const shopId = context.session.user.id;
+      const shopId = shopTenantId(context.session.user);
 
       // Find warehouse
       const warehouseUser = await db
@@ -9805,7 +10072,7 @@ const publicCatalogEndpoints = {
    * Get the full product hierarchy: Type → Category → SubCategory → Core Identity.
    * Public-facing, no auth required. Used for the catalog browse page.
    */
-  getShopCatalogHierarchy: shopOwnerProcedure
+  getShopCatalogHierarchy: permission("shop_product_catalog", "view")
     .input(
       z.object({
         typeId: z.number().nullish(),
@@ -9820,7 +10087,7 @@ const publicCatalogEndpoints = {
       const page = input.page ?? 1;
       const limit = input.limit ?? 50;
       const offset = (page - 1) * limit;
-      const shopId = context.session.user.id;
+      const shopId = shopTenantId(context.session.user);
 
       // 1. Build conditions for core products
       const conditions: SQL[] = [
@@ -10198,7 +10465,7 @@ const publicCatalogEndpoints = {
    * Submit a product identity request (shop owner only).
    * Used when a shop owner can't find a product in the catalog.
    */
-  submitProductIdentityRequest: shopOwnerProcedure
+  submitProductIdentityRequest: permission("shop_product_catalog", "create")
     .input(
       z.object({
         typeName: z.string().optional(),
@@ -10210,7 +10477,7 @@ const publicCatalogEndpoints = {
       }),
     )
     .handler(async ({ context, input }) => {
-      const userId = context.session.user.id;
+      const userId = shopTenantId(context.session.user);
 
       const [created] = await db
         .insert(productIdentityRequest)
@@ -10236,14 +10503,14 @@ const publicCatalogEndpoints = {
   /**
    * Get my product identity requests (shop owner only).
    */
-  getMyProductRequests: shopOwnerProcedure
+  getMyProductRequests: permission("shop_product_catalog", "view")
     .input(
       z.object({
         status: z.enum(["pending", "approved", "rejected"]).optional(),
       }),
     )
     .handler(async ({ context, input }) => {
-      const userId = context.session.user.id;
+      const userId = shopTenantId(context.session.user);
 
       const conditions: SQL[] = [
         eq(productIdentityRequest.requestedBy, userId),
@@ -10374,40 +10641,42 @@ async function loadRetailerProductStockSnapshot(ownerId: string) {
 }
 
 const shopProductEndpoints = {
-  getShopInventoryIntegrity: shopOwnerProcedure.handler(async ({ context }) => {
-    const userId = context.session.user.id;
-    const rows = await db
-      .select({
-        inventoryId: inventory.id,
-        variantId: inventory.variantId,
-        sku: productVariant.sku,
-        productName: product.name,
-        creatorSource: product.creatorSource,
-        createdById: product.createdById,
-        availableQty: inventory.availableQty,
-        reservedQty: inventory.reservedQty,
-      })
-      .from(inventory)
-      .innerJoin(productVariant, eq(inventory.variantId, productVariant.id))
-      .innerJoin(product, eq(productVariant.productId, product.id))
-      .where(
-        and(
-          eq(inventory.ownerType, "shop"),
-          eq(inventory.ownerId, userId),
-          or(
-            sql`${product.creatorSource} <> 'shop'`,
-            sql`${product.createdById} IS DISTINCT FROM ${userId}`,
+  getShopInventoryIntegrity: permission("shop_products", "view").handler(
+    async ({ context }) => {
+      const userId = shopTenantId(context.session.user);
+      const rows = await db
+        .select({
+          inventoryId: inventory.id,
+          variantId: inventory.variantId,
+          sku: productVariant.sku,
+          productName: product.name,
+          creatorSource: product.creatorSource,
+          createdById: product.createdById,
+          availableQty: inventory.availableQty,
+          reservedQty: inventory.reservedQty,
+        })
+        .from(inventory)
+        .innerJoin(productVariant, eq(inventory.variantId, productVariant.id))
+        .innerJoin(product, eq(productVariant.productId, product.id))
+        .where(
+          and(
+            eq(inventory.ownerType, "shop"),
+            eq(inventory.ownerId, userId),
+            or(
+              sql`${product.creatorSource} <> 'shop'`,
+              sql`${product.createdById} IS DISTINCT FROM ${userId}`,
+            ),
           ),
-        ),
-      );
+        );
 
-    return { count: rows.length, violations: rows };
-  }),
+      return { count: rows.length, violations: rows };
+    },
+  ),
 
   /**
    * Get the retailer's brand products with unit-safe structured stock.
    */
-  getShopProducts: shopOwnerProcedure
+  getShopProducts: permission("shop_products", "view")
     .input(
       z.object({
         search: z.string().optional(),
@@ -10428,7 +10697,7 @@ const shopProductEndpoints = {
       }),
     )
     .handler(async ({ input, context }) => {
-      const userId = context.session.user.id;
+      const userId = shopTenantId(context.session.user);
       const { search, categoryId, stockStatus, brandId, page, limit } = input;
       const offset = (page - 1) * limit;
       const snapshot = await loadRetailerProductStockSnapshot(userId);
@@ -10484,25 +10753,27 @@ const shopProductEndpoints = {
   /**
    * Product and variant summary derived from the same structured snapshot.
    */
-  getShopProductKPIs: shopOwnerProcedure.handler(async ({ context }) => {
-    const userId = context.session.user.id;
-    const snapshot = await loadRetailerProductStockSnapshot(userId);
-    return {
-      activeProducts: snapshot.products.length,
-      activeVariants: snapshot.dashboard.summary.activeVariants,
-      lowStockVariants: snapshot.dashboard.stockStatus.lowStock,
-      outOfStockVariants: snapshot.dashboard.stockStatus.outOfStock,
-      configurationIssueCount: snapshot.dashboard.configurationIssueCount,
-    };
-  }),
+  getShopProductKPIs: permission("shop_products", "view").handler(
+    async ({ context }) => {
+      const userId = shopTenantId(context.session.user);
+      const snapshot = await loadRetailerProductStockSnapshot(userId);
+      return {
+        activeProducts: snapshot.products.length,
+        activeVariants: snapshot.dashboard.summary.activeVariants,
+        lowStockVariants: snapshot.dashboard.stockStatus.lowStock,
+        outOfStockVariants: snapshot.dashboard.stockStatus.outOfStock,
+        configurationIssueCount: snapshot.dashboard.configurationIssueCount,
+      };
+    },
+  ),
 
   /**
    * Detailed view of a retailer brand product using canonical variants.
    */
-  getShopProductDetail: shopOwnerProcedure
+  getShopProductDetail: permission("shop_products", "view")
     .input(z.object({ productId: z.number() }))
     .handler(async ({ input, context }) => {
-      const userId = context.session.user.id;
+      const userId = shopTenantId(context.session.user);
       const snapshot = await loadRetailerProductStockSnapshot(userId);
       const productGroup = snapshot.products.find(
         (item) => item.productId === input.productId,
@@ -10596,7 +10867,7 @@ const shopProductEndpoints = {
    * Get options for the Create Product form (cascading selects).
    * Returns types, categories, subcategories, core products, brands, variant options.
    */
-  getCreateProductOptions: shopOwnerProcedure
+  getCreateProductOptions: permission("shop_products", "create")
     .input(
       z.object({
         typeId: z.number().optional(),
@@ -10707,289 +10978,298 @@ const shopProductEndpoints = {
    * Create a new shop product — full 8-step data.
    * Creates product, product_brand links, product_variants, and initial inventory.
    */
-  createShopProduct: shopOwnerProcedure.input(z.unknown()).handler(async () => {
-    throw new ORPCError("BAD_REQUEST", {
-      message: "Retailer products must be configured from Product Catalog",
-    });
-  }),
+  createShopProduct: permission("shop_products", "create")
+    .input(z.unknown())
+    .handler(async () => {
+      throw new ORPCError("BAD_REQUEST", {
+        message: "Retailer products must be configured from Product Catalog",
+      });
+    }),
 
-  getMyStorePreview: shopOwnerProcedure.handler(async ({ context }) => {
-    const userId = context.session.user.id;
+  getMyStorePreview: permission("shop_store", "view").handler(
+    async ({ context }) => {
+      const userId = shopTenantId(context.session.user);
 
-    // 1. Get store identity from user row
-    const storeUser = await db.query.user.findFirst({
-      where: eq(user.id, userId),
-      columns: {
-        id: true,
-        name: true,
-        shopName: true,
-        shopSlug: true,
-        shopAddress: true,
-        shopLat: true,
-        shopLng: true,
-        phoneNumber: true,
-        ownerName: true,
-        image: true,
-      },
-    });
+      // 1. Get store identity from user row
+      const storeUser = await db.query.user.findFirst({
+        where: eq(user.id, userId),
+        columns: {
+          id: true,
+          name: true,
+          shopName: true,
+          shopSlug: true,
+          shopAddress: true,
+          shopLat: true,
+          shopLng: true,
+          phoneNumber: true,
+          ownerName: true,
+          image: true,
+        },
+      });
 
-    if (!storeUser)
-      throw new ORPCError("NOT_FOUND", { message: "User not found" });
+      if (!storeUser)
+        throw new ORPCError("NOT_FOUND", { message: "User not found" });
 
-    // 2. Get all inventory for this shop owner with full product+variant+brand info
-    const shopInventory = await db.query.inventory.findMany({
-      where: and(
-        eq(inventory.ownerType, "shop"),
-        eq(inventory.ownerId, userId),
-      ),
-      with: {
-        variant: {
-          columns: {
-            id: true,
-            productId: true,
-            sku: true,
-            unitLabel: true,
-            weightKg: true,
-            price: true,
-            packType: true,
-            brandId: true,
-            color: true,
-            size: true,
-            isActive: true,
-            isPackReturnRequired: true,
-            packDepositAmount: true,
-            sourceVariantOptionId: true,
-          },
-          with: {
-            product: {
-              columns: {
-                id: true,
-                name: true,
-                slug: true,
-                image: true,
-                categoryId: true,
-                coreProductId: true,
-                status: true,
-                reorderLevel: true,
-                shortDescription: true,
-                isReturnablePack: true,
-              },
-              with: {
-                category: {
-                  columns: {
-                    id: true,
-                    name: true,
-                    slug: true,
+      // 2. Get all inventory for this shop owner with full product+variant+brand info
+      const shopInventory = await db.query.inventory.findMany({
+        where: and(
+          eq(inventory.ownerType, "shop"),
+          eq(inventory.ownerId, userId),
+        ),
+        with: {
+          variant: {
+            columns: {
+              id: true,
+              productId: true,
+              sku: true,
+              unitLabel: true,
+              weightKg: true,
+              price: true,
+              packType: true,
+              brandId: true,
+              color: true,
+              size: true,
+              isActive: true,
+              isPackReturnRequired: true,
+              packDepositAmount: true,
+              sourceVariantOptionId: true,
+            },
+            with: {
+              product: {
+                columns: {
+                  id: true,
+                  name: true,
+                  slug: true,
+                  image: true,
+                  categoryId: true,
+                  coreProductId: true,
+                  status: true,
+                  reorderLevel: true,
+                  shortDescription: true,
+                  isReturnablePack: true,
+                },
+                with: {
+                  category: {
+                    columns: {
+                      id: true,
+                      name: true,
+                      slug: true,
+                    },
                   },
                 },
               },
-            },
-            brand: {
-              columns: { id: true, name: true, logo: true },
+              brand: {
+                columns: { id: true, name: true, logo: true },
+              },
             },
           },
         },
-      },
-    });
-
-    // 3. Group by product
-    type VariantInfo = {
-      variantId: number;
-      sku: string | null;
-      unitLabel: string;
-      weightKg: string;
-      packType: string | null;
-      brandId: number | null;
-      brandName: string | null;
-      brandLogo: string | null;
-      retailPrice: string | null;
-      availableQty: number;
-      isPackReturnRequired: boolean | null;
-      packDepositAmount: string | null;
-    };
-
-    const productMap = new Map<
-      number,
-      {
-        product: (typeof shopInventory)[0]["variant"]["product"];
-        variants: VariantInfo[];
-        totalStock: number;
-        brands: Map<number, { id: number; name: string; logo: string | null }>;
-      }
-    >();
-
-    for (const inv of shopInventory) {
-      if (!inv.variant?.product) continue;
-      const pid = inv.variant.product.id;
-
-      if (!productMap.has(pid)) {
-        productMap.set(pid, {
-          product: inv.variant.product,
-          variants: [],
-          totalStock: 0,
-          brands: new Map(),
-        });
-      }
-
-      const entry = productMap.get(pid)!;
-      const qty = Number(inv.availableQty);
-      entry.totalStock += qty;
-
-      entry.variants.push({
-        variantId: inv.variant.id,
-        sku: inv.variant.sku,
-        unitLabel: inv.variant.unitLabel,
-        weightKg: inv.variant.weightKg,
-        packType: inv.variant.packType,
-        brandId: inv.variant.brandId,
-        brandName: inv.variant.brand?.name ?? null,
-        brandLogo: inv.variant.brand?.logo ?? null,
-        retailPrice: inv.retailPrice,
-        availableQty: qty,
-        isPackReturnRequired: inv.variant.isPackReturnRequired,
-        packDepositAmount: inv.variant.packDepositAmount,
       });
 
-      if (inv.variant.brand) {
-        entry.brands.set(inv.variant.brand.id, {
-          id: inv.variant.brand.id,
-          name: inv.variant.brand.name,
-          logo: inv.variant.brand.logo,
-        });
-      }
-    }
+      // 3. Group by product
+      type VariantInfo = {
+        variantId: number;
+        sku: string | null;
+        unitLabel: string;
+        weightKg: string;
+        packType: string | null;
+        brandId: number | null;
+        brandName: string | null;
+        brandLogo: string | null;
+        retailPrice: string | null;
+        availableQty: number;
+        isPackReturnRequired: boolean | null;
+        packDepositAmount: string | null;
+      };
 
-    // 4. Derive categories
-    const categoryMap = new Map<
-      number,
-      { id: number; name: string; slug: string; productCount: number }
-    >();
-    for (const entry of productMap.values()) {
-      const cat = entry.product.category;
-      if (cat) {
-        const existing = categoryMap.get(cat.id);
-        if (existing) {
-          existing.productCount++;
-        } else {
-          categoryMap.set(cat.id, { ...cat, productCount: 1 });
+      const productMap = new Map<
+        number,
+        {
+          product: (typeof shopInventory)[0]["variant"]["product"];
+          variants: VariantInfo[];
+          totalStock: number;
+          brands: Map<
+            number,
+            { id: number; name: string; logo: string | null }
+          >;
+        }
+      >();
+
+      for (const inv of shopInventory) {
+        if (!inv.variant?.product) continue;
+        const pid = inv.variant.product.id;
+
+        if (!productMap.has(pid)) {
+          productMap.set(pid, {
+            product: inv.variant.product,
+            variants: [],
+            totalStock: 0,
+            brands: new Map(),
+          });
+        }
+
+        const entry = productMap.get(pid)!;
+        const qty = Number(inv.availableQty);
+        entry.totalStock += qty;
+
+        entry.variants.push({
+          variantId: inv.variant.id,
+          sku: inv.variant.sku,
+          unitLabel: inv.variant.unitLabel,
+          weightKg: inv.variant.weightKg,
+          packType: inv.variant.packType,
+          brandId: inv.variant.brandId,
+          brandName: inv.variant.brand?.name ?? null,
+          brandLogo: inv.variant.brand?.logo ?? null,
+          retailPrice: inv.retailPrice,
+          availableQty: qty,
+          isPackReturnRequired: inv.variant.isPackReturnRequired,
+          packDepositAmount: inv.variant.packDepositAmount,
+        });
+
+        if (inv.variant.brand) {
+          entry.brands.set(inv.variant.brand.id, {
+            id: inv.variant.brand.id,
+            name: inv.variant.brand.name,
+            logo: inv.variant.brand.logo,
+          });
         }
       }
-    }
 
-    // 5. Build product list
-    const REORDER_THRESHOLD = 10;
-    const products = Array.from(productMap.values())
-      .sort((a, b) => a.product.name.localeCompare(b.product.name))
-      .map((entry) => {
-        const reorderLevel = entry.product.reorderLevel || REORDER_THRESHOLD;
-        let stockStatus: "in_stock" | "low" | "out_of_stock";
-        if (entry.totalStock <= 0) stockStatus = "out_of_stock";
-        else if (entry.totalStock <= reorderLevel) stockStatus = "low";
-        else stockStatus = "in_stock";
+      // 4. Derive categories
+      const categoryMap = new Map<
+        number,
+        { id: number; name: string; slug: string; productCount: number }
+      >();
+      for (const entry of productMap.values()) {
+        const cat = entry.product.category;
+        if (cat) {
+          const existing = categoryMap.get(cat.id);
+          if (existing) {
+            existing.productCount++;
+          } else {
+            categoryMap.set(cat.id, { ...cat, productCount: 1 });
+          }
+        }
+      }
 
-        // Lowest retail price across variants
-        const prices = entry.variants
-          .map((v) => Number(v.retailPrice))
-          .filter((p) => p > 0);
-        const lowestPrice = prices.length > 0 ? Math.min(...prices) : null;
+      // 5. Build product list
+      const REORDER_THRESHOLD = 10;
+      const products = Array.from(productMap.values())
+        .sort((a, b) => a.product.name.localeCompare(b.product.name))
+        .map((entry) => {
+          const reorderLevel = entry.product.reorderLevel || REORDER_THRESHOLD;
+          let stockStatus: "in_stock" | "low" | "out_of_stock";
+          if (entry.totalStock <= 0) stockStatus = "out_of_stock";
+          else if (entry.totalStock <= reorderLevel) stockStatus = "low";
+          else stockStatus = "in_stock";
 
-        return {
-          productId: entry.product.id,
-          name: entry.product.name,
-          slug: entry.product.slug,
-          image: entry.product.image,
-          shortDescription: entry.product.shortDescription,
-          isReturnablePack: entry.product.isReturnablePack,
-          category: entry.product.category,
-          brands: Array.from(entry.brands.values()),
-          variants: entry.variants,
-          totalStock: entry.totalStock,
-          stockStatus,
-          lowestPrice,
-          variantCount: entry.variants.length,
-        };
-      });
+          // Lowest retail price across variants
+          const prices = entry.variants
+            .map((v) => Number(v.retailPrice))
+            .filter((p) => p > 0);
+          const lowestPrice = prices.length > 0 ? Math.min(...prices) : null;
 
-    return {
-      store: {
-        name: storeUser.shopName || storeUser.name,
-        slug: storeUser.shopSlug,
-        address: storeUser.shopAddress,
-        lat: storeUser.shopLat,
-        lng: storeUser.shopLng,
-        phoneNumber: storeUser.phoneNumber,
-        ownerName: storeUser.ownerName,
-        image: storeUser.image,
-      },
-      categories: Array.from(categoryMap.values()),
-      products,
-      totalProducts: products.length,
-    };
-  }),
+          return {
+            productId: entry.product.id,
+            name: entry.product.name,
+            slug: entry.product.slug,
+            image: entry.product.image,
+            shortDescription: entry.product.shortDescription,
+            isReturnablePack: entry.product.isReturnablePack,
+            category: entry.product.category,
+            brands: Array.from(entry.brands.values()),
+            variants: entry.variants,
+            totalStock: entry.totalStock,
+            stockStatus,
+            lowestPrice,
+            variantCount: entry.variants.length,
+          };
+        });
+
+      return {
+        store: {
+          name: storeUser.shopName || storeUser.name,
+          slug: storeUser.shopSlug,
+          address: storeUser.shopAddress,
+          lat: storeUser.shopLat,
+          lng: storeUser.shopLng,
+          phoneNumber: storeUser.phoneNumber,
+          ownerName: storeUser.ownerName,
+          image: storeUser.image,
+        },
+        categories: Array.from(categoryMap.values()),
+        products,
+        totalProducts: products.length,
+      };
+    },
+  ),
 
   /**
    * Get store KPI stats: total orders, customers, avg rating.
    */
-  getMyStoreStats: shopOwnerProcedure.handler(async ({ context }) => {
-    const userId = context.session.user.id;
+  getMyStoreStats: permission("shop_store", "view").handler(
+    async ({ context }) => {
+      const userId = shopTenantId(context.session.user);
 
-    // Count B2C orders for this shop
-    const [orderStats] = await db
-      .select({
-        totalOrders: count(),
-        totalCustomers: sql<number>`COUNT(DISTINCT ${order.userId})`,
-      })
-      .from(order)
-      .where(and(eq(order.shopId, userId), eq(order.orderType, "b2c")));
+      // Count B2C orders for this shop
+      const [orderStats] = await db
+        .select({
+          totalOrders: count(),
+          totalCustomers: sql<number>`COUNT(DISTINCT ${order.userId})`,
+        })
+        .from(order)
+        .where(and(eq(order.shopId, userId), eq(order.orderType, "b2c")));
 
-    // Get average product rating from reviews on shop's products
-    const shopVariantIds = await db.query.inventory.findMany({
-      where: and(
-        eq(inventory.ownerType, "shop"),
-        eq(inventory.ownerId, userId),
-      ),
-      columns: { variantId: true },
-    });
-
-    const variantIds = shopVariantIds.map((i) => i.variantId);
-    let avgRating = 0;
-    let reviewCount = 0;
-
-    if (variantIds.length > 0) {
-      // Get product IDs from variant IDs
-      const variants = await db.query.productVariant.findMany({
-        where: inArray(productVariant.id, variantIds),
-        columns: { productId: true },
+      // Get average product rating from reviews on shop's products
+      const shopVariantIds = await db.query.inventory.findMany({
+        where: and(
+          eq(inventory.ownerType, "shop"),
+          eq(inventory.ownerId, userId),
+        ),
+        columns: { variantId: true },
       });
-      const productIds = [...new Set(variants.map((v) => v.productId))];
 
-      if (productIds.length > 0) {
-        const [stats] = await db
-          .select({
-            avgRating: avg(productReview.rating),
-            reviewCount: count(),
-          })
-          .from(productReview)
-          .where(inArray(productReview.productId, productIds));
+      const variantIds = shopVariantIds.map((i) => i.variantId);
+      let avgRating = 0;
+      let reviewCount = 0;
 
-        avgRating = Number(stats?.avgRating) || 0;
-        reviewCount = Number(stats?.reviewCount) || 0;
+      if (variantIds.length > 0) {
+        // Get product IDs from variant IDs
+        const variants = await db.query.productVariant.findMany({
+          where: inArray(productVariant.id, variantIds),
+          columns: { productId: true },
+        });
+        const productIds = [...new Set(variants.map((v) => v.productId))];
+
+        if (productIds.length > 0) {
+          const [stats] = await db
+            .select({
+              avgRating: avg(productReview.rating),
+              reviewCount: count(),
+            })
+            .from(productReview)
+            .where(inArray(productReview.productId, productIds));
+
+          avgRating = Number(stats?.avgRating) || 0;
+          reviewCount = Number(stats?.reviewCount) || 0;
+        }
       }
-    }
 
-    return {
-      totalOrders: Number(orderStats?.totalOrders) || 0,
-      totalCustomers: Number(orderStats?.totalCustomers) || 0,
-      avgRating: Math.round(avgRating * 10) / 10,
-      reviewCount,
-    };
-  }),
+      return {
+        totalOrders: Number(orderStats?.totalOrders) || 0,
+        totalCustomers: Number(orderStats?.totalCustomers) || 0,
+        avgRating: Math.round(avgRating * 10) / 10,
+        reviewCount,
+      };
+    },
+  ),
 
   /**
    * Search shop products for stock entry — returns products with their variants
    * and current inventory quantities for the logged-in shop owner.
    */
-  getShopProductsForStock: shopOwnerProcedure
+  getShopProductsForStock: permission("shop_stock", "view")
     .input(
       z.object({
         search: z.string().optional(),
@@ -10997,7 +11277,7 @@ const shopProductEndpoints = {
       }),
     )
     .handler(async ({ context, input }) => {
-      const userId = context.session.user.id;
+      const userId = shopTenantId(context.session.user);
 
       // Get all inventory for this shop, grouped by product
       const shopInventory = await db.query.inventory.findMany({
@@ -11131,7 +11411,7 @@ const shopProductEndpoints = {
   /**
    * Add stock to shop inventory — supports adding to multiple variants at once.
    */
-  addShopStock: shopOwnerProcedure
+  addShopStock: permission("shop_stock", "create")
     .input(
       z.object({
         entries: z
@@ -11149,7 +11429,7 @@ const shopProductEndpoints = {
       }),
     )
     .handler(async ({ context, input }) => {
-      const userId = context.session.user.id;
+      const userId = shopTenantId(context.session.user);
 
       // Validate all inventory rows belong to this shop
       const inventoryIds = input.entries.map((e) => e.inventoryId);
@@ -11239,7 +11519,7 @@ const shopProductEndpoints = {
    * Search shop inventory variants for the adjustment product picker.
    * Returns variant-level results with current stock.
    */
-  searchShopVariantsForAdjustment: shopOwnerProcedure
+  searchShopVariantsForAdjustment: permission("shop_stock_adjustment", "view")
     .input(
       z.object({
         search: z.string().optional(),
@@ -11247,7 +11527,7 @@ const shopProductEndpoints = {
       }),
     )
     .handler(async ({ context, input }) => {
-      const userId = context.session.user.id;
+      const userId = shopTenantId(context.session.user);
 
       const baseConditions = and(
         eq(inventory.ownerType, "shop"),
@@ -11320,7 +11600,7 @@ const shopProductEndpoints = {
    * Create a stock adjustment for the shop — auto-submitted, applies to inventory.
    * Uses "actual stock" input: adjustQty = actualQty - currentQty.
    */
-  createShopAdjustment: shopOwnerProcedure
+  createShopAdjustment: permission("shop_stock_adjustment", "create")
     .input(
       z.object({
         adjustmentType: z.enum([
@@ -11352,7 +11632,7 @@ const shopProductEndpoints = {
       }),
     )
     .handler(async ({ context, input }) => {
-      const userId = context.session.user.id;
+      const userId = shopTenantId(context.session.user);
 
       // 1. Validate all inventory rows belong to this shop
       const inventoryIds = input.items.map((i) => i.inventoryId);
@@ -11506,7 +11786,7 @@ const shopProductEndpoints = {
   /**
    * List shop adjustment history (paginated).
    */
-  getShopAdjustments: shopOwnerProcedure
+  getShopAdjustments: permission("shop_stock_adjustment", "view")
     .input(
       z.object({
         search: z.string().optional(),
@@ -11518,7 +11798,7 @@ const shopProductEndpoints = {
       }),
     )
     .handler(async ({ context, input }) => {
-      const userId = context.session.user.id;
+      const userId = shopTenantId(context.session.user);
       const offset = (input.page - 1) * input.pageSize;
 
       const conditions: SQL[] = [eq(stockAdjustment.warehouseId, userId)];
@@ -11578,7 +11858,7 @@ const shopProductEndpoints = {
   /**
    * Create a damage entry — deducts inventory, calculates financial loss.
    */
-  createDamageEntry: shopOwnerProcedure
+  createDamageEntry: permission("shop_damage", "create")
     .input(
       z.object({
         damageType: z.enum(["physical", "expired", "lost"]),
@@ -11599,7 +11879,7 @@ const shopProductEndpoints = {
       }),
     )
     .handler(async ({ context, input }) => {
-      const userId = context.session.user.id;
+      const userId = shopTenantId(context.session.user);
 
       // 1. Validate all inventory rows belong to this shop
       const inventoryIds = input.items.map((i) => i.inventoryId);
@@ -11733,7 +12013,7 @@ const shopProductEndpoints = {
   /**
    * List damage entries (paginated, filterable).
    */
-  getDamageEntries: shopOwnerProcedure
+  getDamageEntries: permission("shop_damage", "view")
     .input(
       z.object({
         search: z.string().optional(),
@@ -11743,7 +12023,7 @@ const shopProductEndpoints = {
       }),
     )
     .handler(async ({ context, input }) => {
-      const userId = context.session.user.id;
+      const userId = shopTenantId(context.session.user);
       const offset = (input.page - 1) * input.pageSize;
 
       const conditions: SQL[] = [
@@ -11798,10 +12078,10 @@ const shopProductEndpoints = {
   /**
    * Get single damage entry detail with line items.
    */
-  getDamageEntryDetail: shopOwnerProcedure
+  getDamageEntryDetail: permission("shop_damage", "view")
     .input(z.object({ id: z.number().int() }))
     .handler(async ({ context, input }) => {
-      const userId = context.session.user.id;
+      const userId = shopTenantId(context.session.user);
 
       const entry = await db
         .select()
@@ -11850,10 +12130,10 @@ const shopProductEndpoints = {
   /**
    * KPI summary for damage management.
    */
-  getDamageSummary: shopOwnerProcedure
+  getDamageSummary: permission("shop_damage", "view")
     .input(z.void())
     .handler(async ({ context }) => {
-      const userId = context.session.user.id;
+      const userId = shopTenantId(context.session.user);
 
       const [result] = await db
         .select({

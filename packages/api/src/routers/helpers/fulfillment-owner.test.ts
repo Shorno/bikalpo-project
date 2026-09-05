@@ -32,6 +32,31 @@ test("retailer ownership is presented as a store", () => {
     assert.equal(fulfillmentOwnerLabel({ kind: "shop", id: "shop-1" }), "store");
 });
 
+test("shop sales staff resolve to the parent shop fulfillment desk", () => {
+    assert.deepEqual(
+        getFulfillmentOwner({
+            id: "staff-1",
+            role: "shop_staff",
+            shopId: "shop-1",
+            shopFunction: "sales_agent",
+        }),
+        { kind: "shop", id: "shop-1" },
+    );
+});
+
+test("shop purchase staff cannot enter the fulfillment seam", () => {
+    assert.throws(
+        () =>
+            getFulfillmentOwner({
+                id: "staff-1",
+                role: "shop_staff",
+                shopId: "shop-1",
+                shopFunction: "purchase_manager",
+            }),
+        /Fulfillment manager access required/,
+    );
+});
+
 test("non-manager roles cannot enter the fulfillment seam", () => {
     assert.throws(
         () => getFulfillmentOwner({ id: "rider-1", role: "deliveryman" }),

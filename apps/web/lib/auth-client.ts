@@ -1,4 +1,14 @@
 import type { auth } from "@bikalpo-project/auth";
+import {
+  ac,
+  admin as adminRole,
+  consumer,
+  deliveryman,
+  salesman,
+  shop_owner,
+  shop_staff,
+  warehouse,
+} from "@bikalpo-project/auth/permissions";
 import { adminClient, inferAdditionalFields } from "better-auth/client/plugins";
 import { phoneNumberClient } from "better-auth/client/plugins";
 import { createAuthClient } from "better-auth/react";
@@ -10,5 +20,20 @@ export const authClient = createAuthClient({
   fetchOptions: {
     credentials: "include",
   },
-  plugins: [adminClient(), inferAdditionalFields<typeof auth>(), phoneNumberClient()],
+  plugins: [
+    adminClient({
+      ac,
+      roles: {
+        consumer,
+        shop_owner,
+        admin: adminRole,
+        salesman,
+        deliveryman,
+        shop_staff,
+        warehouse,
+      },
+    }),
+    inferAdditionalFields<typeof auth>(),
+    phoneNumberClient(),
+  ],
 });

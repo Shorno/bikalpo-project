@@ -36,7 +36,8 @@ import {
 } from "drizzle-orm";
 import { z } from "zod";
 
-import { protectedProcedure } from "../index";
+import { shopOrWarehousePermissionProcedure } from "../index";
+import { shopOrWarehouseOwnerScope } from "../shop-portal-scope";
 import { localDateStamp } from "../utils/date";
 
 const UI_ACCOUNT_TYPES = [
@@ -134,8 +135,8 @@ type ProductSaleItem = {
   saleAmount: number;
 };
 
-function resolveOwnerScope(role?: string | null): AccountingOwnerType {
-  return role === "warehouse" ? "warehouse" : "shop";
+function resolveOwnerScope(user: { id: string; role?: string | null }) {
+  return shopOrWarehouseOwnerScope(user, "finance");
 }
 
 function toUiAccountType(accountType: AccountingAccountType): UIAccountType {
@@ -238,6 +239,17 @@ function normalizePaymentAccountLookup(value: string | number) {
     .replace(/\s+/g, " ");
 }
 
+function isUsableCashBankPaymentAccount<
+  T extends {
+    isActive: boolean;
+    type: "bank" | "cash" | "mobile_banking";
+  },
+>(account: T | null | undefined): account is T & { type: "bank" | "cash" } {
+  return Boolean(
+    account?.isActive && (account.type === "cash" || account.type === "bank"),
+  );
+}
+
 async function resolvePaymentAccountId(input: {
   ownerId: string;
   ownerType: AccountingOwnerType;
@@ -255,6 +267,7 @@ async function resolvePaymentAccountId(input: {
       andFn(
         eqFn(table.ownerId, input.ownerId),
         eqFn(table.ownerType, input.ownerType),
+        eqFn(table.isActive, true),
       ),
   });
 
@@ -2129,7 +2142,11 @@ async function resolveAccountsPayableAccount(input: {
 }
 
 export const financeRouter = {
-  getChartOfAccounts: protectedProcedure
+  getChartOfAccounts: shopOrWarehousePermissionProcedure(
+    "shop_accounts",
+    "view",
+    "finance",
+  )
     .route({
       method: "POST",
       path: "/finance/chart-of-accounts",
@@ -2138,8 +2155,7 @@ export const financeRouter = {
     })
     .input(z.object({}).optional())
     .handler(async ({ context }) => {
-      const ownerId = context.session.user.id;
-      const ownerType = resolveOwnerScope(context.session.user.role);
+      const { ownerId, ownerType } = resolveOwnerScope(context.session.user);
 
       await ensureDefaultFinanceAccounts();
 
@@ -2206,7 +2222,11 @@ export const financeRouter = {
       };
     }),
 
-  getPaymentAccounts: protectedProcedure
+  getPaymentAccounts: shopOrWarehousePermissionProcedure(
+    "shop_accounts",
+    "view",
+    "finance",
+  )
     .route({
       method: "POST",
       path: "/finance/payment-accounts",
@@ -2215,8 +2235,7 @@ export const financeRouter = {
     })
     .input(z.object({}).optional())
     .handler(async ({ context }) => {
-      const ownerId = context.session.user.id;
-      const ownerType = resolveOwnerScope(context.session.user.role);
+      const { ownerId, ownerType } = resolveOwnerScope(context.session.user);
 
       await ensurePaymentAccountsReady({ ownerId, ownerType });
 
@@ -2254,7 +2273,9 @@ export const financeRouter = {
       return {
         paymentAccounts: paymentAccounts
           .filter(
-            (account) => account.type === "cash" || account.type === "bank",
+            (account) =>
+              account.isActive &&
+              (account.type === "cash" || account.type === "bank"),
           )
           .map((account) => ({
             balance: parseMoney(account.currentBalance),
@@ -2266,7 +2287,295 @@ export const financeRouter = {
       };
     }),
 
-  createMoneyMovement: protectedProcedure
+  getFinancialSettingsAccounts: shopOrWarehousePermissionProcedure(
+    "shop_accounts",
+    "view",
+    "finance",
+  )
+    .route({
+      method: "POST",
+      path: "/finance/settings/payment-accounts",
+      tags: ["Finance"],
+      summary: "Get bank and mobile banking settings",
+    })
+    .input(z.object({}).optional())
+    .handler(async ({ context }) => {
+      const { ownerId, ownerType } = resolveOwnerScope(context.session.user);
+
+      await ensurePaymentAccountsReady({ ownerId, ownerType });
+
+      const accounts = await db.query.financePaymentAccount.findMany({
+        where: (table, { and: andFn, eq: eqFn, inArray: inArrayFn }) =>
+          andFn(
+            eqFn(table.ownerId, ownerId),
+            eqFn(table.ownerType, ownerType),
+            inArrayFn(table.type, ["bank", "mobile_banking"]),
+          ),
+        orderBy: (table, { asc: ascFn }) => [
+          ascFn(table.type),
+          ascFn(table.providerName),
+          ascFn(table.name),
+        ],
+      });
+
+      return {
+        accounts: accounts.map((account) => ({
+          accountName: account.name,
+          accountNumber: account.accountNumber,
+          id: String(account.id),
+          isActive: account.isActive,
+          providerName: account.providerName || account.name,
+          type: account.type as "bank" | "mobile_banking",
+        })),
+      };
+    }),
+
+  createFinancialSettingsAccount: shopOrWarehousePermissionProcedure(
+    "shop_accounts",
+    "create",
+    "finance",
+  )
+    .route({
+      method: "POST",
+      path: "/finance/settings/payment-accounts/create",
+      tags: ["Finance"],
+      summary: "Create a bank or mobile banking account",
+    })
+    .input(
+      z.object({
+        accountName: z.string().max(180).optional(),
+        accountNumber: z.string().trim().min(1).max(80),
+        isActive: z.boolean().default(true),
+        providerName: z.string().min(1).max(120),
+        type: z.enum(["bank", "mobile_banking"]),
+      }),
+    )
+    .handler(async ({ context, input }) => {
+      const { ownerId, ownerType } = resolveOwnerScope(context.session.user);
+      const providerName = input.providerName.trim();
+      const accountName = input.accountName?.trim() || providerName;
+
+      if (
+        !providerName ||
+        (input.type === "bank" && !input.accountName?.trim())
+      ) {
+        throw new ORPCError("BAD_REQUEST", {
+          message:
+            input.type === "bank"
+              ? "Bank name and account name are required"
+              : "Provider name is required",
+        });
+      }
+
+      await ensureDefaultFinanceAccounts();
+
+      const cashBankCategory = await db.query.financeCategory.findFirst({
+        where: (table, { and: andFn, eq: eqFn, isNull: isNullFn }) =>
+          andFn(
+            eqFn(table.code, "asset-cash-bank"),
+            isNullFn(table.ownerId),
+            isNullFn(table.ownerType),
+          ),
+      });
+
+      if (!cashBankCategory) {
+        throw new ORPCError("INTERNAL_SERVER_ERROR", {
+          message: "Cash and bank category is not configured",
+        });
+      }
+
+      const duplicate = await db.query.financePaymentAccount.findFirst({
+        where: (table, { and: andFn, eq: eqFn }) =>
+          andFn(
+            eqFn(table.ownerId, ownerId),
+            eqFn(table.ownerType, ownerType),
+            eqFn(table.type, input.type),
+            eqFn(table.providerName, providerName),
+            eqFn(table.name, accountName),
+          ),
+      });
+
+      if (duplicate) {
+        throw new ORPCError("CONFLICT", {
+          message: "This financial account already exists",
+        });
+      }
+
+      const accountCode = await generateUniqueCode(
+        financeAccount,
+        ownerId,
+        ownerType,
+        `asset-${slugify(providerName)}-${slugify(accountName)}`.slice(0, 72),
+      );
+      const paymentCode = await generateUniquePaymentAccountCode(
+        ownerId,
+        ownerType,
+        `payment-${input.type}-${slugify(providerName)}`.slice(0, 72),
+      );
+
+      const created = await db.transaction(async (tx) => {
+        const [linkedAccount] = await tx
+          .insert(financeAccount)
+          .values({
+            accountType: "asset",
+            balanceSheetLine: "cash_and_bank",
+            categoryId: cashBankCategory.id,
+            code: accountCode,
+            currentBalance: "0",
+            description: `${providerName} financial settings account`,
+            isActive: input.isActive,
+            isPaymentAccount: true,
+            isSystem: false,
+            name: accountName,
+            normalBalance: "debit",
+            openingBalance: "0",
+            ownerId,
+            ownerType,
+            sortOrder: 900,
+          })
+          .returning({ id: financeAccount.id });
+
+        if (!linkedAccount) {
+          throw new ORPCError("INTERNAL_SERVER_ERROR", {
+            message: "Failed to create finance account",
+          });
+        }
+
+        const [paymentAccount] = await tx
+          .insert(financePaymentAccount)
+          .values({
+            code: paymentCode,
+            accountNumber: input.accountNumber,
+            financeAccountId: linkedAccount.id,
+            isActive: input.isActive,
+            isDefault: false,
+            name: accountName,
+            ownerId,
+            ownerType,
+            providerName,
+            type: input.type,
+          })
+          .returning({ id: financePaymentAccount.id });
+
+        return paymentAccount;
+      });
+
+      if (!created) {
+        throw new ORPCError("INTERNAL_SERVER_ERROR", {
+          message: "Failed to create financial account",
+        });
+      }
+
+      return { id: String(created.id), message: "Financial account created" };
+    }),
+
+  updateFinancialSettingsAccount: shopOrWarehousePermissionProcedure(
+    "shop_accounts",
+    "update",
+    "finance",
+  )
+    .route({
+      method: "POST",
+      path: "/finance/settings/payment-accounts/update",
+      tags: ["Finance"],
+      summary: "Update a bank or mobile banking account",
+    })
+    .input(
+      z.object({
+        accountName: z.string().max(180).optional(),
+        accountNumber: z.string().max(80).optional(),
+        id: z.union([z.string(), z.number()]),
+        isActive: z.boolean(),
+        providerName: z.string().min(1).max(120),
+      }),
+    )
+    .handler(async ({ context, input }) => {
+      const { ownerId, ownerType } = resolveOwnerScope(context.session.user);
+      const id = Number(input.id);
+
+      if (!Number.isFinite(id)) {
+        throw new ORPCError("BAD_REQUEST", {
+          message: "Select a valid financial account",
+        });
+      }
+
+      const account = await db.query.financePaymentAccount.findFirst({
+        where: (table, { and: andFn, eq: eqFn, inArray: inArrayFn }) =>
+          andFn(
+            eqFn(table.id, id),
+            eqFn(table.ownerId, ownerId),
+            eqFn(table.ownerType, ownerType),
+            inArrayFn(table.type, ["bank", "mobile_banking"]),
+          ),
+        with: { financeAccount: true },
+      });
+
+      if (!account) {
+        throw new ORPCError("NOT_FOUND", {
+          message: "Financial account not found",
+        });
+      }
+
+      const providerName = input.providerName.trim();
+      const accountName = input.accountName?.trim() || providerName;
+      const accountNumber = input.accountNumber?.trim();
+
+      if (
+        !providerName ||
+        (account.type === "bank" && !input.accountName?.trim())
+      ) {
+        throw new ORPCError("BAD_REQUEST", {
+          message:
+            account.type === "bank"
+              ? "Bank name and account name are required"
+              : "Provider name is required",
+        });
+      }
+
+      if (input.accountNumber !== undefined && !accountNumber) {
+        throw new ORPCError("BAD_REQUEST", {
+          message: "Account number is required",
+        });
+      }
+
+      await db.transaction(async (tx) => {
+        await tx
+          .update(financePaymentAccount)
+          .set({
+            accountNumber:
+              input.accountNumber === undefined
+                ? account.accountNumber
+                : accountNumber,
+            isActive: input.isActive,
+            name: accountName,
+            providerName,
+            updatedAt: new Date(),
+          })
+          .where(eq(financePaymentAccount.id, account.id));
+
+        if (
+          account.financeAccount.ownerId === ownerId &&
+          account.financeAccount.ownerType === ownerType
+        ) {
+          await tx
+            .update(financeAccount)
+            .set({
+              isActive: input.isActive,
+              name: accountName,
+              updatedAt: new Date(),
+            })
+            .where(eq(financeAccount.id, account.financeAccountId));
+        }
+      });
+
+      return { message: "Financial account updated" };
+    }),
+
+  createMoneyMovement: shopOrWarehousePermissionProcedure(
+    "shop_transactions",
+    "create",
+    "finance",
+  )
     .route({
       method: "POST",
       path: "/finance/money-movements/create",
@@ -2301,8 +2610,7 @@ export const financeRouter = {
       }),
     )
     .handler(async ({ context, input }) => {
-      const ownerId = context.session.user.id;
-      const ownerType = resolveOwnerScope(context.session.user.role);
+      const { ownerId, ownerType } = resolveOwnerScope(context.session.user);
       const paymentAccountId = Number(input.paymentAccountId);
 
       if (!Number.isFinite(paymentAccountId)) {
@@ -2323,10 +2631,7 @@ export const financeRouter = {
           ),
       });
 
-      if (
-        !paymentAccount ||
-        (paymentAccount.type !== "cash" && paymentAccount.type !== "bank")
-      ) {
+      if (!isUsableCashBankPaymentAccount(paymentAccount)) {
         throw new ORPCError("NOT_FOUND", {
           message: "Cash or bank account not found",
         });
@@ -2603,7 +2908,11 @@ export const financeRouter = {
       };
     }),
 
-  createOpeningStock: protectedProcedure
+  createOpeningStock: shopOrWarehousePermissionProcedure(
+    "shop_transactions",
+    "create",
+    "finance",
+  )
     .route({
       method: "POST",
       path: "/finance/opening-stock/create",
@@ -2634,8 +2943,7 @@ export const financeRouter = {
       }),
     )
     .handler(async ({ context, input }) => {
-      const ownerId = context.session.user.id;
-      const ownerType = resolveOwnerScope(context.session.user.role);
+      const { ownerId, ownerType } = resolveOwnerScope(context.session.user);
       const ledgerCreatedAt = new Date(`${input.openingDate}T12:00:00.000`);
       const ownerCapital = await resolveOwnerCapitalAccount({
         ownerId,
@@ -2773,7 +3081,11 @@ export const financeRouter = {
       };
     }),
 
-  getGeneralLedger: protectedProcedure
+  getGeneralLedger: shopOrWarehousePermissionProcedure(
+    "shop_ledger",
+    "view",
+    "finance",
+  )
     .route({
       method: "POST",
       path: "/finance/general-ledger",
@@ -2789,8 +3101,7 @@ export const financeRouter = {
       }),
     )
     .handler(async ({ context, input }) => {
-      const ownerId = context.session.user.id;
-      const ownerType = resolveOwnerScope(context.session.user.role);
+      const { ownerId, ownerType } = resolveOwnerScope(context.session.user);
       const startDateTime = new Date(`${input.startDate}T00:00:00.000`);
       const endDateTime = new Date(`${input.endDate}T23:59:59.999`);
       const selectedAccountId =
@@ -3096,7 +3407,11 @@ export const financeRouter = {
       };
     }),
 
-  updateLedgerTransaction: protectedProcedure
+  updateLedgerTransaction: shopOrWarehousePermissionProcedure(
+    "shop_ledger",
+    "update",
+    "finance",
+  )
     .route({
       method: "POST",
       path: "/finance/general-ledger/transactions/update",
@@ -3115,8 +3430,7 @@ export const financeRouter = {
       }),
     )
     .handler(async ({ context, input }) => {
-      const ownerId = context.session.user.id;
-      const ownerType = resolveOwnerScope(context.session.user.role);
+      const { ownerId, ownerType } = resolveOwnerScope(context.session.user);
       const nextAmount = parseMoney(input.amount);
 
       if (nextAmount <= 0) {
@@ -3232,7 +3546,11 @@ export const financeRouter = {
       };
     }),
 
-  deleteLedgerTransaction: protectedProcedure
+  deleteLedgerTransaction: shopOrWarehousePermissionProcedure(
+    "shop_ledger",
+    "delete",
+    "finance",
+  )
     .route({
       method: "POST",
       path: "/finance/general-ledger/transactions/delete",
@@ -3241,8 +3559,7 @@ export const financeRouter = {
     })
     .input(z.object({ id: z.number().int().positive() }))
     .handler(async ({ context, input }) => {
-      const ownerId = context.session.user.id;
-      const ownerType = resolveOwnerScope(context.session.user.role);
+      const { ownerId, ownerType } = resolveOwnerScope(context.session.user);
       const row = await db.query.financialLedger.findFirst({
         where: (table, { and: andFn, eq: eqFn }) =>
           andFn(
@@ -3314,7 +3631,11 @@ export const financeRouter = {
       return { message: "Ledger transaction deleted" };
     }),
 
-  getFixedAssetAccounts: protectedProcedure
+  getFixedAssetAccounts: shopOrWarehousePermissionProcedure(
+    "shop_accounts",
+    "view",
+    "finance",
+  )
     .route({
       method: "POST",
       path: "/finance/fixed-asset-accounts",
@@ -3323,8 +3644,7 @@ export const financeRouter = {
     })
     .input(z.object({}).optional())
     .handler(async ({ context }) => {
-      const ownerId = context.session.user.id;
-      const ownerType = resolveOwnerScope(context.session.user.role);
+      const { ownerId, ownerType } = resolveOwnerScope(context.session.user);
       const categoryId = await resolveFixedAssetCategoryId();
 
       const accounts = await db.query.financeAccount.findMany({
@@ -3360,7 +3680,11 @@ export const financeRouter = {
       };
     }),
 
-  getLoanAccounts: protectedProcedure
+  getLoanAccounts: shopOrWarehousePermissionProcedure(
+    "shop_accounts",
+    "view",
+    "finance",
+  )
     .route({
       method: "POST",
       path: "/finance/loan-accounts",
@@ -3369,8 +3693,7 @@ export const financeRouter = {
     })
     .input(z.object({}).optional())
     .handler(async ({ context }) => {
-      const ownerId = context.session.user.id;
-      const ownerType = resolveOwnerScope(context.session.user.role);
+      const { ownerId, ownerType } = resolveOwnerScope(context.session.user);
       const categoryIds = await resolveLoanPayableCategoryIds({
         ownerId,
         ownerType,
@@ -3409,7 +3732,11 @@ export const financeRouter = {
       };
     }),
 
-  createDaybookExpense: protectedProcedure
+  createDaybookExpense: shopOrWarehousePermissionProcedure(
+    "shop_expenses",
+    "create",
+    "finance",
+  )
     .route({
       method: "POST",
       path: "/finance/daybook-expenses/create",
@@ -3439,8 +3766,7 @@ export const financeRouter = {
       }),
     )
     .handler(async ({ context, input }) => {
-      const ownerId = context.session.user.id;
-      const ownerType = resolveOwnerScope(context.session.user.role);
+      const { ownerId, ownerType } = resolveOwnerScope(context.session.user);
       const directPaymentAccountId = Number(input.paymentAccountId);
       const paymentAccountId =
         Number.isFinite(directPaymentAccountId) && directPaymentAccountId > 0
@@ -3464,10 +3790,7 @@ export const financeRouter = {
           ),
       });
 
-      if (
-        !paymentAccount ||
-        (paymentAccount.type !== "cash" && paymentAccount.type !== "bank")
-      ) {
+      if (!isUsableCashBankPaymentAccount(paymentAccount)) {
         throw new ORPCError("NOT_FOUND", {
           message: "Cash or bank payment account not found",
         });
@@ -3633,7 +3956,11 @@ export const financeRouter = {
       };
     }),
 
-  createFixedAssetPurchase: protectedProcedure
+  createFixedAssetPurchase: shopOrWarehousePermissionProcedure(
+    "shop_transactions",
+    "create",
+    "finance",
+  )
     .route({
       method: "POST",
       path: "/finance/fixed-asset-purchases/create",
@@ -3667,8 +3994,7 @@ export const financeRouter = {
       }),
     )
     .handler(async ({ context, input }) => {
-      const ownerId = context.session.user.id;
-      const ownerType = resolveOwnerScope(context.session.user.role);
+      const { ownerId, ownerType } = resolveOwnerScope(context.session.user);
       const paymentAccountId = Number(input.paymentAccountId);
 
       if (!Number.isFinite(paymentAccountId)) {
@@ -3688,10 +4014,7 @@ export const financeRouter = {
           ),
       });
 
-      if (
-        !paymentAccount ||
-        (paymentAccount.type !== "cash" && paymentAccount.type !== "bank")
-      ) {
+      if (!isUsableCashBankPaymentAccount(paymentAccount)) {
         throw new ORPCError("NOT_FOUND", {
           message: "Cash or bank payment account not found",
         });
@@ -3828,7 +4151,11 @@ export const financeRouter = {
       };
     }),
 
-  createProductPurchase: protectedProcedure
+  createProductPurchase: shopOrWarehousePermissionProcedure(
+    "shop_transactions",
+    "create",
+    "finance",
+  )
     .route({
       method: "POST",
       path: "/finance/product-purchases/create",
@@ -3870,8 +4197,7 @@ export const financeRouter = {
       }),
     )
     .handler(async ({ context, input }) => {
-      const ownerId = context.session.user.id;
-      const ownerType = resolveOwnerScope(context.session.user.role);
+      const { ownerId, ownerType } = resolveOwnerScope(context.session.user);
       const isDuePurchase = input.paymentType === "due";
       const paymentAccountId = Number(input.paymentAccountId);
 
@@ -3895,10 +4221,7 @@ export const financeRouter = {
           });
         }
 
-        if (
-          !paymentAccount ||
-          (paymentAccount.type !== "cash" && paymentAccount.type !== "bank")
-        ) {
+        if (!isUsableCashBankPaymentAccount(paymentAccount)) {
           throw new ORPCError("NOT_FOUND", {
             message: "Cash or bank payment account not found",
           });
@@ -4116,7 +4439,11 @@ export const financeRouter = {
       };
     }),
 
-  createProductSale: protectedProcedure
+  createProductSale: shopOrWarehousePermissionProcedure(
+    "shop_transactions",
+    "create",
+    "finance",
+  )
     .route({
       method: "POST",
       path: "/finance/product-sales/create",
@@ -4151,8 +4478,7 @@ export const financeRouter = {
       }),
     )
     .handler(async ({ context, input }) => {
-      const ownerId = context.session.user.id;
-      const ownerType = resolveOwnerScope(context.session.user.role);
+      const { ownerId, ownerType } = resolveOwnerScope(context.session.user);
       const isDueSale = input.paymentType === "due";
       const paymentAccountId = Number(input.paymentAccountId);
 
@@ -4176,10 +4502,7 @@ export const financeRouter = {
           });
         }
 
-        if (
-          !paymentAccount ||
-          (paymentAccount.type !== "cash" && paymentAccount.type !== "bank")
-        ) {
+        if (!isUsableCashBankPaymentAccount(paymentAccount)) {
           throw new ORPCError("NOT_FOUND", {
             message: "Cash or bank payment account not found",
           });
@@ -4320,7 +4643,11 @@ export const financeRouter = {
       };
     }),
 
-  createLoanReceived: protectedProcedure
+  createLoanReceived: shopOrWarehousePermissionProcedure(
+    "shop_transactions",
+    "create",
+    "finance",
+  )
     .route({
       method: "POST",
       path: "/finance/loans/received/create",
@@ -4349,8 +4676,7 @@ export const financeRouter = {
       }),
     )
     .handler(async ({ context, input }) => {
-      const ownerId = context.session.user.id;
-      const ownerType = resolveOwnerScope(context.session.user.role);
+      const { ownerId, ownerType } = resolveOwnerScope(context.session.user);
       const paymentAccountId = Number(input.paymentAccountId);
 
       if (!Number.isFinite(paymentAccountId)) {
@@ -4370,10 +4696,7 @@ export const financeRouter = {
           ),
       });
 
-      if (
-        !paymentAccount ||
-        (paymentAccount.type !== "cash" && paymentAccount.type !== "bank")
-      ) {
+      if (!isUsableCashBankPaymentAccount(paymentAccount)) {
         throw new ORPCError("NOT_FOUND", {
           message: "Cash or bank deposit account not found",
         });
@@ -4489,7 +4812,11 @@ export const financeRouter = {
       };
     }),
 
-  createSupplierAdvancePayment: protectedProcedure
+  createSupplierAdvancePayment: shopOrWarehousePermissionProcedure(
+    "shop_transactions",
+    "create",
+    "finance",
+  )
     .route({
       method: "POST",
       path: "/finance/supplier-advances/create",
@@ -4511,8 +4838,7 @@ export const financeRouter = {
       }),
     )
     .handler(async ({ context, input }) => {
-      const ownerId = context.session.user.id;
-      const ownerType = resolveOwnerScope(context.session.user.role);
+      const { ownerId, ownerType } = resolveOwnerScope(context.session.user);
       const paymentAccountId = Number(input.paymentAccountId);
       const amount = parseMoney(input.amount);
 
@@ -4539,10 +4865,7 @@ export const financeRouter = {
           ),
       });
 
-      if (
-        !paymentAccount ||
-        (paymentAccount.type !== "cash" && paymentAccount.type !== "bank")
-      ) {
+      if (!isUsableCashBankPaymentAccount(paymentAccount)) {
         throw new ORPCError("NOT_FOUND", {
           message: "Cash or bank payment account not found",
         });
@@ -4622,7 +4945,11 @@ export const financeRouter = {
       };
     }),
 
-  createCustomerAdvancePayment: protectedProcedure
+  createCustomerAdvancePayment: shopOrWarehousePermissionProcedure(
+    "shop_transactions",
+    "create",
+    "finance",
+  )
     .route({
       method: "POST",
       path: "/finance/customer-advances/create",
@@ -4646,8 +4973,7 @@ export const financeRouter = {
       }),
     )
     .handler(async ({ context, input }) => {
-      const ownerId = context.session.user.id;
-      const ownerType = resolveOwnerScope(context.session.user.role);
+      const { ownerId, ownerType } = resolveOwnerScope(context.session.user);
       const depositAccountId = Number(input.depositAccountId);
       const amount = parseMoney(input.amount);
 
@@ -4758,7 +5084,11 @@ export const financeRouter = {
       };
     }),
 
-  createCategory: protectedProcedure
+  createCategory: shopOrWarehousePermissionProcedure(
+    "shop_finance_categories",
+    "create",
+    "finance",
+  )
     .route({
       method: "POST",
       path: "/finance/categories/create",
@@ -4772,8 +5102,7 @@ export const financeRouter = {
       }),
     )
     .handler(async ({ context, input }) => {
-      const ownerId = context.session.user.id;
-      const ownerType = resolveOwnerScope(context.session.user.role);
+      const { ownerId, ownerType } = resolveOwnerScope(context.session.user);
       const accountType = toDbAccountType(input.accountType);
       const name = input.name.trim();
       const baseCode = `${accountType}-${slugify(name)}`;
@@ -4844,7 +5173,11 @@ export const financeRouter = {
       };
     }),
 
-  createAccount: protectedProcedure
+  createAccount: shopOrWarehousePermissionProcedure(
+    "shop_accounts",
+    "create",
+    "finance",
+  )
     .route({
       method: "POST",
       path: "/finance/accounts/create",
@@ -4863,8 +5196,7 @@ export const financeRouter = {
       }),
     )
     .handler(async ({ context, input }) => {
-      const ownerId = context.session.user.id;
-      const ownerType = resolveOwnerScope(context.session.user.role);
+      const { ownerId, ownerType } = resolveOwnerScope(context.session.user);
       const parsedCategoryId = Number(input.categoryId);
       if (!Number.isFinite(parsedCategoryId)) {
         throw new ORPCError("BAD_REQUEST", {
@@ -5023,7 +5355,11 @@ export const financeRouter = {
       };
     }),
 
-  updateAccount: protectedProcedure
+  updateAccount: shopOrWarehousePermissionProcedure(
+    "shop_accounts",
+    "update",
+    "finance",
+  )
     .route({
       method: "POST",
       path: "/finance/accounts/update",
@@ -5043,8 +5379,7 @@ export const financeRouter = {
       }),
     )
     .handler(async ({ context, input }) => {
-      const ownerId = context.session.user.id;
-      const ownerType = resolveOwnerScope(context.session.user.role);
+      const { ownerId, ownerType } = resolveOwnerScope(context.session.user);
       const parsedAccountId = Number(input.id);
       const parsedCategoryId = Number(input.categoryId);
 

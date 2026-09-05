@@ -30,7 +30,7 @@ SET
     "finance_account"."current_balance"::numeric +
     "purchase_account_movements"."balance_delta"
   )::numeric(14, 2),
-  "updated_at" = now()
+  "updatedAt" = now()
 FROM "purchase_account_movements"
 WHERE "finance_account"."id" =
   "purchase_account_movements"."finance_account_id";

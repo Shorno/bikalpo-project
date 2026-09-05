@@ -3,10 +3,12 @@
 import { Loader2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
+import { isShopPortalRole } from "@bikalpo-project/auth/shop-staff-access";
 import { authClient } from "@/lib/auth-client";
 import { getDeliverySubdomainUrl } from "@/lib/delivery-routing";
 import { ADMIN_BASE } from "@/lib/routes";
 import { getSalesSubdomainUrl } from "@/lib/sales-routing";
+import { getShopSubdomainUrl } from "@/lib/shop-routing";
 
 export function DashboardRedirectClient() {
   const router = useRouter();
@@ -20,7 +22,15 @@ export function DashboardRedirectClient() {
       return;
     }
 
-    switch (session.user.role) {
+    const role = session.user.role;
+    if (isShopPortalRole(role)) {
+      // biome-ignore lint/suspicious/noDocumentCookie: Proxy routing relies on this role cookie after client auth flows.
+      document.cookie = `user-role=${role};path=/;domain=.bikalpo.localhost;max-age=${60 * 60 * 24 * 30}`;
+      window.location.href = `${getShopSubdomainUrl()}/dashboard`;
+      return;
+    }
+
+    switch (role) {
       case "admin":
         router.replace(ADMIN_BASE);
         break;
@@ -30,15 +40,6 @@ export function DashboardRedirectClient() {
       case "deliveryman":
         window.location.href = `${getDeliverySubdomainUrl()}/dashboard`;
         return;
-      case "shop_owner": {
-        // Update role cookie so proxy allows shop subdomain access
-        document.cookie = `user-role=shop_owner;path=/;domain=.bikalpo.localhost;max-age=${60 * 60 * 24 * 30}`;
-        const shopUrl =
-          process.env.NEXT_PUBLIC_SHOP_SUBDOMAIN_URL ||
-          "http://shop.bikalpo.localhost:3001";
-        window.location.href = `${shopUrl}/dashboard`;
-        return;
-      }
       case "warehouse":
         window.location.href =
           process.env.NEXT_PUBLIC_WAREHOUSE_SUBDOMAIN_URL ||

@@ -7,7 +7,14 @@ import {
     marketingMaterialRequest,
 } from "@bikalpo-project/db/schema";
 
-import { protectedProcedure } from "../index";
+import { shopOrWarehousePermissionProcedure } from "../index";
+
+const marketingMaterialsPermission = (action: "view" | "create") =>
+    shopOrWarehousePermissionProcedure(
+        "shop_marketing_materials",
+        action,
+        "marketing",
+    );
 
 // ── Helpers ─────────────────────────────────────────────────────────
 async function generateRequestNumber(): Promise<string> {
@@ -21,7 +28,7 @@ async function generateRequestNumber(): Promise<string> {
 // ── Router ──────────────────────────────────────────────────────────
 export const marketingRouter = {
     /** List active materials for sellers to browse */
-    listMaterials: protectedProcedure
+    listMaterials: marketingMaterialsPermission("view")
         .input(
             z
                 .object({
@@ -53,7 +60,7 @@ export const marketingRouter = {
         }),
 
     /** Get single material detail */
-    getMaterial: protectedProcedure
+    getMaterial: marketingMaterialsPermission("view")
         .input(z.object({ id: z.string() }))
         .handler(async ({ input }) => {
             const material = await db.query.marketingMaterial.findFirst({
@@ -66,7 +73,7 @@ export const marketingRouter = {
         }),
 
     /** Submit a material request */
-    submitRequest: protectedProcedure
+    submitRequest: marketingMaterialsPermission("create")
         .input(
             z.object({
                 materialId: z.string(),
@@ -96,7 +103,7 @@ export const marketingRouter = {
             const role = context.session.user.role;
             let userType = "retailer";
             if (role === "warehouse") userType = "warehouse";
-            else if (role === "shop_owner") {
+            else if (role === "shop_owner" || role === "shop_staff") {
                 // For shop owners we default to retailer; could be wholesaler based on business type
                 userType = "retailer";
             }
@@ -122,7 +129,7 @@ export const marketingRouter = {
         }),
 
     /** List current user's requests */
-    myRequests: protectedProcedure
+    myRequests: marketingMaterialsPermission("view")
         .input(
             z
                 .object({
@@ -149,7 +156,7 @@ export const marketingRouter = {
         }),
 
     /** Get single request detail */
-    getRequest: protectedProcedure
+    getRequest: marketingMaterialsPermission("view")
         .input(z.object({ id: z.string() }))
         .handler(async ({ input, context }) => {
             const request = await db.query.marketingMaterialRequest.findFirst({

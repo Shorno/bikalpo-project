@@ -1,19 +1,21 @@
 import { createAccessControl } from "better-auth/plugins/access";
 import { adminAc, defaultStatements } from "better-auth/plugins/admin/access";
+import { SHOP_PERMISSION_STATEMENT } from "./shop-permission-catalog";
 
 /**
  * Custom statements for B2B + B2C marketplace
  * Extends default admin plugin statements with custom resources
  */
 export const statement = {
-    ...defaultStatements,
-    order: ["create", "read", "update", "delete", "list"],
-    product: ["read", "list"],
-    delivery: ["create", "read", "update", "list"],
-    estimate: ["create", "read", "update", "list"],
-    shop: ["create", "read", "update", "list"],
-    inventory: ["read", "list"],
-    seller_application: ["create", "read", "update", "list"],
+  ...defaultStatements,
+  order: ["create", "read", "update", "delete", "list"],
+  product: ["read", "list"],
+  delivery: ["create", "read", "update", "list"],
+  estimate: ["create", "read", "update", "list"],
+  shop: ["create", "read", "update", "list"],
+  inventory: ["read", "list"],
+  seller_application: ["create", "read", "update", "list"],
+  ...SHOP_PERMISSION_STATEMENT,
 } as const;
 
 export const ac = createAccessControl(statement);
@@ -23,13 +25,13 @@ export const ac = createAccessControl(statement);
  * Can browse products, place B2C orders, apply to become a seller
  */
 export const consumer = ac.newRole({
-    order: ["create", "read", "list"],
-    product: ["read", "list"],
-    delivery: [],
-    estimate: [],
-    shop: [],
-    inventory: [],
-    seller_application: ["create"],
+  order: ["create", "read", "list"],
+  product: ["read", "list"],
+  delivery: [],
+  estimate: [],
+  shop: [],
+  inventory: [],
+  seller_application: ["create"],
 });
 
 /**
@@ -38,39 +40,40 @@ export const consumer = ac.newRole({
  * Seller vs Buyer-only controlled by capability flags, not separate roles
  */
 export const shop_owner = ac.newRole({
-    order: ["create", "read", "update", "list"],
-    product: ["read", "list"],
-    delivery: ["read", "list"],
-    estimate: ["create", "read", "update", "list"],
-    shop: ["read", "update"],
-    inventory: ["read", "list"],
-    seller_application: [],
+  order: ["create", "read", "update", "list"],
+  product: ["read", "list"],
+  delivery: ["read", "list"],
+  estimate: ["create", "read", "update", "list"],
+  shop: ["read", "update"],
+  inventory: ["read", "list"],
+  seller_application: [],
+  ...SHOP_PERMISSION_STATEMENT,
 });
 
 /**
  * Salesman role - can manage estimates and view orders
  */
 export const salesman = ac.newRole({
-    order: ["read", "list"],
-    product: ["read", "list"],
-    delivery: [],
-    estimate: ["create", "read", "update", "list"],
-    shop: [],
-    inventory: [],
-    seller_application: [],
+  order: ["read", "list"],
+  product: ["read", "list"],
+  delivery: [],
+  estimate: ["create", "read", "update", "list"],
+  shop: [],
+  inventory: [],
+  seller_application: [],
 });
 
 /**
  * Deliveryman role - can manage deliveries
  */
 export const deliveryman = ac.newRole({
-    order: ["read", "list"],
-    product: ["read", "list"],
-    delivery: ["create", "read", "update", "list"],
-    estimate: [],
-    shop: [],
-    inventory: [],
-    seller_application: [],
+  order: ["read", "list"],
+  product: ["read", "list"],
+  delivery: ["create", "read", "update", "list"],
+  estimate: [],
+  shop: [],
+  inventory: [],
+  seller_application: [],
 });
 
 /**
@@ -78,14 +81,29 @@ export const deliveryman = ac.newRole({
  * Can manage users, approve sellers, manage all resources
  */
 export const admin = ac.newRole({
-    order: ["create", "read", "update", "delete", "list"],
-    product: ["read", "list"],
-    delivery: ["create", "read", "update", "list"],
-    estimate: ["create", "read", "update", "list"],
-    shop: ["create", "read", "update", "list"],
-    inventory: ["read", "list"],
-    seller_application: ["create", "read", "update", "list"],
-    ...adminAc.statements,
+  order: ["create", "read", "update", "delete", "list"],
+  product: ["read", "list"],
+  delivery: ["create", "read", "update", "list"],
+  estimate: ["create", "read", "update", "list"],
+  shop: ["create", "read", "update", "list"],
+  inventory: ["read", "list"],
+  seller_application: ["create", "read", "update", "list"],
+  ...SHOP_PERMISSION_STATEMENT,
+  ...adminAc.statements,
+});
+
+/**
+ * Shop staff role - shop dashboard employee (not the shop owner).
+ * Module access is decided by `shopFunction`, not this platform role.
+ */
+export const shop_staff = ac.newRole({
+  order: ["create", "read", "update", "list"],
+  product: ["read", "list"],
+  delivery: ["read", "list"],
+  estimate: ["create", "read", "update", "list"],
+  shop: ["read", "update"],
+  inventory: ["read", "list"],
+  seller_application: [],
 });
 
 /**
@@ -93,11 +111,11 @@ export const admin = ac.newRole({
  * Can sell to shop owners and other warehouses, manage inventory and orders
  */
 export const warehouse = ac.newRole({
-    order: ["create", "read", "update", "list"],
-    product: ["read", "list"],
-    delivery: ["read", "list"],
-    estimate: ["create", "read", "update", "list"],
-    shop: [],
-    inventory: ["read", "list"],
-    seller_application: [],
+  order: ["create", "read", "update", "list"],
+  product: ["read", "list"],
+  delivery: ["read", "list"],
+  estimate: ["create", "read", "update", "list"],
+  shop: [],
+  inventory: ["read", "list"],
+  seller_application: [],
 });

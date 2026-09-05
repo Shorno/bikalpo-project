@@ -1,3 +1,7 @@
+import {
+  canShopActorAccessModule,
+  resolveShopPortalActor,
+} from "@bikalpo-project/auth/shop-staff-access";
 import { deliveryGroup, invoice, order, user } from "@bikalpo-project/db/schema";
 import { ORPCError } from "@orpc/server";
 import { eq, type SQL, sql } from "drizzle-orm";
@@ -16,6 +20,8 @@ export type FulfillmentOwner =
 export type FulfillmentManager = {
     id: string;
     role?: string | null;
+    shopId?: string | null;
+    shopFunction?: string | null;
 };
 
 export function getFulfillmentOwner(
@@ -26,6 +32,23 @@ export function getFulfillmentOwner(
             return { kind: "warehouse", id: manager.id };
         case "shop_owner":
             return { kind: "shop", id: manager.id };
+        case "shop_staff": {
+            const portal = resolveShopPortalActor({
+                id: manager.id,
+                role: manager.role ?? null,
+                shopId: manager.shopId ?? null,
+                shopFunction: manager.shopFunction ?? null,
+            });
+            if (
+                portal &&
+                canShopActorAccessModule(portal.actor, "fulfillment")
+            ) {
+                return { kind: "shop", id: portal.shopId };
+            }
+            throw new ORPCError("FORBIDDEN", {
+                message: "Fulfillment manager access required",
+            });
+        }
         case "admin":
             return { kind: "admin", id: manager.id };
         default:

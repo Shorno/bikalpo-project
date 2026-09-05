@@ -15,24 +15,22 @@ import {
 import { ORPCError } from "@orpc/server";
 import { and, eq, inArray, or, sql } from "drizzle-orm";
 import { z } from "zod";
-import { protectedProcedure } from "../index";
+import { shopOrWarehousePermissionProcedure } from "../index";
+import { shopOrWarehouseOwnerScope } from "../shop-portal-scope";
 
-type OwnerType = "shop" | "warehouse";
-
-function resolveOwner(role: string | null | undefined): OwnerType {
-  if (role === "warehouse") return "warehouse";
-  if (role === "shop_owner") return "shop";
-  throw new ORPCError("FORBIDDEN", {
-    message: "Warehouse or retailer access required",
-  });
+function resolveOwner(user: { id: string; role?: string | null }) {
+  return shopOrWarehouseOwnerScope(user, "inventory");
 }
 
 const actionSchema = z.enum(["damage", "supplier_return", "sale_application"]);
 
 export const emptyPackManagementRouter = {
-  getSummary: protectedProcedure.handler(async ({ context }) => {
-    const ownerId = context.session.user.id;
-    const ownerType = resolveOwner(context.session.user.role);
+  getSummary: shopOrWarehousePermissionProcedure(
+    "shop_stock",
+    "view",
+    "inventory",
+  ).handler(async ({ context }) => {
+    const { ownerId, ownerType } = resolveOwner(context.session.user);
     const [owner] = await db
       .select({
         name: user.name,
@@ -284,7 +282,11 @@ export const emptyPackManagementRouter = {
     };
   }),
 
-  recordAction: protectedProcedure
+  recordAction: shopOrWarehousePermissionProcedure(
+    "shop_stock",
+    "update",
+    "inventory",
+  )
     .input(
       z.object({
         variantId: z.number().int().positive(),
@@ -294,8 +296,7 @@ export const emptyPackManagementRouter = {
       }),
     )
     .handler(async ({ context, input }) => {
-      const ownerId = context.session.user.id;
-      const ownerType = resolveOwner(context.session.user.role);
+      const { ownerId, ownerType } = resolveOwner(context.session.user);
       await db.transaction(async (tx) => {
         const counter =
           input.action === "damage"

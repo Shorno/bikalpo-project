@@ -220,7 +220,7 @@ export function AddressPicker({
             </div>
 
             <div
-                className="rounded-lg overflow-hidden border"
+                className="relative z-0 overflow-hidden rounded-lg border"
                 style={{ height }}
             >
                 {isMounted ? (

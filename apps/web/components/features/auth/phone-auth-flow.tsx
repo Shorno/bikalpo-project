@@ -1,9 +1,11 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { isShopPortalRole } from "@bikalpo-project/auth/shop-staff-access";
 import { authClient } from "@/lib/auth-client";
 import { getDeliverySubdomainUrl } from "@/lib/delivery-routing";
 import { getSalesSubdomainUrl } from "@/lib/sales-routing";
+import { getShopSubdomainUrl } from "@/lib/shop-routing";
 import { client } from "@/utils/orpc";
 
 type AuthStep = "phone" | "otp" | "name" | "done";
@@ -72,8 +74,8 @@ export function PhoneAuthFlow({ onComplete }: PhoneAuthFlowProps) {
     if (role === "warehouse") {
       return "http://warehouse.bikalpo.localhost:3001/dashboard";
     }
-    if (role === "shop_owner") {
-      return "http://shop.bikalpo.localhost:3001/dashboard";
+    if (isShopPortalRole(role)) {
+      return `${getShopSubdomainUrl()}/dashboard`;
     }
     if (role === "salesman") {
       return `${getSalesSubdomainUrl()}/dashboard`;

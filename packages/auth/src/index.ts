@@ -4,16 +4,48 @@ import * as schema from "@bikalpo-project/db/schema";
 import { env } from "@bikalpo-project/env/server";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
-import { createAuthMiddleware } from "better-auth/api";
-import { admin as adminPlugin, bearer, openAPI, phoneNumber } from "better-auth/plugins";
+import { APIError, createAuthMiddleware } from "better-auth/api";
+import {
+  admin as adminPlugin,
+  bearer,
+  openAPI,
+  phoneNumber,
+} from "better-auth/plugins";
+import {
+  getLoginSessionExpiresAt,
+  normalizeLoginSecurityPreferences,
+  shouldApplyLoginSecurityPreferences,
+  type StoredLoginSecurityPreferences,
+} from "./login-security-policy";
 import { storeOtp } from "./otp-store";
-import { ac, admin as adminRole, consumer, deliveryman, salesman, shop_owner, warehouse } from "./permissions";
+import {
+  getPasswordPolicyError,
+  PASSWORD_MAX_LENGTH,
+  PASSWORD_MIN_LENGTH,
+  passwordValidation,
+} from "./password-policy";
+import {
+  ac,
+  admin as adminRole,
+  consumer,
+  deliveryman,
+  salesman,
+  shop_owner,
+  shop_staff,
+  warehouse,
+} from "./permissions";
 import {
   getPhoneAuthEmail,
   normalizeBangladeshPhoneNumber,
 } from "./phone-identity";
 
 const isProduction = env.NODE_ENV === "production";
+const passwordFieldByPath = new Map<string, "password" | "newPassword">([
+  ["/sign-up/email", "password"],
+  ["/change-password", "newPassword"],
+  ["/reset-password", "newPassword"],
+  ["/phone-number/reset-password", "newPassword"],
+]);
 
 export const auth = betterAuth({
   baseURL: env.BETTER_AUTH_URL,
@@ -24,6 +56,8 @@ export const auth = betterAuth({
   }),
   emailAndPassword: {
     enabled: true,
+    minPasswordLength: PASSWORD_MIN_LENGTH,
+    maxPasswordLength: PASSWORD_MAX_LENGTH,
   },
   plugins: [
     expo(),
@@ -37,6 +71,7 @@ export const auth = betterAuth({
         admin: adminRole,
         salesman,
         deliveryman,
+        shop_staff,
         warehouse,
       },
       defaultRole: "consumer",
@@ -49,6 +84,11 @@ export const auth = betterAuth({
         storeOtp(phone, code);
         console.log(`[OTP] Phone: ${phone} → Code: ${code}`);
       },
+      sendPasswordResetOTP: ({ phoneNumber: phone, code }) => {
+        if (isProduction) return;
+        storeOtp(phone, code);
+        console.log(`[Password reset OTP] Phone: ${phone} → Code: ${code}`);
+      },
       signUpOnVerification: {
         getTempEmail: getPhoneAuthEmail,
         getTempName: (phone) => phone,
@@ -60,6 +100,30 @@ export const auth = betterAuth({
       phoneNumber: {
         type: "string",
         required: false,
+        input: false,
+      },
+      loginVerification: {
+        type: "string",
+        required: false,
+        defaultValue: "otp_only",
+        input: false,
+      },
+      rememberTrustedDevice: {
+        type: "boolean",
+        required: false,
+        defaultValue: true,
+        input: false,
+      },
+      autoLogoutMinutes: {
+        type: "number",
+        required: false,
+        defaultValue: 30,
+        input: false,
+      },
+      allowMultipleLoginDevices: {
+        type: "boolean",
+        required: false,
+        defaultValue: false,
         input: false,
       },
       // Shop owner capability flags (set by admin on approval)
@@ -127,6 +191,11 @@ export const auth = betterAuth({
         type: "string",
         required: false,
       },
+      shopFunction: {
+        type: "string",
+        required: false,
+        input: false,
+      },
       // === Warehouse fields ===
       warehouseName: {
         type: "string",
@@ -171,6 +240,39 @@ export const auth = betterAuth({
       domain: env.COOKIE_DOMAIN,
     },
   },
+  databaseHooks: {
+    session: {
+      create: {
+        before: async (newSession, ctx) => {
+          if (!ctx) return;
+          const sessionUser = await ctx.context.internalAdapter.findUserById(
+            newSession.userId,
+          );
+          if (!sessionUser) return;
+
+          const role = (sessionUser as typeof sessionUser & { role?: string })
+            .role;
+          if (!shouldApplyLoginSecurityPreferences(role)) return;
+
+          const preferences = normalizeLoginSecurityPreferences(
+            sessionUser as typeof sessionUser & StoredLoginSecurityPreferences,
+          );
+          if (!preferences.allowMultipleLoginDevices) {
+            await ctx.context.internalAdapter.deleteSessions(newSession.userId);
+          }
+
+          return {
+            data: {
+              ...newSession,
+              expiresAt: getLoginSessionExpiresAt(
+                preferences.autoLogoutMinutes,
+              ),
+            },
+          };
+        },
+      },
+    },
+  },
   trustedOrigins: [
     ...env.CORS_ORIGINS,
     env.BETTER_AUTH_URL,
@@ -187,6 +289,19 @@ export const auth = betterAuth({
       : []),
   ].filter(Boolean) as string[],
   hooks: {
+    before: createAuthMiddleware(async (ctx) => {
+      const passwordField = passwordFieldByPath.get(ctx.path);
+      if (!passwordField) return;
+
+      const body = ctx.body as Record<string, unknown> | undefined;
+      const policyError = getPasswordPolicyError(body?.[passwordField]);
+      if (policyError) {
+        throw APIError.from("BAD_REQUEST", {
+          code: "PASSWORD_POLICY_FAILED",
+          message: policyError,
+        });
+      }
+    }),
     after: createAuthMiddleware(async (ctx) => {
       const domain = env.COOKIE_DOMAIN || ".localhost";
 
@@ -228,8 +343,9 @@ export async function setCredentialPassword(
   userId: string,
   newPassword: string,
 ) {
+  const password = passwordValidation.parse(newPassword);
   const context = await auth.$context;
-  const hashedPassword = await context.password.hash(newPassword);
+  const hashedPassword = await context.password.hash(password);
   const accounts = await context.internalAdapter.findAccounts(userId);
   const credentialAccount = accounts.find(
     (account) => account.providerId === "credential",
@@ -249,4 +365,4 @@ export async function setCredentialPassword(
 }
 
 // Re-export permissions for client usage
-export { ac, admin as adminRole, consumer, deliveryman, salesman, shop_owner, warehouse } from "./permissions";
+export { ac, admin as adminRole, consumer, deliveryman, salesman, shop_owner, shop_staff, warehouse } from "./permissions";

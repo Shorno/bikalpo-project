@@ -24,28 +24,33 @@ import {
   sql,
 } from "drizzle-orm";
 import { z } from "zod";
-import { protectedProcedure } from "../index";
+import { shopOrWarehousePermissionProcedure } from "../index";
+
+const purchasePermission = (action: "view" | "update" | "approve" | "delete") =>
+  shopOrWarehousePermissionProcedure(
+    "shop_purchase_orders",
+    action,
+    "purchase",
+  );
+
 import { postPurchaseJournal } from "../services/purchase-accounting";
 import { appendOrderPurchaseEvent } from "../services/purchase-history";
-import { classifyPurchasePayment } from "../services/purchase-lifecycle";
 import {
+  classifyPurchasePayment,
   deriveFinancialStatus,
   derivePaymentAggregateStatus,
   derivePurchaseStatus,
 } from "../services/purchase-lifecycle";
-import { localDateString } from "../utils/date";
 import { returnReceivedPurchase } from "../services/purchase-return";
+import { shopOrWarehouseOwnerScope } from "../shop-portal-scope";
+import { localDateString } from "../utils/date";
 
-function ownerTypeForRole(role?: string | null) {
-  if (role === "shop_owner") return "shop" as const;
-  if (role === "warehouse") return "warehouse" as const;
-  throw new ORPCError("FORBIDDEN", {
-    message: "Purchase payments require a shop or warehouse account",
-  });
+function purchaseOwnerScope(user: { id: string; role?: string | null }) {
+  return shopOrWarehouseOwnerScope(user, "purchase");
 }
 
 export const purchaseLifecycleRouter = {
-  getHistory: protectedProcedure
+  getHistory: purchasePermission("view")
     .route({
       method: "POST",
       path: "/purchase-lifecycle/history",
@@ -72,8 +77,7 @@ export const purchaseLifecycleRouter = {
       }),
     )
     .handler(async ({ context, input }) => {
-      const ownerId = context.session.user.id;
-      ownerTypeForRole(context.session.user.role);
+      const { ownerId } = purchaseOwnerScope(context.session.user);
       const conditions: any[] = [
         eq(order.userId, ownerId),
         eq(order.orderType, "b2b"),
@@ -81,7 +85,8 @@ export const purchaseLifecycleRouter = {
       if (input.search?.trim()) {
         conditions.push(ilike(order.orderNumber, `%${input.search.trim()}%`));
       }
-      if (input.dateFrom) conditions.push(gte(order.createdAt, new Date(input.dateFrom)));
+      if (input.dateFrom)
+        conditions.push(gte(order.createdAt, new Date(input.dateFrom)));
       if (input.dateTo) {
         const end = new Date(`${input.dateTo}T23:59:59.999`);
         conditions.push(lte(order.createdAt, end));
@@ -116,7 +121,10 @@ export const purchaseLifecycleRouter = {
       }
 
       const where = and(...conditions);
-      const countRows = await db.select({ total: count() }).from(order).where(where);
+      const countRows = await db
+        .select({ total: count() })
+        .from(order)
+        .where(where);
       const total = countRows[0]?.total ?? 0;
       const rows = await db.query.order.findMany({
         where,
@@ -134,7 +142,9 @@ export const purchaseLifecycleRouter = {
           ? db.query.user.findMany({ where: inArray(user.id, warehouseIds) })
           : [],
         orderIds.length
-          ? db.query.payment.findMany({ where: inArray(payment.orderId, orderIds) })
+          ? db.query.payment.findMany({
+              where: inArray(payment.orderId, orderIds),
+            })
           : [],
         orderIds.length
           ? db.query.inventoryMovement.findMany({
@@ -157,8 +167,12 @@ export const purchaseLifecycleRouter = {
           total: Number(total ?? 0),
         },
         purchases: rows.map((row) => {
-          const rowPayments = payments.filter((item) => item.orderId === row.id);
-          const rowMovements = movements.filter((item) => item.orderId === row.id);
+          const rowPayments = payments.filter(
+            (item) => item.orderId === row.id,
+          );
+          const rowMovements = movements.filter(
+            (item) => item.orderId === row.id,
+          );
           const rowEvents = events.filter((item) => item.orderId === row.id);
           const expectedQty = row.items.reduce(
             (sum, item) => sum + Number(item.modifiedQty ?? item.quantity),
@@ -171,8 +185,7 @@ export const purchaseLifecycleRouter = {
           const recognizedAmount = rowMovements.reduce(
             (sum, item) =>
               sum +
-              (item.direction === "out" ? -1 : 1) *
-                Number(item.totalCost ?? 0),
+              (item.direction === "out" ? -1 : 1) * Number(item.totalCost ?? 0),
             0,
           );
           const advances = rowPayments
@@ -195,9 +208,14 @@ export const purchaseLifecycleRouter = {
             )
             .reduce((sum, item) => sum + Number(item.amount), 0);
           const refundedAmount = rowPayments
-            .filter((item) => item.entryType === "refund" && item.status === "completed")
+            .filter(
+              (item) =>
+                item.entryType === "refund" && item.status === "completed",
+            )
             .reduce((sum, item) => sum + Number(item.amount), 0);
-          const seller = row.warehouseId ? sellerById.get(row.warehouseId) : null;
+          const seller = row.warehouseId
+            ? sellerById.get(row.warehouseId)
+            : null;
 
           return {
             createdAt: row.createdAt,
@@ -219,10 +237,10 @@ export const purchaseLifecycleRouter = {
               row.status === "returned"
                 ? "reversed"
                 : recognizedAmount <= 0
-                ? "not_recognized"
-                : receivedQty < expectedQty
-                  ? "partially_received"
-                  : "recognized",
+                  ? "not_recognized"
+                  : receivedQty < expectedQty
+                    ? "partially_received"
+                    : "recognized",
             itemCount: row.items.length,
             orderNumber: row.orderNumber,
             paidAmount: row.paidAmount,
@@ -243,14 +261,17 @@ export const purchaseLifecycleRouter = {
             }),
             receivedAt: row.receivedAt,
             sellerName:
-              seller?.warehouseName ?? seller?.shopName ?? seller?.name ?? "Supplier",
+              seller?.warehouseName ??
+              seller?.shopName ??
+              seller?.name ??
+              "Supplier",
             total: row.total,
           };
         }),
       };
     }),
 
-  getDetail: protectedProcedure
+  getDetail: purchasePermission("view")
     .route({
       method: "GET",
       path: "/purchase-lifecycle/history/{orderId}",
@@ -259,8 +280,7 @@ export const purchaseLifecycleRouter = {
     })
     .input(z.object({ orderId: z.number().int().positive() }))
     .handler(async ({ context, input }) => {
-      const ownerId = context.session.user.id;
-      ownerTypeForRole(context.session.user.role);
+      const { ownerId } = purchaseOwnerScope(context.session.user);
       const purchaseOrder = await db.query.order.findFirst({
         where: and(
           eq(order.id, input.orderId),
@@ -270,7 +290,9 @@ export const purchaseLifecycleRouter = {
         with: { items: true },
       });
       if (!purchaseOrder) {
-        throw new ORPCError("NOT_FOUND", { message: "Purchase order not found" });
+        throw new ORPCError("NOT_FOUND", {
+          message: "Purchase order not found",
+        });
       }
 
       const [events, payments, movements, journals] = await Promise.all([
@@ -302,7 +324,8 @@ export const purchaseLifecycleRouter = {
         : [];
       const chronologicalPayments = [...payments].sort(
         (left, right) =>
-          new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime(),
+          new Date(left.createdAt).getTime() -
+          new Date(right.createdAt).getTime(),
       );
       let runningDue = Number(purchaseOrder.total);
       const paymentHistory = chronologicalPayments.map((row) => {
@@ -362,7 +385,7 @@ export const purchaseLifecycleRouter = {
       };
     }),
 
-  completePayment: protectedProcedure
+  completePayment: purchasePermission("update")
     .route({
       method: "POST",
       path: "/purchase-lifecycle/payments/complete",
@@ -382,8 +405,7 @@ export const purchaseLifecycleRouter = {
       }),
     )
     .handler(async ({ context, input }) => {
-      const ownerId = context.session.user.id;
-      const ownerType = ownerTypeForRole(context.session.user.role);
+      const { ownerId, ownerType } = purchaseOwnerScope(context.session.user);
       const orderData = await db.query.order.findFirst({
         where: and(
           eq(order.id, input.orderId),
@@ -392,7 +414,9 @@ export const purchaseLifecycleRouter = {
         ),
       });
       if (!orderData) {
-        throw new ORPCError("NOT_FOUND", { message: "Purchase order not found" });
+        throw new ORPCError("NOT_FOUND", {
+          message: "Purchase order not found",
+        });
       }
       if (["cancelled", "returned"].includes(orderData.status)) {
         throw new ORPCError("BAD_REQUEST", {
@@ -575,7 +599,7 @@ export const purchaseLifecycleRouter = {
       };
     }),
 
-  returnPurchase: protectedProcedure
+  returnPurchase: purchasePermission("update")
     .route({
       method: "POST",
       path: "/purchase-lifecycle/returns",
@@ -589,8 +613,7 @@ export const purchaseLifecycleRouter = {
       }),
     )
     .handler(async ({ context, input }) => {
-      const ownerId = context.session.user.id;
-      const ownerType = ownerTypeForRole(context.session.user.role);
+      const { ownerId, ownerType } = purchaseOwnerScope(context.session.user);
       try {
         const result = await db.transaction(async (tx) => {
           await tx.execute(sql`SELECT pg_advisory_xact_lock(${input.orderId})`);
@@ -613,7 +636,7 @@ export const purchaseLifecycleRouter = {
       }
     }),
 
-  requestRefund: protectedProcedure
+  requestRefund: purchasePermission("update")
     .route({
       method: "POST",
       path: "/purchase-lifecycle/refunds/request",
@@ -627,7 +650,7 @@ export const purchaseLifecycleRouter = {
       }),
     )
     .handler(async ({ context, input }) => {
-      const ownerId = context.session.user.id;
+      const { ownerId } = purchaseOwnerScope(context.session.user);
       const paid = await db.query.payment.findFirst({
         where: eq(payment.id, input.paymentId),
         with: { order: true },
@@ -639,7 +662,9 @@ export const purchaseLifecycleRouter = {
         paid.order.userId !== ownerId ||
         paid.order.orderType !== "b2b"
       ) {
-        throw new ORPCError("NOT_FOUND", { message: "Purchase payment not found" });
+        throw new ORPCError("NOT_FOUND", {
+          message: "Purchase payment not found",
+        });
       }
       const orderId = paid.orderId;
       const purchaseOrder = paid.order;
@@ -648,7 +673,7 @@ export const purchaseLifecycleRouter = {
           message: "Cancel or return the purchase before requesting a refund",
         });
       }
-      if (!['completed', 'partially_refunded'].includes(paid.status)) {
+      if (!["completed", "partially_refunded"].includes(paid.status)) {
         throw new ORPCError("BAD_REQUEST", {
           message: "Only completed purchase payments can be refunded",
         });
@@ -677,7 +702,7 @@ export const purchaseLifecycleRouter = {
       return { status: "refund_pending" as const, success: true };
     }),
 
-  approveRefund: protectedProcedure
+  approveRefund: purchasePermission("approve")
     .route({
       method: "POST",
       path: "/purchase-lifecycle/refunds/approve",
@@ -686,62 +711,7 @@ export const purchaseLifecycleRouter = {
     })
     .input(z.object({ paymentId: z.number().int().positive() }))
     .handler(async ({ context, input }) => {
-      const ownerId = context.session.user.id;
-      const paid = await db.query.payment.findFirst({
-        where: eq(payment.id, input.paymentId),
-        with: { order: true },
-      });
-      if (
-        !paid ||
-        !paid.order ||
-        paid.orderId === null ||
-        paid.order.userId !== ownerId ||
-        paid.order.orderType !== "b2b"
-      ) {
-        throw new ORPCError("NOT_FOUND", { message: "Purchase payment not found" });
-      }
-      const orderId = paid.orderId;
-      const purchaseOrder = paid.order;
-      if (paid.status !== "refund_pending") {
-        throw new ORPCError("BAD_REQUEST", { message: "Refund is not pending" });
-      }
-      const verified = await db.query.purchaseEvent.findFirst({
-        where: and(
-          eq(purchaseEvent.orderId, orderId),
-          eq(purchaseEvent.eventType, "refund_verified"),
-          ilike(purchaseEvent.idempotencyKey, `payment:${paid.id}:%`),
-        ),
-        orderBy: [desc(purchaseEvent.occurredAt)],
-      });
-      if (!verified) {
-        throw new ORPCError("BAD_REQUEST", { message: "Verify the refund first" });
-      }
-      await appendOrderPurchaseEvent(db, {
-        actorId: ownerId,
-        amount: Number(paid.amount) - Number(paid.refundedAmount),
-        category: "payment",
-        description: "Purchase refund approved",
-        eventType: "refund_approved",
-        fromState: "refund_pending",
-        idempotencyKey: `payment:${paid.id}:refund-approved`,
-        orderId,
-        ownerId,
-        reference: paid.referenceNo ?? purchaseOrder.orderNumber,
-        toState: "refund_approved",
-      });
-      return { status: "refund_approved" as const, success: true };
-    }),
-
-  verifyRefund: protectedProcedure
-    .route({
-      method: "POST",
-      path: "/purchase-lifecycle/refunds/verify",
-      tags: ["Purchase Lifecycle"],
-      summary: "Verify a requested purchase refund",
-    })
-    .input(z.object({ paymentId: z.number().int().positive() }))
-    .handler(async ({ context, input }) => {
-      const ownerId = context.session.user.id;
+      const { ownerId } = purchaseOwnerScope(context.session.user);
       const paid = await db.query.payment.findFirst({
         where: eq(payment.id, input.paymentId),
         with: { order: true },
@@ -760,7 +730,70 @@ export const purchaseLifecycleRouter = {
       const orderId = paid.orderId;
       const purchaseOrder = paid.order;
       if (paid.status !== "refund_pending") {
-        throw new ORPCError("BAD_REQUEST", { message: "Refund is not pending" });
+        throw new ORPCError("BAD_REQUEST", {
+          message: "Refund is not pending",
+        });
+      }
+      const verified = await db.query.purchaseEvent.findFirst({
+        where: and(
+          eq(purchaseEvent.orderId, orderId),
+          eq(purchaseEvent.eventType, "refund_verified"),
+          ilike(purchaseEvent.idempotencyKey, `payment:${paid.id}:%`),
+        ),
+        orderBy: [desc(purchaseEvent.occurredAt)],
+      });
+      if (!verified) {
+        throw new ORPCError("BAD_REQUEST", {
+          message: "Verify the refund first",
+        });
+      }
+      await appendOrderPurchaseEvent(db, {
+        actorId: ownerId,
+        amount: Number(paid.amount) - Number(paid.refundedAmount),
+        category: "payment",
+        description: "Purchase refund approved",
+        eventType: "refund_approved",
+        fromState: "refund_pending",
+        idempotencyKey: `payment:${paid.id}:refund-approved`,
+        orderId,
+        ownerId,
+        reference: paid.referenceNo ?? purchaseOrder.orderNumber,
+        toState: "refund_approved",
+      });
+      return { status: "refund_approved" as const, success: true };
+    }),
+
+  verifyRefund: purchasePermission("approve")
+    .route({
+      method: "POST",
+      path: "/purchase-lifecycle/refunds/verify",
+      tags: ["Purchase Lifecycle"],
+      summary: "Verify a requested purchase refund",
+    })
+    .input(z.object({ paymentId: z.number().int().positive() }))
+    .handler(async ({ context, input }) => {
+      const { ownerId } = purchaseOwnerScope(context.session.user);
+      const paid = await db.query.payment.findFirst({
+        where: eq(payment.id, input.paymentId),
+        with: { order: true },
+      });
+      if (
+        !paid ||
+        !paid.order ||
+        paid.orderId === null ||
+        paid.order.userId !== ownerId ||
+        paid.order.orderType !== "b2b"
+      ) {
+        throw new ORPCError("NOT_FOUND", {
+          message: "Purchase payment not found",
+        });
+      }
+      const orderId = paid.orderId;
+      const purchaseOrder = paid.order;
+      if (paid.status !== "refund_pending") {
+        throw new ORPCError("BAD_REQUEST", {
+          message: "Refund is not pending",
+        });
       }
       const requested = await db.query.purchaseEvent.findFirst({
         where: and(
@@ -771,7 +804,9 @@ export const purchaseLifecycleRouter = {
         orderBy: [desc(purchaseEvent.occurredAt)],
       });
       if (!requested) {
-        throw new ORPCError("BAD_REQUEST", { message: "Request the refund first" });
+        throw new ORPCError("BAD_REQUEST", {
+          message: "Request the refund first",
+        });
       }
       await appendOrderPurchaseEvent(db, {
         actorId: ownerId,
@@ -789,7 +824,7 @@ export const purchaseLifecycleRouter = {
       return { status: "refund_verified" as const, success: true };
     }),
 
-  processRefund: protectedProcedure
+  processRefund: purchasePermission("approve")
     .route({
       method: "POST",
       path: "/purchase-lifecycle/refunds/process",
@@ -798,7 +833,7 @@ export const purchaseLifecycleRouter = {
     })
     .input(z.object({ paymentId: z.number().int().positive() }))
     .handler(async ({ context, input }) => {
-      const ownerId = context.session.user.id;
+      const { ownerId } = purchaseOwnerScope(context.session.user);
       const paid = await db.query.payment.findFirst({
         where: eq(payment.id, input.paymentId),
         with: { order: true },
@@ -810,12 +845,16 @@ export const purchaseLifecycleRouter = {
         paid.order.userId !== ownerId ||
         paid.order.orderType !== "b2b"
       ) {
-        throw new ORPCError("NOT_FOUND", { message: "Purchase payment not found" });
+        throw new ORPCError("NOT_FOUND", {
+          message: "Purchase payment not found",
+        });
       }
       const orderId = paid.orderId;
       const purchaseOrder = paid.order;
       if (paid.status !== "refund_pending") {
-        throw new ORPCError("BAD_REQUEST", { message: "Refund is not pending" });
+        throw new ORPCError("BAD_REQUEST", {
+          message: "Refund is not pending",
+        });
       }
       const approved = await db.query.purchaseEvent.findFirst({
         where: and(
@@ -826,7 +865,9 @@ export const purchaseLifecycleRouter = {
         orderBy: [desc(purchaseEvent.occurredAt)],
       });
       if (!approved) {
-        throw new ORPCError("BAD_REQUEST", { message: "Approve the refund first" });
+        throw new ORPCError("BAD_REQUEST", {
+          message: "Approve the refund first",
+        });
       }
       await appendOrderPurchaseEvent(db, {
         actorId: ownerId,
@@ -844,7 +885,7 @@ export const purchaseLifecycleRouter = {
       return { status: "refund_processed" as const, success: true };
     }),
 
-  completeRefund: protectedProcedure
+  completeRefund: purchasePermission("approve")
     .route({
       method: "POST",
       path: "/purchase-lifecycle/refunds/complete",
@@ -862,8 +903,7 @@ export const purchaseLifecycleRouter = {
       }),
     )
     .handler(async ({ context, input }) => {
-      const ownerId = context.session.user.id;
-      const ownerType = ownerTypeForRole(context.session.user.role);
+      const { ownerId, ownerType } = purchaseOwnerScope(context.session.user);
       const paid = await db.query.payment.findFirst({
         where: eq(payment.id, input.paymentId),
         with: { order: true },
@@ -875,7 +915,9 @@ export const purchaseLifecycleRouter = {
         paid.order.userId !== ownerId ||
         paid.order.orderType !== "b2b"
       ) {
-        throw new ORPCError("NOT_FOUND", { message: "Purchase payment not found" });
+        throw new ORPCError("NOT_FOUND", {
+          message: "Purchase payment not found",
+        });
       }
       const orderId = paid.orderId;
       const purchaseOrder = paid.order;
@@ -963,7 +1005,9 @@ export const purchaseLifecycleRouter = {
             returnAmount:
               purchaseOrder.status === "returned"
                 ? purchaseOrder.returnAmount
-                : (Number(purchaseOrder.returnAmount) + input.amount).toFixed(2),
+                : (Number(purchaseOrder.returnAmount) + input.amount).toFixed(
+                    2,
+                  ),
           })
           .where(eq(order.id, orderId));
         await appendOrderPurchaseEvent(tx, {

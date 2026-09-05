@@ -86,7 +86,6 @@ export const barikoiRouter = {
                 area: "true",
                 division: "true",
                 sub_district: "true",
-                bangla: "true",
                 thana: "true",
             });
 

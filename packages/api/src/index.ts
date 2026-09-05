@@ -1,7 +1,23 @@
+import {
+  canPermissionMapAccessModule,
+  type ShopPermissionAction,
+  type ShopPermissionResource,
+} from "@bikalpo-project/auth/shop-permissions";
+import type { ShopModule } from "@bikalpo-project/auth/shop-staff-access";
+import { shopPortalShopId } from "@bikalpo-project/auth/shop-staff-access";
 import { ORPCError, os } from "@orpc/server";
 
 import { isCatalogRequesterRole } from "./catalog-requester-role";
 import type { Context } from "./context";
+import {
+  requireShopPermission,
+  resolveShopAuthorization,
+} from "./shop-authorization";
+import {
+  markShopModuleAuthorized,
+  shopSessionUser,
+} from "./shop-portal-scope";
+import { databaseShopRoleGrantRepository } from "./shop-role-grant-repository";
 
 export const o = os.$context<Context>();
 
@@ -112,6 +128,93 @@ const requireShopOwner = o.middleware(async ({ context, next }) => {
 
 export const shopOwnerProcedure = publicProcedure.use(requireShopOwner);
 
+const requireShopPortal = o.middleware(async ({ context, next }) => {
+  if (!context.session?.user) {
+    throw new ORPCError("UNAUTHORIZED");
+  }
+  if (!shopPortalShopId(shopSessionUser(context.session.user))) {
+    throw new ORPCError("FORBIDDEN", {
+      message: "Shop dashboard access required",
+    });
+  }
+  return next({
+    context: {
+      ...context,
+      session: context.session,
+    },
+  });
+});
+
+export const shopPortalProcedure = publicProcedure.use(requireShopPortal);
+
+export function shopModuleProcedure(module: ShopModule) {
+  return publicProcedure.use(async ({ context, next }) => {
+    if (!context.session?.user) {
+      throw new ORPCError("UNAUTHORIZED");
+    }
+    const access = await resolveShopAuthorization(
+      context.session.user,
+      databaseShopRoleGrantRepository,
+    );
+    if (!canPermissionMapAccessModule(access.permissions, module)) {
+      throw new ORPCError("FORBIDDEN", {
+        message: `Shop ${module} access required`,
+      });
+    }
+    return next({
+      context: {
+        ...context,
+        session: context.session,
+      },
+    });
+  });
+}
+
+export function shopPermissionProcedure(
+  resource: ShopPermissionResource,
+  action: ShopPermissionAction,
+) {
+  return publicProcedure.use(async ({ context, next }) => {
+    if (!context.session?.user) {
+      throw new ORPCError("UNAUTHORIZED");
+    }
+    await requireShopPermission(
+      context.session.user,
+      resource,
+      action,
+      databaseShopRoleGrantRepository,
+    );
+    return next({
+      context: {
+        ...context,
+        session: context.session,
+      },
+    });
+  });
+}
+
+export function shopOrWarehousePermissionProcedure(
+  resource: ShopPermissionResource,
+  action: ShopPermissionAction,
+  module: ShopModule,
+) {
+  return publicProcedure.use(async ({ context, next }) => {
+    if (!context.session?.user) throw new ORPCError("UNAUTHORIZED");
+    if (context.session.user.role !== "warehouse") {
+      await requireShopPermission(
+        context.session.user,
+        resource,
+        action,
+        databaseShopRoleGrantRepository,
+      );
+      markShopModuleAuthorized(context.session.user, module);
+    }
+    return next({
+      context: { ...context, session: context.session },
+    });
+  });
+}
+
 // Warehouse procedure - requires authenticated user with warehouse role
 const requireWarehouse = o.middleware(async ({ context, next }) => {
   if (!context.session?.user) {
@@ -184,13 +287,22 @@ const requireFulfillmentManager = o.middleware(async ({ context, next }) => {
     throw new ORPCError("UNAUTHORIZED");
   }
   if (
-    !["warehouse", "shop_owner", "admin"].includes(
+    !["warehouse", "shop_owner", "shop_staff", "admin"].includes(
       context.session.user.role ?? "",
     )
   ) {
     throw new ORPCError("FORBIDDEN", {
       message: "Fulfillment manager access required",
     });
+  }
+  if (context.session.user.role === "shop_staff") {
+    await requireShopPermission(
+      context.session.user,
+      "shop_delivery_management",
+      "view",
+      databaseShopRoleGrantRepository,
+    );
+    markShopModuleAuthorized(context.session.user, "fulfillment");
   }
   return next({
     context: {

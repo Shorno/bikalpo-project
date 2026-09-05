@@ -10,11 +10,11 @@ import {
   warehouseDueCollection,
   warehousePosSale,
 } from "@bikalpo-project/db/schema";
-import { ORPCError } from "@orpc/server";
 import { and, asc, eq, gte, inArray, isNotNull, lte, sql } from "drizzle-orm";
 import { z } from "zod";
 
-import { protectedProcedure } from "../index";
+import { shopOrWarehousePermissionProcedure } from "../index";
+import { shopOrWarehouseOwnerScope } from "../shop-portal-scope";
 
 const ACTIVE_SALE_STATUSES = new Set(["confirmed", "processing", "delivered"]);
 const PAID_INVOICE_STATUSES = new Set(["collected", "settled"]);
@@ -80,7 +80,11 @@ function withinActiveSales(status: string | null | undefined) {
 }
 
 export const balanceSheetRouter = {
-  getBalanceSheet: protectedProcedure
+  getBalanceSheet: shopOrWarehousePermissionProcedure(
+    "shop_balance_sheet",
+    "view",
+    "finance",
+  )
     .route({
       method: "POST",
       path: "/balance-sheet",
@@ -107,15 +111,10 @@ export const balanceSheetRouter = {
       }),
     )
     .handler(async ({ context, input }) => {
-      const role = context.session.user.role;
-      if (role !== "shop_owner" && role !== "warehouse") {
-        throw new ORPCError("FORBIDDEN", {
-          message: "Balance sheet access required",
-        });
-      }
-
-      const ownerId = context.session.user.id;
-      const ownerType = role === "warehouse" ? "warehouse" : "shop";
+      const { ownerId, ownerType } = shopOrWarehouseOwnerScope(
+        context.session.user,
+        "finance",
+      );
       const startDate = input.startDate ?? `${input.year}-01-01`;
       const endDate = input.endDate ?? input.asOfDate ?? `${input.year}-12-31`;
       const startDateTime = new Date(`${startDate}T00:00:00.000`);
@@ -425,7 +424,7 @@ export const balanceSheetRouter = {
       let receivable = 0;
       let payable = 0;
 
-      if (role === "warehouse") {
+      if (ownerType === "warehouse") {
         const [orderRows, posRows] = await Promise.all([
           db
             .select({

@@ -1,5 +1,7 @@
 "use client";
 
+import type { ShopPermissionMap } from "@bikalpo-project/auth/shop-permissions";
+import { canPermissionMapAccessPath } from "@bikalpo-project/auth/shop-permissions";
 import {
   AlertTriangleIcon,
   ArrowRightLeftIcon,
@@ -12,7 +14,6 @@ import {
   ExternalLinkIcon,
   FileTextIcon,
   GiftIcon,
-  HeadphonesIcon,
   LayoutDashboardIcon,
   MegaphoneIcon,
   PackageIcon,
@@ -20,7 +21,6 @@ import {
   PlusCircleIcon,
   ReceiptIcon,
   SettingsIcon,
-  ShieldIcon,
   ShoppingCartIcon,
   SmartphoneIcon,
   StoreIcon,
@@ -42,6 +42,7 @@ import {
   SidebarFooter,
   SidebarHeader,
 } from "@/components/ui/sidebar";
+import { useShopMyAccess } from "@/hooks/use-shop-staff-api";
 import { authClient } from "@/lib/auth-client";
 
 const D = "/dashboard";
@@ -303,25 +304,45 @@ const shopOwnerNavGroups: NavGroup[] = [
   {
     label: "Settings",
     items: [
-      { title: "Business Profile", url: `${D}/settings`, icon: SettingsIcon },
       {
-        title: "Payment Accounts",
-        url: `${D}/payment-accounts`,
-        icon: CreditCardIcon,
+        title: "Settings",
+        url: `${D}/settings`,
+        icon: SettingsIcon,
+        items: [
+          { title: "General Settings", url: `${D}/settings` },
+          {
+            title: "User Management",
+            url: `${D}/user-roles`,
+          },
+          {
+            title: "Operational Controls",
+            url: `${D}/user-roles#operational-controls`,
+          },
+        ],
       },
-      { title: "User Roles", url: `${D}/user-roles`, icon: ShieldIcon },
-      {
-        title: "Invoice Settings",
-        url: `${D}/invoice-settings`,
-        icon: FileTextIcon,
-      },
-      { title: "Support", url: `${D}/support`, icon: HeadphonesIcon },
     ],
   },
 ];
 
+function visibleShopNavGroups(permissions: ShopPermissionMap): NavGroup[] {
+  return shopOwnerNavGroups.flatMap((group) => {
+    const items = group.items.flatMap((item) => {
+      const children = item.items?.filter((child) =>
+        canPermissionMapAccessPath(permissions, child.url),
+      );
+      const mayOpen = canPermissionMapAccessPath(permissions, item.url);
+      return mayOpen || children?.length ? [{ ...item, items: children }] : [];
+    });
+    return items.length ? [{ ...group, items }] : [];
+  });
+}
+
 export function ShopOwnerSidebar(props: React.ComponentProps<typeof Sidebar>) {
   const { data, isPending } = authClient.useSession();
+  const access = useShopMyAccess();
+  const groups = access.data
+    ? visibleShopNavGroups(access.data.permissions)
+    : [];
 
   return (
     <Sidebar collapsible="offcanvas" {...props}>
@@ -346,7 +367,7 @@ export function ShopOwnerSidebar(props: React.ComponentProps<typeof Sidebar>) {
         </a>
       </SidebarHeader>
       <SidebarContent className="mt-4 thin-scrollbar">
-        <NavGrouped groups={shopOwnerNavGroups} />
+        <NavGrouped groups={groups} />
       </SidebarContent>
       <SidebarFooter>
         {isPending || !data ? (

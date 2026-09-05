@@ -114,11 +114,31 @@ async function findOwnerFinancePaymentAccount(
 }
 
 function resolvePaymentAccountType(code: string) {
+  if (
+    [
+      "1007-bkash-merchant",
+      "1008-nagad-merchant",
+      "1009-rocket-merchant",
+    ].includes(code)
+  ) {
+    return "mobile_banking";
+  }
+
   if (code.includes("bank")) {
     return "bank";
   }
 
   return "cash";
+}
+
+function resolvePaymentAccountProvider(code: string, name: string) {
+  const type = resolvePaymentAccountType(code);
+
+  if (type === "cash") {
+    return null;
+  }
+
+  return type === "mobile_banking" ? name.replace(/\s+Merchant$/i, "") : name;
 }
 
 function isAccountingOwnerType(value: string): value is AccountingOwnerType {
@@ -306,9 +326,7 @@ async function ensureDefaultFinancePaymentAccountsUncached({
       await database
         .update(financePaymentAccount)
         .set({
-          isActive: true,
           isDefault: seed.code === "1001-cash-on-hand",
-          name: seed.name,
           type: resolvePaymentAccountType(seed.code),
         })
         .where(eq(financePaymentAccount.id, existingPaymentAccount.id));
@@ -333,6 +351,7 @@ async function ensureDefaultFinancePaymentAccountsUncached({
         isActive: true,
         isDefault: seed.code === "1001-cash-on-hand",
         name: seed.name,
+        providerName: resolvePaymentAccountProvider(seed.code, seed.name),
         openingBalance: seed.openingBalance,
         ownerId,
         ownerType,

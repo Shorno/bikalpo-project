@@ -1,3 +1,4 @@
+import { isShopPortalRole } from "@bikalpo-project/auth/shop-staff-access";
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
@@ -201,8 +202,8 @@ export function proxy(request: NextRequest) {
       return NextResponse.redirect(new URL("/login", mainDomain));
     }
 
-    // If logged in but not a shop_owner, redirect to main domain
-    if (role && role !== "shop_owner") {
+    // If logged in but not a shop portal account, redirect to main domain
+    if (role && !isShopPortalRole(role)) {
       const mainDomain = getRootDomainUrl(request);
       return NextResponse.redirect(new URL("/", mainDomain));
     }
@@ -394,7 +395,7 @@ export function proxy(request: NextRequest) {
   // Auth routes - redirect logged-in users away from login/sign-up
   if (isAuthRoute) {
     if (token && role) {
-      if (role === "shop_owner") {
+      if (isShopPortalRole(role)) {
         // Shop owners go to shop subdomain
         const shopDomain =
           process.env.NEXT_PUBLIC_SHOP_SUBDOMAIN_URL ||
@@ -479,10 +480,11 @@ export function proxy(request: NextRequest) {
     "salesman",
     "deliveryman",
     "shop_owner",
+    "shop_staff",
     "warehouse",
   ];
   if (token && role && staffRoles.includes(role)) {
-    if (role === "shop_owner") {
+    if (isShopPortalRole(role)) {
       const shopDomain =
         process.env.NEXT_PUBLIC_SHOP_SUBDOMAIN_URL ||
         "http://shop.bikalpo.localhost:3001";

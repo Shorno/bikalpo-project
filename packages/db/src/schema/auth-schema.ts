@@ -10,6 +10,14 @@ export const user = pgTable("user", {
     // Phone number fields
     phoneNumber: text("phone_number").unique(),
     phoneNumberVerified: boolean("phone_number_verified").default(false),
+    loginVerification: text("login_verification").default("otp_only").notNull(),
+    rememberTrustedDevice: boolean("remember_trusted_device")
+        .default(true)
+        .notNull(),
+    autoLogoutMinutes: integer("auto_logout_minutes").default(30).notNull(),
+    allowMultipleLoginDevices: boolean("allow_multiple_login_devices")
+        .default(false)
+        .notNull(),
     // Admin plugin fields
     role: text("role").default("consumer"),
     banned: boolean("banned").default(false),
@@ -57,6 +65,8 @@ export const user = pgTable("user", {
     warehouseId: text("warehouse_id").references((): AnyPgColumn => user.id),
     // Links retailer delivery staff to their parent shop owner
     shopId: text("shop_id").references((): AnyPgColumn => user.id),
+    /** Shop-internal function for `shop_staff` (and optional for shop riders). */
+    shopFunction: text("shop_function"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at")
         .defaultNow()
