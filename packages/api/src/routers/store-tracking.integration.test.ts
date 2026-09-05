@@ -45,31 +45,25 @@ test(
       shippingCity: "Test city",
     };
     try {
-      await db
-        .insert(user)
-        .values(
-          ids.map((id, i) => ({
-            id,
-            name: "Tracking fixture",
-            email: `${id}@example.test`,
-            role: i < 2 ? "consumer" : "shop_owner",
-          })),
-        );
-      await db
-        .insert(order)
-        .values([
-          ...(["delivered", "cancelled", "returned"] as const).map(
-            (status) => ({
-              ...base,
-              orderNumber: `${suffix}-${status}`,
-              status,
-            }),
-          ),
-          { ...base, orderNumber: `${suffix}-open`, isOpenOrder: true },
-          { ...base, orderNumber: `${suffix}-other-user`, userId: otherId },
-          { ...base, orderNumber: `${suffix}-other-shop`, shopId: otherShopId },
-          { ...base, orderNumber: `${suffix}-b2b`, orderType: "b2b" },
-        ]);
+      await db.insert(user).values(
+        ids.map((id, i) => ({
+          id,
+          name: "Tracking fixture",
+          email: `${id}@example.test`,
+          role: i < 2 ? "consumer" : "shop_owner",
+        })),
+      );
+      await db.insert(order).values([
+        ...(["delivered", "cancelled", "returned"] as const).map((status) => ({
+          ...base,
+          orderNumber: `${suffix}-${status}`,
+          status,
+        })),
+        { ...base, orderNumber: `${suffix}-open`, isOpenOrder: true },
+        { ...base, orderNumber: `${suffix}-other-user`, userId: otherId },
+        { ...base, orderNumber: `${suffix}-other-shop`, shopId: otherShopId },
+        { ...base, orderNumber: `${suffix}-b2b`, orderType: "b2b" },
+      ]);
       assert.equal((await load()).total, 0);
       await db
         .insert(order)
@@ -78,14 +72,52 @@ test(
         (await load()).orders.map((item) => item.orderNumber),
         [`${suffix}-single`],
       );
-      await db
-        .insert(order)
-        .values(
-          Array.from({ length: 20 }, (_, i) => ({
-            ...base,
-            orderNumber: `${suffix}-active-${i}`,
-          })),
+      const detail = (
+        orderNumber: string,
+        scopedShopId: string | undefined = shopId,
+      ) =>
+        (
+          customerRouter.getOrderByNumber as unknown as {
+            "~orpc": {
+              handler(
+                args: unknown,
+              ): Promise<{ order: { orderNumber: string } }>;
+            };
+          }
+        )["~orpc"].handler({
+          context: { session: { user: { id: consumerId } } },
+          input: { orderNumber, shopId: scopedShopId },
+        });
+      assert.equal(
+        (await detail(`${suffix}-single`)).order.orderNumber,
+        `${suffix}-single`,
+      );
+      assert.equal(
+        (await detail(`${suffix}-delivered`)).order.orderNumber,
+        `${suffix}-delivered`,
+      );
+      for (const excluded of [
+        "other-user",
+        "other-shop",
+        "open",
+        "b2b",
+        "missing",
+      ]) {
+        await assert.rejects(
+          detail(`${suffix}-${excluded}`),
+          /Order not found/,
         );
+      }
+      await assert.rejects(
+        detail(`${suffix}-single`, otherShopId),
+        /Order not found/,
+      );
+      await db.insert(order).values(
+        Array.from({ length: 20 }, (_, i) => ({
+          ...base,
+          orderNumber: `${suffix}-active-${i}`,
+        })),
+      );
       const first = await load();
       const second = await load(2);
       assert.equal(first.total, 21);

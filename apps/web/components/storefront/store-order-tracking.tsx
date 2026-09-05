@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { storeTrackingOrderHref } from "@/lib/store-tracking-links";
 import { orpc } from "@/utils/orpc";
 
 export function StoreOrderTracking({
@@ -34,8 +35,8 @@ export function StoreOrderTracking({
     data?.total === 1 ? data.orders[0]?.orderNumber : undefined;
   useEffect(() => {
     if (singleOrder)
-      router.replace(`/account/orders/${encodeURIComponent(singleOrder)}`);
-  }, [singleOrder, router]);
+      router.replace(storeTrackingOrderHref(trackingHref, singleOrder));
+  }, [singleOrder, router, trackingHref]);
   useEffect(() => {
     if (data && page > 1 && data.orders.length === 0) setPage(1);
   }, [data, page]);
@@ -106,7 +107,7 @@ export function StoreOrderTracking({
             {data.orders.map((order) => (
               <li key={order.orderNumber}>
                 <Link
-                  href={`/account/orders/${encodeURIComponent(order.orderNumber)}`}
+                  href={storeTrackingOrderHref(trackingHref, order.orderNumber)}
                   className="flex items-center justify-between gap-4 py-5 focus-visible:outline-2 focus-visible:outline-offset-4 hover:text-primary"
                 >
                   <span className="min-w-0">

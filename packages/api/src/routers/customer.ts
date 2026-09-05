@@ -2591,7 +2591,7 @@ const queries = {
       tags: ["Customer"],
       summary: "Get order by order number",
     })
-    .input(z.object({ orderNumber: z.string() }))
+    .input(z.object({ orderNumber: z.string(), shopId: z.string().min(1).optional() }))
     .handler(async ({ context, input }) => {
       const userId = context.session.user.id;
       const found = await db.query.order.findFirst({
@@ -2599,6 +2599,8 @@ const queries = {
           eq(order.orderNumber, input.orderNumber),
           eq(order.userId, userId),
           eq(order.isOpenOrder, false),
+          input.shopId ? eq(order.shopId, input.shopId) : undefined,
+          input.shopId ? eq(order.orderType, "b2c") : undefined,
         ),
         with: { items: true },
       });

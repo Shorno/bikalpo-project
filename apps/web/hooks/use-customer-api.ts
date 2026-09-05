@@ -130,12 +130,19 @@ export function useMyOrders() {
 }
 
 /** Order by order number */
-export function useOrderByNumber(orderNumber: string) {
-  return useQuery(
-    orpc.customer.getOrderByNumber.queryOptions({
-      input: orderNumber ? { orderNumber } : skipToken,
-    }),
-  );
+export function useOrderByNumber(
+  orderNumber: string,
+  store?: { shopId: string; viewerId: string },
+) {
+  const options = orpc.customer.getOrderByNumber.queryOptions({
+    input: orderNumber
+      ? { orderNumber, ...(store ? { shopId: store.shopId } : {}) }
+      : skipToken,
+  });
+  return useQuery({
+    ...options,
+    queryKey: store ? [...options.queryKey, store.viewerId] : options.queryKey,
+  });
 }
 
 /** Order status with payment */
