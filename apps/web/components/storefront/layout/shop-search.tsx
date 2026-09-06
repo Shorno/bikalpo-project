@@ -45,7 +45,7 @@ export function ShopSearch({ storePath }: { storePath: string }) {
         placeholder="Search this store"
         aria-label="Search products in this store"
         maxLength={150}
-        className="h-10 w-full rounded-lg border border-white/25 bg-white pl-9 pr-9 text-sm text-slate-950 outline-none placeholder:text-slate-400 focus:border-white focus:ring-2 focus:ring-white/25"
+        className="h-10 w-full rounded-lg border border-[var(--header-line)] bg-white pl-9 pr-9 text-sm text-slate-950 outline-none placeholder:text-slate-400 focus:border-[var(--header-brand)] focus:ring-2 focus:ring-[var(--header-brand)]/20"
       />
       {value && (
         <button

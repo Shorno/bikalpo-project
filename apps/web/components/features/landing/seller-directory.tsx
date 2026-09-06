@@ -5,17 +5,37 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { orpc } from "@/utils/orpc";
 
+const demoLocations = [
+  { district: "Dhaka", division: "Dhaka", count: "320+" },
+  { district: "Chattogram", division: "Chattogram", count: "185+" },
+  { district: "Gazipur", division: "Dhaka", count: "110+" },
+  { district: "Narayanganj", division: "Dhaka", count: "95+" },
+  { district: "Cumilla", division: "Chattogram", count: "75+" },
+] as const;
+
 export function SellerLocationLinks() {
   const { data, isPending, isError, refetch } = useQuery({
     ...orpc.sellerDirectory.locations.queryOptions({ input: undefined }),
     staleTime: 60_000,
     refetchInterval: 60_000,
   });
+  const liveLocations = data?.locations ?? [];
+  const supplementalDemoLocations = demoLocations
+    .filter(
+      (demoLocation) =>
+        !liveLocations.some(
+          (liveLocation) =>
+            liveLocation.district.toLocaleLowerCase("en") ===
+            demoLocation.district.toLocaleLowerCase("en"),
+        ),
+    )
+    .slice(0, Math.max(0, 5 - liveLocations.length));
+
   return (
     <nav aria-labelledby="footer-sellers">
       <h2
         id="footer-sellers"
-        className="text-sm font-semibold text-[var(--footer-brand)]"
+        className="text-base font-semibold text-[var(--footer-brand)]"
       >
         Bikalpo sellers
       </h2>
@@ -23,25 +43,53 @@ export function SellerLocationLinks() {
         <p role="status" className="mt-4 text-sm text-[var(--footer-ink)]">
           Loading seller locations…
         </p>
-      ) : isError ? (
-        <div className="mt-4 text-sm text-[var(--footer-ink)]">
-          <p>Seller locations are unavailable.</p>
-          <button
-            type="button"
-            onClick={() => refetch()}
-            className="min-h-11 underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-[var(--footer-brand)]"
-          >
-            Try again
-          </button>
-        </div>
-      ) : data?.locations.length ? (
-        <ul className="mt-2 max-h-64 overflow-y-auto pr-2">
-          {data.locations.map((location) => (
-            <li key={`${location.divisionKey}/${location.districtKey}`}>
-              <Link
-                href={`/sellers?${new URLSearchParams({ district: location.districtKey, division: location.divisionKey })}`}
-                className="inline-flex min-h-11 lg:min-h-8 items-center gap-2 py-1 text-sm text-[var(--footer-ink)] hover:text-[var(--footer-brand)] hover:underline hover:underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--footer-brand)]"
-                aria-label={`${location.district}, ${location.division}: ${location.count} sellers`}
+      ) : (
+        <>
+          {isError ? (
+            <div className="mt-2 text-sm text-[var(--footer-ink)]">
+              <p>Live seller locations are unavailable.</p>
+              <button
+                type="button"
+                onClick={() => refetch()}
+                className="min-h-11 underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-[var(--footer-brand)]"
+              >
+                Try again
+              </button>
+            </div>
+          ) : null}
+          {supplementalDemoLocations.length ? (
+            <p className="mt-2 max-w-sm text-sm leading-6 text-[var(--footer-muted)]">
+              Live locations are supplemented with demo entries for this
+              preview.
+            </p>
+          ) : null}
+          <ul className="mt-2 max-h-64 overflow-y-auto pr-2">
+            {liveLocations.map((location) => (
+              <li key={`${location.divisionKey}/${location.districtKey}`}>
+                <Link
+                  href={`/sellers?${new URLSearchParams({ district: location.districtKey, division: location.divisionKey })}`}
+                  className="inline-flex min-h-11 lg:min-h-9 items-center gap-2 py-1 text-base text-[var(--footer-ink)] hover:text-[var(--footer-brand)] hover:underline hover:underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[var(--footer-brand)]"
+                  aria-label={`${location.district}, ${location.division}: ${location.count} sellers`}
+                >
+                  <span>
+                    {location.district}
+                    {location.division !== location.district ? (
+                      <span className="ml-2 text-xs text-[var(--footer-muted)]">
+                        {location.division}
+                      </span>
+                    ) : null}
+                  </span>
+                  <span aria-hidden="true">-</span>
+                  <span className="shrink-0 font-semibold tabular-nums text-[var(--footer-brand)]">
+                    {location.count.toLocaleString("en-BD")}
+                  </span>
+                </Link>
+              </li>
+            ))}
+            {supplementalDemoLocations.map((location) => (
+              <li
+                key={`demo-${location.division}-${location.district}`}
+                className="flex min-h-11 items-center gap-2 py-1 text-base text-[var(--footer-ink)] lg:min-h-9"
               >
                 <span>
                   {location.district}
@@ -53,16 +101,12 @@ export function SellerLocationLinks() {
                 </span>
                 <span aria-hidden="true">-</span>
                 <span className="shrink-0 font-semibold tabular-nums text-[var(--footer-brand)]">
-                  {location.count.toLocaleString("en-BD")}
+                  {location.count}
                 </span>
-              </Link>
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <p className="mt-4 text-sm leading-6 text-[var(--footer-ink)]">
-          No registered seller locations are available yet.
-        </p>
+              </li>
+            ))}
+          </ul>
+        </>
       )}
     </nav>
   );

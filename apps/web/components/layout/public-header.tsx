@@ -80,8 +80,8 @@ export function PublicHeader() {
       </div>
 
       <div className={styles.navigation}>
-        <div className="mx-auto hidden h-10 max-w-7xl items-center gap-1 px-4 sm:px-6 md:flex lg:px-8">
-          {publicNavigationLinks.map(({ label, href, icon: Icon }) => {
+        <div className="mx-auto hidden h-12 max-w-7xl grid-cols-3 px-4 sm:px-6 md:grid lg:px-8">
+          {publicNavigationLinks.map(({ label, href }) => {
             const isActive =
               pathname === href || pathname.startsWith(`${href}/`);
 
@@ -95,11 +95,10 @@ export function PublicHeader() {
                 aria-current={isActive ? "page" : undefined}
                 className={
                   isActive
-                    ? "inline-flex h-10 items-center gap-1.5 border-b-2 border-white bg-[var(--header-hover)] px-3 text-xs font-semibold text-white focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-white"
-                    : "inline-flex h-10 items-center gap-1.5 px-3 text-xs font-medium text-blue-50 transition-colors hover:bg-[var(--header-hover)] hover:text-white focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-white"
+                    ? "inline-flex h-12 items-center justify-center px-4 text-base font-bold text-[var(--header-brand)] focus-visible:outline-2 focus-visible:outline-offset-[-3px] focus-visible:outline-[var(--header-brand)]"
+                    : "inline-flex h-12 items-center justify-center px-4 text-base font-semibold text-[var(--header-ink)] transition-colors hover:text-[var(--header-brand)] focus-visible:outline-2 focus-visible:outline-offset-[-3px] focus-visible:outline-[var(--header-brand)]"
                 }
               >
-                <Icon className="size-3.5" />
                 {label}
               </Link>
             );

@@ -6,8 +6,7 @@
   --footer-line: #b8d7d1;
   background: var(--footer-surface);
   color: var(--footer-ink);
-  border-top: 4px solid var(--footer-brand);
-  font-size: 0.875rem;
+  font-size: 1rem;
   line-height: 1.6;
 }
 .content,
@@ -29,7 +28,7 @@
 }
 .footer h2 {
   color: var(--footer-brand);
-  font-size: 0.875rem;
+  font-size: 1rem;
   font-weight: 650;
   margin-bottom: 0.5rem;
 }
@@ -54,7 +53,7 @@
 .links a {
   display: inline-flex;
   align-items: center;
-  min-height: 2rem;
+  min-height: 2.25rem;
 }
 .secondary {
   margin-top: 2rem;
@@ -117,10 +116,14 @@
 .pending {
   color: var(--footer-muted);
 }
+.demoNotice {
+  color: var(--footer-muted);
+  font-size: 0.875rem;
+  margin-bottom: 0.25rem;
+}
 .platform {
   margin-top: 2rem;
   padding-block: 1.5rem;
-  border-top: 1px solid var(--footer-line);
   text-align: center;
 }
 .platform > p {
@@ -149,8 +152,8 @@
   padding-inline: 0.875rem;
 }
 .bottom {
-  background: var(--footer-brand);
-  color: white;
+  background: var(--footer-surface);
+  color: var(--footer-muted);
 }
 .copyright {
   display: flex;
@@ -158,7 +161,7 @@
   align-items: center;
   gap: 0.5rem 2rem;
   padding-block: 1rem;
-  font-size: 0.8125rem;
+  font-size: 0.875rem;
 }
 .copyright p {
   overflow-wrap: anywhere;
@@ -171,7 +174,7 @@
   font-weight: 650;
 }
 .copyright a:hover {
-  color: white;
+  color: var(--footer-brand);
 }
 @media (max-width: 767px) {
   .footer a {
@@ -197,10 +200,6 @@
   .columns {
     grid-template-columns: 1fr;
     gap: 1.75rem;
-  }
-  .columns > div + div {
-    border-top: 1px solid var(--footer-line);
-    padding-top: 1.75rem;
   }
   .secondary {
     margin-top: 1.25rem;

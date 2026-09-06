@@ -264,9 +264,27 @@ export function ShopFooter({ slug }: { slug: string }) {
                   )}
                 </address>
               ) : (
-                <p className={styles.pending}>
-                  Store contact details are unavailable.
-                </p>
+                <>
+                  <p className={styles.demoNotice}>Demo contact details</p>
+                  <address className={styles.contact}>
+                    <p>
+                      <Phone size={16} aria-hidden="true" />
+                      <span>+880 1712-345678</span>
+                    </p>
+                    <p>
+                      <Mail size={16} aria-hidden="true" />
+                      <span>hello@retailer.example</span>
+                    </p>
+                    <Link href={storePath}>
+                      <Globe2 size={16} aria-hidden="true" />
+                      <span>Retailer store page</span>
+                    </Link>
+                    <p>
+                      <Clock3 size={16} aria-hidden="true" />
+                      <span>9:00 AM – 8:00 PM</span>
+                    </p>
+                  </address>
+                </>
               )}
             </section>
           </div>

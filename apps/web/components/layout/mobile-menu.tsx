@@ -20,7 +20,7 @@ export function MobileMenu({ previewMode = false }: { previewMode?: boolean }) {
         <Button
           variant="ghost"
           size="icon"
-          className="text-white hover:bg-white/10 hover:text-white"
+          className="text-[var(--header-brand)] hover:bg-[#cee7e0] hover:text-[var(--header-hover)]"
           aria-label="Open navigation"
         >
           <Menu className="size-5" />
@@ -33,16 +33,15 @@ export function MobileMenu({ previewMode = false }: { previewMode?: boolean }) {
 
         <nav aria-label="Mobile navigation" className="p-3">
           <div className="space-y-1">
-            {publicNavigationLinks.map(({ label, href, icon: Icon }) => (
+            {publicNavigationLinks.map(({ label, href }) => (
               <Link
                 key={href}
                 href={withCustomerStorefrontPreview(
                   href,
                   previewMode && href === "/products",
                 )}
-                className="flex min-h-11 items-center gap-3 rounded-md px-3 text-sm font-medium text-foreground transition-colors hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                className="flex min-h-11 items-center px-3 text-base font-semibold text-foreground transition-colors hover:text-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
               >
-                <Icon className="size-4 text-muted-foreground" />
                 {label}
               </Link>
             ))}

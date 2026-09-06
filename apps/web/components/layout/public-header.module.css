@@ -6,17 +6,11 @@
   --header-line: #b8d7d1;
   background: var(--header-surface);
   color: var(--header-ink);
-  border-bottom: 1px solid var(--header-line);
 }
 
 .navigation {
-  background: var(--header-brand);
-  color: white;
-}
-
-.navigation a:hover,
-.navigation a[aria-current="page"] {
-  background: var(--header-hover);
+  background: var(--header-surface);
+  color: var(--header-ink);
 }
 
 .actions button,
@@ -32,8 +26,6 @@
 
 .mobileSearch {
   background: var(--header-surface);
-  border-top: 1px solid var(--header-line);
-  border-bottom: 3px solid var(--header-brand);
 }
 
 .header [data-slot="avatar-fallback"] {

@@ -27,13 +27,13 @@ const aboutLinks = [
   { label: "Help Center", href: "/help-center" },
 ];
 const linkStyle =
-  "inline-flex min-h-11 lg:min-h-8 items-center gap-2 text-sm text-[var(--footer-ink)] hover:text-[var(--footer-brand)] hover:underline hover:underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[var(--footer-brand)]";
+  "inline-flex min-h-11 lg:min-h-9 items-center gap-2 text-base text-[var(--footer-ink)] hover:text-[var(--footer-brand)] hover:underline hover:underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[var(--footer-brand)]";
 
 export function LandingFooter() {
   return (
     <footer className={styles.footer}>
       <div className="mx-auto max-w-7xl px-4 py-9 sm:px-6 lg:px-8 lg:py-10">
-        <div className="grid items-start gap-x-12 gap-y-9 md:grid-cols-2 lg:grid-cols-[1.15fr_0.9fr_1fr]">
+        <div className="grid items-start gap-x-12 gap-y-10 md:grid-cols-2 lg:grid-cols-3">
           <div className="md:col-span-2 lg:col-span-1">
             <Link
               href="/"
@@ -50,7 +50,7 @@ export function LandingFooter() {
               />
               <span>Bikalpo</span>
             </Link>
-            <p className="mt-3 max-w-xs text-sm leading-6 text-[var(--footer-ink)]">
+            <p className="mt-3 max-w-xs text-base leading-7 text-[var(--footer-ink)]">
               Multi-channel digital e-commerce
             </p>
             <ul
@@ -60,13 +60,13 @@ export function LandingFooter() {
               {roles.map((role) => (
                 <li
                   key={role}
-                  className="text-sm leading-6 after:ml-2 after:text-[var(--footer-muted)] after:content-['·'] last:after:content-none"
+                  className="text-base leading-7 after:ml-2 after:text-[var(--footer-muted)] after:content-['·'] last:after:content-none"
                 >
                   {role}
                 </li>
               ))}
             </ul>
-            <h2 className="mt-6 text-sm font-semibold text-[var(--footer-brand)]">
+            <h2 className="mt-6 text-base font-semibold text-[var(--footer-brand)]">
               Follow us
             </h2>
             <div className="mt-2 flex gap-2">
@@ -92,7 +92,7 @@ export function LandingFooter() {
 
           <div>
             <SellerLocationLinks />
-            <h2 className="mt-6 text-sm font-semibold text-[var(--footer-brand)]">
+            <h2 className="mt-6 text-base font-semibold text-[var(--footer-brand)]">
               Apps
             </h2>
             <div className="mt-2 flex flex-wrap gap-2">
@@ -102,7 +102,7 @@ export function LandingFooter() {
               ].map(({ label, Icon }) => (
                 <span
                   key={label}
-                  className="inline-flex items-center gap-2.5 rounded-md border border-[var(--footer-line)] bg-white/40 px-3 py-2 text-sm"
+                  className="inline-flex items-center gap-2.5 rounded-md border border-[var(--footer-line)] bg-white/40 px-3 py-2 text-base"
                   title={`${label} app — coming soon`}
                 >
                   <Icon className="size-6" aria-hidden="true" />
@@ -121,7 +121,7 @@ export function LandingFooter() {
             <nav aria-labelledby="footer-about">
               <h2
                 id="footer-about"
-                className="text-sm font-semibold text-[var(--footer-brand)]"
+                className="text-base font-semibold text-[var(--footer-brand)]"
               >
                 About Bikalpo
               </h2>
@@ -144,7 +144,7 @@ export function LandingFooter() {
                 <ArrowUpRight className="size-4" aria-hidden="true" />
               </Link>
             </h2>
-            <address className="mt-1 space-y-2 text-sm not-italic">
+            <address className="mt-1 space-y-2 text-base not-italic">
               <p className="flex items-center gap-3">
                 <Phone
                   className="size-4 shrink-0 text-[var(--footer-brand)]"
@@ -180,12 +180,10 @@ export function LandingFooter() {
           </div>
         </div>
       </div>
-      <div className={styles.bottom}>
-        <div className="mx-auto max-w-7xl px-4 py-5 text-xs leading-6 sm:px-6 lg:px-8">
+      <div>
+        <div className="mx-auto flex max-w-7xl flex-col gap-1 px-4 pb-7 text-sm leading-6 text-[var(--footer-muted)] sm:px-6 lg:flex-row lg:items-center lg:justify-between lg:px-8">
           <p>© {new Date().getFullYear()} Bikalpo. All Rights Reserved.</p>
-          <p className="text-blue-100">
-            Bangladesh&apos;s Multi-Vendor Digital Commerce Ecosystem.
-          </p>
+          <p>Bangladesh&apos;s Multi-Vendor Digital Commerce Ecosystem.</p>
         </div>
       </div>
     </footer>
