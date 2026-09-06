@@ -6,12 +6,6 @@
   --footer-line: #b8d7d1;
   background: var(--footer-surface);
   color: var(--footer-ink);
-  border-top: 4px solid var(--footer-brand);
-}
-
-.bottom {
-  background: var(--footer-brand);
-  color: #ffffff;
 }
 
 @media (pointer: coarse) {

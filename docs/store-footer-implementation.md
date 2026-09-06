@@ -6,23 +6,23 @@ User approved implementing the supplied shop footer structure using existing cap
 
 ## Implemented boundary
 
-- Separate shop footer retains the established aqua `#e4f3ef` surface and blue `#2455c6` headings/copyright bar; public footer is untouched.
+- Separate shop footer uses the established aqua `#e4f3ef` surface throughout with blue `#2455c6` headings; its former blue rule and copyright bar have been removed to match the shared public treatment.
 - About Store and Our Products link to real store-root anchors, including from product pages and with preview mode preserved. Initial asynchronous store loading handles the requested anchor after content mounts.
 - Customer support uses accurate existing destinations: Support tickets `/account/support`, Track order `/account/track`, My item requests `/account/requests`. These retain existing authentication and account scope.
 - Policies links only to the existing global Terms page; no placeholder store policies or legal copy are created.
 - Existing navigation identity API now explicitly selects approved business registration contact channels, along with public phone/hours. It never publishes the whole application or falls back to login email. Generated phone-auth email placeholders are excluded.
 - Only provided HTTP(S) social URLs appear. No new social fields/settings are introduced. Missing business email/socials are omitted; app icons remain clearly non-interactive Coming soon placeholders.
-- Footer shows real store phone, provided business email, store page link, hours, dynamic year/store name and Powered by Bikalpo. Platform Home, All Stores, Help Center, Contact Us remain separate.
+- Footer shows real store phone, provided business email, store page link, hours, dynamic year/store name and Powered by Bikalpo. When store data is unavailable, an explicitly labelled demo contact set keeps the preview populated without presenting sample values as real. Platform Home, All Stores, Help Center, Contact Us remain separate.
 - Mobile stacks the sections, uses at least 44px link targets and a two-column platform menu. Long contact text wraps; fetch loading/failure does not invent store data.
 
 ## Design notes
 
 These local decisions describe the built shop footer in `shop-footer.module.css`.
 
-- The aqua/blue palette above pairs dark ink (`#244459`) with muted text (`#466572`) and divider lines (`#b8d7d1`); a solid blue top border (4px) and white-on-blue copyright bar frame the footer.
+- The aqua/blue palette above pairs dark ink (`#244459`) with muted text (`#466572`) and blue headings. The entire footer, including copyright, is one uninterrupted aqua surface with no framing divider.
 - Desktop uses three equal columns with a 3rem gap inside a centered 80rem container, 2rem side padding and 2.5rem top padding. Secondary groups have 2rem top spacing.
-- At 767px and below, columns stack with 1.75rem gaps and dividing borders; side padding becomes 1rem, top padding 2rem and secondary spacing 1.25rem. Platform links form two columns; copyright stacks and aligns left.
-- Typography inherits the page font: body and headings are 0.875rem with 1.6 line height; headings use weight 650. App notes are 0.75rem and copyright is 0.8125rem.
+- At 767px and below, columns stack with 1.75rem gaps and no dividing rules; side padding becomes 1rem, top padding 2rem and secondary spacing 1.25rem. Platform links form two columns; copyright stacks and aligns left.
+- Typography inherits the page font: body and headings are 1rem with 1.6 line height; headings use weight 650. App notes are 0.75rem and copyright is 0.875rem.
 - Links underline on hover; keyboard focus uses a 2px current-color outline offset by 4px. Mobile and coarse-pointer links have a minimum 44px height. Social controls are 2.75rem square; social and app outlines have 6px corners.
 
 ## Validation
