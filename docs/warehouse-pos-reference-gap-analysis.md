@@ -31,7 +31,7 @@ The page must use three stages:
 
 - Show `Welcome, {user name}` and the current date.
 - Provide one `Search / Scan Product` input. In this scope, “scan” means that a scanner can type an existing SKU into the focused input and submit it; no separate barcode format or barcode-generation system is required.
-- Use a persistent left navigation tree built from the warehouse catalog hierarchy, with `All` and expandable category/variant groupings matching the reference composition.
+- Use a persistent left navigation tree with `All` and product types (for example, LPG). Clicking a type selects it and expands every distinct variant/pack available under that type (for example, 12 KG and 35 KG), across its categories and brands. Clicking a child filters by both its parent type and exact variant/pack, showing matching products across brands. Do not substitute subcategories for the variant children. `All` clears both filters. The tree stays available while searching and works on desktop and smaller screens. (Clarified by the screenshot on 2026-09-08.)
 - Show product/brand cards with current stock and add-to-order interaction.
 - Do not show the current Retail/Wholesale toggle or six-dropdown filter row.
 

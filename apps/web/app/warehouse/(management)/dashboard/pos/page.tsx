@@ -61,6 +61,11 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import {
+  buildPosTypeTree,
+  matchesPosTypeSelection,
+  type PosCatalogSelection,
+} from "@/lib/warehouse-pos-catalog";
+import {
   createWarehousePosInvoicePdf,
   printWarehousePosInvoice,
   shareWarehousePosInvoice,
@@ -73,6 +78,8 @@ type CatalogVariant = {
   productId: number;
   sku: string | null;
   coreProductName: string;
+  typeId: number;
+  typeName: string;
   categoryId: number;
   categoryName: string;
   subCategoryId: number;
@@ -316,11 +323,9 @@ function InvoiceSheet({ invoice }: { invoice: WarehousePosInvoiceDetail }) {
 
 export default function WarehousePosPage() {
   const [search, setSearch] = useState("");
-  const [categoryId, setCategoryId] = useState<number | null>(null);
-  const [subCategoryId, setSubCategoryId] = useState<number | null>(null);
-  const [expandedCategories, setExpandedCategories] = useState<Set<number>>(
-    new Set(),
-  );
+  const [catalogSelection, setCatalogSelection] =
+    useState<PosCatalogSelection>(null);
+  const [expandedTypes, setExpandedTypes] = useState<Set<number>>(new Set());
   const [cart, setCart] = useState<CartItem[]>([]);
   const [discount, setDiscount] = useState("0");
   const [discountDialog, setDiscountDialog] = useState(false);
@@ -421,31 +426,11 @@ export default function WarehousePosPage() {
     );
   }, [paymentAccounts]);
 
-  const categories = useMemo(() => {
-    const map = new Map<
-      number,
-      { id: number; name: string; subcategories: Map<number, string> }
-    >();
-    for (const variant of variants) {
-      const category = map.get(variant.categoryId) ?? {
-        id: variant.categoryId,
-        name: variant.categoryName,
-        subcategories: new Map<number, string>(),
-      };
-      category.subcategories.set(
-        variant.subCategoryId,
-        variant.subCategoryName,
-      );
-      map.set(category.id, category);
-    }
-    return [...map.values()].sort((a, b) => a.name.localeCompare(b.name));
-  }, [variants]);
+  const productTypes = useMemo(() => buildPosTypeTree(variants), [variants]);
 
   const normalizedSearch = search.trim().toLowerCase();
   const visibleVariants = variants.filter((variant) => {
-    if (categoryId !== null && variant.categoryId !== categoryId) return false;
-    if (subCategoryId !== null && variant.subCategoryId !== subCategoryId)
-      return false;
+    if (!matchesPosTypeSelection(variant, catalogSelection)) return false;
     if (!normalizedSearch) return true;
     return [
       variant.sku,
@@ -748,92 +733,99 @@ export default function WarehousePosPage() {
             </p>
           </div>
           <nav
-            aria-label="Product categories"
-            className="flex gap-1 overflow-x-auto p-2 xl:block xl:max-h-[calc(100vh-11rem)] xl:overflow-y-auto"
+            aria-label="Product types and variants"
+            className="max-h-64 space-y-1 overflow-y-auto p-2 xl:max-h-[calc(100vh-11rem)]"
           >
             <button
               className={cn(
-                "flex h-9 min-w-max items-center rounded-md px-3 text-sm font-medium transition-colors xl:w-full",
-                categoryId === null
+                "flex min-h-10 w-full items-center rounded-md px-3 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700",
+                catalogSelection === null
                   ? "bg-blue-700 text-white"
                   : "text-zinc-700 hover:bg-zinc-100",
               )}
-              onClick={() => {
-                setCategoryId(null);
-                setSubCategoryId(null);
-              }}
+              aria-pressed={catalogSelection === null}
+              onClick={() => setCatalogSelection(null)}
               type="button"
             >
-              All products
+              All
             </button>
-            {categories.map((category) => {
-              const expanded = expandedCategories.has(category.id);
+            {productTypes.map((productType) => {
+              const expanded = expandedTypes.has(productType.id);
+              const selected = catalogSelection?.typeId === productType.id;
               return (
-                <div className="min-w-max xl:min-w-0" key={category.id}>
-                  <div className="flex items-center">
-                    <button
-                      className={cn(
-                        "flex h-9 flex-1 items-center rounded-md px-3 text-left text-sm font-medium transition-colors",
-                        categoryId === category.id
-                          ? "bg-blue-700 text-white"
-                          : "text-zinc-700 hover:bg-zinc-100",
-                      )}
-                      onClick={() => {
-                        setCategoryId(category.id);
-                        setSubCategoryId(null);
-                      }}
-                      type="button"
-                    >
-                      <span className="truncate">{category.name}</span>
-                    </button>
-                    {category.subcategories.size > 0 ? (
-                      <button
-                        aria-expanded={expanded}
-                        aria-label={`${expanded ? "Collapse" : "Expand"} ${category.name}`}
-                        className="hidden h-9 w-8 items-center justify-center rounded-md text-zinc-500 hover:bg-zinc-100 xl:flex"
-                        onClick={() =>
-                          setExpandedCategories((current) => {
-                            const next = new Set(current);
-                            if (next.has(category.id)) next.delete(category.id);
-                            else next.add(category.id);
-                            return next;
-                          })
-                        }
-                        type="button"
-                      >
-                        {expanded ? (
-                          <ChevronDown className="h-4 w-4" />
-                        ) : (
-                          <ChevronRight className="h-4 w-4" />
-                        )}
-                      </button>
-                    ) : null}
-                  </div>
-                  {expanded ? (
-                    <ul className="hidden pb-2 pl-5 xl:block">
-                      {[...category.subcategories.entries()].map(
-                        ([id, name]) => (
-                          <li className="border-l border-zinc-200" key={id}>
-                            <button
-                              className={cn(
-                                "w-full px-3 py-1.5 text-left text-xs transition-colors",
-                                subCategoryId === id
-                                  ? "font-semibold text-blue-700"
-                                  : "text-zinc-500 hover:text-zinc-900",
-                              )}
-                              onClick={() => {
-                                setCategoryId(category.id);
-                                setSubCategoryId(id);
-                              }}
-                              type="button"
-                            >
-                              {name}
-                            </button>
-                          </li>
-                        ),
-                      )}
-                    </ul>
-                  ) : null}
+                <div key={productType.id}>
+                  <button
+                    aria-expanded={expanded}
+                    aria-controls={`pos-type-${productType.id}-variants`}
+                    aria-pressed={selected && catalogSelection.pack === null}
+                    className={cn(
+                      "flex min-h-10 w-full items-center gap-2 rounded-md px-3 text-left text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700",
+                      selected
+                        ? "bg-blue-700 text-white"
+                        : "text-zinc-700 hover:bg-zinc-100",
+                    )}
+                    onClick={() => {
+                      setCatalogSelection({
+                        typeId: productType.id,
+                        pack: null,
+                      });
+                      setExpandedTypes((current) => {
+                        const next = new Set(current);
+                        if (
+                          expanded &&
+                          selected &&
+                          catalogSelection.pack === null
+                        )
+                          next.delete(productType.id);
+                        else next.add(productType.id);
+                        return next;
+                      });
+                    }}
+                    type="button"
+                  >
+                    {expanded ? (
+                      <ChevronDown
+                        aria-hidden="true"
+                        className="h-3.5 w-3.5 shrink-0"
+                      />
+                    ) : (
+                      <ChevronRight
+                        aria-hidden="true"
+                        className="h-3.5 w-3.5 shrink-0"
+                      />
+                    )}
+                    <span className="break-words">{productType.name}</span>
+                  </button>
+                  <ul
+                    id={`pos-type-${productType.id}-variants`}
+                    hidden={!expanded}
+                    className="pb-2 pl-6"
+                  >
+                    {productType.packs.map((pack) => (
+                      <li className="border-l border-zinc-200" key={pack}>
+                        <button
+                          aria-pressed={
+                            selected && catalogSelection.pack === pack
+                          }
+                          className={cn(
+                            "min-h-10 w-full rounded-r-md px-3 py-1.5 text-left text-xs transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-700",
+                            selected && catalogSelection.pack === pack
+                              ? "bg-blue-50 font-semibold text-blue-700"
+                              : "text-zinc-600 hover:bg-zinc-50 hover:text-zinc-900",
+                          )}
+                          onClick={() => {
+                            setCatalogSelection({
+                              typeId: productType.id,
+                              pack,
+                            });
+                          }}
+                          type="button"
+                        >
+                          {pack}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
                 </div>
               );
             })}
