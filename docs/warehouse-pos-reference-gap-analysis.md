@@ -56,7 +56,8 @@ Use the central table shown in the reference:
 ### Order Details
 
 - Show the selected customer in a compact card.
-- `+` opens customer search/selection/creation.
+- Put a `Customer name or phone` search field directly in Order details and at the customer point in Complete Order. Typing shows matching existing warehouse POS customers; selecting a result attaches it to the order. Do not open a separate selection dialog or list customers before typing.
+- Only after a successful search has no matches, offer `Add customer` at the same point. Prefill the entered name or phone, collect customer name, phone, and location/address, then save and select that customer. Loading and failed searches must not offer creation. Phone remains required for due orders; existing field requirements otherwise stay unchanged. This is customer creation, not an account-unlocking or verification workflow. (Client feedback accepted on 2026-09-08.)
 - Display the selected customer's current warehouse POS outstanding due.
 - Default to Walk-In Customer when no named customer is selected.
 - Do not show Connected Store as a separate POS customer mode.
@@ -83,7 +84,7 @@ Coupon, reward, VAT/tax, delivery charge, shipping charge, and commission rows/a
 ### Customer
 
 - Display the selected customer.
-- Provide an edit action that returns to customer selection without losing the draft.
+- Provide inline customer name/phone search to change the customer without losing the draft.
 - A named customer with contact information is required when the submitted order leaves a due balance.
 
 ### Split payments

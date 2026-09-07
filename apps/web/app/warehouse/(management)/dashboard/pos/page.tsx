@@ -23,14 +23,11 @@ import {
   Share2,
   ShoppingBasket,
   Trash2,
-  UserRound,
-  UserRoundPlus,
   X,
 } from "lucide-react";
 import Image from "next/image";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -59,6 +56,10 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  type PosCustomer,
+  PosCustomerEntry,
+} from "@/components/warehouse/pos-customer-entry";
 import { cn } from "@/lib/utils";
 import {
   buildPosTypeTree,
@@ -91,15 +92,6 @@ type CatalogVariant = {
   allowsDecimal: boolean;
   availableQty: number;
   unitPrice: number;
-};
-
-type PosCustomer = {
-  id: number;
-  name: string;
-  phone: string | null;
-  address: string | null;
-  isDefault: boolean;
-  outstanding: number;
 };
 
 type CartItem = CatalogVariant & { quantity: number };
@@ -329,19 +321,8 @@ export default function WarehousePosPage() {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [discount, setDiscount] = useState("0");
   const [discountDialog, setDiscountDialog] = useState(false);
-  const [selectedCustomerId, setSelectedCustomerId] = useState<number | null>(
-    null,
-  );
   const [selectedCustomerSnapshot, setSelectedCustomerSnapshot] =
     useState<PosCustomer | null>(null);
-  const [customerDialog, setCustomerDialog] = useState(false);
-  const [customerSearch, setCustomerSearch] = useState("");
-  const [newCustomerDialog, setNewCustomerDialog] = useState(false);
-  const [customerForm, setCustomerForm] = useState({
-    name: "",
-    phone: "",
-    address: "",
-  });
   const [checkoutDialog, setCheckoutDialog] = useState(false);
   const [payments, setPayments] = useState<PaymentDraft[]>([newPayment()]);
   const [deliveryMethod, setDeliveryMethod] =
@@ -364,13 +345,6 @@ export default function WarehousePosPage() {
     queryKey: ["warehousePos", "catalog"],
     queryFn: () => orpc.warehousePos.getCatalog.call({}),
   });
-  const customersQuery = useQuery({
-    queryKey: ["warehousePos", "customers", customerSearch],
-    queryFn: () =>
-      orpc.warehousePos.searchCustomers.call({
-        search: customerSearch || undefined,
-      }),
-  });
   const accountsQuery = useQuery({
     queryKey: ["finance", "paymentAccounts"],
     queryFn: () => orpc.finance.getPaymentAccounts.call({}),
@@ -383,7 +357,6 @@ export default function WarehousePosPage() {
   });
 
   const variants = (catalogQuery.data?.variants ?? []) as CatalogVariant[];
-  const customers = (customersQuery.data?.customers ?? []) as PosCustomer[];
   const paymentAccounts = (accountsQuery.data?.paymentAccounts ??
     []) as PaymentAccount[];
   const defaultCustomer = useMemo(
@@ -398,19 +371,22 @@ export default function WarehousePosPage() {
         : null,
     [bootstrapQuery.data?.defaultCustomer],
   );
+  const selectedCustomerId = selectedCustomerSnapshot?.id;
+  const selectedCustomerQuery = useQuery({
+    queryKey: ["warehousePos", "customers", "selected", selectedCustomerId],
+    queryFn: () =>
+      orpc.warehousePos.searchCustomers.call({
+        customerId: selectedCustomerId!,
+      }),
+    enabled:
+      selectedCustomerId !== undefined && !selectedCustomerSnapshot?.isDefault,
+  });
   const selectedCustomer =
-    customers.find((customer) => customer.id === selectedCustomerId) ??
-    (selectedCustomerSnapshot?.id === selectedCustomerId
-      ? selectedCustomerSnapshot
-      : null) ??
-    (defaultCustomer?.id === selectedCustomerId ? defaultCustomer : null);
-
-  useEffect(() => {
-    if (selectedCustomerId === null && defaultCustomer?.id) {
-      setSelectedCustomerId(defaultCustomer.id);
-      setSelectedCustomerSnapshot(defaultCustomer);
-    }
-  }, [defaultCustomer, selectedCustomerId]);
+    selectedCustomerQuery.data?.customers.find(
+      (customer) => customer.id === selectedCustomerId,
+    ) ??
+    selectedCustomerSnapshot ??
+    defaultCustomer;
 
   useEffect(() => {
     if (paymentAccounts.length === 0) return;
@@ -548,38 +524,12 @@ export default function WarehousePosPage() {
     if (cart.length > 0 && !window.confirm("Reset this POS draft?")) return;
     setCart([]);
     setDiscount("0");
-    setSelectedCustomerId(defaultCustomer?.id ?? null);
     setSelectedCustomerSnapshot(defaultCustomer);
     setPayments([newPayment(paymentAccounts[0]?.id)]);
     setTerms(defaultTerms);
     setCheckoutRequestId(crypto.randomUUID());
     searchRef.current?.focus();
   };
-
-  const createCustomer = useMutation({
-    mutationFn: () =>
-      orpc.warehousePos.createCustomer.call({
-        name: customerForm.name.trim(),
-        phone: customerForm.phone.trim() || undefined,
-        address: customerForm.address.trim() || undefined,
-        customerType: "wholesale",
-      }),
-    onSuccess: async (result) => {
-      const created = result.customer;
-      setSelectedCustomerId(created?.id ?? null);
-      setSelectedCustomerSnapshot(
-        created ? { ...created, outstanding: 0 } : null,
-      );
-      setCustomerForm({ name: "", phone: "", address: "" });
-      setNewCustomerDialog(false);
-      setCustomerDialog(false);
-      await queryClient.invalidateQueries({
-        queryKey: ["warehousePos", "customers"],
-      });
-      toast.success("Customer added to the order");
-    },
-    onError: (error) => toast.error(errorMessage(error)),
-  });
 
   const holdOrder = useMutation({
     mutationFn: () =>
@@ -1075,36 +1025,15 @@ export default function WarehousePosPage() {
 
         <aside className="border-t border-zinc-200 bg-zinc-50 xl:border-l xl:border-t-0">
           <section className="border-b border-zinc-200 bg-white">
-            <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3">
+            <div className="border-b border-zinc-200 px-4 py-3">
               <h2 className="text-sm font-bold">Order details</h2>
-              <Button
-                className="h-8 gap-1.5"
-                onClick={() => setCustomerDialog(true)}
-                size="sm"
-                variant="ghost"
-              >
-                <UserRoundPlus className="h-4 w-4" />
-                Change
-              </Button>
             </div>
-            <div className="flex items-start gap-3 p-4">
-              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-zinc-100 text-zinc-600">
-                <UserRound className="h-4 w-4" />
-              </span>
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-semibold">
-                  {selectedCustomer?.name || "Walk-in Customer"}
-                </p>
-                <p className="mt-0.5 truncate text-xs text-zinc-500">
-                  {selectedCustomer?.phone || "No phone on file"}
-                </p>
-                <div className="mt-3 flex items-center justify-between border-t border-zinc-100 pt-3 text-xs">
-                  <span className="text-zinc-500">Customer due</span>
-                  <span className="font-mono font-bold tabular-nums">
-                    ৳{money(selectedCustomer?.outstanding)}
-                  </span>
-                </div>
-              </div>
+            <div className="p-4">
+              <PosCustomerEntry
+                selectedCustomer={selectedCustomer}
+                defaultCustomer={defaultCustomer}
+                onSelect={setSelectedCustomerSnapshot}
+              />
             </div>
           </section>
 
@@ -1180,166 +1109,6 @@ export default function WarehousePosPage() {
         </div>
       </footer>
 
-      <Dialog onOpenChange={setCustomerDialog} open={customerDialog}>
-        <DialogContent className="sm:max-w-xl">
-          <DialogHeader>
-            <DialogTitle>Select customer</DialogTitle>
-            <DialogDescription>
-              Choose a customer for this counter order or add a new one.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-400" />
-            <Input
-              className="pl-9"
-              onChange={(event) => setCustomerSearch(event.target.value)}
-              placeholder="Search by name or phone"
-              value={customerSearch}
-            />
-          </div>
-          <div className="max-h-80 overflow-y-auto rounded-lg border border-zinc-200">
-            {customersQuery.isLoading ? (
-              <div className="flex h-32 items-center justify-center text-sm text-zinc-500">
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Loading customers…
-              </div>
-            ) : null}
-            {!customersQuery.isLoading && defaultCustomer ? (
-              <button
-                className="flex w-full items-center justify-between border-b border-zinc-200 p-3 text-left hover:bg-zinc-50"
-                onClick={() => {
-                  setSelectedCustomerId(defaultCustomer.id);
-                  setSelectedCustomerSnapshot(defaultCustomer);
-                  setCustomerDialog(false);
-                }}
-                type="button"
-              >
-                <span>
-                  <span className="block text-sm font-semibold">
-                    Walk-in Customer
-                  </span>
-                  <span className="text-xs text-zinc-500">
-                    For fully paid counter orders
-                  </span>
-                </span>
-                <ChevronRight className="h-4 w-4 text-zinc-400" />
-              </button>
-            ) : null}
-            {customers
-              .filter((customer) => !customer.isDefault)
-              .map((customer) => (
-                <button
-                  className="flex w-full items-center justify-between border-b border-zinc-100 p-3 text-left last:border-b-0 hover:bg-zinc-50"
-                  key={customer.id}
-                  onClick={() => {
-                    setSelectedCustomerId(customer.id);
-                    setSelectedCustomerSnapshot(customer);
-                    setCustomerDialog(false);
-                  }}
-                  type="button"
-                >
-                  <span className="min-w-0">
-                    <span className="block truncate text-sm font-semibold">
-                      {customer.name}
-                    </span>
-                    <span className="block truncate text-xs text-zinc-500">
-                      {customer.phone || "No phone"}
-                      {customer.address ? ` · ${customer.address}` : ""}
-                    </span>
-                  </span>
-                  <span className="ml-4 shrink-0 font-mono text-xs tabular-nums">
-                    Due ৳{money(customer.outstanding)}
-                  </span>
-                </button>
-              ))}
-          </div>
-          <DialogFooter>
-            <Button
-              className="gap-2"
-              onClick={() => setNewCustomerDialog(true)}
-              variant="outline"
-            >
-              <UserRoundPlus className="h-4 w-4" />
-              New customer
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog onOpenChange={setNewCustomerDialog} open={newCustomerDialog}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Add customer</DialogTitle>
-            <DialogDescription>
-              A phone number is required if this customer will carry a due
-              balance.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="grid gap-4 py-2">
-            <div className="grid gap-2">
-              <Label htmlFor="customer-name">Customer name *</Label>
-              <Input
-                id="customer-name"
-                onChange={(event) =>
-                  setCustomerForm((current) => ({
-                    ...current,
-                    name: event.target.value,
-                  }))
-                }
-                value={customerForm.name}
-              />
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="customer-phone">Phone</Label>
-              <Input
-                id="customer-phone"
-                onChange={(event) =>
-                  setCustomerForm((current) => ({
-                    ...current,
-                    phone: event.target.value,
-                  }))
-                }
-                placeholder="01XXXXXXXXX"
-                value={customerForm.phone}
-              />
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="customer-address">Address</Label>
-              <Textarea
-                id="customer-address"
-                onChange={(event) =>
-                  setCustomerForm((current) => ({
-                    ...current,
-                    address: event.target.value,
-                  }))
-                }
-                value={customerForm.address}
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button
-              onClick={() => setNewCustomerDialog(false)}
-              variant="outline"
-            >
-              Cancel
-            </Button>
-            <Button
-              className="bg-blue-700 hover:bg-blue-800"
-              disabled={
-                customerForm.name.trim().length < 2 || createCustomer.isPending
-              }
-              onClick={() => createCustomer.mutate()}
-            >
-              {createCustomer.isPending ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : null}
-              Save customer
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
       <Dialog onOpenChange={setDiscountDialog} open={discountDialog}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
@@ -1387,22 +1156,12 @@ export default function WarehousePosPage() {
             </DialogDescription>
           </DialogHeader>
 
-          <section className="flex items-center justify-between gap-4 rounded-lg border border-zinc-200 bg-zinc-50 p-3">
-            <div className="min-w-0">
-              <p className="text-xs font-semibold uppercase tracking-[0.08em] text-zinc-500">
-                Selected customer
-              </p>
-              <p className="mt-1 truncate text-sm font-semibold">
-                {selectedCustomer?.name || "Walk-in Customer"}
-              </p>
-            </div>
-            <Button
-              onClick={() => setCustomerDialog(true)}
-              size="sm"
-              variant="outline"
-            >
-              Edit customer
-            </Button>
+          <section className="rounded-lg border border-zinc-200 bg-white p-3">
+            <PosCustomerEntry
+              selectedCustomer={selectedCustomer}
+              defaultCustomer={defaultCustomer}
+              onSelect={setSelectedCustomerSnapshot}
+            />
           </section>
 
           <section className="mt-2">

@@ -509,11 +509,20 @@ export const warehousePosRouter = {
         }),
 
     searchCustomers: warehouseProcedure
-        .input(z.object({ search: z.string().optional() }).optional())
+        .input(
+            z.object({
+                search: z.string().optional(),
+                customerId: z.number().int().positive().optional(),
+            }).optional(),
+        )
         .handler(async ({ context, input }) => {
             const warehouseId = context.session.user.id;
             const searchTerm = input?.search?.trim();
             const conditions: SQL[] = [eq(warehousePosCustomer.warehouseId, warehouseId)];
+
+            if (input?.customerId) {
+                conditions.push(eq(warehousePosCustomer.id, input.customerId));
+            }
 
             if (searchTerm) {
                 const textFilter = or(

@@ -266,6 +266,25 @@ test(
 				},
 			);
 
+			const selectedCustomer = await invokeProcedure<{
+				customers: { id: number; outstanding: number }[];
+			}>(warehousePosRouter.searchCustomers, context, {
+				customerId: named.customer.id,
+			});
+			assert.equal(selectedCustomer.customers.length, 1);
+			assert.equal(selectedCustomer.customers[0]?.id, named.customer.id);
+			assert.equal(selectedCustomer.customers[0]?.outstanding, 200);
+			const otherWarehouseLookup = await invokeProcedure<{
+				customers: { id: number }[];
+			}>(
+				warehousePosRouter.searchCustomers,
+				{
+					session: { user: { ...context.session.user, id: otherWarehouseId } },
+				},
+				{ customerId: named.customer.id },
+			);
+			assert.deepEqual(otherWarehouseLookup.customers, []);
+
 			const afterCheckout = await db.query.inventory.findFirst({
 				where: and(
 					eq(inventory.ownerType, "warehouse"),
