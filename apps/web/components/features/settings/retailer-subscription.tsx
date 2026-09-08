@@ -84,7 +84,12 @@ export function SubscriptionDetails({
       current ? subscriptionDate(current.expiresAt, "No expiry") : null,
     ],
     ["Auto Renewal", current ? "Off" : null],
-    ["Next Billing Date", current ? "Not scheduled" : null],
+    [
+      "Next Billing Date",
+      current
+        ? subscriptionDate(current.nextBillingAt, "Not scheduled")
+        : null,
+    ],
     ["Payment Status", current?.paymentStatus],
   ];
   return (

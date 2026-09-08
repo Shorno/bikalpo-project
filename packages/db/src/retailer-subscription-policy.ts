@@ -68,6 +68,21 @@ export type SubscriptionTerm = {
 export function subscriptionStatus(term: SubscriptionTerm, now = new Date()) {
   return term.expiresAt && now >= term.expiresAt ? "Expired" : "Active";
 }
+
+export function subscriptionNextBillingAt(
+  term: SubscriptionTerm,
+  now = new Date(),
+) {
+  if (
+    term.durationMonths === null ||
+    !term.expiresAt ||
+    subscriptionStatus(term, now) === "Expired"
+  )
+    return null;
+
+  return term.expiresAt;
+}
+
 export function subscriptionAction(
   current: SubscriptionTerm | null,
   duration: number | null,

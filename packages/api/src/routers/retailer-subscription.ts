@@ -2,6 +2,7 @@ import { db } from "@bikalpo-project/db";
 import {
   subscriptionAction,
   subscriptionExpiry,
+  subscriptionNextBillingAt,
   subscriptionStatus,
   validateSubscriptionCatalog,
 } from "@bikalpo-project/db/retailer-subscription-policy";
@@ -60,6 +61,7 @@ export function retailerSubscriptionDto(
 ) {
   return {
     ...term,
+    nextBillingAt: subscriptionNextBillingAt(term, now),
     status: subscriptionStatus(term, now),
     paymentStatus: term.purchaseId ? "Paid (Dummy)" : "Not required",
   };

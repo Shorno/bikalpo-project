@@ -5,6 +5,7 @@ import {
   isEligibleSubscriptionAccount,
   subscriptionAction,
   subscriptionExpiry,
+  subscriptionNextBillingAt,
   subscriptionStatus,
   validateSubscriptionCatalog,
 } from "./retailer-subscription-policy";
@@ -67,6 +68,37 @@ test("only upgrades are offered during active terms and expiry permits manual re
   assert.equal(subscriptionStatus(current, expiresAt), "Expired");
   assert.equal(subscriptionStatus({ ...current, expiresAt: null }), "Active");
   assert.equal(subscriptionAction(null, 1), null);
+});
+
+test("active paid terms bill at expiry while free and expired terms are unscheduled", () => {
+  const now = new Date("2026-09-08T06:00:00.000Z");
+  const expiry = new Date("2026-10-08T06:00:00.000Z");
+
+  assert.equal(
+    subscriptionNextBillingAt(
+      { durationMonths: 1, startsAt: now, expiresAt: expiry },
+      now,
+    ),
+    expiry,
+  );
+  assert.equal(
+    subscriptionNextBillingAt(
+      { durationMonths: null, startsAt: now, expiresAt: null },
+      now,
+    ),
+    null,
+  );
+  assert.equal(
+    subscriptionNextBillingAt(
+      {
+        durationMonths: 1,
+        startsAt: new Date("2026-08-08T06:00:00.000Z"),
+        expiresAt: now,
+      },
+      now,
+    ),
+    null,
+  );
 });
 
 test("eligibility excludes staff, warehouses, restaurants and currently banned owners", () => {
