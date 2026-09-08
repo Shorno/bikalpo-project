@@ -11,10 +11,8 @@ import {
   ContactRound,
   Edit3,
   Loader2,
-  MapPin,
   Save,
 } from "lucide-react";
-import dynamic from "next/dynamic";
 import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useState } from "react";
@@ -51,26 +49,10 @@ import { BUSINESS_NATURES } from "@/constants/seller-registration";
 import {
   useUpdateBusinessContactInformation,
   useUpdateBusinessInformation,
-  useUpdateShopLocation,
   useUpdateShopProfile,
 } from "@/hooks/use-shop-owner-api";
 import { authClient } from "@/lib/auth-client";
 import { orpc } from "@/utils/orpc";
-
-const AddressPicker = dynamic(
-  () =>
-    import("@/components/shared/address-picker").then(
-      (mod) => mod.AddressPicker,
-    ),
-  {
-    ssr: false,
-    loading: () => (
-      <div className="flex h-[250px] items-center justify-center rounded-lg bg-muted text-sm text-muted-foreground">
-        Loading map...
-      </div>
-    ),
-  },
-);
 
 type BusinessApplication =
   | typeof sellerApplication.$inferSelect
@@ -120,11 +102,8 @@ export default function ShopSettingsPage() {
     enabled: Boolean(user?.id),
     retry: false,
   });
-  const updateLocationMutation = useUpdateShopLocation();
   const updateProfileMutation = useUpdateShopProfile();
 
-  const [lat, setLat] = useState("");
-  const [lng, setLng] = useState("");
   const [shopLogo, setShopLogo] = useState("");
   const [logoDialogOpen, setLogoDialogOpen] = useState(false);
   const [isLogoUploading, setIsLogoUploading] = useState(false);
@@ -133,20 +112,9 @@ export default function ShopSettingsPage() {
 
   useEffect(() => {
     if (!user?.id) return;
-    setLat(user.shopLat || "");
-    setLng(user.shopLng || "");
-  }, [user?.id, user?.shopLat, user?.shopLng]);
-
-  useEffect(() => {
-    if (!user?.id) return;
     setOpeningTime(user?.shopOpeningTime || "");
     setClosingTime(user?.shopClosingTime || "");
   }, [user?.id, user?.shopClosingTime, user?.shopOpeningTime]);
-
-  const handleSaveLocation = async () => {
-    if (!lat || !lng) return;
-    await updateLocationMutation.mutateAsync({ lat, lng });
-  };
 
   const handleSaveProfile = async () => {
     await updateProfileMutation.mutateAsync({
@@ -506,66 +474,6 @@ export default function ShopSettingsPage() {
                 <Save className="size-4" />
               )}
               Save storefront settings
-            </Button>
-          </div>
-        </div>
-      </section>
-
-      <section
-        className="overflow-hidden rounded-xl border bg-white"
-        aria-labelledby="shop-location-heading"
-      >
-        <div className="border-b p-6">
-          <h2
-            id="shop-location-heading"
-            className="flex items-center gap-2 text-lg font-semibold text-gray-950"
-          >
-            <MapPin className="size-5 text-emerald-700" aria-hidden="true" />
-            Shop location
-          </h2>
-          <p className="mt-1 text-sm text-gray-500">
-            Pin the exact shop location used to match nearby open orders.
-          </p>
-        </div>
-
-        <div className="space-y-4 p-6">
-          {lat && lng && (
-            <div className="flex flex-wrap items-center gap-3 text-sm">
-              <span className="text-gray-500">Current coordinates</span>
-              <code className="rounded bg-gray-100 px-2 py-1 text-xs">
-                {Number(lat).toFixed(6)}, {Number(lng).toFixed(6)}
-              </code>
-            </div>
-          )}
-
-          <AddressPicker
-            lat={lat}
-            lng={lng}
-            onLocationChange={(newLat, newLng) => {
-              setLat(newLat);
-              setLng(newLng);
-            }}
-            onAddressResolved={() => {}}
-            height="300px"
-          />
-
-          <div className="flex justify-end">
-            <Button
-              onClick={handleSaveLocation}
-              disabled={!lat || !lng || updateLocationMutation.isPending}
-              className="bg-emerald-600 hover:bg-emerald-700"
-            >
-              {updateLocationMutation.isPending ? (
-                <>
-                  <Loader2 className="size-4 animate-spin" />
-                  Saving location...
-                </>
-              ) : (
-                <>
-                  <Save className="size-4" />
-                  Save location
-                </>
-              )}
             </Button>
           </div>
         </div>

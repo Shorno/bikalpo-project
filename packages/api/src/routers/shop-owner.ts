@@ -2070,42 +2070,6 @@ const mutations = {
       };
     }),
 
-  /** Update shop location coordinates */
-  updateShopLocation: shopOwnerProcedure
-    .route({
-      method: "POST",
-      path: "/shop-owner/update-location",
-      tags: ["Shop Owner"],
-      summary: "Update shop location (lat/lng)",
-    })
-    .input(
-      z.object({
-        lat: z.string().refine((v) => !isNaN(Number(v)), {
-          message: "Latitude must be a number",
-        }),
-        lng: z.string().refine((v) => !isNaN(Number(v)), {
-          message: "Longitude must be a number",
-        }),
-      }),
-    )
-    .handler(async ({ input, context }) => {
-      const userId = shopTenantId(context.session.user);
-
-      await db
-        .update(user)
-        .set({
-          shopLat: input.lat,
-          shopLng: input.lng,
-        })
-        .where(eq(user.id, userId));
-
-      return {
-        success: true,
-        message: "Shop location updated",
-        location: { lat: input.lat, lng: input.lng },
-      };
-    }),
-
   /** Update the business identity and location fields captured at registration. */
   updateBusinessInformation: shopOwnerProcedure
     .route({

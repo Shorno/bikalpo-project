@@ -622,17 +622,6 @@ export function useUpdateRetailPrice() {
   );
 }
 
-/** Update shop location */
-export function useUpdateShopLocation() {
-  return useMutation({
-    ...orpc.shopOwner.updateShopLocation.mutationOptions(),
-    onSuccess: () => {
-      toast.success("Shop location updated!");
-    },
-    onError: (err) => toast.error(err.message),
-  });
-}
-
 /** Update shop branding and operating hours */
 export function useUpdateShopProfile() {
   return useMutation({
