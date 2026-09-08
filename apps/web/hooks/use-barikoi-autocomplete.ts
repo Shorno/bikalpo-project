@@ -13,6 +13,7 @@ export interface BarikoiPlace {
   city_bn: string;
   area: string;
   area_bn: string;
+  sub_district?: string;
   postCode: number;
   pType: string;
   uCode: string;

@@ -50,6 +50,7 @@ export const sellerApplication = pgTable(
         latitude: text("latitude"),
         longitude: text("longitude"),
         area: text("area"),
+        thana: text("thana"),
         district: text("district"),
         division: text("division"),
         postCode: text("post_code"),
@@ -68,6 +69,8 @@ export const sellerApplication = pgTable(
         // Social
         facebookUrl: text("facebook_url"),
         whatsappNumber: text("whatsapp_number"),
+        messengerUrl: text("messenger_url"),
+        telegramUrl: text("telegram_url"),
         instagramUrl: text("instagram_url"),
         websiteUrl: text("website_url"),
         tiktokUrl: text("tiktok_url"),

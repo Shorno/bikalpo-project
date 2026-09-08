@@ -15,6 +15,8 @@ interface ImageUploaderProps {
   maxSizeMB?: number;
   className?: string;
   disabled?: boolean;
+  deleteOnRemove?: boolean;
+  onUploadStateChange?: (isUploading: boolean) => void;
 }
 
 export default function ImageUploader({
@@ -24,12 +26,15 @@ export default function ImageUploader({
   maxSizeMB = 5,
   className = "",
   disabled = false,
+  deleteOnRemove = true,
+  onUploadStateChange,
 }: ImageUploaderProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string>(value);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
   const [isDeleting, startDeleteTransition] = useTransition();
+  const uploadInFlight = React.useRef(false);
 
   React.useEffect(() => {
     setPreviewUrl(value);
@@ -37,6 +42,7 @@ export default function ImageUploader({
 
   const handleFileUpload = useCallback(
     async (file: File) => {
+      if (disabled || uploadInFlight.current) return;
       setError(null);
 
       // Client-side validation
@@ -48,6 +54,8 @@ export default function ImageUploader({
         return;
       }
 
+      uploadInFlight.current = true;
+      onUploadStateChange?.(true);
       startTransition(async () => {
         try {
           const fileDataUrl = await fileToDataUrl(file);
@@ -69,10 +77,13 @@ export default function ImageUploader({
           setError(errorMessage);
           toast.error(errorMessage);
           console.error("Upload error:", error);
+        } finally {
+          uploadInFlight.current = false;
+          onUploadStateChange?.(false);
         }
       });
     },
-    [folder, maxSizeMB, onChange],
+    [disabled, folder, maxSizeMB, onChange, onUploadStateChange],
   );
 
   const handleDragEnter = useCallback(
@@ -133,7 +144,7 @@ export default function ImageUploader({
 
     const publicId = getPublicIdFromUrl(previewUrl);
 
-    if (publicId) {
+    if (publicId && deleteOnRemove) {
       startDeleteTransition(async () => {
         try {
           const result = await client.cloudinary.delete({ publicId });
@@ -157,7 +168,7 @@ export default function ImageUploader({
       onChange?.("");
       setError(null);
     }
-  }, [previewUrl, onChange, disabled]);
+  }, [previewUrl, onChange, disabled, deleteOnRemove]);
 
   const isLoading = isPending || isDeleting;
 

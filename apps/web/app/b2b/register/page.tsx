@@ -515,7 +515,8 @@ export default function RegisterPage() {
 
         postCode: business.businessLocation.postCode || undefined,
 
-        selectedPlan: "free_trial",
+        // Registration preference only; approval provisions the actual retailer Free term.
+        selectedPlan: isWarehouse ? "free_trial" : "free",
 
         binNumber: verification.binNumber || undefined,
 
@@ -576,6 +577,8 @@ export default function RegisterPage() {
           businessType: "retail",
 
           shopAddress: business.businessLocation.address,
+
+          thana: business.businessLocation.thana || undefined,
 
           ...sharedFields,
 

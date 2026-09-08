@@ -7,7 +7,10 @@ import { useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import type { LocationData } from "@/constants/seller-registration";
+import type {
+  LocationAddress,
+  LocationData,
+} from "@/constants/seller-registration";
 
 import type { BarikoiPlace } from "@/hooks/use-barikoi-autocomplete";
 import { useBarikoiAutocomplete } from "@/hooks/use-barikoi-autocomplete";
@@ -39,6 +42,8 @@ interface LocationPickerSectionProps {
   onUpdate: (data: LocationData) => void;
 
   required?: boolean;
+
+  summaryLocationLevel?: "area" | "thana";
 }
 
 export function LocationPickerSection({
@@ -51,6 +56,8 @@ export function LocationPickerSection({
   onUpdate,
 
   required = true,
+
+  summaryLocationLevel = "area",
 }: LocationPickerSectionProps) {
   const {
     suggestions,
@@ -114,6 +121,7 @@ export function LocationPickerSection({
       addressBn: "",
 
       area: resolved?.area || place.area || "",
+      thana: resolved?.thana || place.sub_district || "",
 
       district: resolved?.district || "",
 
@@ -168,6 +176,7 @@ export function LocationPickerSection({
           address: resolved.address || "",
           addressBn: "",
           area: resolved.area || "",
+          thana: resolved.thana || "",
           district: resolved.district || "",
           division: resolved.division || "",
           postCode: resolved.postCode || "",
@@ -191,19 +200,7 @@ export function LocationPickerSection({
 
     lng: number,
 
-    addressInfo?: {
-      address: string;
-
-      addressBn: string;
-
-      area: string;
-
-      district: string;
-
-      division: string;
-
-      postCode: string;
-    },
+    addressInfo?: LocationAddress,
   ) => {
     if (addressInfo) {
       setLocationError("");
@@ -221,6 +218,7 @@ export function LocationPickerSection({
         addressBn: addressInfo.addressBn,
 
         area: addressInfo.area,
+        thana: addressInfo.thana || "",
 
         district: addressInfo.district,
 
@@ -237,6 +235,7 @@ export function LocationPickerSection({
         address: "",
         addressBn: "",
         area: "",
+        thana: "",
         district: "",
         division: "",
         postCode: "",
@@ -349,13 +348,25 @@ export function LocationPickerSection({
               </span>
             </div>
 
-            {data.area && (
+            {summaryLocationLevel === "area" && data.area && (
               <div>
                 <span className="block text-xs text-muted-foreground">
                   Area
                 </span>
 
                 <span className="font-medium text-foreground">{data.area}</span>
+              </div>
+            )}
+
+            {summaryLocationLevel === "thana" && data.thana && (
+              <div>
+                <span className="block text-xs text-muted-foreground">
+                  Thana
+                </span>
+
+                <span className="font-medium text-foreground">
+                  {data.thana}
+                </span>
               </div>
             )}
 

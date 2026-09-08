@@ -15,6 +15,7 @@ import {
 } from "drizzle-orm";
 import {
     inventory,
+    financePaymentAccount,
     user,
     warehousePosCart,
     warehousePosCustomer,
@@ -26,6 +27,11 @@ import { ORPCError } from "@orpc/server";
 import { z } from "zod";
 import { warehouseProcedure } from "../index";
 import { ensurePosWalkInCustomer } from "../services/owner-pos-store";
+import {
+    calculatePosSplitPayments,
+    validatePosDueCustomer,
+} from "../services/owner-pos";
+import { postWarehousePosSaleAccounting } from "../services/warehouse-pos-accounting";
 
 const catalogFilterSchema = z.object({
     search: z.string().optional(),
@@ -40,11 +46,9 @@ const catalogFilterSchema = z.object({
 const cartItemInputSchema = z.object({
     variantId: z.number().int(),
     quantity: z.number().positive(),
-    unitPrice: z.number().nonnegative().optional(),
 });
 
 const saleTypeSchema = z.enum(["retail", "wholesale"]);
-const paymentMethodSchema = z.enum(["cash", "bkash", "nagad", "bank", "due"]);
 
 type CatalogVariantRow = {
     variantId: number;
@@ -111,22 +115,19 @@ async function ensureWalkInCustomer(warehouseId: string, userId: string) {
     return ensurePosWalkInCustomer({ kind: "warehouse", id: warehouseId }, userId);
 }
 
-async function generateInvoiceNo(
-    warehouseId: string,
-    saleType: "retail" | "wholesale",
-): Promise<string> {
-    const prefix = saleType === "wholesale" ? "WH-INV-" : "INV-";
-    const [countRow] = await db
-        .select({ count: sql<number>`count(*)::int` })
-        .from(warehousePosSale)
-        .where(
-            and(
-                eq(warehousePosSale.warehouseId, warehouseId),
-                eq(warehousePosSale.saleType, saleType),
-            ),
-        );
-
-    return `${prefix}${String((countRow?.count ?? 0) + 1).padStart(4, "0")}`;
+async function generateInvoiceNo(): Promise<string> {
+    const result = await db.execute<{ sequence: string }>(
+        sql`SELECT nextval('warehouse_pos_invoice_seq')::text AS sequence`,
+    );
+    const sequence = result.rows[0]?.sequence;
+    if (!sequence) {
+        throw new ORPCError("INTERNAL_SERVER_ERROR", {
+            message: "Could not generate warehouse POS invoice number",
+        });
+    }
+    const date = new Date();
+    const datePart = [date.getFullYear(), String(date.getMonth() + 1).padStart(2, "0"), String(date.getDate()).padStart(2, "0")].join("");
+    return `INV-${datePart}-${sequence.padStart(6, "0")}`;
 }
 
 async function generateHeldRef(warehouseId: string): Promise<string> {
@@ -259,7 +260,7 @@ async function getCatalogRows(warehouseId: string): Promise<CatalogVariantRow[]>
 
 async function resolveSaleLines(
     warehouseId: string,
-    items: Array<{ variantId: number; quantity: number; unitPrice?: number }>,
+    items: Array<{ variantId: number; quantity: number }>,
 ): Promise<{ lines: ResolvedSaleLine[]; subtotal: number }> {
     const variantIds = Array.from(new Set(items.map((item) => item.variantId)));
 
@@ -358,18 +359,22 @@ async function resolveSaleLines(
             unitLabel: stock.variant.unitLabel,
             packType: stock.variant.packType,
         });
-        const unitPrice = item.unitPrice && item.unitPrice > 0
-            ? item.unitPrice
-            : (toNumber(stock.retailPrice) > 0
-                ? toNumber(stock.retailPrice)
-                : toNumber(stock.variant.price));
+        const unitPrice = toNumber(stock.retailPrice) > 0
+            ? toNumber(stock.retailPrice)
+            : toNumber(stock.variant.price);
         const lineTotal = unitPrice * item.quantity;
+        const productName = stock.variant.product.coreProduct?.name || stock.variant.product.name;
+        const brandName = stock.variant.brand?.name?.trim();
+        const alreadyBranded = brandName && (
+            productName.toLowerCase() === brandName.toLowerCase() ||
+            productName.toLowerCase().startsWith(`${brandName.toLowerCase()} `)
+        );
 
         lines.push({
             variantId: stock.variant.id,
             productId: stock.variant.product.id,
             sku: stock.variant.sku,
-            productName: stock.variant.product.coreProduct?.name || stock.variant.product.name,
+            productName: brandName && !alreadyBranded ? `${brandName} ${productName}` : productName,
             variantLabel: pack,
             unitLabel:
                 operations?.operationalUnit ??
@@ -510,11 +515,20 @@ export const warehousePosRouter = {
         }),
 
     searchCustomers: warehouseProcedure
-        .input(z.object({ search: z.string().optional() }).optional())
+        .input(
+            z.object({
+                search: z.string().optional(),
+                customerId: z.number().int().positive().optional(),
+            }).optional(),
+        )
         .handler(async ({ context, input }) => {
             const warehouseId = context.session.user.id;
             const searchTerm = input?.search?.trim();
             const conditions: SQL[] = [eq(warehousePosCustomer.warehouseId, warehouseId)];
+
+            if (input?.customerId) {
+                conditions.push(eq(warehousePosCustomer.id, input.customerId));
+            }
 
             if (searchTerm) {
                 const textFilter = or(
@@ -539,7 +553,33 @@ export const warehousePosRouter = {
                 .orderBy(desc(warehousePosCustomer.isDefault), desc(warehousePosCustomer.createdAt))
                 .limit(30);
 
-            return { customers };
+            const customerIds = customers.map((customer) => customer.id);
+            const dueRows = customerIds.length
+                ? await db
+                    .select({
+                        customerId: warehousePosSale.customerId,
+                        outstanding: sql<string>`COALESCE(SUM(${warehousePosSale.due}::numeric), 0)::text`,
+                    })
+                    .from(warehousePosSale)
+                    .where(
+                        and(
+                            eq(warehousePosSale.warehouseId, warehouseId),
+                            eq(warehousePosSale.status, "completed"),
+                            inArray(warehousePosSale.customerId, customerIds),
+                        ),
+                    )
+                    .groupBy(warehousePosSale.customerId)
+                : [];
+            const outstandingByCustomer = new Map(
+                dueRows.map((row) => [row.customerId, toNumber(row.outstanding)]),
+            );
+
+            return {
+                customers: customers.map((customer) => ({
+                    ...customer,
+                    outstanding: outstandingByCustomer.get(customer.id) ?? 0,
+                })),
+            };
         }),
 
     createCustomer: warehouseProcedure
@@ -676,35 +716,104 @@ export const warehousePosRouter = {
     completeSale: warehouseProcedure
         .input(
             z.object({
-                saleType: saleTypeSchema.default("retail"),
                 customerId: z.number().int().optional(),
-                customerName: z.string().optional(),
-                customerPhone: z.string().optional(),
-                customerAddress: z.string().optional(),
-                paymentMethod: paymentMethodSchema,
-                paidAmount: z.number().nonnegative().optional(),
+                checkoutRequestId: z.string().trim().min(8).max(80),
                 discount: z.number().nonnegative().optional(),
-                tax: z.number().nonnegative().optional(),
                 note: z.string().optional(),
+                terms: z.string().max(3000).optional(),
+                deliveryMethod: z.string().trim().min(1).max(80),
+                paymentStatus: z.enum(["paid", "partial", "due"]),
+                saleDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+                payments: z.array(z.object({
+                    paymentAccountId: z.number().int().positive(),
+                    receivedAmount: z.number().nonnegative(),
+                })).min(1).max(8),
                 heldCartId: z.number().int().optional(),
                 items: z.array(cartItemInputSchema).min(1),
             }),
         )
         .handler(async ({ context, input }) => {
             const warehouseId = context.session.user.id;
+            const existingSale = await db.query.warehousePosSale.findFirst({
+                where: and(
+                    eq(warehousePosSale.warehouseId, warehouseId),
+                    eq(warehousePosSale.checkoutRequestId, input.checkoutRequestId),
+                ),
+            });
+            if (existingSale) {
+                return {
+                    saleId: existingSale.id,
+                    invoiceNo: existingSale.invoiceNo,
+                    duplicate: true,
+                    totals: {
+                        subtotal: existingSale.subtotal,
+                        discount: existingSale.discount,
+                        tax: existingSale.tax,
+                        total: existingSale.total,
+                        paid: existingSale.paid,
+                        due: existingSale.due,
+                        received: existingSale.tenderedAmount ?? existingSale.paid,
+                        change: existingSale.changeAmount,
+                    },
+                };
+            }
+
             const discount = input.discount ?? 0;
-            const tax = input.tax ?? 0;
             const { lines, subtotal } = await resolveSaleLines(warehouseId, input.items);
-            const total = Math.max(0, subtotal - discount + tax);
-            const paid = input.paidAmount !== undefined
-                ? Math.max(0, input.paidAmount)
-                : (input.paymentMethod === "due" ? 0 : total);
-            const due = Math.max(0, total - paid);
+            if (discount > subtotal) {
+                throw new ORPCError("BAD_REQUEST", {
+                    message: "Discount cannot exceed subtotal",
+                });
+            }
+            const total = Math.max(0, subtotal - discount);
+
+            const accountIds = input.payments.map((payment) => payment.paymentAccountId);
+            const paymentAccounts = await db.query.financePaymentAccount.findMany({
+                where: and(
+                    eq(financePaymentAccount.ownerId, warehouseId),
+                    eq(financePaymentAccount.ownerType, "warehouse"),
+                    eq(financePaymentAccount.isActive, true),
+                    inArray(financePaymentAccount.id, accountIds),
+                ),
+            });
+            const accountById = new Map(paymentAccounts.map((account) => [account.id, account]));
+            if (accountById.size !== new Set(accountIds).size) {
+                throw new ORPCError("BAD_REQUEST", {
+                    message: "Select active payment accounts owned by this warehouse",
+                });
+            }
+
+            let splitPayment;
+            try {
+                splitPayment = calculatePosSplitPayments({
+                    payableTotal: total,
+                    payments: input.payments.map((payment) => {
+                        const account = accountById.get(payment.paymentAccountId);
+                        if (!account || (account.type !== "cash" && account.type !== "bank")) {
+                            throw new Error("Select a valid cash or bank account");
+                        }
+                        return {
+                            accountId: account.id,
+                            accountType: account.type,
+                            receivedAmount: payment.receivedAmount,
+                        };
+                    }),
+                });
+            } catch (error) {
+                throw new ORPCError("BAD_REQUEST", {
+                    message: error instanceof Error ? error.message : "Invalid split payments",
+                });
+            }
+            if (splitPayment.paymentStatus !== input.paymentStatus) {
+                throw new ORPCError("BAD_REQUEST", {
+                    message: `Payment status must be ${splitPayment.paymentStatus}`,
+                });
+            }
 
             let customerId: number | null = input.customerId ?? null;
-            let customerName = (input.customerName || "").trim();
-            let customerPhone = (input.customerPhone || "").trim() || null;
-            let customerAddress = (input.customerAddress || "").trim() || null;
+            let customerName = "";
+            let customerPhone: string | null = null;
+            let customerAddress: string | null = null;
 
             if (customerId) {
                 const customer = await db.query.warehousePosCustomer.findFirst({
@@ -729,9 +838,42 @@ export const warehousePosRouter = {
                 customerAddress = walkIn.address;
             }
 
-            const invoiceNo = await generateInvoiceNo(warehouseId, input.saleType);
+            try {
+                validatePosDueCustomer(
+                    { name: customerName, phone: customerPhone },
+                    {
+                        subtotal,
+                        discount,
+                        taxableAmount: total,
+                        tax: 0,
+                        total,
+                        paid: splitPayment.appliedTotal,
+                        due: splitPayment.due,
+                        change: splitPayment.change,
+                    },
+                );
+            } catch (error) {
+                throw new ORPCError("BAD_REQUEST", {
+                    message: error instanceof Error ? error.message : "Invalid Due customer",
+                });
+            }
+
+            const invoiceNo = await generateInvoiceNo();
 
             const result = await db.transaction(async (tx) => {
+                await tx.execute(
+                    sql`SELECT pg_advisory_xact_lock(hashtext(${input.checkoutRequestId}))`,
+                );
+                const concurrentDuplicate = await tx.query.warehousePosSale.findFirst({
+                    where: and(
+                        eq(warehousePosSale.warehouseId, warehouseId),
+                        eq(warehousePosSale.checkoutRequestId, input.checkoutRequestId),
+                    ),
+                });
+                if (concurrentDuplicate) {
+                    return { sale: concurrentDuplicate, duplicate: true };
+                }
+
                 // Atomic stock deduction (guarded against negative stock)
                 for (const line of lines) {
                     const updatedInventory = await tx
@@ -760,19 +902,34 @@ export const warehousePosRouter = {
                     .insert(warehousePosSale)
                     .values({
                         warehouseId,
-                        saleType: input.saleType,
+                        saleType: "wholesale",
                         invoiceNo,
+                        checkoutRequestId: input.checkoutRequestId,
                         customerId,
                         customerName,
                         customerPhone,
                         customerAddress,
                         subtotal: toMoney(subtotal),
                         discount: toMoney(discount),
-                        tax: toMoney(tax),
+                        discountMode: "fixed",
+                        discountValue: toMoney(discount),
+                        tax: "0.00",
                         total: toMoney(total),
-                        paid: toMoney(paid),
-                        due: toMoney(due),
-                        paymentMethod: input.paymentMethod,
+                        paid: toMoney(splitPayment.appliedTotal),
+                        due: toMoney(splitPayment.due),
+                        tenderedAmount: toMoney(splitPayment.receivedTotal),
+                        changeAmount: toMoney(splitPayment.change),
+                        paymentMethod: splitPayment.appliedTotal > 0
+                            ? accountById.get(splitPayment.rows.find((row) => row.appliedAmount > 0)?.accountId ?? accountIds[0]!)?.type === "cash"
+                                ? "cash"
+                                : "bank"
+                            : "due",
+                        paymentStatus: splitPayment.paymentStatus,
+                        deliveryMethod: input.deliveryMethod,
+                        responsiblePersonId: warehouseId,
+                        responsiblePersonName: context.session.user.name,
+                        saleDate: input.saleDate,
+                        terms: input.terms?.trim() || null,
                         status: "completed",
                         note: input.note || null,
                         heldCartId: input.heldCartId ?? null,
@@ -801,14 +958,31 @@ export const warehousePosRouter = {
                     })),
                 );
 
-                if (paid > 0) {
+                for (const payment of splitPayment.rows) {
+                    const account = accountById.get(payment.accountId)!;
                     await tx.insert(warehousePosPayment).values({
                         saleId: sale.id,
-                        paymentMethod: input.paymentMethod,
-                        amount: toMoney(paid),
+                        paymentAccountId: account.id,
+                        paymentMethod: account.type === "cash" ? "cash" : "bank",
+                        amount: toMoney(payment.appliedAmount),
+                        tenderedAmount: toMoney(payment.receivedAmount),
                         createdById: warehouseId,
                     });
                 }
+
+                await postWarehousePosSaleAccounting(tx, {
+                    actorId: warehouseId,
+                    due: splitPayment.due,
+                    invoiceNo: sale.invoiceNo,
+                    ownerId: warehouseId,
+                    payments: splitPayment.rows.map((payment) => ({
+                        appliedAmount: payment.appliedAmount,
+                        paymentAccountId: payment.accountId,
+                    })),
+                    saleDate: input.saleDate,
+                    saleId: sale.id,
+                    total,
+                });
 
                 if (input.heldCartId) {
                     await tx
@@ -822,20 +996,34 @@ export const warehousePosRouter = {
                         );
                 }
 
-                return sale;
+                return { sale, duplicate: false };
             });
 
             return {
-                saleId: result.id,
-                invoiceNo: result.invoiceNo,
-                totals: {
-                    subtotal: toMoney(subtotal),
-                    discount: toMoney(discount),
-                    tax: toMoney(tax),
-                    total: toMoney(total),
-                    paid: toMoney(paid),
-                    due: toMoney(due),
-                },
+                saleId: result.sale.id,
+                invoiceNo: result.sale.invoiceNo,
+                duplicate: result.duplicate,
+                totals: result.duplicate
+                    ? {
+                        subtotal: result.sale.subtotal,
+                        discount: result.sale.discount,
+                        tax: result.sale.tax,
+                        total: result.sale.total,
+                        paid: result.sale.paid,
+                        due: result.sale.due,
+                        received: result.sale.tenderedAmount ?? result.sale.paid,
+                        change: result.sale.changeAmount,
+                    }
+                    : {
+                        subtotal: toMoney(subtotal),
+                        discount: toMoney(discount),
+                        tax: "0.00",
+                        total: toMoney(total),
+                        paid: toMoney(splitPayment.appliedTotal),
+                        due: toMoney(splitPayment.due),
+                        received: toMoney(splitPayment.receivedTotal),
+                        change: toMoney(splitPayment.change),
+                    },
             };
         }),
 
@@ -853,6 +1041,7 @@ export const warehousePosRouter = {
                     items: {
                         columns: {
                             id: true,
+                            sku: true,
                             productName: true,
                             variantLabel: true,
                             quantity: true,
@@ -872,12 +1061,19 @@ export const warehousePosRouter = {
                     },
                     payments: {
                         columns: {
+                            id: true,
                             amount: true,
+                            tenderedAmount: true,
+                            paymentAccountId: true,
                             paymentMethod: true,
                             paidAt: true,
                         },
-                        orderBy: [desc(warehousePosPayment.createdAt)],
-                        limit: 1,
+                        with: {
+                            paymentAccount: {
+                                columns: { id: true, name: true, type: true },
+                            },
+                        },
+                        orderBy: [warehousePosPayment.id],
                     },
                 },
             });
@@ -902,16 +1098,24 @@ export const warehousePosRouter = {
                     invoiceNo: sale.invoiceNo,
                     saleType: sale.saleType,
                     paymentMethod: sale.paymentMethod,
+                    paymentStatus: sale.paymentStatus,
+                    deliveryMethod: sale.deliveryMethod,
+                    responsiblePersonName: sale.responsiblePersonName,
+                    saleDate: sale.saleDate,
                     subtotal: sale.subtotal,
                     discount: sale.discount,
                     tax: sale.tax,
                     total: sale.total,
                     paid: sale.paid,
                     due: sale.due,
+                    tenderedAmount: sale.tenderedAmount,
+                    changeAmount: sale.changeAmount,
                     createdAt: sale.createdAt,
                     note: sale.note,
+                    terms: sale.terms,
                 },
                 store: {
+                    code: warehouseId,
                     name: warehouse?.warehouseName || context.session.user.name,
                     address: warehouse?.warehouseAddress || null,
                     phone: warehouse?.phoneNumber || null,
@@ -923,7 +1127,7 @@ export const warehousePosRouter = {
                     customerType: sale.customer?.customerType || null,
                 },
                 items: sale.items,
-                payment: sale.payments[0] || null,
+                payments: sale.payments,
             };
         }),
 

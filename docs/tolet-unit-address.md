@@ -10,7 +10,7 @@
 
 ## Database / deployment
 
-`0079_tolet_unit_address.sql` adds nullable JSONB `tolet_unit.address_override`. Renumbered from 0074 during upstream integration to preserve upstream migration order. It is additive and idempotent. Apply before deploying code that selects the new column. The migration was applied to the configured local-development connection; no business records were modified for this task. No GitHub push or production code deployment was performed.
+`0082_tolet_unit_address.sql` adds nullable JSONB `tolet_unit.address_override`. Renumbered from 0074 (then 0079) to 0082 during upstream integration to preserve upstream migration order. It is additive and idempotent. Apply before deploying code that selects the new column. The migration was applied to the configured local-development connection; no business records were modified for this task. No GitHub push or production code deployment was performed.
 
 ## Checks
 

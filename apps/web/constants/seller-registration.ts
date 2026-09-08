@@ -104,10 +104,13 @@ export type LocationData = {
   division: string;
   district: string;
   area: string;
+  thana?: string;
   postCode: string;
   latitude: number;
   longitude: number;
 };
+
+export type LocationAddress = Omit<LocationData, "latitude" | "longitude">;
 
 export const EMPTY_LOCATION: LocationData = {
   address: "",

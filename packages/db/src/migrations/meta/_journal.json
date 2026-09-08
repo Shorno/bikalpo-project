@@ -537,22 +537,43 @@
     {
       "idx": 77,
       "version": "7",
-      "when": 1789202100000,
-      "tag": "0077_tolet_alert_notifications",
+      "when": 1789300000000,
+      "tag": "0077_warehouse_pos_checkout_review",
       "breakpoints": true
     },
     {
       "idx": 78,
       "version": "7",
-      "when": 1789202200000,
-      "tag": "0078_tolet_property_upazila",
+      "when": 1789400000000,
+      "tag": "0078_retailer_profile_contacts",
       "breakpoints": true
     },
     {
       "idx": 79,
       "version": "7",
-      "when": 1789202300000,
-      "tag": "0079_tolet_unit_address",
+      "when": 1789500000000,
+      "tag": "0079_retailer_subscriptions",
+      "breakpoints": true
+    },
+    {
+      "idx": 80,
+      "version": "7",
+      "when": 1789500100000,
+      "tag": "0080_tolet_alert_notifications",
+      "breakpoints": true
+    },
+    {
+      "idx": 81,
+      "version": "7",
+      "when": 1789500200000,
+      "tag": "0081_tolet_property_upazila",
+      "breakpoints": true
+    },
+    {
+      "idx": 82,
+      "version": "7",
+      "when": 1789500300000,
+      "tag": "0082_tolet_unit_address",
       "breakpoints": true
     }
   ]

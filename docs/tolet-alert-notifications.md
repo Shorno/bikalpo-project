@@ -21,7 +21,7 @@ Opening View Details marks that notification read; a separate action marks unrea
 
 ## Database and rollout
 
-`packages/db/src/migrations/0077_tolet_alert_notifications.sql` adds only the notification table and its unique/index keys. Renumbered from 0072 during upstream integration. It is registered in the migration journal. The additive SQL was applied directly to the configured database for local verification on 2026-09-05; its `IF NOT EXISTS` statements make a later normal migration run safe. Other pending migrations were not executed. Deploy API and web code together after applying the migration in each target environment. No GitHub push or production deployment was performed in this task.
+`packages/db/src/migrations/0080_tolet_alert_notifications.sql` adds only the notification table and its unique/index keys. Renumbered from 0072 (then 0077) to 0080 during upstream integration. It is registered in the migration journal. The additive SQL was applied directly to the configured database for local verification on 2026-09-05; its `IF NOT EXISTS` statements make a later normal migration run safe. Other pending migrations were not executed. Deploy API and web code together after applying the migration in each target environment. No GitHub push or production deployment was performed in this task.
 
 ## Verification
 
