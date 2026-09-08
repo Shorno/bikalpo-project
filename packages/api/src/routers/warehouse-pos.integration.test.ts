@@ -73,6 +73,11 @@ test(
 				.from(category)
 				.limit(1);
 			assert.ok(categoryRow, "A category fixture is required");
+			const [brandRow] = await db
+				.select({ id: schema.brand.id, name: schema.brand.name })
+				.from(schema.brand)
+				.limit(1);
+			assert.ok(brandRow, "A brand fixture is required");
 			await db.insert(user).values([
 				{
 					id: warehouseId,
@@ -110,6 +115,7 @@ test(
 				.insert(productVariant)
 				.values({
 					productId: createdProduct.id,
+					brandId: brandRow.id,
 					sku: `WPOS-${suffix}`,
 					unitLabel: "Unit",
 					quantitySelectorLabel: "1 unit",
@@ -238,6 +244,13 @@ test(
 			const duplicate = firstAttempt.duplicate ? firstAttempt : secondAttempt;
 			assert.equal(duplicate.saleId, paid.saleId);
 			assert.equal(duplicate.duplicate, true);
+			const printedInvoice = await invokeProcedure<{
+				items: { productName: string }[];
+			}>(warehousePosRouter.getSaleInvoice, context, { saleId: paid.saleId });
+			assert.equal(
+				printedInvoice.items[0]?.productName,
+				`${brandRow.name} Warehouse POS Test Product`,
+			);
 
 			const partial = await invokeProcedure<{ saleId: number }>(
 				warehousePosRouter.completeSale,

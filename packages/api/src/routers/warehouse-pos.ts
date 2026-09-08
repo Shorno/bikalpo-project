@@ -363,12 +363,18 @@ async function resolveSaleLines(
             ? toNumber(stock.retailPrice)
             : toNumber(stock.variant.price);
         const lineTotal = unitPrice * item.quantity;
+        const productName = stock.variant.product.coreProduct?.name || stock.variant.product.name;
+        const brandName = stock.variant.brand?.name?.trim();
+        const alreadyBranded = brandName && (
+            productName.toLowerCase() === brandName.toLowerCase() ||
+            productName.toLowerCase().startsWith(`${brandName.toLowerCase()} `)
+        );
 
         lines.push({
             variantId: stock.variant.id,
             productId: stock.variant.product.id,
             sku: stock.variant.sku,
-            productName: stock.variant.product.coreProduct?.name || stock.variant.product.name,
+            productName: brandName && !alreadyBranded ? `${brandName} ${productName}` : productName,
             variantLabel: pack,
             unitLabel:
                 operations?.operationalUnit ??

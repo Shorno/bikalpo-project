@@ -6,11 +6,13 @@ export type WarehousePosInvoiceDetail = {
   sale: {
     invoiceNo: string;
     paymentStatus: string;
+    paymentMethod?: string;
     deliveryMethod: string;
     responsiblePersonName: string | null;
     saleDate: string;
     subtotal: InvoiceValue;
     discount: InvoiceValue;
+    tax?: InvoiceValue;
     total: InvoiceValue;
     paid: InvoiceValue;
     due: InvoiceValue;
@@ -38,6 +40,7 @@ export type WarehousePosInvoiceDetail = {
     quantity: InvoiceValue;
     unitPrice: InvoiceValue;
   }>;
+  payments?: Array<{ amount: InvoiceValue; paymentMethod: string }>;
 };
 
 async function createPdfFromInvoiceElement(element: HTMLElement) {
@@ -60,13 +63,35 @@ async function createPdfFromInvoiceElement(element: HTMLElement) {
     useCORS: true,
   });
   const pagePixelHeight = Math.max(1, Math.floor((canvas.width * 762) / 515));
+  const invoiceBounds = element.getBoundingClientRect();
+  const pixelScale = canvas.width / invoiceBounds.width;
+  const blocks = Array.from(
+    element.querySelectorAll("[data-invoice-block]"),
+  ).map((block) => {
+    const bounds = block.getBoundingClientRect();
+    return {
+      top: Math.floor((bounds.top - invoiceBounds.top) * pixelScale),
+      bottom: Math.ceil((bounds.bottom - invoiceBounds.top) * pixelScale),
+    };
+  });
   const pages: Array<{
     pngDataUrl: string;
     sourceWidth: number;
     sourceHeight: number;
   }> = [];
-  for (let sourceY = 0; sourceY < canvas.height; sourceY += pagePixelHeight) {
-    const sourceHeight = Math.min(pagePixelHeight, canvas.height - sourceY);
+  for (let sourceY = 0; sourceY < canvas.height; ) {
+    let end = Math.min(sourceY + pagePixelHeight, canvas.height);
+    // Keep ordinary rows, totals, and notes together. Oversized blocks still
+    // advance by one page so unusually long content cannot stall the export.
+    const crossingBlock = blocks.find(
+      (block) =>
+        block.top > sourceY &&
+        block.top < end &&
+        block.bottom > end &&
+        block.bottom - block.top <= pagePixelHeight,
+    );
+    if (crossingBlock) end = crossingBlock.top;
+    const sourceHeight = end - sourceY;
     const pageCanvas = document.createElement("canvas");
     pageCanvas.width = canvas.width;
     pageCanvas.height = sourceHeight;
@@ -88,6 +113,7 @@ async function createPdfFromInvoiceElement(element: HTMLElement) {
       sourceWidth: pageCanvas.width,
       sourceHeight: pageCanvas.height,
     });
+    sourceY = end;
   }
   return createWarehousePosInvoicePdfFromPngPages(pages);
 }

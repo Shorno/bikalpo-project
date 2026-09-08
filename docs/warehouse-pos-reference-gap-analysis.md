@@ -150,17 +150,17 @@ The UI may present the reference dropdown, but Submit must reject a status that 
 ### Invoice contents
 
 - `BIKALPO INVOICE` heading and Bikalpo/warehouse logo when configured.
-- Warehouse name, available warehouse identity/code, address, and phone.
-- Invoice number and sale date/time.
+- Warehouse name followed by its available identity/code in parentheses; do not invent an SHP code.
+- Logo on the left and date/time on the right, formatted in Asia/Dhaka as `13 Aug 2026 06:21 AM`. Invoice number centered in brackets. Preserve the persisted unique invoice identifier.
 - No barcode.
 - Customer name, address, and mobile number.
-- Payment status and Delivery Method.
+- `PAYMENT: ...` under customer details, using the actual recorded payment methods (including split cash/bank), or due status when unpaid. Do not mislabel a counter sale as COD. Omit the additional delivery/responsible/sale-date panel from the printed document.
 - Item table with SKU, Product Name / Variant, Qty, and Price.
-- Items count, Subtotal, Discount, Grand Total, Paid Amount, Due Amount, and Return/Change Amount.
-- Saved Notes/Terms & Conditions.
-- `Powered by Bikalpo.com` and thank-you footer.
+- Totals follow the document's order: Items Total (N Items), Product Discount, Coupon Discount, Reward Discount, VAT / Tax, Delivery Charge, Shipping Charge; separated Grand Total, Paid Amount, Due Amount; then Return Amount. Product Discount uses the existing saved POS discount. Grand total and balances use persisted sale values.
+- Saved Notes/Terms & Conditions under `Note`, followed by the document's arrow prefix.
+- `Powered by Bikalpo.com` (linked) and thank-you footer on separate lines.
 
-Excluded invoice rows: coupon discount, reward discount, VAT/tax, delivery charge, shipping charge, and commission.
+Updated 2026-09-08: coupon, reward, delivery, and shipping rows appear as zero-valued display rows to match the document; their calculation features remain excluded. VAT / Tax displays the persisted tax (zero for current warehouse POS). Commission and barcode remain omitted. Match the reference's plain white sheet, bordered four-column table, combined product/variant text, and whole-number formatting where there are no fractional amounts. Use one canonical layout for preview and PDF, and avoid splitting ordinary rows and totals across PDF pages.
 
 ### Actions
 
@@ -202,8 +202,16 @@ Excluded invoice rows: coupon discount, reward discount, VAT/tax, delivery charg
 - Split payment rows post to the correct owner-scoped accounts and reconcile exactly.
 - Cash over-tender produces change without overstating paid revenue or account balance.
 - Partial and due sales update customer due and Accounts Receivable correctly.
-- Delivery Method appears on the invoice but creates no fulfillment records.
+- Delivery Method is retained as sale metadata but creates no fulfillment records; the reference-matched invoice does not add an extra metadata panel.
 - Hold Order persists the approved draft fields.
 - Invoice preview, print, downloaded PDF, and shared PDF match.
-- Invoice contains no barcode or excluded calculation rows.
+- Invoice contains no barcode or commission; excluded charge features have zero-valued display rows only.
 - Warehouse POS integration tests cover stock conflicts, invalid accounts, cross-owner account attempts, split payments, due, change, rollback, idempotency, and PDF data generation.
+
+## Invoice alignment verification — 2026-09-08
+
+- Preview checked with an isolated local fixture; generated one-page and 24-row/two-page A4 PDFs were rendered and visually inspected. Product rows and totals remained intact. Narrow-screen preview preserves the sheet through horizontal scrolling. No real sales were created for these checks; temporary QA routes/files were removed.
+- Four focused invoice tests passed, covering reference labels/order, saved discount and balances, payment methods, fractional quantities, escaped text, and valid PDF output. The opt-in database test (including new brand-snapshot coverage) was skipped.
+- Full suite: 301 passed, 15 skipped, 9 failed due to environment configuration and Bun test imports under Node. Web typechecking reports existing React type conflicts in calendar/field/skeleton; none in changed files. Changed frontend files pass Biome and whitespace checks.
+- User-requested broader review covered POS work since `75b14f14`. Standards review: checkout label associations fixed and re-reviewed, no remaining findings. Spec review: Reset's date/delivery defaults, new-invoice brand snapshots, and Print & Share's download notice fixed and re-reviewed, no remaining findings.
+- Historical invoices retain their saved product descriptions and identifiers; no financial records, accounting rules, or schema were rewritten.

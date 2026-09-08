@@ -25,10 +25,8 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import Image from "next/image";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -60,6 +58,7 @@ import {
   type PosCustomer,
   PosCustomerEntry,
 } from "@/components/warehouse/pos-customer-entry";
+import { PosInvoiceSheet } from "@/components/warehouse/pos-invoice-sheet";
 import { cn } from "@/lib/utils";
 import {
   buildPosTypeTree,
@@ -70,7 +69,6 @@ import {
   createWarehousePosInvoicePdf,
   printWarehousePosInvoice,
   shareWarehousePosInvoice,
-  type WarehousePosInvoiceDetail,
 } from "@/lib/warehouse-pos-invoice";
 import { orpc, queryClient } from "@/utils/orpc";
 
@@ -142,175 +140,6 @@ function invoicePreviewElement() {
 
 function newPayment(accountId = "", received = ""): PaymentDraft {
   return { id: crypto.randomUUID(), accountId, received };
-}
-
-function InvoiceSheet({ invoice }: { invoice: WarehousePosInvoiceDetail }) {
-  return (
-    <article
-      className="w-[760px] max-w-none rounded-xl border border-zinc-200 bg-white p-7 text-zinc-950"
-      data-invoice-preview=""
-    >
-      <header className="flex items-start justify-between gap-6 border-b border-zinc-200 pb-5">
-        <div className="flex min-w-0 items-start gap-3">
-          {/* The repository logo is the configured Bikalpo fallback. */}
-          <Image
-            alt="Bikalpo"
-            className="h-12 w-12 rounded-lg border border-zinc-200 object-cover"
-            height={48}
-            src="/logos/bikalpo-logo.jpg"
-            width={48}
-          />
-          <div className="min-w-0">
-            <h2 className="text-lg font-extrabold tracking-[-0.02em]">
-              BIKALPO INVOICE
-            </h2>
-            <p className="mt-1 text-sm font-semibold">{invoice.store.name}</p>
-            {invoice.store.address ? (
-              <p className="mt-0.5 max-w-[52ch] text-xs text-zinc-600">
-                {invoice.store.address}
-              </p>
-            ) : null}
-            {invoice.store.phone ? (
-              <p className="text-xs text-zinc-600">
-                Mobile: {invoice.store.phone}
-              </p>
-            ) : null}
-          </div>
-        </div>
-        <div className="shrink-0 text-right">
-          <p className="font-mono text-sm font-bold tabular-nums">
-            {invoice.sale.invoiceNo}
-          </p>
-          <p className="mt-1 text-xs text-zinc-600">
-            {new Date(invoice.sale.createdAt).toLocaleString("en-BD")}
-          </p>
-          <Badge className="mt-2 uppercase" variant="outline">
-            {invoice.sale.paymentStatus}
-          </Badge>
-        </div>
-      </header>
-
-      <section className="grid gap-4 border-b border-zinc-200 py-5 text-sm sm:grid-cols-2">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.08em] text-zinc-500">
-            Customer
-          </p>
-          <p className="mt-1 font-semibold">{invoice.customer.name}</p>
-          {invoice.customer.address ? (
-            <p className="mt-0.5 text-zinc-600">{invoice.customer.address}</p>
-          ) : null}
-          {invoice.customer.phone ? (
-            <p className="text-zinc-600">Mobile: {invoice.customer.phone}</p>
-          ) : null}
-        </div>
-        <dl className="grid grid-cols-[auto_1fr] content-start gap-x-4 gap-y-1 sm:justify-self-end">
-          <dt className="text-zinc-500">Delivery method</dt>
-          <dd className="text-right font-medium">
-            {invoice.sale.deliveryMethod}
-          </dd>
-          <dt className="text-zinc-500">Responsible</dt>
-          <dd className="text-right font-medium">
-            {invoice.sale.responsiblePersonName || "Warehouse user"}
-          </dd>
-          <dt className="text-zinc-500">Sale date</dt>
-          <dd className="text-right font-mono tabular-nums">
-            {invoice.sale.saleDate}
-          </dd>
-        </dl>
-      </section>
-
-      <div className="overflow-hidden border-b border-zinc-200 py-4">
-        <Table>
-          <TableHeader>
-            <TableRow className="border-zinc-200 bg-zinc-50 hover:bg-zinc-50">
-              <TableHead className="font-mono text-[11px]">SKU</TableHead>
-              <TableHead className="text-[11px]">PRODUCT / VARIANT</TableHead>
-              <TableHead className="text-right text-[11px]">QTY</TableHead>
-              <TableHead className="text-right text-[11px]">PRICE</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {invoice.items.map((item) => (
-              <TableRow className="border-zinc-200" key={item.id}>
-                <TableCell className="font-mono text-xs text-zinc-600">
-                  {item.sku || "—"}
-                </TableCell>
-                <TableCell>
-                  <p className="text-sm font-medium">{item.productName}</p>
-                  <p className="text-xs text-zinc-500">{item.variantLabel}</p>
-                </TableCell>
-                <TableCell className="text-right font-mono text-xs tabular-nums">
-                  {money(item.quantity)}
-                </TableCell>
-                <TableCell className="text-right font-mono text-xs tabular-nums">
-                  ৳{money(item.unitPrice)}
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </div>
-
-      <section className="ml-auto grid max-w-sm gap-2 py-5 text-sm">
-        <div className="flex justify-between">
-          <span className="text-zinc-500">
-            Items total ({invoice.items.length})
-          </span>
-          <span className="font-mono tabular-nums">
-            ৳{money(invoice.sale.subtotal)}
-          </span>
-        </div>
-        <div className="flex justify-between">
-          <span className="text-zinc-500">Discount</span>
-          <span className="font-mono tabular-nums">
-            − ৳{money(invoice.sale.discount)}
-          </span>
-        </div>
-        <div className="flex justify-between border-t border-zinc-200 pt-2 text-base font-bold">
-          <span>Grand total</span>
-          <span className="font-mono tabular-nums">
-            ৳{money(invoice.sale.total)}
-          </span>
-        </div>
-        <div className="flex justify-between">
-          <span className="text-zinc-500">Paid amount</span>
-          <span className="font-mono tabular-nums">
-            ৳{money(invoice.sale.paid)}
-          </span>
-        </div>
-        <div className="flex justify-between">
-          <span className="text-zinc-500">Due amount</span>
-          <span className="font-mono tabular-nums">
-            ৳{money(invoice.sale.due)}
-          </span>
-        </div>
-        <div className="flex justify-between">
-          <span className="text-zinc-500">Return amount</span>
-          <span className="font-mono tabular-nums">
-            ৳{money(invoice.sale.changeAmount)}
-          </span>
-        </div>
-      </section>
-
-      {invoice.sale.terms || invoice.sale.note ? (
-        <section className="border-t border-zinc-200 py-4">
-          <h3 className="text-xs font-semibold uppercase tracking-[0.08em] text-zinc-500">
-            Note / terms
-          </h3>
-          <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-zinc-700">
-            {invoice.sale.terms || invoice.sale.note}
-          </p>
-        </section>
-      ) : null}
-
-      <footer className="flex flex-wrap items-center justify-between gap-2 border-t border-zinc-200 pt-4 text-xs text-zinc-500">
-        <span className="font-semibold text-blue-700">
-          Powered by Bikalpo.com
-        </span>
-        <span>Thank you for shopping with Bikalpo.</span>
-      </footer>
-    </article>
-  );
 }
 
 export default function WarehousePosPage() {
@@ -527,6 +356,8 @@ export default function WarehousePosPage() {
     setSelectedCustomerSnapshot(defaultCustomer);
     setPayments([newPayment(paymentAccounts[0]?.id)]);
     setTerms(defaultTerms);
+    setDeliveryMethod("Self Pickup");
+    setSaleDate(localDateInput());
     setCheckoutRequestId(crypto.randomUUID());
     searchRef.current?.focus();
   };
@@ -1211,7 +1042,9 @@ export default function WarehousePosPage() {
                     />
                   </div>
                   <div className="grid gap-1.5">
-                    <Label>Select account *</Label>
+                    <Label htmlFor={`payment-account-${payment.id}`}>
+                      Select account *
+                    </Label>
                     <Select
                       onValueChange={(value) =>
                         setPayments((current) =>
@@ -1224,7 +1057,7 @@ export default function WarehousePosPage() {
                       }
                       value={payment.accountId}
                     >
-                      <SelectTrigger>
+                      <SelectTrigger id={`payment-account-${payment.id}`}>
                         <SelectValue placeholder="Select finance account" />
                       </SelectTrigger>
                       <SelectContent>
@@ -1245,7 +1078,9 @@ export default function WarehousePosPage() {
                     </Select>
                   </div>
                   <div className="grid gap-1.5">
-                    <Label>Delivery method *</Label>
+                    <Label htmlFor={`delivery-method-${payment.id}`}>
+                      Delivery method *
+                    </Label>
                     <Select
                       onValueChange={(value) =>
                         setDeliveryMethod(
@@ -1254,7 +1089,7 @@ export default function WarehousePosPage() {
                       }
                       value={deliveryMethod}
                     >
-                      <SelectTrigger>
+                      <SelectTrigger id={`delivery-method-${payment.id}`}>
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -1288,9 +1123,9 @@ export default function WarehousePosPage() {
 
           <section className="grid gap-4 border-y border-zinc-200 py-4 md:grid-cols-3">
             <div className="grid gap-1.5">
-              <Label>Payment status *</Label>
+              <Label htmlFor="payment-status">Payment status *</Label>
               <Select disabled value={paymentStatus}>
-                <SelectTrigger>
+                <SelectTrigger id="payment-status">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -1410,8 +1245,14 @@ export default function WarehousePosPage() {
             </div>
           ) : null}
           {invoice ? (
-            <div className="overflow-x-auto">
-              <InvoiceSheet invoice={invoice} />
+            <div
+              className="overflow-x-auto"
+              role="region"
+              aria-label="Invoice preview; scroll horizontally to view the full sheet"
+              // biome-ignore lint/a11y/noNoninteractiveTabindex: Enable keyboard scrolling of the fixed-width invoice.
+              tabIndex={0}
+            >
+              <PosInvoiceSheet invoice={invoice} />
             </div>
           ) : null}
           {invoice && !invoicePdf ? (
@@ -1465,7 +1306,14 @@ export default function WarehousePosPage() {
                   try {
                     if (!invoicePdf)
                       throw new Error("Invoice PDF is still preparing");
-                    await shareWarehousePosInvoice(invoice, invoicePdf);
+                    const result = await shareWarehousePosInvoice(
+                      invoice,
+                      invoicePdf,
+                    );
+                    if (result === "downloaded")
+                      toast.info(
+                        "Direct file sharing is unavailable, so the PDF was downloaded.",
+                      );
                     printWarehousePosInvoice(invoicePdf);
                   } catch (error) {
                     if ((error as DOMException)?.name !== "AbortError")
