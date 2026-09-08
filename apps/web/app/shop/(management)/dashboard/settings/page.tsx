@@ -1,5 +1,7 @@
 "use client";
 
+import { computeProfileCompletion } from "@bikalpo-project/api/business-profile";
+import type { sellerApplication } from "@bikalpo-project/db/schema";
 import { useQuery } from "@tanstack/react-query";
 import type { LucideIcon } from "lucide-react";
 import {
@@ -15,6 +17,7 @@ import {
   Save,
 } from "lucide-react";
 import dynamic from "next/dynamic";
+import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { LocationPickerSection } from "@/components/features/onboarding/location-picker-section";
@@ -75,6 +78,21 @@ const statusColors: Record<string, string> = {
   disabled: "bg-gray-100 text-gray-600",
 };
 
+type BusinessApplication =
+  | typeof sellerApplication.$inferSelect
+  | null
+  | undefined;
+type ProfileUser = typeof authClient.$Infer.Session.user | undefined;
+
+const UNAVAILABLE_PLAN_FIELDS = [
+  "Subscription Status",
+  "Plan Start Date",
+  "Expiry Date",
+  "Auto Renewal",
+  "Next Billing Date",
+  "Payment Status",
+] as const;
+
 function displayValue(value: unknown) {
   if (typeof value !== "string" || !value.trim()) return "Not provided";
   return value.trim();
@@ -101,8 +119,13 @@ function formatDate(value: unknown) {
 
 export default function ShopSettingsPage() {
   const { data: session, isPending, refetch } = authClient.useSession();
-  const user = session?.user as any;
-  const { data: application, isPending: isApplicationPending } = useQuery({
+  const user = session?.user;
+  const {
+    data: application,
+    isPending: isApplicationPending,
+    isError: isApplicationError,
+    refetch: refetchApplication,
+  } = useQuery({
     ...orpc.sellerApplication.getMyApplication.queryOptions(),
     enabled: Boolean(user?.id),
     retry: false,
@@ -113,6 +136,7 @@ export default function ShopSettingsPage() {
   const [lat, setLat] = useState("");
   const [lng, setLng] = useState("");
   const [shopLogo, setShopLogo] = useState("");
+  const [logoDialogOpen, setLogoDialogOpen] = useState(false);
   const [openingTime, setOpeningTime] = useState("");
   const [closingTime, setClosingTime] = useState("");
 
@@ -120,17 +144,13 @@ export default function ShopSettingsPage() {
     if (!user?.id) return;
     setLat(user.shopLat || "");
     setLng(user.shopLng || "");
-    setShopLogo(user.shopLogo || "");
-    setOpeningTime(user.shopOpeningTime || "");
-    setClosingTime(user.shopClosingTime || "");
-  }, [
-    user?.id,
-    user?.shopClosingTime,
-    user?.shopLat,
-    user?.shopLng,
-    user?.shopLogo,
-    user?.shopOpeningTime,
-  ]);
+  }, [user?.id, user?.shopLat, user?.shopLng]);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    setOpeningTime(user?.shopOpeningTime || "");
+    setClosingTime(user?.shopClosingTime || "");
+  }, [user?.id, user?.shopClosingTime, user?.shopOpeningTime]);
 
   const handleSaveLocation = async () => {
     if (!lat || !lng) return;
@@ -139,7 +159,6 @@ export default function ShopSettingsPage() {
 
   const handleSaveProfile = async () => {
     await updateProfileMutation.mutateAsync({
-      shopLogo: shopLogo || null,
       openingTime: openingTime || null,
       closingTime: closingTime || null,
     });
@@ -159,6 +178,7 @@ export default function ShopSettingsPage() {
   const email = application?.email || user?.email;
   const phoneNumber = application?.phoneNumber || user?.phoneNumber;
   const memberSince = user?.createdAt;
+  const profileCompletion = computeProfileCompletion(application, user);
 
   return (
     <div className="mx-auto max-w-7xl space-y-6">
@@ -172,6 +192,23 @@ export default function ShopSettingsPage() {
         </p>
       </header>
 
+      {isApplicationError && (
+        <div
+          role="alert"
+          className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950"
+        >
+          Registration details could not be loaded. Some profile fields are
+          unavailable.
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => void refetchApplication()}
+          >
+            Retry
+          </Button>
+        </div>
+      )}
+
       <section
         id="profile"
         className="overflow-hidden rounded-xl border bg-white"
@@ -180,27 +217,83 @@ export default function ShopSettingsPage() {
         <div className="grid lg:grid-cols-[18rem_minmax(0,1fr)]">
           <div className="border-b bg-gray-50/70 p-6 lg:border-r lg:border-b-0">
             <p className="text-xs font-semibold tracking-wider text-gray-500 uppercase">
-              Company logo
+              Company Logo
             </p>
             <div className="mt-4">
-              <ImageUploader
-                value={shopLogo}
-                onChange={setShopLogo}
-                folder={`shop-logos/${user?.id || "shop"}`}
-                maxSizeMB={2}
-                disabled={updateProfileMutation.isPending}
-                className="bg-white"
-              />
+              <div className="relative flex h-36 items-center justify-center rounded-lg border bg-white">
+                {user?.shopLogo ? (
+                  <Image
+                    src={user.shopLogo}
+                    alt={`${businessNameLabel} company logo`}
+                    fill
+                    unoptimized
+                    className="object-contain p-4"
+                  />
+                ) : (
+                  <Building2
+                    className="size-12 text-gray-300"
+                    aria-label="No company logo"
+                  />
+                )}
+              </div>
+              <Dialog
+                open={logoDialogOpen}
+                onOpenChange={(open) => {
+                  setLogoDialogOpen(open);
+                  if (open) setShopLogo(user?.shopLogo || "");
+                }}
+              >
+                <DialogTrigger asChild>
+                  <Button variant="outline" size="sm" className="mt-4 w-full">
+                    Change Logo
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="sm:max-w-md">
+                  <DialogHeader>
+                    <DialogTitle>Change Logo</DialogTitle>
+                    <DialogDescription>
+                      Upload your company logo and save your changes.
+                    </DialogDescription>
+                  </DialogHeader>
+                  <ImageUploader
+                    value={shopLogo}
+                    onChange={setShopLogo}
+                    deleteOnRemove={false}
+                    folder={`shop-logos/${user?.id || "shop"}`}
+                    maxSizeMB={2}
+                    disabled={updateProfileMutation.isPending}
+                  />
+                  <DialogFooter>
+                    <DialogClose asChild>
+                      <Button variant="outline">Cancel</Button>
+                    </DialogClose>
+                    <Button
+                      disabled={updateProfileMutation.isPending}
+                      onClick={async () => {
+                        await updateProfileMutation.mutateAsync({
+                          shopLogo: shopLogo || null,
+                        });
+                        await refetch();
+                        setLogoDialogOpen(false);
+                      }}
+                    >
+                      {updateProfileMutation.isPending && (
+                        <Loader2 className="size-4 animate-spin" />
+                      )}
+                      Save Logo
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
             </div>
           </div>
 
           <div className="flex flex-col justify-between gap-8 p-6 sm:p-8">
             <div>
-              {application?.applicationNumber && (
-                <p className="font-mono text-xs font-semibold tracking-wide text-emerald-700">
-                  {application.applicationNumber}
-                </p>
-              )}
+              <p className="font-mono text-xs font-semibold tracking-wide text-emerald-700">
+                <span className="sr-only">Business ID: </span>
+                {displayValue(application?.applicationNumber)}
+              </p>
               <div className="mt-2 flex flex-wrap items-center gap-3">
                 <h2
                   id="business-identity-heading"
@@ -222,42 +315,40 @@ export default function ShopSettingsPage() {
 
               <dl className="mt-6 grid gap-x-8 gap-y-4 text-sm sm:grid-cols-2 xl:grid-cols-3">
                 <IdentityItem
-                  label="Business category"
+                  label="Type"
                   value={formatLabel(application?.businessCategory)}
                 />
                 <IdentityItem
-                  label="Business nature"
+                  label="Nature"
                   value={formatLabel(application?.businessNature)}
                 />
+                <div>
+                  <dt className="text-xs text-gray-500">Profile completion</dt>
+                  <dd className="mt-1 font-medium text-gray-900">
+                    {profileCompletion}% Complete
+                  </dd>
+                  <progress
+                    aria-label="Profile completion"
+                    value={profileCompletion}
+                    max={100}
+                    className="mt-2 h-1.5 w-full accent-emerald-600"
+                  />
+                </div>
                 <IdentityItem
-                  label="Selected plan"
+                  label="Plan"
                   value={formatLabel(application?.selectedPlan)}
                 />
-                <IdentityItem
-                  label="Member since"
-                  value={formatDate(memberSince)}
-                />
+                <IdentityItem label="Since" value={formatDate(memberSince)} />
               </dl>
             </div>
 
             <div className="flex justify-end border-t pt-5">
-              <Button
-                onClick={handleSaveProfile}
-                disabled={hasIncompleteHours || updateProfileMutation.isPending}
-                className="bg-emerald-600 hover:bg-emerald-700"
-              >
-                {updateProfileMutation.isPending ? (
-                  <>
-                    <Loader2 className="size-4 animate-spin" />
-                    Saving changes...
-                  </>
-                ) : (
-                  <>
-                    <Save className="size-4" />
-                    Save profile changes
-                  </>
-                )}
-              </Button>
+              <BusinessInformationDialog
+                application={application}
+                user={user}
+                onSaved={refetch}
+                triggerLabel="Edit Business Profile"
+              />
             </div>
           </div>
         </div>
@@ -312,7 +403,7 @@ export default function ShopSettingsPage() {
         aria-label="Profile information"
       >
         <ProfileSection
-          title="Business information"
+          title="Business Info"
           icon={Building2}
           action={
             <BusinessInformationDialog
@@ -322,52 +413,51 @@ export default function ShopSettingsPage() {
             />
           }
         >
-          <DetailRow label="Business name" value={businessName} />
+          <DetailRow label="Business Name" value={businessName} />
+          <DetailRow label="Business Type" value={formatLabel(businessType)} />
           <DetailRow
-            label="Owner name"
-            value={user?.ownerName || application?.ownerName}
-          />
-          <DetailRow label="Business type" value={formatLabel(businessType)} />
-          <DetailRow
-            label="Business category"
+            label="Business Category"
             value={application?.businessCategory}
           />
-          <DetailRow
-            label="Business nature"
-            value={formatLabel(application?.businessNature)}
-          />
-          <DetailRow label="Business address" value={businessAddress} />
-          <DetailRow label="Area" value={application?.area} />
+          <DetailRow label="Business Address" value={businessAddress} />
           <DetailRow label="District" value={application?.district} />
           <DetailRow label="Division" value={application?.division} />
+          <DetailRow label="Thana" value={application?.thana} />
         </ProfileSection>
 
         <ProfileSection
-          title="Contact information"
+          title="Contact Info"
           icon={ContactRound}
           action={
             <ContactInformationDialog application={application} user={user} />
           }
         >
-          <DetailRow label="Mobile number" value={phoneNumber} />
+          <DetailRow label="Mobile Number" value={phoneNumber} />
           <DetailRow label="WhatsApp" value={application?.whatsappNumber} />
-          <DetailRow label="Email address" value={email} />
-          <DetailRow label="Facebook page" value={application?.facebookUrl} />
-          <DetailRow label="Instagram" value={application?.instagramUrl} />
+          <DetailRow label="Email Address" value={email} />
+          <DetailRow label="Facebook Page" value={application?.facebookUrl} />
+          <DetailRow label="Messenger" value={application?.messengerUrl} />
           <DetailRow label="Website" value={application?.websiteUrl} />
+          <DetailRow
+            label="Telegram (Optional)"
+            value={application?.telegramUrl}
+          />
         </ProfileSection>
 
         <ProfileSection
-          title="User plan"
+          title="User Plan"
           icon={CreditCard}
           className="md:col-span-2 xl:col-span-1"
           action={<PlanInformationDialog application={application} />}
+          description="Current Plan reflects your registration selection. Subscription and billing details are not available yet."
         >
           <DetailRow
-            label="Selected plan"
+            label="Current Plan"
             value={formatLabel(application?.selectedPlan)}
           />
-          <DetailRow label="Subscription status" value={formatLabel(status)} />
+          {UNAVAILABLE_PLAN_FIELDS.map((label) => (
+            <DetailRow key={label} label={label} value="Not available" />
+          ))}
         </ProfileSection>
       </section>
 
@@ -537,7 +627,7 @@ function EditSectionButton(props: React.ComponentProps<typeof Button>) {
       className="h-8 gap-1.5 px-2.5 text-xs normal-case tracking-normal"
     >
       <Edit3 className="size-3.5" aria-hidden="true" />
-      Edit
+      {props.children || "Edit"}
     </Button>
   );
 }
@@ -592,10 +682,12 @@ function BusinessInformationDialog({
   application,
   user,
   onSaved,
+  triggerLabel = "Edit Business Info",
 }: {
-  application: any;
-  user: any;
+  application: BusinessApplication;
+  user: ProfileUser;
   onSaved: () => Promise<unknown>;
+  triggerLabel?: string;
 }) {
   const [open, setOpen] = useState(false);
   const mutation = useUpdateBusinessInformation();
@@ -611,6 +703,7 @@ function BusinessInformationDialog({
     businessNature: "",
     shopAddress: "",
     area: "",
+    thana: "",
     district: "",
     division: "",
     postCode: "",
@@ -630,6 +723,7 @@ function BusinessInformationDialog({
       businessNature: application?.businessNature || "",
       shopAddress: user?.shopAddress || application?.shopAddress || "",
       area: application?.area || "",
+      thana: application?.thana || "",
       district: application?.district || "",
       division: application?.division || "",
       postCode: application?.postCode || "",
@@ -656,6 +750,7 @@ function BusinessInformationDialog({
         | null,
       shopAddress: form.shopAddress,
       area: nullable(form.area),
+      thana: nullable(form.thana),
       district: nullable(form.district),
       division: nullable(form.division),
       postCode: nullable(form.postCode),
@@ -669,7 +764,7 @@ function BusinessInformationDialog({
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <EditSectionButton />
+        <EditSectionButton>{triggerLabel}</EditSectionButton>
       </DialogTrigger>
       {!application ? (
         <MissingRegistrationDialogContent section="business information" />
@@ -776,6 +871,7 @@ function BusinessInformationDialog({
                 address: form.shopAddress,
                 addressBn: "",
                 area: form.area,
+                thana: form.thana,
                 district: form.district,
                 division: form.division,
                 postCode: form.postCode,
@@ -787,6 +883,7 @@ function BusinessInformationDialog({
                   ...current,
                   shopAddress: location.address,
                   area: location.area,
+                  thana: location.thana || "",
                   district: location.district,
                   division: location.division,
                   postCode: location.postCode,
@@ -795,6 +892,14 @@ function BusinessInformationDialog({
                 }))
               }
             />
+            <Field id="business-thana" label="Thana">
+              <Input
+                id="business-thana"
+                value={form.thana}
+                onChange={(event) => update("thana", event.target.value)}
+                maxLength={100}
+              />
+            </Field>
             <DialogFooter>
               <DialogClose asChild>
                 <Button type="button" variant="outline">
@@ -829,8 +934,8 @@ function ContactInformationDialog({
   application,
   user,
 }: {
-  application: any;
-  user: any;
+  application: BusinessApplication;
+  user: ProfileUser;
 }) {
   const [open, setOpen] = useState(false);
   const mutation = useUpdateBusinessContactInformation();
@@ -839,8 +944,9 @@ function ContactInformationDialog({
     email: "",
     whatsappNumber: "",
     facebookUrl: "",
-    instagramUrl: "",
+    messengerUrl: "",
     websiteUrl: "",
+    telegramUrl: "",
   });
 
   useEffect(() => {
@@ -850,8 +956,9 @@ function ContactInformationDialog({
       email: application?.email || user?.email || "",
       whatsappNumber: application?.whatsappNumber || "",
       facebookUrl: application?.facebookUrl || "",
-      instagramUrl: application?.instagramUrl || "",
+      messengerUrl: application?.messengerUrl || "",
       websiteUrl: application?.websiteUrl || "",
+      telegramUrl: application?.telegramUrl || "",
     });
   }, [application, open, user]);
 
@@ -866,8 +973,9 @@ function ContactInformationDialog({
       email: nullable(form.email),
       whatsappNumber: nullable(form.whatsappNumber),
       facebookUrl: nullable(form.facebookUrl),
-      instagramUrl: nullable(form.instagramUrl),
+      messengerUrl: nullable(form.messengerUrl),
       websiteUrl: nullable(form.websiteUrl),
+      telegramUrl: nullable(form.telegramUrl),
     });
     setOpen(false);
   };
@@ -875,7 +983,7 @@ function ContactInformationDialog({
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <EditSectionButton />
+        <EditSectionButton>Edit Contact Info</EditSectionButton>
       </DialogTrigger>
       {!application ? (
         <MissingRegistrationDialogContent section="contact information" />
@@ -915,7 +1023,7 @@ function ContactInformationDialog({
                 />
               </Field>
             </div>
-            <Field id="contact-email" label="Business email">
+            <Field id="contact-email" label="Email Address">
               <Input
                 id="contact-email"
                 type="email"
@@ -926,9 +1034,10 @@ function ContactInformationDialog({
             </Field>
             {(
               [
-                ["facebookUrl", "Facebook page"],
-                ["instagramUrl", "Instagram"],
+                ["facebookUrl", "Facebook Page"],
+                ["messengerUrl", "Messenger"],
                 ["websiteUrl", "Website"],
+                ["telegramUrl", "Telegram (Optional)"],
               ] as const
             ).map(([field, label]) => (
               <Field key={field} id={`contact-${field}`} label={label}>
@@ -966,7 +1075,11 @@ function ContactInformationDialog({
   );
 }
 
-function PlanInformationDialog({ application }: { application: any }) {
+function PlanInformationDialog({
+  application,
+}: {
+  application: BusinessApplication;
+}) {
   const [open, setOpen] = useState(false);
   const mutation = useUpdateBusinessPlanInformation();
   const [selectedPlan, setSelectedPlan] = useState("");
@@ -989,7 +1102,7 @@ function PlanInformationDialog({ application }: { application: any }) {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <EditSectionButton />
+        <EditSectionButton>Update User</EditSectionButton>
       </DialogTrigger>
       {!application ? (
         <MissingRegistrationDialogContent section="plan information" />
@@ -1074,25 +1187,32 @@ function ProfileSection({
   children,
   className = "",
   action,
+  description,
 }: {
   title: string;
   icon: LucideIcon;
   children: React.ReactNode;
   className?: string;
   action: React.ReactNode;
+  description?: string;
 }) {
   return (
     <section
-      className={`border-b p-6 last:border-b-0 md:border-r md:[&:nth-child(2)]:border-r-0 xl:border-b-0 xl:[&:nth-child(2)]:border-r xl:last:border-r-0 ${className}`}
+      className={`flex flex-col border-b p-6 last:border-b-0 md:border-r md:[&:nth-child(2)]:border-r-0 xl:border-b-0 xl:[&:nth-child(2)]:border-r xl:last:border-r-0 ${className}`}
     >
       <div className="flex items-center justify-between gap-3">
         <h2 className="flex items-center gap-2 text-sm font-semibold tracking-wide text-gray-950 uppercase">
           <Icon className="size-4 text-emerald-700" aria-hidden="true" />
           {title}
         </h2>
-        {action}
       </div>
       <dl className="mt-5 divide-y">{children}</dl>
+      {description && (
+        <p className="pt-3 text-xs leading-relaxed text-gray-500">
+          {description}
+        </p>
+      )}
+      <div className="mt-auto pt-5">{action}</div>
     </section>
   );
 }

@@ -149,6 +149,11 @@ import {
   RetailerOrderStockError,
   restoreRetailerOrderStock,
 } from "./helpers/retailer-order-stock";
+import {
+  retailerBusinessContactInformationSchema,
+  retailerShopProfileSchema,
+  retailerThanaSchema,
+} from "./helpers/retailer-profile-fields";
 import { completeSelfPickupInvoice } from "./helpers/self-pickup";
 import { loadStructuredBrandStockRows } from "./helpers/structured-stock-data";
 import {
@@ -2119,6 +2124,7 @@ const mutations = {
           businessNature: z.enum(SHOP_OWNER_BUSINESS_NATURES).nullable(),
           shopAddress: z.string().trim().min(5).max(500),
           area: z.string().trim().max(100).nullable(),
+          thana: retailerThanaSchema,
           district: z.string().trim().max(100).nullable(),
           division: z.string().trim().max(100).nullable(),
           postCode: z.string().trim().max(20).nullable(),
@@ -2163,6 +2169,7 @@ const mutations = {
             businessNature: input.businessNature,
             shopAddress: input.shopAddress,
             area: input.area,
+            thana: input.thana,
             district: input.district,
             division: input.division,
             postCode: input.postCode,
@@ -2195,16 +2202,7 @@ const mutations = {
       tags: ["Shop Owner"],
       summary: "Update retailer business contact information",
     })
-    .input(
-      z.object({
-        phoneNumber: z.string().trim().min(10).max(20),
-        email: z.string().trim().email().max(320).nullable(),
-        whatsappNumber: z.string().trim().max(20).nullable(),
-        facebookUrl: z.string().trim().url().max(2048).nullable(),
-        instagramUrl: z.string().trim().url().max(2048).nullable(),
-        websiteUrl: z.string().trim().url().max(2048).nullable(),
-      }),
-    )
+    .input(retailerBusinessContactInformationSchema)
     .handler(async ({ input, context }) => {
       const application = await db.query.sellerApplication.findFirst({
         where: eq(sellerApplication.userId, context.session.user.id),
@@ -2350,41 +2348,7 @@ const mutations = {
       tags: ["Shop Owner"],
       summary: "Update shop logo and operating hours",
     })
-    .input(
-      z
-        .object({
-          shopLogo: z
-            .string()
-            .url("Shop logo must be a valid URL")
-            .max(2048)
-            .nullable(),
-          openingTime: z
-            .string()
-            .regex(
-              /^([01]\d|2[0-3]):[0-5]\d$/,
-              "Opening time must use HH:mm format",
-            )
-            .nullable(),
-          closingTime: z
-            .string()
-            .regex(
-              /^([01]\d|2[0-3]):[0-5]\d$/,
-              "Closing time must use HH:mm format",
-            )
-            .nullable(),
-        })
-        .superRefine((value, ctx) => {
-          if ((value.openingTime === null) !== (value.closingTime === null)) {
-            ctx.addIssue({
-              code: "custom",
-              message:
-                "Set both opening and closing times, or leave both empty",
-              path:
-                value.openingTime === null ? ["openingTime"] : ["closingTime"],
-            });
-          }
-        }),
-    )
+    .input(retailerShopProfileSchema)
     .handler(async ({ input, context }) => {
       const userId = shopTenantId(context.session.user);
 

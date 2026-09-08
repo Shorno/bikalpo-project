@@ -577,6 +577,8 @@ export default function RegisterPage() {
 
           shopAddress: business.businessLocation.address,
 
+          thana: business.businessLocation.thana || undefined,
+
           ...sharedFields,
 
         });

@@ -114,6 +114,7 @@ export function LocationPickerSection({
       addressBn: "",
 
       area: resolved?.area || place.area || "",
+      thana: resolved?.thana || "",
 
       district: resolved?.district || "",
 
@@ -168,6 +169,7 @@ export function LocationPickerSection({
           address: resolved.address || "",
           addressBn: "",
           area: resolved.area || "",
+          thana: resolved.thana || "",
           district: resolved.district || "",
           division: resolved.division || "",
           postCode: resolved.postCode || "",
@@ -197,6 +199,7 @@ export function LocationPickerSection({
       addressBn: string;
 
       area: string;
+      thana?: string;
 
       district: string;
 
@@ -221,6 +224,7 @@ export function LocationPickerSection({
         addressBn: addressInfo.addressBn,
 
         area: addressInfo.area,
+        thana: addressInfo.thana || "",
 
         district: addressInfo.district,
 
@@ -237,6 +241,7 @@ export function LocationPickerSection({
         address: "",
         addressBn: "",
         area: "",
+        thana: "",
         district: "",
         division: "",
         postCode: "",

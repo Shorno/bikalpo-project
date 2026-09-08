@@ -15,6 +15,7 @@ interface ImageUploaderProps {
   maxSizeMB?: number;
   className?: string;
   disabled?: boolean;
+  deleteOnRemove?: boolean;
 }
 
 export default function ImageUploader({
@@ -24,6 +25,7 @@ export default function ImageUploader({
   maxSizeMB = 5,
   className = "",
   disabled = false,
+  deleteOnRemove = true,
 }: ImageUploaderProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string>(value);
@@ -133,7 +135,7 @@ export default function ImageUploader({
 
     const publicId = getPublicIdFromUrl(previewUrl);
 
-    if (publicId) {
+    if (publicId && deleteOnRemove) {
       startDeleteTransition(async () => {
         try {
           const result = await client.cloudinary.delete({ publicId });
@@ -157,7 +159,7 @@ export default function ImageUploader({
       onChange?.("");
       setError(null);
     }
-  }, [previewUrl, onChange, disabled]);
+  }, [previewUrl, onChange, disabled, deleteOnRemove]);
 
   const isLoading = isPending || isDeleting;
 

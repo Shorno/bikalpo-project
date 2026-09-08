@@ -540,6 +540,13 @@
       "when": 1789300000000,
       "tag": "0077_warehouse_pos_checkout_review",
       "breakpoints": true
+    },
+    {
+      "idx": 78,
+      "version": "7",
+      "when": 1789400000000,
+      "tag": "0078_retailer_profile_contacts",
+      "breakpoints": true
     }
   ]
 }

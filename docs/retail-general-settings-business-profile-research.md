@@ -1,5 +1,13 @@
 # Retail General Settings business-profile data inventory
 
+## Reference-field alignment (September 2026)
+
+The retailer settings page now follows the supplied wireframe's field labels and order: Type, Nature, completion, Plan, Since; Business Info; Contact Info; and User Plan. The earlier recommendations below to omit unsupported rows are superseded by this implementation. All requested rows remain visible, with missing contacts shown as “Not provided” and unavailable subscription details shown as “Not available.” Seller approval is no longer used as subscription status.
+
+Migration `0078_retailer_profile_contacts` adds nullable `thana`, `messenger_url`, and `telegram_url` to `seller_application`. Apply it before deploying the updated API. Thana is distinct from Area, can be edited, and is captured from Barikoi for new retailer registrations and location edits. Messenger and Telegram are editable business contact URLs. Existing Instagram values are preserved.
+
+Profile completion now shares the nine registration checks with the admin profile; empty document collections do not count as supplied documents. The business identifier remains the stored application number, and Current Plan remains the registration plan preference. No subscription or payment facts are inferred. Change Logo saves independently of storefront hours; Edit Business Profile opens the business information form.
+
 ## Scope
 
 This note inventories first-party data that can support the proposed retail-portal **General Settings / Business Profile** page without invented values. It covers the signed-in retailer view, the related admin view, and the gap between a selected onboarding plan and a real subscription.

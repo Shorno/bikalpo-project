@@ -16,6 +16,7 @@ import { and, desc, eq, ne, or, type SQL, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { BUSINESS_NATURES } from "../business-registration";
+import { computeProfileCompletion } from "../business-profile";
 import { adminProcedure } from "../index";
 import {
   deriveKycStatus,
@@ -268,33 +269,6 @@ function projectedUserWhere(
   }
 
   return conditions.length > 0 ? sql`WHERE ${sql.join(conditions, sql` AND `)}` : sql``;
-}
-
-function computeProfileCompletion(
-  app: Record<string, unknown> | null,
-  userRecord: {
-    name: string;
-    email: string;
-    phoneNumber: string | null;
-    shopName: string | null;
-    warehouseName: string | null;
-    ownerName: string | null;
-    image: string | null;
-  },
-): number {
-  const checks = [
-    userRecord.ownerName || app?.ownerName,
-    userRecord.phoneNumber || app?.phoneNumber,
-    userRecord.email || app?.email,
-    app?.profilePhotoUrl || userRecord.image,
-    userRecord.shopName || userRecord.warehouseName || app?.shopName || app?.warehouseName,
-    app?.businessNature || app?.businessCategory,
-    app?.district || app?.area,
-    app?.bankName,
-    app?.documentUrls || app?.documents,
-  ];
-  const filled = checks.filter(Boolean).length;
-  return Math.round((filled / checks.length) * 100);
 }
 
 // ─── Router ────────────────────────────────────────────────────

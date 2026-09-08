@@ -104,6 +104,7 @@ export type LocationData = {
   division: string;
   district: string;
   area: string;
+  thana?: string;
   postCode: string;
   latitude: number;
   longitude: number;

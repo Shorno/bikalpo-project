@@ -15,6 +15,7 @@ interface LocationPickerMapProps {
       address: string;
       addressBn: string;
       area: string;
+      thana?: string;
       district: string;
       division: string;
       postCode: string;
@@ -117,6 +118,7 @@ export function LocationPickerMap({
           address: result.address || "",
           addressBn: "",
           area: result.area || "",
+          thana: result.thana || "",
           district: result.district || "",
           division: result.division || "",
           postCode: result.postCode || "",
