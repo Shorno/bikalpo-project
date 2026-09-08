@@ -1,6 +1,12 @@
 import { z } from "zod";
 
-export const retailerThanaSchema = z.string().trim().max(100).nullable().optional();
+export const retailerThanaSchema = z
+  .string()
+  .trim()
+  .max(100)
+  .nullable()
+  .optional();
+export const retailerRequiredThanaSchema = z.string().trim().min(2).max(100);
 
 const optionalHttpUrlSchema = z
   .string()
@@ -48,11 +54,15 @@ export const retailerShopProfileSchema = z
     { message: "Provide a logo or operating hours to update" },
   )
   .superRefine((value, ctx) => {
-    if ((value.openingTime === undefined) !== (value.closingTime === undefined)) {
+    if (
+      (value.openingTime === undefined) !==
+      (value.closingTime === undefined)
+    ) {
       ctx.addIssue({
         code: "custom",
         message: "Opening and closing times must be provided together",
-        path: value.openingTime === undefined ? ["openingTime"] : ["closingTime"],
+        path:
+          value.openingTime === undefined ? ["openingTime"] : ["closingTime"],
       });
     } else if ((value.openingTime === null) !== (value.closingTime === null)) {
       ctx.addIssue({

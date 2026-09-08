@@ -6,7 +6,6 @@ import { useQuery } from "@tanstack/react-query";
 import type { LucideIcon } from "lucide-react";
 import {
   Building2,
-  CheckCircle2,
   CircleAlert,
   Clock3,
   ContactRound,
@@ -73,13 +72,6 @@ const AddressPicker = dynamic(
   },
 );
 
-const statusColors: Record<string, string> = {
-  approved: "bg-emerald-100 text-emerald-800",
-  pending: "bg-amber-100 text-amber-800",
-  rejected: "bg-red-100 text-red-700",
-  disabled: "bg-gray-100 text-gray-600",
-};
-
 type BusinessApplication =
   | typeof sellerApplication.$inferSelect
   | null
@@ -103,11 +95,15 @@ function formatDate(value: unknown) {
   if (!value) return "Not provided";
   const date = new Date(value as string | number | Date);
   if (Number.isNaN(date.getTime())) return "Not provided";
-  return new Intl.DateTimeFormat("en-BD", {
+  const parts = new Intl.DateTimeFormat("en-GB", {
     day: "2-digit",
     month: "short",
     year: "numeric",
-  }).format(date);
+    timeZone: "Asia/Dhaka",
+  }).formatToParts(date);
+  const getPart = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((part) => part.type === type)?.value;
+  return `${getPart("day")}-${getPart("month")}-${getPart("year")}`;
 }
 
 export default function ShopSettingsPage() {
@@ -164,7 +160,6 @@ export default function ShopSettingsPage() {
     return <BusinessProfileSkeleton />;
   }
 
-  const status = user?.sellerStatus || application?.status;
   const hasIncompleteHours = Boolean(openingTime) !== Boolean(closingTime);
   const businessName = user?.shopName || application?.shopName;
   const businessNameLabel = displayValue(businessName);
@@ -174,6 +169,11 @@ export default function ShopSettingsPage() {
   const phoneNumber = application?.phoneNumber || user?.phoneNumber;
   const memberSince = user?.createdAt;
   const profileCompletion = computeProfileCompletion(application, user);
+  const businessId = application?.applicationNumber
+    ? application.applicationNumber
+    : user?.id
+      ? `BUS-${user.id.slice(0, 8).toUpperCase()}`
+      : "Not provided";
 
   return (
     <div className="mx-auto max-w-7xl space-y-6">
@@ -206,27 +206,27 @@ export default function ShopSettingsPage() {
 
       <section
         id="profile"
-        className="overflow-hidden rounded-xl border bg-white"
+        className="overflow-hidden rounded-lg border border-gray-200 bg-white"
         aria-labelledby="business-identity-heading"
       >
-        <div className="grid lg:grid-cols-[18rem_minmax(0,1fr)]">
-          <div className="border-b bg-gray-50/70 p-6 lg:border-r lg:border-b-0">
-            <p className="text-xs font-semibold tracking-wider text-gray-500 uppercase">
+        <div className="grid md:grid-cols-[minmax(15rem,2fr)_minmax(0,3fr)]">
+          <div className="flex min-h-64 flex-col border-b p-6 md:border-r md:border-b-0">
+            <p className="text-center text-xs font-semibold tracking-wide text-gray-600 uppercase">
               Company Logo
             </p>
-            <div className="mt-4">
-              <div className="relative flex h-36 items-center justify-center rounded-lg border bg-white">
+            <div className="mt-4 flex flex-1 flex-col justify-between gap-4">
+              <div className="relative mx-auto flex min-h-28 w-full max-w-56 flex-1 items-center justify-center">
                 {user?.shopLogo ? (
                   <Image
                     src={user.shopLogo}
                     alt={`${businessNameLabel} company logo`}
                     fill
                     unoptimized
-                    className="object-contain p-4"
+                    className="object-contain p-2"
                   />
                 ) : (
                   <Building2
-                    className="size-12 text-gray-300"
+                    className="size-14 text-gray-300"
                     aria-label="No company logo"
                   />
                 )}
@@ -241,7 +241,11 @@ export default function ShopSettingsPage() {
                 }}
               >
                 <DialogTrigger asChild>
-                  <Button variant="outline" size="sm" className="mt-4 w-full">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="mx-auto min-w-32"
+                  >
                     Change Logo
                   </Button>
                 </DialogTrigger>
@@ -297,69 +301,51 @@ export default function ShopSettingsPage() {
             </div>
           </div>
 
-          <div className="flex flex-col justify-between gap-8 p-6 sm:p-8">
-            <div>
-              <p className="font-mono text-xs font-semibold tracking-wide text-emerald-700">
-                <span className="sr-only">Business ID: </span>
-                {displayValue(application?.applicationNumber)}
+          <div className="flex min-h-64 items-center p-6 sm:p-8">
+            <div className="w-full max-w-xl font-sans text-sm leading-6 text-gray-950">
+              <p className="font-mono text-xs font-semibold tracking-wide text-gray-500 tabular-nums">
+                {businessId}
               </p>
-              <div className="mt-2 flex flex-wrap items-center gap-3">
-                <h2
-                  id="business-identity-heading"
-                  className="text-2xl font-semibold tracking-tight text-gray-950 sm:text-3xl"
-                >
-                  {businessNameLabel}
-                </h2>
-                {status && (
-                  <span
-                    className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold capitalize ${statusColors[status] || statusColors.disabled}`}
-                  >
-                    {status === "approved" && (
-                      <CheckCircle2 className="size-3.5" aria-hidden="true" />
-                    )}
-                    {formatLabel(status)}
-                  </span>
-                )}
-              </div>
-
-              <dl className="mt-6 grid gap-x-8 gap-y-4 text-sm sm:grid-cols-2 xl:grid-cols-3">
-                <IdentityItem
+              <h2
+                id="business-identity-heading"
+                className="mt-1 text-xl font-semibold tracking-tight text-gray-950"
+              >
+                {businessNameLabel}
+              </h2>
+              <dl className="mt-3 space-y-0.5">
+                <ProfileRecordRow
                   label="Type"
                   value={formatLabel(application?.businessCategory)}
                 />
-                <IdentityItem
+                <ProfileRecordRow
                   label="Nature"
                   value={formatLabel(application?.businessNature)}
                 />
                 <div>
-                  <dt className="text-xs text-gray-500">Profile completion</dt>
-                  <dd className="mt-1 font-medium text-gray-900">
+                  <dt className="sr-only">Profile completion</dt>
+                  <dd className="font-medium text-gray-900 tabular-nums">
                     {profileCompletion}% Complete
                   </dd>
-                  <progress
-                    aria-label="Profile completion"
-                    value={profileCompletion}
-                    max={100}
-                    className="mt-2 h-1.5 w-full accent-emerald-600"
-                  />
                 </div>
-                <IdentityItem
+                <ProfileRecordRow
                   label="Plan"
                   value={
                     subscription.data?.current?.planName || "Not available"
                   }
                 />
-                <IdentityItem label="Since" value={formatDate(memberSince)} />
+                <ProfileRecordRow
+                  label="Since"
+                  value={formatDate(memberSince)}
+                />
               </dl>
-            </div>
-
-            <div className="flex justify-end border-t pt-5">
-              <BusinessInformationDialog
-                application={application}
-                user={user}
-                onSaved={refetch}
-                triggerLabel="Edit Business Profile"
-              />
+              <div className="mt-3">
+                <BusinessInformationDialog
+                  application={application}
+                  user={user}
+                  onSaved={refetch}
+                  triggerLabel="Edit Business Profile"
+                />
+              </div>
             </div>
           </div>
         </div>
@@ -693,7 +679,6 @@ function BusinessInformationDialog({
     productTypeId: "",
     businessNature: "",
     shopAddress: "",
-    area: "",
     thana: "",
     district: "",
     division: "",
@@ -713,7 +698,6 @@ function BusinessInformationDialog({
         : "",
       businessNature: application?.businessNature || "",
       shopAddress: user?.shopAddress || application?.shopAddress || "",
-      area: application?.area || "",
       thana: application?.thana || "",
       district: application?.district || "",
       division: application?.division || "",
@@ -740,8 +724,7 @@ function BusinessInformationDialog({
         | "importer"
         | null,
       shopAddress: form.shopAddress,
-      area: nullable(form.area),
-      thana: nullable(form.thana),
+      thana: form.thana,
       district: nullable(form.district),
       division: nullable(form.division),
       postCode: nullable(form.postCode),
@@ -857,11 +840,12 @@ function BusinessInformationDialog({
             </div>
             <LocationPickerSection
               label="Business location"
-              description="Search with Barikoi, use your current location, or drag the map pin. Area, district, and division update automatically."
+              description="Search with Barikoi, use your current location, or drag the map pin. Thana, district, and division update automatically."
+              summaryLocationLevel="thana"
               data={{
                 address: form.shopAddress,
                 addressBn: "",
-                area: form.area,
+                area: "",
                 thana: form.thana,
                 district: form.district,
                 division: form.division,
@@ -873,7 +857,6 @@ function BusinessInformationDialog({
                 setForm((current) => ({
                   ...current,
                   shopAddress: location.address,
-                  area: location.area,
                   thana: location.thana || "",
                   district: location.district,
                   division: location.division,
@@ -888,6 +871,8 @@ function BusinessInformationDialog({
                 id="business-thana"
                 value={form.thana}
                 onChange={(event) => update("thana", event.target.value)}
+                required
+                minLength={2}
                 maxLength={100}
               />
             </Field>
@@ -903,6 +888,7 @@ function BusinessInformationDialog({
                   mutation.isPending ||
                   !form.businessType ||
                   !form.shopAddress ||
+                  !form.thana.trim() ||
                   !form.latitude ||
                   !form.longitude
                 }
@@ -1073,7 +1059,7 @@ function BusinessProfileSkeleton() {
         <Skeleton className="h-8 w-52" />
         <Skeleton className="h-4 w-full max-w-lg" />
       </div>
-      <Skeleton className="h-72 w-full rounded-xl" />
+      <Skeleton className="h-64 w-full rounded-lg" />
       <Skeleton className="h-12 w-full" />
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         <Skeleton className="h-96 rounded-xl" />
@@ -1084,11 +1070,13 @@ function BusinessProfileSkeleton() {
   );
 }
 
-function IdentityItem({ label, value }: { label: string; value: string }) {
+function ProfileRecordRow({ label, value }: { label: string; value: string }) {
   return (
-    <div>
-      <dt className="text-xs text-gray-500">{label}</dt>
-      <dd className="mt-1 font-medium text-gray-900">{value}</dd>
+    <div className="grid grid-cols-[4.5rem_minmax(0,1fr)] gap-2">
+      <dt className="font-medium text-gray-600">{label}</dt>
+      <dd className="min-w-0 break-words font-medium text-gray-900">
+        : {value}
+      </dd>
     </div>
   );
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import L from "leaflet";
+import { Hand } from "lucide-react";
 import { useEffect, useRef } from "react";
 import "leaflet/dist/leaflet.css";
 import type { LocationAddress } from "@/constants/seller-registration";
@@ -160,9 +161,7 @@ export function LocationPickerMap({
       />
       {/* Instruction overlay */}
       <div className="absolute top-3 left-3 z-[1000] bg-white/90 backdrop-blur-sm px-3 py-1.5 rounded-lg shadow-sm flex items-center gap-1.5">
-        <span className="material-symbols-outlined text-[#003178] text-sm">
-          pan_tool
-        </span>
+        <Hand className="size-3.5 text-[#003178]" aria-hidden="true" />
         <span className="text-xs text-gray-600 font-medium">
           Drag the pin to adjust location
         </span>

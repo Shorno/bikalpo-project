@@ -7,7 +7,10 @@ import { useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import type { LocationAddress, LocationData } from "@/constants/seller-registration";
+import type {
+  LocationAddress,
+  LocationData,
+} from "@/constants/seller-registration";
 
 import type { BarikoiPlace } from "@/hooks/use-barikoi-autocomplete";
 import { useBarikoiAutocomplete } from "@/hooks/use-barikoi-autocomplete";
@@ -39,6 +42,8 @@ interface LocationPickerSectionProps {
   onUpdate: (data: LocationData) => void;
 
   required?: boolean;
+
+  summaryLocationLevel?: "area" | "thana";
 }
 
 export function LocationPickerSection({
@@ -51,6 +56,8 @@ export function LocationPickerSection({
   onUpdate,
 
   required = true,
+
+  summaryLocationLevel = "area",
 }: LocationPickerSectionProps) {
   const {
     suggestions,
@@ -114,7 +121,7 @@ export function LocationPickerSection({
       addressBn: "",
 
       area: resolved?.area || place.area || "",
-      thana: resolved?.thana || "",
+      thana: resolved?.thana || place.sub_district || "",
 
       district: resolved?.district || "",
 
@@ -341,13 +348,25 @@ export function LocationPickerSection({
               </span>
             </div>
 
-            {data.area && (
+            {summaryLocationLevel === "area" && data.area && (
               <div>
                 <span className="block text-xs text-muted-foreground">
                   Area
                 </span>
 
                 <span className="font-medium text-foreground">{data.area}</span>
+              </div>
+            )}
+
+            {summaryLocationLevel === "thana" && data.thana && (
+              <div>
+                <span className="block text-xs text-muted-foreground">
+                  Thana
+                </span>
+
+                <span className="font-medium text-foreground">
+                  {data.thana}
+                </span>
               </div>
             )}
 

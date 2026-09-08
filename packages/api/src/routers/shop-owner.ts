@@ -151,8 +151,8 @@ import {
 } from "./helpers/retailer-order-stock";
 import {
   retailerBusinessContactInformationSchema,
+  retailerRequiredThanaSchema,
   retailerShopProfileSchema,
-  retailerThanaSchema,
 } from "./helpers/retailer-profile-fields";
 import { completeSelfPickupInvoice } from "./helpers/self-pickup";
 import { loadStructuredBrandStockRows } from "./helpers/structured-stock-data";
@@ -2123,8 +2123,7 @@ const mutations = {
           productTypeId: z.number().int().positive().nullable(),
           businessNature: z.enum(SHOP_OWNER_BUSINESS_NATURES).nullable(),
           shopAddress: z.string().trim().min(5).max(500),
-          area: z.string().trim().max(100).nullable(),
-          thana: retailerThanaSchema,
+          thana: retailerRequiredThanaSchema,
           district: z.string().trim().max(100).nullable(),
           division: z.string().trim().max(100).nullable(),
           postCode: z.string().trim().max(20).nullable(),
@@ -2168,7 +2167,7 @@ const mutations = {
             businessCategory: selectedProductType?.name ?? null,
             businessNature: input.businessNature,
             shopAddress: input.shopAddress,
-            area: input.area,
+            area: null,
             thana: input.thana,
             district: input.district,
             division: input.division,

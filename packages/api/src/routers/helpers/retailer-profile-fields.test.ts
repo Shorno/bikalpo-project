@@ -6,6 +6,7 @@ import { eq, getTableColumns } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import {
   retailerBusinessContactInformationSchema,
+  retailerRequiredThanaSchema,
   retailerShopProfileSchema,
   retailerThanaSchema,
 } from "./retailer-profile-fields";
@@ -20,10 +21,19 @@ const legacyContactInput = {
 
 test("thana trims before checking its limit and supports omission and clearing", () => {
   assert.equal(retailerThanaSchema.parse("  Dhanmondi  "), "Dhanmondi");
-  assert.equal(retailerThanaSchema.parse(`  ${"a".repeat(100)}  `), "a".repeat(100));
+  assert.equal(
+    retailerThanaSchema.parse(`  ${"a".repeat(100)}  `),
+    "a".repeat(100),
+  );
   assert.equal(retailerThanaSchema.safeParse("a".repeat(101)).success, false);
   assert.equal(retailerThanaSchema.parse(undefined), undefined);
   assert.equal(retailerThanaSchema.parse(null), null);
+});
+
+test("business profile updates require a usable Thana", () => {
+  assert.equal(retailerRequiredThanaSchema.parse("  Savar  "), "Savar");
+  assert.equal(retailerRequiredThanaSchema.safeParse("").success, false);
+  assert.equal(retailerRequiredThanaSchema.safeParse(null).success, false);
 });
 
 test("contact updates accept older clients and preserve Instagram compatibility", () => {
@@ -120,7 +130,12 @@ test("profile columns are nullable and updates preserve omitted values or clear 
       .toSQL();
 
   const omitted = update(legacyContactInput);
-  for (const column of ["thana", "messenger_url", "telegram_url", "instagram_url"]) {
+  for (const column of [
+    "thana",
+    "messenger_url",
+    "telegram_url",
+    "instagram_url",
+  ]) {
     assert.equal(omitted.sql.includes(`"${column}" =`), false);
   }
   const saved = update({
@@ -129,7 +144,11 @@ test("profile columns are nullable and updates preserve omitted values or clear 
     messengerUrl: " https://m.me/example ",
     telegramUrl: " https://t.me/example ",
   });
-  for (const value of ["Dhanmondi", "https://m.me/example", "https://t.me/example"]) {
+  for (const value of [
+    "Dhanmondi",
+    "https://m.me/example",
+    "https://t.me/example",
+  ]) {
     assert.ok(saved.params.includes(value));
   }
   const cleared = update({
@@ -139,7 +158,12 @@ test("profile columns are nullable and updates preserve omitted values or clear 
     telegramUrl: null,
     instagramUrl: null,
   });
-  for (const column of ["thana", "messenger_url", "telegram_url", "instagram_url"]) {
+  for (const column of [
+    "thana",
+    "messenger_url",
+    "telegram_url",
+    "instagram_url",
+  ]) {
     const parameter = cleared.sql.match(new RegExp(`"${column}" = \\$(\\d+)`));
     assert.ok(parameter, `${column} is included in the update`);
     assert.equal(cleared.params[Number(parameter[1]) - 1], null);
@@ -212,8 +236,14 @@ test("shop profile updates omit untouched logo or hours in generated SQL", () =>
   };
   const logoOnly = update({ shopLogo: "https://example.com/logo.png" });
   assert.ok(logoOnly.sql.includes(`"${user.shopLogo.name}" =`));
-  assert.equal(logoOnly.sql.includes(`"${user.shopOpeningTime.name}" =`), false);
-  assert.equal(logoOnly.sql.includes(`"${user.shopClosingTime.name}" =`), false);
+  assert.equal(
+    logoOnly.sql.includes(`"${user.shopOpeningTime.name}" =`),
+    false,
+  );
+  assert.equal(
+    logoOnly.sql.includes(`"${user.shopClosingTime.name}" =`),
+    false,
+  );
   for (const hours of [
     { openingTime: "09:00", closingTime: "18:00" },
     { openingTime: null, closingTime: null },
@@ -224,7 +254,9 @@ test("shop profile updates omit untouched logo or hours in generated SQL", () =>
       [user.shopOpeningTime.name, hours.openingTime],
       [user.shopClosingTime.name, hours.closingTime],
     ] as const) {
-      const parameter = hoursOnly.sql.match(new RegExp(`"${column}" = \\$(\\d+)`));
+      const parameter = hoursOnly.sql.match(
+        new RegExp(`"${column}" = \\$(\\d+)`),
+      );
       assert.ok(parameter);
       assert.equal(hoursOnly.params[Number(parameter[1]) - 1], value);
     }
