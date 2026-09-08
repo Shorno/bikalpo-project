@@ -169,6 +169,7 @@ Updated 2026-09-08: coupon, reward, delivery, and shipping rows appear as zero-v
 - **Print & Share:** make the same PDF available for sharing and open the print flow without generating a second, different invoice representation.
 - Remove the current placeholder SMS success action.
 - The preview, print output, downloaded PDF, and shared PDF must use the same invoice data and totals.
+- POS entries in warehouse Sales details use the same `PosInvoiceDialog` as the POS checkout page: same invoice endpoint, `PosInvoiceSheet`, PDF generator, and Print only / Share PDF / Print & share actions. Order-invoice and payment-receipt templates are outside this change. Collecting POS due invalidates the invoice and customer balances; changing invoices disables output until the matching PDF is ready. PDF generation failures expose Retry PDF.
 
 ## Data and API changes
 

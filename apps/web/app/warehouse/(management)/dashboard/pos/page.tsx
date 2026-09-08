@@ -10,17 +10,14 @@ import {
   ChevronDown,
   ChevronRight,
   CirclePlus,
-  FileText,
   Loader2,
   Minus,
   PackageOpen,
   Pause,
   Plus,
-  Printer,
   ReceiptText,
   RotateCcw,
   Search,
-  Share2,
   ShoppingBasket,
   Trash2,
   X,
@@ -58,18 +55,13 @@ import {
   type PosCustomer,
   PosCustomerEntry,
 } from "@/components/warehouse/pos-customer-entry";
-import { PosInvoiceSheet } from "@/components/warehouse/pos-invoice-sheet";
+import { PosInvoiceDialog } from "@/components/warehouse/pos-invoice-dialog";
 import { cn } from "@/lib/utils";
 import {
   buildPosTypeTree,
   matchesPosTypeSelection,
   type PosCatalogSelection,
 } from "@/lib/warehouse-pos-catalog";
-import {
-  createWarehousePosInvoicePdf,
-  printWarehousePosInvoice,
-  shareWarehousePosInvoice,
-} from "@/lib/warehouse-pos-invoice";
 import { orpc, queryClient } from "@/utils/orpc";
 
 type CatalogVariant = {
@@ -132,12 +124,6 @@ function errorMessage(error: unknown) {
     : "Something went wrong. Please try again.";
 }
 
-function invoicePreviewElement() {
-  return (
-    document.querySelector<HTMLElement>("[data-invoice-preview]") ?? undefined
-  );
-}
-
 function newPayment(accountId = "", received = ""): PaymentDraft {
   return { id: crypto.randomUUID(), accountId, received };
 }
@@ -163,7 +149,6 @@ export default function WarehousePosPage() {
   );
   const [invoiceSaleId, setInvoiceSaleId] = useState<number | null>(null);
   const [invoiceDialog, setInvoiceDialog] = useState(false);
-  const [invoicePdf, setInvoicePdf] = useState<Blob | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
 
   const bootstrapQuery = useQuery({
@@ -177,12 +162,6 @@ export default function WarehousePosPage() {
   const accountsQuery = useQuery({
     queryKey: ["finance", "paymentAccounts"],
     queryFn: () => orpc.finance.getPaymentAccounts.call({}),
-  });
-  const invoiceQuery = useQuery({
-    queryKey: ["warehousePos", "invoice", invoiceSaleId],
-    queryFn: () =>
-      orpc.warehousePos.getSaleInvoice.call({ saleId: invoiceSaleId! }),
-    enabled: invoiceSaleId !== null,
   });
 
   const variants = (catalogQuery.data?.variants ?? []) as CatalogVariant[];
@@ -287,28 +266,6 @@ export default function WarehousePosPage() {
   const change = splitPayment.change;
   const due = splitPayment.due;
   const paymentStatus = splitPayment.paymentStatus;
-  const invoice = invoiceQuery.data;
-
-  useEffect(() => {
-    setInvoicePdf(null);
-    if (!invoice || !invoiceDialog) return;
-    let cancelled = false;
-    const frame = window.requestAnimationFrame(() => {
-      const element = invoicePreviewElement();
-      if (!element) return;
-      void createWarehousePosInvoicePdf(element)
-        .then((pdf) => {
-          if (!cancelled) setInvoicePdf(pdf);
-        })
-        .catch((error) => {
-          if (!cancelled) toast.error(errorMessage(error));
-        });
-    });
-    return () => {
-      cancelled = true;
-      window.cancelAnimationFrame(frame);
-    };
-  }, [invoice, invoiceDialog]);
 
   const addVariant = (variant: CatalogVariant) => {
     setCart((current) => {
@@ -1218,116 +1175,11 @@ export default function WarehousePosPage() {
         </DialogContent>
       </Dialog>
 
-      <Dialog onOpenChange={setInvoiceDialog} open={invoiceDialog}>
-        <DialogContent className="max-h-[94vh] overflow-y-auto sm:max-w-4xl">
-          <DialogHeader>
-            <DialogTitle>Invoice preview</DialogTitle>
-            <DialogDescription>
-              Print or share the completed invoice PDF.
-            </DialogDescription>
-          </DialogHeader>
-          {invoiceQuery.isLoading ? (
-            <div className="flex min-h-80 items-center justify-center text-sm text-zinc-500">
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              Preparing invoice…
-            </div>
-          ) : null}
-          {invoiceQuery.isError ? (
-            <div className="flex min-h-48 flex-col items-center justify-center gap-3 border border-red-200 bg-red-50 text-sm text-red-700">
-              <span>Invoice preview could not be loaded.</span>
-              <Button
-                onClick={() => invoiceQuery.refetch()}
-                size="sm"
-                variant="outline"
-              >
-                Retry
-              </Button>
-            </div>
-          ) : null}
-          {invoice ? (
-            <div
-              className="overflow-x-auto"
-              role="region"
-              aria-label="Invoice preview; scroll horizontally to view the full sheet"
-              // biome-ignore lint/a11y/noNoninteractiveTabindex: Enable keyboard scrolling of the fixed-width invoice.
-              tabIndex={0}
-            >
-              <PosInvoiceSheet invoice={invoice} />
-            </div>
-          ) : null}
-          {invoice && !invoicePdf ? (
-            <p className="flex items-center justify-center gap-2 text-xs font-medium text-zinc-500">
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              Preparing the printable PDF…
-            </p>
-          ) : null}
-          {invoice ? (
-            <DialogFooter className="sm:justify-center">
-              <Button
-                className="gap-2"
-                disabled={!invoicePdf}
-                onClick={() =>
-                  invoicePdf && printWarehousePosInvoice(invoicePdf)
-                }
-                variant="outline"
-              >
-                <Printer className="h-4 w-4" />
-                Print only
-              </Button>
-              <Button
-                className="gap-2"
-                disabled={!invoicePdf}
-                onClick={async () => {
-                  try {
-                    if (!invoicePdf)
-                      throw new Error("Invoice PDF is still preparing");
-                    const result = await shareWarehousePosInvoice(
-                      invoice,
-                      invoicePdf,
-                    );
-                    if (result === "downloaded")
-                      toast.info(
-                        "Direct file sharing is unavailable, so the PDF was downloaded.",
-                      );
-                  } catch (error) {
-                    if ((error as DOMException)?.name !== "AbortError")
-                      toast.error(errorMessage(error));
-                  }
-                }}
-                variant="outline"
-              >
-                <Share2 className="h-4 w-4" />
-                Share PDF
-              </Button>
-              <Button
-                className="gap-2 bg-blue-700 hover:bg-blue-800"
-                disabled={!invoicePdf}
-                onClick={async () => {
-                  try {
-                    if (!invoicePdf)
-                      throw new Error("Invoice PDF is still preparing");
-                    const result = await shareWarehousePosInvoice(
-                      invoice,
-                      invoicePdf,
-                    );
-                    if (result === "downloaded")
-                      toast.info(
-                        "Direct file sharing is unavailable, so the PDF was downloaded.",
-                      );
-                    printWarehousePosInvoice(invoicePdf);
-                  } catch (error) {
-                    if ((error as DOMException)?.name !== "AbortError")
-                      toast.error(errorMessage(error));
-                  }
-                }}
-              >
-                <FileText className="h-4 w-4" />
-                Print &amp; share
-              </Button>
-            </DialogFooter>
-          ) : null}
-        </DialogContent>
-      </Dialog>
+      <PosInvoiceDialog
+        open={invoiceDialog}
+        onOpenChange={setInvoiceDialog}
+        saleId={invoiceSaleId}
+      />
     </div>
   );
 }
