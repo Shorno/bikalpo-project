@@ -186,17 +186,23 @@ export function PosInvoiceSheet({
           </p>
         </section>
       ) : null}
-      <footer data-invoice-block="" className="mt-7 space-y-2">
-        <p className="text-center">
-          Powered by{" "}
+      <footer
+        data-invoice-block=""
+        className="mt-7 space-y-2"
+        style={{ fontFamily: "Arial, sans-serif" }}
+      >
+        <p className="flex items-baseline justify-center gap-1">
+          <span className="whitespace-pre">Powered by</span>
           <a
             href="https://bikalpo.com"
-            className="underline underline-offset-2"
+            className="whitespace-nowrap underline underline-offset-2"
           >
             Bikalpo.com
           </a>
         </p>
-        <p>Thank you for shopping with Bikalpo.</p>
+        <p className="whitespace-pre-wrap">
+          Thank you for shopping with Bikalpo.
+        </p>
       </footer>
     </article>
   );
