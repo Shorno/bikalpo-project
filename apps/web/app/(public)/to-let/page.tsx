@@ -235,7 +235,7 @@ export default async function ToLetPage({ searchParams }: ToLetPageProps) {
         aria-labelledby="curated-listings-heading"
         className="scroll-mt-32 border-y border-stone-200/80 bg-white py-14 sm:py-20"
       >
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+        <div className="site-container px-4 sm:px-6 lg:px-8">
           <SectionHeading
             title="সাম্প্রতিক ও ভেরিফাইড To-Let লিস্টিং"
             description="নতুন listing publish হওয়ার পর ৩০ দিন দেখা যাবে। Booking confirm হলে Booked status-সহ নতুন ৩০ দিন থাকবে; Booked unit নতুন request নেয় না।"
@@ -363,7 +363,7 @@ function ToLetHero({
 }) {
   return (
     <section className="border-b border-stone-200/80 bg-stone-50/60">
-      <div className="mx-auto max-w-7xl px-4 py-5 sm:px-6 sm:py-7 lg:px-8">
+      <div className="site-container px-4 py-5 sm:px-6 sm:py-7 lg:px-8">
         <div className="relative min-h-[470px] overflow-hidden rounded-2xl border border-emerald-950/10 bg-zinc-950 sm:min-h-[500px]">
           <Image
             src="/images/to-let-hero.png"
@@ -498,7 +498,7 @@ function MarketplaceSnapshot({
       aria-label="Current To-Let marketplace snapshot"
       className="bg-stone-50/60"
     >
-      <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+      <div className="site-container px-4 py-8 sm:px-6 lg:px-8">
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {stats.map(({ label, value, description, icon: Icon }) => (
             <article
@@ -536,7 +536,7 @@ function RentalTypeExplorer({
 }) {
   return (
     <section className="border-y border-emerald-100 bg-emerald-50/35 py-14 sm:py-16">
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+      <div className="site-container px-4 sm:px-6 lg:px-8">
         <SectionHeading
           title="যে ধরনের ইউনিট খুঁজছেন, সেখান থেকেই শুরু করুন"
           description="ফ্যামিলি, ব্যাচেলর, সাবলেট, অফিস, দোকান ও গুদামঘরসহ বিভিন্ন ধরনের To-Let listing থেকে প্রয়োজন অনুযায়ী সঠিক ইউনিট নির্বাচন করুন।"
@@ -608,7 +608,7 @@ function FilterChip({
 function TenantJourney({ firstListing }: { firstListing?: UnitListing }) {
   return (
     <section className="border-y border-emerald-100 bg-emerald-50/30 py-14 sm:py-16">
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+      <div className="site-container px-4 sm:px-6 lg:px-8">
         <SectionHeading
           title="From Listing Search to Digital Booking and Tenant Connection"
           description="Fewer steps, more assurance—from verified listing search and booking confirmation to tenant connection and the monthly digital rent workflow."
@@ -691,7 +691,7 @@ function TenantJourney({ firstListing }: { firstListing?: UnitListing }) {
 function OwnerCallToAction() {
   return (
     <section className="bg-stone-50/60 py-14 sm:py-20">
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+      <div className="site-container px-4 sm:px-6 lg:px-8">
         <div className="overflow-hidden rounded-2xl border border-emerald-900 bg-emerald-950 px-6 py-10 text-emerald-50 sm:px-10 sm:py-14 lg:px-14">
           <div className="grid gap-10 lg:grid-cols-[1.2fr_0.8fr] lg:items-center">
             <div>

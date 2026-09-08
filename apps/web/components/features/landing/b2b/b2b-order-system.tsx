@@ -11,7 +11,7 @@ const capabilities = [
 export function B2bOrderSystem() {
   return (
     <section className="py-20 sm:py-28 bg-white" id="order-system">
-      <div className="max-w-7xl mx-auto px-6">
+      <div className="site-container px-6">
         <div className="grid lg:grid-cols-2 gap-16 items-center">
           <div>
             <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-[#00C853]/[0.06] border border-[#00C853]/[0.12] mb-6">

@@ -81,7 +81,7 @@ export function VerifiedCustomersHero({
 
       {/* Content */}
       <div className="relative py-16 md:py-24">
-        <div className="container mx-auto px-4 text-center">
+        <div className="site-container px-4 text-center">
           {/* Title */}
           <h1 className="text-3xl md:text-5xl font-bold text-white mb-4 tracking-wide">
             VERIFIED B2B CUSTOMERS

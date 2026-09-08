@@ -31,7 +31,7 @@ export default async function QrPropertyPage({ params }: QrPropertyPageProps) {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-50 to-white">
-      <div className="container mx-auto px-4 py-8 md:py-12">
+      <div className="site-container px-4 py-8 md:py-12">
         <section className="overflow-hidden rounded-xl border border-gray-100 bg-white shadow-sm">
           <div className="grid md:grid-cols-[minmax(0,1fr)_2fr]">
             <div className="relative aspect-video bg-slate-100 md:aspect-auto">

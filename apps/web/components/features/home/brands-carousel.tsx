@@ -52,7 +52,7 @@ export function BrandsCarousel({ brands }: BrandsCarouselProps) {
   if (brands.length === 0) {
     return (
       <section className="py-10 sm:py-12 bg-gray-50">
-        <div className="container mx-auto px-4 md:px-0">
+        <div className="site-container px-4 md:px-0">
           <h2 className="text-2xl sm:text-3xl font-bold text-center mb-8">
             Top Brands
           </h2>
@@ -64,7 +64,7 @@ export function BrandsCarousel({ brands }: BrandsCarouselProps) {
 
   return (
     <section className="py-10 sm:py-12 bg-gray-50">
-      <div className="container mx-auto px-4 md:px-0">
+      <div className="site-container px-4 md:px-0">
         <h2 className="text-2xl sm:text-3xl font-bold text-center mb-8 sm:mb-12">
           Top Brands
         </h2>

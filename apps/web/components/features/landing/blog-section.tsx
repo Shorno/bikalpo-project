@@ -24,7 +24,7 @@ import Image from "next/image";
 export function BlogSection() {
   return (
     <section className="py-12 sm:py-24" style={{ backgroundColor: "#f3f4f5" }}>
-      <div className="max-w-7xl mx-auto px-6">
+      <div className="site-container px-6">
         <div className="flex justify-between items-end mb-16">
           <div>
             <h2

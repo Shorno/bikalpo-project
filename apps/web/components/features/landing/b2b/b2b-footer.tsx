@@ -26,7 +26,7 @@ const footerLinks = {
 export function B2bFooter() {
   return (
     <footer className="border-t border-border bg-card pt-16 pb-10">
-      <div className="mx-auto max-w-7xl px-6">
+      <div className="site-container px-6">
         <div className="mb-16 grid grid-cols-2 gap-12 lg:grid-cols-5">
           <div className="col-span-2">
             <div className="mb-6 flex items-center gap-2">

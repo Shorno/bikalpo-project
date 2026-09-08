@@ -15,7 +15,7 @@ export function B2bFaq() {
 
   return (
     <section className="py-20 sm:py-28 bg-white" id="faq">
-      <div className="max-w-7xl mx-auto px-6">
+      <div className="site-container px-6">
         <div className="grid lg:grid-cols-2 gap-16 items-start">
           <div className="lg:sticky lg:top-32">
             <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-[#003178]/[0.04] border border-[#003178]/[0.08] mb-6">

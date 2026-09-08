@@ -111,7 +111,7 @@ export function WarehouseInfoHeader({
   return (
     <>
       <section className="bg-white border-b">
-        <div className="container mx-auto px-4 py-6">
+        <div className="site-container px-4 py-6">
           <div className="flex flex-col md:flex-row md:items-center gap-5">
             {/* Warehouse Avatar */}
             <div className="shrink-0 w-16 h-16 md:w-20 md:h-20 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-700 flex items-center justify-center shadow-lg">

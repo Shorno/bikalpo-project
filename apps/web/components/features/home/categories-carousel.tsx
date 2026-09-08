@@ -50,7 +50,7 @@ function CategoryItem({ category }: { category: Category }) {
 export function CategoriesCarousel({ categories }: CategoriesCarouselProps) {
   return (
     <section className="py-10 sm:py-16 bg-white">
-      <div className="container mx-auto px-4 md:px-0">
+      <div className="site-container px-4 md:px-0">
         <h2 className="text-2xl sm:text-3xl font-bold text-center mb-8 sm:mb-12">
           Categories
         </h2>

@@ -13,7 +13,7 @@ export function ShopDashboardClient({ shopName }: { shopName: string }) {
 
   return (
     <div>
-      <div className="container mx-auto px-4 py-6">
+      <div className="site-container px-4 py-6">
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>
             <h1 className="flex items-center gap-2 text-2xl font-bold text-gray-900 md:text-3xl">
@@ -30,11 +30,11 @@ export function ShopDashboardClient({ shopName }: { shopName: string }) {
         </div>
       </div>
 
-      <div className="container mx-auto px-4">
+      <div className="site-container px-4">
         <ShopHero />
       </div>
 
-      <div className="container mx-auto px-4 py-6">
+      <div className="site-container px-4 py-6">
         <div className="grid grid-cols-1 gap-8 lg:grid-cols-4">
           <div className="lg:col-span-3">
             <CustomerHomeProductTabs />

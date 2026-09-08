@@ -35,7 +35,7 @@ export default async function ProductsPage({
   return (
     <div className="min-h-screen bg-[oklch(0.985_0.004_260)]">
       {previewMode && <CustomerPreviewBanner />}
-      <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 md:py-12 lg:px-8">
+      <div className="site-container px-4 py-8 sm:px-6 md:py-12 lg:px-8">
         <header className="border-b border-border pb-8">
           <p className="text-xs font-semibold tracking-[0.16em] text-primary uppercase">
             Public catalog

@@ -38,7 +38,7 @@ export function CategoryPageClient({
 
   if (isLoading) {
     return (
-      <div className="container mx-auto px-4 py-8">
+      <div className="site-container px-4 py-8">
         <div className="mb-8">
           <Skeleton className="h-10 w-64 mb-2" />
           <Skeleton className="h-6 w-96" />
@@ -62,7 +62,7 @@ export function CategoryPageClient({
   const category = data.category;
 
   return (
-    <div className="container mx-auto px-4 py-8">
+    <div className="site-container px-4 py-8">
       {/* Header */}
       <div className="mb-8">
         <h1 className="text-2xl md:text-3xl font-bold text-gray-900 mb-2">

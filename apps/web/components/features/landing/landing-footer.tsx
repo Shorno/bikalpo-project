@@ -32,7 +32,7 @@ const linkStyle =
 export function LandingFooter() {
   return (
     <footer className={styles.footer}>
-      <div className="mx-auto max-w-7xl px-4 py-9 sm:px-6 lg:px-8 lg:py-10">
+      <div className="site-container px-4 py-9 sm:px-6 lg:px-8 lg:py-10">
         <div className="grid items-start gap-x-12 gap-y-10 md:grid-cols-2 lg:grid-cols-3">
           <div className="md:col-span-2 lg:col-span-1">
             <Link
@@ -181,7 +181,7 @@ export function LandingFooter() {
         </div>
       </div>
       <div>
-        <div className="mx-auto flex max-w-7xl flex-col gap-1 px-4 pb-7 text-sm leading-6 text-[var(--footer-muted)] sm:px-6 lg:flex-row lg:items-center lg:justify-between lg:px-8">
+        <div className="site-container flex flex-col gap-1 px-4 pb-7 text-sm leading-6 text-[var(--footer-muted)] sm:px-6 lg:flex-row lg:items-center lg:justify-between lg:px-8">
           <p>© {new Date().getFullYear()} Bikalpo. All Rights Reserved.</p>
           <p>Bangladesh&apos;s Multi-Vendor Digital Commerce Ecosystem.</p>
         </div>

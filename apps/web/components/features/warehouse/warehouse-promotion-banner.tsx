@@ -61,7 +61,7 @@ export function WarehousePromotionBanner({
   banners = defaultBanners,
 }: WarehousePromotionBannerProps) {
   return (
-    <section className="container mx-auto px-4 py-6">
+    <section className="site-container px-4 py-6">
       <div className="flex items-center justify-between mb-4">
         <h2 className="text-lg font-bold text-gray-900">
           B2B Offers & Promotions

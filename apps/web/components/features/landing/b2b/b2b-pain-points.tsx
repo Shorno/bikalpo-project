@@ -14,7 +14,7 @@ const painPoints = [
 export function B2bPainPoints() {
   return (
     <section className="py-20 sm:py-28 bg-white" id="pain-points">
-      <div className="max-w-7xl mx-auto px-6">
+      <div className="site-container px-6">
         <div className="text-center mb-16 max-w-3xl mx-auto">
           <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-red-500/[0.06] border border-red-500/10 mb-6">
             <span className="material-symbols-outlined text-sm text-red-500">warning</span>

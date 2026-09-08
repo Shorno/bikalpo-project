@@ -279,7 +279,7 @@ export function OrpcCheckout() {
 
   if (items.length === 0) {
     return (
-      <div className="container mx-auto px-4 py-16">
+      <div className="site-container px-4 py-16">
         <div className="max-w-md mx-auto text-center">
           <ShoppingBag className="h-16 w-16 mx-auto text-gray-400 mb-4" />
           <h1 className="text-2xl font-bold mb-2 text-gray-900">

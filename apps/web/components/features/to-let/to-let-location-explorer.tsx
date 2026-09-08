@@ -136,7 +136,7 @@ export function ToLetLocationExplorer({
       aria-labelledby="location-intelligence-heading"
       className="scroll-mt-28 border-y border-stone-200/80 bg-white py-14 sm:py-16"
     >
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+      <div className="site-container px-4 sm:px-6 lg:px-8">
         <div className="mb-8 max-w-3xl sm:mb-10">
           <h2
             id="location-intelligence-heading"

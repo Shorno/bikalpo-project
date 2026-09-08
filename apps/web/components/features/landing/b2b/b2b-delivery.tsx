@@ -11,7 +11,7 @@ const deliveryFeatures = [
 export function B2bDelivery() {
   return (
     <section className="py-20 sm:py-28 bg-gradient-to-b from-[#f8faff] via-[#f0f4ff] to-[#f8faff]" id="delivery">
-      <div className="max-w-7xl mx-auto px-6">
+      <div className="site-container px-6">
         <div className="grid lg:grid-cols-2 gap-16 items-center">
           <div className="relative order-2 lg:order-1">
             <div className="rounded-2xl p-8 bg-gradient-to-br from-[#0a1628] to-[#1a2744] shadow-[0_24px_60px_rgba(0,0,0,0.15)]">

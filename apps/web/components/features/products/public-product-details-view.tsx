@@ -254,7 +254,7 @@ export function StorefrontProductDetailsView({
       {previewMode && <CustomerPreviewBanner />}
 
       <div className="border-b border-zinc-200 bg-white">
-        <div className="container mx-auto px-4 py-3">
+        <div className="site-container px-4 py-3">
           <nav
             aria-label="Breadcrumb"
             className="flex min-w-0 items-center gap-2 overflow-x-auto whitespace-nowrap text-sm text-zinc-600"
@@ -280,7 +280,7 @@ export function StorefrontProductDetailsView({
         </div>
       </div>
 
-      <main className="container mx-auto px-4 py-6 lg:py-8">
+      <main className="site-container px-4 py-6 lg:py-8">
         <header className="flex items-center gap-4 rounded-lg border border-zinc-200 bg-white px-4 py-3">
           <Link
             className="inline-flex h-9 shrink-0 items-center gap-2 rounded-md border border-zinc-200 px-3 text-sm font-medium text-zinc-800 hover:bg-zinc-50"

@@ -57,7 +57,7 @@ export default function WarehouseLandingPage() {
       <div className="min-h-screen bg-[#f8f9fa] space-y-6">
         {/* Mock Warehouse Info Header Skeleton */}
         <section className="bg-white border-b">
-          <div className="container mx-auto px-4 py-6">
+          <div className="site-container px-4 py-6">
             <div className="flex flex-col md:flex-row md:items-center gap-5">
               {/* Avatar Skeleton */}
               <div className="shrink-0 w-16 h-16 md:w-20 md:h-20 rounded-xl bg-zinc-100 border border-zinc-200 flex items-center justify-center">
@@ -81,12 +81,12 @@ export default function WarehouseLandingPage() {
         </section>
 
         {/* Promotion Banner Skeleton */}
-        <div className="container mx-auto px-4">
+        <div className="site-container px-4">
           <Skeleton className="h-40 w-full rounded-xl" />
         </div>
 
         {/* Category List Skeleton */}
-        <section className="container mx-auto px-4">
+        <section className="site-container px-4">
           <div className="flex items-center justify-between mb-3">
             <Skeleton className="h-6 w-44" />
           </div>
@@ -99,7 +99,7 @@ export default function WarehouseLandingPage() {
         </section>
 
         {/* Product Grid Skeleton */}
-        <section className="container mx-auto px-4 py-6">
+        <section className="site-container px-4 py-6">
           <div className="flex items-center justify-between mb-4">
             <Skeleton className="h-6 w-24" />
             <Skeleton className="h-4 w-32" />

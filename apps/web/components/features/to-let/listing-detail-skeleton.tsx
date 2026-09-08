@@ -8,7 +8,7 @@ export function ListingDetailSkeleton() {
       aria-busy="true"
       className="min-h-screen bg-muted/20"
     >
-      <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 sm:py-8 lg:px-8 lg:py-10">
+      <div className="site-container px-4 py-6 sm:px-6 sm:py-8 lg:px-8 lg:py-10">
         <Skeleton className="h-5 w-36" />
         <div className="my-6 space-y-4 border-b pb-6">
           <Skeleton className="h-5 w-40" />

@@ -12,7 +12,7 @@ export default async function CategoryListing({
   const categoriesWithProducts = await getCategoriesWithProducts(8, 600);
 
   return (
-    <div className={cn("py-4 container mx-auto", className)}>
+    <div className={cn("py-4 site-container", className)}>
       {categoriesWithProducts.length === 0 ? (
         <p className="text-center py-12 opacity-60">
           No products available at the moment.

@@ -68,7 +68,7 @@ function HeroSkeleton() {
 
       {/* Content */}
       <div className="relative py-16 md:py-24">
-        <div className="container mx-auto px-4 text-center">
+        <div className="site-container px-4 text-center">
           {/* Title */}
           <Skeleton className="h-10 md:h-14 w-3/4 md:w-1/2 mx-auto mb-4 bg-white/20" />
 
@@ -151,7 +151,7 @@ export default async function VerifiedCustomersPage({
       </Suspense>
 
       {/* Content */}
-      <div className="container mx-auto px-4 py-12">
+      <div className="site-container px-4 py-12">
         {/* Top Buyers Section */}
         <TopBuyers buyers={topBuyers} />
 

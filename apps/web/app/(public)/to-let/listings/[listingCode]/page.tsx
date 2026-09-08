@@ -169,7 +169,7 @@ export default async function PublicListingPage({
         listingCode={listingCode}
         qrToken={qrToken}
       />
-      <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 sm:py-8 lg:px-8 lg:py-10">
+      <div className="site-container px-4 py-6 sm:px-6 sm:py-8 lg:px-8 lg:py-10">
         <Link
           href={qrToken ? `/to-let/qr/${qrToken}` : "/to-let"}
           className="inline-flex items-center gap-2 text-sm font-semibold text-primary transition-colors hover:text-primary/80 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary"

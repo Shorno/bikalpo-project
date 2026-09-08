@@ -28,7 +28,7 @@ export function ContactSection() {
 
   return (
     <section className="pb-24 px-6 md:px-12">
-      <div className="max-w-7xl mx-auto">
+      <div className="site-container">
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
           {/* Left: Contact Details (5 Columns) */}
           <div className="lg:col-span-5 space-y-4">

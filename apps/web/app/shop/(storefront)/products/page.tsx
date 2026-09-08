@@ -24,7 +24,7 @@ export default async function CustomerProductsPage({
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-50/50 to-white">
-      <div className="container mx-auto px-4 py-6 md:py-10">
+      <div className="site-container px-4 py-6 md:py-10">
         {/* Header */}
         <div className="mb-8 md:mb-10">
           <div className="max-w-2xl">

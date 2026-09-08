@@ -40,7 +40,7 @@ export function AccountShell({
         className="hidden"
         dangerouslySetInnerHTML={{ __html: ACCOUNT_DIRECTION_CONTRACT }}
       />
-      <div className="container mx-auto max-w-7xl px-4 py-5 sm:py-7 lg:py-9">
+      <div className="site-container px-4 py-5 sm:py-7 lg:py-9">
         <div className="grid items-start gap-5 lg:grid-cols-[15rem_minmax(0,1fr)] lg:gap-7 xl:grid-cols-[16rem_minmax(0,1fr)] xl:gap-9">
           <AccountSidebar displayName={displayName} audience={audience} />
           <div id="account-content" className="min-w-0">
