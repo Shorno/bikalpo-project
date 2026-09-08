@@ -400,7 +400,7 @@ export default function B2BStatusPage() {
 
                   <RegistrationReviewRow
 
-                    label="Plan"
+                    label="Registration plan preference"
 
                     value={application.selectedPlan.replace(/_/g, " ")}
 

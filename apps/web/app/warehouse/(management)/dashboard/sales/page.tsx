@@ -59,6 +59,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { PosInvoiceDialog } from "@/components/warehouse/pos-invoice-dialog";
 import { cn } from "@/lib/utils";
 import { orpc } from "@/utils/orpc";
 import type { SaleRow } from "./_components/sales-columns";
@@ -930,6 +931,14 @@ function SalesDetailPanel({
       queryClient.invalidateQueries({
         queryKey: ["warehouseSales"],
       });
+      if (selectedSale?.kind === "pos") {
+        queryClient.invalidateQueries({
+          queryKey: ["warehousePos", "invoice", selectedSale.id],
+        });
+        queryClient.invalidateQueries({
+          queryKey: ["warehousePos", "customers"],
+        });
+      }
     },
     onError: (error: any) => {
       toast.error(error?.message ?? "Failed to collect payment");
@@ -1132,7 +1141,9 @@ function SalesDetailPanel({
       <footer className="flex shrink-0 items-center gap-2.5 border-t bg-white px-6 py-4 shadow-[0_-2px_8px_rgba(0,0,0,0.04)]">
         <DrawerAction
           icon={Printer}
-          label="Print Invoice"
+          label={
+            selectedSale?.kind === "pos" ? "Print / Share Invoice" : "Print Invoice"
+          }
           onClick={() => setPrintInvoiceOpen(true)}
           colorClass="bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100"
         />
@@ -1164,12 +1175,20 @@ function SalesDetailPanel({
         isPending={collectDueMutation.isPending}
       />
 
-      <PrintInvoiceDialog
-        open={printInvoiceOpen}
-        onOpenChange={setPrintInvoiceOpen}
-        detail={detail}
-        warehouseLabel={warehouseLabel}
-      />
+      {selectedSale?.kind === "pos" ? (
+        <PosInvoiceDialog
+          open={printInvoiceOpen}
+          onOpenChange={setPrintInvoiceOpen}
+          saleId={selectedSale.id}
+        />
+      ) : (
+        <PrintInvoiceDialog
+          open={printInvoiceOpen}
+          onOpenChange={setPrintInvoiceOpen}
+          detail={detail}
+          warehouseLabel={warehouseLabel}
+        />
+      )}
 
       <PrintReceiptDialog
         open={printReceiptOpen}

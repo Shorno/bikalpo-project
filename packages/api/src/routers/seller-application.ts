@@ -13,6 +13,7 @@ import { eq, desc, and, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { assertBusinessNatureMatchesApplicationPath } from "../business-registration";
+import { retailerThanaSchema } from "./helpers/retailer-profile-fields";
 
 import { protectedProcedure, adminProcedure } from "../index";
 import {
@@ -33,6 +34,7 @@ export const sellerApplicationInputSchema = sharedApplicationFieldsSchema
         shopName: z.string().min(2).max(100),
         businessType: z.enum(["retail", "restaurant"]).default("retail"),
         shopAddress: z.string().min(5).max(500),
+        thana: retailerThanaSchema,
     })
     .superRefine((input, context) => {
         try {
@@ -100,6 +102,7 @@ export const sellerApplicationRouter = {
                     shopName: input.shopName,
                     businessType: input.businessType,
                     shopAddress: input.shopAddress,
+                    thana: input.thana,
                     ...sharedValues,
                 })
                 .returning();
@@ -400,6 +403,7 @@ export const sellerApplicationRouter = {
                         shopName: input.shopName,
                         businessType: input.businessType,
                         shopAddress: input.shopAddress,
+                        thana: input.thana,
                         ...sharedValues,
                     })
                     .returning();
@@ -427,6 +431,7 @@ export const sellerApplicationRouter = {
                     shopName: input.shopName,
                     businessType: input.businessType,
                     shopAddress: input.shopAddress,
+                    thana: input.thana,
                     ...sharedValues,
                     status: "pending",
                     adminNotes: null,

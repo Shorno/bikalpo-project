@@ -41,6 +41,7 @@ export * from "./journal-entry";
 export * from "./journal-line";
 export * from "./kyc-verification";
 export * from "./landing-page";
+export * from "./retailer-subscription";
 export * from "./marketing-material";
 export * from "./offer";
 export * from "./offer-template";

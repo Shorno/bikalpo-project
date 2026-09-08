@@ -1,6 +1,8 @@
 import { db } from "@bikalpo-project/db";
+import { subscriptionStatus } from "@bikalpo-project/db/retailer-subscription-policy";
 import {
     area,
+    retailerSubscription,
     deliveryGroup,
     deliveryGroupInvoice,
     invoice,
@@ -313,74 +315,27 @@ export const dashboardRouter = {
             // ─── SUBSCRIPTION STATUS ────────────────────────────────────
 
             const subscriptions = await safe(async () => {
-                // Plan durations in days
-                const TRIAL_DAYS = 14;
-                const EXPIRING_THRESHOLD_DAYS = 3;
                 const now = new Date();
-
-                // Fetch all approved seller applications with plan + approval date
-                const sellerRows = await db
-                    .select({
-                        plan: sellerApplication.selectedPlan,
-                        approvedAt: sellerApplication.reviewedAt,
-                        createdAt: sellerApplication.createdAt,
-                    })
-                    .from(sellerApplication)
-                    .where(eq(sellerApplication.status, "approved"));
-
-                // Fetch all approved warehouse applications
-                const warehouseRows = await db
-                    .select({
-                        plan: warehouseApplication.selectedPlan,
-                        approvedAt: warehouseApplication.reviewedAt,
-                        createdAt: warehouseApplication.createdAt,
-                    })
-                    .from(warehouseApplication)
-                    .where(eq(warehouseApplication.status, "approved"));
-
+                const rows = await db.select({ term: retailerSubscription })
+                    .from(retailerSubscription)
+                    .innerJoin(user, eq(retailerSubscription.shopId, user.id))
+                    .where(and(eq(retailerSubscription.isCurrent, true), eq(user.role, "shop_owner"), eq(user.businessType, "retail")));
                 let active = 0;
+                let free = 0;
                 let expiringSoon = 0;
                 let expired = 0;
-                let freeTrial = 0;
-                let starter = 0;
-                let growth = 0;
-
-                const allRows = [...sellerRows, ...warehouseRows];
-
-                for (const row of allRows) {
-                    const plan = row.plan || "free_trial";
-
-                    if (plan === "free_trial") {
-                        // Trial accounts: time-limited (14 days from approval)
-                        const startDate = row.approvedAt || row.createdAt;
-                        const expiryDate = new Date(startDate);
-                        expiryDate.setDate(expiryDate.getDate() + TRIAL_DAYS);
-
-                        const daysUntilExpiry = Math.ceil(
-                            (expiryDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24),
-                        );
-
-                        if (daysUntilExpiry <= 0) {
-                            expired++;
-                        } else if (daysUntilExpiry <= EXPIRING_THRESHOLD_DAYS) {
-                            expiringSoon++;
-                            freeTrial++;
-                        } else {
-                            active++;
-                            freeTrial++;
-                        }
-                    } else {
-                        // Paid plans (starter, growth): always active (recurring subscriptions)
-                        active++;
-                        if (plan === "starter") starter++;
-                        else if (plan === "growth") growth++;
+                for (const { term } of rows) {
+                    if (subscriptionStatus(term, now) === "Expired") {
+                        expired++;
+                        continue;
                     }
+                    active++;
+                    if (!term.purchaseId) free++;
+                    else if (term.expiresAt && term.expiresAt.getTime() - now.getTime() <= 3 * 86400000) expiringSoon++;
                 }
-
-                const totalActive = active + expiringSoon;
-
-                return { totalActive, active, expiringSoon, expired, freeTrial, starter, growth };
-            }, { totalActive: 0, active: 0, expiringSoon: 0, expired: 0, freeTrial: 0, starter: 0, growth: 0 });
+                // Free and expiring-soon are subsets of active, not additive totals.
+                return { totalActive: active, active, free, expiringSoon, expired };
+            }, { totalActive: 0, active: 0, free: 0, expiringSoon: 0, expired: 0 });
             // ─── PERFORMANCE HIGHLIGHTS ──────────────────────────────────
 
             const topProduct = await safe(async () => {

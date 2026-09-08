@@ -3,9 +3,78 @@ import test from "node:test";
 
 import {
 	calculatePosCheckout,
+	calculatePosPaymentTotals,
+	calculatePosSplitPayments,
 	normalizePosPhone,
 	validatePosDueCustomer,
 } from "./owner-pos";
+
+test("POS payment totals can preview incomplete account selections", () => {
+	assert.deepEqual(
+		calculatePosPaymentTotals({
+			payableTotal: 250,
+			receivedAmounts: [100, 200],
+		}),
+		{
+			appliedTotal: 250,
+			change: 50,
+			due: 0,
+			paymentStatus: "paid",
+			receivedTotal: 300,
+		},
+	);
+});
+
+test("POS split payments apply only the payable amount and return cash change", () => {
+	assert.deepEqual(
+		calculatePosSplitPayments({
+			payableTotal: 250,
+			payments: [
+				{ accountId: 7, accountType: "bank", receivedAmount: 100 },
+				{ accountId: 3, accountType: "cash", receivedAmount: 200 },
+			],
+		}),
+		{
+			appliedTotal: 250,
+			change: 50,
+			due: 0,
+			paymentStatus: "paid",
+			receivedTotal: 300,
+			rows: [
+				{ accountId: 7, appliedAmount: 100, receivedAmount: 100 },
+				{ accountId: 3, appliedAmount: 150, receivedAmount: 200 },
+			],
+		},
+	);
+});
+
+test("POS split payments derive partial and due states", () => {
+	assert.equal(
+		calculatePosSplitPayments({
+			payableTotal: 250,
+			payments: [{ accountId: 7, accountType: "bank", receivedAmount: 100 }],
+		}).paymentStatus,
+		"partial",
+	);
+	assert.equal(
+		calculatePosSplitPayments({
+			payableTotal: 250,
+			payments: [],
+		}).paymentStatus,
+		"due",
+	);
+});
+
+test("POS over-tender is accepted only on a cash account", () => {
+	assert.throws(
+		() =>
+			calculatePosSplitPayments({
+				payableTotal: 100,
+				payments: [{ accountId: 7, accountType: "bank", receivedAmount: 110 }],
+			}),
+		/cash account/i,
+	);
+});
 
 test("POS checkout applies percentage discount before VAT and returns cash change", () => {
 	const result = calculatePosCheckout({

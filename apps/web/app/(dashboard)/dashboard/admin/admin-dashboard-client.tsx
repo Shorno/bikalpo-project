@@ -181,7 +181,7 @@ export function AdminDashboardClient() {
             deltaLabel: "today",
           },
           {
-            label: "Subscriptions",
+            label: "Retailer Subscriptions",
             value: s?.subscriptions?.totalActive || 0,
             icon: CreditCard,
           },
@@ -323,13 +323,13 @@ export function AdminDashboardClient() {
       <Stagger index={8}>
         <div className="rounded-lg border bg-card">
           <div className="border-b px-4 py-2.5">
-            <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Subscriptions</h2>
+            <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Retailer Subscriptions</h2>
           </div>
           <div className="grid grid-cols-2 divide-x divide-y sm:grid-cols-4 sm:divide-y-0">
             {[
               { label: "Active", value: s?.subscriptions?.active || 0, dotColor: "bg-emerald-500" },
-              { label: "Trial", value: s?.subscriptions?.freeTrial || 0, dotColor: "bg-sky-500" },
-              { label: "Expiring Soon", value: s?.subscriptions?.expiringSoon || 0, dotColor: "bg-amber-500" },
+              { label: "Free (included in Active)", value: s?.subscriptions?.free || 0, dotColor: "bg-sky-500" },
+              { label: "Expiring Soon (included in Active)", value: s?.subscriptions?.expiringSoon || 0, dotColor: "bg-amber-500" },
               { label: "Expired", value: s?.subscriptions?.expired || 0, dotColor: "bg-red-500" },
             ].map((item) => (
               <div key={item.label} className="flex items-center gap-2.5 px-4 py-3">

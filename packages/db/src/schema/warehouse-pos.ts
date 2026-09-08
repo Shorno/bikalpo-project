@@ -2,6 +2,7 @@ import { relations, sql } from "drizzle-orm";
 import {
     check,
     boolean,
+    date,
     decimal,
     index,
     integer,
@@ -17,6 +18,7 @@ import {
 import { user } from "./auth-schema";
 import { product } from "./product";
 import { productVariant } from "./product-variant";
+import { financePaymentAccount } from "./finance-payment-account";
 
 export const warehousePosCustomerTypeEnum = pgEnum("warehouse_pos_customer_type", [
     "walk_in",
@@ -51,6 +53,11 @@ export const warehousePosCartStatusEnum = pgEnum("warehouse_pos_cart_status", [
 export const warehousePosPaymentEntryTypeEnum = pgEnum(
     "warehouse_pos_payment_entry_type",
     ["payment", "reversal"],
+);
+
+export const warehousePosPaymentStatusEnum = pgEnum(
+    "warehouse_pos_payment_status",
+    ["paid", "partial", "due"],
 );
 
 export type WarehousePosCartItem = {
@@ -193,6 +200,18 @@ export const warehousePosSale = pgTable(
             .default("0")
             .notNull(),
         paymentMethod: warehousePosPaymentMethodEnum("payment_method").notNull(),
+        paymentStatus: warehousePosPaymentStatusEnum("payment_status")
+            .default("paid")
+            .notNull(),
+        deliveryMethod: varchar("delivery_method", { length: 80 })
+            .default("Self Pickup")
+            .notNull(),
+        responsiblePersonId: text("responsible_person_id").references(() => user.id, {
+            onDelete: "set null",
+        }),
+        responsiblePersonName: varchar("responsible_person_name", { length: 150 }),
+        saleDate: date("sale_date").default(sql`CURRENT_DATE`).notNull(),
+        terms: text("terms"),
         status: warehousePosSaleStatusEnum("status").default("completed").notNull(),
         note: text("note"),
         heldCartId: integer("held_cart_id").references(() => warehousePosCart.id, {
@@ -268,6 +287,10 @@ export const warehousePosPayment = pgTable(
             .notNull(),
         idempotencyKey: varchar("idempotency_key", { length: 80 }),
         reversesPaymentId: integer("reverses_payment_id"),
+        paymentAccountId: integer("payment_account_id").references(
+            () => financePaymentAccount.id,
+            { onDelete: "restrict" },
+        ),
         paymentMethod: warehousePosPaymentMethodEnum("payment_method").notNull(),
         amount: decimal("amount", { precision: 12, scale: 2 }).notNull(),
         tenderedAmount: decimal("tendered_amount", { precision: 12, scale: 2 }),
@@ -282,6 +305,7 @@ export const warehousePosPayment = pgTable(
     (table) => [
         index("warehousePosPayment_saleId_idx").on(table.saleId),
         index("warehousePosPayment_method_idx").on(table.paymentMethod),
+        index("warehousePosPayment_paymentAccountId_idx").on(table.paymentAccountId),
         uniqueIndex("warehousePosPayment_idempotencyKey_unique")
             .on(table.idempotencyKey)
             .where(sql`${table.idempotencyKey} IS NOT NULL`),
@@ -364,6 +388,11 @@ export const warehousePosSaleRelations = relations(warehousePosSale, ({ one, man
         references: [user.id],
         relationName: "warehousePosSaleVoidedBy",
     }),
+    responsiblePerson: one(user, {
+        fields: [warehousePosSale.responsiblePersonId],
+        references: [user.id],
+        relationName: "warehousePosSaleResponsiblePerson",
+    }),
     items: many(warehousePosSaleItem),
     payments: many(warehousePosPayment),
 }));
@@ -392,6 +421,10 @@ export const warehousePosPaymentRelations = relations(warehousePosPayment, ({ on
         fields: [warehousePosPayment.createdById],
         references: [user.id],
         relationName: "warehousePosPaymentCreatedBy",
+    }),
+    paymentAccount: one(financePaymentAccount, {
+        fields: [warehousePosPayment.paymentAccountId],
+        references: [financePaymentAccount.id],
     }),
 }));
 
