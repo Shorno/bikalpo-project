@@ -6,6 +6,7 @@ import {
 import { db } from "@bikalpo-project/db";
 import {
   kycVerification,
+  retailerSubscription,
   sellerApplication,
   session,
   user,
@@ -18,6 +19,7 @@ import { z } from "zod";
 import { BUSINESS_NATURES } from "../business-registration";
 import { computeProfileCompletion } from "../business-profile";
 import { adminProcedure } from "../index";
+import { retailerSubscriptionDto } from "./retailer-subscription";
 import {
   deriveKycStatus,
   ensurePendingKycForUser,
@@ -593,8 +595,14 @@ export const adminUserManagementRouter = {
 
       const kycStatus = deriveKycStatus(latestKyc?.status);
       const applicationNumber = application?.applicationNumber as string | null | undefined;
+      const currentSubscription = found.role === "shop_owner" && found.businessType === "retail"
+        ? await db.query.retailerSubscription.findFirst({
+            where: and(eq(retailerSubscription.shopId, found.id), eq(retailerSubscription.isCurrent, true)),
+          })
+        : null;
 
       return {
+        subscription: currentSubscription ? retailerSubscriptionDto(currentSubscription) : null,
         user: {
           id: found.id,
           name: found.name,

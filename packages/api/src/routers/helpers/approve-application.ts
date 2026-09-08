@@ -1,5 +1,6 @@
 import { ORPCError } from "@orpc/server";
 import { db } from "@bikalpo-project/db";
+import { provisionRetailerFreeSubscription } from "@bikalpo-project/db/retailer-subscription-provisioning";
 import {
   invite,
   sellerApplication,
@@ -77,34 +78,54 @@ export async function approveSellerApplicationById(
   }
 
   const isSeller = application.businessType === "retail";
-
-  await db
-    .update(sellerApplication)
-    .set({
-      status: "approved",
-      adminNotes: adminNotes || null,
-      reviewedBy: adminId,
-      reviewedAt: new Date(),
-    })
-    .where(eq(sellerApplication.id, applicationId));
-
   const shopSlug = await generateUniqueShopSlug(application.shopName);
-
-  await db
-    .update(user)
-    .set({
-      role: "shop_owner",
-      isSeller,
-      sellerStatus: "approved",
-      businessType: application.businessType,
-      shopAddress: application.shopAddress,
-      shopName: application.shopName,
-      shopSlug,
-      ownerName: application.ownerName,
-      shopLat: application.latitude || undefined,
-      shopLng: application.longitude || undefined,
-    })
-    .where(eq(user.id, application.userId));
+  await db.transaction(async (tx) => {
+    await tx
+      .select({ id: user.id })
+      .from(user)
+      .where(eq(user.id, application.userId))
+      .for("update");
+    const approved = await tx
+      .update(sellerApplication)
+      .set({
+        status: "approved",
+        adminNotes: adminNotes || null,
+        reviewedBy: adminId,
+        reviewedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(sellerApplication.id, applicationId),
+          eq(sellerApplication.status, "pending"),
+        ),
+      )
+      .returning({ id: sellerApplication.id });
+    if (!approved.length)
+      throw new ORPCError("CONFLICT", {
+        message: "Application was already reviewed.",
+      });
+    await tx
+      .update(user)
+      .set({
+        role: "shop_owner",
+        isSeller,
+        sellerStatus: "approved",
+        businessType: application.businessType,
+        shopAddress: application.shopAddress,
+        shopName: application.shopName,
+        shopSlug,
+        ownerName: application.ownerName,
+        shopLat: application.latitude || undefined,
+        shopLng: application.longitude || undefined,
+      })
+      .where(eq(user.id, application.userId));
+    if (isSeller)
+      await provisionRetailerFreeSubscription(
+        tx,
+        application.userId,
+        "approval",
+      );
+  });
 
   try {
     const matchingInvite = await db.query.invite.findFirst({
@@ -201,16 +222,22 @@ export async function approveSellerApplicationById(
           );
           const inviterSessions = Array.isArray(inviterSessionResult)
             ? inviterSessionResult
-            : ((inviterSessionResult as { rows?: { ip_address?: string; userAgent?: string }[] })
-                .rows ?? []);
+            : ((
+                inviterSessionResult as {
+                  rows?: { ip_address?: string; userAgent?: string }[];
+                }
+              ).rows ?? []);
 
           const invitedSessionResult = await db.execute(
             sql`SELECT ip_address, "userAgent" FROM session WHERE "userId" = ${application.userId} ORDER BY "createdAt" DESC LIMIT 1`,
           );
           const invitedSessions = Array.isArray(invitedSessionResult)
             ? invitedSessionResult
-            : ((invitedSessionResult as { rows?: { ip_address?: string; userAgent?: string }[] })
-                .rows ?? []);
+            : ((
+                invitedSessionResult as {
+                  rows?: { ip_address?: string; userAgent?: string }[];
+                }
+              ).rows ?? []);
 
           const inviterIP = inviterSessions[0]?.ip_address;
           const invitedIP = invitedSessions[0]?.ip_address;

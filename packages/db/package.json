@@ -30,6 +30,7 @@
     "db:studio": "drizzle-kit studio",
     "db:migrate": "drizzle-kit migrate",
     "db:seed-accounting": "tsx src/accounting-seed.ts",
+    "db:seed-subscriptions": "tsx --env-file=../../apps/server/.env src/retailer-subscription-seed.ts",
     "db:reset-product-flow": "tsx src/dev-reset-product-flow.ts"
   },
   "dependencies": {

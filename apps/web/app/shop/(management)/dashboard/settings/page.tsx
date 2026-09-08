@@ -10,7 +10,6 @@ import {
   CircleAlert,
   Clock3,
   ContactRound,
-  CreditCard,
   Edit3,
   Loader2,
   MapPin,
@@ -23,6 +22,10 @@ import { useEffect, useState } from "react";
 import { LocationPickerSection } from "@/components/features/onboarding/location-picker-section";
 import { FinancialSettingsSection } from "@/components/features/settings/financial-settings-section";
 import { PasswordSecuritySection } from "@/components/features/settings/password-security-section";
+import {
+  RetailerSubscriptionSection,
+  useRetailerSubscription,
+} from "@/components/features/settings/retailer-subscription";
 import ImageUploader from "@/components/ImageUploader";
 import { Button } from "@/components/ui/button";
 import {
@@ -49,7 +52,6 @@ import { BUSINESS_NATURES } from "@/constants/seller-registration";
 import {
   useUpdateBusinessContactInformation,
   useUpdateBusinessInformation,
-  useUpdateBusinessPlanInformation,
   useUpdateShopLocation,
   useUpdateShopProfile,
 } from "@/hooks/use-shop-owner-api";
@@ -84,15 +86,6 @@ type BusinessApplication =
   | undefined;
 type ProfileUser = typeof authClient.$Infer.Session.user | undefined;
 
-const UNAVAILABLE_PLAN_FIELDS = [
-  "Subscription Status",
-  "Plan Start Date",
-  "Expiry Date",
-  "Auto Renewal",
-  "Next Billing Date",
-  "Payment Status",
-] as const;
-
 function displayValue(value: unknown) {
   if (typeof value !== "string" || !value.trim()) return "Not provided";
   return value.trim();
@@ -120,6 +113,7 @@ function formatDate(value: unknown) {
 export default function ShopSettingsPage() {
   const { data: session, isPending, refetch } = authClient.useSession();
   const user = session?.user;
+  const subscription = useRetailerSubscription();
   const {
     data: application,
     isPending: isApplicationPending,
@@ -351,7 +345,9 @@ export default function ShopSettingsPage() {
                 </div>
                 <IdentityItem
                   label="Plan"
-                  value={formatLabel(application?.selectedPlan)}
+                  value={
+                    subscription.data?.current?.planName || "Not available"
+                  }
                 />
                 <IdentityItem label="Since" value={formatDate(memberSince)} />
               </dl>
@@ -459,21 +455,7 @@ export default function ShopSettingsPage() {
           />
         </ProfileSection>
 
-        <ProfileSection
-          title="User Plan"
-          icon={CreditCard}
-          className="md:col-span-2 xl:col-span-1"
-          action={<PlanInformationDialog application={application} />}
-          description="Current Plan reflects your registration selection. Subscription and billing details are not available yet."
-        >
-          <DetailRow
-            label="Current Plan"
-            value={formatLabel(application?.selectedPlan)}
-          />
-          {UNAVAILABLE_PLAN_FIELDS.map((label) => (
-            <DetailRow key={label} label={label} value="Not available" />
-          ))}
-        </ProfileSection>
+        <RetailerSubscriptionSection />
       </section>
 
       <section
@@ -614,12 +596,6 @@ export default function ShopSettingsPage() {
 const RETAIL_BUSINESS_NATURES = BUSINESS_NATURES.filter((nature) =>
   ["retail_shop", "manufacturer", "importer"].includes(nature.id),
 );
-
-const PLAN_OPTIONS = [
-  { value: "free_trial", label: "Free Trial" },
-  { value: "starter", label: "Starter" },
-  { value: "growth", label: "Growth" },
-] as const;
 
 const NOT_PROVIDED_VALUE = "__not_provided__";
 
@@ -1081,85 +1057,6 @@ function ContactInformationDialog({
                   <Loader2 className="size-4 animate-spin" aria-hidden="true" />
                 )}
                 Save contact information
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      )}
-    </Dialog>
-  );
-}
-
-function PlanInformationDialog({
-  application,
-}: {
-  application: BusinessApplication;
-}) {
-  const [open, setOpen] = useState(false);
-  const mutation = useUpdateBusinessPlanInformation();
-  const [selectedPlan, setSelectedPlan] = useState("");
-
-  useEffect(() => {
-    if (!open) return;
-    setSelectedPlan(application?.selectedPlan || "");
-  }, [application, open]);
-
-  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    await mutation.mutateAsync({
-      selectedPlan: selectedPlan as "free_trial" | "starter" | "growth",
-      yearsInBusiness: application?.yearsInBusiness || null,
-      monthlyRevenue: application?.monthlyRevenue || null,
-    });
-    setOpen(false);
-  };
-
-  return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <EditSectionButton>Update User</EditSectionButton>
-      </DialogTrigger>
-      {!application ? (
-        <MissingRegistrationDialogContent section="plan information" />
-      ) : (
-        <DialogContent className="sm:max-w-lg">
-          <DialogHeader>
-            <DialogTitle>Edit selected plan</DialogTitle>
-            <DialogDescription>
-              Update the plan preference saved with your registration. Changing
-              this selection does not activate billing or a subscription.
-            </DialogDescription>
-          </DialogHeader>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <Field id="registration-plan" label="Selected plan">
-              <Select value={selectedPlan} onValueChange={setSelectedPlan}>
-                <SelectTrigger id="registration-plan" className="h-9 w-full">
-                  <SelectValue placeholder="Select a plan preference" />
-                </SelectTrigger>
-                <SelectContent position="popper">
-                  {PLAN_OPTIONS.map((plan) => (
-                    <SelectItem key={plan.value} value={plan.value}>
-                      {plan.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </Field>
-            <DialogFooter>
-              <DialogClose asChild>
-                <Button type="button" variant="outline">
-                  Cancel
-                </Button>
-              </DialogClose>
-              <Button
-                type="submit"
-                disabled={mutation.isPending || !selectedPlan}
-                className="bg-emerald-600 hover:bg-emerald-700"
-              >
-                {mutation.isPending && (
-                  <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-                )}
-                Save plan information
               </Button>
             </DialogFooter>
           </form>

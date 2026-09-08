@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
+import { RetailerSubscriptionBanner } from "@/components/features/settings/retailer-subscription";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -98,29 +99,7 @@ export default function ShopOwnerDashboardPage() {
           </div>
         </div>
 
-        {/* Trial / Subscription Banner */}
-        <div className="bg-gradient-to-br from-emerald-600 to-teal-700 rounded-lg shadow-sm p-5 text-white flex flex-col justify-between">
-          <div>
-            <div className="flex items-center gap-2 mb-1">
-              <Clock className="w-4 h-4 text-emerald-200" />
-              <span className="text-xs font-medium text-emerald-200">
-                Subscription
-              </span>
-            </div>
-            <p className="text-sm font-medium">
-              Trial ends in <span className="text-lg font-bold">10 days</span>
-            </p>
-            <p className="text-xs text-emerald-200 mt-0.5">
-              Renewal date: 04 Feb 2026
-            </p>
-          </div>
-          <Button
-            size="sm"
-            className="mt-3 bg-white text-emerald-700 hover:bg-emerald-50 font-medium text-xs h-8"
-          >
-            Buy a Plan
-          </Button>
-        </div>
+        <RetailerSubscriptionBanner />
       </div>
 
       {/* Announcements */}

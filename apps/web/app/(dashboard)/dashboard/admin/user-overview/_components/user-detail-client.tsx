@@ -19,6 +19,7 @@ import {
   toApplicationDetail,
 } from "@/components/features/admin/application-detail-sections";
 import { KycVerifyDialog } from "@/components/features/admin/kyc-verify-dialog";
+import { SubscriptionDetails } from "@/components/features/settings/retailer-subscription";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -390,24 +391,33 @@ export function UserDetailClient({ userId }: UserDetailClientProps) {
               </Button>
             )}
 
-            {selectedPlan && (
+            {userData.businessType === "retail" && !isWarehouse && (
               <div className="rounded-xl border border-gray-100 bg-white p-5">
-                <div className="mb-3 flex items-center gap-2">
-                  <span
-                    className="material-symbols-outlined text-lg text-[#003178]"
-                    style={{ fontVariationSettings: "'FILL' 1" }}
-                  >
-                    workspace_premium
-                  </span>
-                  <h3 className="text-sm font-bold text-gray-900">
-                    Selected Plan
-                  </h3>
-                </div>
-                <p className="text-sm font-medium text-[#003178]">
-                  {selectedPlan}
-                </p>
+                <h3 className="mb-3 text-sm font-bold text-gray-900">
+                  User Plan
+                </h3>
+                <SubscriptionDetails current={data.subscription} />
               </div>
             )}
+            {selectedPlan &&
+              (isWarehouse || userData.businessType !== "retail") && (
+                <div className="rounded-xl border border-gray-100 bg-white p-5">
+                  <div className="mb-3 flex items-center gap-2">
+                    <span
+                      className="material-symbols-outlined text-lg text-[#003178]"
+                      style={{ fontVariationSettings: "'FILL' 1" }}
+                    >
+                      workspace_premium
+                    </span>
+                    <h3 className="text-sm font-bold text-gray-900">
+                      Selected Plan
+                    </h3>
+                  </div>
+                  <p className="text-sm font-medium text-[#003178]">
+                    {selectedPlan}
+                  </p>
+                </div>
+              )}
 
             <div className="rounded-xl border border-gray-100 bg-white p-5">
               <div className="mb-3 flex items-center gap-2">
