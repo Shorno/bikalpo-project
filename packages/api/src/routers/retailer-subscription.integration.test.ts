@@ -65,6 +65,35 @@ test(
         acceptDummyPayment: true,
       });
     try {
+      const { call } = await import("@orpc/server");
+      assert.equal(router.current["~orpc"].route.method, "GET");
+      assert.equal(admin.listPlans["~orpc"].route.method, "GET");
+      await assert.rejects(
+        call(router.current, undefined, {
+          context: { session: null } as never,
+        }),
+        { code: "UNAUTHORIZED" },
+      );
+      await assert.rejects(
+        call(admin.listPlans, undefined, {
+          context: {
+            session: { user: { id: owner, role: "shop_owner" } },
+          } as never,
+        }),
+        { code: "FORBIDDEN" },
+      );
+      await assert.rejects(
+        call(
+          router.quote,
+          { planId: "unused" },
+          {
+            context: {
+              session: { user: { id: owner, role: "shop_staff" } },
+            } as never,
+          },
+        ),
+        { code: "FORBIDDEN" },
+      );
       await db.insert(user).values(
         ids.map((id) => ({
           id,
@@ -159,6 +188,35 @@ test(
         "ineligible",
       );
       const free = (await current()).current;
+      const [duplicateApplication] = await db
+        .insert(sellerApplication)
+        .values({
+          userId: owner,
+          shopName: "Duplicate fixture",
+          ownerName: "Test",
+          phoneNumber: "01700000000",
+          businessType: "retail",
+          shopAddress: "Test",
+          status: "approved",
+          selectedPlan: "unknown_test_preference",
+        })
+        .returning();
+      assert.equal(
+        await db.transaction((tx) =>
+          provisioning.provisionRetailerFreeSubscription(tx, owner, "backfill"),
+        ),
+        "ambiguous_application",
+      );
+      await assert.rejects(current(), /approved retail/i);
+      const { seedRetailerSubscriptions } = await import(
+        "@bikalpo-project/db/retailer-subscription-seed"
+      );
+      const preview = await seedRetailerSubscriptions(true);
+      assert.ok(preview.anomalies.ambiguousApplicationOwnerIds.includes(owner));
+      assert.ok(preview.anomalies.unknownPreferenceOwnerIds.includes(owner));
+      await db
+        .delete(sellerApplication)
+        .where(eq(sellerApplication.id, duplicateApplication!.id));
       assert.equal(free.planCode, "free");
       assert.equal(free.expiresAt, null);
       assert.equal(free.autoRenew, false);
@@ -211,6 +269,21 @@ test(
       assert.equal((await current()).current.id, free.id);
 
       const key = randomUUID();
+      // Force the final term insert to violate its check after the earlier writes.
+      // The entire payment/activation transaction must roll back.
+      const failedActivation = await quote(monthly.id);
+      await db
+        .update(purchases)
+        .set({ planCode: "free" })
+        .where(eq(purchases.id, failedActivation.id));
+      await assert.rejects(confirm(failedActivation));
+      assert.equal((await current()).current.id, free.id);
+      const [rolledBackPayment] = await db
+        .select()
+        .from(purchases)
+        .where(eq(purchases.id, failedActivation.id));
+      assert.equal(rolledBackPayment!.confirmedAt, null);
+      assert.equal(rolledBackPayment!.idempotencyKey, null);
       const bought = await confirm(abandoned, key);
       const replay = await confirm(abandoned, key);
       assert.equal(replay.id, bought.id);
@@ -308,6 +381,17 @@ test(
         .select()
         .from(sellerApplication)
         .where(eq(sellerApplication.userId, pending));
+      await db.update(user).set({ banned: true }).where(eq(user.id, pending));
+      await assert.rejects(
+        approveSellerApplicationById(application!.id, { adminId: owner }),
+        /could not be initialized/,
+      );
+      const [stillPending] = await db
+        .select()
+        .from(sellerApplication)
+        .where(eq(sellerApplication.id, application!.id));
+      assert.equal(stillPending!.status, "pending");
+      await db.update(user).set({ banned: false }).where(eq(user.id, pending));
       await approveSellerApplicationById(application!.id, { adminId: owner });
       assert.equal((await current(pending)).current.source, "approval");
       await assert.rejects(

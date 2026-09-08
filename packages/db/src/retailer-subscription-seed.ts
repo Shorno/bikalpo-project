@@ -6,7 +6,7 @@ import {
   provisionRetailerFreeSubscription,
   seedRetailerSubscriptionPlans,
 } from "./retailer-subscription-provisioning";
-import { retailerSubscriptionPlan, user } from "./schema";
+import { retailerSubscriptionPlan, sellerApplication, user } from "./schema";
 import { DEFAULT_SUBSCRIPTION_PLANS } from "./retailer-subscription-policy";
 
 export async function seedRetailerSubscriptions(dryRun = false) {
@@ -23,7 +23,11 @@ export async function seedRetailerSubscriptions(dryRun = false) {
       }
     : await db.transaction(seedRetailerSubscriptionPlans);
   const owners = await db
-    .select({ id: user.id })
+    .select({
+      id: user.id,
+      businessType: user.businessType,
+      sellerStatus: user.sellerStatus,
+    })
     .from(user)
     .where(eq(user.role, "shop_owner"));
   const subscriptions = {
@@ -31,14 +35,56 @@ export async function seedRetailerSubscriptions(dryRun = false) {
     existing: 0,
     ineligible: 0,
     missing_application: 0,
+    ambiguous_application: 0,
   };
+  const anomalies = {
+    missingApplicationOwnerIds: [] as string[],
+    ambiguousApplicationOwnerIds: [] as string[],
+    mismatchedApprovalOwnerIds: [] as string[],
+    unknownPreferenceOwnerIds: [] as string[],
+  };
+  const knownPreferences = new Set([
+    "free",
+    "free_trial",
+    "starter",
+    "growth",
+    "monthly",
+    "six_monthly",
+    "yearly",
+  ]);
   for (const owner of owners) {
+    const applications = await db
+      .select({
+        status: sellerApplication.status,
+        businessType: sellerApplication.businessType,
+        preference: sellerApplication.selectedPlan,
+      })
+      .from(sellerApplication)
+      .where(eq(sellerApplication.userId, owner.id));
+    if (
+      applications.some(
+        (app) => app.preference && !knownPreferences.has(app.preference),
+      )
+    )
+      anomalies.unknownPreferenceOwnerIds.push(owner.id);
+    if (
+      owner.businessType === "retail" &&
+      (owner.sellerStatus === "approved") !==
+        applications.some(
+          (app) => app.status === "approved" && app.businessType === "retail",
+        )
+    )
+      anomalies.mismatchedApprovalOwnerIds.push(owner.id);
     const result = await db.transaction((tx) =>
       provisionRetailerFreeSubscription(tx, owner.id, "backfill", dryRun),
     );
     subscriptions[result]++;
+    if (result === "missing_application")
+      anomalies.missingApplicationOwnerIds.push(owner.id);
+    if (result === "ambiguous_application")
+      anomalies.ambiguousApplicationOwnerIds.push(owner.id);
   }
-  return { dryRun, plans, subscriptions };
+  return { dryRun, plans, subscriptions, anomalies };
 }
 
 if (

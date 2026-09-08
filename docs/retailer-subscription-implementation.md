@@ -34,6 +34,18 @@ $env:RUN_RETAILER_SUBSCRIPTION_DB_TEST='1'
 pnpm exec tsx --env-file=apps/server/.env --test packages/api/src/routers/retailer-subscription.integration.test.ts
 ```
 
-The integration suite expects the four default offers to be seeded and active. Handler-level tests exercise fresh eligibility and transactional behavior; route access uses the existing owner/admin middleware. No payment credentials are collected or stored.
+The integration suite expects the four default offers to be seeded and active. Tests exercise fresh eligibility, transaction rollback, the owner/admin middleware and explicit read routing. No payment credentials are collected or stored. Backfill reports missing/ambiguous application owners, mismatched approval states and unknown registration preferences for review; ambiguous owners are skipped.
+
+Implementation verification: 356 Node tests and 3 Bun tests passed; 16 opt-in database tests were skipped by the ordinary suite. The subscription database test passed separately against isolated fixtures. Web type checking reports only the existing React ref-type conflicts in `calendar.tsx`, `field.tsx` and `skeleton.tsx`. Browser verification was limited: the signed-in Test User lacks Settings access, so the modal was not visually verified.
 
 If rollback is needed, disable the new entry points and retain the subscription/purchase history tables. Do not drop paid history or rerun approval/referral effects to repair a missing subscription.
+
+## Standards
+
+Parallel review of the feature against baseline `9476f9b8043a6b38dde5f52c8e85045dfd7ee483` found no hard documented-standard violations. Two heuristic findings were addressed: duplicated account/application eligibility checks now share `retailerSubscriptionEligibility`; the generic `isEligibleRetailer` predicate was renamed `isEligibleSubscriptionAccount` to avoid conflicting with the order-eligibility terminology in CONTEXT.md. The standards reviewer verified both fixes: **0 unresolved findings**.
+
+## Spec
+
+Three findings were addressed: backfill now reports anomalous application/preference records and rejects ambiguous owners; reads have explicit GET routing; stale-offer conflicts and dialog reopening refresh the current plan/options while preserving retry keys for ambiguous network failures. The spec reviewer verified all three fixes and found no unrequested scope: **0 unresolved findings**.
+
+Review summary: Standards 2 observations resolved, no remaining issue; Spec 3 findings resolved, no remaining issue. Unrelated concurrent warehouse POS edits were excluded from the reviews and feature commits.

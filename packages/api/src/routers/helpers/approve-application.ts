@@ -119,12 +119,18 @@ export async function approveSellerApplicationById(
         shopLng: application.longitude || undefined,
       })
       .where(eq(user.id, application.userId));
-    if (isSeller)
-      await provisionRetailerFreeSubscription(
+    if (isSeller) {
+      const provisioned = await provisionRetailerFreeSubscription(
         tx,
         application.userId,
         "approval",
       );
+      if (provisioned !== "created" && provisioned !== "existing") {
+        throw new ORPCError("CONFLICT", {
+          message: `Retailer subscription could not be initialized: ${provisioned}. Review the account/application before approval.`,
+        });
+      }
+    }
   });
 
   try {

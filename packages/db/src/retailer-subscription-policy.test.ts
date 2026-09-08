@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   DEFAULT_SUBSCRIPTION_PLANS,
-  isEligibleRetailer,
+  isEligibleSubscriptionAccount,
   subscriptionAction,
   subscriptionExpiry,
   subscriptionStatus,
@@ -77,7 +77,7 @@ test("eligibility excludes staff, warehouses, restaurants and currently banned o
     banned: false,
     banExpires: null,
   };
-  assert.equal(isEligibleRetailer(owner), true);
+  assert.equal(isEligibleSubscriptionAccount(owner), true);
   for (const override of [
     { role: "shop_staff" },
     { role: "warehouse" },
@@ -85,9 +85,12 @@ test("eligibility excludes staff, warehouses, restaurants and currently banned o
     { sellerStatus: "disabled" },
     { banned: true },
   ])
-    assert.equal(isEligibleRetailer({ ...owner, ...override }), false);
+    assert.equal(
+      isEligibleSubscriptionAccount({ ...owner, ...override }),
+      false,
+    );
   assert.equal(
-    isEligibleRetailer({
+    isEligibleSubscriptionAccount({
       ...owner,
       banned: true,
       banExpires: new Date("2020-01-01"),

@@ -1,6 +1,5 @@
 import { db } from "@bikalpo-project/db";
 import {
-  isEligibleRetailer,
   subscriptionAction,
   subscriptionExpiry,
   subscriptionStatus,
@@ -8,14 +7,13 @@ import {
 } from "@bikalpo-project/db/retailer-subscription-policy";
 import {
   lockSubscriptionCatalog,
+  retailerSubscriptionEligibility,
   type SubscriptionTransaction,
 } from "@bikalpo-project/db/retailer-subscription-provisioning";
 import {
   retailerSubscription as terms,
   retailerSubscriptionPlan as plans,
   retailerSubscriptionPurchase as purchases,
-  sellerApplication,
-  user,
 } from "@bikalpo-project/db/schema";
 import { ORPCError } from "@orpc/server";
 import { and, asc, eq } from "drizzle-orm";
@@ -66,23 +64,13 @@ export function retailerSubscriptionDto(
     paymentStatus: term.purchaseId ? "Paid (Dummy)" : "Not required",
   };
 }
-const termDto = retailerSubscriptionDto;
 
 async function requireEligibleOwner(
   tx: SubscriptionTransaction,
   shopId: string,
   lock = false,
 ) {
-  const query = tx.select().from(user).where(eq(user.id, shopId));
-  const [owner] = lock ? await query.for("update") : await query;
-  const application = await tx.query.sellerApplication.findFirst({
-    where: and(
-      eq(sellerApplication.userId, shopId),
-      eq(sellerApplication.status, "approved"),
-      eq(sellerApplication.businessType, "retail"),
-    ),
-  });
-  if (!owner || !isEligibleRetailer(owner) || !application)
+  if ((await retailerSubscriptionEligibility(tx, shopId, lock)) !== "eligible")
     throw new ORPCError("FORBIDDEN", {
       message: "An approved retail shop owner account is required.",
     });
@@ -96,10 +84,24 @@ function catalogError(error: unknown): never {
 }
 
 export const adminRetailerSubscriptionRouter = {
-  listPlans: adminProcedure.handler(() =>
-    db.select().from(plans).orderBy(asc(plans.sortOrder), asc(plans.createdAt)),
-  ),
+  listPlans: adminProcedure
+    .route({
+      method: "GET",
+      path: "/admin/retailer-subscriptions/plans",
+      tags: ["Retailer Subscriptions"],
+    })
+    .handler(() =>
+      db
+        .select()
+        .from(plans)
+        .orderBy(asc(plans.sortOrder), asc(plans.createdAt)),
+    ),
   createPlan: adminProcedure
+    .route({
+      method: "POST",
+      path: "/admin/retailer-subscriptions/plans",
+      tags: ["Retailer Subscriptions"],
+    })
     .input(subscriptionPlanInput)
     .handler(({ input, context }) =>
       db.transaction(async (tx) => {
@@ -122,6 +124,11 @@ export const adminRetailerSubscriptionRouter = {
       }),
     ),
   updatePlan: adminProcedure
+    .route({
+      method: "PATCH",
+      path: "/admin/retailer-subscriptions/plans/{id}",
+      tags: ["Retailer Subscriptions"],
+    })
     .input(
       z.object({
         id: z.string(),
@@ -170,30 +177,41 @@ export const adminRetailerSubscriptionRouter = {
 };
 
 export const retailerSubscriptionRouter = {
-  current: shopOwnerProcedure.handler(({ context }) =>
-    db.transaction(async (tx) => {
-      const shopId = context.session.user.id;
-      await requireEligibleOwner(tx, shopId);
-      const current = await tx.query.retailerSubscription.findFirst({
-        where: currentWhere(shopId),
-      });
-      const available = await tx
-        .select()
-        .from(plans)
-        .where(eq(plans.active, true))
-        .orderBy(asc(plans.sortOrder));
-      const now = new Date();
-      return {
-        current: current ? termDto(current, now) : null,
-        serverTime: now,
-        plans: available.map((p) => ({
-          ...p,
-          action: subscriptionAction(current ?? null, p.durationMonths, now),
-        })),
-      };
-    }),
-  ),
+  current: shopOwnerProcedure
+    .route({
+      method: "GET",
+      path: "/retailer-subscriptions/current",
+      tags: ["Retailer Subscriptions"],
+    })
+    .handler(({ context }) =>
+      db.transaction(async (tx) => {
+        const shopId = context.session.user.id;
+        await requireEligibleOwner(tx, shopId);
+        const current = await tx.query.retailerSubscription.findFirst({
+          where: currentWhere(shopId),
+        });
+        const available = await tx
+          .select()
+          .from(plans)
+          .where(eq(plans.active, true))
+          .orderBy(asc(plans.sortOrder));
+        const now = new Date();
+        return {
+          current: current ? retailerSubscriptionDto(current, now) : null,
+          serverTime: now,
+          plans: available.map((p) => ({
+            ...p,
+            action: subscriptionAction(current ?? null, p.durationMonths, now),
+          })),
+        };
+      }),
+    ),
   quote: shopOwnerProcedure
+    .route({
+      method: "POST",
+      path: "/retailer-subscriptions/quotes",
+      tags: ["Retailer Subscriptions"],
+    })
     .input(z.object({ planId: z.string() }))
     .handler(({ input, context }) =>
       db.transaction(async (tx) => {
@@ -245,6 +263,11 @@ export const retailerSubscriptionRouter = {
       }),
     ),
   confirm: shopOwnerProcedure
+    .route({
+      method: "POST",
+      path: "/retailer-subscriptions/confirm",
+      tags: ["Retailer Subscriptions"],
+    })
     .input(
       z.object({
         quoteId: z.string(),
@@ -290,7 +313,7 @@ export const retailerSubscriptionRouter = {
             ),
           });
           if (!saved) throw new ORPCError("INTERNAL_SERVER_ERROR");
-          return termDto(saved);
+          return retailerSubscriptionDto(saved);
         }
         const [plan] = await tx
           .select()
@@ -336,7 +359,7 @@ export const retailerSubscriptionRouter = {
             source: "dummy_purchase",
           })
           .returning();
-        return termDto(activated!);
+        return retailerSubscriptionDto(activated!);
       }),
     ),
 };

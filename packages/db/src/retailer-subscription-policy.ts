@@ -96,7 +96,7 @@ export function subscriptionExpiry(start: Date, months: number) {
   return new Date(local.getTime() - offset);
 }
 
-export function isEligibleRetailer(
+export function isEligibleSubscriptionAccount(
   owner: {
     role: string | null;
     businessType: string | null;

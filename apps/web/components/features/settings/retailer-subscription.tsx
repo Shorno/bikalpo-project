@@ -121,7 +121,10 @@ export function SubscriptionDialog({
       setAccepted(false);
       setError("");
     },
-    onError: (err) => setError(err.message),
+    onError: (err) => {
+      setError(err.message);
+      void subscription.refetch();
+    },
   });
   const confirmMutation = useMutation({
     ...orpc.retailerSubscription.confirm.mutationOptions(),
@@ -133,7 +136,13 @@ export function SubscriptionDialog({
       setQuote(null);
       setError("");
     },
-    onError: (err) => setError(err.message),
+    onError: (err) => {
+      setError(err.message);
+      if ("code" in err && err.code === "CONFLICT") {
+        void subscription.refetch();
+      }
+      // Keep the quote/key for safe retries after ambiguous network failures.
+    },
   });
   const busy = quoteMutation.isPending || confirmMutation.isPending;
   return (
@@ -142,6 +151,7 @@ export function SubscriptionDialog({
       onOpenChange={(next) => {
         if (busy) return;
         setOpen(next);
+        if (next) void subscription.refetch();
         if (!next) {
           setQuote(null);
           setError("");
