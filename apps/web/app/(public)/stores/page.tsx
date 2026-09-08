@@ -136,7 +136,7 @@ export default function StoresPage() {
       {/* ── Hero Header ── */}
       <div className="relative overflow-hidden bg-gradient-to-br from-emerald-600 via-emerald-700 to-teal-800">
         <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHZpZXdCb3g9IjAgMCA2MCA2MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZyBmaWxsPSJub25lIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiPjxnIGZpbGw9IiNmZmYiIGZpbGwtb3BhY2l0eT0iMC4wNSI+PHBhdGggZD0iTTM2IDE4YzMuMzE0IDAgNiAyLjY4NiA2IDZzLTIuNjg2IDYtNiA2LTYtMi42ODYtNi02IDIuNjg2LTYgNi02eiIvPjwvZz48L2c+PC9zdmc+')] opacity-40" />
-        <div className="container mx-auto px-4 py-14 relative">
+        <div className="site-container px-4 py-14 relative">
           <div className="max-w-2xl">
             <h1 className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight">
               {locationFilter
@@ -193,7 +193,7 @@ export default function StoresPage() {
       </div>
 
       {/* ── Search & Filter Bar ── */}
-      <div className="container mx-auto px-4 -mt-6 relative z-10">
+      <div className="site-container px-4 -mt-6 relative z-10">
         <div className="bg-white rounded-2xl shadow-lg shadow-gray-900/5 border border-gray-100 p-4 sm:p-5">
           <div className="flex flex-col sm:flex-row gap-3">
             <div className="relative flex-1">
@@ -298,7 +298,7 @@ export default function StoresPage() {
       </div>
 
       {/* ── Content ── */}
-      <div className="container mx-auto px-4 py-8">
+      <div className="site-container px-4 py-8">
         {isLoading ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
             {Array.from({ length: 8 }).map((_, i) => (

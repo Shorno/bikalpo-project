@@ -323,6 +323,10 @@ const shopOwnerNavGroups: NavGroup[] = [
         items: [
           { title: "General Settings", url: `${D}/settings` },
           {
+            title: "Registration Profile",
+            url: `${D}/settings/profile`,
+          },
+          {
             title: "User Management",
             url: `${D}/user-roles`,
           },

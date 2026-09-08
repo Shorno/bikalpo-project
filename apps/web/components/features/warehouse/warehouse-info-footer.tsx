@@ -15,7 +15,7 @@ export function WarehouseInfoFooter({
 }: WarehouseInfoFooterProps) {
   return (
     <section className="bg-gray-900 text-white">
-      <div className="container mx-auto px-4 py-8">
+      <div className="site-container px-4 py-8">
         <h3 className="text-lg font-bold mb-5 flex items-center gap-2">
           <Building2 className="w-5 h-5 text-blue-400" />
           Warehouse Information

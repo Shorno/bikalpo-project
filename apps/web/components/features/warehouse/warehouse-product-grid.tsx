@@ -167,7 +167,7 @@ export function WarehouseProductGrid({
 
   if (isLoading) {
     return (
-      <section className="container mx-auto px-4 py-6">
+      <section className="site-container px-4 py-6">
         <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4">
           {Array.from({ length: 8 }).map((_, index) => (
             <WarehouseProductCardSkeleton key={index} />
@@ -179,7 +179,7 @@ export function WarehouseProductGrid({
 
   if (products.length === 0) {
     return (
-      <section className="container mx-auto px-4 py-12">
+      <section className="site-container px-4 py-12">
         <div className="text-center">
           <Package className="mx-auto mb-3 h-16 w-16 text-gray-300" />
           <p className="text-lg font-medium text-gray-600">
@@ -195,7 +195,7 @@ export function WarehouseProductGrid({
 
   return (
     <>
-      <section className="container mx-auto px-4 py-6">
+      <section className="site-container px-4 py-6">
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-lg font-bold text-gray-900">Products</h2>
           <span className="text-sm text-gray-500">

@@ -5,7 +5,7 @@ import Link from "next/link";
 export function B2bVision() {
   return (
     <section className="py-20 sm:py-28 bg-gradient-to-b from-[#0a0e27] via-[#111638] to-[#0a0e27]" id="vision">
-      <div className="max-w-7xl mx-auto px-6">
+      <div className="site-container px-6">
         <div className="max-w-4xl mx-auto text-center">
           <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/[0.06] border border-white/10 mb-8">
             <span className="material-symbols-outlined text-sm text-[#42a5f5]">rocket_launch</span>

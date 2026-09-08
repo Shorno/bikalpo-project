@@ -260,7 +260,7 @@ export default function ReorderPage({
   if (queryError || !reorderData) {
     const errorMessage = queryError?.message || "Failed to load reorder items";
     return (
-      <div className="container mx-auto px-4 py-16">
+      <div className="site-container px-4 py-16">
         <div className="max-w-md mx-auto text-center">
           <AlertCircle className="h-16 w-16 mx-auto text-red-400 mb-4" />
           <h1 className="text-2xl font-bold mb-2 text-gray-900">
@@ -288,7 +288,7 @@ export default function ReorderPage({
   // No available items state
   if (availableItems.length === 0 && itemsInitialized) {
     return (
-      <div className="container mx-auto px-4 py-16">
+      <div className="site-container px-4 py-16">
         <div className="max-w-md mx-auto text-center">
           <RotateCcw className="h-16 w-16 mx-auto text-gray-400 mb-4" />
           <h1 className="text-2xl font-bold mb-2 text-gray-900">

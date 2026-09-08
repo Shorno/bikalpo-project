@@ -14,7 +14,7 @@ const bikalpoWay = [
 export function B2bNoWebsite() {
   return (
     <section className="py-20 sm:py-28 bg-gradient-to-b from-[#f0f4ff] via-[#f8faff] to-white" id="no-website">
-      <div className="max-w-7xl mx-auto px-6">
+      <div className="site-container px-6">
         <div className="text-center mb-16 max-w-3xl mx-auto">
           <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-[#FF6D00]/[0.06] border border-[#FF6D00]/[0.12] mb-6">
             <span className="material-symbols-outlined text-sm text-[#FF6D00]">code_off</span>

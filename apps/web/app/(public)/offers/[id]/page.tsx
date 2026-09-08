@@ -23,7 +23,7 @@ export default function OfferDetailsPage() {
   if (isLoading) {
     return (
       <section className="py-8 sm:py-12">
-        <div className="container mx-auto px-4 space-y-6">
+        <div className="site-container px-4 space-y-6">
           <Skeleton className="h-10 w-48" />
           <Skeleton className="h-72 w-full rounded-xl" />
           <Skeleton className="h-8 w-1/2" />
@@ -38,7 +38,7 @@ export default function OfferDetailsPage() {
   if (!offer) {
     return (
       <section className="py-12">
-        <div className="container mx-auto px-4 text-center">
+        <div className="site-container px-4 text-center">
           <h1 className="text-2xl font-bold text-gray-900">Offer not found</h1>
           <p className="text-gray-600 mt-2">
             This offer is unavailable or inactive.

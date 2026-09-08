@@ -18,7 +18,7 @@ export function ShopNavbar() {
   return (
     <nav className="sticky top-0 z-50 bg-white shadow-sm">
       <div className="border-b">
-        <div className="container mx-auto">
+        <div className="site-container">
           <div className="relative flex h-16 items-center justify-between gap-4 px-4">
             <div className="flex items-center gap-2 z-10">
               <MobileMenu />

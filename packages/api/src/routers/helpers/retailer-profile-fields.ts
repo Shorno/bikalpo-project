@@ -19,6 +19,28 @@ const optionalHttpUrlSchema = z
   .nullable()
   .optional();
 
+const nullableHttpUrlSchema = z
+  .string()
+  .trim()
+  .url()
+  .max(2048)
+  .refine((value) => /^https?:\/\//i.test(value), {
+    message: "URL must use http or https",
+  })
+  .nullable();
+
+const nullableText = (max: number) => z.string().trim().max(max).nullable();
+
+const bangladeshCoordinates = z
+  .object({
+    latitude: z.number().min(20.5).max(26.7).nullable(),
+    longitude: z.number().min(87.9).max(92.7).nullable(),
+  })
+  .refine((value) => (value.latitude === null) === (value.longitude === null), {
+    message: "Latitude and longitude must be provided together",
+    path: ["longitude"],
+  });
+
 export const retailerBusinessContactInformationSchema = z.object({
   phoneNumber: z.string().trim().min(10).max(20),
   email: z.string().trim().email().max(320).nullable(),
@@ -72,3 +94,75 @@ export const retailerShopProfileSchema = z
       });
     }
   });
+
+/** Complete post-approval registration profile contract for a Shop Owner. */
+export const retailerRegistrationProfileSchema = z.object({
+  applicant: z
+    .object({
+      profilePhotoUrl: nullableHttpUrlSchema,
+      ownerName: z.string().trim().min(2).max(100),
+      dateOfBirth: nullableText(10),
+      gender: z.enum(["male", "female", "other"]).nullable(),
+      personalAddress: nullableText(500),
+      personalArea: nullableText(100),
+      personalDistrict: nullableText(100),
+      personalDivision: nullableText(100),
+      personalPostCode: nullableText(20),
+      personalLatitude: z.number().min(20.5).max(26.7).nullable(),
+      personalLongitude: z.number().min(87.9).max(92.7).nullable(),
+    })
+    .refine(
+      (value) =>
+        (value.personalLatitude === null) ===
+        (value.personalLongitude === null),
+      {
+        message: "Latitude and longitude must be provided together",
+        path: ["personalLongitude"],
+      },
+    ),
+  business: z
+    .object({
+      shopLogo: nullableHttpUrlSchema,
+      shopName: z.string().trim().min(2).max(150),
+      businessType: z.enum(["retail", "restaurant"]),
+      productTypeId: z.number().int().positive().nullable(),
+      businessNature: z
+        .enum(["retail_shop", "manufacturer", "importer"])
+        .nullable(),
+      yearsInBusiness: nullableText(100),
+      monthlyRevenue: nullableText(100),
+      binNumber: nullableText(100),
+      tinNumber: nullableText(100),
+      tradeLicenseNumber: nullableText(100),
+      shopAddress: z.string().trim().min(5).max(500),
+      area: nullableText(100),
+      thana: retailerRequiredThanaSchema,
+      district: nullableText(100),
+      division: nullableText(100),
+      postCode: nullableText(20),
+    })
+    .and(bangladeshCoordinates),
+  contacts: z.object({
+    phoneNumber: z.string().trim().min(10).max(20),
+    email: z.string().trim().email().max(320).nullable(),
+    whatsappNumber: nullableText(20),
+    facebookUrl: nullableHttpUrlSchema,
+    messengerUrl: nullableHttpUrlSchema,
+    instagramUrl: nullableHttpUrlSchema,
+    websiteUrl: nullableHttpUrlSchema,
+    telegramUrl: nullableHttpUrlSchema,
+    tiktokUrl: nullableHttpUrlSchema,
+    twitterUrl: nullableHttpUrlSchema,
+  }),
+  documents: z.object({
+    tradeLicense: nullableHttpUrlSchema,
+    nid: nullableHttpUrlSchema,
+    shopPhoto: nullableHttpUrlSchema,
+    storeFront: nullableHttpUrlSchema,
+    warehouse: nullableHttpUrlSchema,
+  }),
+});
+
+export type RetailerRegistrationProfileInput = z.infer<
+  typeof retailerRegistrationProfileSchema
+>;

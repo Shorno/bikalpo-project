@@ -3,7 +3,7 @@ import Link from "next/link";
 export function HeroSection() {
   return (
     <section className="relative pt-10 sm:pt-24 pb-12 sm:pb-20 overflow-hidden">
-      <div className="max-w-7xl mx-auto px-6 grid lg:grid-cols-2 gap-16 items-center">
+      <div className="site-container px-6 grid lg:grid-cols-2 gap-16 items-center">
         <div className="relative z-10">
           {/* Trust badge */}
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#003178]/5 border border-[#003178]/10 text-[#003178] mb-6">

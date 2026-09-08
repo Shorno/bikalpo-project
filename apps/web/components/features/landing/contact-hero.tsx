@@ -1,7 +1,7 @@
 export function ContactHero() {
   return (
     <section className="pt-24 pb-12 px-6 md:px-12">
-      <div className="max-w-7xl mx-auto">
+      <div className="site-container">
         <div className="max-w-3xl">
           <span className="inline-block py-1 px-3 rounded-full bg-[#003178]/10 text-[#003178] text-xs font-bold tracking-widest uppercase mb-4">
             Get In Touch

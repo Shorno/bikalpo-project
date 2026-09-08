@@ -7,7 +7,7 @@ export function EnterpriseSection() {
       className="px-6 py-12 sm:py-24"
       style={{ backgroundColor: "#edeeef" }}
     >
-      <div className="max-w-7xl mx-auto flex flex-col md:flex-row gap-16 items-center">
+      <div className="site-container flex flex-col md:flex-row gap-16 items-center">
         {/* Dashboard Preview */}
         <div className="flex-1 order-2 md:order-1 relative">
           <div className="bg-white rounded-xl shadow-2xl overflow-hidden border border-gray-200/20 p-4">

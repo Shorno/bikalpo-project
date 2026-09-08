@@ -5,7 +5,7 @@ import Link from "next/link";
 export function B2bCta() {
   return (
     <section className="py-20 sm:py-28 bg-white">
-      <div className="max-w-7xl mx-auto px-6">
+      <div className="site-container px-6">
         <div className="relative rounded-3xl overflow-hidden bg-gradient-to-br from-[#003178] via-[#0d47a1] to-[#1a237e] px-6 py-16 sm:px-16 sm:py-24">
           <div className="absolute top-0 right-0 w-80 h-80 rounded-full bg-white/[0.06] translate-x-[30%] -translate-y-[30%] pointer-events-none" />
           <div className="absolute bottom-0 left-0 w-64 h-64 rounded-full bg-[#00C853]/[0.08] -translate-x-[30%] translate-y-[30%] pointer-events-none" />

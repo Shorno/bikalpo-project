@@ -222,7 +222,7 @@ export function WarehouseDealsSection({
 
   return (
     <>
-      <section className="container mx-auto px-4 py-6">
+      <section className="site-container px-4 py-6">
         <h2 className="text-lg font-bold text-gray-900 mb-4">
           Deals & Bulk Offers
         </h2>

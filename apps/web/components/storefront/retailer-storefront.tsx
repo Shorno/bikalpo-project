@@ -116,7 +116,7 @@ export function StoreHeader({
 
   return (
     <header id="store-information" className="scroll-mt-20 border-b bg-white">
-      <div className="mx-auto max-w-7xl px-3 py-6 sm:px-6 md:py-8 lg:px-8">
+      <div className="site-container px-3 py-6 sm:px-6 md:py-8 lg:px-8">
         <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
           <div className="min-w-0">
             <h1 className="truncate text-2xl font-bold tracking-tight text-slate-950 md:text-3xl">
@@ -214,7 +214,7 @@ export function StorefrontOfferBanner({
   if (offers.length === 0) {
     return (
       <section aria-label="Store offers" className="border-b bg-blue-50">
-        <div className="mx-auto max-w-7xl px-3 py-5 sm:px-6 md:py-6 lg:px-8">
+        <div className="site-container px-3 py-5 sm:px-6 md:py-6 lg:px-8">
           <div className="flex items-start gap-3 rounded-lg border border-dashed border-blue-200 bg-white/70 p-4 md:p-5">
             <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
               <Megaphone className="size-5" aria-hidden="true" />
@@ -241,7 +241,7 @@ export function StorefrontOfferBanner({
 
   return (
     <section aria-label="Store offers" className="border-b bg-blue-50">
-      <div className="mx-auto max-w-7xl px-3 py-5 sm:px-6 md:py-6 lg:px-8">
+      <div className="site-container px-3 py-5 sm:px-6 md:py-6 lg:px-8">
         <div className="flex flex-col gap-4 rounded-lg border border-blue-200 bg-white p-4 md:flex-row md:items-center md:justify-between md:p-5">
           <div className="flex min-w-0 items-start gap-3">
             <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground">
@@ -620,7 +620,7 @@ export function StorefrontSkeleton() {
   return (
     <div className="min-h-screen">
       <div className="border-b bg-slate-50/70">
-        <div className="mx-auto max-w-7xl px-3 py-6 sm:px-6 lg:px-8">
+        <div className="site-container px-3 py-6 sm:px-6 lg:px-8">
           <Skeleton className="mb-5 h-3 w-48" />
           <div className="flex items-center gap-4">
             <Skeleton className="size-16 rounded-lg" />
@@ -631,7 +631,7 @@ export function StorefrontSkeleton() {
           </div>
         </div>
       </div>
-      <div className="mx-auto max-w-7xl px-3 py-7 sm:px-6 lg:px-8">
+      <div className="site-container px-3 py-7 sm:px-6 lg:px-8">
         <div className="mb-6 rounded-lg border p-4">
           <div className="flex gap-3">
             <Skeleton className="h-11 flex-1" />

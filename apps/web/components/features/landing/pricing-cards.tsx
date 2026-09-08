@@ -51,7 +51,7 @@ export function PricingCards({ plans, billingPeriod }: PricingCardsProps) {
   if (hasDynamicPlans) {
     return (
       <section className="px-6 pb-24">
-        <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-8 items-stretch">
+        <div className="site-container grid grid-cols-1 md:grid-cols-3 gap-8 items-stretch">
           {plans.map((plan) => {
             const features = (plan.features as string[]) || [];
             const price =
@@ -136,7 +136,7 @@ export function PricingCards({ plans, billingPeriod }: PricingCardsProps) {
   // Fallback static plans
   return (
     <section className="px-6 pb-24">
-      <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-3 gap-8 items-stretch">
+      <div className="site-container grid grid-cols-1 md:grid-cols-3 gap-8 items-stretch">
         {fallbackPlans.map((plan) => {
           const price =
             billingPeriod === "yearly" ? plan.priceYearly : plan.priceMonthly;

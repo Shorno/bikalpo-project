@@ -173,7 +173,7 @@ export default async function ToLetPage({ searchParams }: ToLetPageProps) {
         aria-labelledby="recent-listings-heading"
         className="scroll-mt-28 border-y border-zinc-200 bg-white py-12 sm:py-16"
       >
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+        <div className="site-container px-4 sm:px-6 lg:px-8">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
             <div>
               <p className="text-xs font-semibold tracking-[0.14em] text-blue-700 uppercase">
@@ -291,7 +291,7 @@ function ToLetCatalogHero({
 
   return (
     <section className="bg-white">
-      <div className="mx-auto max-w-7xl px-4 py-5 sm:px-6 sm:py-7 lg:px-8">
+      <div className="site-container px-4 py-5 sm:px-6 sm:py-7 lg:px-8">
         <div className="grid gap-4 lg:grid-cols-[15.5rem_minmax(0,1fr)]">
           <aside className="hidden min-h-[390px] overflow-hidden rounded-xl border border-zinc-200 bg-white lg:block">
             <div className="flex h-14 items-center gap-2 border-b border-zinc-200 px-4 text-sm font-semibold text-zinc-950">
@@ -425,7 +425,7 @@ function RentalTypeDirectory({
 }) {
   return (
     <section className="border-b border-zinc-200 bg-zinc-50 py-12 sm:py-16">
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+      <div className="site-container px-4 sm:px-6 lg:px-8">
         <p className="text-xs font-semibold tracking-[0.14em] text-blue-700 uppercase">
           Explore rental types
         </p>
@@ -516,7 +516,7 @@ function MarketplaceSnapshot({
       aria-label="Current To-Let marketplace data"
       className="border-b border-zinc-200 bg-white"
     >
-      <div className="mx-auto grid max-w-7xl grid-cols-2 gap-3 px-4 py-7 sm:px-6 lg:grid-cols-4 lg:px-8">
+      <div className="site-container grid grid-cols-2 gap-3 px-4 py-7 sm:px-6 lg:grid-cols-4 lg:px-8">
         {stats.map(({ label, value, description, icon: Icon }) => (
           <article
             key={label}
@@ -575,7 +575,7 @@ function TenantJourney() {
 
   return (
     <section className="border-b border-zinc-200 bg-zinc-50 py-12 sm:py-16">
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+      <div className="site-container px-4 sm:px-6 lg:px-8">
         <p className="text-xs font-semibold tracking-[0.14em] text-blue-700 uppercase">
           Tenant journey
         </p>
@@ -626,7 +626,7 @@ function TenantJourney() {
 function OwnerCallToAction() {
   return (
     <section className="bg-zinc-50 py-12 sm:py-16">
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+      <div className="site-container px-4 sm:px-6 lg:px-8">
         <div className="grid gap-8 rounded-xl border border-zinc-200 bg-white p-6 sm:p-8 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center lg:p-10">
           <div className="max-w-3xl">
             <h2 className="text-2xl font-bold tracking-tight text-zinc-950 sm:text-3xl">

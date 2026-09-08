@@ -57,7 +57,7 @@ export default async function HomePage() {
         {offers.length > 0 ? <ActiveOffers offers={offers} /> : null}
 
         <section className="border-b border-border/70 bg-background py-12 sm:py-16">
-          <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+          <div className="site-container px-4 sm:px-6 lg:px-8">
             <SectionHeading
               title="Recently added"
               description="Explore the newest products available in the customer catalog."
@@ -93,7 +93,7 @@ export default async function HomePage() {
 function ConsumerHero({ categories }: { categories: HomeCategory[] }) {
   return (
     <section className="border-b border-border/70 bg-background">
-      <div className="mx-auto max-w-7xl px-4 py-5 sm:px-6 sm:py-7 lg:px-8">
+      <div className="site-container px-4 py-5 sm:px-6 sm:py-7 lg:px-8">
         <div
           className={
             categories.length > 0
@@ -237,7 +237,7 @@ function CategoryImage({
 function ActiveOffers({ offers }: { offers: HomeOffer[] }) {
   return (
     <section className="border-b border-border/70 bg-[oklch(0.972_0.008_250)] py-12 sm:py-16">
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+      <div className="site-container px-4 sm:px-6 lg:px-8">
         <SectionHeading
           title="Current offers"
           description="Explore offers currently available through Bikalpo."
@@ -302,7 +302,7 @@ function ActiveOffers({ offers }: { offers: HomeOffer[] }) {
 function BrandDirectory({ brands }: { brands: HomeBrand[] }) {
   return (
     <section className="bg-[oklch(0.985_0.004_260)] py-12 sm:py-16">
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+      <div className="site-container px-4 sm:px-6 lg:px-8">
         <SectionHeading
           title="Browse brands"
           description="Find products from brands available in the catalog."

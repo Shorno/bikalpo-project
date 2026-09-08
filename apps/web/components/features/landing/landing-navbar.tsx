@@ -40,7 +40,7 @@ export function LandingNavbar() {
 
   return (
     <nav className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-gray-200/10">
-      <div className="max-w-7xl mx-auto px-6 h-14 md:h-20 flex items-center justify-between">
+      <div className="site-container px-6 h-14 md:h-20 flex items-center justify-between">
         <div className="flex items-center gap-12">
           <Link href="/">
             <span

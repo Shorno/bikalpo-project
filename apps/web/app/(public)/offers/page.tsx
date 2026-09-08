@@ -16,7 +16,7 @@ export default async function OffersPage() {
 
   return (
     <main className="min-h-[70vh] bg-[oklch(0.985_0.004_260)] py-10 sm:py-14">
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+      <div className="site-container px-4 sm:px-6 lg:px-8">
         <div className="max-w-2xl">
           <p className="text-xs font-semibold tracking-[0.16em] text-primary uppercase">
             Catalog offers

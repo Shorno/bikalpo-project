@@ -26,7 +26,7 @@ export function PublicHeader() {
 
   return (
     <nav className={`${styles.header} sticky top-0 z-50`}>
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+      <div className="site-container px-4 sm:px-6 lg:px-8">
         <div className="flex h-16 items-center gap-2 sm:gap-5">
           <div className={`${styles.actions} md:hidden`}>
             <MobileMenu previewMode={previewMode} />
@@ -80,7 +80,7 @@ export function PublicHeader() {
       </div>
 
       <div className={styles.navigation}>
-        <div className="mx-auto hidden h-12 max-w-7xl grid-cols-3 px-4 sm:px-6 md:grid lg:px-8">
+        <div className="site-container hidden h-12 grid-cols-3 px-4 sm:px-6 md:grid lg:px-8">
           {publicNavigationLinks.map(({ label, href }) => {
             const isActive =
               pathname === href || pathname.startsWith(`${href}/`);

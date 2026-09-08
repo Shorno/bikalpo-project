@@ -32,7 +32,7 @@ export function WarehouseCategoryList({
   };
 
   return (
-    <section className="container mx-auto px-4">
+    <section className="site-container px-4">
       <div className="flex items-center justify-between mb-3">
         <h2 className="text-lg font-bold text-gray-900">
           Wholesale Categories

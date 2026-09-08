@@ -246,7 +246,7 @@ export default function ShopStorePage({
 
   if (isError || !data?.shop) {
     return (
-      <main className="mx-auto max-w-7xl px-3 py-20 sm:px-6 lg:px-8">
+      <main className="site-container px-3 py-20 sm:px-6 lg:px-8">
         <div className="mx-auto max-w-lg rounded-lg border bg-slate-50 px-6 py-12 text-center">
           <AlertCircle
             className="mx-auto size-10 text-red-500"
@@ -296,7 +296,7 @@ export default function ShopStorePage({
       />
       <StorefrontOfferBanner offers={data.activeOffers} />
 
-      <main className="mx-auto max-w-7xl px-3 py-6 sm:px-6 md:py-8 lg:px-8">
+      <main className="site-container px-3 py-6 sm:px-6 md:py-8 lg:px-8">
         <section aria-labelledby="store-catalog-heading" aria-busy={isFetching}>
           <div className="mb-5 border-b pb-5">
             <div className="flex items-center justify-between gap-4">

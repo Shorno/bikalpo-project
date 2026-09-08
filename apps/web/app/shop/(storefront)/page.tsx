@@ -19,7 +19,7 @@ export default function ShopDashboardPage() {
   return (
     <div>
       {/* Full-width header section */}
-      <div className="container mx-auto px-4 py-6">
+      <div className="site-container px-4 py-6">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
             <h1 className="text-2xl md:text-3xl font-bold text-gray-900 flex items-center gap-2">
@@ -37,17 +37,17 @@ export default function ShopDashboardPage() {
       </div>
 
       {/*/!* Full-width hero *!/*/}
-      <div className="container mx-auto px-4">
+      <div className="site-container px-4">
         <ShopHero />
       </div>
 
       {/*/!* Full-width category tabs *!/*/}
-      <div className="container mx-auto px-4 mt-6">
+      <div className="site-container px-4 mt-6">
         <CategoryTabs />
       </div>
 
       {/*/!* Grid section with sidebar *!/*/}
-      <div className="container mx-auto px-4 py-6">
+      <div className="site-container px-4 py-6">
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
           {/* Products section */}
           <div className="lg:col-span-3">

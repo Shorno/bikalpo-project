@@ -3,7 +3,7 @@ import Link from "next/link";
 export function CtaSection() {
   return (
     <section className="py-12 sm:py-24">
-      <div className="max-w-7xl mx-auto px-6">
+      <div className="site-container px-6">
         <div
           className="rounded-3xl p-12 lg:p-20 text-center relative overflow-hidden"
           style={{

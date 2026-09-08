@@ -15,7 +15,7 @@ export function PricingHeroSection({
 }: PricingHeroSectionProps) {
   return (
     <header className="pt-24 pb-16 px-6">
-      <div className="max-w-7xl mx-auto">
+      <div className="site-container">
         <div className="max-w-3xl">
           <h1
             className="text-5xl md:text-6xl font-extrabold tracking-tight leading-tight mb-6"

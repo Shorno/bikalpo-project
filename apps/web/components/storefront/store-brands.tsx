@@ -57,7 +57,7 @@ export function StoreBrands({ slug }: { slug: string }) {
       aria-labelledby="store-brands-heading"
       className="scroll-mt-20 bg-[oklch(0.985_0.004_260)] py-12 sm:py-16"
     >
-      <div className="mx-auto max-w-7xl px-3 sm:px-6 lg:px-8">
+      <div className="site-container px-3 sm:px-6 lg:px-8">
         <div className="mb-6 sm:mb-8">
           <h2
             id="store-brands-heading"

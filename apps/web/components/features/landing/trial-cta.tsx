@@ -4,7 +4,7 @@ import Link from "next/link";
 export function TrialCta() {
   return (
     <section className="px-6 md:px-12 pb-24">
-      <div className="max-w-7xl mx-auto relative rounded-3xl overflow-hidden bg-[#003178] p-12 md:p-24 text-center">
+      <div className="site-container relative rounded-3xl overflow-hidden bg-[#003178] p-12 md:p-24 text-center">
         {/* Background Decoration */}
         <div className="absolute inset-0 opacity-20 pointer-events-none overflow-hidden">
           <Image

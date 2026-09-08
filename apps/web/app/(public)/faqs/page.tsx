@@ -7,7 +7,7 @@ export const metadata: Metadata = {
 
 export default function FAQsPage() {
   return (
-    <div className="container mx-auto px-4 py-16">
+    <div className="site-container px-4 py-16">
       <h1 className="text-4xl font-bold mb-8 text-center">
         Frequently Asked Questions
       </h1>

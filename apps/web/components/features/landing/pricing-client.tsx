@@ -19,7 +19,7 @@ export function PricingClient({ plans }: PricingClientProps) {
       className="py-12 sm:py-24"
       style={{ backgroundColor: "rgba(231,232,233,0.5)" }}
     >
-      <div className="max-w-7xl mx-auto px-6">
+      <div className="site-container px-6">
         <div className="text-center mb-16">
           <h2
             className="text-3xl font-bold mb-6"

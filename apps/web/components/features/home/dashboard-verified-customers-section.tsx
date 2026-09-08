@@ -32,7 +32,7 @@ export function DashboardVerifiedCustomersSection({
 
   return (
     <section className="py-12 bg-white">
-      <div className="container mx-auto px-4">
+      <div className="site-container px-4">
         <div className="text-center mb-8">
           <h2 className="text-2xl md:text-3xl font-bold text-gray-900 mb-3">
             Other Verified B2B Customers

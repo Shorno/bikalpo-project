@@ -58,7 +58,7 @@ const features = [
 export function NumberedFeatureGrid() {
   return (
     <section className="py-16 px-6" style={{ backgroundColor: "#edeeef" }}>
-      <div className="max-w-7xl mx-auto">
+      <div className="site-container">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           {features.map((feature) => (
             <div

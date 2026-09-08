@@ -11,7 +11,7 @@ const networkNodes = [
 export function B2bNetwork() {
   return (
     <section className="py-20 sm:py-28 bg-gradient-to-b from-[#f8faff] via-[#eef2ff] to-[#f8faff]" id="network">
-      <div className="max-w-7xl mx-auto px-6">
+      <div className="site-container px-6">
         <div className="text-center mb-16 max-w-3xl mx-auto">
           <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-[#003178]/[0.04] border border-[#003178]/[0.08] mb-6">
             <span className="material-symbols-outlined text-sm text-[#003178]">hub</span>

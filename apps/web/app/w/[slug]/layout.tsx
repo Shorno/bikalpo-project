@@ -11,7 +11,7 @@ export default function WarehouseStorefrontLayout({
     <div className="min-h-screen flex flex-col bg-zinc-50">
       {/* Storefront navbar */}
       <header className="sticky top-0 z-40 border-b border-zinc-200 bg-white/85 backdrop-blur-sm">
-        <div className="container mx-auto px-4 h-16 flex items-center justify-between">
+        <div className="site-container px-4 h-16 flex items-center justify-between">
           <Link href="/" className="flex items-center gap-2.5">
             <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-zinc-900 text-white">
               <WarehouseIcon className="w-[18px] h-[18px]" />
@@ -30,7 +30,7 @@ export default function WarehouseStorefrontLayout({
 
       {/* Footer */}
       <footer className="border-t border-zinc-200 bg-white">
-        <div className="container mx-auto px-4 py-5 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-zinc-500">
+        <div className="site-container px-4 py-5 flex flex-col sm:flex-row items-center justify-between gap-2 text-xs text-zinc-500">
           <span>Bikalpo Warehouse — Private Supplier Platform</span>
           <span className="text-zinc-400">Restricted B2B access</span>
         </div>

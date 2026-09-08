@@ -37,7 +37,7 @@ export function ToLetCommunityReviews() {
       aria-labelledby="community-reviews-heading"
       className="border-y border-border/70 bg-background py-14 sm:py-20"
     >
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+      <div className="site-container px-4 sm:px-6 lg:px-8">
         <div className="mb-10 flex flex-col justify-between gap-5 border-b border-border pb-8 md:flex-row md:items-end">
           <div className="max-w-2xl">
             <h2

@@ -89,6 +89,9 @@
 
 :root {
 
+    /* Matches the reference storefront's responsive content shell. */
+    --site-container-max-width: 95%;
+
     --background: oklch(1 0 0);
 
     --foreground: oklch(0.145 0 0);
@@ -152,6 +155,29 @@
     --sidebar-border: oklch(0.922 0 0);
 
     --sidebar-ring: oklch(0.708 0 0);
+}
+
+@media (min-width: 1601px) {
+  :root {
+    --site-container-max-width: 80%;
+  }
+}
+
+@media (max-width: 479px) {
+  :root {
+    --site-container-max-width: 100%;
+  }
+}
+
+/*
+ * The customer-facing shell follows ghorerbazar.com: 95% through common
+ * desktop widths, 80% on extra-wide screens, and full width on mobile.
+ * Individual surfaces keep their existing responsive inner gutters.
+ */
+.site-container {
+  width: 100%;
+  max-width: var(--site-container-max-width);
+  margin-inline: auto;
 }
 
 .dark {

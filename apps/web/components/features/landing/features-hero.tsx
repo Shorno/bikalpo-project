@@ -1,7 +1,7 @@
 export function FeaturesHero() {
   return (
     <section className="pt-24 pb-16 px-6">
-      <div className="max-w-7xl mx-auto">
+      <div className="site-container">
         <div className="flex flex-col items-start max-w-3xl">
           <span
             className="inline-flex items-center px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider mb-6"

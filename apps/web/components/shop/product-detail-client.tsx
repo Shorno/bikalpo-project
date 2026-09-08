@@ -60,7 +60,7 @@ export function ProductDetailClient({
     <div className="min-h-screen bg-gray-50">
       {/* Breadcrumb */}
       <div className="bg-white border-b">
-        <div className="container mx-auto px-4 py-3">
+        <div className="site-container px-4 py-3">
           <nav className="flex items-center gap-2 text-sm">
             <Link href="/" className="text-gray-600 hover:text-gray-900">
               Dashboard
@@ -92,7 +92,7 @@ export function ProductDetailClient({
       </div>
 
       {/* Product Details Section */}
-      <div className="container mx-auto px-4 py-8">
+      <div className="site-container px-4 py-8">
         <div className="bg-white rounded-lg shadow-sm p-6 lg:p-8">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-12">
             {/* Product Images — client-side gallery */}
@@ -482,7 +482,7 @@ function ProductDetailSkeleton() {
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="bg-white border-b">
-        <div className="container mx-auto px-4 py-3">
+        <div className="site-container px-4 py-3">
           <div className="flex items-center gap-2">
             <Skeleton className="h-4 w-16" />
             <Skeleton className="h-4 w-4" />
@@ -492,7 +492,7 @@ function ProductDetailSkeleton() {
           </div>
         </div>
       </div>
-      <div className="container mx-auto px-4 py-8">
+      <div className="site-container px-4 py-8">
         <div className="bg-white rounded-lg shadow-sm p-6 lg:p-8">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
             <Skeleton className="aspect-square w-full rounded-lg" />

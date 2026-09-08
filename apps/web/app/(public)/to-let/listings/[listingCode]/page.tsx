@@ -1,4 +1,3 @@
-import { ListingViewRecorder } from "@/components/features/to-let/listing-view-recorder";
 import {
   ArrowLeft,
   Building2,
@@ -14,6 +13,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { RequestBookingButton } from "@/components/features/to-let/booking/request-booking-dialog";
+import { ListingViewRecorder } from "@/components/features/to-let/listing-view-recorder";
 import {
   ToLetDetailHero,
   ToLetDetailsSection,
@@ -145,12 +145,16 @@ export default async function PublicListingPage({
 
   return (
     <div className="min-h-screen bg-zinc-50">
-      <ListingViewRecorder key={`${listingCode}:${qrToken ?? "public"}`} listingCode={listingCode} qrToken={qrToken} />
+      <ListingViewRecorder
+        key={`${listingCode}:${qrToken ?? "public"}`}
+        listingCode={listingCode}
+        qrToken={qrToken}
+      />
       <nav
         aria-label="Breadcrumb"
         className="border-b border-zinc-200 bg-white"
       >
-        <ol className="mx-auto flex min-h-12 max-w-7xl items-center gap-2 px-4 text-xs text-zinc-500 sm:px-6 lg:px-8">
+        <ol className="site-container flex min-h-12 items-center gap-2 px-4 text-xs text-zinc-500 sm:px-6 lg:px-8">
           <li>
             <Link href="/" className="hover:text-blue-700">
               Home
@@ -171,7 +175,7 @@ export default async function PublicListingPage({
         </ol>
       </nav>
 
-      <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
+      <main className="site-container px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
         <header className="flex flex-wrap items-center gap-4 rounded-lg border border-zinc-200 bg-white px-4 py-3">
           <Link
             href={qrToken ? `/to-let/qr/${qrToken}` : "/to-let"}

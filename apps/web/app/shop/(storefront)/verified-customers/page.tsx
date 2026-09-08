@@ -24,7 +24,7 @@ export default function VerifiedCustomersPage({
 
         {/* Content */}
         <div className="relative py-12 md:py-16">
-          <div className="container mx-auto px-4 text-center">
+          <div className="site-container px-4 text-center">
             {/* Title - Static */}
             <h1 className="text-2xl md:text-4xl font-bold text-white mb-3 tracking-wide">
               VERIFIED B2B CUSTOMERS
@@ -45,7 +45,7 @@ export default function VerifiedCustomersPage({
       </div>
 
       {/* Content */}
-      <div className="container mx-auto px-4 py-12">
+      <div className="site-container px-4 py-12">
         {/* Top Buyers Section - Dynamic with Suspense */}
         <VerifiedTopBuyers />
 

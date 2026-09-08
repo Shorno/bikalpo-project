@@ -5,7 +5,7 @@ import { getShopStoreDashboardUrl } from "@/lib/customer-storefront-preview";
 export function CustomerPreviewBanner() {
   return (
     <div className="border-b border-amber-200 bg-amber-50">
-      <div className="container mx-auto flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="site-container flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-start gap-2.5">
           <Eye className="mt-0.5 size-4 shrink-0 text-amber-700" />
           <div>

@@ -36,7 +36,7 @@ export function ShopHeader({ slug }: { slug: string }) {
 
   return (
     <nav className={`${styles.header} sticky top-0 z-50`}>
-      <div className="mx-auto flex h-16 max-w-7xl items-center gap-2 px-3 sm:gap-4 sm:px-6 lg:px-8">
+      <div className="site-container flex h-16 items-center gap-2 px-3 sm:gap-4 sm:px-6 lg:px-8">
         <div className={`${styles.actions} md:hidden`}>
           <ShopNavigation previewMode={previewMode} />
         </div>
@@ -106,7 +106,7 @@ export function ShopHeader({ slug }: { slug: string }) {
         </DropdownMenu>
       </div>
       <div className={styles.navigation}>
-        <div className="mx-auto hidden h-12 max-w-7xl grid-cols-3 px-4 sm:px-6 md:grid lg:px-8">
+        <div className="site-container hidden h-12 grid-cols-3 px-4 sm:px-6 md:grid lg:px-8">
           {shopNavigationLinks.map(({ label, href }) => {
             const isActive =
               pathname === href || pathname.startsWith(`${href}/`);

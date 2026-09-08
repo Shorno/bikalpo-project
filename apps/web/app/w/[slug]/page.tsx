@@ -531,7 +531,7 @@ export default function WarehouseStorefrontPage() {
     return (
       <div className="min-h-screen bg-zinc-50/50">
         <div className="bg-white border-b border-zinc-200">
-          <div className="container mx-auto px-4 py-8">
+          <div className="site-container px-4 py-8">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
               <div className="flex items-start gap-4">
                 <Skeleton className="w-16 h-16 rounded-xl shrink-0" />
@@ -550,7 +550,7 @@ export default function WarehouseStorefrontPage() {
           </div>
         </div>
 
-        <div className="container mx-auto px-4 py-6">
+        <div className="site-container px-4 py-6">
           <div className="bg-white border border-zinc-200 rounded-xl p-4 sm:p-5 flex flex-col gap-4">
             <Skeleton className="h-11 w-full rounded-lg" />
             <div className="flex flex-wrap items-center gap-2 border-t border-zinc-100 pt-4">
@@ -562,7 +562,7 @@ export default function WarehouseStorefrontPage() {
           </div>
         </div>
 
-        <div className="container mx-auto px-4 pb-16">
+        <div className="site-container px-4 pb-16">
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
             {Array.from({ length: 8 }).map((_, i) => (
               <WarehouseProductCardSkeleton key={i} />
@@ -1283,7 +1283,7 @@ export default function WarehouseStorefrontPage() {
     return (
       <div className="min-h-screen bg-zinc-50">
         <header className="border-b border-zinc-200 bg-white">
-          <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-4 sm:px-6">
+          <div className="site-container flex items-center justify-between gap-4 px-4 py-4 sm:px-6">
             <div className="flex min-w-0 items-center gap-3">
               {checkoutStep === "review" ? (
                 <Button
@@ -1343,7 +1343,7 @@ export default function WarehouseStorefrontPage() {
           </div>
         </header>
 
-        <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6 sm:py-8">
+        <main className="site-container px-4 py-6 sm:px-6 sm:py-8">
           {!isCartHydrated ? (
             <div className="flex min-h-[55vh] items-center justify-center border border-zinc-200 bg-white">
               <div className="flex items-center gap-2 text-sm text-zinc-500">
@@ -1782,7 +1782,7 @@ export default function WarehouseStorefrontPage() {
     <div className="min-h-screen bg-zinc-50/50">
       {/* Warehouse Header */}
       <div className="bg-white border-b border-zinc-200">
-        <div className="container mx-auto px-4 py-8">
+        <div className="site-container px-4 py-8">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
             <div className="flex items-start gap-4 min-w-0">
               <div className="w-16 h-16 bg-zinc-100 rounded-xl flex items-center justify-center shrink-0 border border-zinc-200">
@@ -1823,7 +1823,7 @@ export default function WarehouseStorefrontPage() {
 
       {/* Access alert block */}
       {isWarehouseBuyer && !isConnectedSupplier && (
-        <div className="container mx-auto px-4 pt-6">
+        <div className="site-container px-4 pt-6">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3.5">
             <div className="flex items-start gap-3">
               <AlertCircle className="w-5 h-5 text-amber-600 mt-0.5 shrink-0" />
@@ -1852,7 +1852,7 @@ export default function WarehouseStorefrontPage() {
       )}
 
       {/* Main Content Layout */}
-      <div className="container mx-auto px-4 py-6">
+      <div className="site-container px-4 py-6">
         <div className="space-y-6">
           {/* Search & Filter Bar */}
           <div className="bg-white border border-zinc-200 rounded-xl p-4 sm:p-5 flex flex-col gap-4">

@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { sellerApplication } from "@bikalpo-project/db/schema/seller-application";
 import { user } from "@bikalpo-project/db/schema/auth-schema";
+import { sellerApplication } from "@bikalpo-project/db/schema/seller-application";
 import { eq, getTableColumns } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import {
   retailerBusinessContactInformationSchema,
+  retailerRegistrationProfileSchema,
   retailerRequiredThanaSchema,
   retailerShopProfileSchema,
   retailerThanaSchema,
@@ -261,4 +262,97 @@ test("shop profile updates omit untouched logo or hours in generated SQL", () =>
       assert.equal(hoursOnly.params[Number(parameter[1]) - 1], value);
     }
   }
+});
+
+const completeRegistrationProfile = {
+  applicant: {
+    profilePhotoUrl: "https://example.com/owner.jpg",
+    ownerName: "  Amina Rahman  ",
+    dateOfBirth: "1990-05-12",
+    gender: "female" as const,
+    personalAddress: "12 Lake Road, Dhaka",
+    personalArea: "Dhanmondi",
+    personalDistrict: "Dhaka",
+    personalDivision: "Dhaka",
+    personalPostCode: "1209",
+    personalLatitude: 23.7461,
+    personalLongitude: 90.3742,
+  },
+  business: {
+    shopLogo: "https://example.com/shop-logo.png",
+    shopName: "  Amina General Store  ",
+    businessType: "retail" as const,
+    productTypeId: 4,
+    businessNature: "retail_shop" as const,
+    yearsInBusiness: "1 - 5 Years",
+    monthlyRevenue: "৳2 Lakh - ৳10 Lakh",
+    binNumber: "BIN-100",
+    tinNumber: "TIN-200",
+    tradeLicenseNumber: "TL-300",
+    shopAddress: "12 Market Road, Dhaka",
+    area: "Dhanmondi",
+    thana: "Dhanmondi",
+    district: "Dhaka",
+    division: "Dhaka",
+    postCode: "1209",
+    latitude: 23.7461,
+    longitude: 90.3742,
+  },
+  contacts: {
+    phoneNumber: "01700000000",
+    email: "owner@example.com",
+    whatsappNumber: "01700000000",
+    facebookUrl: "https://facebook.com/example",
+    messengerUrl: "https://m.me/example",
+    instagramUrl: "https://instagram.com/example",
+    websiteUrl: "https://example.com",
+    telegramUrl: "https://t.me/example",
+    tiktokUrl: "https://tiktok.com/@example",
+    twitterUrl: "https://x.com/example",
+  },
+  documents: {
+    tradeLicense: "https://example.com/trade-license.pdf",
+    nid: "https://example.com/nid.jpg",
+    shopPhoto: "https://example.com/shop.jpg",
+    storeFront: "https://example.com/storefront.jpg",
+    warehouse: null,
+  },
+};
+
+test("registration profile accepts the complete owner-editable application contract", () => {
+  const parsed = retailerRegistrationProfileSchema.parse(
+    completeRegistrationProfile,
+  );
+
+  assert.equal(parsed.applicant.ownerName, "Amina Rahman");
+  assert.equal(parsed.business.shopName, "Amina General Store");
+  assert.equal(parsed.business.area, "Dhanmondi");
+  assert.equal(parsed.contacts.telegramUrl, "https://t.me/example");
+  assert.equal(
+    parsed.documents.tradeLicense,
+    "https://example.com/trade-license.pdf",
+  );
+});
+
+test("registration profile requires coordinate pairs and safe document URLs", () => {
+  assert.equal(
+    retailerRegistrationProfileSchema.safeParse({
+      ...completeRegistrationProfile,
+      applicant: {
+        ...completeRegistrationProfile.applicant,
+        personalLongitude: null,
+      },
+    }).success,
+    false,
+  );
+  assert.equal(
+    retailerRegistrationProfileSchema.safeParse({
+      ...completeRegistrationProfile,
+      documents: {
+        ...completeRegistrationProfile.documents,
+        nid: "javascript:alert(1)",
+      },
+    }).success,
+    false,
+  );
 });

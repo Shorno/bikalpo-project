@@ -19,7 +19,7 @@ export function ProcessSteps() {
 
   return (
     <section className="py-12 sm:py-24">
-      <div className="max-w-7xl mx-auto px-6 text-center">
+      <div className="site-container px-6 text-center">
         <h2
           className="text-3xl font-bold mb-16"
           style={{ fontFamily: "'Manrope', sans-serif" }}

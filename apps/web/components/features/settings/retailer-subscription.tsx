@@ -86,9 +86,7 @@ export function SubscriptionDetails({
     ["Auto Renewal", current ? "Off" : null],
     [
       "Next Billing Date",
-      current
-        ? subscriptionDate(current.nextBillingAt, "Not scheduled")
-        : null,
+      current ? subscriptionDate(current.nextBillingAt, "Not scheduled") : null,
     ],
     ["Payment Status", current?.paymentStatus],
   ];
@@ -353,6 +351,7 @@ export function RetailerSubscriptionSection() {
   const subscription = useRetailerSubscription();
   return (
     <section
+      id="subscription-settings"
       className="flex flex-col p-6 md:col-span-2 xl:col-span-1"
       aria-labelledby="user-plan-heading"
     >

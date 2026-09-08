@@ -11,7 +11,7 @@ const trialSteps = [
 export function B2bTrial() {
   return (
     <section className="py-20 sm:py-28 bg-white" id="trial">
-      <div className="max-w-7xl mx-auto px-6">
+      <div className="site-container px-6">
         <div className="text-center mb-16 max-w-3xl mx-auto">
           <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-[#00C853]/[0.06] border border-[#00C853]/[0.12] mb-6">
             <span className="material-symbols-outlined text-sm text-[#00C853]">credit_card_off</span>

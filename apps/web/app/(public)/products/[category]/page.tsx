@@ -90,7 +90,7 @@ export default async function CategoryProductsPage({
   return (
     <div>
       {previewMode && <CustomerPreviewBanner />}
-      <div className="container mx-auto px-4 py-8 md:py-12">
+      <div className="site-container px-4 py-8 md:py-12">
         {/* Header */}
         <div className="mb-8">
           <h1 className="text-3xl md:text-4xl font-serif font-light mb-2">

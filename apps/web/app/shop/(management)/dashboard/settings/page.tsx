@@ -1,12 +1,10 @@
 "use client";
 
 import { computeProfileCompletion } from "@bikalpo-project/api/business-profile";
-import type { sellerApplication } from "@bikalpo-project/db/schema";
 import { useQuery } from "@tanstack/react-query";
 import type { LucideIcon } from "lucide-react";
 import {
   Building2,
-  CircleAlert,
   Clock3,
   ContactRound,
   Edit3,
@@ -16,49 +14,19 @@ import {
 import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { LocationPickerSection } from "@/components/features/onboarding/location-picker-section";
 import { FinancialSettingsSection } from "@/components/features/settings/financial-settings-section";
 import { PasswordSecuritySection } from "@/components/features/settings/password-security-section";
 import {
   RetailerSubscriptionSection,
   useRetailerSubscription,
 } from "@/components/features/settings/retailer-subscription";
-import ImageUploader from "@/components/ImageUploader";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogClose,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import { BUSINESS_NATURES } from "@/constants/seller-registration";
-import {
-  useUpdateBusinessContactInformation,
-  useUpdateBusinessInformation,
-  useUpdateShopProfile,
-} from "@/hooks/use-shop-owner-api";
+import { useUpdateShopProfile } from "@/hooks/use-shop-owner-api";
 import { authClient } from "@/lib/auth-client";
 import { orpc } from "@/utils/orpc";
-
-type BusinessApplication =
-  | typeof sellerApplication.$inferSelect
-  | null
-  | undefined;
-type ProfileUser = typeof authClient.$Infer.Session.user | undefined;
 
 function displayValue(value: unknown) {
   if (typeof value !== "string" || !value.trim()) return "Not provided";
@@ -104,9 +72,6 @@ export default function ShopSettingsPage() {
   });
   const updateProfileMutation = useUpdateShopProfile();
 
-  const [shopLogo, setShopLogo] = useState("");
-  const [logoDialogOpen, setLogoDialogOpen] = useState(false);
-  const [isLogoUploading, setIsLogoUploading] = useState(false);
   const [openingTime, setOpeningTime] = useState("");
   const [closingTime, setClosingTime] = useState("");
 
@@ -199,73 +164,16 @@ export default function ShopSettingsPage() {
                   />
                 )}
               </div>
-              <Dialog
-                open={logoDialogOpen}
-                onOpenChange={(open) => {
-                  if (isLogoUploading || updateProfileMutation.isPending)
-                    return;
-                  setLogoDialogOpen(open);
-                  if (open) setShopLogo(user?.shopLogo || "");
-                }}
+              <Button
+                asChild
+                variant="outline"
+                size="sm"
+                className="mx-auto min-w-32"
               >
-                <DialogTrigger asChild>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="mx-auto min-w-32"
-                  >
-                    Change Logo
-                  </Button>
-                </DialogTrigger>
-                <DialogContent className="sm:max-w-md">
-                  <DialogHeader>
-                    <DialogTitle>Change Logo</DialogTitle>
-                    <DialogDescription>
-                      Upload your company logo and save your changes.
-                    </DialogDescription>
-                  </DialogHeader>
-                  <ImageUploader
-                    value={shopLogo}
-                    onChange={setShopLogo}
-                    deleteOnRemove={false}
-                    onUploadStateChange={setIsLogoUploading}
-                    folder={`shop-logos/${user?.id || "shop"}`}
-                    maxSizeMB={2}
-                    disabled={
-                      isLogoUploading || updateProfileMutation.isPending
-                    }
-                  />
-                  <DialogFooter>
-                    <DialogClose asChild>
-                      <Button
-                        variant="outline"
-                        disabled={
-                          isLogoUploading || updateProfileMutation.isPending
-                        }
-                      >
-                        Cancel
-                      </Button>
-                    </DialogClose>
-                    <Button
-                      disabled={
-                        isLogoUploading || updateProfileMutation.isPending
-                      }
-                      onClick={async () => {
-                        await updateProfileMutation.mutateAsync({
-                          shopLogo: shopLogo || null,
-                        });
-                        await refetch();
-                        setLogoDialogOpen(false);
-                      }}
-                    >
-                      {updateProfileMutation.isPending && (
-                        <Loader2 className="size-4 animate-spin" />
-                      )}
-                      {isLogoUploading ? "Uploading logo..." : "Save Logo"}
-                    </Button>
-                  </DialogFooter>
-                </DialogContent>
-              </Dialog>
+                <Link href="/dashboard/settings/profile/edit#business-information">
+                  Change Logo
+                </Link>
+              </Button>
             </div>
           </div>
 
@@ -307,12 +215,9 @@ export default function ShopSettingsPage() {
                 />
               </dl>
               <div className="mt-3">
-                <BusinessInformationDialog
-                  application={application}
-                  user={user}
-                  onSaved={refetch}
-                  triggerLabel="Edit Business Profile"
-                />
+                <EditSectionLink href="/dashboard/settings/profile/edit#business-information">
+                  Edit Business Profile
+                </EditSectionLink>
               </div>
             </div>
           </div>
@@ -371,11 +276,7 @@ export default function ShopSettingsPage() {
           title="Business Info"
           icon={Building2}
           action={
-            <BusinessInformationDialog
-              application={application}
-              user={user}
-              onSaved={refetch}
-            />
+            <EditSectionLink href="/dashboard/settings/profile/edit#business-information" />
           }
         >
           <DetailRow label="Business Name" value={businessName} />
@@ -394,7 +295,7 @@ export default function ShopSettingsPage() {
           title="Contact Info"
           icon={ContactRound}
           action={
-            <ContactInformationDialog application={application} user={user} />
+            <EditSectionLink href="/dashboard/settings/profile/edit#contact-information" />
           }
         >
           <DetailRow label="Mobile Number" value={phoneNumber} />
@@ -479,7 +380,7 @@ export default function ShopSettingsPage() {
         </div>
       </section>
 
-      <FinancialSettingsSection />
+      <FinancialSettingsSection editorHref="/dashboard/settings/profile/edit#banking-information" />
       <PasswordSecuritySection
         phoneNumber={user?.phoneNumberVerified ? user.phoneNumber : null}
       />
@@ -487,476 +388,26 @@ export default function ShopSettingsPage() {
   );
 }
 
-const RETAIL_BUSINESS_NATURES = BUSINESS_NATURES.filter((nature) =>
-  ["retail_shop", "manufacturer", "importer"].includes(nature.id),
-);
-
-const NOT_PROVIDED_VALUE = "__not_provided__";
-
-function nullable(value: string) {
-  return value.trim() || null;
-}
-
-function coordinateValue(value: unknown) {
-  const coordinate = Number(value);
-  return Number.isFinite(coordinate) ? coordinate : 0;
-}
-
-function EditSectionButton(props: React.ComponentProps<typeof Button>) {
+function EditSectionLink({
+  children = "Edit",
+  href,
+}: {
+  children?: React.ReactNode;
+  href: string;
+}) {
   return (
     <Button
-      {...props}
+      asChild
       type="button"
       variant="outline"
       size="sm"
       className="h-8 gap-1.5 px-2.5 text-xs normal-case tracking-normal"
     >
-      <Edit3 className="size-3.5" aria-hidden="true" />
-      {props.children || "Edit"}
+      <Link href={href}>
+        <Edit3 className="size-3.5" aria-hidden="true" />
+        {children}
+      </Link>
     </Button>
-  );
-}
-
-function MissingRegistrationDialogContent({ section }: { section: string }) {
-  return (
-    <DialogContent className="sm:max-w-md">
-      <DialogHeader>
-        <DialogTitle>Edit {section}</DialogTitle>
-        <DialogDescription>
-          This account does not have a linked business registration record, so
-          these details cannot be saved yet.
-        </DialogDescription>
-      </DialogHeader>
-      <div
-        role="alert"
-        className="flex gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4 text-amber-950"
-      >
-        <CircleAlert className="mt-0.5 size-5 shrink-0" aria-hidden="true" />
-        <p className="text-sm leading-6">
-          Contact support to link the original registration to this shop
-          account, then return here to edit this section.
-        </p>
-      </div>
-      <DialogFooter>
-        <DialogClose asChild>
-          <Button type="button">Close</Button>
-        </DialogClose>
-      </DialogFooter>
-    </DialogContent>
-  );
-}
-
-function Field({
-  id,
-  label,
-  children,
-}: {
-  id: string;
-  label: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="space-y-2">
-      <Label htmlFor={id}>{label}</Label>
-      {children}
-    </div>
-  );
-}
-
-function BusinessInformationDialog({
-  application,
-  user,
-  onSaved,
-  triggerLabel = "Edit Business Info",
-}: {
-  application: BusinessApplication;
-  user: ProfileUser;
-  onSaved: () => Promise<unknown>;
-  triggerLabel?: string;
-}) {
-  const [open, setOpen] = useState(false);
-  const mutation = useUpdateBusinessInformation();
-  const { data: productTypeData } = useQuery({
-    ...orpc.adminProductType.getActiveTypes.queryOptions(),
-    enabled: open,
-  });
-  const [form, setForm] = useState({
-    shopName: "",
-    ownerName: "",
-    businessType: "",
-    productTypeId: "",
-    businessNature: "",
-    shopAddress: "",
-    thana: "",
-    district: "",
-    division: "",
-    postCode: "",
-    latitude: 0,
-    longitude: 0,
-  });
-
-  useEffect(() => {
-    if (!open) return;
-    setForm({
-      shopName: user?.shopName || application?.shopName || "",
-      ownerName: user?.ownerName || application?.ownerName || "",
-      businessType: user?.businessType || application?.businessType || "",
-      productTypeId: application?.productTypeId
-        ? String(application.productTypeId)
-        : "",
-      businessNature: application?.businessNature || "",
-      shopAddress: user?.shopAddress || application?.shopAddress || "",
-      thana: application?.thana || "",
-      district: application?.district || "",
-      division: application?.division || "",
-      postCode: application?.postCode || "",
-      latitude: coordinateValue(application?.latitude || user?.shopLat),
-      longitude: coordinateValue(application?.longitude || user?.shopLng),
-    });
-  }, [application, open, user]);
-
-  const update = (field: keyof typeof form, value: string) => {
-    setForm((current) => ({ ...current, [field]: value }));
-  };
-
-  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    await mutation.mutateAsync({
-      shopName: form.shopName,
-      ownerName: form.ownerName,
-      businessType: form.businessType as "retail" | "restaurant",
-      productTypeId: form.productTypeId ? Number(form.productTypeId) : null,
-      businessNature: (form.businessNature || null) as
-        | "retail_shop"
-        | "manufacturer"
-        | "importer"
-        | null,
-      shopAddress: form.shopAddress,
-      thana: form.thana,
-      district: nullable(form.district),
-      division: nullable(form.division),
-      postCode: nullable(form.postCode),
-      latitude: form.latitude || null,
-      longitude: form.longitude || null,
-    });
-    await onSaved();
-    setOpen(false);
-  };
-
-  return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <EditSectionButton>{triggerLabel}</EditSectionButton>
-      </DialogTrigger>
-      {!application ? (
-        <MissingRegistrationDialogContent section="business information" />
-      ) : (
-        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>Edit business information</DialogTitle>
-            <DialogDescription>
-              Update the business details originally submitted during
-              registration.
-            </DialogDescription>
-          </DialogHeader>
-          <form onSubmit={handleSubmit} className="space-y-5">
-            <div className="grid gap-4 sm:grid-cols-2">
-              <Field id="business-name" label="Business name">
-                <Input
-                  id="business-name"
-                  value={form.shopName}
-                  onChange={(event) => update("shopName", event.target.value)}
-                  required
-                  minLength={2}
-                  maxLength={150}
-                />
-              </Field>
-              <Field id="owner-name" label="Owner name">
-                <Input
-                  id="owner-name"
-                  value={form.ownerName}
-                  onChange={(event) => update("ownerName", event.target.value)}
-                  required
-                  minLength={2}
-                  maxLength={100}
-                />
-              </Field>
-              <Field id="business-type" label="Business type">
-                <Select
-                  value={form.businessType}
-                  onValueChange={(value) => update("businessType", value)}
-                >
-                  <SelectTrigger id="business-type" className="h-9 w-full">
-                    <SelectValue placeholder="Select a business type" />
-                  </SelectTrigger>
-                  <SelectContent position="popper">
-                    <SelectItem value="retail">Retail</SelectItem>
-                    <SelectItem value="restaurant">Restaurant</SelectItem>
-                  </SelectContent>
-                </Select>
-              </Field>
-              <Field id="business-category" label="Business category">
-                <Select
-                  value={form.productTypeId || NOT_PROVIDED_VALUE}
-                  onValueChange={(value) =>
-                    update(
-                      "productTypeId",
-                      value === NOT_PROVIDED_VALUE ? "" : value,
-                    )
-                  }
-                >
-                  <SelectTrigger id="business-category" className="h-9 w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent position="popper">
-                    <SelectItem value={NOT_PROVIDED_VALUE}>
-                      Not provided
-                    </SelectItem>
-                    {productTypeData?.types.map((type) => (
-                      <SelectItem key={type.id} value={String(type.id)}>
-                        {type.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </Field>
-              <Field id="business-nature" label="Business nature">
-                <Select
-                  value={form.businessNature || NOT_PROVIDED_VALUE}
-                  onValueChange={(value) =>
-                    update(
-                      "businessNature",
-                      value === NOT_PROVIDED_VALUE ? "" : value,
-                    )
-                  }
-                >
-                  <SelectTrigger id="business-nature" className="h-9 w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent position="popper">
-                    <SelectItem value={NOT_PROVIDED_VALUE}>
-                      Not provided
-                    </SelectItem>
-                    {RETAIL_BUSINESS_NATURES.map((nature) => (
-                      <SelectItem key={nature.id} value={nature.id}>
-                        {nature.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </Field>
-            </div>
-            <LocationPickerSection
-              label="Business location"
-              description="Search with Barikoi, use your current location, or drag the map pin. Thana, district, and division update automatically."
-              summaryLocationLevel="thana"
-              data={{
-                address: form.shopAddress,
-                addressBn: "",
-                area: "",
-                thana: form.thana,
-                district: form.district,
-                division: form.division,
-                postCode: form.postCode,
-                latitude: form.latitude,
-                longitude: form.longitude,
-              }}
-              onUpdate={(location) =>
-                setForm((current) => ({
-                  ...current,
-                  shopAddress: location.address,
-                  thana: location.thana || "",
-                  district: location.district,
-                  division: location.division,
-                  postCode: location.postCode,
-                  latitude: location.latitude,
-                  longitude: location.longitude,
-                }))
-              }
-            />
-            <Field id="business-thana" label="Thana">
-              <Input
-                id="business-thana"
-                value={form.thana}
-                onChange={(event) => update("thana", event.target.value)}
-                required
-                minLength={2}
-                maxLength={100}
-              />
-            </Field>
-            <DialogFooter>
-              <DialogClose asChild>
-                <Button type="button" variant="outline">
-                  Cancel
-                </Button>
-              </DialogClose>
-              <Button
-                type="submit"
-                disabled={
-                  mutation.isPending ||
-                  !form.businessType ||
-                  !form.shopAddress ||
-                  !form.thana.trim() ||
-                  !form.latitude ||
-                  !form.longitude
-                }
-                className="bg-emerald-600 hover:bg-emerald-700"
-              >
-                {mutation.isPending && (
-                  <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-                )}
-                Save business information
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      )}
-    </Dialog>
-  );
-}
-
-function ContactInformationDialog({
-  application,
-  user,
-}: {
-  application: BusinessApplication;
-  user: ProfileUser;
-}) {
-  const [open, setOpen] = useState(false);
-  const mutation = useUpdateBusinessContactInformation();
-  const [form, setForm] = useState({
-    phoneNumber: "",
-    email: "",
-    whatsappNumber: "",
-    facebookUrl: "",
-    messengerUrl: "",
-    websiteUrl: "",
-    telegramUrl: "",
-  });
-
-  useEffect(() => {
-    if (!open) return;
-    setForm({
-      phoneNumber: application?.phoneNumber || user?.phoneNumber || "",
-      email: application?.email || user?.email || "",
-      whatsappNumber: application?.whatsappNumber || "",
-      facebookUrl: application?.facebookUrl || "",
-      messengerUrl: application?.messengerUrl || "",
-      websiteUrl: application?.websiteUrl || "",
-      telegramUrl: application?.telegramUrl || "",
-    });
-  }, [application, open, user]);
-
-  const update = (field: keyof typeof form, value: string) => {
-    setForm((current) => ({ ...current, [field]: value }));
-  };
-
-  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    await mutation.mutateAsync({
-      phoneNumber: form.phoneNumber,
-      email: nullable(form.email),
-      whatsappNumber: nullable(form.whatsappNumber),
-      facebookUrl: nullable(form.facebookUrl),
-      messengerUrl: nullable(form.messengerUrl),
-      websiteUrl: nullable(form.websiteUrl),
-      telegramUrl: nullable(form.telegramUrl),
-    });
-    setOpen(false);
-  };
-
-  return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <EditSectionButton>Edit Contact Info</EditSectionButton>
-      </DialogTrigger>
-      {!application ? (
-        <MissingRegistrationDialogContent section="contact information" />
-      ) : (
-        <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-xl">
-          <DialogHeader>
-            <DialogTitle>Edit contact information</DialogTitle>
-            <DialogDescription>
-              These are public business contacts. Your sign-in credentials will
-              not change.
-            </DialogDescription>
-          </DialogHeader>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="grid gap-4 sm:grid-cols-2">
-              <Field id="contact-phone" label="Mobile number">
-                <Input
-                  id="contact-phone"
-                  type="tel"
-                  value={form.phoneNumber}
-                  onChange={(event) =>
-                    update("phoneNumber", event.target.value)
-                  }
-                  required
-                  minLength={10}
-                  maxLength={20}
-                />
-              </Field>
-              <Field id="contact-whatsapp" label="WhatsApp">
-                <Input
-                  id="contact-whatsapp"
-                  type="tel"
-                  value={form.whatsappNumber}
-                  onChange={(event) =>
-                    update("whatsappNumber", event.target.value)
-                  }
-                  maxLength={20}
-                />
-              </Field>
-            </div>
-            <Field id="contact-email" label="Email Address">
-              <Input
-                id="contact-email"
-                type="email"
-                value={form.email}
-                onChange={(event) => update("email", event.target.value)}
-                maxLength={320}
-              />
-            </Field>
-            {(
-              [
-                ["facebookUrl", "Facebook Page"],
-                ["messengerUrl", "Messenger"],
-                ["websiteUrl", "Website"],
-                ["telegramUrl", "Telegram (Optional)"],
-              ] as const
-            ).map(([field, label]) => (
-              <Field key={field} id={`contact-${field}`} label={label}>
-                <Input
-                  id={`contact-${field}`}
-                  type="url"
-                  value={form[field]}
-                  onChange={(event) => update(field, event.target.value)}
-                  placeholder="https://"
-                  maxLength={2048}
-                />
-              </Field>
-            ))}
-            <DialogFooter>
-              <DialogClose asChild>
-                <Button type="button" variant="outline">
-                  Cancel
-                </Button>
-              </DialogClose>
-              <Button
-                type="submit"
-                disabled={mutation.isPending}
-                className="bg-emerald-600 hover:bg-emerald-700"
-              >
-                {mutation.isPending && (
-                  <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-                )}
-                Save contact information
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      )}
-    </Dialog>
   );
 }
 
