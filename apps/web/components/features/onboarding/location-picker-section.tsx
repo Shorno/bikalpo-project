@@ -7,7 +7,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import type { LocationData } from "@/constants/seller-registration";
+import type { LocationAddress, LocationData } from "@/constants/seller-registration";
 
 import type { BarikoiPlace } from "@/hooks/use-barikoi-autocomplete";
 import { useBarikoiAutocomplete } from "@/hooks/use-barikoi-autocomplete";
@@ -193,20 +193,7 @@ export function LocationPickerSection({
 
     lng: number,
 
-    addressInfo?: {
-      address: string;
-
-      addressBn: string;
-
-      area: string;
-      thana?: string;
-
-      district: string;
-
-      division: string;
-
-      postCode: string;
-    },
+    addressInfo?: LocationAddress,
   ) => {
     if (addressInfo) {
       setLocationError("");

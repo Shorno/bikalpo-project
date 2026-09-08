@@ -110,6 +110,8 @@ export type LocationData = {
   longitude: number;
 };
 
+export type LocationAddress = Omit<LocationData, "latitude" | "longitude">;
+
 export const EMPTY_LOCATION: LocationData = {
   address: "",
   addressBn: "",

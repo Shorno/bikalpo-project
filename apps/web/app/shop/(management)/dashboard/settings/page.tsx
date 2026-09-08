@@ -137,6 +137,7 @@ export default function ShopSettingsPage() {
   const [lng, setLng] = useState("");
   const [shopLogo, setShopLogo] = useState("");
   const [logoDialogOpen, setLogoDialogOpen] = useState(false);
+  const [isLogoUploading, setIsLogoUploading] = useState(false);
   const [openingTime, setOpeningTime] = useState("");
   const [closingTime, setClosingTime] = useState("");
 
@@ -239,6 +240,8 @@ export default function ShopSettingsPage() {
               <Dialog
                 open={logoDialogOpen}
                 onOpenChange={(open) => {
+                  if (isLogoUploading || updateProfileMutation.isPending)
+                    return;
                   setLogoDialogOpen(open);
                   if (open) setShopLogo(user?.shopLogo || "");
                 }}
@@ -259,16 +262,28 @@ export default function ShopSettingsPage() {
                     value={shopLogo}
                     onChange={setShopLogo}
                     deleteOnRemove={false}
+                    onUploadStateChange={setIsLogoUploading}
                     folder={`shop-logos/${user?.id || "shop"}`}
                     maxSizeMB={2}
-                    disabled={updateProfileMutation.isPending}
+                    disabled={
+                      isLogoUploading || updateProfileMutation.isPending
+                    }
                   />
                   <DialogFooter>
                     <DialogClose asChild>
-                      <Button variant="outline">Cancel</Button>
+                      <Button
+                        variant="outline"
+                        disabled={
+                          isLogoUploading || updateProfileMutation.isPending
+                        }
+                      >
+                        Cancel
+                      </Button>
                     </DialogClose>
                     <Button
-                      disabled={updateProfileMutation.isPending}
+                      disabled={
+                        isLogoUploading || updateProfileMutation.isPending
+                      }
                       onClick={async () => {
                         await updateProfileMutation.mutateAsync({
                           shopLogo: shopLogo || null,
@@ -280,7 +295,7 @@ export default function ShopSettingsPage() {
                       {updateProfileMutation.isPending && (
                         <Loader2 className="size-4 animate-spin" />
                       )}
-                      Save Logo
+                      {isLogoUploading ? "Uploading logo..." : "Save Logo"}
                     </Button>
                   </DialogFooter>
                 </DialogContent>

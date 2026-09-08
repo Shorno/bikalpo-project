@@ -3,6 +3,7 @@
 import L from "leaflet";
 import { useEffect, useRef } from "react";
 import "leaflet/dist/leaflet.css";
+import type { LocationAddress } from "@/constants/seller-registration";
 import { useBarikoiReverseGeocode } from "@/hooks/use-barikoi-reverse-geocode";
 
 interface LocationPickerMapProps {
@@ -11,15 +12,7 @@ interface LocationPickerMapProps {
   onPositionChange: (
     lat: number,
     lng: number,
-    addressInfo?: {
-      address: string;
-      addressBn: string;
-      area: string;
-      thana?: string;
-      district: string;
-      division: string;
-      postCode: string;
-    },
+    addressInfo?: LocationAddress,
   ) => void;
 }
 

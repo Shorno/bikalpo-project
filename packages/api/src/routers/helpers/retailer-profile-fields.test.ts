@@ -158,6 +158,12 @@ test("shop profile supports logo-only, hours-only, and legacy combined updates",
   }
 });
 
+test("shop profile rejects updates with no recognized changes", () => {
+  for (const input of [{}, { shopLogo: undefined }, { ignored: "value" }]) {
+    assert.equal(retailerShopProfileSchema.safeParse(input).success, false);
+  }
+});
+
 test("shop profile rejects partial hours and mismatched null states", () => {
   for (const openingTime of [undefined, null, "09:00"]) {
     for (const closingTime of [undefined, null, "18:00"]) {

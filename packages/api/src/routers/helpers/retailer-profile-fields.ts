@@ -43,6 +43,10 @@ export const retailerShopProfileSchema = z
       .nullable()
       .optional(),
   })
+  .refine(
+    (value) => Object.values(value).some((field) => field !== undefined),
+    { message: "Provide a logo or operating hours to update" },
+  )
   .superRefine((value, ctx) => {
     if ((value.openingTime === undefined) !== (value.closingTime === undefined)) {
       ctx.addIssue({
