@@ -102,6 +102,7 @@ type UnitOfferDisplay = {
   otherFacilities?: string | null;
   imageUrl?: string | null;
   imageUrls?: string[];
+  videoUrl?: string | null;
   status?: string;
 };
 
@@ -261,6 +262,15 @@ function UnitInformationPanel({
   offer: UnitOfferDisplay | null;
 }) {
   const listingStatus = offer?.status ?? unit.currentListing?.status ?? null;
+  const residential = [
+    "family_flat",
+    "bachelor_room",
+    "sublet",
+    "other",
+  ].includes(unit.unitType);
+  const showBathrooms =
+    residential || ["office", "shop", "warehouse"].includes(unit.unitType);
+  const showBalconies = residential || unit.unitType === "office";
   const photoCount = new Set(
     [
       ...(offer?.imageUrls ?? unit.currentListing?.imageUrls ?? []),
@@ -272,31 +282,50 @@ function UnitInformationPanel({
     ["Property ID *", property.propertyCode],
     ["Property Name", property.name],
     ["Unit Name / Number *", unit.name],
+    ["Address source", unit.addressOverride ? "Unit-specific address" : "Property registration address"],
+    ["Unit address", (unit.addressOverride ?? property).fullAddress],
+    ["Unit location", [
+      (unit.addressOverride ?? property).area,
+      (unit.addressOverride ?? property).upazila,
+      (unit.addressOverride ?? property).district,
+      (unit.addressOverride ?? property).division,
+    ].filter(Boolean).join(", ")],
     ["Listing Category *", humanize(unit.unitType)],
     ["Floor Number *", formatFloorLabel(unit.floorNumber)],
     ["Unit Size *", `${unit.sizeSqFt} sq ft`],
     ["Unit Photos *", `${photoCount} image${photoCount === 1 ? "" : "s"}`],
     [
-      "Property Video (Optional)",
-      property.videoUrl ? (
+      "Unit / Listing Video (Optional)",
+      offer?.videoUrl ? (
         <a
-          key="property-video"
-          href={property.videoUrl}
+          key="unit-listing-video"
+          href={offer.videoUrl}
           target="_blank"
           rel="noreferrer"
           className="font-medium text-emerald-700 hover:underline"
         >
-          View property video
+          View unit / listing video
         </a>
       ) : (
         "Not added"
       ),
     ],
-    ["Balcony *", unit.balconies],
-    ["Bathrooms *", unit.bathrooms],
-    ["Drawing Room", unit.hasDrawingRoom ? "Yes" : "No"],
-    ["Dining Space", unit.hasDiningSpace ? "Yes" : "No"],
-    ["Kitchen", unit.hasKitchen ? "Yes" : "No"],
+    ...(residential
+      ? ([["Bedrooms *", unit.bedrooms]] as Array<[string, ReactNode]>)
+      : []),
+    ...(showBathrooms
+      ? ([["Bathrooms *", unit.bathrooms]] as Array<[string, ReactNode]>)
+      : []),
+    ...(showBalconies
+      ? ([["Balconies", unit.balconies]] as Array<[string, ReactNode]>)
+      : []),
+    ...(residential
+      ? ([
+          ["Drawing Room", unit.hasDrawingRoom ? "Yes" : "No"],
+          ["Dining Space", unit.hasDiningSpace ? "Yes" : "No"],
+          ["Kitchen", unit.hasKitchen ? "Yes" : "No"],
+        ] as Array<[string, ReactNode]>)
+      : []),
     [
       "Preferred Tenant *",
       offer?.preferredTenant ? humanize(offer.preferredTenant) : "Not selected",
@@ -1415,7 +1444,7 @@ export function UnitDetailsClient({
                 <Button variant="outline" asChild>
                   <Link href={liveHref} target="_blank" prefetch={false}>
                     {listing?.visibility === "public" ? <Eye /> : <QrCode />}
-                    View Live
+                    View Listing
                   </Link>
                 </Button>
               ) : null}

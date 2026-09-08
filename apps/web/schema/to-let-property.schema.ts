@@ -1,3 +1,4 @@
+import { unitAddressSchema } from "@bikalpo-project/api/lib/tolet-unit-address";
 import { z } from "zod";
 
 const httpUrl = z.string().trim().max(2048).pipe(z.httpUrl());
@@ -103,7 +104,8 @@ export const propertyBasicSchema = z.object({
   }),
   division: z.string().trim().min(2, "Division is required").max(100),
   district: z.string().trim().min(2, "District is required").max(100),
-  area: z.string().trim().min(2, "Area or Upazila is required").max(150),
+  area: z.string().trim().min(2, "Area is required").max(150),
+  upazila: z.string().trim().min(2, "Upazila / Thana is required").max(150),
   fullAddress: z.string().trim().min(5, "Full address is required").max(1000),
   nearbyLandmark: z.string().trim().max(500),
   latitude: optionalCoordinate(-90, 90, "Latitude"),
@@ -192,6 +194,7 @@ export type PropertyEditableValues = Omit<
 };
 
 export const unitSchema = z.object({
+  addressOverride: unitAddressSchema.nullable().default(null),
   name: z.string().trim().min(1, "Unit name or number is required").max(100),
   unitType: z.enum(unitTypeValues, { error: "Select a unit type" }),
   floorNumber: z.coerce

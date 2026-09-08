@@ -1,3 +1,4 @@
+import { unitAddressSchema } from "../lib/tolet-unit-address";
 import { db } from "@bikalpo-project/db";
 import {
 	type ToletProperty,
@@ -123,6 +124,7 @@ export const toletPropertyFieldsSchema = z
 		division: z.string().trim().min(2).max(100),
 		district: z.string().trim().min(2).max(100),
 		area: z.string().trim().min(2).max(150),
+		upazila: z.string().trim().max(150).optional(),
 		fullAddress: z.string().trim().min(5).max(1000),
 		nearbyLandmark: optionalTextSchema(500),
 		latitude: optionalCoordinateSchema(-90, 90),
@@ -165,6 +167,7 @@ export const updateToletPropertyInputSchema = z
 
 export const toletUnitFieldsSchema = z
 	.object({
+		addressOverride: unitAddressSchema.nullable().optional(),
 		name: z.string().trim().min(1).max(100),
 		unitType: z.enum(UNIT_TYPES),
 		floorNumber: z.coerce.number().int().min(-10).max(500),
@@ -289,6 +292,7 @@ function propertyWriteValues(input: PropertyFields) {
 		division: input.division,
 		district: input.district,
 		area: input.area,
+		...(input.upazila !== undefined ? { upazila: input.upazila || null } : {}),
 		fullAddress: input.fullAddress,
 		nearbyLandmark: input.nearbyLandmark ?? null,
 		latitude: input.latitude == null ? null : String(input.latitude),
@@ -312,18 +316,29 @@ function propertyWriteValues(input: PropertyFields) {
 }
 
 function unitWriteValues(input: UnitFields) {
+	const residential = [
+		"family_flat",
+		"bachelor_room",
+		"sublet",
+		"other",
+	].includes(input.unitType);
+	const hasBathroom =
+		residential || ["office", "shop", "warehouse"].includes(input.unitType);
+	const hasBalcony = residential || input.unitType === "office";
+	const canBeFurnished = hasBathroom || input.unitType === "garage";
 	return {
+		...(input.addressOverride !== undefined ? { addressOverride: input.addressOverride } : {}),
 		name: input.name,
 		unitType: input.unitType,
 		floorNumber: input.floorNumber,
 		sizeSqFt: input.sizeSqFt,
-		bedrooms: input.bedrooms,
-		bathrooms: input.bathrooms,
-		balconies: input.balconies,
-		hasDrawingRoom: input.hasDrawingRoom,
-		hasDiningSpace: input.hasDiningSpace,
-		hasKitchen: input.hasKitchen,
-		isFurnished: input.isFurnished,
+		bedrooms: residential ? input.bedrooms : 0,
+		bathrooms: hasBathroom ? input.bathrooms : 0,
+		balconies: hasBalcony ? input.balconies : 0,
+		hasDrawingRoom: residential && input.hasDrawingRoom,
+		hasDiningSpace: residential && input.hasDiningSpace,
+		hasKitchen: residential && input.hasKitchen,
+		isFurnished: canBeFurnished && input.isFurnished,
 		description: input.description ?? null,
 		imageUrls: input.imageUrls,
 	};
@@ -788,6 +803,11 @@ export const toLetPropertyRouter = {
 		.handler(async ({ context, input }) => {
 			const userId = context.session.user.id;
 			const identity = parsePropertyCode(input.propertyCode);
+			if (input.data.imageUrls.length === 0) {
+				throw new ORPCError("BAD_REQUEST", {
+					message: "Add at least one unit photo",
+				});
+			}
 
 			try {
 				const created = await db.transaction(async (tx) => {

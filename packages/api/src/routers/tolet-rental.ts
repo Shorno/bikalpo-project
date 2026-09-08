@@ -1,7 +1,9 @@
+import { unitLocationLabel } from "../lib/tolet-unit-address";
 import { createHmac } from "node:crypto";
 import { db } from "@bikalpo-project/db";
 import {
 	toletBookingRequest,
+	toletAlertNotification,
 	toletProperty,
 	toletRentalAlert,
 	toletRentalComment,
@@ -12,10 +14,12 @@ import {
 } from "@bikalpo-project/db/schema";
 import { env } from "@bikalpo-project/env/server";
 import { ORPCError } from "@orpc/server";
-import { and, asc, count, desc, eq, inArray } from "drizzle-orm";
+import { and, asc, count, desc, eq, inArray, isNull } from "drizzle-orm";
 import { z } from "zod";
 
 import { consumerProcedure } from "../index";
+import { syncToLetAlertNotifications } from "../services/tolet-alert-notifications";
+import { toLetMarketplaceStatus } from "./helpers/tolet-marketplace-visibility";
 import {
 	completeExpiredToLetContract,
 	ensureToLetRentCycles,
@@ -189,6 +193,62 @@ function alertDto(alert: typeof toletRentalAlert.$inferSelect) {
 }
 
 export const toLetRentalRouter = {
+	listAlertNotifications: consumerProcedure
+		.route({ method: "GET", path: "/to-let/alert-notifications", tags: ["To-Let Rental"], summary: "Discover and list my matched rental notifications" })
+		.input(z.object({ page: z.number().int().min(1).max(10000).default(1) }))
+		.handler(async ({ context, input }) => {
+			const userId = context.session.user.id;
+			await syncToLetAlertNotifications(userId);
+			const scope = eq(toletAlertNotification.userId, userId);
+			const [rows, totals, unread] = await Promise.all([
+				db.select({ notification: toletAlertNotification, listing: toletUnitListing, unit: toletUnit, property: toletProperty })
+					.from(toletAlertNotification)
+					.innerJoin(toletUnitListing, eq(toletAlertNotification.listingId, toletUnitListing.id))
+					.innerJoin(toletUnit, eq(toletUnitListing.unitId, toletUnit.id))
+					.innerJoin(toletProperty, eq(toletUnit.propertyId, toletProperty.id))
+					.where(scope).orderBy(desc(toletAlertNotification.createdAt), desc(toletAlertNotification.id)).limit(12).offset((input.page - 1) * 12),
+				db.select({ value: count() }).from(toletAlertNotification).where(scope),
+				db.select({ value: count() }).from(toletAlertNotification).where(and(scope, isNull(toletAlertNotification.readAt))),
+			]);
+			return {
+				total: totals[0]?.value ?? 0, unreadCount: unread[0]?.value ?? 0,
+				notifications: rows.map(({ notification, listing, unit, property }) => {
+					const status = property.status === "active" && listing.visibility === "public"
+						? toLetMarketplaceStatus({ listingStatus: listing.status, unitStatus: unit.status, publishedAt: listing.publishedAt, createdAt: listing.createdAt, closedAt: listing.closedAt }) : null;
+					return {
+						id: notification.id, createdAt: notification.createdAt.toISOString(), readAt: notification.readAt?.toISOString() ?? null,
+						listing: status ? {
+							listingCode: `LST-${String(listing.publicNumber).padStart(6, "0")}`,
+							title: listing.title, propertyName: property.name, unitName: unit.name,
+							location: unitLocationLabel(property, unit),
+							unitType: unit.unitType, sizeSqFt: unit.sizeSqFt, bedrooms: unit.bedrooms, bathrooms: unit.bathrooms,
+							monthlyRent: listing.monthlyRentVisible ? Number(listing.monthlyRent) : null,
+							imageUrl: listing.imageUrls[0] ?? unit.imageUrls[0] ?? property.coverImageUrl,
+							imageUrls: Array.from(new Set([...listing.imageUrls, ...unit.imageUrls].filter(Boolean))),
+							availableFrom: listing.availableFrom,
+							facilities: [
+								property.hasWaterSupply && "Water supply", property.hasGasConnection && "Gas connection",
+								property.hasSecurityGuard && "Security", property.hasParking && "Parking",
+								property.hasLift && "Lift", listing.hasInternet && "Internet",
+							].filter((value): value is string => Boolean(value)),
+							status,
+						} : null,
+					};
+				}),
+			};
+		}),
+
+	markAlertNotificationsRead: consumerProcedure
+		.route({ method: "POST", path: "/to-let/alert-notifications/read", tags: ["To-Let Rental"], summary: "Mark my received rental alerts as read" })
+		.input(z.object({ notificationIds: z.array(z.uuid()).min(1).max(12) }).strict())
+		.handler(async ({ context, input }) => {
+			await db.update(toletAlertNotification).set({ readAt: new Date() }).where(and(
+				eq(toletAlertNotification.userId, context.session.user.id),
+				inArray(toletAlertNotification.id, input.notificationIds), isNull(toletAlertNotification.readAt),
+			));
+			return { success: true };
+		}),
+
 	listAlerts: consumerProcedure
 		.route({
 			method: "GET",
@@ -274,6 +334,25 @@ export const toLetRentalRouter = {
 				});
 			}
 			return { alert: alertDto(alert) };
+		}),
+
+	deleteAlert: consumerProcedure
+		.route({
+			method: "DELETE",
+			path: "/to-let/alerts/{alertId}",
+			tags: ["To-Let Rental"],
+			summary: "Delete one of my saved To-Let alerts",
+		})
+		.input(z.object({ alertId: z.uuid("Invalid alert ID") }).strict())
+		.handler(async ({ context, input }) => {
+			const [deleted] = await db.delete(toletRentalAlert)
+				.where(and(
+					eq(toletRentalAlert.id, input.alertId),
+					eq(toletRentalAlert.userId, context.session.user.id),
+				))
+				.returning({ id: toletRentalAlert.id });
+			if (!deleted) throw new ORPCError("NOT_FOUND", { message: "Alert not found" });
+			return { success: true };
 		}),
 
 	updateAlertStatus: consumerProcedure

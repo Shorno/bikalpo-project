@@ -533,6 +533,27 @@
       "when": 1789202000000,
       "tag": "0076_store_item_requests",
       "breakpoints": true
+    },
+    {
+      "idx": 77,
+      "version": "7",
+      "when": 1789202100000,
+      "tag": "0077_tolet_alert_notifications",
+      "breakpoints": true
+    },
+    {
+      "idx": 78,
+      "version": "7",
+      "when": 1789202200000,
+      "tag": "0078_tolet_property_upazila",
+      "breakpoints": true
+    },
+    {
+      "idx": 79,
+      "version": "7",
+      "when": 1789202300000,
+      "tag": "0079_tolet_unit_address",
+      "breakpoints": true
     }
   ]
 }

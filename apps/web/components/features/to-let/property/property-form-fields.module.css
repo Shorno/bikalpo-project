@@ -1,0 +1,32 @@
+/* Keep field geometry stable as selected values and validation messages change. */
+.fields :is([data-slot="input"]:not([type="file"]):not([type="hidden"]), [data-slot="select-trigger"], button[role="combobox"], select) {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  height: 2.5rem;
+  min-height: 2.5rem;
+  box-sizing: border-box;
+}
+
+.fields :is([data-slot="select-trigger"], button[role="combobox"]) {
+  overflow: hidden;
+}
+
+.fields [data-slot="select-value"] {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fields :global(.grid) > * {
+  min-width: 0;
+}
+
+.fields textarea {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  min-height: 7.5rem;
+  resize: vertical;
+}

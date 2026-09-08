@@ -5,6 +5,7 @@ import {
 	date,
 	index,
 	integer,
+	jsonb,
 	numeric,
 	pgEnum,
 	pgTable,
@@ -83,6 +84,7 @@ export const toletProperty = pgTable(
 		division: varchar("division", { length: 100 }).notNull(),
 		district: varchar("district", { length: 100 }).notNull(),
 		area: varchar("area", { length: 150 }).notNull(),
+		upazila: varchar("upazila", { length: 150 }),
 		fullAddress: text("full_address").notNull(),
 		nearbyLandmark: text("nearby_landmark"),
 		latitude: text("latitude"),
@@ -147,6 +149,10 @@ export const toletUnit = pgTable(
 
 		name: varchar("name", { length: 100 }).notNull(),
 		unitType: varchar("unit_type", { length: 50 }).notNull(),
+		addressOverride: jsonb("address_override").$type<{
+			division: string; district: string; upazila: string; area: string;
+			fullAddress: string; nearbyLandmark: string; latitude: string | null; longitude: string | null;
+		}>(),
 		status: toletUnitStatusEnum("status").default("vacant").notNull(),
 		floorNumber: integer("floor_number").notNull(),
 		sizeSqFt: integer("size_sq_ft").notNull(),

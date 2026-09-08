@@ -1,3 +1,4 @@
+import { effectiveUnitAddress, unitLocationLabel } from "../lib/tolet-unit-address";
 import { db } from "@bikalpo-project/db";
 import {
   type ToletProperty,
@@ -261,6 +262,7 @@ function publicMarketplaceListingScope(now = new Date()) {
 
 function publicListingDto(row: JoinedListing, now = new Date()) {
   const { listing, unit, property } = row;
+  const address = effectiveUnitAddress(property, unit);
   const marketplaceStatus = toLetMarketplaceStatus(
     {
       listingStatus: listing.status,
@@ -314,7 +316,7 @@ function publicListingDto(row: JoinedListing, now = new Date()) {
     hasInternet: listing.hasInternet,
     otherFacilities: listing.otherFacilities,
     imageUrls,
-    videoUrl: listing.videoUrl ?? property.videoUrl,
+    videoUrl: listing.videoUrl,
     visibility: listing.visibility,
     marketplaceStatus: marketplaceStatus ?? "available",
     bookedAt: listing.closedAt,
@@ -328,12 +330,14 @@ function publicListingDto(row: JoinedListing, now = new Date()) {
       propertyType: property.propertyType,
       buildingType: property.buildingType,
       coverImageUrl: property.coverImageUrl,
-      division: property.division,
-      district: property.district,
-      area: property.area,
-      nearbyLandmark: property.nearbyLandmark,
-      latitude: property.latitude,
-      longitude: property.longitude,
+      division: address.division,
+      district: address.district,
+      upazila: address.upazila,
+      area: address.area,
+      fullAddress: address.fullAddress,
+      nearbyLandmark: address.nearbyLandmark,
+      latitude: address.latitude,
+      longitude: address.longitude,
       hasParking: property.hasParking,
       hasLift: property.hasLift,
       hasSecurityGuard: property.hasSecurityGuard,
@@ -360,7 +364,7 @@ function publicListingDto(row: JoinedListing, now = new Date()) {
       name: property.ownerName,
       phone: property.mobileNumber,
     },
-    location: [property.area, property.district, property.division].join(", "),
+    location: unitLocationLabel(property, unit),
   };
 }
 
@@ -557,11 +561,7 @@ export const toLetUnitListingRouter = {
             propertyCode: formatPropertyCode(row.property),
             propertyName: row.property.name,
             qrToken: row.property.qrToken,
-            location: [
-              row.property.area,
-              row.property.district,
-              row.property.division,
-            ].join(", "),
+            location: unitLocationLabel(row.property, row.unit),
             unitCode: formatUnitCode(row.unit),
             unitName: row.unit.name,
             unitType: row.unit.unitType,

@@ -1,34 +1,36 @@
-import type { LucideIcon } from "lucide-react";
+import { ListingViewRecorder } from "@/components/features/to-let/listing-view-recorder";
 import {
   ArrowLeft,
-  Bath,
-  BedDouble,
   Building2,
-  CalendarDays,
-  Check,
-  DoorOpen,
+  ChevronRight,
   ExternalLink,
-  Eye,
-  Layers3,
   MapPin,
-  MessageCircle,
   Phone,
-  Ruler,
   ShieldCheck,
   Video,
+  WalletCards,
 } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { RequestBookingButton } from "@/components/features/to-let/booking/request-booking-dialog";
-import { ListingViewRecorder } from "@/components/features/to-let/listing-view-recorder";
-import { PublicListingGallery } from "@/components/features/to-let/public-listing-gallery";
+import {
+  ToLetDetailHero,
+  ToLetDetailsSection,
+  ToLetDetailsShell,
+  ToLetFacilityItem,
+  ToLetInfoTile,
+  ToLetRentItem,
+  ToLetSummaryRow,
+} from "@/components/features/to-let/to-let-detail-layout";
 import {
   getPublicToLetUnitListingByCode,
   getToLetQrUnitListingByCode,
 } from "@/lib/public-data";
 
-export const dynamic = "force-dynamic";
+// Public display data uses the same cache window as product details.
+// Booking mutations still validate current availability in the database.
+export const revalidate = 30;
 
 export const metadata: Metadata = {
   title: "To-Let Listing",
@@ -52,9 +54,7 @@ function tenantLabel(value: string) {
 }
 
 function money(value: number | null) {
-  return value === null
-    ? "Hidden by owner"
-    : `BDT ${value.toLocaleString("en-BD")}`;
+  return value === null ? "—" : `BDT ${value.toLocaleString("en-BD")}`;
 }
 
 function formatDate(value: string | Date | null) {
@@ -91,20 +91,15 @@ function formatFloor(floor: number) {
   return `Floor ${floor}`;
 }
 
-function whatsAppPhone(value: string) {
-  const digits = value.replace(/\D/g, "");
-  return digits.startsWith("0") ? `88${digits}` : digits;
-}
-
 export default async function PublicListingPage({
   params,
   searchParams,
 }: PublicListingPageProps) {
-  const { listingCode } = await params;
-  const { qrToken } = (await searchParams) ?? {};
+  const [{ listingCode }, query] = await Promise.all([params, searchParams]);
+  const { qrToken } = query ?? {};
   const listing = qrToken
     ? await getToLetQrUnitListingByCode(qrToken, listingCode, 0)
-    : await getPublicToLetUnitListingByCode(listingCode, 0);
+    : await getPublicToLetUnitListingByCode(listingCode, 30);
 
   if (!listing) {
     notFound();
@@ -127,21 +122,6 @@ export default async function PublicListingPage({
       included: listing.utilityChargeIncluded,
     },
   ];
-  const facilities = [
-    listing.hasInternet && "Internet",
-    listing.unit.hasDrawingRoom && "Drawing room",
-    listing.unit.hasDiningSpace && "Dining space",
-    listing.unit.hasKitchen && "Kitchen",
-    listing.unit.isFurnished && "Furnished",
-    listing.property.hasParking && "Parking",
-    listing.property.hasLift && "Lift",
-    listing.property.hasSecurityGuard && "Security guard",
-    listing.property.hasCctv && "CCTV",
-    listing.property.hasGenerator && "Generator",
-    listing.property.hasWaterSupply && "Water supply",
-    listing.property.hasGasConnection && "Gas connection",
-    listing.property.hasElectricity && "Electricity",
-  ].filter((facility): facility is string => Boolean(facility));
   const availableFrom = formatDate(listing.availableFrom);
   const marketplaceVisibleUntil = formatDate(listing.marketplaceVisibleUntil);
   const isBooked = listing.marketplaceStatus === "booked";
@@ -152,6 +132,7 @@ export default async function PublicListingPage({
       ? "Available now"
       : `Available from ${availableFrom}`;
   const publishedAt = formatDate(listing.publishedAt);
+  const bookedAt = formatDate(listing.bookedAt);
   const latitude = Number(listing.property.latitude);
   const longitude = Number(listing.property.longitude);
   const hasCoordinates =
@@ -163,139 +144,93 @@ export default async function PublicListingPage({
     : null;
 
   return (
-    <div className="min-h-screen bg-muted/20">
-      <ListingViewRecorder
-        key={`${listingCode}:${qrToken ?? "public"}`}
-        listingCode={listingCode}
-        qrToken={qrToken}
-      />
-      <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 sm:py-8 lg:px-8 lg:py-10">
-        <Link
-          href={qrToken ? `/to-let/qr/${qrToken}` : "/to-let"}
-          className="inline-flex items-center gap-2 text-sm font-semibold text-primary transition-colors hover:text-primary/80 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary"
-        >
-          <ArrowLeft className="size-4" aria-hidden="true" />
-          {qrToken ? "Back to property" : "Back to listings"}
-        </Link>
+    <div className="min-h-screen bg-zinc-50">
+      <ListingViewRecorder key={`${listingCode}:${qrToken ?? "public"}`} listingCode={listingCode} qrToken={qrToken} />
+      <nav
+        aria-label="Breadcrumb"
+        className="border-b border-zinc-200 bg-white"
+      >
+        <ol className="mx-auto flex min-h-12 max-w-7xl items-center gap-2 px-4 text-xs text-zinc-500 sm:px-6 lg:px-8">
+          <li>
+            <Link href="/" className="hover:text-blue-700">
+              Home
+            </Link>
+          </li>
+          <ChevronRight className="size-3.5" aria-hidden="true" />
+          <li>
+            <Link href="/to-let" className="hover:text-blue-700">
+              To-Let
+            </Link>
+          </li>
+          <ChevronRight className="size-3.5" aria-hidden="true" />
+          <li className="max-w-40 truncate text-zinc-700 sm:max-w-none">
+            {humanize(listing.unit.unitType)}
+          </li>
+          <ChevronRight className="size-3.5" aria-hidden="true" />
+          <li className="font-mono text-zinc-700">{listing.listingCode}</li>
+        </ol>
+      </nav>
 
-        <header className="mt-5 border-b border-border pb-6">
-          <div className="flex flex-wrap items-center gap-2 text-xs font-semibold">
-            <span
-              className={`rounded-full px-3 py-1 ring-1 ${
-                isBooked
-                  ? "bg-amber-50 text-amber-700 ring-amber-200"
-                  : "bg-emerald-50 text-emerald-700 ring-emerald-200"
-              }`}
-            >
-              {isBooked ? "Booked" : "Available to book"}
-            </span>
-            <span className="rounded-full bg-primary/8 px-3 py-1 text-primary">
-              {tenantLabel(listing.preferredTenant)}
-            </span>
-            <span className="rounded-full bg-background px-3 py-1 text-muted-foreground ring-1 ring-border">
-              {humanize(listing.unit.unitType)}
-            </span>
-          </div>
-
-          <div className="mt-4 flex flex-col justify-between gap-4 lg:flex-row lg:items-end">
-            <div>
-              <p className="text-xs font-semibold tracking-[0.12em] text-primary uppercase">
-                {listing.listingCode}
-              </p>
-              <h1 className="mt-1 max-w-4xl text-2xl font-bold tracking-tight text-foreground sm:text-3xl lg:text-4xl">
-                {listing.title}
-              </h1>
-              <p className="mt-3 flex items-start gap-2 text-sm text-muted-foreground sm:items-center">
-                <MapPin className="mt-0.5 size-4 shrink-0 text-primary sm:mt-0" />
-                <span>
-                  {listing.location}
-                  {listing.property.nearbyLandmark
-                    ? ` · Near ${listing.property.nearbyLandmark}`
-                    : ""}
-                </span>
-              </p>
-            </div>
-
-            <div className="flex flex-wrap gap-x-5 gap-y-2 text-xs text-muted-foreground sm:text-sm">
-              <span className="inline-flex items-center gap-1.5">
-                <Eye className="size-4" aria-hidden="true" />
-                {listing.viewCount.toLocaleString("en-BD")} views
-              </span>
-              {publishedAt ? (
-                <span className="inline-flex items-center gap-1.5">
-                  <CalendarDays className="size-4" aria-hidden="true" />
-                  Published {publishedAt}
-                </span>
-              ) : null}
-            </div>
+      <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
+        <header className="flex flex-wrap items-center gap-4 rounded-lg border border-zinc-200 bg-white px-4 py-3">
+          <Link
+            href={qrToken ? `/to-let/qr/${qrToken}` : "/to-let"}
+            className="inline-flex min-h-10 items-center gap-2 rounded-md border border-zinc-300 px-3 text-sm font-semibold text-zinc-900 transition-colors hover:border-blue-300 hover:text-blue-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
+          >
+            <ArrowLeft className="size-4" aria-hidden="true" />
+            Back
+          </Link>
+          <div className="min-w-0">
+            <h1 className="text-lg font-bold text-zinc-950 sm:text-xl">
+              {listing.title}
+            </h1>
+            <p className="mt-0.5 font-mono text-xs text-zinc-500">
+              {listing.listingCode}
+            </p>
           </div>
         </header>
 
-        <div className="mt-6 grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
-          <div>
-            <PublicListingGallery
-              imageUrls={listing.imageUrls}
-              alt={listing.title}
-            />
-          </div>
-
-          <aside className="self-stretch lg:col-start-2 lg:row-span-2 lg:row-start-1">
-            <div className="space-y-4 lg:sticky lg:top-28">
-              <section
-                id="booking"
-                className="scroll-mt-28 rounded-2xl border border-border bg-background p-5 shadow-sm sm:p-6"
-              >
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div>
-                    <p className="text-sm font-medium text-muted-foreground">
-                      Monthly rent
-                    </p>
-                    <p className="mt-1 text-3xl font-bold tracking-tight text-emerald-600">
-                      {money(listing.monthlyRent)}
-                    </p>
-                    {listing.monthlyRent !== null ? (
-                      <p className="mt-0.5 text-xs text-muted-foreground">
-                        per month
-                      </p>
-                    ) : null}
-                  </div>
-                  <span
-                    className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ${
-                      isBooked
-                        ? "bg-amber-50 text-amber-700"
-                        : "bg-emerald-50 text-emerald-700"
-                    }`}
-                  >
-                    {availability}
-                  </span>
-                </div>
-
-                <div className="mt-5 space-y-3 border-t border-border pt-4">
-                  <ChargeRow
-                    label="Advance"
-                    value={money(listing.advanceAmount)}
-                  />
-                  <ChargeRow
-                    label="Security deposit"
-                    value={money(listing.securityDeposit)}
-                  />
-                  {charges.map((charge) => (
-                    <ChargeRow
-                      key={charge.label}
-                      label={charge.label}
-                      value={
-                        charge.included
-                          ? "Included in rent"
-                          : money(charge.value)
-                      }
-                      included={charge.included}
-                    />
-                  ))}
-                </div>
-
+        <div className="mt-4">
+          <ToLetDetailHero
+            imageUrls={listing.imageUrls}
+            imageAlt={listing.title}
+            code={listing.listingCode}
+            title={listing.title}
+            propertyName={listing.property.name}
+            location={`${listing.location}${
+              listing.property.nearbyLandmark
+                ? ` · Near ${listing.property.nearbyLandmark}`
+                : ""
+            }`}
+            unitCode={listing.unitCode}
+            unitName={listing.unit.name}
+            category={humanize(listing.unit.unitType)}
+            viewCount={listing.viewCount}
+            size={`${listing.unit.sizeSqFt.toLocaleString("en-BD")} sq ft`}
+            monthlyRent={
+              listing.monthlyRent === null
+                ? "Price hidden by owner"
+                : money(listing.monthlyRent)
+            }
+            statusLabel={availability}
+            statusTone={isBooked ? "amber" : "emerald"}
+            dateLabel={isBooked ? "Booked on" : "Available from"}
+            dateValue={
+              isBooked
+                ? (bookedAt ?? "Booking confirmed")
+                : (availableFrom ?? listing.availableFrom)
+            }
+            statusDetail={
+              isBooked
+                ? `This Unit is booked, so new booking requests are closed. It remains visible until ${marketplaceVisibleUntil ?? "30 days after confirmation"}.`
+                : "The property owner reviews each request before confirming the booking."
+            }
+            showHeading={false}
+            actions={
+              <div id="booking" className="grid w-full gap-2 sm:grid-cols-2">
                 {isBooked ? (
-                  <div className="mt-5 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-center text-sm font-semibold text-amber-800">
-                    Booked · New booking requests are closed
+                  <div className="inline-flex min-h-10 items-center justify-center rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm font-semibold text-amber-800">
+                    Booked · Requests closed
                   </div>
                 ) : (
                   <RequestBookingButton
@@ -305,180 +240,265 @@ export default async function PublicListingPage({
                     {...(qrToken ? { qrToken } : {})}
                   />
                 )}
-                <p className="mt-3 text-center text-xs leading-5 text-muted-foreground">
-                  {isBooked
-                    ? `This listing remains visible as Booked${marketplaceVisibleUntil ? ` until ${marketplaceVisibleUntil}` : " for 30 days after confirmation"}.`
-                    : "The owner reviews every request before a booking is confirmed."}
-                </p>
-              </section>
+                <a
+                  href={`tel:${listing.contact.phone}`}
+                  className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-900 transition-colors hover:border-blue-300 hover:text-blue-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
+                >
+                  <Phone className="size-4" aria-hidden="true" />
+                  Call owner
+                </a>
+              </div>
+            }
+          />
+        </div>
 
-              <section className="rounded-2xl border border-border bg-background p-5 shadow-sm sm:p-6">
-                <div className="flex items-center gap-3">
-                  <span className="flex size-10 items-center justify-center rounded-xl bg-primary/8 text-primary">
-                    <ShieldCheck className="size-5" aria-hidden="true" />
-                  </span>
-                  <div>
-                    <h2 className="font-semibold text-foreground">
-                      Property contact
-                    </h2>
-                    <p className="text-sm text-muted-foreground">
-                      {listing.contact.name}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="mt-4 grid grid-cols-2 gap-2">
-                  <a
-                    href={`tel:${listing.contact.phone}`}
-                    className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-border px-3 py-2 text-sm font-semibold text-foreground transition-colors hover:border-primary/40 hover:text-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
-                  >
-                    <Phone className="size-4" aria-hidden="true" /> Call
-                  </a>
-                  <a
-                    href={`https://wa.me/${whatsAppPhone(listing.contact.phone)}?text=${encodeURIComponent(`I am interested in ${listing.listingCode}: ${listing.title}`)}`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-emerald-600 px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-emerald-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
-                  >
-                    <MessageCircle className="size-4" aria-hidden="true" />
-                    WhatsApp
-                  </a>
-                </div>
-                <p className="mt-3 text-center text-xs text-muted-foreground">
-                  {listing.contact.phone}
-                </p>
-              </section>
-            </div>
-          </aside>
-
-          <div className="space-y-6 lg:col-start-1">
-            <section className="rounded-2xl border border-border bg-background p-5 shadow-sm sm:p-6">
-              <SectionHeading
-                icon={Building2}
-                eyebrow="Unit overview"
-                title={`${listing.property.name} · ${listing.unit.name}`}
-              />
-              <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-                <Detail
-                  label="Unit"
+        <div className="mt-5">
+          <ToLetDetailsShell
+            items={[
+              { href: "#overview", label: "Unit Information" },
+              { href: "#facilities", label: "Facilities" },
+              { href: "#rent-information", label: "Rent" },
+              { href: "#property-information", label: "Property" },
+            ]}
+          >
+            <ToLetDetailsSection
+              id="overview"
+              icon={Building2}
+              eyebrow="Overview"
+              title="Unit Information"
+              embedded
+            >
+              <div className="grid gap-4 sm:grid-cols-2">
+                <ToLetInfoTile
+                  label="Unit name / number"
                   value={listing.unit.name}
-                  icon={DoorOpen}
                 />
-                <Detail
-                  label="Unit type"
+                <ToLetInfoTile
+                  label="Listing category"
                   value={humanize(listing.unit.unitType)}
-                  icon={Building2}
                 />
-                <Detail
-                  label="Floor"
+                <ToLetInfoTile
+                  label="Floor number"
                   value={formatFloor(listing.unit.floorNumber)}
-                  icon={Layers3}
                 />
-                <Detail
-                  label="Size"
+                <ToLetInfoTile
+                  label="Unit size"
                   value={`${listing.unit.sizeSqFt.toLocaleString("en-BD")} sq ft`}
-                  icon={Ruler}
                 />
-                <Detail
-                  label="Bedrooms"
-                  value={String(listing.unit.bedrooms)}
-                  icon={BedDouble}
-                />
-                <Detail
+                <ToLetInfoTile label="Bedrooms" value={listing.unit.bedrooms} />
+                <ToLetInfoTile
                   label="Bathrooms"
-                  value={String(listing.unit.bathrooms)}
-                  icon={Bath}
+                  value={listing.unit.bathrooms}
                 />
-                <Detail
+                <ToLetInfoTile
                   label="Balconies"
-                  value={String(listing.unit.balconies)}
-                  icon={Building2}
+                  value={listing.unit.balconies}
                 />
-                <Detail
-                  label={isBooked ? "Booking status" : "Available"}
-                  value={
-                    isBooked
-                      ? "Booked"
-                      : (availableFrom ?? listing.availableFrom)
-                  }
-                  icon={CalendarDays}
+                <ToLetInfoTile
+                  label="Preferred tenant"
+                  value={tenantLabel(listing.preferredTenant)}
+                />
+                <ToLetInfoTile
+                  label="Available from"
+                  value={availableFrom ?? listing.availableFrom}
+                />
+                <ToLetInfoTile
+                  label="Listing status"
+                  value={isBooked ? "Booked" : "Active"}
+                />
+                {isBooked ? (
+                  <>
+                    <ToLetInfoTile
+                      label="Booked on"
+                      value={bookedAt ?? "Booking confirmed"}
+                    />
+                    <ToLetInfoTile
+                      label="Visible until"
+                      value={
+                        marketplaceVisibleUntil ?? "30 days after confirmation"
+                      }
+                    />
+                  </>
+                ) : null}
+                {publishedAt ? (
+                  <ToLetInfoTile label="Published on" value={publishedAt} />
+                ) : null}
+              </div>
+
+              <div className="mt-5 grid gap-3 sm:grid-cols-3">
+                <ToLetFacilityItem
+                  label="Drawing room"
+                  available={listing.unit.hasDrawingRoom}
+                />
+                <ToLetFacilityItem
+                  label="Dining space"
+                  available={listing.unit.hasDiningSpace}
+                />
+                <ToLetFacilityItem
+                  label="Kitchen"
+                  available={listing.unit.hasKitchen}
                 />
               </div>
-            </section>
 
-            <section className="rounded-2xl border border-border bg-background p-5 shadow-sm sm:p-6">
-              <SectionHeading
-                icon={DoorOpen}
-                eyebrow="About this listing"
-                title="Description"
-              />
-              <p className="mt-4 whitespace-pre-line text-sm leading-7 text-muted-foreground sm:text-base">
-                {listing.description || "No description provided by the owner."}
-              </p>
-            </section>
-
-            <section className="rounded-2xl border border-border bg-background p-5 shadow-sm sm:p-6">
-              <SectionHeading
-                icon={Check}
-                eyebrow="What is available"
-                title="Facilities"
-              />
-              {facilities.length > 0 ? (
-                <div className="mt-5 grid grid-cols-2 gap-2 sm:grid-cols-3">
-                  {facilities.map((facility) => (
-                    <p
-                      key={facility}
-                      className="flex min-h-10 items-center gap-2 rounded-lg border border-emerald-100 bg-emerald-50/70 px-3 py-2 text-sm font-medium text-emerald-800"
-                    >
-                      <Check
-                        className="size-4 shrink-0 text-emerald-600"
-                        aria-hidden="true"
-                      />
-                      {facility}
-                    </p>
-                  ))}
-                </div>
-              ) : (
-                <p className="mt-4 text-sm text-muted-foreground">
-                  No facilities were specified by the owner.
+              <div className="mt-5 border-t border-slate-100 pt-5">
+                <p className="text-sm font-semibold text-slate-900">
+                  Property description
                 </p>
-              )}
+                <p className="mt-2 whitespace-pre-line text-sm leading-7 text-slate-700">
+                  {listing.description ||
+                    "No description provided by the owner."}
+                </p>
+              </div>
+            </ToLetDetailsSection>
+
+            <ToLetDetailsSection
+              id="facilities"
+              icon={ShieldCheck}
+              eyebrow="Facilities"
+              title="Facilities"
+              description="Property facilities are inherited by this Unit. Listing-specific items use the current rental offer."
+              embedded
+            >
+              <div className="grid gap-3 sm:grid-cols-2">
+                <ToLetFacilityItem
+                  label="Water supply"
+                  available={listing.property.hasWaterSupply}
+                  included={listing.property.hasWaterSupply}
+                />
+                <ToLetFacilityItem
+                  label="Gas connection"
+                  available={listing.property.hasGasConnection}
+                  included={listing.property.hasGasConnection}
+                />
+                <ToLetFacilityItem
+                  label="Electricity"
+                  available={listing.property.hasElectricity}
+                  included={listing.property.hasElectricity}
+                />
+                <ToLetFacilityItem
+                  label="Internet"
+                  available={listing.hasInternet}
+                  included={listing.hasInternet}
+                />
+                <ToLetFacilityItem
+                  label="Lift"
+                  available={listing.property.hasLift}
+                  included={listing.property.hasLift}
+                />
+                <ToLetFacilityItem
+                  label="Parking"
+                  available={listing.property.hasParking}
+                  included={listing.property.hasParking}
+                />
+                <ToLetFacilityItem
+                  label="Generator"
+                  available={listing.property.hasGenerator}
+                  included={listing.property.hasGenerator}
+                />
+                <ToLetFacilityItem
+                  label="Security"
+                  available={listing.property.hasSecurityGuard}
+                  included={listing.property.hasSecurityGuard}
+                />
+                <ToLetFacilityItem
+                  label="CCTV"
+                  available={listing.property.hasCctv}
+                  included={listing.property.hasCctv}
+                />
+                <ToLetFacilityItem
+                  label="Furnished"
+                  available={listing.unit.isFurnished}
+                  included={listing.unit.isFurnished}
+                />
+              </div>
               {listing.otherFacilities ? (
-                <div className="mt-5 border-t border-border pt-5">
-                  <p className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-                    Other facilities
-                  </p>
-                  <p className="mt-2 whitespace-pre-line text-sm leading-6 text-foreground">
-                    {listing.otherFacilities}
-                  </p>
+                <div className="mt-4 rounded-lg border border-slate-200 p-4 text-sm leading-6 text-slate-700">
+                  <span className="font-semibold text-slate-950">
+                    Other facilities:{" "}
+                  </span>
+                  {listing.otherFacilities}
                 </div>
               ) : null}
-            </section>
+            </ToLetDetailsSection>
 
-            <section className="rounded-2xl border border-border bg-background p-5 shadow-sm sm:p-6">
-              <SectionHeading
-                icon={MapPin}
-                eyebrow="Property information"
-                title={listing.property.name}
-              />
-              <dl className="mt-5 divide-y divide-border border-y border-border text-sm">
-                <PropertyRow label="Property ID" value={listing.propertyCode} />
-                <PropertyRow label="Unit ID" value={listing.unitCode} />
-                <PropertyRow
+            <ToLetDetailsSection
+              id="rent-information"
+              icon={WalletCards}
+              eyebrow="Rent information"
+              title="Rental terms"
+              description="The owner controls which prices are visible before booking confirmation."
+              embedded
+            >
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                <ToLetRentItem
+                  label="Monthly rent"
+                  value={money(listing.monthlyRent)}
+                />
+                <ToLetRentItem
+                  label="Advance"
+                  value={money(listing.advanceAmount)}
+                />
+                <ToLetRentItem
+                  label="Security deposit"
+                  value={money(listing.securityDeposit)}
+                />
+                {charges.map((charge) => (
+                  <ToLetRentItem
+                    key={charge.label}
+                    label={charge.label}
+                    value={
+                      charge.included ? "Included in rent" : money(charge.value)
+                    }
+                    included={charge.included}
+                  />
+                ))}
+              </div>
+              <div className="mt-4 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
+                <span className="font-semibold">Payment method:</span> Monthly
+                OTP Verification activates after an approved booking and active
+                contract.
+              </div>
+            </ToLetDetailsSection>
+
+            <ToLetDetailsSection
+              id="property-information"
+              icon={MapPin}
+              eyebrow="Property information"
+              title={listing.property.name}
+              embedded
+            >
+              <dl className="divide-y divide-slate-200 border-y border-slate-200 text-sm">
+                <ToLetSummaryRow
+                  label="Property ID"
+                  value={listing.propertyCode}
+                  mono
+                />
+                <ToLetSummaryRow
+                  label="Unit ID"
+                  value={listing.unitCode}
+                  mono
+                />
+                <ToLetSummaryRow
                   label="Property type"
                   value={humanize(listing.property.propertyType)}
                 />
-                <PropertyRow
+                <ToLetSummaryRow
                   label="Building type"
                   value={humanize(listing.property.buildingType)}
                 />
-                <PropertyRow label="Location" value={listing.location} />
+                <ToLetSummaryRow label="Location" value={listing.location} />
                 {listing.property.nearbyLandmark ? (
-                  <PropertyRow
+                  <ToLetSummaryRow
                     label="Nearby landmark"
                     value={listing.property.nearbyLandmark}
                   />
                 ) : null}
+                <ToLetSummaryRow label="Owner" value={listing.contact.name} />
+                <ToLetSummaryRow
+                  label="Phone"
+                  value={listing.contact.phone}
+                  mono
+                />
               </dl>
 
               {listing.videoUrl || mapHref ? (
@@ -488,7 +508,7 @@ export default async function PublicListingPage({
                       href={listing.videoUrl}
                       target="_blank"
                       rel="noreferrer"
-                      className="inline-flex items-center gap-2 rounded-lg border border-border px-4 py-2.5 text-sm font-semibold text-foreground transition-colors hover:border-primary/40 hover:text-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                      className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-900 hover:border-blue-300 hover:text-blue-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
                     >
                       <Video className="size-4" aria-hidden="true" />
                       Watch property video
@@ -500,7 +520,7 @@ export default async function PublicListingPage({
                       href={mapHref}
                       target="_blank"
                       rel="noreferrer"
-                      className="inline-flex items-center gap-2 rounded-lg border border-border px-4 py-2.5 text-sm font-semibold text-foreground transition-colors hover:border-primary/40 hover:text-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                      className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-900 hover:border-blue-300 hover:text-blue-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
                     >
                       <MapPin className="size-4" aria-hidden="true" />
                       Open in Google Maps
@@ -509,90 +529,10 @@ export default async function PublicListingPage({
                   ) : null}
                 </div>
               ) : null}
-            </section>
-          </div>
+            </ToLetDetailsSection>
+          </ToLetDetailsShell>
         </div>
-      </div>
-    </div>
-  );
-}
-
-function SectionHeading({
-  icon: Icon,
-  eyebrow,
-  title,
-}: {
-  icon: LucideIcon;
-  eyebrow: string;
-  title: string;
-}) {
-  return (
-    <div className="flex items-center gap-3">
-      <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary/8 text-primary">
-        <Icon className="size-5" aria-hidden="true" />
-      </span>
-      <div>
-        <p className="text-xs font-semibold tracking-[0.12em] text-primary uppercase">
-          {eyebrow}
-        </p>
-        <h2 className="mt-0.5 text-lg font-semibold text-foreground sm:text-xl">
-          {title}
-        </h2>
-      </div>
-    </div>
-  );
-}
-
-function Detail({
-  label,
-  value,
-  icon: Icon,
-}: {
-  label: string;
-  value: string;
-  icon: LucideIcon;
-}) {
-  return (
-    <div className="min-w-0 rounded-xl border border-border bg-muted/30 p-3.5">
-      <Icon className="size-4 text-primary" aria-hidden="true" />
-      <p className="mt-2 text-xs text-muted-foreground">{label}</p>
-      <p className="mt-0.5 truncate text-sm font-semibold text-foreground">
-        {value}
-      </p>
-    </div>
-  );
-}
-
-function ChargeRow({
-  label,
-  value,
-  included = false,
-}: {
-  label: string;
-  value: string;
-  included?: boolean;
-}) {
-  return (
-    <div className="flex items-start justify-between gap-4 text-sm">
-      <span className="text-muted-foreground">{label}</span>
-      <span
-        className={
-          included
-            ? "text-right font-semibold text-emerald-700"
-            : "text-right font-semibold text-foreground"
-        }
-      >
-        {value}
-      </span>
-    </div>
-  );
-}
-
-function PropertyRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="grid gap-1 py-3 sm:grid-cols-[160px_1fr] sm:gap-5">
-      <dt className="text-muted-foreground">{label}</dt>
-      <dd className="font-medium text-foreground sm:text-right">{value}</dd>
+      </main>
     </div>
   );
 }

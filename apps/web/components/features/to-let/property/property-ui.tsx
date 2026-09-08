@@ -87,7 +87,7 @@ export function ListingStatusBadge({ status }: { status: ListingStatus }) {
       variant="outline"
       className={cn("capitalize", listingStatusStyles[status])}
     >
-      {status === "active" ? "Live" : status}
+      {status}
     </Badge>
   );
 }

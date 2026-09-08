@@ -4,7 +4,6 @@ import {
   Ban,
   Bath,
   BedDouble,
-  Bell,
   CalendarCheck,
   CheckCircle2,
   Clock3,
@@ -18,7 +17,6 @@ import {
   XCircle,
 } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
 import { ListingImageCarousel } from "@/components/features/to-let/listing-image-carousel";
 import {
   AlertDialog,
@@ -33,7 +31,6 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -43,11 +40,6 @@ import {
   useCancelMyToLetBooking,
   useMyToLetBookings,
 } from "@/hooks/use-to-let-booking-api";
-import {
-  type ToLetAlertCategory,
-  toLetAlertCategoryOptions,
-  useCreateToLetAlert,
-} from "@/hooks/use-to-let-rental-api";
 
 type BookingTab = "all" | "requests" | "current" | "history";
 
@@ -466,205 +458,9 @@ function BookingsLoading() {
   );
 }
 
-function SetAlertPanel({ onSaved }: { onSaved: () => void }) {
-  const createAlert = useCreateToLetAlert();
-  const [form, setForm] = useState<{
-    preferredCategory: ToLetAlertCategory;
-    preferredLocation: string;
-    minimumSizeSqFt: number;
-    minimumBedrooms: number;
-    minimumBathrooms: number;
-    minimumBalconies: number;
-    balconyPreference: "required" | "optional" | "not_required";
-    preferredFloor: string;
-  }>({
-    preferredCategory: "family_flat",
-    preferredLocation: "Dhaka",
-    minimumSizeSqFt: 0,
-    minimumBedrooms: 0,
-    minimumBathrooms: 0,
-    minimumBalconies: 0,
-    balconyPreference: "optional" as "required" | "optional" | "not_required",
-    preferredFloor: "any",
-  });
-
-  const save = async () => {
-    try {
-      await createAlert.mutateAsync(form);
-      onSaved();
-    } catch {
-      // The mutation hook displays the API validation message.
-    }
-  };
-
-  return (
-    <section className="rounded-lg border border-emerald-200 bg-emerald-50/40 p-4 sm:p-5">
-      <div className="flex items-start gap-3">
-        <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700">
-          <Bell className="size-5" />
-        </span>
-        <div>
-          <h2 className="font-semibold text-gray-900">Create To-Let Alert</h2>
-          <p className="mt-1 text-sm text-gray-500">
-            Save what you need. Matching notifications can use this preference
-            when the notification service is connected.
-          </p>
-        </div>
-      </div>
-
-      <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <label className="text-xs font-medium text-gray-700">
-          Preferred category
-          <select
-            className="mt-1 h-9 w-full rounded-md border border-gray-200 bg-white px-3"
-            value={form.preferredCategory}
-            onChange={(event) =>
-              setForm((current) => ({
-                ...current,
-                preferredCategory: event.target.value as ToLetAlertCategory,
-              }))
-            }
-          >
-            {toLetAlertCategoryOptions.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="text-xs font-medium text-gray-700 sm:col-span-2">
-          Preferred location
-          <Input
-            className="mt-1 bg-white"
-            value={form.preferredLocation}
-            onChange={(event) =>
-              setForm((current) => ({
-                ...current,
-                preferredLocation: event.target.value,
-              }))
-            }
-          />
-        </label>
-        <label className="text-xs font-medium text-gray-700">
-          Minimum size (sq ft)
-          <Input
-            className="mt-1 bg-white"
-            type="number"
-            min={0}
-            value={form.minimumSizeSqFt}
-            onChange={(event) =>
-              setForm((current) => ({
-                ...current,
-                minimumSizeSqFt: Number(event.target.value),
-              }))
-            }
-          />
-        </label>
-        <label className="text-xs font-medium text-gray-700">
-          Minimum bedrooms
-          <Input
-            className="mt-1 bg-white"
-            type="number"
-            min={0}
-            value={form.minimumBedrooms}
-            onChange={(event) =>
-              setForm((current) => ({
-                ...current,
-                minimumBedrooms: Number(event.target.value),
-              }))
-            }
-          />
-        </label>
-        <label className="text-xs font-medium text-gray-700">
-          Minimum bathrooms
-          <Input
-            className="mt-1 bg-white"
-            type="number"
-            min={0}
-            value={form.minimumBathrooms}
-            onChange={(event) =>
-              setForm((current) => ({
-                ...current,
-                minimumBathrooms: Number(event.target.value),
-              }))
-            }
-          />
-        </label>
-        <label className="text-xs font-medium text-gray-700">
-          Minimum balconies
-          <Input
-            className="mt-1 bg-white"
-            type="number"
-            min={0}
-            value={form.minimumBalconies}
-            onChange={(event) =>
-              setForm((current) => ({
-                ...current,
-                minimumBalconies: Number(event.target.value),
-              }))
-            }
-          />
-        </label>
-        <label className="text-xs font-medium text-gray-700">
-          Balcony preference
-          <select
-            className="mt-1 h-9 w-full rounded-md border border-gray-200 bg-white px-3"
-            value={form.balconyPreference}
-            onChange={(event) =>
-              setForm((current) => ({
-                ...current,
-                balconyPreference: event.target.value as
-                  | "required"
-                  | "optional"
-                  | "not_required",
-              }))
-            }
-          >
-            <option value="required">Required</option>
-            <option value="optional">Optional</option>
-            <option value="not_required">Not required</option>
-          </select>
-        </label>
-        <label className="text-xs font-medium text-gray-700">
-          Preferred floor
-          <Input
-            className="mt-1 bg-white"
-            value={form.preferredFloor}
-            onChange={(event) =>
-              setForm((current) => ({
-                ...current,
-                preferredFloor: event.target.value,
-              }))
-            }
-          />
-        </label>
-      </div>
-
-      <div className="mt-4 flex justify-end gap-2 border-t border-emerald-100 pt-4">
-        <Button variant="ghost" onClick={onSaved}>
-          Close
-        </Button>
-        <Button
-          className="bg-emerald-600 hover:bg-emerald-700"
-          disabled={
-            createAlert.isPending ||
-            form.preferredCategory.trim().length === 0 ||
-            form.preferredLocation.trim().length < 2
-          }
-          onClick={() => void save()}
-        >
-          <Bell className="size-4" />
-          {createAlert.isPending ? "Saving…" : "Save Alert"}
-        </Button>
-      </div>
-    </section>
-  );
-}
-
 export function MyBookingsClient() {
   const query = useMyToLetBookings();
   const cancelBooking = useCancelMyToLetBooking();
-  const [showAlert, setShowAlert] = useState(false);
 
   if (query.isLoading) return <BookingsLoading />;
 
@@ -706,20 +502,14 @@ export function MyBookingsClient() {
 
   return (
     <div className="space-y-5">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+      <div>
         <div>
           <h1 className="text-2xl font-bold text-gray-900">My Bookings</h1>
           <p className="mt-1 text-sm leading-6 text-gray-500">
             Track booking requests, confirmed units and your rental history.
           </p>
         </div>
-        <Button variant="outline" onClick={() => setShowAlert((open) => !open)}>
-          <Bell className="size-4" />
-          {showAlert ? "Close Alert" : "Set Alert"}
-        </Button>
       </div>
-
-      {showAlert ? <SetAlertPanel onSaved={() => setShowAlert(false)} /> : null}
 
       <Tabs defaultValue="all" className="w-full">
         <div className="overflow-x-auto pb-1">
