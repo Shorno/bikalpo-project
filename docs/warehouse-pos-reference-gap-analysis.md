@@ -149,8 +149,8 @@ The UI may present the reference dropdown, but Submit must reject a status that 
 
 ### Invoice contents
 
-- `BIKALPO INVOICE` heading and Bikalpo/warehouse logo when configured.
-- Warehouse name followed by its available identity/code in parentheses; do not invent an SHP code.
+- `Bikalpo Invoice` heading with explicitly separated brand and document label, plus the Bikalpo/warehouse logo when configured. Preserve the brand casing `Bikalpo`.
+- Warehouse/store display name only. Do not show its internal account ID or code (client branding correction, 2026-09-08).
 - Logo on the left and date/time on the right, formatted in Asia/Dhaka as `13 Aug 2026 06:21 AM`. Invoice number centered in brackets. Preserve the persisted unique invoice identifier.
 - No barcode.
 - Customer name, address, and mobile number.

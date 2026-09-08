@@ -58,7 +58,13 @@ export function PosInvoiceSheet({
       className="w-[760px] max-w-none bg-white p-8 text-sm leading-6 text-zinc-950"
     >
       <header data-invoice-block="">
-        <h2 className="mb-5 text-xl font-bold">BIKALPO INVOICE</h2>
+        <h2
+          className="mb-5 flex items-baseline gap-2 text-xl font-bold"
+          aria-label="Bikalpo Invoice"
+        >
+          <span>Bikalpo</span>
+          <span>Invoice</span>
+        </h2>
         <div className="flex items-start justify-between gap-6">
           {React.createElement("img", {
             src: "/logos/bikalpo-logo.jpg",
@@ -74,10 +80,7 @@ export function PosInvoiceSheet({
             {date}
           </time>
         </div>
-        <p className="mt-2 break-words font-semibold">
-          {store.name}
-          {store.code ? ` (${store.code})` : ""}
-        </p>
+        <p className="mt-2 break-words font-semibold">{store.name}</p>
         <p className="my-5 break-words text-center font-mono font-semibold">
           [{sale.invoiceNo}]
         </p>

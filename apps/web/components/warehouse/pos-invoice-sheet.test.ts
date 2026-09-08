@@ -60,7 +60,9 @@ test("invoice follows reference order and displays persisted discount and totals
     createElement(PosInvoiceSheet, { invoice }),
   );
   const text = html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
-  assert.match(text, /Noor Distribution Hub \(SHP-100245\)/);
+  assert.match(text, /Bikalpo Invoice/);
+  assert.match(text, /Noor Distribution Hub/);
+  assert.doesNotMatch(text, /SHP-100245|BIKALPOINVOICE/);
   assert.match(text, /13 Aug 2026 06:21 AM/);
   assert.match(text, /\[INV-20260721-000001\]/);
   assert.match(text, /PAYMENT: CASH/);
