@@ -325,7 +325,7 @@ export function MyPostsClient() {
                       {canOpenLive ? (
                         <Button asChild variant="outline" size="sm">
                           <Link href={liveHref} target="_blank">
-                            <ExternalLink /> View Live
+                            <ExternalLink /> View Listing
                           </Link>
                         </Button>
                       ) : null}

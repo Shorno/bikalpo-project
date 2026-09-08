@@ -5,6 +5,7 @@ import { CalendarCheck, CheckCircle2, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
+import { useLoginRequired } from "@/components/features/auth/login-required-modal";
 import { Button } from "@/components/ui/button";
 import { authClient } from "@/lib/auth-client";
 import { orpc } from "@/utils/orpc";
@@ -25,6 +26,7 @@ export function RequestBookingButton({
   const { data: session, isPending: isSessionPending } =
     authClient.useSession();
   const queryClient = useQueryClient();
+  const { showLoginModal } = useLoginRequired();
   const createBooking = useMutation(orpc.toLetBooking.create.mutationOptions());
   const idempotencyKey = useRef<string | null>(null);
   const [isHydrated, setIsHydrated] = useState(false);
@@ -41,10 +43,7 @@ export function RequestBookingButton({
     if (isCheckingSession) return;
 
     if (!session?.user) {
-      const redirect = encodeURIComponent(
-        `${window.location.pathname}${window.location.search}${window.location.hash}`,
-      );
-      window.location.assign(`/login?redirect=${redirect}`);
+      showLoginModal();
       return;
     }
 
@@ -128,7 +127,7 @@ export function RequestBookingButton({
       type="button"
       onClick={submitBooking}
       disabled={isCheckingSession || createBooking.isPending}
-      className="mt-5 h-10 w-full bg-emerald-600 text-white hover:bg-emerald-700"
+      className="h-10 w-full bg-blue-700 text-white hover:bg-blue-800"
     >
       {createBooking.isPending ? (
         <Loader2 className="animate-spin" aria-hidden="true" />

@@ -5,12 +5,12 @@ import {
   Building2,
   CalendarCheck2,
   Car,
+  ChevronRight,
   Eye,
   Home,
   KeyRound,
   type LucideIcon,
   MapPin,
-  QrCode,
   Search,
   Shapes,
   Store,
@@ -21,7 +21,6 @@ import type { Metadata } from "next";
 import Form from "next/form";
 import Image from "next/image";
 import Link from "next/link";
-import type { CSSProperties, ReactNode } from "react";
 import { PublicUnitListingCard } from "@/components/features/to-let/public-unit-listing-card";
 import { ToLetAccountLink } from "@/components/features/to-let/to-let-account-link";
 import { ToLetAlertDialog } from "@/components/features/to-let/to-let-alert-dialog";
@@ -38,8 +37,8 @@ import {
   toLetMarketHref,
 } from "@/lib/to-let-marketplace";
 
-export const dynamic = "force-dynamic";
-export const revalidate = 0;
+// Match the public product homepage's server-side catalog cache.
+export const revalidate = 60;
 
 export const metadata: Metadata = {
   title: { absolute: "Bikalpo To-Let | Find Rental Spaces in Bangladesh" },
@@ -60,96 +59,54 @@ const rentalTypes: ReadonlyArray<{
   label: string;
   banglaLabel: string;
   icon: LucideIcon;
-  featured: boolean;
 }> = [
   {
     value: "family_flat",
     label: "Family To-Let",
     banglaLabel: "ফ্যামিলি বাসা",
     icon: Home,
-    featured: true,
   },
   {
     value: "bachelor_room",
     label: "Bachelor",
     banglaLabel: "ব্যাচেলর",
     icon: Users,
-    featured: true,
   },
   {
     value: "sublet",
     label: "Sublet",
     banglaLabel: "সাবলেট",
     icon: KeyRound,
-    featured: true,
   },
   {
     value: "shop",
     label: "Shop To-Let",
     banglaLabel: "দোকান",
     icon: Store,
-    featured: true,
   },
   {
     value: "office",
     label: "Office To-Let",
     banglaLabel: "অফিস",
     icon: Briefcase,
-    featured: true,
   },
   {
     value: "warehouse",
     label: "Warehouse",
     banglaLabel: "গুদামঘর",
     icon: Warehouse,
-    featured: true,
   },
   {
     value: "garage",
     label: "Garage",
     banglaLabel: "গ্যারেজ",
     icon: Car,
-    featured: false,
   },
   {
     value: "other",
     label: "Other",
     banglaLabel: "অন্যান্য",
     icon: Shapes,
-    featured: false,
-  },
-];
-
-const journeySteps: ReadonlyArray<{
-  title: string;
-  description: string;
-  icon: LucideIcon;
-  phase: "live" | "upcoming";
-}> = [
-  {
-    title: "Find listings",
-    description: "Use Location Search or Map Search to find the right unit.",
-    icon: Search,
-    phase: "live",
-  },
-  {
-    title: "View details",
-    description: "Review property details, photo gallery, rent and facilities.",
-    icon: Eye,
-    phase: "live",
-  },
-  {
-    title: "Request a booking",
-    description: "Select a preferred date and send a tracked request.",
-    icon: CalendarCheck2,
-    phase: "live",
-  },
-  {
-    title: "Join as a tenant",
-    description:
-      "Owner approval confirms booking and links the tenant account.",
-    icon: BadgeCheck,
-    phase: "live",
   },
 ];
 
@@ -158,35 +115,32 @@ export default async function ToLetPage({ searchParams }: ToLetPageProps) {
   const { query, selectedType } = parseToLetSearchParams(params);
   let listingsUnavailable = false;
   let unitListings: UnitListing[] = [];
+
   try {
-    unitListings = await listPublicToLetUnitListings(0);
+    unitListings = await listPublicToLetUnitListings(60);
   } catch {
     listingsUnavailable = true;
   }
+
   const { queryMatched: queryMatchedListings, filtered: filteredUnitListings } =
     filterToLetMarketplaceListings(unitListings, query, selectedType);
-
   const propertyCount = new Set(
-    filteredUnitListings.map((listing) => listing.propertyCode),
+    unitListings.map((listing) => listing.propertyCode),
   ).size;
-  const areaCount = new Set(
-    filteredUnitListings
-      .map((listing) => listing.property.area.trim().toLowerCase())
-      .filter(Boolean),
-  ).size;
-  const totalViews = filteredUnitListings.reduce(
-    (total, listing) => total + listing.viewCount,
-    0,
+  const areaNames = Array.from(
+    new Map(
+      unitListings
+        .filter((listing) => listing.property.area.trim().length > 0)
+        .map((listing) => [
+          listing.property.area.trim().toLowerCase(),
+          listing.property.area.trim(),
+        ]),
+    ).values(),
   );
-  const availableListingCount = filteredUnitListings.filter(
+  const availableListingCount = unitListings.filter(
     (listing) => listing.marketplaceStatus === "available",
   ).length;
-  const bookedListingCount =
-    filteredUnitListings.length - availableListingCount;
-  const firstAvailableListing = filteredUnitListings.find(
-    (listing) => listing.marketplaceStatus === "available",
-  );
-  const mapListings = [...filteredUnitListings]
+  const mapListings = [...unitListings]
     .sort((left, right) =>
       left.marketplaceStatus === right.marketplaceStatus
         ? 0
@@ -195,146 +149,116 @@ export default async function ToLetPage({ searchParams }: ToLetPageProps) {
           : 1,
     )
     .slice(0, 4);
-  const locationPins = Array.from(
-    new Map(
-      filteredUnitListings
-        .filter((listing) => listing.property.area.trim().length > 0)
-        .map((listing) => [
-          listing.property.area.trim().toLowerCase(),
-          listing.property.area.trim(),
-        ]),
-    ).values(),
-  ).slice(0, 4);
+  const locationPins = areaNames.slice(0, 6);
 
   return (
-    <div
-      className="min-h-screen bg-stone-50/45 text-foreground selection:bg-emerald-200 selection:text-emerald-950 [&_input]:caret-emerald-600 [&_textarea]:caret-emerald-600"
-      style={
-        {
-          "--primary": "oklch(0.46 0.13 158)",
-          "--primary-foreground": "oklch(0.985 0.008 145)",
-          "--ring": "oklch(0.52 0.14 158)",
-        } as CSSProperties
-      }
-    >
-      <ToLetHero query={query} selectedType={selectedType} />
-
-      <MarketplaceSnapshot
-        listingCount={filteredUnitListings.length}
-        availableListingCount={availableListingCount}
-        bookedListingCount={bookedListingCount}
-        propertyCount={propertyCount}
-        areaCount={areaCount}
-        totalViews={totalViews}
+    <div className="min-h-screen bg-zinc-50 text-foreground">
+      <ToLetCatalogHero
+        query={query}
+        selectedType={selectedType}
+        listings={queryMatchedListings}
       />
 
-      <RentalTypeExplorer listings={queryMatchedListings} query={query} />
+      <MarketplaceSnapshot
+        listingCount={unitListings.length}
+        availableListingCount={availableListingCount}
+        propertyCount={propertyCount}
+        areaCount={areaNames.length}
+      />
+
+      <RentalTypeDirectory listings={unitListings} query={query} />
 
       <section
         id="listings"
-        aria-labelledby="curated-listings-heading"
-        className="scroll-mt-32 border-y border-stone-200/80 bg-white py-14 sm:py-20"
+        aria-labelledby="recent-listings-heading"
+        className="scroll-mt-28 border-y border-zinc-200 bg-white py-12 sm:py-16"
       >
         <div className="site-container px-4 sm:px-6 lg:px-8">
-          <SectionHeading
-            title="সাম্প্রতিক ও ভেরিফাইড To-Let লিস্টিং"
-            description="নতুন listing publish হওয়ার পর ৩০ দিন দেখা যাবে। Booking confirm হলে Booked status-সহ নতুন ৩০ দিন থাকবে; Booked unit নতুন request নেয় না।"
-            action={
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <p className="text-xs font-semibold tracking-[0.14em] text-blue-700 uppercase">
+                Curated listings
+              </p>
+              <h2
+                id="recent-listings-heading"
+                className="mt-2 text-2xl font-bold tracking-tight text-zinc-950 sm:text-3xl"
+              >
+                সাম্প্রতিক ও ভেরিফাইড To-Let লিস্টিং
+              </h2>
+              <p className="mt-2 text-sm text-zinc-500">
+                Available ও recently booked unit দেখুন, তারপর সরাসরি Call বা View
+                Details করুন।
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
               <Link
                 href="/to-let#listings"
-                className="inline-flex min-h-11 items-center gap-1.5 text-sm font-semibold text-primary hover:underline hover:underline-offset-4"
+                className="inline-flex min-h-11 items-center gap-2 text-sm font-semibold text-blue-700 hover:underline hover:underline-offset-4"
               >
                 See all listings <ArrowRight className="size-4" />
               </Link>
-            }
-          />
+              <ToLetAlertDialog query={query} selectedType={selectedType} />
+            </div>
+          </div>
 
-          <div className="mb-7 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-            <nav
-              aria-label="Filter listings by rental type"
-              className="-mx-4 flex snap-x gap-2 overflow-x-auto px-4 pb-2 [scrollbar-width:thin] sm:mx-0 sm:px-0"
-            >
+          <div className="mt-7 flex gap-2 overflow-x-auto pb-2 [scrollbar-width:thin]">
+            <FilterChip
+              href={toLetMarketHref(query)}
+              active={!selectedType}
+              label="All listings"
+            />
+            {rentalTypes.map((type) => (
               <FilterChip
-                href={toLetMarketHref(query)}
-                active={!selectedType}
-                label="All"
+                key={type.value}
+                href={toLetMarketHref(query, type.value)}
+                active={selectedType === type.value}
+                label={type.label.replace(" To-Let", "")}
               />
-              {rentalTypes.map((type) => (
-                <FilterChip
-                  key={type.value}
-                  href={toLetMarketHref(query, type.value)}
-                  active={selectedType === type.value}
-                  label={type.label.replace(" To-Let", "")}
-                />
-              ))}
-            </nav>
-
-            <ToLetAlertDialog query={query} selectedType={selectedType} />
+            ))}
           </div>
 
           {query || selectedType ? (
-            <div className="mb-6 flex flex-wrap items-center gap-2 rounded-xl border border-border bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
-              <Search className="size-4 text-primary" />
+            <div className="mt-4 flex flex-wrap items-center gap-2 border border-zinc-200 bg-zinc-50 px-4 py-3 text-sm text-zinc-600">
+              <Search className="size-4 text-blue-600" aria-hidden="true" />
               <span>
-                Showing {filteredUnitListings.length} result(s)
+                {filteredUnitListings.length.toLocaleString("en-BD")} result(s)
                 {query ? ` for “${query}”` : ""}
-                {selectedType
-                  ? ` in ${rentalTypes.find((type) => type.value === selectedType)?.label}`
-                  : ""}
               </span>
               <Link
                 href="/to-let#listings"
-                className="ml-auto font-semibold text-primary hover:underline"
+                className="ml-auto font-semibold text-blue-700 hover:underline"
               >
                 Clear filters
               </Link>
             </div>
           ) : null}
 
-          {listingsUnavailable ? (
-            <div
-              role="alert"
-              className="rounded-xl border border-amber-200 bg-amber-50 px-6 py-12 text-center"
-            >
-              <Building2 className="mx-auto size-10 text-amber-600" />
-              <h3 className="mt-4 text-lg font-semibold text-amber-950">
-                Listings are temporarily unavailable
-              </h3>
-              <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-amber-800">
-                The marketplace data could not be loaded. Try again now or save
-                your search as an alert; the selected filters stay in the URL.
-              </p>
-              <div className="mt-5 flex flex-col justify-center gap-2 sm:flex-row">
-                <a
-                  href="/to-let#listings"
-                  className="inline-flex min-h-11 items-center justify-center rounded-lg bg-amber-950 px-4 text-sm font-semibold text-white hover:bg-amber-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-950"
-                >
-                  Try again
-                </a>
-                <ToLetAlertDialog query={query} selectedType={selectedType} />
+          <div className="mt-7">
+            {listingsUnavailable ? (
+              <ListingMessage
+                title="Listings are temporarily unavailable"
+                description="The marketplace could not be loaded. Please try again in a moment."
+                actionLabel="Try again"
+                actionHref="/to-let#listings"
+              />
+            ) : filteredUnitListings.length > 0 ? (
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                {filteredUnitListings.map((listing) => (
+                  <PublicUnitListingCard
+                    key={listing.listingCode}
+                    listing={listing}
+                  />
+                ))}
               </div>
-            </div>
-          ) : filteredUnitListings.length > 0 ? (
-            <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3">
-              {filteredUnitListings.map((listing) => (
-                <PublicUnitListingCard
-                  key={listing.listingCode}
-                  listing={listing}
-                />
-              ))}
-            </div>
-          ) : (
-            <div className="rounded-xl border border-dashed border-border bg-muted/20 px-6 py-14 text-center">
-              <Building2 className="mx-auto size-10 text-muted-foreground/60" />
-              <h3 className="mt-4 text-lg font-semibold">
-                No matching listing
-              </h3>
-              <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-muted-foreground">
-                Try another area or rental type. New Public listings will appear
-                here automatically after an owner publishes them.
-              </p>
-            </div>
-          )}
+            ) : (
+              <ListingMessage
+                title="No matching listing"
+                description="Try another location or rental type. New public listings appear here automatically."
+                actionLabel="View all listings"
+                actionHref="/to-let#listings"
+              />
+            )}
+          </div>
         </div>
       </section>
 
@@ -345,7 +269,7 @@ export default async function ToLetPage({ searchParams }: ToLetPageProps) {
         unavailable={listingsUnavailable}
       />
 
-      <TenantJourney firstListing={firstAvailableListing} />
+      <TenantJourney />
 
       <ToLetCommunityReviews />
 
@@ -354,92 +278,190 @@ export default async function ToLetPage({ searchParams }: ToLetPageProps) {
   );
 }
 
-function ToLetHero({
+function ToLetCatalogHero({
   query,
   selectedType,
+  listings,
 }: {
   query: string;
   selectedType?: ToLetMarketRentalType;
+  listings: UnitListing[];
 }) {
+  const visibleTypes = rentalTypes.slice(0, 6);
+
   return (
-    <section className="border-b border-stone-200/80 bg-stone-50/60">
+    <section className="bg-white">
       <div className="site-container px-4 py-5 sm:px-6 sm:py-7 lg:px-8">
-        <div className="relative min-h-[470px] overflow-hidden rounded-2xl border border-emerald-950/10 bg-zinc-950 sm:min-h-[500px]">
-          <Image
-            src="/images/to-let-hero.png"
-            alt="Modern apartment overlooking Dhaka for Bikalpo To-Let"
-            fill
-            priority
-            className="object-cover saturate-[0.78]"
-            sizes="(max-width: 1280px) 100vw, 1280px"
-          />
-          <div className="absolute inset-0 bg-zinc-950/70" />
-          <div className="relative flex min-h-[470px] max-w-3xl flex-col justify-center px-6 py-10 text-white sm:min-h-[500px] sm:px-10 lg:px-12">
-            <div className="inline-flex w-fit items-center gap-2 rounded-full border border-emerald-200/30 bg-emerald-950/45 px-3 py-1.5 text-xs font-semibold tracking-[0.12em] text-emerald-100 uppercase">
-              <KeyRound className="size-3.5" /> Bikalpo To-Let
+        <div className="grid gap-4 lg:grid-cols-[15.5rem_minmax(0,1fr)]">
+          <aside className="hidden min-h-[390px] overflow-hidden rounded-xl border border-zinc-200 bg-white lg:block">
+            <div className="flex h-14 items-center gap-2 border-b border-zinc-200 px-4 text-sm font-semibold text-zinc-950">
+              <Building2 className="size-4 text-blue-600" />
+              Browse rental types
             </div>
-            <h1 className="mt-5 max-w-3xl text-4xl font-semibold leading-[1.08] tracking-[-0.04em] sm:text-5xl">
-              Bangladesh&apos;s most trusted digital To-Let platform.
-            </h1>
-            <p className="mt-5 max-w-2xl text-sm leading-7 text-slate-100/90 sm:text-base sm:leading-8">
-              Find, compare and contact the owner directly for your desired
-              house, flat, sublet, shop, office or garage in one place. Send a
-              Booking Request online.
-            </p>
+            <nav aria-label="Browse To-Let by rental type">
+              {visibleTypes.map(({ value, label, icon: Icon }) => {
+                const count = listings.filter(
+                  (listing) => listing.unit.unitType === value,
+                ).length;
+                return (
+                  <Link
+                    key={value}
+                    href={toLetMarketHref(query, value)}
+                    className="flex min-h-14 items-center gap-3 border-b border-zinc-100 px-4 text-sm text-zinc-700 transition-colors hover:bg-zinc-50 hover:text-blue-700 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-blue-600"
+                  >
+                    <span className="flex size-8 items-center justify-center rounded-md bg-zinc-100 text-zinc-600">
+                      <Icon className="size-4" aria-hidden="true" />
+                    </span>
+                    <span className="min-w-0 flex-1 truncate font-medium">
+                      {label}
+                    </span>
+                    <span className="font-mono text-xs tabular-nums text-zinc-400">
+                      {count}
+                    </span>
+                    <ChevronRight className="size-3.5 text-zinc-400" />
+                  </Link>
+                );
+              })}
+            </nav>
+          </aside>
 
-            <Form
-              key={`${query}:${selectedType ?? "all"}`}
-              action="/to-let#listings"
-              className="mt-8 grid gap-2 rounded-xl border border-white/25 bg-white p-2 sm:grid-cols-[minmax(0,1fr)_12rem_auto]"
-            >
-              <label className="relative block">
-                <span className="sr-only">
-                  Search by area, property or listing ID
-                </span>
-                <Search className="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
-                <input
-                  name="q"
-                  defaultValue={query}
-                  placeholder="Area, property or listing ID"
-                  className="h-11 w-full rounded-lg border-0 bg-stone-50 pl-10 pr-3 text-sm text-stone-900 outline-none ring-primary/20 placeholder:text-stone-400 focus:ring-4"
-                />
-              </label>
-              <label>
-                <span className="sr-only">Rental type</span>
-                <select
-                  name="type"
-                  defaultValue={selectedType ?? ""}
-                  className="h-11 w-full rounded-lg border-0 bg-stone-50 px-3 text-sm text-stone-700 outline-none ring-primary/20 focus:ring-4"
+          <div className="relative min-h-[390px] overflow-hidden rounded-xl bg-zinc-800">
+            <Image
+              src="/images/to-let-hero.png"
+              alt="A modern rental home at sunset"
+              fill
+              priority
+              className="object-cover"
+              sizes="(max-width: 1024px) 100vw, 980px"
+            />
+            <div className="absolute inset-0 bg-zinc-950/65" />
+            <div className="relative flex min-h-[390px] max-w-3xl flex-col justify-center px-6 py-9 text-white sm:px-10 lg:px-12">
+              <p className="text-xs font-semibold tracking-[0.16em] text-blue-200 uppercase">
+                Bikalpo To-Let
+              </p>
+              <h1 className="mt-4 max-w-2xl text-4xl font-bold leading-[1.08] tracking-[-0.035em] sm:text-5xl">
+                Bangladesh&apos;s most trusted digital To-Let platform
+              </h1>
+              <p className="mt-5 max-w-xl text-sm leading-7 text-zinc-100 sm:text-base">
+                Find, compare and contact the owner directly for your desired
+                house, flat, sublet, shop, office or garage in one place. Send a
+                Booking Request online.
+              </p>
+
+              <Form
+                key={`${query}:${selectedType ?? "all"}`}
+                action="/to-let#listings"
+                className="mt-7 grid max-w-2xl gap-2 rounded-lg bg-white p-2 sm:grid-cols-[minmax(0,1fr)_11rem_auto]"
+              >
+                <label className="relative block">
+                  <span className="sr-only">Search To-Let listings</span>
+                  <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-zinc-400" />
+                  <input
+                    name="q"
+                    defaultValue={query}
+                    placeholder="Area, property or listing ID"
+                    className="h-11 w-full rounded-md border-0 bg-zinc-100 pl-10 pr-3 text-sm text-zinc-950 outline-none ring-blue-200 placeholder:text-zinc-500 focus:ring-4"
+                  />
+                </label>
+                <label>
+                  <span className="sr-only">Rental type</span>
+                  <select
+                    name="type"
+                    defaultValue={selectedType ?? ""}
+                    className="h-11 w-full rounded-md border-0 bg-zinc-100 px-3 text-sm text-zinc-700 outline-none ring-blue-200 focus:ring-4"
+                  >
+                    <option value="">All types</option>
+                    {rentalTypes.map((type) => (
+                      <option key={type.value} value={type.value}>
+                        {type.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <ToLetSearchButton className="inline-flex h-11 items-center justify-center gap-2 rounded-md bg-primary px-5 text-sm font-medium text-primary-foreground disabled:opacity-60" />
+              </Form>
+
+              <div className="mt-5 flex flex-wrap items-center gap-4 text-sm">
+                <Link
+                  href="#listings"
+                  className="inline-flex min-h-11 items-center gap-2 rounded-md bg-blue-600 px-4 font-semibold text-white transition-colors hover:bg-blue-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
                 >
-                  <option value="">All rental types</option>
-                  {rentalTypes.map((type) => (
-                    <option key={type.value} value={type.value}>
-                      {type.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <ToLetSearchButton className="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-primary px-5 text-sm font-medium text-primary-foreground disabled:opacity-60 focus-visible:outline-2 focus-visible:outline-offset-2" />
-            </Form>
-
-            <div className="mt-6 flex flex-wrap gap-3">
-              <Button asChild size="lg" className="min-h-11 rounded-lg">
-                <Link href="#listings">
                   Browse listings <ArrowRight className="size-4" />
                 </Link>
-              </Button>
-              <Button
-                asChild
-                size="lg"
-                variant="outline"
-                className="min-h-11 rounded-lg border-white/30 bg-white/10 text-white hover:bg-emerald-50 hover:text-emerald-950"
-              >
-                <ToLetAccountLink href="/account/to-let/properties/new">
-                  Add your property
+                <ToLetAccountLink
+                  href="/account/to-let/properties/new"
+                  className="font-semibold text-white underline-offset-4 hover:underline"
+                >
+                  List your property
                 </ToLetAccountLink>
-              </Button>
+              </div>
             </div>
           </div>
+        </div>
+
+        <div className="mt-4 flex gap-3 overflow-x-auto pb-1 lg:hidden">
+          {visibleTypes.map(({ value, label, icon: Icon }) => (
+            <Link
+              key={value}
+              href={toLetMarketHref(query, value)}
+              className="flex min-w-36 items-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 py-3 text-sm font-medium text-zinc-700"
+            >
+              <Icon className="size-4 text-blue-600" />
+              {label}
+            </Link>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function RentalTypeDirectory({
+  listings,
+  query,
+}: {
+  listings: UnitListing[];
+  query: string;
+}) {
+  return (
+    <section className="border-b border-zinc-200 bg-zinc-50 py-12 sm:py-16">
+      <div className="site-container px-4 sm:px-6 lg:px-8">
+        <p className="text-xs font-semibold tracking-[0.14em] text-blue-700 uppercase">
+          Explore rental types
+        </p>
+        <h2 className="text-2xl font-bold tracking-tight text-zinc-950 sm:text-3xl">
+          যে ধরনের ইউনিট খুঁজছেন, সেখান থেকেই শুরু করুন
+        </h2>
+        <p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-500">
+          ফ্যামিলি, ব্যাচেলর, সাবলেট, অফিস, দোকান ও গুদামঘরসহ বিভিন্ন ধরনের To-Let
+          Listing থেকে আপনার প্রয়োজন অনুযায়ী সঠিক ইউনিট নির্বাচন করুন।
+        </p>
+
+        <div className="mt-7 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
+          {rentalTypes.map(({ value, label, banglaLabel, icon: Icon }) => {
+            const count = listings.filter(
+              (listing) => listing.unit.unitType === value,
+            ).length;
+            return (
+              <Link
+                key={value}
+                href={toLetMarketHref(query, value)}
+                className="group flex min-h-24 items-center gap-3 rounded-xl border border-zinc-200 bg-white px-4 py-3 transition-colors hover:border-blue-300 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
+              >
+                <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-zinc-100 text-blue-700 transition-colors group-hover:bg-blue-50">
+                  <Icon className="size-5" />
+                </span>
+                <span className="min-w-0">
+                  <span className="block truncate text-sm font-semibold text-zinc-950">
+                    {label}
+                  </span>
+                  <span className="mt-0.5 block truncate text-xs text-zinc-500">
+                    {banglaLabel} · {count.toLocaleString("en-BD")}
+                  </span>
+                </span>
+              </Link>
+            );
+          })}
         </div>
       </div>
     </section>
@@ -449,132 +471,188 @@ function ToLetHero({
 function MarketplaceSnapshot({
   listingCount,
   availableListingCount,
-  bookedListingCount,
   propertyCount,
   areaCount,
-  totalViews,
 }: {
   listingCount: number;
   availableListingCount: number;
-  bookedListingCount: number;
   propertyCount: number;
   areaCount: number;
-  totalViews: number;
 }) {
   const stats: ReadonlyArray<{
     label: string;
-    value: string;
+    value: number;
     description: string;
     icon: LucideIcon;
   }> = [
     {
-      label: "Listings shown",
-      value: listingCount.toLocaleString("en-BD"),
-      description: `${availableListingCount.toLocaleString("en-BD")} available · ${bookedListingCount.toLocaleString("en-BD")} recently booked`,
+      label: "Published listings",
+      value: listingCount,
+      description: "Live and recently booked units",
       icon: KeyRound,
     },
     {
-      label: "Properties represented",
-      value: propertyCount.toLocaleString("en-BD"),
-      description: "Unique properties in the current results",
+      label: "Available to book",
+      value: availableListingCount,
+      description: "Accepting booking requests now",
+      icon: CalendarCheck2,
+    },
+    {
+      label: "Registered properties",
+      value: propertyCount,
+      description: "Properties represented by current listings",
       icon: Building2,
     },
     {
       label: "Areas represented",
-      value: areaCount.toLocaleString("en-BD"),
-      description: "Locations covered by current results",
+      value: areaCount,
+      description: "Locations covered by current listings",
       icon: MapPin,
-    },
-    {
-      label: "Listing views",
-      value: totalViews.toLocaleString("en-BD"),
-      description: "Interest across the current listings",
-      icon: Eye,
     },
   ];
 
   return (
     <section
-      aria-label="Current To-Let marketplace snapshot"
-      className="bg-stone-50/60"
+      aria-label="Current To-Let marketplace data"
+      className="border-b border-zinc-200 bg-white"
     >
-      <div className="site-container px-4 py-8 sm:px-6 lg:px-8">
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          {stats.map(({ label, value, description, icon: Icon }) => (
-            <article
-              key={label}
-              className="rounded-xl border border-stone-200 bg-white p-5 transition-colors hover:border-emerald-300"
-            >
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <p className="text-2xl font-semibold tracking-[-0.03em]">
-                    {value}
-                  </p>
-                  <h2 className="mt-1 text-sm font-semibold">{label}</h2>
-                </div>
-                <span className="flex size-10 items-center justify-center rounded-lg bg-primary/8 text-primary">
-                  <Icon className="size-5" />
-                </span>
+      <div className="site-container grid grid-cols-2 gap-3 px-4 py-7 sm:px-6 lg:grid-cols-4 lg:px-8">
+        {stats.map(({ label, value, description, icon: Icon }) => (
+          <article
+            key={label}
+            className="rounded-xl border border-zinc-200 bg-white px-3 py-4 sm:px-5"
+          >
+            <div className="flex items-start gap-3">
+              <span className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-700">
+                <Icon className="size-4.5" aria-hidden="true" />
+              </span>
+              <div className="min-w-0">
+                <p className="font-mono text-2xl font-bold tabular-nums text-zinc-950">
+                  {value.toLocaleString("en-BD")}
+                </p>
+                <h2 className="mt-1 text-sm font-semibold text-zinc-900">
+                  {label}
+                </h2>
+                <p className="mt-1 hidden text-xs leading-5 text-zinc-500 sm:block">
+                  {description}
+                </p>
               </div>
-              <p className="mt-3 text-xs leading-5 text-muted-foreground">
-                {description}
-              </p>
-            </article>
-          ))}
-        </div>
+            </div>
+          </article>
+        ))}
       </div>
     </section>
   );
 }
 
-function RentalTypeExplorer({
-  listings,
-  query,
-}: {
-  listings: UnitListing[];
-  query: string;
-}) {
-  return (
-    <section className="border-y border-emerald-100 bg-emerald-50/35 py-14 sm:py-16">
-      <div className="site-container px-4 sm:px-6 lg:px-8">
-        <SectionHeading
-          title="যে ধরনের ইউনিট খুঁজছেন, সেখান থেকেই শুরু করুন"
-          description="ফ্যামিলি, ব্যাচেলর, সাবলেট, অফিস, দোকান ও গুদামঘরসহ বিভিন্ন ধরনের To-Let listing থেকে প্রয়োজন অনুযায়ী সঠিক ইউনিট নির্বাচন করুন।"
-        />
+function TenantJourney() {
+  const steps: ReadonlyArray<{
+    title: string;
+    details: readonly [string, string];
+    icon: LucideIcon;
+  }> = [
+    {
+      title: "Find listings",
+      details: ["Location Search", "Map Search"],
+      icon: Search,
+    },
+    {
+      title: "View details",
+      details: ["Property Details", "Photo Gallery"],
+      icon: Eye,
+    },
+    {
+      title: "Request a booking",
+      details: ["Booking Request", "Select Date"],
+      icon: CalendarCheck2,
+    },
+    {
+      title: "Join as a tenant",
+      details: ["Owner Approval", "Booking Confirm"],
+      icon: BadgeCheck,
+    },
+  ];
 
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
-          {rentalTypes
-            .filter((type) => type.featured)
-            .map(({ value, label, banglaLabel, icon: Icon }) => {
-              const count = listings.filter(
-                (listing) => listing.unit.unitType === value,
-              ).length;
-              return (
-                <Link
-                  key={value}
-                  href={toLetMarketHref(query, value)}
-                  className="group flex min-h-44 flex-col rounded-xl border border-emerald-100 bg-white p-4 transition-colors duration-200 hover:border-emerald-300 hover:bg-emerald-50/35 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <span className="flex size-10 items-center justify-center rounded-lg bg-primary/8 text-primary transition-colors group-hover:bg-primary group-hover:text-primary-foreground">
-                      <Icon className="size-4.5" />
-                    </span>
-                    <ArrowRight className="mt-1 size-4 text-muted-foreground transition-transform group-hover:translate-x-1 group-hover:text-primary" />
-                  </div>
-                  <div className="mt-5">
-                    <div>
-                      <h3 className="font-semibold">{label}</h3>
-                      <p className="mt-0.5 text-xs text-muted-foreground">
-                        {banglaLabel}
-                      </p>
-                    </div>
-                  </div>
-                  <p className="mt-auto pt-5 text-xs font-semibold text-primary">
-                    {count} {count === 1 ? "listing" : "listings"} shown
-                  </p>
-                </Link>
-              );
-            })}
+  return (
+    <section className="border-b border-zinc-200 bg-zinc-50 py-12 sm:py-16">
+      <div className="site-container px-4 sm:px-6 lg:px-8">
+        <p className="text-xs font-semibold tracking-[0.14em] text-blue-700 uppercase">
+          Tenant journey
+        </p>
+        <div className="mt-2 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+          <h2 className="max-w-3xl text-2xl font-bold tracking-tight text-zinc-950 sm:text-3xl">
+            From listing search to digital booking and tenant connection
+          </h2>
+          <p className="text-sm font-medium text-zinc-500">
+            Fewer steps, more assurance.
+          </p>
+        </div>
+        <p className="mt-3 max-w-3xl text-sm leading-6 text-zinc-500">
+          From finding verified listings to Booking Confirm, Tenant Link and
+          Monthly Rent—a fully digital experience.
+        </p>
+
+        <ol className="mt-8 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {steps.map(({ title, details, icon: Icon }, index) => (
+            <li
+              key={title}
+              className="rounded-xl border border-zinc-200 bg-white p-5"
+            >
+              <div className="flex items-center justify-between gap-3">
+                <span className="flex size-10 items-center justify-center rounded-lg bg-blue-50 text-blue-700">
+                  <Icon className="size-5" aria-hidden="true" />
+                </span>
+                <span className="font-mono text-sm font-semibold text-zinc-400">
+                  {String(index + 1).padStart(2, "0")}
+                </span>
+              </div>
+              <h3 className="mt-5 font-semibold text-zinc-950">{title}</h3>
+              <ul className="mt-3 space-y-1.5 text-sm text-zinc-500">
+                {details.map((detail) => (
+                  <li key={detail} className="flex items-center gap-2">
+                    <span className="size-1.5 rounded-full bg-blue-600" />
+                    {detail}
+                  </li>
+                ))}
+              </ul>
+            </li>
+          ))}
+        </ol>
+      </div>
+    </section>
+  );
+}
+
+function OwnerCallToAction() {
+  return (
+    <section className="bg-zinc-50 py-12 sm:py-16">
+      <div className="site-container px-4 sm:px-6 lg:px-8">
+        <div className="grid gap-8 rounded-xl border border-zinc-200 bg-white p-6 sm:p-8 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center lg:p-10">
+          <div className="max-w-3xl">
+            <h2 className="text-2xl font-bold tracking-tight text-zinc-950 sm:text-3xl">
+              একটি Property নিবন্ধন করুন, হাজারো ভাড়াটিয়ার কাছে পৌঁছান—এক প্ল্যাটফর্মে
+            </h2>
+            <p className="mt-4 text-sm leading-7 text-zinc-600">
+              Bikalpo-তে Property Account তৈরি করে আপনার ফ্ল্যাট, বাসা, অফিস, দোকান,
+              গ্যারেজ, গুদাম বা যেকোনো ভাড়ার ইউনিটের জন্য Verified Listing প্রকাশ করুন।
+            </p>
+            <p className="mt-3 text-sm leading-7 text-zinc-500">
+              Permanent Property ID, QR Code, Smart Booking, Social Media Share
+              এবং Tenant Management—সবকিছু এক জায়গায়।
+            </p>
+          </div>
+          <div className="grid min-w-64 gap-3">
+            <Button asChild size="lg" className="rounded-md">
+              <ToLetAccountLink href="/account/to-let/properties/new">
+                Property Account তৈরি করুন <ArrowRight className="size-4" />
+              </ToLetAccountLink>
+            </Button>
+            <Button asChild size="lg" variant="outline" className="rounded-md">
+              <ToLetAccountLink href="/account/to-let/properties">
+                নতুন To-Let পোস্ট করুন <ArrowRight className="size-4" />
+              </ToLetAccountLink>
+            </Button>
+          </div>
         </div>
       </div>
     </section>
@@ -594,10 +672,10 @@ function FilterChip({
     <Link
       href={href}
       aria-current={active ? "page" : undefined}
-      className={`min-h-11 shrink-0 snap-start rounded-full border px-4 py-2 text-xs font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary ${
+      className={`inline-flex min-h-10 shrink-0 items-center rounded-md border px-3 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 ${
         active
-          ? "border-primary bg-primary text-primary-foreground"
-          : "border-border bg-background text-muted-foreground hover:border-primary/40 hover:text-primary"
+          ? "border-blue-600 bg-blue-600 text-white"
+          : "border-zinc-200 bg-white text-zinc-600 hover:border-blue-300 hover:text-blue-700"
       }`}
     >
       {label}
@@ -605,180 +683,30 @@ function FilterChip({
   );
 }
 
-function TenantJourney({ firstListing }: { firstListing?: UnitListing }) {
-  return (
-    <section className="border-y border-emerald-100 bg-emerald-50/30 py-14 sm:py-16">
-      <div className="site-container px-4 sm:px-6 lg:px-8">
-        <SectionHeading
-          title="From Listing Search to Digital Booking and Tenant Connection"
-          description="Fewer steps, more assurance—from verified listing search and booking confirmation to tenant connection and the monthly digital rent workflow."
-        />
-
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          {journeySteps.map(
-            ({ title, description, icon: Icon, phase }, index) => {
-              const href =
-                index === 0
-                  ? "/to-let#listings"
-                  : index === 1
-                    ? firstListing
-                      ? `/to-let/listings/${firstListing.listingCode}`
-                      : "/to-let#listings"
-                    : index === 2
-                      ? firstListing
-                        ? `/to-let/listings/${firstListing.listingCode}#booking`
-                        : "/to-let#listings"
-                      : "/account/to-let";
-              const card = (
-                <article
-                  key={title}
-                  className="relative h-full rounded-xl border border-emerald-100 bg-white p-5"
-                >
-                  <div className="flex items-start justify-between gap-4">
-                    <span className="text-xs font-semibold tracking-[0.14em] text-muted-foreground">
-                      {String(index + 1).padStart(2, "0")}
-                    </span>
-                    <span
-                      className={`rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase ${
-                        phase === "live"
-                          ? "bg-emerald-50 text-emerald-700"
-                          : "bg-amber-50 text-amber-700"
-                      }`}
-                    >
-                      {phase === "live" ? "Live" : "Upcoming"}
-                    </span>
-                  </div>
-                  <span className="mt-8 flex size-11 items-center justify-center rounded-xl bg-primary/8 text-primary">
-                    <Icon className="size-5" />
-                  </span>
-                  <h3 className="mt-4 font-semibold">{title}</h3>
-                  <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                    {description}
-                  </p>
-                  {href ? (
-                    <span className="mt-5 inline-flex items-center gap-1 text-xs font-semibold text-primary">
-                      Open step <ArrowRight className="size-3.5" />
-                    </span>
-                  ) : null}
-                </article>
-              );
-              return index === 3 ? (
-                <ToLetAccountLink
-                  key={title}
-                  href={href}
-                  className="rounded-xl transition-colors hover:bg-muted/30 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
-                >
-                  {card}
-                </ToLetAccountLink>
-              ) : (
-                <Link
-                  key={title}
-                  href={href}
-                  prefetch={false}
-                  className="rounded-xl transition-colors hover:bg-muted/30 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
-                >
-                  {card}
-                </Link>
-              );
-            },
-          )}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function OwnerCallToAction() {
-  return (
-    <section className="bg-stone-50/60 py-14 sm:py-20">
-      <div className="site-container px-4 sm:px-6 lg:px-8">
-        <div className="overflow-hidden rounded-2xl border border-emerald-900 bg-emerald-950 px-6 py-10 text-emerald-50 sm:px-10 sm:py-14 lg:px-14">
-          <div className="grid gap-10 lg:grid-cols-[1.2fr_0.8fr] lg:items-center">
-            <div>
-              <h2 className="max-w-3xl text-3xl font-semibold leading-tight tracking-[-0.035em] sm:text-4xl">
-                একটি Property নিবন্ধন করুন, হাজারো ভাড়াটিয়ার কাছে পৌঁছান—এক প্ল্যাটফর্মে।
-              </h2>
-              <p className="mt-5 max-w-2xl text-sm leading-7 text-emerald-100/80 sm:text-base">
-                Bikalpo-তে Property Account তৈরি করে আপনার ফ্ল্যাট, বাসা, অফিস, দোকান,
-                গ্যারেজ, গুদাম বা যেকোনো ভাড়ার ইউনিটের জন্য Verified Listing প্রকাশ করুন।
-                Permanent Property ID, QR Code, Smart Booking, Social Media
-                Share এবং Tenant Management—সবকিছু এক জায়গায়।
-              </p>
-              <div className="mt-7 flex flex-wrap gap-3 text-xs text-emerald-100/85">
-                {[
-                  "Verified Listing",
-                  "Permanent Property ID",
-                  "QR Code",
-                  "Smart Booking",
-                  "Social Media Share",
-                  "Tenant Management",
-                ].map((feature) => (
-                  <span
-                    key={feature}
-                    className="inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-white/8 px-3 py-1.5"
-                  >
-                    <BadgeCheck className="size-3.5 text-emerald-300" />
-                    {feature}
-                  </span>
-                ))}
-              </div>
-            </div>
-
-            <div className="flex flex-col gap-3 lg:items-end">
-              <Button
-                asChild
-                size="lg"
-                className="min-h-11 w-full rounded-lg bg-white text-emerald-900 hover:bg-emerald-50 sm:w-auto"
-              >
-                <ToLetAccountLink href="/account/to-let/properties/new">
-                  <Building2 className="size-4" /> Property Account তৈরি করুন
-                </ToLetAccountLink>
-              </Button>
-              <Button
-                asChild
-                size="lg"
-                variant="outline"
-                className="min-h-11 w-full rounded-lg border-emerald-200/30 bg-emerald-900 text-emerald-50 hover:bg-emerald-50 hover:text-emerald-950 sm:w-auto"
-              >
-                <ToLetAccountLink href="/account/to-let/properties">
-                  <QrCode className="size-4" /> নতুন To-Let পোস্ট করুন
-                </ToLetAccountLink>
-              </Button>
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function SectionHeading({
+function ListingMessage({
   title,
   description,
-  action,
+  actionLabel,
+  actionHref,
 }: {
   title: string;
   description: string;
-  action?: ReactNode;
+  actionLabel: string;
+  actionHref: string;
 }) {
   return (
-    <div className="mb-8 flex flex-col justify-between gap-5 sm:mb-10 md:flex-row md:items-end">
-      <div className="max-w-3xl">
-        <h2
-          id={
-            title === "সাম্প্রতিক ও ভেরিফাইড To-Let লিস্টিং"
-              ? "curated-listings-heading"
-              : undefined
-          }
-          className="text-3xl font-semibold leading-tight tracking-[-0.035em] sm:text-4xl"
-        >
-          {title}
-        </h2>
-        <p className="mt-4 text-sm leading-7 text-muted-foreground sm:text-base">
-          {description}
-        </p>
-      </div>
-      {action ? <div className="shrink-0">{action}</div> : null}
+    <div className="border border-dashed border-zinc-300 bg-zinc-50 px-6 py-14 text-center">
+      <Building2 className="mx-auto size-9 text-zinc-400" />
+      <h3 className="mt-4 text-lg font-semibold text-zinc-950">{title}</h3>
+      <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-zinc-500">
+        {description}
+      </p>
+      <Link
+        href={actionHref}
+        className="mt-5 inline-flex min-h-10 items-center rounded-md bg-blue-600 px-4 text-sm font-semibold text-white hover:bg-blue-700"
+      >
+        {actionLabel}
+      </Link>
     </div>
   );
 }

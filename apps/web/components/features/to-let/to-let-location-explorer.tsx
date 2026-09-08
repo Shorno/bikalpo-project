@@ -134,24 +134,27 @@ export function ToLetLocationExplorer({
     <section
       id="location-intelligence"
       aria-labelledby="location-intelligence-heading"
-      className="scroll-mt-28 border-y border-stone-200/80 bg-white py-14 sm:py-16"
+      className="scroll-mt-28 border-y border-border/70 bg-background py-12 sm:py-16"
     >
       <div className="site-container px-4 sm:px-6 lg:px-8">
         <div className="mb-8 max-w-3xl sm:mb-10">
+          <p className="text-xs font-semibold tracking-[0.14em] text-primary uppercase">
+            Location intelligence
+          </p>
           <h2
             id="location-intelligence-heading"
-            className="text-3xl font-semibold leading-tight tracking-[-0.035em] sm:text-4xl"
+            className="mt-2 text-2xl font-semibold leading-tight tracking-[-0.025em] sm:text-3xl"
           >
             নির্ভুলভাবে আপনার পছন্দের To-Let ইউনিট খুঁজুন
           </h2>
-          <p className="mt-4 max-w-[70ch] text-sm leading-7 text-muted-foreground sm:text-base">
-            নিজের Search Area ও radius নির্ধারণ করুন, কাছের School, Hospital,
-            Mosque, Market, Bus Stop বা Metro Station দেখুন এবং Google Maps-এ
-            distance ও commute route যাচাই করুন।
+          <p className="mt-2 max-w-[70ch] text-sm leading-6 text-muted-foreground">
+            ম্যাপে খুঁজুন, নিজের Search Area নির্ধারণ করুন, Radius Search, Nearby
+            School, Hospital, Mosque, Market, Bus Stop, Metro, Smart Distance,
+            Commute Time ও Live Availability দেখে সিদ্ধান্ত নিন।
           </p>
         </div>
 
-        <div className="mb-5 rounded-xl border border-emerald-100 bg-emerald-50/30 p-4 sm:p-5">
+        <div className="mb-5 rounded-xl border border-border bg-[oklch(0.972_0.008_250)] p-4 sm:p-5">
           <form
             action="/to-let#location-intelligence"
             className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_10rem_auto]"
@@ -244,7 +247,7 @@ export function ToLetLocationExplorer({
           ) : null}
         </div>
 
-        <div className="grid overflow-hidden rounded-xl border border-stone-200 bg-background lg:grid-cols-[0.72fr_1.28fr]">
+        <div className="grid overflow-hidden rounded-xl border border-border bg-background lg:grid-cols-[0.72fr_1.28fr]">
           <div className="border-b border-border p-5 sm:p-6 lg:border-r lg:border-b-0">
             <div className="flex items-start justify-between gap-4">
               <div>
@@ -407,7 +410,7 @@ export function ToLetLocationExplorer({
                 <Navigation className="size-4 text-primary" />
                 <div>
                   <p className="text-[11px] text-muted-foreground">
-                    Live availability
+                    Available listings
                   </p>
                   <p className="text-xs font-semibold tabular-nums">
                     {unavailable ? "Unavailable" : `${availableCount} unit(s)`}

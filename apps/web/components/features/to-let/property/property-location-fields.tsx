@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronsUpDown, Loader2, MapPin } from "lucide-react";
+import { ChevronsUpDown, MapPin } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
@@ -28,19 +28,27 @@ import {
   bangladeshDivisions,
   districtsForDivision,
 } from "@/constants/bangladesh-locations";
-import { useBarikoiAutocomplete } from "@/hooks/use-barikoi-autocomplete";
+import {
+  areasForUpazila,
+  upazilasForDistrict,
+} from "@/constants/property-location-options";
 import { cn } from "@/lib/utils";
 
 interface PropertyLocationFieldsProps {
   division: string;
   district: string;
   area: string;
+  upazila: string;
   errors: {
     division?: string;
     district?: string;
     area?: string;
+    upazila?: string;
   };
-  onChange: (field: "division" | "district" | "area", value: string) => void;
+  onChange: (
+    field: "division" | "district" | "upazila" | "area",
+    value: string,
+  ) => void;
 }
 
 function FieldMessage({ message }: { message?: string }) {
@@ -51,61 +59,77 @@ function FieldMessage({ message }: { message?: string }) {
   ) : null;
 }
 
-function areaName(place: { area: string; city: string; address: string }) {
-  return place.area || place.city || place.address;
-}
-
 export function PropertyLocationFields({
   division,
   district,
   area,
+  upazila,
   errors,
   onChange,
 }: PropertyLocationFieldsProps) {
   const [areaOpen, setAreaOpen] = useState(false);
+  const [upazilaOpen, setUpazilaOpen] = useState(false);
+  const [upazilaQuery, setUpazilaQuery] = useState("");
   const [areaQuery, setAreaQuery] = useState("");
-  const { suggestions, isLoading, search, clearSuggestions } =
-    useBarikoiAutocomplete();
   const districts = districtsForDivision(division);
-
-  const areaOptions = useMemo(() => {
-    const seen = new Set<string>();
-    return suggestions.filter((place) => {
-      const label = areaName(place).trim();
-      if (!label || seen.has(label.toLowerCase())) return false;
-      seen.add(label.toLowerCase());
-      return true;
-    });
-  }, [suggestions]);
+  const upazilaOptions = useMemo(
+    () => upazilasForDistrict(division, district),
+    [division, district],
+  );
+  const areaOptions = useMemo(
+    () => areasForUpazila(division, district, upazila),
+    [division, district, upazila],
+  );
+  const selectUpazila = (value: string) => {
+    if (value !== upazila) {
+      onChange("upazila", value);
+      onChange("area", "");
+    }
+    setUpazilaQuery("");
+    setAreaQuery("");
+    setUpazilaOpen(false);
+    setAreaOpen(false);
+  };
 
   const selectDivision = (value: string) => {
+    if (value === division) return;
     onChange("division", value);
     onChange("district", "");
+    onChange("upazila", "");
+    setUpazilaQuery("");
     onChange("area", "");
     setAreaQuery("");
-    clearSuggestions();
+    setUpazilaOpen(false);
+    setAreaOpen(false);
   };
 
   const selectDistrict = (value: string) => {
+    if (value === district) return;
     onChange("district", value);
+    onChange("upazila", "");
+    setUpazilaQuery("");
     onChange("area", "");
     setAreaQuery("");
-    clearSuggestions();
+    setUpazilaOpen(false);
+    setAreaOpen(false);
   };
 
   const selectArea = (value: string) => {
     onChange("area", value.trim());
     setAreaQuery("");
-    clearSuggestions();
     setAreaOpen(false);
   };
 
   return (
     <div className="grid gap-4 sm:grid-cols-2">
       <div className="space-y-1.5">
-        <Label>Division *</Label>
+        <Label htmlFor="property-division">Division *</Label>
         <Select value={division} onValueChange={selectDivision}>
-          <SelectTrigger aria-invalid={Boolean(errors.division)}>
+          <SelectTrigger
+            id="property-division"
+            className="h-10 w-full"
+            aria-invalid={Boolean(errors.division)}
+          >
             <SelectValue placeholder="Select Division" />
           </SelectTrigger>
           <SelectContent>
@@ -120,13 +144,17 @@ export function PropertyLocationFields({
       </div>
 
       <div className="space-y-1.5">
-        <Label>District *</Label>
+        <Label htmlFor="property-district">District *</Label>
         <Select
           value={district}
           onValueChange={selectDistrict}
           disabled={!division}
         >
-          <SelectTrigger aria-invalid={Boolean(errors.district)}>
+          <SelectTrigger
+            id="property-district"
+            className="h-10 w-full"
+            aria-invalid={Boolean(errors.district)}
+          >
             <SelectValue
               placeholder={
                 division ? "Select District" : "Select Division first"
@@ -144,17 +172,96 @@ export function PropertyLocationFields({
         <FieldMessage message={errors.district} />
       </div>
 
-      <div className="space-y-1.5 sm:col-span-2">
-        <Label>Area / Upazila *</Label>
+      <div className="space-y-1.5">
+        <Label htmlFor="property-upazila">Upazila / Thana *</Label>
+        <Popover open={upazilaOpen} onOpenChange={setUpazilaOpen}>
+          <PopoverTrigger asChild>
+            <Button
+              id="property-upazila"
+              type="button"
+              variant="outline"
+              role="combobox"
+              aria-expanded={upazilaOpen}
+              aria-invalid={Boolean(errors.upazila)}
+              disabled={!district}
+              className={cn(
+                "w-full justify-between font-normal",
+                !upazila && "text-muted-foreground",
+              )}
+            >
+              <span className="truncate">
+                {upazila ||
+                  (district
+                    ? "Select Upazila / Thana"
+                    : "Select District first")}
+              </span>
+              <ChevronsUpDown className="size-4 shrink-0" aria-hidden="true" />
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent
+            align="start"
+            className="w-[var(--radix-popover-trigger-width)] p-0"
+          >
+            <Command shouldFilter={false}>
+              <CommandInput
+                placeholder="Type Upazila / Thana name"
+                value={upazilaQuery}
+                onValueChange={setUpazilaQuery}
+                maxLength={150}
+              />
+              <CommandList>
+                <CommandEmpty>
+                  No location listed. Type at least 2 letters to add a name.
+                </CommandEmpty>
+                <CommandGroup>
+                  {upazilaOptions
+                    .filter((option) =>
+                      option
+                        .toLowerCase()
+                        .includes(upazilaQuery.trim().toLowerCase()),
+                    )
+                    .map((option) => (
+                      <CommandItem
+                        key={option}
+                        value={option}
+                        onSelect={() => selectUpazila(option)}
+                      >
+                        {option}
+                      </CommandItem>
+                    ))}
+                  {upazilaQuery.trim().length >= 2 &&
+                    !upazilaOptions.some(
+                      (option) =>
+                        option.toLowerCase() ===
+                        upazilaQuery.trim().toLowerCase(),
+                    ) && (
+                      <CommandItem
+                        value={`manual-${upazilaQuery}`}
+                        onSelect={() => selectUpazila(upazilaQuery.trim())}
+                      >
+                        Use &ldquo;{upazilaQuery.trim()}&rdquo; (not listed)
+                      </CommandItem>
+                    )}
+                </CommandGroup>
+              </CommandList>
+            </Command>
+          </PopoverContent>
+        </Popover>
+        <FieldMessage message={errors.upazila} />
+      </div>
+
+      <div className="space-y-1.5">
+        <Label htmlFor="property-area">Area *</Label>
         <Popover open={areaOpen} onOpenChange={setAreaOpen}>
           <PopoverTrigger asChild>
             <Button
+              id="property-area"
               type="button"
               variant="outline"
               role="combobox"
               aria-expanded={areaOpen}
               aria-invalid={Boolean(errors.area)}
-              disabled={!district}
+              disabled={!upazila}
               className={cn(
                 "w-full justify-between font-normal",
                 !area && "text-muted-foreground",
@@ -163,7 +270,8 @@ export function PropertyLocationFields({
               <span className="flex min-w-0 items-center gap-2">
                 <MapPin className="size-4 shrink-0" />
                 <span className="truncate">
-                  {area || (district ? "Select Area" : "Select District first")}
+                  {area ||
+                    (upazila ? "Select Area" : "Select Upazila / Thana first")}
                 </span>
               </span>
               <ChevronsUpDown className="size-4 shrink-0 opacity-50" />
@@ -175,31 +283,27 @@ export function PropertyLocationFields({
           >
             <Command shouldFilter={false}>
               <CommandInput
-                placeholder={`Search area in ${district}`}
+                placeholder={`Search area in ${upazila}`}
                 value={areaQuery}
-                onValueChange={(value) => {
-                  setAreaQuery(value);
-                  search(value, district);
-                }}
+                onValueChange={setAreaQuery}
+                maxLength={150}
               />
               <CommandList>
-                {isLoading ? (
-                  <div className="flex items-center justify-center gap-2 py-6 text-sm text-muted-foreground">
-                    <Loader2 className="size-4 animate-spin" /> Searching
-                    areas...
-                  </div>
-                ) : null}
-                {!isLoading && areaQuery.trim().length < 2 ? (
-                  <CommandEmpty>Type at least 2 letters.</CommandEmpty>
-                ) : null}
-                {!isLoading && areaQuery.trim().length >= 2 ? (
-                  <CommandGroup heading="Area results">
-                    {areaOptions.map((place) => {
-                      const label = areaName(place);
+                <CommandEmpty>
+                  No area listed. Type at least 2 letters to add a name.
+                </CommandEmpty>
+                <CommandGroup heading="Area results">
+                  {areaOptions
+                    .filter((option) =>
+                      option
+                        .toLowerCase()
+                        .includes(areaQuery.trim().toLowerCase()),
+                    )
+                    .map((label) => {
                       return (
                         <CommandItem
-                          key={place.id}
-                          value={`${place.id}-${label}`}
+                          key={label}
+                          value={label}
                           onSelect={() => selectArea(label)}
                           data-checked={area === label}
                         >
@@ -208,21 +312,23 @@ export function PropertyLocationFields({
                             <span className="block truncate font-medium">
                               {label}
                             </span>
-                            <span className="block truncate text-xs text-muted-foreground">
-                              {place.address}
-                            </span>
                           </span>
                         </CommandItem>
                       );
                     })}
-                    <CommandItem
-                      value={`manual-${areaQuery}`}
-                      onSelect={() => selectArea(areaQuery)}
-                    >
-                      Use &ldquo;{areaQuery.trim()}&rdquo;
-                    </CommandItem>
-                  </CommandGroup>
-                ) : null}
+                  {areaQuery.trim().length >= 2 &&
+                    !areaOptions.some(
+                      (option) =>
+                        option.toLowerCase() === areaQuery.trim().toLowerCase(),
+                    ) && (
+                      <CommandItem
+                        value={`manual-${areaQuery}`}
+                        onSelect={() => selectArea(areaQuery)}
+                      >
+                        Use &ldquo;{areaQuery.trim()}&rdquo; (not listed)
+                      </CommandItem>
+                    )}
+                </CommandGroup>
               </CommandList>
             </Command>
           </PopoverContent>

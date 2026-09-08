@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { type ComponentProps, forwardRef, useEffect, useState } from "react";
+import { useLoginRequired } from "@/components/features/auth/login-required-modal";
 import { authClient } from "@/lib/auth-client";
 
 export const ToLetAccountLink = forwardRef<
@@ -11,6 +12,7 @@ export const ToLetAccountLink = forwardRef<
   }
 >(function ToLetAccountLink({ href, onClick, ...props }, ref) {
   const { data: session, isPending } = authClient.useSession();
+  const { showLoginModal } = useLoginRequired();
   const [isHydrated, setIsHydrated] = useState(false);
 
   useEffect(() => {
@@ -33,6 +35,19 @@ export const ToLetAccountLink = forwardRef<
           return;
         }
         onClick?.(event);
+        if (
+          !event.defaultPrevented &&
+          !session?.user &&
+          event.button === 0 &&
+          !event.metaKey &&
+          !event.ctrlKey &&
+          !event.shiftKey &&
+          !event.altKey &&
+          (!props.target || props.target === "_self")
+        ) {
+          event.preventDefault();
+          showLoginModal();
+        }
       }}
       {...props}
     />

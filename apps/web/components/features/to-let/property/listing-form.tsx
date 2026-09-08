@@ -80,7 +80,19 @@ const steps = [
 
 const stepSchemas = [
   listingPublishSchema.pick({
-    title: true,
+    availableFrom: true,
+  }),
+  listingDraftSchema.pick({
+    preferredTenant: true,
+    description: true,
+  }),
+  listingDraftSchema.pick({
+    hasInternet: true,
+    otherFacilities: true,
+    imageUrls: true,
+    videoUrl: true,
+  }),
+  listingPublishSchema.pick({
     monthlyRent: true,
     monthlyRentVisible: true,
     advanceAmount: true,
@@ -96,19 +108,8 @@ const stepSchemas = [
     utilityCharge: true,
     utilityChargeVisible: true,
     utilityChargeIncluded: true,
-    availableFrom: true,
+    visibility: true,
   }),
-  listingDraftSchema.pick({
-    preferredTenant: true,
-    description: true,
-  }),
-  listingDraftSchema.pick({
-    hasInternet: true,
-    otherFacilities: true,
-    imageUrls: true,
-    videoUrl: true,
-  }),
-  listingDraftSchema.pick({ visibility: true }),
 ] as const;
 
 type FieldErrors = Record<string, string>;
@@ -331,6 +332,15 @@ function LoadedListingForm({
   const [values, setValues] = useState(() =>
     initialValues(property, unit, listing),
   );
+  const residentialUnit = [
+    "family_flat",
+    "bachelor_room",
+    "sublet",
+    "other",
+  ].includes(unit.unitType);
+  const showBathrooms =
+    residentialUnit || ["office", "shop", "warehouse"].includes(unit.unitType);
+  const showBalconies = residentialUnit || unit.unitType === "office";
   const [errors, setErrors] = useState<FieldErrors>({});
   const isPublicListingRenewalDue = listing
     ? isToLetPublicListingRenewalDue({
@@ -489,7 +499,7 @@ function LoadedListingForm({
           ) : listing?.status === "active" ? (
             <Button variant="outline" asChild>
               <Link href={liveHref} target="_blank" prefetch={false}>
-                <ExternalLink /> Open Live Page
+                <ExternalLink /> Open Listing Page
               </Link>
             </Button>
           ) : null
@@ -595,55 +605,6 @@ function LoadedListingForm({
               label="Unit Size *"
               value={`${unit.sizeSqFt.toLocaleString("en-BD")} Sq.ft`}
             />
-            <MoneyField
-              id="monthly-rent"
-              label="Rent *"
-              value={values.monthlyRent}
-              error={errors.monthlyRent}
-              onChange={(value) => update("monthlyRent", value)}
-            />
-            <MoneyField
-              id="advance-amount"
-              label="Advance *"
-              value={values.advanceAmount}
-              error={errors.advanceAmount}
-              onChange={(value) => update("advanceAmount", value)}
-            />
-            <MoneyField
-              id="security-deposit"
-              label="Security Deposit"
-              value={values.securityDeposit}
-              error={errors.securityDeposit}
-              onChange={(value) => update("securityDeposit", value)}
-            />
-            <div>
-              <MoneyField
-                id="service-charge"
-                label="Service Charge"
-                value={values.serviceCharge}
-                error={errors.serviceCharge}
-                onChange={(value) => update("serviceCharge", value)}
-              />
-              <ChargeIncluded
-                label="Service charge"
-                checked={values.serviceChargeIncluded}
-                onChange={(checked) => update("serviceChargeIncluded", checked)}
-              />
-            </div>
-            <div>
-              <MoneyField
-                id="parking-charge"
-                label="Parking"
-                value={values.parkingCharge}
-                error={errors.parkingCharge}
-                onChange={(value) => update("parkingCharge", value)}
-              />
-              <ChargeIncluded
-                label="Parking"
-                checked={values.parkingChargeIncluded}
-                onChange={(checked) => update("parkingChargeIncluded", checked)}
-              />
-            </div>
             <div className="space-y-1.5">
               <Label htmlFor="available-from">Available From</Label>
               <Input
@@ -667,13 +628,23 @@ function LoadedListingForm({
           description="Physical details come from the reusable Unit. Edit the Unit itself if any permanent information is incorrect."
         >
           <div className="grid gap-4 sm:grid-cols-2">
-            <ReadonlyField label="Bedrooms *" value={unit.bedrooms} />
-            <ReadonlyField label="Bathrooms *" value={unit.bathrooms} />
+            {residentialUnit ? (
+              <ReadonlyField label="Bedrooms *" value={unit.bedrooms} />
+            ) : null}
+            {showBathrooms ? (
+              <ReadonlyField label="Bathrooms *" value={unit.bathrooms} />
+            ) : null}
             {[
-              ["Balcony", unit.balconies > 0],
-              ["Kitchen", unit.hasKitchen],
-              ["Drawing Room", unit.hasDrawingRoom],
-              ["Dining Space", unit.hasDiningSpace],
+              ...(showBalconies
+                ? [["Balcony", unit.balconies > 0] as const]
+                : []),
+              ...(residentialUnit
+                ? [
+                    ["Kitchen", unit.hasKitchen] as const,
+                    ["Drawing Room", unit.hasDrawingRoom] as const,
+                    ["Dining Space", unit.hasDiningSpace] as const,
+                  ]
+                : []),
             ].map(([label, included]) => (
               <div key={String(label)} className="space-y-1.5">
                 <p className="text-sm font-medium text-gray-900">{label}</p>
@@ -740,7 +711,7 @@ function LoadedListingForm({
         <div className="space-y-5">
           <FormSection
             title="Step 3 · Facilities"
-            description="Property and Unit facilities are shown automatically on the live listing."
+            description="Property and Unit facilities are shown automatically on the public listing."
           >
             <div className="grid gap-x-8 gap-y-4 sm:grid-cols-2">
               {[
@@ -840,7 +811,84 @@ function LoadedListingForm({
 
       {currentStep === 4 ? (
         <div className="space-y-5">
-          <FormSection title="Step 4 · Contact">
+          <FormSection
+            title="Step 4 · Pricing"
+            description="Set the rent and charges for this listing. Included charges are shown as part of the monthly rent."
+          >
+            <div className="grid gap-4 sm:grid-cols-2">
+              <MoneyField
+                id="monthly-rent"
+                label="Rent *"
+                value={values.monthlyRent}
+                error={errors.monthlyRent}
+                onChange={(value) => update("monthlyRent", value)}
+              />
+              <MoneyField
+                id="advance-amount"
+                label="Advance *"
+                value={values.advanceAmount}
+                error={errors.advanceAmount}
+                onChange={(value) => update("advanceAmount", value)}
+              />
+              <MoneyField
+                id="security-deposit"
+                label="Security Deposit"
+                value={values.securityDeposit}
+                error={errors.securityDeposit}
+                onChange={(value) => update("securityDeposit", value)}
+              />
+              <div>
+                <MoneyField
+                  id="service-charge"
+                  label="Service Charge"
+                  value={values.serviceCharge}
+                  error={errors.serviceCharge}
+                  onChange={(value) => update("serviceCharge", value)}
+                />
+                <ChargeIncluded
+                  label="Service charge"
+                  checked={values.serviceChargeIncluded}
+                  onChange={(checked) =>
+                    update("serviceChargeIncluded", checked)
+                  }
+                />
+              </div>
+              <div>
+                <MoneyField
+                  id="parking-charge"
+                  label="Parking"
+                  value={values.parkingCharge}
+                  error={errors.parkingCharge}
+                  onChange={(value) => update("parkingCharge", value)}
+                />
+                <ChargeIncluded
+                  label="Parking"
+                  checked={values.parkingChargeIncluded}
+                  onChange={(checked) =>
+                    update("parkingChargeIncluded", checked)
+                  }
+                />
+              </div>
+              <div>
+                <MoneyField
+                  id="utility-charge"
+                  label="Utility Charge"
+                  value={values.utilityCharge}
+                  error={errors.utilityCharge}
+                  onChange={(value) => update("utilityCharge", value)}
+                />
+                <ChargeIncluded
+                  label="Utility charge"
+                  checked={values.utilityChargeIncluded}
+                  onChange={(checked) =>
+                    update("utilityChargeIncluded", checked)
+                  }
+                />
+              </div>
+            </div>
+          </FormSection>
+
+          <FormSection title="Contact">
             <div className="grid gap-4 sm:grid-cols-2">
               <ReadonlyField
                 label="Contact Person"
@@ -857,9 +905,9 @@ function LoadedListingForm({
             </p>
           </FormSection>
 
-          <details className="rounded-lg border border-gray-200 bg-white">
+          <details open className="rounded-lg border border-gray-200 bg-white">
             <summary className="cursor-pointer px-5 py-4 text-sm font-semibold text-gray-900 sm:px-6">
-              Advanced publishing settings
+              Publishing and visitor visibility
             </summary>
             <div className="space-y-6 border-t border-gray-100 px-5 py-5 sm:px-6">
               <div>
@@ -955,20 +1003,6 @@ function LoadedListingForm({
               </div>
 
               <div className="max-w-xl">
-                <MoneyField
-                  id="utility-charge"
-                  label="Utility Charge"
-                  value={values.utilityCharge}
-                  error={errors.utilityCharge}
-                  onChange={(value) => update("utilityCharge", value)}
-                />
-                <ChargeIncluded
-                  label="Utility charge"
-                  checked={values.utilityChargeIncluded}
-                  onChange={(checked) =>
-                    update("utilityChargeIncluded", checked)
-                  }
-                />
                 <PriceVisibility
                   label="utility charge"
                   checked={values.utilityChargeVisible}

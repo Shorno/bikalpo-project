@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" role="img" aria-labelledby="title desc">
+  <title id="title">Bikalpo To-Let QR poster background</title>
+  <desc id="desc">A branded To-Let poster preview with a decorative QR pattern.</desc>
+  <rect width="1600" height="900" fill="#f8fafc"/>
+  <rect x="34" y="34" width="1532" height="832" rx="34" fill="#ffffff" stroke="#0f3f9e" stroke-width="18"/>
+  <circle cx="1328" cy="152" r="210" fill="#ecfdf5"/>
+  <circle cx="176" cy="774" r="254" fill="#eff6ff"/>
+  <path d="M118 170h590M118 226h430M118 282h510" stroke="#dbeafe" stroke-width="26" stroke-linecap="round"/>
+  <path d="M118 390h670M118 442h520" stroke="#e2e8f0" stroke-width="18" stroke-linecap="round"/>
+  <g transform="translate(1008 190)" fill="#0f172a">
+    <rect width="370" height="370" rx="28" fill="#ffffff" stroke="#f97316" stroke-width="8"/>
+    <g transform="translate(34 34)">
+      <path d="M0 0h92v92H0zM20 20h52v52H20zM210 0h92v92h-92zM230 20h52v52h-52zM0 210h92v92H0zM20 230h52v52H20z" fill-rule="evenodd"/>
+      <path d="M118 0h26v26h-26zM158 0h26v52h-26zM118 42h26v26h-26zM112 84h38v28h-38zM166 72h26v40h-26zM206 112h30v30h-30zM250 112h52v26h-52zM104 128h34v34h-34zM152 126h38v26h-38zM0 112h28v54H0zM42 116h46v26H42zM12 178h34v26H12zM60 166h38v38H60zM112 178h28v54h-28zM154 166h50v26h-50zM220 160h26v54h-26zM260 154h42v28h-42zM166 208h34v34h-34zM212 228h30v30h-30zM258 202h44v28h-44zM104 256h26v46h-26zM144 266h38v36h-38zM198 276h28v26h-28zM244 248h58v26h-58z"/>
+    </g>
+  </g>
+  <rect x="1012" y="594" width="360" height="58" rx="18" fill="#0f3f9e"/>
+  <text x="1192" y="633" text-anchor="middle" font-family="Arial, sans-serif" font-size="25" font-weight="700" fill="#ffffff">SCAN TO VIEW</text>
+  <path d="M118 720h620" stroke="#dbeafe" stroke-width="24" stroke-linecap="round"/>
+  <path d="M118 770h420" stroke="#fed7aa" stroke-width="18" stroke-linecap="round"/>
+</svg>

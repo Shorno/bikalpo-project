@@ -1,3 +1,4 @@
+import { effectiveUnitAddress } from "../lib/tolet-unit-address";
 import { db } from "@bikalpo-project/db";
 import {
   type ToletBookingOfferSnapshot,
@@ -229,9 +230,10 @@ function offerSnapshotDto(
       name: snapshot.property.name,
       location: [
         snapshot.property.location.area,
+        snapshot.property.location.upazila,
         snapshot.property.location.district,
         snapshot.property.location.division,
-      ].join(", "),
+      ].filter(Boolean).join(", "),
       description: snapshot.property.description ?? null,
       facilities: snapshot.property.facilities ?? null,
     },
@@ -267,6 +269,7 @@ function createOfferSnapshot(
   capturedAt: Date,
 ): ToletBookingOfferSnapshot {
   const { listing, unit, property } = row;
+  const address = effectiveUnitAddress(property, unit);
   const imageUrl =
     listing.imageUrls[0] ?? unit.imageUrls[0] ?? property.coverImageUrl;
 
@@ -302,9 +305,11 @@ function createOfferSnapshot(
       propertyCode: formatPropertyCode(property),
       name: property.name,
       location: {
-        division: property.division,
-        district: property.district,
-        area: property.area,
+        upazila: address.upazila,
+        fullAddress: address.fullAddress,
+        division: address.division,
+        district: address.district,
+        area: address.area,
       },
       description: property.description,
       facilities: {

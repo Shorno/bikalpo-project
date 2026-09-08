@@ -28,6 +28,7 @@ import {
   unitTypes,
 } from "@/schema/to-let-property.schema";
 import { IncludedExcludedButtons } from "./included-excluded-buttons";
+import fieldStyles from "./property-form-fields.module.css";
 import { propertyFromResponse } from "./property-details-client";
 import {
   PropertyDetailsSkeleton,
@@ -35,8 +36,10 @@ import {
   PropertyPageHeader,
 } from "./property-ui";
 import type { ToLetPropertyView, ToLetUnitView } from "./types";
+import { UnitAddressFields } from "./unit-address-fields";
 
 const emptyUnit: UnitFormValues = {
+  addressOverride: null,
   name: "",
   unitType: "",
   floorNumber: 0,
@@ -52,9 +55,51 @@ const emptyUnit: UnitFormValues = {
   imageUrls: [],
 };
 
+const residentialUnitTypes = new Set([
+  "family_flat",
+  "bachelor_room",
+  "sublet",
+  "other",
+]);
+const bathroomUnitTypes = new Set([
+  ...residentialUnitTypes,
+  "office",
+  "shop",
+  "warehouse",
+]);
+const furnishedUnitTypes = new Set([...bathroomUnitTypes, "garage"]);
+
+function unitCapabilities(unitType: string) {
+  const residential = residentialUnitTypes.has(unitType);
+  return {
+    bedrooms: residential,
+    bathrooms: bathroomUnitTypes.has(unitType),
+    balconies: residential || unitType === "office",
+    drawingRoom: residential,
+    diningSpace: residential,
+    kitchen: residential,
+    furnished: furnishedUnitTypes.has(unitType),
+  };
+}
+
+function normalizeUnitValues(values: UnitFormValues): UnitFormValues {
+  const capabilities = unitCapabilities(values.unitType);
+  return {
+    ...values,
+    bedrooms: capabilities.bedrooms ? values.bedrooms : 0,
+    bathrooms: capabilities.bathrooms ? values.bathrooms : 0,
+    balconies: capabilities.balconies ? values.balconies : 0,
+    hasDrawingRoom: capabilities.drawingRoom && values.hasDrawingRoom,
+    hasDiningSpace: capabilities.diningSpace && values.hasDiningSpace,
+    hasKitchen: capabilities.kitchen && values.hasKitchen,
+    isFurnished: capabilities.furnished && values.isFurnished,
+  };
+}
+
 function valuesFromUnit(unit?: ToLetUnitView): UnitFormValues {
   return unit
     ? {
+        addressOverride: unit.addressOverride ?? null,
         name: unit.name,
         unitType: unit.unitType,
         floorNumber: unit.floorNumber,
@@ -111,6 +156,7 @@ function LoadedUnitForm({
   const [errors, setErrors] = useState<Record<string, string>>({});
   const isEditing = Boolean(unit);
   const isPending = createMutation.isPending || updateMutation.isPending;
+  const capabilities = unitCapabilities(values.unitType);
 
   const update = <K extends keyof UnitFormValues>(
     key: K,
@@ -118,24 +164,35 @@ function LoadedUnitForm({
   ) => {
     setValues((current) => ({ ...current, [key]: value }));
     setErrors((current) => {
-      if (!current[key]) return current;
       const next = { ...current };
-      delete next[key];
+      for (const errorKey of Object.keys(next)) {
+        if (errorKey === key || errorKey.startsWith(`${key}.`))
+          delete next[errorKey];
+      }
       return next;
     });
   };
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
-    const parsed = unitSchema.safeParse(values);
+    const normalizedValues = normalizeUnitValues(values);
+    const parsed = unitSchema.safeParse(normalizedValues);
     if (!parsed.success) {
       const nextErrors: Record<string, string> = {};
       for (const issue of parsed.error.issues) {
-        const key = String(issue.path[0] ?? "form");
+        const key = issue.path.join(".") || "form";
         if (!nextErrors[key]) nextErrors[key] = issue.message;
       }
       setErrors(nextErrors);
       toast.error("Please review the highlighted fields");
+      return;
+    }
+    if (!unit && parsed.data.imageUrls.length === 0) {
+      setErrors((current) => ({
+        ...current,
+        imageUrls: "Add at least one unit photo",
+      }));
+      toast.error("Add at least one unit photo");
       return;
     }
 
@@ -167,7 +224,7 @@ function LoadedUnitForm({
   };
 
   return (
-    <form onSubmit={submit} className="space-y-5">
+    <form onSubmit={submit} className={`${fieldStyles.fields} space-y-5`}>
       <PropertyPageHeader
         title={isEditing ? "Edit Unit" : "Create Unit"}
         description={`${property.name} · ${property.propertyCode}`}
@@ -193,6 +250,13 @@ function LoadedUnitForm({
         </div>
       </div>
 
+      <UnitAddressFields
+        property={property}
+        value={values.addressOverride}
+        onChange={(address) => update("addressOverride", address)}
+        errors={errors}
+      />
+
       <section className="rounded-lg border border-gray-200 bg-white p-5 sm:p-6">
         <h2 className="font-semibold text-gray-900">Unit identity</h2>
         <div className="mt-4 grid gap-4 sm:grid-cols-2">
@@ -211,7 +275,17 @@ function LoadedUnitForm({
             <Label>Unit Type *</Label>
             <Select
               value={values.unitType}
-              onValueChange={(value) => update("unitType", value)}
+              onValueChange={(value) => {
+                setValues((current) =>
+                  normalizeUnitValues({ ...current, unitType: value }),
+                );
+                setErrors((current) => {
+                  if (!current.unitType) return current;
+                  const next = { ...current };
+                  delete next.unitType;
+                  return next;
+                });
+              }}
             >
               <SelectTrigger aria-invalid={Boolean(errors.unitType)}>
                 <SelectValue placeholder="Select unit type" />
@@ -273,56 +347,65 @@ function LoadedUnitForm({
         <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
           {(
             [
-              ["bedrooms", "Bedrooms"],
-              ["bathrooms", "Bathrooms"],
-              ["balconies", "Balconies"],
+              ["bedrooms", "Bedrooms", capabilities.bedrooms],
+              ["bathrooms", "Bathrooms", capabilities.bathrooms],
+              ["balconies", "Balconies", capabilities.balconies],
             ] as const
-          ).map(([key, label]) => (
-            <div key={key} className="space-y-1.5">
-              <Label htmlFor={`unit-${key}`}>{label}</Label>
-              <Input
-                id={`unit-${key}`}
-                type="number"
-                min={0}
-                value={values[key]}
-                onChange={(event) => update(key, Number(event.target.value))}
-                aria-invalid={Boolean(errors[key])}
-              />
-              <UnitError message={errors[key]} />
-            </div>
-          ))}
+          )
+            .filter(([, , visible]) => visible)
+            .map(([key, label]) => (
+              <div key={key} className="space-y-1.5">
+                <Label htmlFor={`unit-${key}`}>{label}</Label>
+                <Input
+                  id={`unit-${key}`}
+                  type="number"
+                  min={0}
+                  value={values[key]}
+                  onChange={(event) => update(key, Number(event.target.value))}
+                  aria-invalid={Boolean(errors[key])}
+                />
+                <UnitError message={errors[key]} />
+              </div>
+            ))}
         </div>
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
           {(
             [
-              ["hasDrawingRoom", "Drawing room"],
-              ["hasDiningSpace", "Dining space"],
-              ["hasKitchen", "Kitchen"],
-              ["isFurnished", "Furnished"],
+              ["hasDrawingRoom", "Drawing room", capabilities.drawingRoom],
+              ["hasDiningSpace", "Dining space", capabilities.diningSpace],
+              ["hasKitchen", "Kitchen", capabilities.kitchen],
+              ["isFurnished", "Furnished", capabilities.furnished],
             ] as const
-          ).map(([key, label]) =>
-            key === "isFurnished" ? (
-              <div
-                key={key}
-                className="flex min-h-14 items-center justify-between gap-3 rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-700"
-              >
-                {label}
-                <IncludedExcludedButtons
+          )
+            .filter(([, , visible]) => visible)
+            .map(([key, label]) =>
+              key === "isFurnished" ? (
+                <div
+                  key={key}
+                  className="flex min-h-14 items-center justify-between gap-3 rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-700"
+                >
+                  {label}
+                  <IncludedExcludedButtons
+                    label={label}
+                    included={values[key]}
+                    onChange={(included) => update(key, included)}
+                  />
+                </div>
+              ) : (
+                <UnitToggle
+                  key={key}
                   label={label}
-                  included={values[key]}
-                  onChange={(included) => update(key, included)}
+                  checked={values[key]}
+                  onChange={(checked) => update(key, checked)}
                 />
-              </div>
-            ) : (
-              <UnitToggle
-                key={key}
-                label={label}
-                checked={values[key]}
-                onChange={(checked) => update(key, checked)}
-              />
-            ),
-          )}
+              ),
+            )}
         </div>
+        {values.unitType && !Object.values(capabilities).some(Boolean) ? (
+          <p className="mt-4 rounded-lg border border-gray-200 bg-gray-50 p-4 text-sm text-gray-600">
+            This unit type does not need residential room details.
+          </p>
+        ) : null}
         <div className="mt-4 space-y-1.5">
           <Label htmlFor="unit-description">Unit Description</Label>
           <Textarea
@@ -337,9 +420,13 @@ function LoadedUnitForm({
       </section>
 
       <section className="rounded-lg border border-gray-200 bg-white p-5 sm:p-6">
-        <h2 className="font-semibold text-gray-900">Unit photos</h2>
+        <h2 className="font-semibold text-gray-900">
+          Unit photos{!unit ? " *" : ""}
+        </h2>
         <p className="mt-1 text-sm text-gray-500">
-          Add up to 8 reusable JPG, PNG or WebP photos.
+          {unit
+            ? "Add up to 8 reusable JPG, PNG or WebP photos."
+            : "Add 1 to 8 reusable JPG, PNG or WebP photos. At least one photo is required."}
         </p>
         <div className="mt-4">
           <AdditionalImagesUploader
@@ -368,7 +455,11 @@ function LoadedUnitForm({
             disabled={isPending}
             className="bg-emerald-600 hover:bg-emerald-700"
           >
-            {isPending ? <Loader2 className="animate-spin" /> : <Save />}
+            {isPending ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <Save className="size-4" />
+            )}
             {isPending
               ? "Saving..."
               : isEditing

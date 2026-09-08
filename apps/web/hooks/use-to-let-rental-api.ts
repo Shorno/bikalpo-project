@@ -7,6 +7,7 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { authClient } from "@/lib/auth-client";
 import { orpc } from "@/utils/orpc";
 
 export const toLetAlertCategoryOptions = [
@@ -192,9 +193,22 @@ export function useCreateToLetAlert() {
     ...orpc.toLetRental.createAlert.mutationOptions(),
     onSuccess: () => {
       toast.success("To-Let alert saved");
+      queryClient.invalidateQueries({ queryKey: orpc.toLetRental.listAlertNotifications.key() });
       queryClient.invalidateQueries({
         queryKey: orpc.toLetRental.listAlerts.key(),
       });
+    },
+    onError: (error) => toast.error(error.message),
+  });
+}
+
+export function useDeleteToLetAlert() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    ...orpc.toLetRental.deleteAlert.mutationOptions(),
+    onSuccess: () => {
+      toast.success("Saved alert deleted");
+      queryClient.invalidateQueries({ queryKey: orpc.toLetRental.listAlerts.key() });
     },
     onError: (error) => toast.error(error.message),
   });
@@ -208,6 +222,28 @@ export function useMyToLetAlerts(enabled = true) {
   });
 }
 
+export function useToLetAlertNotifications(enabled = true, page = 1) {
+  const { data: session } = authClient.useSession();
+  const options = orpc.toLetRental.listAlertNotifications.queryOptions({ input: { page } });
+  return useQuery({
+    ...options,
+    queryKey: [...options.queryKey, session?.user.id],
+    enabled: enabled && Boolean(session?.user.id),
+    staleTime: 15_000,
+    refetchInterval: 60_000,
+    retry: false,
+  });
+}
+
+export function useMarkToLetAlertsRead() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    ...orpc.toLetRental.markAlertNotificationsRead.mutationOptions(),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: orpc.toLetRental.listAlertNotifications.key() }),
+    onError: (error) => toast.error(error.message),
+  });
+}
+
 export function useUpdateToLetAlertStatus() {
   const queryClient = useQueryClient();
 
@@ -217,6 +253,7 @@ export function useUpdateToLetAlertStatus() {
       toast.success(
         variables.status === "active" ? "Alert resumed" : "Alert paused",
       );
+      queryClient.invalidateQueries({ queryKey: orpc.toLetRental.listAlertNotifications.key() });
       queryClient.invalidateQueries({
         queryKey: orpc.toLetRental.listAlerts.key(),
       });
