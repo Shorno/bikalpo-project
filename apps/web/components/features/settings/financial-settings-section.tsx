@@ -12,14 +12,6 @@ import {
 import { useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -44,6 +36,13 @@ type AccountDraft = {
   isActive: boolean;
   providerName: string;
 };
+
+function maskedAccountNumber(value: string | null) {
+  if (!value) return "Not provided";
+  const compact = value.replace(/\s/g, "");
+  if (compact.length <= 4) return value;
+  return `${"•".repeat(Math.min(8, compact.length - 4))}${compact.slice(-4)}`;
+}
 
 const EMPTY_DRAFT: AccountDraft = {
   accountName: "",
@@ -75,9 +74,9 @@ export function FinancialSettingsSection() {
       className="overflow-hidden rounded-xl border bg-white"
       aria-labelledby="financial-settings-heading"
     >
-      <div className="border-b bg-gradient-to-r from-emerald-50/70 via-white to-white p-6">
+      <div className="border-b bg-gray-50/70 p-6">
         <div className="flex items-start gap-3">
-          <span className="flex size-10 shrink-0 items-center justify-center rounded-xl border border-emerald-200 bg-white text-emerald-700 shadow-sm">
+          <span className="flex size-10 shrink-0 items-center justify-center rounded-xl border border-emerald-200 bg-white text-emerald-700">
             <CircleDollarSign className="size-5" aria-hidden="true" />
           </span>
           <div>
@@ -245,7 +244,7 @@ function FinancialAccountPanel({
         ) : (
           <div className="divide-y">
             <div
-              className={`hidden gap-3 pb-2 text-[11px] font-semibold tracking-wide text-gray-400 uppercase sm:grid ${isBank ? "grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(7.5rem,1fr)_auto_auto]" : "grid-cols-[minmax(0,1fr)_minmax(7.5rem,1fr)_auto_auto]"}`}
+              className={`hidden gap-3 pb-2 text-xs font-semibold tracking-wide text-gray-600 uppercase sm:grid ${isBank ? "grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(7.5rem,1fr)_auto_auto]" : "grid-cols-[minmax(0,1fr)_minmax(7.5rem,1fr)_auto_auto]"}`}
             >
               <span>{isBank ? "Bank name" : "Provider"}</span>
               {isBank && <span>Account name</span>}
@@ -265,11 +264,11 @@ function FinancialAccountPanel({
                         {account.accountName}
                       </p>
                     )}
-                    <p className="mt-2 text-[11px] font-medium tracking-wide text-gray-400 uppercase">
+                    <p className="mt-2 text-xs font-medium tracking-wide text-gray-600 uppercase">
                       Account number
                     </p>
                     <p className="mt-0.5 break-all font-mono text-xs text-gray-700">
-                      {account.accountNumber || "Not provided"}
+                      {maskedAccountNumber(account.accountNumber)}
                     </p>
                   </div>
                   <div className="flex shrink-0 flex-col items-end gap-2">
@@ -301,7 +300,7 @@ function FinancialAccountPanel({
                     </span>
                   )}
                   <span className="truncate font-mono text-xs text-gray-700">
-                    {account.accountNumber || "Not provided"}
+                    {maskedAccountNumber(account.accountNumber)}
                   </span>
                   <StatusBadge
                     active={account.isActive}
@@ -323,7 +322,7 @@ function FinancialAccountPanel({
         )}
       </div>
 
-      <AccountEditorDialog
+      <AccountEditorForm
         draft={draft}
         isBank={isBank}
         isSaving={isSaving}
@@ -358,7 +357,7 @@ function StatusBadge({
   );
 }
 
-function AccountEditorDialog({
+function AccountEditorForm({
   draft,
   isBank,
   isSaving,
@@ -371,145 +370,133 @@ function AccountEditorDialog({
   onDraftChange: (draft: AccountDraft | null) => void;
   onSubmit: (event: React.FormEvent<HTMLFormElement>) => void;
 }) {
+  if (!draft) return null;
+
   return (
-    <Dialog
-      open={draft !== null}
-      onOpenChange={(nextOpen) => {
-        if (!nextOpen && !isSaving) onDraftChange(null);
-      }}
-    >
-      <DialogContent
-        className="max-h-[90vh] overflow-y-auto sm:max-w-xl"
-        onInteractOutside={(event) => {
-          if (isSaving) event.preventDefault();
-        }}
-      >
-        <DialogHeader>
-          <DialogTitle>
-            {draft?.id ? "Edit" : "Add"}{" "}
-            {isBank ? "bank account" : "mobile banking"}
-          </DialogTitle>
-          <DialogDescription>
-            {draft?.id
-              ? "Update the account details and availability."
-              : "Enter the account details to connect it to this business."}
-          </DialogDescription>
-        </DialogHeader>
+    <div className="mt-5 border-t border-gray-200 pt-5">
+      <div>
+        <h4 className="font-semibold text-gray-950">
+          {draft.id ? "Edit" : "Add"}{" "}
+          {isBank ? "bank account" : "mobile banking"}
+        </h4>
+        <p className="mt-1 text-xs leading-5 text-gray-600">
+          {draft.id
+            ? "Update the account details and availability."
+            : "Enter the account details to connect it to this business."}
+        </p>
+      </div>
 
-        {draft && (
-          <form onSubmit={onSubmit} className="space-y-5">
-            <div className="flex items-center justify-between gap-3">
-              <Label htmlFor={`${isBank ? "bank" : "mobile"}-active`}>
-                Account status
-              </Label>
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-gray-600">
-                  {draft.isActive ? "Active" : "Disabled"}
-                </span>
-                <Switch
-                  id={`${isBank ? "bank" : "mobile"}-active`}
-                  checked={draft.isActive}
-                  onCheckedChange={(checked) =>
-                    onDraftChange({ ...draft, isActive: checked })
-                  }
-                  disabled={isSaving}
-                />
-              </div>
-            </div>
+      <form onSubmit={onSubmit} className="mt-5 space-y-5">
+        <div className="flex items-center justify-between gap-3">
+          <Label htmlFor={`${isBank ? "bank" : "mobile"}-active`}>
+            Account status
+          </Label>
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-gray-600">
+              {draft.isActive ? "Active" : "Disabled"}
+            </span>
+            <Switch
+              id={`${isBank ? "bank" : "mobile"}-active`}
+              checked={draft.isActive}
+              onCheckedChange={(checked) =>
+                onDraftChange({ ...draft, isActive: checked })
+              }
+              disabled={isSaving}
+            />
+          </div>
+        </div>
 
-            <div className="grid gap-4">
-              <div className="space-y-2">
-                <Label htmlFor={`${isBank ? "bank" : "mobile"}-provider`}>
-                  {isBank ? "Bank name" : "Provider name"}
-                </Label>
-                <Input
-                  id={`${isBank ? "bank" : "mobile"}-provider`}
-                  value={draft.providerName}
-                  onChange={(event) =>
-                    onDraftChange({
-                      ...draft,
-                      providerName: event.target.value,
-                    })
-                  }
-                  placeholder={isBank ? "Enter bank name" : "Enter provider"}
-                  maxLength={120}
-                  required
-                  autoFocus
-                />
-              </div>
-              {isBank && (
-                <div className="space-y-2">
-                  <Label htmlFor="bank-account-name">Account name</Label>
-                  <Input
-                    id="bank-account-name"
-                    value={draft.accountName}
-                    onChange={(event) =>
-                      onDraftChange({
-                        ...draft,
-                        accountName: event.target.value,
-                      })
-                    }
-                    placeholder="Enter account name"
-                    maxLength={180}
-                    required
-                  />
-                </div>
-              )}
-              <div className="space-y-2">
-                <Label htmlFor={`${isBank ? "bank" : "mobile"}-account-number`}>
-                  Account number
-                </Label>
-                <Input
-                  id={`${isBank ? "bank" : "mobile"}-account-number`}
-                  value={draft.accountNumber}
-                  onChange={(event) =>
-                    onDraftChange({
-                      ...draft,
-                      accountNumber: event.target.value,
-                    })
-                  }
-                  placeholder={
-                    isBank
-                      ? "Enter bank account number"
-                      : "Enter mobile account number"
-                  }
-                  inputMode={isBank ? "text" : "tel"}
-                  autoComplete="off"
-                  maxLength={80}
-                  className="font-mono"
-                  required
-                />
-              </div>
-            </div>
-
-            <DialogFooter>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => onDraftChange(null)}
-                disabled={isSaving}
-              >
-                Cancel
-              </Button>
-              <Button
-                type="submit"
-                className="bg-emerald-600 hover:bg-emerald-700"
-                disabled={
-                  isSaving ||
-                  !draft.providerName.trim() ||
-                  !draft.accountNumber.trim() ||
-                  (isBank && !draft.accountName.trim())
+        <div className="grid gap-4">
+          <div className="space-y-2">
+            <Label htmlFor={`${isBank ? "bank" : "mobile"}-provider`}>
+              {isBank ? "Bank name" : "Provider name"}
+            </Label>
+            <Input
+              id={`${isBank ? "bank" : "mobile"}-provider`}
+              value={draft.providerName}
+              onChange={(event) =>
+                onDraftChange({
+                  ...draft,
+                  providerName: event.target.value,
+                })
+              }
+              placeholder={isBank ? "Enter bank name" : "Enter provider"}
+              maxLength={120}
+              required
+              autoFocus
+            />
+          </div>
+          {isBank && (
+            <div className="space-y-2">
+              <Label htmlFor="bank-account-name">Account name</Label>
+              <Input
+                id="bank-account-name"
+                value={draft.accountName}
+                onChange={(event) =>
+                  onDraftChange({
+                    ...draft,
+                    accountName: event.target.value,
+                  })
                 }
-              >
-                {isSaving && (
-                  <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-                )}
-                {draft.id ? "Save changes" : "Add account"}
-              </Button>
-            </DialogFooter>
-          </form>
-        )}
-      </DialogContent>
-    </Dialog>
+                placeholder="Enter account name"
+                maxLength={180}
+                required
+              />
+            </div>
+          )}
+          <div className="space-y-2">
+            <Label htmlFor={`${isBank ? "bank" : "mobile"}-account-number`}>
+              Account number
+            </Label>
+            <Input
+              id={`${isBank ? "bank" : "mobile"}-account-number`}
+              value={draft.accountNumber}
+              onChange={(event) =>
+                onDraftChange({
+                  ...draft,
+                  accountNumber: event.target.value,
+                })
+              }
+              placeholder={
+                isBank
+                  ? "Enter bank account number"
+                  : "Enter mobile account number"
+              }
+              inputMode={isBank ? "text" : "tel"}
+              autoComplete="off"
+              maxLength={80}
+              className="font-mono"
+              required
+            />
+          </div>
+        </div>
+
+        <div className="flex flex-col-reverse gap-2 border-t border-gray-200 pt-4 sm:flex-row sm:justify-end">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => onDraftChange(null)}
+            disabled={isSaving}
+          >
+            Cancel
+          </Button>
+          <Button
+            type="submit"
+            className="bg-emerald-600 hover:bg-emerald-700"
+            disabled={
+              isSaving ||
+              !draft.providerName.trim() ||
+              !draft.accountNumber.trim() ||
+              (isBank && !draft.accountName.trim())
+            }
+          >
+            {isSaving && (
+              <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+            )}
+            {draft.id ? "Save changes" : "Add account"}
+          </Button>
+        </div>
+      </form>
+    </div>
   );
 }

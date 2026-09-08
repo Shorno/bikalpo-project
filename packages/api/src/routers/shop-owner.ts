@@ -44,6 +44,7 @@ import {
   financialLedger,
   inventory,
   invoice,
+  kycVerification,
   openOrderBid,
   openOrderBidItem,
   order,
@@ -97,6 +98,7 @@ import {
 } from "drizzle-orm";
 import { z } from "zod";
 
+import { computeProfileCompletion } from "../business-profile";
 import { SHOP_OWNER_BUSINESS_NATURES } from "../business-registration";
 import {
   publicProcedure,
@@ -132,6 +134,10 @@ import {
   prepareB2bMovementForApproval,
   releaseB2bOrderReservations,
 } from "./helpers/b2b-inventory-movement";
+import {
+  deriveKycStatus,
+  getLatestKycRecord,
+} from "./helpers/kyc-verification";
 import { configureExistingInvoiceFulfillmentForOwner } from "./helpers/order-dispatch";
 import { buildCanonicalOrderFlow } from "./helpers/order-lifecycle";
 import {
@@ -151,6 +157,7 @@ import {
 } from "./helpers/retailer-order-stock";
 import {
   retailerBusinessContactInformationSchema,
+  retailerRegistrationProfileSchema,
   retailerRequiredThanaSchema,
   retailerShopProfileSchema,
 } from "./helpers/retailer-profile-fields";
@@ -2067,6 +2074,211 @@ const mutations = {
         inventoryId: input.inventoryId,
         retailPrice: input.retailPrice,
         recalculatedOpenOrders: recalculatedOrderIds.length,
+      };
+    }),
+
+  /** Return the current owner's complete, owner-safe registration profile. */
+  getMyRegistrationProfile: shopOwnerProcedure
+    .route({
+      method: "GET",
+      path: "/shop-owner/registration-profile",
+      tags: ["Shop Owner"],
+      summary: "Get retailer registration profile",
+    })
+    .handler(async ({ context }) => {
+      const userId = shopTenantId(context.session.user);
+      const [application, accountProfile, latestKyc] = await Promise.all([
+        db.query.sellerApplication.findFirst({
+          where: eq(sellerApplication.userId, userId),
+          orderBy: [desc(sellerApplication.createdAt)],
+          columns: { adminNotes: false, reviewedBy: false },
+          with: {
+            productType: { columns: { id: true, name: true } },
+          },
+        }),
+        db.query.user.findFirst({
+          where: eq(user.id, userId),
+          columns: {
+            id: true,
+            name: true,
+            email: true,
+            image: true,
+            phoneNumber: true,
+            phoneNumberVerified: true,
+            ownerName: true,
+            businessType: true,
+            shopName: true,
+            shopLogo: true,
+            shopAddress: true,
+            shopSlug: true,
+            shopLat: true,
+            shopLng: true,
+            sellerStatus: true,
+            createdAt: true,
+          },
+        }),
+        getLatestKycRecord(userId),
+      ]);
+
+      if (!application || !accountProfile) {
+        throw new ORPCError("NOT_FOUND", {
+          message: "Your business registration record could not be found",
+        });
+      }
+
+      return {
+        application,
+        account: accountProfile,
+        kycStatus: deriveKycStatus(latestKyc?.status),
+        kycReviewedAt: latestKyc?.reviewedAt ?? null,
+        profileCompletion: computeProfileCompletion(
+          application,
+          accountProfile,
+        ),
+      };
+    }),
+
+  /** Update the complete owner-editable registration profile in one transaction. */
+  updateRegistrationProfile: shopOwnerProcedure
+    .route({
+      method: "POST",
+      path: "/shop-owner/registration-profile",
+      tags: ["Shop Owner"],
+      summary: "Update retailer registration profile",
+    })
+    .input(retailerRegistrationProfileSchema)
+    .handler(async ({ input, context }) => {
+      const userId = shopTenantId(context.session.user);
+      const application = await db.query.sellerApplication.findFirst({
+        where: eq(sellerApplication.userId, userId),
+        orderBy: [desc(sellerApplication.createdAt)],
+        columns: {
+          id: true,
+          binNumber: true,
+          businessNature: true,
+          businessType: true,
+          documentUrls: true,
+          productTypeId: true,
+          tinNumber: true,
+          tradeLicenseNumber: true,
+        },
+      });
+
+      if (!application) {
+        throw new ORPCError("NOT_FOUND", {
+          message: "Your business registration record could not be found",
+        });
+      }
+
+      const selectedProductType = input.business.productTypeId
+        ? await resolveActiveProductType(input.business.productTypeId)
+        : null;
+      const documentUrls = {
+        tradeLicense: input.documents.tradeLicense ?? undefined,
+        nid: input.documents.nid ?? undefined,
+        shopPhoto: input.documents.shopPhoto ?? undefined,
+        storeFront: input.documents.storeFront ?? undefined,
+        warehouse: input.documents.warehouse ?? undefined,
+      };
+      const documentsChanged =
+        JSON.stringify(application.documentUrls ?? {}) !==
+        JSON.stringify(documentUrls);
+      const governedProfileChanged =
+        application.businessType !== input.business.businessType ||
+        application.productTypeId !== input.business.productTypeId ||
+        application.businessNature !== input.business.businessNature ||
+        application.binNumber !== input.business.binNumber ||
+        application.tinNumber !== input.business.tinNumber ||
+        application.tradeLicenseNumber !== input.business.tradeLicenseNumber;
+
+      await db.transaction(async (tx) => {
+        await tx
+          .update(sellerApplication)
+          .set({
+            ...(governedProfileChanged
+              ? {
+                  status: "pending" as const,
+                  reviewedAt: null,
+                  reviewedBy: null,
+                }
+              : {}),
+            profilePhotoUrl: input.applicant.profilePhotoUrl,
+            ownerName: input.applicant.ownerName,
+            dateOfBirth: input.applicant.dateOfBirth,
+            gender: input.applicant.gender,
+            personalAddress: input.applicant.personalAddress,
+            personalArea: input.applicant.personalArea,
+            personalDistrict: input.applicant.personalDistrict,
+            personalDivision: input.applicant.personalDivision,
+            personalPostCode: input.applicant.personalPostCode,
+            personalLatitude:
+              input.applicant.personalLatitude?.toString() ?? null,
+            personalLongitude:
+              input.applicant.personalLongitude?.toString() ?? null,
+            shopName: input.business.shopName,
+            businessType: input.business.businessType,
+            productTypeId: selectedProductType?.id ?? null,
+            businessCategory: selectedProductType?.name ?? null,
+            businessNature: input.business.businessNature,
+            yearsInBusiness: input.business.yearsInBusiness,
+            monthlyRevenue: input.business.monthlyRevenue,
+            binNumber: input.business.binNumber,
+            tinNumber: input.business.tinNumber,
+            tradeLicenseNumber: input.business.tradeLicenseNumber,
+            shopAddress: input.business.shopAddress,
+            area: input.business.area,
+            thana: input.business.thana,
+            district: input.business.district,
+            division: input.business.division,
+            postCode: input.business.postCode,
+            latitude: input.business.latitude?.toString() ?? null,
+            longitude: input.business.longitude?.toString() ?? null,
+            phoneNumber: input.contacts.phoneNumber,
+            email: input.contacts.email,
+            whatsappNumber: input.contacts.whatsappNumber,
+            facebookUrl: input.contacts.facebookUrl,
+            messengerUrl: input.contacts.messengerUrl,
+            instagramUrl: input.contacts.instagramUrl,
+            websiteUrl: input.contacts.websiteUrl,
+            telegramUrl: input.contacts.telegramUrl,
+            tiktokUrl: input.contacts.tiktokUrl,
+            twitterUrl: input.contacts.twitterUrl,
+            documentUrls,
+          })
+          .where(eq(sellerApplication.id, application.id));
+
+        await tx
+          .update(user)
+          .set({
+            name: input.applicant.ownerName,
+            image: input.applicant.profilePhotoUrl,
+            ownerName: input.applicant.ownerName,
+            shopName: input.business.shopName,
+            shopLogo: input.business.shopLogo,
+            businessType: input.business.businessType,
+            shopAddress: input.business.shopAddress,
+            shopLat: input.business.latitude?.toString() ?? null,
+            shopLng: input.business.longitude?.toString() ?? null,
+          })
+          .where(eq(user.id, userId));
+
+        if (documentsChanged) {
+          await tx.insert(kycVerification).values({
+            userId,
+            status: "pending",
+          });
+        }
+      });
+
+      return {
+        success: true,
+        message: documentsChanged
+          ? "Profile updated and documents submitted for verification"
+          : governedProfileChanged
+            ? "Profile updated and governed changes submitted for review"
+            : "Registration profile updated",
+        verificationReset: documentsChanged,
+        applicationReviewRequested: governedProfileChanged,
       };
     }),
 

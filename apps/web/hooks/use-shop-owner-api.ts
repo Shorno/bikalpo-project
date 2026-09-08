@@ -678,6 +678,26 @@ export function useUpdateBusinessPlanInformation() {
   });
 }
 
+export function useUpdateRegistrationProfile() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    ...orpc.shopOwner.updateRegistrationProfile.mutationOptions(),
+    onSuccess: async (result) => {
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: orpc.shopOwner.getMyRegistrationProfile.key(),
+        }),
+        queryClient.invalidateQueries({
+          queryKey: orpc.sellerApplication.getMyApplication.key(),
+        }),
+      ]);
+      toast.success(result.message);
+    },
+    onError: (err) => toast.error(err.message),
+  });
+}
+
 // ────────────────────────────────────────────────────────────────
 // INCOMING B2C ORDER HOOKS
 // ────────────────────────────────────────────────────────────────

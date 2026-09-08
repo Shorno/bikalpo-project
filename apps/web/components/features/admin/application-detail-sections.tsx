@@ -1,20 +1,30 @@
 "use client";
 
-import dynamic from "next/dynamic";
 import { format, isValid, parse } from "date-fns";
-import Image from "next/image";
 import {
-  BUSINESS_NATURES,
-  GENDERS,
-  type DocumentUrls,
-} from "@/constants/seller-registration";
-import { Loader2 } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
+  Building2,
+  FileText,
+  FolderX,
+  Home,
+  Landmark,
+  Loader2,
+  MapPin,
+  Share2,
+  UserPlus,
+} from "lucide-react";
+import dynamic from "next/dynamic";
+import Image from "next/image";
 import {
   KYC_STATUS_CONFIG,
   type KycStatusKey,
 } from "@/components/features/admin/kyc-verify-dialog";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  BUSINESS_NATURES,
+  type DocumentUrls,
+  GENDERS,
+} from "@/constants/seller-registration";
 
 export const APPLICATION_STATUS_CONFIG = {
   pending: {
@@ -90,6 +100,8 @@ export type ApplicationDetailData = {
   referralPhone?: string | null;
   facebookUrl?: string | null;
   whatsappNumber?: string | null;
+  messengerUrl?: string | null;
+  telegramUrl?: string | null;
   instagramUrl?: string | null;
   websiteUrl?: string | null;
   tiktokUrl?: string | null;
@@ -98,6 +110,7 @@ export type ApplicationDetailData = {
   latitude?: string | null;
   longitude?: string | null;
   area?: string | null;
+  thana?: string | null;
   district?: string | null;
   division?: string | null;
   postCode?: string | null;
@@ -133,7 +146,12 @@ function formatDateOfBirth(dob?: string | null) {
 }
 
 function hasCoords(lat?: string | null, lng?: string | null) {
-  return Boolean(lat && lng && !Number.isNaN(parseFloat(lat)) && !Number.isNaN(parseFloat(lng)));
+  return Boolean(
+    lat &&
+      lng &&
+      !Number.isNaN(parseFloat(lat)) &&
+      !Number.isNaN(parseFloat(lng)),
+  );
 }
 
 function maskBankAccount(accountNumber?: string | null) {
@@ -144,7 +162,9 @@ function maskBankAccount(accountNumber?: string | null) {
 }
 
 function formatCoverage(data: ApplicationDetailData) {
-  return [data.area, data.district, data.division].filter(Boolean).join(", ") || null;
+  return (
+    [data.area, data.district, data.division].filter(Boolean).join(", ") || null
+  );
 }
 
 function formatPersonalLocationHint(data: ApplicationDetailData) {
@@ -175,16 +195,22 @@ export function DetailSection({
   children: React.ReactNode;
   badge?: React.ReactNode;
 }) {
+  const Icon =
+    {
+      account_balance: Landmark,
+      description: FileText,
+      group_add: UserPlus,
+      home: Home,
+      location_on: MapPin,
+      share: Share2,
+      storefront: Building2,
+    }[icon] ?? FileText;
+
   return (
     <div className="overflow-hidden rounded-xl border border-gray-200">
       <div className="flex items-center justify-between bg-gray-50/80 px-5 py-3">
         <div className="flex items-center gap-2">
-          <span
-            className="material-symbols-outlined text-lg text-[#003178]"
-            style={{ fontVariationSettings: "'FILL' 1" }}
-          >
-            {icon}
-          </span>
+          <Icon className="size-[18px] text-[#003178]" aria-hidden="true" />
           <h3 className="text-sm font-bold text-gray-900">{title}</h3>
         </div>
         {badge}
@@ -207,7 +233,9 @@ export function DetailField({
   return (
     <div className="flex justify-between gap-4 text-sm">
       <span className="shrink-0 text-gray-500">{label}</span>
-      <span className="text-right font-medium text-gray-900">{value || "—"}</span>
+      <span className="text-right font-medium text-gray-900">
+        {value || "—"}
+      </span>
     </div>
   );
 }
@@ -292,7 +320,9 @@ export function ApplicationReviewHero({
           <p className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-gray-400">
             Applicant Profile
           </p>
-          <h1 className="mb-3 text-base font-semibold text-gray-900">{pageTitle}</h1>
+          <h1 className="mb-3 text-base font-semibold text-gray-900">
+            {pageTitle}
+          </h1>
           <div className="space-y-1">
             <HeroFieldRow label="Full Name" value={data.ownerName} />
             <HeroFieldRow label="Mobile" value={data.phoneNumber} />
@@ -389,7 +419,11 @@ export function ApplicationReviewHero({
   );
 }
 
-export function PersonalLocationSection({ data }: { data: ApplicationDetailData }) {
+export function PersonalLocationSection({
+  data,
+}: {
+  data: ApplicationDetailData;
+}) {
   const hasPersonal =
     data.personalAddress ||
     hasCoords(data.personalLatitude, data.personalLongitude);
@@ -444,12 +478,24 @@ export function BusinessInformationSection({
           <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">
             Business Name
           </p>
-          <DetailField label={businessNameLabel} value={businessName} alwaysShow />
+          <DetailField
+            label={businessNameLabel}
+            value={businessName}
+            alwaysShow
+          />
           <DetailField label="Product Type" value={typeName} alwaysShow />
           <DetailField label="Coverage" value={coverage} alwaysShow />
-          <DetailField label="Address" value={data.businessAddress} alwaysShow />
+          <DetailField
+            label="Address"
+            value={data.businessAddress}
+            alwaysShow
+          />
           {businessType && businessTypeLabel && (
-            <DetailField label={businessTypeLabel} value={businessType} alwaysShow />
+            <DetailField
+              label={businessTypeLabel}
+              value={businessType}
+              alwaysShow
+            />
           )}
           {sellingModeBadge}
         </div>
@@ -462,8 +508,16 @@ export function BusinessInformationSection({
             value={formatBusinessNature(data.businessNature)}
             alwaysShow
           />
-          <DetailField label="Experience" value={data.yearsInBusiness} alwaysShow />
-          <DetailField label="Sales Volume" value={data.monthlyRevenue} alwaysShow />
+          <DetailField
+            label="Experience"
+            value={data.yearsInBusiness}
+            alwaysShow
+          />
+          <DetailField
+            label="Sales Volume"
+            value={data.monthlyRevenue}
+            alwaysShow
+          />
           <DetailField label="Status" value={applicantStatusLabel} alwaysShow />
         </div>
       </div>
@@ -471,7 +525,11 @@ export function BusinessInformationSection({
   );
 }
 
-export function BusinessLocationSection({ data }: { data: ApplicationDetailData }) {
+export function BusinessLocationSection({
+  data,
+}: {
+  data: ApplicationDetailData;
+}) {
   return (
     <DetailSection title="Business Location" icon="location_on">
       {hasCoords(data.latitude, data.longitude) && (
@@ -485,6 +543,7 @@ export function BusinessLocationSection({ data }: { data: ApplicationDetailData 
       <DetailField label="Address" value={data.businessAddress} />
       <div className="grid grid-cols-2 gap-x-6 gap-y-2">
         <DetailField label="Area" value={data.area} />
+        <DetailField label="Thana" value={data.thana} />
         <DetailField label="District" value={data.district} />
         <DetailField label="Division" value={data.division} />
         <DetailField label="Post Code" value={data.postCode} />
@@ -547,7 +606,11 @@ function DocumentCard({
   );
 }
 
-export function LabeledDocumentsSection({ data }: { data: ApplicationDetailData }) {
+export function LabeledDocumentsSection({
+  data,
+}: {
+  data: ApplicationDetailData;
+}) {
   const documentUrls = data.documentUrls || {};
   const labeledEntries = (
     Object.entries(DOCUMENT_LABELS) as [keyof DocumentUrls, string][]
@@ -570,9 +633,7 @@ export function LabeledDocumentsSection({ data }: { data: ApplicationDetailData 
     >
       {totalCount === 0 ? (
         <div className="flex flex-col items-center py-6 text-center">
-          <span className="material-symbols-outlined mb-2 text-3xl text-gray-300">
-            folder_off
-          </span>
+          <FolderX className="mb-2 size-8 text-gray-300" aria-hidden="true" />
           <p className="text-sm text-gray-400">No documents uploaded</p>
         </div>
       ) : labeledEntries.length > 0 ? (
@@ -581,7 +642,11 @@ export function LabeledDocumentsSection({ data }: { data: ApplicationDetailData 
             {labeledEntries
               .filter(([key]) => key !== "warehouse")
               .map(([key, label]) => (
-                <DocumentCard key={key} label={label} url={documentUrls[key]!} />
+                <DocumentCard
+                  key={key}
+                  label={label}
+                  url={documentUrls[key]!}
+                />
               ))}
           </div>
           {documentUrls.warehouse && (
@@ -595,7 +660,11 @@ export function LabeledDocumentsSection({ data }: { data: ApplicationDetailData 
       ) : (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
           {legacyDocuments.map((doc, index) => (
-            <DocumentCard key={index} label={`Document ${index + 1}`} url={doc} />
+            <DocumentCard
+              key={index}
+              label={`Document ${index + 1}`}
+              url={doc}
+            />
           ))}
         </div>
       )}
@@ -606,13 +675,14 @@ export function LabeledDocumentsSection({ data }: { data: ApplicationDetailData 
 export function BankAndTaxSection({ data }: { data: ApplicationDetailData }) {
   const hasBank =
     data.bankName || data.bankAccountName || data.bankAccountNumber;
-  const hasTax = data.binNumber || data.tinNumber || hasTradeLicenseSubmitted(data);
+  const hasTax =
+    data.binNumber || data.tinNumber || hasTradeLicenseSubmitted(data);
 
   if (!hasBank && !hasTax) return null;
 
-  const tradeLicenseStatus = hasTradeLicenseSubmitted(data)
-    ? "Submitted ✓"
-    : "Not provided";
+  const tradeLicenseStatus =
+    data.tradeLicenseNumber ||
+    (hasTradeLicenseSubmitted(data) ? "Submitted" : "Not provided");
 
   return (
     <DetailSection title="Bank Information" icon="account_balance">
@@ -622,7 +692,11 @@ export function BankAndTaxSection({ data }: { data: ApplicationDetailData }) {
             Bank Details
           </p>
           <DetailField label="Bank Name" value={data.bankName} alwaysShow />
-          <DetailField label="Account Name" value={data.bankAccountName} alwaysShow />
+          <DetailField
+            label="Account Name"
+            value={data.bankAccountName}
+            alwaysShow
+          />
           <DetailField
             label="Account Number"
             value={maskBankAccount(data.bankAccountNumber)}
@@ -635,7 +709,11 @@ export function BankAndTaxSection({ data }: { data: ApplicationDetailData }) {
           </p>
           <DetailField label="BIN Number" value={data.binNumber} alwaysShow />
           <DetailField label="TIN Number" value={data.tinNumber} alwaysShow />
-          <DetailField label="Trade License" value={tradeLicenseStatus} alwaysShow />
+          <DetailField
+            label="Trade License"
+            value={tradeLicenseStatus}
+            alwaysShow
+          />
         </div>
       </div>
     </DetailSection>
@@ -656,10 +734,16 @@ export function ReferralSection({ data }: { data: ApplicationDetailData }) {
   );
 }
 
-export function SocialProfilesSection({ data }: { data: ApplicationDetailData }) {
+export function SocialProfilesSection({
+  data,
+}: {
+  data: ApplicationDetailData;
+}) {
   const links = [
     { label: "Facebook", value: data.facebookUrl },
     { label: "WhatsApp", value: data.whatsappNumber },
+    { label: "Messenger", value: data.messengerUrl },
+    { label: "Telegram", value: data.telegramUrl },
     { label: "Instagram", value: data.instagramUrl },
     { label: "Website", value: data.websiteUrl },
     { label: "TikTok", value: data.tiktokUrl },
@@ -777,6 +861,8 @@ export function toApplicationDetail(
     referralPhone: app.referralPhone as string | null | undefined,
     facebookUrl: app.facebookUrl as string | null | undefined,
     whatsappNumber: app.whatsappNumber as string | null | undefined,
+    messengerUrl: app.messengerUrl as string | null | undefined,
+    telegramUrl: app.telegramUrl as string | null | undefined,
     instagramUrl: app.instagramUrl as string | null | undefined,
     websiteUrl: app.websiteUrl as string | null | undefined,
     tiktokUrl: app.tiktokUrl as string | null | undefined,
@@ -785,6 +871,7 @@ export function toApplicationDetail(
     latitude: app.latitude as string | null | undefined,
     longitude: app.longitude as string | null | undefined,
     area: app.area as string | null | undefined,
+    thana: app.thana as string | null | undefined,
     district: app.district as string | null | undefined,
     division: app.division as string | null | undefined,
     postCode: app.postCode as string | null | undefined,

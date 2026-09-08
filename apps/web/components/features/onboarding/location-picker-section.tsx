@@ -35,6 +35,8 @@ const LocationPickerMap = dynamic(
 interface LocationPickerSectionProps {
   label: string;
 
+  inputId?: string;
+
   description?: string;
 
   data: LocationData;
@@ -48,6 +50,8 @@ interface LocationPickerSectionProps {
 
 export function LocationPickerSection({
   label,
+
+  inputId = "location-search",
 
   description,
 
@@ -253,7 +257,7 @@ export function LocationPickerSection({
 
       <div ref={dropdownRef} className="relative">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <RegistrationFieldLabel required={required} htmlFor="location-search">
+          <RegistrationFieldLabel required={required} htmlFor={inputId}>
             {label}
           </RegistrationFieldLabel>
           <Button
@@ -276,7 +280,7 @@ export function LocationPickerSection({
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
 
           <Input
-            id="location-search"
+            id={inputId}
             type="text"
             value={searchQuery}
             onChange={(e) => handleSearchChange(e.target.value)}
