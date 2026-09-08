@@ -17,6 +17,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { LocationPickerSection } from "@/components/features/onboarding/location-picker-section";
+import { FinancialSettingsSection } from "@/components/features/settings/financial-settings-section";
 import ImageUploader from "@/components/ImageUploader";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -239,15 +240,20 @@ function FormSection({
   children,
   description,
   icon: Icon,
+  id,
   title,
 }: {
   children: React.ReactNode;
   description: string;
   icon: typeof UserRound;
+  id?: string;
   title: string;
 }) {
   return (
-    <section className="overflow-hidden rounded-xl border border-gray-200 bg-white">
+    <section
+      id={id}
+      className="scroll-mt-6 overflow-hidden rounded-xl border border-gray-200 bg-white"
+    >
       <div className="flex items-start gap-3 border-b bg-gray-50/70 px-5 py-4 sm:px-6">
         <span className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-lg bg-[#003178]/10 text-[#003178]">
           <Icon className="size-4.5" aria-hidden="true" />
@@ -398,29 +404,107 @@ export function RetailerRegistrationProfileEditor() {
   const [form, setForm] = useState<ProfileForm>(EMPTY_FORM);
   const [initialForm, setInitialForm] = useState<ProfileForm>(EMPTY_FORM);
   const [activeUploads, setActiveUploads] = useState(0);
+  const [financialEditorDirty, setFinancialEditorDirty] = useState(false);
   const uploadedDocuments = useRef(new Map<string, string>());
   const cleanupSessionId = useRef(crypto.randomUUID());
+  const navigationApproved = useRef(false);
+  const restoringHistory = useRef(false);
 
   useEffect(() => {
     if (!profileData) return;
     const next = formFromProfile(profileData);
     setForm(next);
     setInitialForm(next);
+
+    const sectionId = window.location.hash.slice(1);
+    if (sectionId) {
+      window.requestAnimationFrame(() => {
+        document.getElementById(sectionId)?.scrollIntoView({ block: "start" });
+      });
+    }
   }, [profileData]);
 
   const isDirty = useMemo(
     () => JSON.stringify(form) !== JSON.stringify(initialForm),
     [form, initialForm],
   );
+  const hasUnsavedChanges = isDirty || financialEditorDirty;
 
   useEffect(() => {
     const warn = (event: BeforeUnloadEvent) => {
-      if (!isDirty) return;
+      if (!hasUnsavedChanges || navigationApproved.current) return;
       event.preventDefault();
     };
     window.addEventListener("beforeunload", warn);
     return () => window.removeEventListener("beforeunload", warn);
-  }, [isDirty]);
+  }, [hasUnsavedChanges]);
+
+  useEffect(() => {
+    if (!hasUnsavedChanges) return;
+
+    const confirmNavigation = () =>
+      window.confirm("Discard your unsaved registration profile changes?");
+
+    const protectLinkNavigation = (event: MouseEvent) => {
+      if (
+        event.defaultPrevented ||
+        event.button !== 0 ||
+        event.metaKey ||
+        event.ctrlKey ||
+        event.shiftKey ||
+        event.altKey
+      ) {
+        return;
+      }
+
+      const target = event.target;
+      const anchor =
+        target instanceof Element
+          ? target.closest<HTMLAnchorElement>("a[href]")
+          : null;
+      if (!anchor || anchor.download || anchor.target === "_blank") return;
+
+      const currentUrl = new URL(window.location.href);
+      const destinationUrl = new URL(anchor.href, currentUrl);
+      const staysOnDocument =
+        destinationUrl.origin === currentUrl.origin &&
+        destinationUrl.pathname === currentUrl.pathname &&
+        destinationUrl.search === currentUrl.search;
+      if (staysOnDocument) return;
+
+      if (!confirmNavigation()) {
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
+
+      navigationApproved.current = true;
+      abandonProfileDocumentSession(cleanupSessionId.current);
+    };
+
+    const protectHistoryNavigation = () => {
+      if (restoringHistory.current) {
+        restoringHistory.current = false;
+        return;
+      }
+
+      if (confirmNavigation()) {
+        navigationApproved.current = true;
+        abandonProfileDocumentSession(cleanupSessionId.current);
+        return;
+      }
+
+      restoringHistory.current = true;
+      window.history.forward();
+    };
+
+    document.addEventListener("click", protectLinkNavigation, true);
+    window.addEventListener("popstate", protectHistoryNavigation);
+    return () => {
+      document.removeEventListener("click", protectLinkNavigation, true);
+      window.removeEventListener("popstate", protectHistoryNavigation);
+    };
+  }, [hasUnsavedChanges]);
 
   useEffect(() => {
     activateProfileDocumentSession(cleanupSessionId.current);
@@ -437,17 +521,6 @@ export function RetailerRegistrationProfileEditor() {
 
   const onUploadStateChange = (uploading: boolean) => {
     setActiveUploads((count) => Math.max(0, count + (uploading ? 1 : -1)));
-  };
-
-  const confirmDiscard = (event: React.MouseEvent<HTMLAnchorElement>) => {
-    if (
-      isDirty &&
-      !window.confirm("Discard your unsaved registration profile changes?")
-    ) {
-      event.preventDefault();
-      return;
-    }
-    if (isDirty) abandonProfileDocumentSession(cleanupSessionId.current);
   };
 
   const updateDocument = (
@@ -580,268 +653,278 @@ export function RetailerRegistrationProfileEditor() {
   const uploadFolder = `registration-profiles/${profileData.account.id}`;
 
   return (
-    <form onSubmit={handleSubmit} className="mx-auto max-w-5xl space-y-6 pb-24">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <Button asChild variant="ghost" className="-ml-3 mb-2 text-gray-600">
-            <Link href="/dashboard/settings/profile" onClick={confirmDiscard}>
-              <ArrowLeft className="size-4" aria-hidden="true" />
-              Registration Profile
-            </Link>
-          </Button>
-          <h1 className="text-2xl font-bold tracking-tight text-gray-950">
-            Edit Registration Profile
-          </h1>
-          <p className="mt-1 max-w-2xl text-sm leading-6 text-gray-500">
-            Update the information connected to your registration. Document
-            changes will be submitted for verification.
-          </p>
-        </div>
-        <div className="rounded-lg border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-900">
-          Application {profileData.application.applicationNumber || "record"}
-        </div>
-      </div>
-
-      <FormSection
-        title="Applicant information"
-        description="The owner identity and personal location recorded during registration."
-        icon={UserRound}
+    <div className="mx-auto max-w-5xl space-y-6 pb-24">
+      <form
+        id="registration-profile-form"
+        onSubmit={handleSubmit}
+        className="space-y-6"
       >
-        <div className="grid gap-6 lg:grid-cols-[15rem_minmax(0,1fr)]">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <Label>Profile photo</Label>
-            <div className="mt-2">
-              <ImageUploader
-                value={form.profilePhotoUrl}
-                onChange={(value) => update("profilePhotoUrl", value)}
-                folder={`${uploadFolder}/profile-photo`}
-                maxSizeMB={3}
-                deleteOnRemove={false}
-                disabled={isSaving}
-                onUploadStateChange={onUploadStateChange}
-              />
+            <Button
+              asChild
+              variant="ghost"
+              className="-ml-3 mb-2 text-gray-600"
+            >
+              <Link href="/dashboard/settings/profile">
+                <ArrowLeft className="size-4" aria-hidden="true" />
+                Registration Profile
+              </Link>
+            </Button>
+            <h1 className="text-2xl font-bold tracking-tight text-gray-950">
+              Edit Registration Profile
+            </h1>
+            <p className="mt-1 max-w-2xl text-sm leading-6 text-gray-500">
+              Update the information connected to your registration. Document
+              changes will be submitted for verification.
+            </p>
+          </div>
+          <div className="rounded-lg border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-900">
+            Application {profileData.application.applicationNumber || "record"}
+          </div>
+        </div>
+
+        <FormSection
+          id="applicant-information"
+          title="Applicant information"
+          description="The owner identity and personal location recorded during registration."
+          icon={UserRound}
+        >
+          <div className="grid gap-6 lg:grid-cols-[15rem_minmax(0,1fr)]">
+            <div>
+              <Label>Profile photo</Label>
+              <div className="mt-2">
+                <ImageUploader
+                  value={form.profilePhotoUrl}
+                  onChange={(value) => update("profilePhotoUrl", value)}
+                  folder={`${uploadFolder}/profile-photo`}
+                  maxSizeMB={3}
+                  deleteOnRemove={false}
+                  disabled={isSaving}
+                  onUploadStateChange={onUploadStateChange}
+                />
+              </div>
+            </div>
+            <div className="grid content-start gap-4 sm:grid-cols-2">
+              <FormField id="owner-name" label="Owner name">
+                <Input
+                  id="owner-name"
+                  value={form.ownerName}
+                  onChange={(event) => update("ownerName", event.target.value)}
+                  minLength={2}
+                  maxLength={100}
+                  required
+                />
+              </FormField>
+              <FormField id="date-of-birth" label="Date of birth">
+                <Input
+                  id="date-of-birth"
+                  type="date"
+                  value={form.dateOfBirth}
+                  onChange={(event) =>
+                    update("dateOfBirth", event.target.value)
+                  }
+                />
+              </FormField>
+              <FormField id="gender" label="Gender">
+                <Select
+                  value={form.gender || "not_provided"}
+                  onValueChange={(value) =>
+                    update("gender", value === "not_provided" ? "" : value)
+                  }
+                >
+                  <SelectTrigger id="gender" className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="not_provided">Not provided</SelectItem>
+                    {GENDERS.map((gender) => (
+                      <SelectItem key={gender.id} value={gender.id}>
+                        {gender.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </FormField>
             </div>
           </div>
-          <div className="grid content-start gap-4 sm:grid-cols-2">
-            <FormField id="owner-name" label="Owner name">
+
+          <LocationPickerSection
+            label="Personal location"
+            inputId="personal-location-search"
+            description="Search for the owner's home location or drag the map pin."
+            data={{
+              address: form.personalAddress,
+              addressBn: "",
+              area: form.personalArea,
+              thana: "",
+              district: form.personalDistrict,
+              division: form.personalDivision,
+              postCode: form.personalPostCode,
+              latitude: form.personalLatitude,
+              longitude: form.personalLongitude,
+            }}
+            onUpdate={(location) =>
+              setForm((current) => ({
+                ...current,
+                personalAddress: location.address,
+                personalArea: location.area,
+                personalDistrict: location.district,
+                personalDivision: location.division,
+                personalPostCode: location.postCode,
+                personalLatitude: location.latitude,
+                personalLongitude: location.longitude,
+              }))
+            }
+          />
+        </FormSection>
+
+        <BusinessInformationFormSection
+          form={form}
+          setForm={setForm}
+          update={update}
+          uploadFolder={uploadFolder}
+          isSaving={isSaving}
+          onUploadStateChange={onUploadStateChange}
+          productTypes={productTypeData?.types ?? []}
+        />
+
+        <FormSection
+          id="tax-and-license"
+          title="Tax and license"
+          description="Business identifiers submitted for verification and compliance."
+          icon={ShieldCheck}
+        >
+          <div className="grid gap-4 sm:grid-cols-3">
+            <FormField id="bin-number" label="BIN number">
               <Input
-                id="owner-name"
-                value={form.ownerName}
-                onChange={(event) => update("ownerName", event.target.value)}
-                minLength={2}
+                id="bin-number"
+                value={form.binNumber}
+                onChange={(event) => update("binNumber", event.target.value)}
                 maxLength={100}
+              />
+            </FormField>
+            <FormField id="tin-number" label="TIN number">
+              <Input
+                id="tin-number"
+                value={form.tinNumber}
+                onChange={(event) => update("tinNumber", event.target.value)}
+                maxLength={100}
+              />
+            </FormField>
+            <FormField id="trade-license-number" label="Trade license number">
+              <Input
+                id="trade-license-number"
+                value={form.tradeLicenseNumber}
+                onChange={(event) =>
+                  update("tradeLicenseNumber", event.target.value)
+                }
+                maxLength={100}
+              />
+            </FormField>
+          </div>
+        </FormSection>
+
+        <FormSection
+          id="contact-information"
+          title="Business contacts"
+          description="Public contact details and social channels customers can use."
+          icon={ContactRound}
+        >
+          <div className="grid gap-4 sm:grid-cols-2">
+            <FormField
+              id="public-phone"
+              label="Public phone"
+              hint="This does not change the phone number used to sign in."
+            >
+              <Input
+                id="public-phone"
+                type="tel"
+                value={form.phoneNumber}
+                onChange={(event) => update("phoneNumber", event.target.value)}
+                minLength={10}
+                maxLength={20}
                 required
               />
             </FormField>
-            <FormField id="date-of-birth" label="Date of birth">
-              <Input
-                id="date-of-birth"
-                type="date"
-                value={form.dateOfBirth}
-                onChange={(event) => update("dateOfBirth", event.target.value)}
-              />
-            </FormField>
-            <FormField id="gender" label="Gender">
-              <Select
-                value={form.gender || "not_provided"}
-                onValueChange={(value) =>
-                  update("gender", value === "not_provided" ? "" : value)
-                }
-              >
-                <SelectTrigger id="gender" className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="not_provided">Not provided</SelectItem>
-                  {GENDERS.map((gender) => (
-                    <SelectItem key={gender.id} value={gender.id}>
-                      {gender.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </FormField>
-          </div>
-        </div>
-
-        <LocationPickerSection
-          label="Personal location"
-          inputId="personal-location-search"
-          description="Search for the owner's home location or drag the map pin."
-          data={{
-            address: form.personalAddress,
-            addressBn: "",
-            area: form.personalArea,
-            thana: "",
-            district: form.personalDistrict,
-            division: form.personalDivision,
-            postCode: form.personalPostCode,
-            latitude: form.personalLatitude,
-            longitude: form.personalLongitude,
-          }}
-          onUpdate={(location) =>
-            setForm((current) => ({
-              ...current,
-              personalAddress: location.address,
-              personalArea: location.area,
-              personalDistrict: location.district,
-              personalDivision: location.division,
-              personalPostCode: location.postCode,
-              personalLatitude: location.latitude,
-              personalLongitude: location.longitude,
-            }))
-          }
-        />
-      </FormSection>
-
-      <BusinessInformationFormSection
-        form={form}
-        setForm={setForm}
-        update={update}
-        uploadFolder={uploadFolder}
-        isSaving={isSaving}
-        onUploadStateChange={onUploadStateChange}
-        productTypes={productTypeData?.types ?? []}
-      />
-
-      <FormSection
-        title="Tax and license"
-        description="Business identifiers submitted for verification and compliance."
-        icon={ShieldCheck}
-      >
-        <div className="grid gap-4 sm:grid-cols-3">
-          <FormField id="bin-number" label="BIN number">
-            <Input
-              id="bin-number"
-              value={form.binNumber}
-              onChange={(event) => update("binNumber", event.target.value)}
-              maxLength={100}
-            />
-          </FormField>
-          <FormField id="tin-number" label="TIN number">
-            <Input
-              id="tin-number"
-              value={form.tinNumber}
-              onChange={(event) => update("tinNumber", event.target.value)}
-              maxLength={100}
-            />
-          </FormField>
-          <FormField id="trade-license-number" label="Trade license number">
-            <Input
-              id="trade-license-number"
-              value={form.tradeLicenseNumber}
-              onChange={(event) =>
-                update("tradeLicenseNumber", event.target.value)
-              }
-              maxLength={100}
-            />
-          </FormField>
-        </div>
-      </FormSection>
-
-      <FormSection
-        title="Business contacts"
-        description="Public contact details and social channels customers can use."
-        icon={ContactRound}
-      >
-        <div className="grid gap-4 sm:grid-cols-2">
-          <FormField
-            id="public-phone"
-            label="Public phone"
-            hint="This does not change the phone number used to sign in."
-          >
-            <Input
-              id="public-phone"
-              type="tel"
-              value={form.phoneNumber}
-              onChange={(event) => update("phoneNumber", event.target.value)}
-              minLength={10}
-              maxLength={20}
-              required
-            />
-          </FormField>
-          <FormField
-            id="public-email"
-            label="Public email"
-            hint="This does not change the email address used to sign in."
-          >
-            <Input
+            <FormField
               id="public-email"
-              type="email"
-              value={form.email}
-              onChange={(event) => update("email", event.target.value)}
-              maxLength={320}
-            />
-          </FormField>
-          <FormField id="whatsapp" label="WhatsApp">
-            <Input
-              id="whatsapp"
-              type="tel"
-              value={form.whatsappNumber}
-              onChange={(event) => update("whatsappNumber", event.target.value)}
-              maxLength={20}
-            />
-          </FormField>
-          {[
-            ["facebookUrl", "Facebook", "facebook-url"],
-            ["messengerUrl", "Messenger", "messenger-url"],
-            ["instagramUrl", "Instagram", "instagram-url"],
-            ["websiteUrl", "Website", "website-url"],
-            ["telegramUrl", "Telegram", "telegram-url"],
-            ["tiktokUrl", "TikTok", "tiktok-url"],
-            ["twitterUrl", "X (Twitter)", "twitter-url"],
-          ].map(([field, label, id]) => (
-            <FormField key={field} id={id} label={label}>
+              label="Public email"
+              hint="This does not change the email address used to sign in."
+            >
               <Input
-                id={id}
-                type="url"
-                value={form[field as keyof ProfileForm] as string}
-                onChange={(event) =>
-                  update(field as keyof ProfileForm, event.target.value)
-                }
-                placeholder="https://"
-                maxLength={2048}
+                id="public-email"
+                type="email"
+                value={form.email}
+                onChange={(event) => update("email", event.target.value)}
+                maxLength={320}
               />
             </FormField>
-          ))}
-        </div>
-      </FormSection>
+            <FormField id="whatsapp" label="WhatsApp">
+              <Input
+                id="whatsapp"
+                type="tel"
+                value={form.whatsappNumber}
+                onChange={(event) =>
+                  update("whatsappNumber", event.target.value)
+                }
+                maxLength={20}
+              />
+            </FormField>
+            {[
+              ["facebookUrl", "Facebook", "facebook-url"],
+              ["messengerUrl", "Messenger", "messenger-url"],
+              ["instagramUrl", "Instagram", "instagram-url"],
+              ["websiteUrl", "Website", "website-url"],
+              ["telegramUrl", "Telegram", "telegram-url"],
+              ["tiktokUrl", "TikTok", "tiktok-url"],
+              ["twitterUrl", "X (Twitter)", "twitter-url"],
+            ].map(([field, label, id]) => (
+              <FormField key={field} id={id} label={label}>
+                <Input
+                  id={id}
+                  type="url"
+                  value={form[field as keyof ProfileForm] as string}
+                  onChange={(event) =>
+                    update(field as keyof ProfileForm, event.target.value)
+                  }
+                  placeholder="https://"
+                  maxLength={2048}
+                />
+              </FormField>
+            ))}
+          </div>
+        </FormSection>
 
-      <FormSection
-        title="Verification documents"
-        description="Replacing or removing a document sends the profile back for verification."
-        icon={FileText}
-      >
-        <div className="space-y-3">
-          {DOCUMENT_FIELDS.map(([field, label]) => (
-            <DocumentUploadField
-              key={field}
-              label={label}
-              value={String(form[field] || "")}
-              onChange={(value, publicId) =>
-                updateDocument(field, value, publicId)
-              }
-              folder={`${uploadFolder}/documents`}
-              disabled={mutation.isPending}
-              onUploadingChange={onUploadStateChange}
-            />
-          ))}
-        </div>
-      </FormSection>
+        <FormSection
+          id="verification-documents"
+          title="Verification documents"
+          description="Replacing or removing a document sends the profile back for verification."
+          icon={FileText}
+        >
+          <div className="space-y-3">
+            {DOCUMENT_FIELDS.map(([field, label]) => (
+              <DocumentUploadField
+                key={field}
+                label={label}
+                value={String(form[field] || "")}
+                onChange={(value, publicId) =>
+                  updateDocument(field, value, publicId)
+                }
+                folder={`${uploadFolder}/documents`}
+                disabled={mutation.isPending}
+                onUploadingChange={onUploadStateChange}
+              />
+            ))}
+          </div>
+        </FormSection>
+      </form>
 
-      <section className="rounded-xl border border-gray-200 bg-white p-5 sm:p-6">
-        <h2 className="font-semibold text-gray-950">Banking information</h2>
-        <p className="mt-1 text-sm leading-6 text-gray-500">
-          The bank details submitted during registration remain part of the
-          historical application record. Manage current bank and mobile-banking
-          accounts from the Banking tab on your profile.
-        </p>
-        <Button asChild type="button" variant="outline" className="mt-4">
-          <Link href="/dashboard/settings/profile" onClick={confirmDiscard}>
-            Open banking settings
-          </Link>
-        </Button>
-      </section>
+      <FinancialSettingsSection
+        inlineEditor
+        onEditorDirtyChange={setFinancialEditorDirty}
+        sectionId="banking-information"
+      />
 
       <div className="fixed inset-x-0 bottom-0 z-30 border-t border-gray-200 bg-white px-4 py-3 md:pl-[calc(var(--sidebar-width)+1rem)]">
         <div className="mx-auto flex max-w-5xl items-center justify-between gap-4">
@@ -851,19 +934,31 @@ export function RetailerRegistrationProfileEditor() {
           >
             {activeUploads > 0
               ? "Finish uploading files before saving."
-              : isDirty
-                ? "You have unsaved changes."
-                : "No unsaved changes."}
+              : financialEditorDirty
+                ? "Save or cancel the open financial account changes."
+                : isDirty
+                  ? "You have unsaved changes."
+                  : "No unsaved changes."}
           </p>
           <div className="ml-auto flex gap-3">
-            <Button asChild type="button" variant="outline" disabled={isSaving}>
-              <Link href="/dashboard/settings/profile" onClick={confirmDiscard}>
+            {isSaving ? (
+              <Button type="button" variant="outline" disabled>
                 Cancel
-              </Link>
-            </Button>
+              </Button>
+            ) : (
+              <Button asChild type="button" variant="outline">
+                <Link href="/dashboard/settings/profile">Cancel</Link>
+              </Button>
+            )}
             <Button
               type="submit"
-              disabled={!isDirty || isSaving || !form.thana.trim()}
+              form="registration-profile-form"
+              disabled={
+                !isDirty ||
+                isSaving ||
+                financialEditorDirty ||
+                !form.thana.trim()
+              }
               className="min-w-32 bg-[#003178] hover:bg-[#00255c]"
             >
               {mutation.isPending ? (
@@ -876,7 +971,7 @@ export function RetailerRegistrationProfileEditor() {
           </div>
         </div>
       </div>
-    </form>
+    </div>
   );
 }
 
@@ -913,6 +1008,7 @@ function BusinessInformationFormSection({
 }) {
   return (
     <FormSection
+      id="business-information"
       title="Business information"
       description="Business identity, registration category, operating history, and storefront logo."
       icon={Building2}

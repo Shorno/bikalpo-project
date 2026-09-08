@@ -285,7 +285,7 @@ export function RetailerRegistrationProfileView() {
               separately below.
             </div>
             <BankAndTaxSection data={detail} />
-            <FinancialSettingsSection />
+            <FinancialSettingsSection editorHref="/dashboard/settings/profile/edit#banking-information" />
           </TabsContent>
         </Tabs>
 

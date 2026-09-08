@@ -9,9 +9,18 @@ import {
   Plus,
   Smartphone,
 } from "lucide-react";
-import { useState } from "react";
+import Link from "next/link";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -37,13 +46,6 @@ type AccountDraft = {
   providerName: string;
 };
 
-function maskedAccountNumber(value: string | null) {
-  if (!value) return "Not provided";
-  const compact = value.replace(/\s/g, "");
-  if (compact.length <= 4) return value;
-  return `${"•".repeat(Math.min(8, compact.length - 4))}${compact.slice(-4)}`;
-}
-
 const EMPTY_DRAFT: AccountDraft = {
   accountName: "",
   accountNumber: "",
@@ -56,7 +58,21 @@ function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : "Please try again.";
 }
 
-export function FinancialSettingsSection() {
+export function FinancialSettingsSection({
+  editorHref,
+  inlineEditor = false,
+  onEditorDirtyChange,
+  sectionId = "financial-settings",
+}: {
+  editorHref?: string;
+  inlineEditor?: boolean;
+  onEditorDirtyChange?: (dirty: boolean) => void;
+  sectionId?: string;
+} = {}) {
+  const [openEditors, setOpenEditors] = useState({
+    bank: false,
+    mobile_banking: false,
+  });
   const query = useQuery({
     ...orpc.finance.getFinancialSettingsAccounts.queryOptions({ input: {} }),
     staleTime: 30_000,
@@ -67,16 +83,21 @@ export function FinancialSettingsSection() {
   const mobileAccounts = accounts.filter(
     (account) => account.type === "mobile_banking",
   );
+  const hasOpenEditor = openEditors.bank || openEditors.mobile_banking;
+
+  useEffect(() => {
+    onEditorDirtyChange?.(inlineEditor && hasOpenEditor);
+  }, [hasOpenEditor, inlineEditor, onEditorDirtyChange]);
 
   return (
     <section
-      id="financial-settings"
+      id={sectionId}
       className="overflow-hidden rounded-xl border bg-white"
       aria-labelledby="financial-settings-heading"
     >
-      <div className="border-b bg-gray-50/70 p-6">
+      <div className="border-b bg-gradient-to-r from-emerald-50/70 via-white to-white p-6">
         <div className="flex items-start gap-3">
-          <span className="flex size-10 shrink-0 items-center justify-center rounded-xl border border-emerald-200 bg-white text-emerald-700">
+          <span className="flex size-10 shrink-0 items-center justify-center rounded-xl border border-emerald-200 bg-white text-emerald-700 shadow-sm">
             <CircleDollarSign className="size-5" aria-hidden="true" />
           </span>
           <div>
@@ -113,6 +134,11 @@ export function FinancialSettingsSection() {
             icon={Landmark}
             title="Bank accounts"
             description="Accounts used for business banking and transfers."
+            editorHref={editorHref}
+            inlineEditor={inlineEditor}
+            onEditorOpenChange={(open) =>
+              setOpenEditors((current) => ({ ...current, bank: open }))
+            }
           />
           <FinancialAccountPanel
             type="mobile_banking"
@@ -120,6 +146,14 @@ export function FinancialSettingsSection() {
             icon={Smartphone}
             title="Mobile banking"
             description="Mobile financial services available to the business."
+            editorHref={editorHref}
+            inlineEditor={inlineEditor}
+            onEditorOpenChange={(open) =>
+              setOpenEditors((current) => ({
+                ...current,
+                mobile_banking: open,
+              }))
+            }
           />
         </div>
       )}
@@ -130,13 +164,19 @@ export function FinancialSettingsSection() {
 function FinancialAccountPanel({
   accounts,
   description,
+  editorHref,
   icon: Icon,
+  inlineEditor,
+  onEditorOpenChange,
   title,
   type,
 }: {
   accounts: FinancialAccount[];
   description: string;
+  editorHref?: string;
   icon: typeof Landmark;
+  inlineEditor: boolean;
+  onEditorOpenChange: (open: boolean) => void;
   title: string;
   type: FinancialAccountType;
 }) {
@@ -144,6 +184,10 @@ function FinancialAccountPanel({
   const [draft, setDraft] = useState<AccountDraft | null>(null);
   const isBank = type === "bank";
   const accountLabel = isBank ? "bank account" : "mobile banking account";
+  const setEditorDraft = (nextDraft: AccountDraft | null) => {
+    setDraft(nextDraft);
+    onEditorOpenChange(nextDraft !== null);
+  };
 
   const refresh = async () => {
     await queryClient.invalidateQueries({
@@ -155,7 +199,7 @@ function FinancialAccountPanel({
     orpc.finance.createFinancialSettingsAccount.mutationOptions({
       onSuccess: async () => {
         await refresh();
-        setDraft(null);
+        setEditorDraft(null);
         toast.success(isBank ? "Bank account added" : "Mobile banking added");
       },
       onError: (error) => toast.error(errorMessage(error)),
@@ -166,7 +210,7 @@ function FinancialAccountPanel({
     orpc.finance.updateFinancialSettingsAccount.mutationOptions({
       onSuccess: async () => {
         await refresh();
-        setDraft(null);
+        setEditorDraft(null);
         toast.success("Financial account updated");
       },
       onError: (error) => toast.error(errorMessage(error)),
@@ -175,10 +219,10 @@ function FinancialAccountPanel({
 
   const isSaving = createMutation.isPending || updateMutation.isPending;
 
-  const openCreate = () => setDraft({ ...EMPTY_DRAFT });
+  const openCreate = () => setEditorDraft({ ...EMPTY_DRAFT });
 
   const openEdit = (account: FinancialAccount) => {
-    setDraft({
+    setEditorDraft({
       accountName: account.accountName,
       accountNumber: account.accountNumber || "",
       id: account.id,
@@ -219,15 +263,24 @@ function FinancialAccountPanel({
           </h3>
           <p className="mt-1 text-xs leading-5 text-gray-500">{description}</p>
         </div>
-        <Button
-          type="button"
-          size="sm"
-          className="w-full sm:w-auto"
-          onClick={openCreate}
-        >
-          <Plus className="size-4" aria-hidden="true" />
-          Add {isBank ? "bank account" : "mobile banking"}
-        </Button>
+        {editorHref ? (
+          <Button asChild size="sm" className="w-full sm:w-auto">
+            <Link href={editorHref}>
+              <Plus className="size-4" aria-hidden="true" />
+              Add {isBank ? "bank account" : "mobile banking"}
+            </Link>
+          </Button>
+        ) : (
+          <Button
+            type="button"
+            size="sm"
+            className="w-full sm:w-auto"
+            onClick={openCreate}
+          >
+            <Plus className="size-4" aria-hidden="true" />
+            Add {isBank ? "bank account" : "mobile banking"}
+          </Button>
+        )}
       </div>
 
       <div className="mt-5 flex-1">
@@ -244,7 +297,7 @@ function FinancialAccountPanel({
         ) : (
           <div className="divide-y">
             <div
-              className={`hidden gap-3 pb-2 text-xs font-semibold tracking-wide text-gray-600 uppercase sm:grid ${isBank ? "grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(7.5rem,1fr)_auto_auto]" : "grid-cols-[minmax(0,1fr)_minmax(7.5rem,1fr)_auto_auto]"}`}
+              className={`hidden gap-3 pb-2 text-[11px] font-semibold tracking-wide text-gray-400 uppercase sm:grid ${isBank ? "grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(7.5rem,1fr)_auto_auto]" : "grid-cols-[minmax(0,1fr)_minmax(7.5rem,1fr)_auto_auto]"}`}
             >
               <span>{isBank ? "Bank name" : "Provider"}</span>
               {isBank && <span>Account name</span>}
@@ -264,11 +317,11 @@ function FinancialAccountPanel({
                         {account.accountName}
                       </p>
                     )}
-                    <p className="mt-2 text-xs font-medium tracking-wide text-gray-600 uppercase">
+                    <p className="mt-2 text-[11px] font-medium tracking-wide text-gray-400 uppercase">
                       Account number
                     </p>
                     <p className="mt-0.5 break-all font-mono text-xs text-gray-700">
-                      {maskedAccountNumber(account.accountNumber)}
+                      {account.accountNumber || "Not provided"}
                     </p>
                   </div>
                   <div className="flex shrink-0 flex-col items-end gap-2">
@@ -276,15 +329,24 @@ function FinancialAccountPanel({
                       active={account.isActive}
                       activeLabel={isBank ? "Active" : "Enabled"}
                     />
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => openEdit(account)}
-                    >
-                      <Pencil className="size-3.5" aria-hidden="true" />
-                      Edit
-                    </Button>
+                    {editorHref ? (
+                      <Button asChild variant="ghost" size="sm">
+                        <Link href={editorHref}>
+                          <Pencil className="size-3.5" aria-hidden="true" />
+                          Edit
+                        </Link>
+                      </Button>
+                    ) : (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => openEdit(account)}
+                      >
+                        <Pencil className="size-3.5" aria-hidden="true" />
+                        Edit
+                      </Button>
+                    )}
                   </div>
                 </div>
 
@@ -300,21 +362,30 @@ function FinancialAccountPanel({
                     </span>
                   )}
                   <span className="truncate font-mono text-xs text-gray-700">
-                    {maskedAccountNumber(account.accountNumber)}
+                    {account.accountNumber || "Not provided"}
                   </span>
                   <StatusBadge
                     active={account.isActive}
                     activeLabel={isBank ? "Active" : "Enabled"}
                   />
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => openEdit(account)}
-                  >
-                    <Pencil className="size-3.5" aria-hidden="true" />
-                    Edit
-                  </Button>
+                  {editorHref ? (
+                    <Button asChild variant="ghost" size="sm">
+                      <Link href={editorHref}>
+                        <Pencil className="size-3.5" aria-hidden="true" />
+                        Edit
+                      </Link>
+                    </Button>
+                  ) : (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => openEdit(account)}
+                    >
+                      <Pencil className="size-3.5" aria-hidden="true" />
+                      Edit
+                    </Button>
+                  )}
                 </div>
               </div>
             ))}
@@ -322,13 +393,23 @@ function FinancialAccountPanel({
         )}
       </div>
 
-      <AccountEditorForm
-        draft={draft}
-        isBank={isBank}
-        isSaving={isSaving}
-        onDraftChange={setDraft}
-        onSubmit={saveDraft}
-      />
+      {inlineEditor ? (
+        <AccountEditorInline
+          draft={draft}
+          isBank={isBank}
+          isSaving={isSaving}
+          onDraftChange={setEditorDraft}
+          onSubmit={saveDraft}
+        />
+      ) : (
+        <AccountEditorDialog
+          draft={draft}
+          isBank={isBank}
+          isSaving={isSaving}
+          onDraftChange={setEditorDraft}
+          onSubmit={saveDraft}
+        />
+      )}
     </div>
   );
 }
@@ -357,7 +438,7 @@ function StatusBadge({
   );
 }
 
-function AccountEditorForm({
+function AccountEditorInline({
   draft,
   isBank,
   isSaving,
@@ -373,130 +454,205 @@ function AccountEditorForm({
   if (!draft) return null;
 
   return (
-    <div className="mt-5 border-t border-gray-200 pt-5">
-      <div>
+    <div className="mt-5 border-t pt-5">
+      <div className="mb-5">
         <h4 className="font-semibold text-gray-950">
           {draft.id ? "Edit" : "Add"}{" "}
           {isBank ? "bank account" : "mobile banking"}
         </h4>
-        <p className="mt-1 text-xs leading-5 text-gray-600">
+        <p className="mt-1 text-xs leading-5 text-gray-500">
           {draft.id
             ? "Update the account details and availability."
             : "Enter the account details to connect it to this business."}
         </p>
       </div>
-
-      <form onSubmit={onSubmit} className="mt-5 space-y-5">
-        <div className="flex items-center justify-between gap-3">
-          <Label htmlFor={`${isBank ? "bank" : "mobile"}-active`}>
-            Account status
-          </Label>
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-gray-600">
-              {draft.isActive ? "Active" : "Disabled"}
-            </span>
-            <Switch
-              id={`${isBank ? "bank" : "mobile"}-active`}
-              checked={draft.isActive}
-              onCheckedChange={(checked) =>
-                onDraftChange({ ...draft, isActive: checked })
-              }
-              disabled={isSaving}
-            />
-          </div>
-        </div>
-
-        <div className="grid gap-4">
-          <div className="space-y-2">
-            <Label htmlFor={`${isBank ? "bank" : "mobile"}-provider`}>
-              {isBank ? "Bank name" : "Provider name"}
-            </Label>
-            <Input
-              id={`${isBank ? "bank" : "mobile"}-provider`}
-              value={draft.providerName}
-              onChange={(event) =>
-                onDraftChange({
-                  ...draft,
-                  providerName: event.target.value,
-                })
-              }
-              placeholder={isBank ? "Enter bank name" : "Enter provider"}
-              maxLength={120}
-              required
-              autoFocus
-            />
-          </div>
-          {isBank && (
-            <div className="space-y-2">
-              <Label htmlFor="bank-account-name">Account name</Label>
-              <Input
-                id="bank-account-name"
-                value={draft.accountName}
-                onChange={(event) =>
-                  onDraftChange({
-                    ...draft,
-                    accountName: event.target.value,
-                  })
-                }
-                placeholder="Enter account name"
-                maxLength={180}
-                required
-              />
-            </div>
-          )}
-          <div className="space-y-2">
-            <Label htmlFor={`${isBank ? "bank" : "mobile"}-account-number`}>
-              Account number
-            </Label>
-            <Input
-              id={`${isBank ? "bank" : "mobile"}-account-number`}
-              value={draft.accountNumber}
-              onChange={(event) =>
-                onDraftChange({
-                  ...draft,
-                  accountNumber: event.target.value,
-                })
-              }
-              placeholder={
-                isBank
-                  ? "Enter bank account number"
-                  : "Enter mobile account number"
-              }
-              inputMode={isBank ? "text" : "tel"}
-              autoComplete="off"
-              maxLength={80}
-              className="font-mono"
-              required
-            />
-          </div>
-        </div>
-
-        <div className="flex flex-col-reverse gap-2 border-t border-gray-200 pt-4 sm:flex-row sm:justify-end">
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => onDraftChange(null)}
-            disabled={isSaving}
-          >
-            Cancel
-          </Button>
-          <Button
-            type="submit"
-            className="bg-emerald-600 hover:bg-emerald-700"
-            disabled={
-              isSaving ||
-              !draft.providerName.trim() ||
-              !draft.accountNumber.trim() ||
-              (isBank && !draft.accountName.trim())
-            }
-          >
-            {isSaving && (
-              <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-            )}
-            {draft.id ? "Save changes" : "Add account"}
-          </Button>
-        </div>
-      </form>
+      <AccountEditorForm
+        draft={draft}
+        isBank={isBank}
+        isSaving={isSaving}
+        onDraftChange={onDraftChange}
+        onSubmit={onSubmit}
+      />
     </div>
+  );
+}
+
+function AccountEditorForm({
+  draft,
+  isBank,
+  isSaving,
+  onDraftChange,
+  onSubmit,
+}: {
+  draft: AccountDraft;
+  isBank: boolean;
+  isSaving: boolean;
+  onDraftChange: (draft: AccountDraft | null) => void;
+  onSubmit: (event: React.FormEvent<HTMLFormElement>) => void;
+}) {
+  return (
+    <form onSubmit={onSubmit} className="space-y-5">
+      <div className="flex items-center justify-between gap-3">
+        <Label htmlFor={`${isBank ? "bank" : "mobile"}-active`}>
+          Account status
+        </Label>
+        <div className="flex items-center gap-2">
+          <span className="text-sm text-gray-600">
+            {draft.isActive ? "Active" : "Disabled"}
+          </span>
+          <Switch
+            id={`${isBank ? "bank" : "mobile"}-active`}
+            checked={draft.isActive}
+            onCheckedChange={(checked) =>
+              onDraftChange({ ...draft, isActive: checked })
+            }
+            disabled={isSaving}
+          />
+        </div>
+      </div>
+
+      <div className="grid gap-4">
+        <div className="space-y-2">
+          <Label htmlFor={`${isBank ? "bank" : "mobile"}-provider`}>
+            {isBank ? "Bank name" : "Provider name"}
+          </Label>
+          <Input
+            id={`${isBank ? "bank" : "mobile"}-provider`}
+            value={draft.providerName}
+            onChange={(event) =>
+              onDraftChange({
+                ...draft,
+                providerName: event.target.value,
+              })
+            }
+            placeholder={isBank ? "Enter bank name" : "Enter provider"}
+            maxLength={120}
+            required
+            autoFocus
+          />
+        </div>
+        {isBank && (
+          <div className="space-y-2">
+            <Label htmlFor="bank-account-name">Account name</Label>
+            <Input
+              id="bank-account-name"
+              value={draft.accountName}
+              onChange={(event) =>
+                onDraftChange({
+                  ...draft,
+                  accountName: event.target.value,
+                })
+              }
+              placeholder="Enter account name"
+              maxLength={180}
+              required
+            />
+          </div>
+        )}
+        <div className="space-y-2">
+          <Label htmlFor={`${isBank ? "bank" : "mobile"}-account-number`}>
+            Account number
+          </Label>
+          <Input
+            id={`${isBank ? "bank" : "mobile"}-account-number`}
+            value={draft.accountNumber}
+            onChange={(event) =>
+              onDraftChange({
+                ...draft,
+                accountNumber: event.target.value,
+              })
+            }
+            placeholder={
+              isBank
+                ? "Enter bank account number"
+                : "Enter mobile account number"
+            }
+            inputMode={isBank ? "text" : "tel"}
+            autoComplete="off"
+            maxLength={80}
+            className="font-mono"
+            required
+          />
+        </div>
+      </div>
+
+      <DialogFooter>
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => onDraftChange(null)}
+          disabled={isSaving}
+        >
+          Cancel
+        </Button>
+        <Button
+          type="submit"
+          className="bg-emerald-600 hover:bg-emerald-700"
+          disabled={
+            isSaving ||
+            !draft.providerName.trim() ||
+            !draft.accountNumber.trim() ||
+            (isBank && !draft.accountName.trim())
+          }
+        >
+          {isSaving && (
+            <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+          )}
+          {draft.id ? "Save changes" : "Add account"}
+        </Button>
+      </DialogFooter>
+    </form>
+  );
+}
+
+function AccountEditorDialog({
+  draft,
+  isBank,
+  isSaving,
+  onDraftChange,
+  onSubmit,
+}: {
+  draft: AccountDraft | null;
+  isBank: boolean;
+  isSaving: boolean;
+  onDraftChange: (draft: AccountDraft | null) => void;
+  onSubmit: (event: React.FormEvent<HTMLFormElement>) => void;
+}) {
+  return (
+    <Dialog
+      open={draft !== null}
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen && !isSaving) onDraftChange(null);
+      }}
+    >
+      <DialogContent
+        className="max-h-[90vh] overflow-y-auto sm:max-w-xl"
+        onInteractOutside={(event) => {
+          if (isSaving) event.preventDefault();
+        }}
+      >
+        <DialogHeader>
+          <DialogTitle>
+            {draft?.id ? "Edit" : "Add"}{" "}
+            {isBank ? "bank account" : "mobile banking"}
+          </DialogTitle>
+          <DialogDescription>
+            {draft?.id
+              ? "Update the account details and availability."
+              : "Enter the account details to connect it to this business."}
+          </DialogDescription>
+        </DialogHeader>
+
+        {draft && (
+          <AccountEditorForm
+            draft={draft}
+            isBank={isBank}
+            isSaving={isSaving}
+            onDraftChange={onDraftChange}
+            onSubmit={onSubmit}
+          />
+        )}
+      </DialogContent>
+    </Dialog>
   );
 }
