@@ -76,15 +76,22 @@ export function UnitCard({
   qrToken,
   unit,
   location,
-  propertyVideoUrl,
 }: {
   propertyCode: string;
   qrToken: string;
   unit: ToLetUnitView;
   location: string;
-  propertyVideoUrl?: string | null;
 }) {
   const listing = unit.currentListing;
+  const residential = [
+    "family_flat",
+    "bachelor_room",
+    "sublet",
+    "other",
+  ].includes(unit.unitType);
+  const showBathrooms =
+    residential || ["office", "shop", "warehouse"].includes(unit.unitType);
+  const showBalconies = residential || unit.unitType === "office";
   const prefersReducedMotion = usePrefersReducedMotion();
   const markRented = useMarkToLetUnitRented();
   const [slideIndex, setSlideIndex] = useState(0);
@@ -104,15 +111,6 @@ export function UnitCard({
             type: "video" as const,
             url: listing.videoUrl,
             label: "Open Listing video / 360° tour",
-          },
-        ]
-      : []),
-    ...(propertyVideoUrl && propertyVideoUrl !== listing?.videoUrl
-      ? [
-          {
-            type: "video" as const,
-            url: propertyVideoUrl,
-            label: "Open property video / 360° tour",
           },
         ]
       : []),
@@ -337,16 +335,23 @@ export function UnitCard({
         ) : null}
 
         <div className="mt-4 grid grid-cols-2 gap-2 text-xs text-gray-600">
-          <span className="flex items-center gap-1.5">
-            <BedDouble className="size-3.5 text-gray-400" /> {unit.bedrooms} bed
-          </span>
-          <span className="flex items-center gap-1.5">
-            <Bath className="size-3.5 text-gray-400" /> {unit.bathrooms} bath
-          </span>
-          <span className="flex items-center gap-1.5">
-            <Building2 className="size-3.5 text-gray-400" /> {unit.balconies}{" "}
-            balcony
-          </span>
+          {residential ? (
+            <span className="flex items-center gap-1.5">
+              <BedDouble className="size-3.5 text-gray-400" /> {unit.bedrooms}{" "}
+              bed
+            </span>
+          ) : null}
+          {showBathrooms ? (
+            <span className="flex items-center gap-1.5">
+              <Bath className="size-3.5 text-gray-400" /> {unit.bathrooms} bath
+            </span>
+          ) : null}
+          {showBalconies ? (
+            <span className="flex items-center gap-1.5">
+              <Building2 className="size-3.5 text-gray-400" /> {unit.balconies}{" "}
+              balcony
+            </span>
+          ) : null}
           <span className="flex items-center gap-1.5">
             <Ruler className="size-3.5 text-gray-400" />
             {unit.sizeSqFt.toLocaleString("en-BD")} sq ft

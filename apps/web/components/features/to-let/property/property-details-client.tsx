@@ -4,7 +4,6 @@ import {
   Building2,
   Check,
   Edit2,
-  ExternalLink,
   Loader2,
   MapPin,
   Plus,
@@ -398,7 +397,6 @@ export function PropertyDetailsClient({
                 qrToken={property.qrToken}
                 unit={unit}
                 location={`${property.area}, ${property.district}`}
-                propertyVideoUrl={property.videoUrl}
               />
             ))}
           </div>
@@ -429,16 +427,6 @@ export function PropertyDetailsClient({
             <p className="mt-4 whitespace-pre-wrap text-sm leading-6 text-gray-600">
               {property.description}
             </p>
-          ) : null}
-          {property.videoUrl ? (
-            <a
-              href={property.videoUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="mt-4 inline-flex items-center gap-1.5 text-sm font-medium text-emerald-700 hover:underline"
-            >
-              View building video <ExternalLink className="size-3.5" />
-            </a>
           ) : null}
         </section>
 

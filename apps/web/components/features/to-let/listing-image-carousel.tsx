@@ -75,6 +75,20 @@ export function ListingImageCarousel({
   };
 
   if (images.length === 0) {
+    if (galleryHref) {
+      return (
+        <Link
+          href={galleryHref}
+          aria-label={`View ${alt} details`}
+          className={cn(
+            "flex aspect-video items-center justify-center bg-slate-100 text-sm text-slate-500 focus-visible:outline-2 focus-visible:outline-offset-[-4px] focus-visible:outline-primary",
+            className,
+          )}
+        >
+          No photo available
+        </Link>
+      );
+    }
     return (
       <div
         className={cn(
@@ -112,6 +126,14 @@ export function ListingImageCarousel({
         unoptimized={activeImage.startsWith("http")}
       />
 
+      {galleryHref ? (
+        <Link
+          href={galleryHref}
+          aria-label={`View ${alt} details`}
+          className="absolute inset-0 focus-visible:outline-2 focus-visible:outline-offset-[-4px] focus-visible:outline-primary"
+        />
+      ) : null}
+
       {hasMultipleImages && (
         <>
           <button
@@ -131,11 +153,11 @@ export function ListingImageCarousel({
             )}
           </button>
 
-          <div className="absolute inset-x-0 top-1/2 flex -translate-y-1/2 justify-between px-2 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+          <div className="pointer-events-none absolute inset-x-0 top-1/2 z-10 flex -translate-y-1/2 justify-between px-2 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
             <button
               type="button"
               onClick={showPrevious}
-              className="inline-flex size-11 items-center justify-center rounded-full bg-black/65 text-white hover:bg-black/80 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+              className="pointer-events-auto inline-flex size-11 items-center justify-center rounded-full bg-black/65 text-white hover:bg-black/80 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
               aria-label="Show previous photo"
             >
               <ChevronLeft className="size-4" aria-hidden="true" />
@@ -143,7 +165,7 @@ export function ListingImageCarousel({
             <button
               type="button"
               onClick={showNext}
-              className="inline-flex size-11 items-center justify-center rounded-full bg-black/65 text-white hover:bg-black/80 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+              className="pointer-events-auto inline-flex size-11 items-center justify-center rounded-full bg-black/65 text-white hover:bg-black/80 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
               aria-label="Show next photo"
             >
               <ChevronRight className="size-4" aria-hidden="true" />

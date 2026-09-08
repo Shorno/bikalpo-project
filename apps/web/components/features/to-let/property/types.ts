@@ -59,6 +59,7 @@ export interface ToLetOwnerListingSummary {
 }
 
 export interface ToLetUnitView {
+  addressOverride?: import("@bikalpo-project/api/lib/tolet-unit-address").UnitAddress | null;
   id?: string;
   unitCode: string;
   name: string;
@@ -93,6 +94,7 @@ export interface ToLetPropertyView {
   division: string;
   district: string;
   area: string;
+  upazila?: string | null;
   fullAddress: string;
   nearbyLandmark: string | null;
   latitude: string | null;

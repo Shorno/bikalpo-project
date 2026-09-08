@@ -44,6 +44,7 @@ import { client } from "@/utils/orpc";
 import { PropertyLocationFields } from "./property-location-fields";
 import { PropertyPhoneVerification } from "./property-phone-verification";
 import { PropertyPageHeader } from "./property-ui";
+import fieldStyles from "./property-form-fields.module.css";
 
 const steps = [
   { id: 1, label: "Basic" },
@@ -96,6 +97,7 @@ const initialValues: PropertyRegistrationValues = {
   division: "",
   district: "",
   area: "",
+  upazila: "",
   fullAddress: "",
   nearbyLandmark: "",
   latitude: "",
@@ -423,6 +425,10 @@ export function PropertyRegistrationWizard() {
       }
     }
 
+    if (step === 1 && (!values.latitude || !values.longitude)) {
+      stepErrors.latitude = "Capture the property GPS location";
+    }
+
     return stepErrors;
   };
 
@@ -494,11 +500,8 @@ export function PropertyRegistrationWizard() {
               longitude: longitude.toFixed(7),
               division: division || current.division,
               district: district || current.district,
-              area:
-                location?.sub_district ||
-                location?.thana ||
-                location?.area ||
-                current.area,
+              upazila: location?.thana || location?.sub_district || current.upazila,
+              area: location?.area || current.area,
               fullAddress: current.fullAddress || location?.address || "",
             };
           });
@@ -585,7 +588,7 @@ export function PropertyRegistrationWizard() {
   );
 
   return (
-    <div className="space-y-5">
+    <div className={`${fieldStyles.fields} space-y-5`}>
       <PropertyPageHeader
         title="Create Property Management Account"
         backHref="/account/to-let/properties"
@@ -660,7 +663,7 @@ export function PropertyRegistrationWizard() {
                 : currentStep === 2
                   ? "Property Information"
                   : currentStep === 3
-                    ? "Verification (Image and Video)"
+                    ? "Verification (Images and Phone)"
                     : "Review Registration"}
             </h2>
           </div>
@@ -740,13 +743,14 @@ export function PropertyRegistrationWizard() {
                   division={values.division}
                   district={values.district}
                   area={values.area}
+                  upazila={values.upazila}
                   errors={errors}
                   onChange={update}
                 />
               </div>
 
-              <div className="space-y-1.5 sm:col-span-2">
-                <Label htmlFor="full-address">Full Address *</Label>
+              <div className="space-y-1.5">
+                <Label htmlFor="full-address">Address *</Label>
                 <Input
                   id="full-address"
                   value={values.fullAddress}
@@ -759,30 +763,15 @@ export function PropertyRegistrationWizard() {
                 <FieldMessage message={errors.fullAddress} />
               </div>
 
-              <div className="space-y-1.5 sm:col-span-2">
-                <Label htmlFor="landmark">Nearby Landmark</Label>
-                <Input
-                  id="landmark"
-                  value={values.nearbyLandmark}
-                  onChange={(event) =>
-                    update("nearbyLandmark", event.target.value)
-                  }
-                  placeholder="Example: Near Metro Station"
-                  aria-invalid={Boolean(errors.nearbyLandmark)}
-                />
-                <FieldMessage message={errors.nearbyLandmark} />
-              </div>
-
-              <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 sm:col-span-2">
-                <p className="text-sm font-medium text-gray-900">
-                  Google Map Location
-                </p>
+              <div className="space-y-1.5">
+                <Label htmlFor="property-capture-gps">Google Map Location *</Label>
                 <Button
+                  id="property-capture-gps"
                   type="button"
                   variant="outline"
                   onClick={captureGps}
                   disabled={locating}
-                  className="mt-3"
+                  className="h-10 w-full justify-start font-normal"
                 >
                   {locating ? (
                     <Loader2 className="animate-spin" />
@@ -797,6 +786,13 @@ export function PropertyRegistrationWizard() {
                   </p>
                 ) : null}
                 <FieldMessage message={errors.latitude ?? errors.longitude} />
+              </div>
+              <div className="space-y-1.5 sm:col-span-2">
+                <Label htmlFor="landmark">Nearby Landmark</Label>
+                <Input id="landmark" value={values.nearbyLandmark}
+                  onChange={(event) => update("nearbyLandmark", event.target.value)}
+                  placeholder="Example: Near Metro Station" aria-invalid={Boolean(errors.nearbyLandmark)} />
+                <FieldMessage message={errors.nearbyLandmark} />
               </div>
             </div>
           ) : null}
@@ -948,7 +944,7 @@ export function PropertyRegistrationWizard() {
                     ["Owner", values.ownerName],
                     [
                       "Location",
-                      `${values.area}, ${values.district}, ${values.division}`,
+                      `${values.area}, ${values.upazila}, ${values.district}, ${values.division}`,
                     ],
                     [
                       "Building Type",
@@ -1091,15 +1087,17 @@ export function PropertyRegistrationWizard() {
               >
                 {createProperty.isPending ? (
                   <>
-                    <Loader2 className="animate-spin" /> Registering...
+                    <Loader2 className="size-4 shrink-0 animate-spin" />{" "}
+                    Registering...
                   </>
                 ) : currentStep === 4 ? (
                   <>
-                    <Building2 /> Register Property
+                    <Building2 className="size-4 shrink-0" /> Register Property
                   </>
                 ) : (
                   <>
-                    Save &amp; Continue <ArrowRight />
+                    Save &amp; Continue{" "}
+                    <ArrowRight className="size-4 shrink-0" />
                   </>
                 )}
               </Button>

@@ -15,7 +15,7 @@ import {
 
 import { user } from "./auth-schema";
 import { toletBookingRequest } from "./tolet-booking";
-import { toletProperty, toletUnit } from "./tolet-property";
+import { toletProperty, toletUnit, toletUnitListing } from "./tolet-property";
 
 export const toletRentalContractStatusEnum = pgEnum(
 	"tolet_rental_contract_status",
@@ -184,6 +184,18 @@ export const toletRentalAlert = pgTable(
 		check("tolet_rental_alert_sizes_nonnegative", sql`${table.minimumSizeSqFt} >= 0 AND ${table.minimumBedrooms} >= 0 AND ${table.minimumBathrooms} >= 0 AND ${table.minimumBalconies} >= 0`),
 	],
 );
+
+// One persistent inbox item per consumer/listing, even when saved searches overlap.
+export const toletAlertNotification = pgTable("tolet_alert_notification", {
+	id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+	userId: text("user_id").notNull().references(() => user.id, { onDelete: "cascade" }),
+	listingId: text("listing_id").notNull().references(() => toletUnitListing.id, { onDelete: "cascade" }),
+	createdAt: timestamp("created_at").defaultNow().notNull(),
+	readAt: timestamp("read_at"),
+}, (table) => [
+	uniqueIndex("tolet_alert_notification_user_listing_unique").on(table.userId, table.listingId),
+	index("tolet_alert_notification_user_created_idx").on(table.userId, table.createdAt),
+]);
 
 export const toletRentalComment = pgTable(
 	"tolet_rental_comment",

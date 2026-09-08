@@ -1,15 +1,8 @@
 "use client";
 
-import {
-  ChevronLeft,
-  ChevronRight,
-  ImageIcon,
-  Pause,
-  Play,
-} from "lucide-react";
+import { ChevronLeft, ChevronRight, ImageIcon } from "lucide-react";
 import Image from "next/image";
 import {
-  type FocusEvent,
   type KeyboardEvent,
   type TouchEvent,
   useCallback,
@@ -24,7 +17,6 @@ interface PublicListingGalleryProps {
   alt: string;
 }
 
-const AUTO_ADVANCE_MS = 5_000;
 const SWIPE_THRESHOLD_PX = 45;
 const MAX_IMAGES = 12;
 
@@ -44,15 +36,11 @@ export function PublicListingGallery({
     [imageUrls],
   );
   const [activeIndex, setActiveIndex] = useState(0);
-  const [isUserPaused, setIsUserPaused] = useState(false);
-  const [isHovered, setIsHovered] = useState(false);
-  const [isFocusWithin, setIsFocusWithin] = useState(false);
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
   const touchStartX = useRef<number | null>(null);
   const thumbnailStripRef = useRef<HTMLDivElement | null>(null);
   const thumbnailRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const hasMultipleImages = images.length > 1;
-  const isInteractionPaused = isHovered || isFocusWithin;
 
   useEffect(() => {
     setActiveIndex((index) => Math.min(index, Math.max(images.length - 1, 0)));
@@ -76,26 +64,6 @@ export function PublicListingGallery({
     if (images.length < 2) return;
     setActiveIndex((index) => (index - 1 + images.length) % images.length);
   }, [images.length]);
-
-  useEffect(() => {
-    if (
-      !hasMultipleImages ||
-      isUserPaused ||
-      isInteractionPaused ||
-      prefersReducedMotion
-    ) {
-      return;
-    }
-
-    const interval = window.setInterval(showNext, AUTO_ADVANCE_MS);
-    return () => window.clearInterval(interval);
-  }, [
-    hasMultipleImages,
-    isInteractionPaused,
-    isUserPaused,
-    prefersReducedMotion,
-    showNext,
-  ]);
 
   useEffect(() => {
     const strip = thumbnailStripRef.current;
@@ -124,12 +92,6 @@ export function PublicListingGallery({
     }
   };
 
-  const handleBlur = (event: FocusEvent<HTMLDivElement>) => {
-    if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
-      setIsFocusWithin(false);
-    }
-  };
-
   const handleTouchStart = (event: TouchEvent<HTMLDivElement>) => {
     touchStartX.current = event.changedTouches[0]?.clientX ?? null;
   };
@@ -150,8 +112,8 @@ export function PublicListingGallery({
 
   if (images.length === 0) {
     return (
-      <div className="flex aspect-video flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-gray-300 bg-gray-50 text-gray-500">
-        <span className="flex size-12 items-center justify-center rounded-full bg-white shadow-sm">
+      <div className="flex aspect-video flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-zinc-300 bg-zinc-50 text-zinc-500">
+        <span className="flex size-12 items-center justify-center rounded-full border border-zinc-200 bg-white">
           <ImageIcon className="size-5" aria-hidden="true" />
         </span>
         <p className="text-sm font-medium">No photos available</p>
@@ -167,15 +129,11 @@ export function PublicListingGallery({
       aria-label={`${alt} photo gallery`}
       className="space-y-3"
       onKeyDown={handleKeyDown}
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
-      onFocusCapture={() => setIsFocusWithin(true)}
-      onBlurCapture={handleBlur}
     >
       <div
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}
-        className="group relative aspect-video touch-pan-y overflow-hidden rounded-2xl border border-gray-200 bg-gray-100 shadow-sm"
+        className="group relative aspect-video touch-pan-y overflow-hidden rounded-lg border border-zinc-200 bg-zinc-100"
       >
         <Image
           key={activeImage}
@@ -196,7 +154,7 @@ export function PublicListingGallery({
             <button
               type="button"
               onClick={showPrevious}
-              className="absolute left-3 top-1/2 flex size-10 -translate-y-1/2 items-center justify-center rounded-full bg-white/90 text-gray-900 shadow-md transition hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 sm:opacity-0 sm:group-focus-within:opacity-100 sm:group-hover:opacity-100"
+              className="absolute left-3 top-1/2 flex size-10 -translate-y-1/2 items-center justify-center rounded-full border border-white/70 bg-white/90 text-zinc-900 transition hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 sm:opacity-0 sm:group-focus-within:opacity-100 sm:group-hover:opacity-100"
               aria-label="Show previous photo"
             >
               <ChevronLeft className="size-5" aria-hidden="true" />
@@ -204,34 +162,13 @@ export function PublicListingGallery({
             <button
               type="button"
               onClick={showNext}
-              className="absolute right-3 top-1/2 flex size-10 -translate-y-1/2 items-center justify-center rounded-full bg-white/90 text-gray-900 shadow-md transition hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 sm:opacity-0 sm:group-focus-within:opacity-100 sm:group-hover:opacity-100"
+              className="absolute right-3 top-1/2 flex size-10 -translate-y-1/2 items-center justify-center rounded-full border border-white/70 bg-white/90 text-zinc-900 transition hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 sm:opacity-0 sm:group-focus-within:opacity-100 sm:group-hover:opacity-100"
               aria-label="Show next photo"
             >
               <ChevronRight className="size-5" aria-hidden="true" />
             </button>
 
-            <button
-              type="button"
-              onClick={() => setIsUserPaused((paused) => !paused)}
-              disabled={prefersReducedMotion}
-              className="absolute left-3 top-3 inline-flex h-8 items-center gap-1.5 rounded-full bg-black/65 px-3 text-xs font-medium text-white shadow-sm backdrop-blur-sm transition hover:bg-black/75 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white disabled:cursor-default disabled:opacity-70"
-              aria-label={
-                prefersReducedMotion
-                  ? "Automatic slideshow is off because reduced motion is enabled"
-                  : isUserPaused
-                    ? "Resume automatic slideshow"
-                    : "Pause automatic slideshow"
-              }
-            >
-              {isUserPaused || prefersReducedMotion ? (
-                <Play className="size-3.5" aria-hidden="true" />
-              ) : (
-                <Pause className="size-3.5" aria-hidden="true" />
-              )}
-              {isUserPaused || prefersReducedMotion ? "Play" : "Pause"}
-            </button>
-
-            <span className="absolute bottom-3 right-3 rounded-full bg-black/65 px-3 py-1 text-xs font-semibold tabular-nums text-white backdrop-blur-sm">
+            <span className="absolute bottom-3 right-3 rounded-md bg-black/70 px-2.5 py-1 text-xs font-semibold tabular-nums text-white">
               {activeIndex + 1} / {images.length}
             </span>
           </>
@@ -255,11 +192,11 @@ export function PublicListingGallery({
               onClick={() => setActiveIndex(index)}
               aria-label={`Show photo ${index + 1} of ${images.length}`}
               aria-pressed={index === activeIndex}
-              className={`relative aspect-[4/3] w-20 shrink-0 overflow-hidden rounded-lg border-2 bg-gray-100 transition sm:w-24 ${
+              className={`relative aspect-[4/3] w-20 shrink-0 overflow-hidden rounded-md border-2 bg-zinc-100 transition sm:w-24 ${
                 index === activeIndex
-                  ? "border-emerald-600 ring-2 ring-emerald-100"
+                  ? "border-blue-600 ring-2 ring-blue-100"
                   : "border-transparent opacity-75 hover:opacity-100"
-              } focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-offset-2`}
+              } focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2`}
             >
               <Image
                 src={imageUrl}

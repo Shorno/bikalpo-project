@@ -58,6 +58,8 @@ export type ToletBookingOfferSnapshot = {
 		propertyCode: string;
 		name: string;
 		location: {
+			upazila?: string | null;
+			fullAddress?: string;
 			division: string;
 			district: string;
 			area: string;

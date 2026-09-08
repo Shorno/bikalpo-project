@@ -29,12 +29,12 @@ import {
 import { IncludedExcludedButtons } from "./included-excluded-buttons";
 import { propertyFromResponse } from "./property-details-client";
 import { PropertyPhoneVerification } from "./property-phone-verification";
+import { PropertyLocationFields } from "./property-location-fields";
 import {
   PropertyDetailsSkeleton,
   PropertyErrorState,
   PropertyPageHeader,
 } from "./property-ui";
-import { PropertyVideoField } from "./property-video-field";
 import type { ToLetPropertyView } from "./types";
 
 type Errors = Record<string, string>;
@@ -52,6 +52,7 @@ function initialEditValues(
     division: property.division,
     district: property.district,
     area: property.area,
+    upazila: property.upazila ?? "",
     fullAddress: property.fullAddress,
     nearbyLandmark: property.nearbyLandmark ?? "",
     latitude: property.latitude ?? "",
@@ -283,24 +284,16 @@ function LoadedPropertyEditForm({ property }: { property: ToLetPropertyView }) {
 
       <FormSection title="Location">
         <div className="grid gap-4 sm:grid-cols-2">
-          {(
-            [
-              ["division", "Division"],
-              ["district", "District"],
-              ["area", "Area / Upazila"],
-            ] as const
-          ).map(([key, label]) => (
-            <div key={key} className="space-y-1.5">
-              <Label htmlFor={`edit-${key}`}>{label} *</Label>
-              <Input
-                id={`edit-${key}`}
-                value={values[key]}
-                onChange={(event) => update(key, event.target.value)}
-                aria-invalid={Boolean(errors[key])}
-              />
-              <EditFieldError message={errors[key]} />
-            </div>
-          ))}
+          <div className="min-w-0 sm:col-span-2">
+            <PropertyLocationFields
+              division={values.division}
+              district={values.district}
+              upazila={values.upazila}
+              area={values.area}
+              errors={errors}
+              onChange={update}
+            />
+          </div>
           <div className="space-y-1.5 sm:col-span-2">
             <Label htmlFor="edit-full-address">Full Address *</Label>
             <Textarea
@@ -441,16 +434,6 @@ function LoadedPropertyEditForm({ property }: { property: ToLetPropertyView }) {
               folder="to-let/properties"
               className="min-h-44"
             />
-          </div>
-          <div className="space-y-1.5 sm:col-span-2">
-            <Label>Building Video (optional)</Label>
-            <PropertyVideoField
-              value={values.videoUrl}
-              onChange={(url) => update("videoUrl", url)}
-              disabled={mutation.isPending}
-              invalid={Boolean(errors.videoUrl)}
-            />
-            <EditFieldError message={errors.videoUrl} />
           </div>
         </div>
       </FormSection>

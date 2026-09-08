@@ -1,16 +1,26 @@
 "use client";
 
-import { ChevronDown, LogOut, Menu, Store } from "lucide-react";
+import {
+  Bell,
+  CalendarCheck,
+  ChevronDown,
+  KeyRound,
+  LogOut,
+  Menu,
+  Store,
+} from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   type AccountAudience,
+  type AccountNavigationItem,
   createPropertyNavigationItems,
   getAccountNavigation,
 } from "@/components/account/account-navigation";
 import { Button } from "@/components/ui/button";
 import { useToLetPropertyNavigation } from "@/hooks/use-to-let-property-api";
+import { useToLetAlertNotifications } from "@/hooks/use-to-let-rental-api";
 import { authClient } from "@/lib/auth-client";
 import { redirectToRootLogin } from "@/lib/auth-routing";
 import { cn } from "@/lib/utils";
@@ -24,7 +34,19 @@ export function AccountSidebar({ displayName, audience }: AccountSidebarProps) {
   const pathname = usePathname();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const isAlertPath = pathname.startsWith("/account/to-let/alerts");
+  const isBookingPath =
+    pathname === "/account/to-let" ||
+    pathname.startsWith("/account/to-let/bookings/");
+  const isToLetPath = isAlertPath || isBookingPath;
+  const [toLetOpen, setToLetOpen] = useState(isToLetPath);
   const propertyNavigation = useToLetPropertyNavigation();
+  const alertNotifications = useToLetAlertNotifications(propertyNavigation.isConsumer);
+  const unreadAlerts = alertNotifications.data?.unreadCount ?? 0;
+
+  useEffect(() => {
+    if (isToLetPath) setToLetOpen(true);
+  }, [isToLetPath]);
 
   const sections = useMemo(() => {
     const nextSections = getAccountNavigation(audience);
@@ -53,6 +75,76 @@ export function AccountSidebar({ displayName, audience }: AccountSidebarProps) {
       setIsLoggingOut(false);
     }
   };
+
+  const renderNavigationItem = (item: AccountNavigationItem) => {
+    const isActive = item.exact
+      ? pathname === item.href
+      : pathname === item.href || pathname.startsWith(`${item.href}/`);
+    const Icon = item.icon;
+
+    return (
+      <Link
+        key={item.href}
+        href={item.href}
+        aria-current={isActive ? "page" : undefined}
+        onClick={() => setMobileMenuOpen(false)}
+        className={cn(
+          "flex min-h-11 items-center gap-2.5 rounded-md px-2 text-sm outline-none transition-colors focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1",
+          isActive
+            ? "bg-primary/10 font-medium text-primary"
+            : "text-zinc-600 hover:bg-zinc-50 hover:text-zinc-950",
+        )}
+      >
+        <Icon
+          className={cn(
+            "size-4 shrink-0",
+            isActive ? "text-primary" : "text-zinc-400",
+          )}
+          aria-hidden="true"
+        />
+        <span>{item.label}</span>
+      </Link>
+    );
+  };
+
+  const renderToLetChild = ({
+    label,
+    href,
+    icon: Icon,
+    isActive,
+  }: {
+    label: string;
+    href: string;
+    icon: typeof Bell;
+    isActive: boolean;
+  }) => (
+    <Link
+      key={href}
+      href={href}
+      aria-current={isActive ? "page" : undefined}
+      onClick={() => setMobileMenuOpen(false)}
+      className={cn(
+        "flex min-h-10 items-center gap-2.5 rounded-md px-2 text-sm outline-none transition-colors focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1",
+        isActive
+          ? "bg-primary/10 font-medium text-primary"
+          : "text-zinc-600 hover:bg-zinc-50 hover:text-zinc-950",
+      )}
+    >
+      <Icon
+        className={cn(
+          "size-4 shrink-0",
+          isActive ? "text-primary" : "text-zinc-400",
+        )}
+        aria-hidden="true"
+      />
+      <span>{label}</span>
+      {href === "/account/to-let/alerts" && unreadAlerts > 0 ? (
+        <span className="ml-auto rounded-full bg-primary px-2 py-0.5 text-xs font-semibold tabular-nums text-primary-foreground" aria-label={`${unreadAlerts} unread alerts`}>
+          {unreadAlerts > 99 ? "99+" : unreadAlerts}
+        </span>
+      ) : null}
+    </Link>
+  );
 
   return (
     <aside className="w-full lg:sticky lg:top-24">
@@ -96,49 +188,83 @@ export function AccountSidebar({ displayName, audience }: AccountSidebarProps) {
         </div>
 
         <div className="space-y-5 px-3 py-4">
-          {sections.map((section) => (
-            <section key={section.id} aria-labelledby={`nav-${section.id}`}>
-              <h2
-                id={`nav-${section.id}`}
-                className="px-2 text-[13px] font-semibold text-zinc-950"
-              >
-                {section.label}
-              </h2>
-              <div className="mt-1.5 space-y-0.5">
-                {section.items.map((item) => {
-                  const isActive = item.exact
-                    ? pathname === item.href
-                    : pathname === item.href ||
-                      pathname.startsWith(`${item.href}/`);
-                  const Icon = item.icon;
+          {sections.map((section) => {
+            const isRentalsSection = section.id === "rentals";
+            const visibleItems = isRentalsSection
+              ? section.items.filter((item) => item.href !== "/account/to-let")
+              : section.items;
 
-                  return (
-                    <Link
-                      key={item.href}
-                      href={item.href}
-                      aria-current={isActive ? "page" : undefined}
-                      onClick={() => setMobileMenuOpen(false)}
-                      className={cn(
-                        "flex min-h-11 items-center gap-2.5 rounded-md px-2 text-sm outline-none transition-colors focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1",
-                        isActive
-                          ? "bg-primary/10 font-medium text-primary"
-                          : "text-zinc-600 hover:bg-zinc-50 hover:text-zinc-950",
-                      )}
-                    >
-                      <Icon
+            return (
+              <section key={section.id} aria-labelledby={`nav-${section.id}`}>
+                <h2
+                  id={`nav-${section.id}`}
+                  className="px-2 text-[13px] font-semibold text-zinc-950"
+                >
+                  {section.label}
+                </h2>
+                <div className="mt-1.5 space-y-0.5">
+                  {isRentalsSection && (
+                    <div>
+                      <button
+                        type="button"
+                        aria-expanded={toLetOpen}
+                        aria-controls="to-let-account-links"
+                        onClick={() => setToLetOpen((open) => !open)}
                         className={cn(
-                          "size-4 shrink-0",
-                          isActive ? "text-primary" : "text-zinc-400",
+                          "flex min-h-11 w-full items-center gap-2.5 rounded-md px-2 text-sm outline-none transition-colors focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-1",
+                          isToLetPath
+                            ? "bg-primary/10 font-medium text-primary"
+                            : "text-zinc-600 hover:bg-zinc-50 hover:text-zinc-950",
                         )}
-                        aria-hidden="true"
-                      />
-                      <span>{item.label}</span>
-                    </Link>
-                  );
-                })}
-              </div>
-            </section>
-          ))}
+                      >
+                        <KeyRound
+                          className={cn(
+                            "size-4 shrink-0",
+                            isToLetPath ? "text-primary" : "text-zinc-400",
+                          )}
+                          aria-hidden="true"
+                        />
+                        <span>To-Let</span>
+                        {!toLetOpen && unreadAlerts > 0 ? (
+                          <span className="rounded-full bg-primary px-2 py-0.5 text-xs font-semibold tabular-nums text-primary-foreground" aria-label={`${unreadAlerts} unread alerts`}>
+                            {unreadAlerts > 99 ? "99+" : unreadAlerts}
+                          </span>
+                        ) : null}
+                        <ChevronDown
+                          className={cn(
+                            "ml-auto size-4 transition-transform duration-200",
+                            toLetOpen && "rotate-180",
+                          )}
+                          aria-hidden="true"
+                        />
+                      </button>
+
+                      {toLetOpen && (
+                        <div
+                          id="to-let-account-links"
+                          className="ml-4 mt-1 space-y-0.5 border-l border-zinc-200 pl-2"
+                        >
+                          {renderToLetChild({
+                            label: "My Alert",
+                            href: "/account/to-let/alerts",
+                            icon: Bell,
+                            isActive: isAlertPath,
+                          })}
+                          {renderToLetChild({
+                            label: "My Bookings",
+                            href: "/account/to-let",
+                            icon: CalendarCheck,
+                            isActive: isBookingPath,
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  {visibleItems.map(renderNavigationItem)}
+                </div>
+              </section>
+            );
+          })}
         </div>
 
         <div className="border-t border-zinc-200 p-3">
