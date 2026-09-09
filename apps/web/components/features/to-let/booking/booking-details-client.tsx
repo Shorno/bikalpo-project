@@ -43,6 +43,7 @@ import {
   type ToLetRentalContractView,
   toLetAlertCategoryOptions,
   useAddToLetRentalComment,
+  useCreateToLetAlert,
   useRequestToLetLeave,
   useToLetRental,
   useVerifyToLetRentPayment,
@@ -241,7 +242,7 @@ function CommentsSection({
       icon={MessageSquareText}
       eyebrow="Comments"
       title="Verified rental feedback"
-      description="Comments are linked to this active or completed rental contract."
+      description="Read and share feedback about this property during your current rental period."
       embedded
     >
       <div className="space-y-3">
@@ -354,6 +355,8 @@ function BookingDetails({ booking }: { booking: ToLetBookingRequestView }) {
     ? rentalStatusPresentation[contract.status]
     : statusPresentation[booking.status];
   const leave = useRequestToLetLeave();
+  const createAlert = useCreateToLetAlert();
+  const [alertOpen, setAlertOpen] = useState(false);
   const [alert, setAlert] = useState<{
     preferredCategory: ToLetAlertCategory;
     preferredLocation: string;
@@ -382,6 +385,29 @@ function BookingDetails({ booking }: { booking: ToLetBookingRequestView }) {
     ),
   );
 
+  function openLeaveForm() {
+    setAlertOpen(true);
+    requestAnimationFrame(() => {
+      const field = document.querySelector<HTMLSelectElement>("#alert-builder select");
+      field?.focus({ preventScroll: true });
+      document.getElementById("alert-builder")?.scrollIntoView({ block: "start" });
+    });
+    if (contract?.status === "active" && !leave.isPending) {
+      leave.mutate({ bookingCode: booking.bookingCode });
+    }
+  }
+
+  if (booking.rentalSummary?.status === "completed" || contract?.status === "completed" ||
+      (booking.rentalSummary && rentalQuery.isError)) {
+    return (
+      <div className="rounded-xl border bg-white p-6">
+        <h1 className="text-xl font-semibold">Rental details unavailable</h1>
+        <p className="mt-2 text-sm text-gray-500">Details access ends with the rental period. Completed rentals remain in Rental History. If your rental is still current, please try again.</p>
+        <Button asChild variant="outline" className="mt-4"><Link href="/account/to-let">Back to My Bookings</Link></Button>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       <Button asChild size="sm" variant="outline">
@@ -391,6 +417,7 @@ function BookingDetails({ booking }: { booking: ToLetBookingRequestView }) {
       </Button>
 
       <ToLetDetailHero
+        documentOrder
         imageUrls={images}
         imageAlt={snapshot.title}
         code={booking.bookingCode}
@@ -427,11 +454,9 @@ function BookingDetails({ booking }: { booking: ToLetBookingRequestView }) {
         statusDetail={status.detail}
         actions={
           <>
-            {contract?.status === "active" ? (
-              <Button asChild>
-                <a href="#alert-builder">
-                  <DoorOpen className="size-4" /> Leave
-                </a>
+            {contract?.status === "active" || contract?.status === "leaving" ? (
+              <Button onClick={openLeaveForm} disabled={leave.isPending} aria-expanded={alertOpen} aria-controls="alert-builder">
+                  <DoorOpen className="size-4" /> {leave.isPending ? "Scheduling…" : contract.status === "leaving" ? "Leaving · Create alert" : "Leave"}
               </Button>
             ) : (
               <Button
@@ -499,7 +524,7 @@ function BookingDetails({ booking }: { booking: ToLetBookingRequestView }) {
           { href: "#facilities", label: "Facilities" },
           { href: "#rent-information", label: "Rent" },
           ...(contract ? [{ href: "#payment-history", label: "Payment" }] : []),
-          { href: "#alert-builder", label: "Alert" },
+          ...(alertOpen ? [{ href: "#alert-builder", label: "Alert" }] : []),
           ...(contract
             ? [{ href: "#rental-comments", label: "Comments" }]
             : []),
@@ -734,12 +759,12 @@ function BookingDetails({ booking }: { booking: ToLetBookingRequestView }) {
           </ToLetDetailsSection>
         ) : null}
 
-        <ToLetDetailsSection
+        {alertOpen && <ToLetDetailsSection
           id="alert-builder"
           icon={Bell}
           eyebrow="Create To-Let alert"
           title="Prepare your next rental preference"
-          description="This preview is prefilled from the current Unit. Saving alerts requires the upcoming notification service."
+          description="Prefilled from your current rental. Save your category, location and minimum size to receive matching rental alerts. Closing this form does not cancel your scheduled leave."
           embedded
         >
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -871,22 +896,21 @@ function BookingDetails({ booking }: { booking: ToLetBookingRequestView }) {
           </div>
           <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-gray-100 pt-5">
             <p className="text-xs text-gray-500">
-              Leaving remains scheduled until the contract end date. Your next
-              rental preference will be saved at the same time.
+              Details remain accessible through the contract end date. Save your next rental preferences separately.
             </p>
+            {leave.isError && <p role="alert" className="text-sm text-red-600">{leave.error.message} <button type="button" className="underline" onClick={openLeaveForm}>Retry scheduling leave</button></p>}
+            <Button variant="outline" onClick={() => setAlertOpen(false)}>Close form</Button>
             <Button
-              disabled={contract?.status !== "active" || leave.isPending}
+              disabled={createAlert.isPending || leave.isPending || leave.isError || (contract?.status !== "leaving" && !leave.isSuccess)}
               onClick={() =>
-                leave.mutate({ bookingCode: booking.bookingCode, alert })
+                createAlert.mutate(alert, { onSuccess: () => setAlertOpen(false) })
               }
             >
               <Bell className="size-4" />
-              {leave.isPending
-                ? "Scheduling…"
-                : "Schedule Leave & Create Alert"}
+              {createAlert.isPending ? "Saving…" : "Save alert"}
             </Button>
           </div>
-        </ToLetDetailsSection>
+        </ToLetDetailsSection>}
 
         {contract ? (
           <CommentsSection

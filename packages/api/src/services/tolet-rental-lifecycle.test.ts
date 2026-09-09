@@ -1,11 +1,20 @@
 import { describe, expect, it } from "bun:test";
 import {
+	canAccessToLetRentalDetails,
 	shouldCompleteToLetContract,
 	TO_LET_RENT_DUE_DAY,
 	toLetRentCyclesThroughDate,
 } from "../routers/helpers/tolet-rental-lifecycle";
 
 describe("To-Let rental lifecycle", () => {
+	it("limits tenant details to the rental period while preserving owner history", () => {
+		const contract = { status: "leaving", endDate: "2026-09-10", tenantUserId: "tenant", ownerUserId: "owner" };
+		expect(canAccessToLetRentalDetails(contract, "tenant", "2026-09-10")).toBe(true);
+		expect(canAccessToLetRentalDetails(contract, "tenant", "2026-09-11")).toBe(false);
+		expect(canAccessToLetRentalDetails({ ...contract, status: "completed" }, "tenant", "2026-09-10")).toBe(false);
+		expect(canAccessToLetRentalDetails({ ...contract, status: "completed" }, "owner", "2026-09-11")).toBe(true);
+		expect(canAccessToLetRentalDetails(contract, "stranger", "2026-09-10")).toBe(false);
+	});
 	it("keeps a contract active through its final day", () => {
 		expect(
 			shouldCompleteToLetContract(

@@ -1,5 +1,16 @@
 export const TO_LET_RENT_DUE_DAY = 1 as const;
 
+export function canAccessToLetRentalDetails(
+	contract: { status: string; endDate: string; ownerUserId: string; tenantUserId: string },
+	userId: string,
+	today = toLetDhakaDateString(),
+) {
+	if (contract.ownerUserId === userId) return true;
+	return contract.tenantUserId === userId &&
+		(contract.status === "active" || contract.status === "leaving") &&
+		contract.endDate >= today;
+}
+
 export function toLetDhakaDateString(date = new Date()) {
 	return new Intl.DateTimeFormat("en-CA", {
 		timeZone: "Asia/Dhaka",

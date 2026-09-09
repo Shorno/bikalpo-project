@@ -54,7 +54,8 @@ function tenantLabel(value: string) {
 }
 
 function money(value: number | null) {
-  return value === null ? "—" : `BDT ${value.toLocaleString("en-BD")}`;
+  // The consumer specification requires owner-hidden prices to remain blank.
+  return value === null ? "" : `৳${value.toLocaleString("en-BD")}`;
 }
 
 function formatDate(value: string | Date | null) {
@@ -112,12 +113,12 @@ export default async function PublicListingPage({
       included: listing.serviceChargeIncluded,
     },
     {
-      label: "Parking charge",
+      label: "Parking",
       value: listing.parkingCharge,
       included: listing.parkingChargeIncluded,
     },
     {
-      label: "Utility charge",
+      label: "Utility bill",
       value: listing.utilityCharge,
       included: listing.utilityChargeIncluded,
     },
@@ -211,11 +212,7 @@ export default async function PublicListingPage({
             category={humanize(listing.unit.unitType)}
             viewCount={listing.viewCount}
             size={`${listing.unit.sizeSqFt.toLocaleString("en-BD")} sq ft`}
-            monthlyRent={
-              listing.monthlyRent === null
-                ? "Price hidden by owner"
-                : money(listing.monthlyRent)
-            }
+            monthlyRent={money(listing.monthlyRent)}
             statusLabel={availability}
             statusTone={isBooked ? "amber" : "emerald"}
             dateLabel={isBooked ? "Booked on" : "Available from"}
@@ -230,6 +227,7 @@ export default async function PublicListingPage({
                 : "The property owner reviews each request before confirming the booking."
             }
             showHeading={false}
+            documentOrder
             actions={
               <div id="booking" className="grid w-full gap-2 sm:grid-cols-2">
                 {isBooked ? (
@@ -259,7 +257,7 @@ export default async function PublicListingPage({
         <div className="mt-5">
           <ToLetDetailsShell
             items={[
-              { href: "#overview", label: "Unit Information" },
+              { href: "#overview", label: "Overview" },
               { href: "#facilities", label: "Facilities" },
               { href: "#rent-information", label: "Rent" },
               { href: "#property-information", label: "Property" },
@@ -268,8 +266,7 @@ export default async function PublicListingPage({
             <ToLetDetailsSection
               id="overview"
               icon={Building2}
-              eyebrow="Overview"
-              title="Unit Information"
+              title="Overview"
               embedded
             >
               <div className="grid gap-4 sm:grid-cols-2">
@@ -278,7 +275,7 @@ export default async function PublicListingPage({
                   value={listing.unit.name}
                 />
                 <ToLetInfoTile
-                  label="Listing category"
+                  label="Unit category"
                   value={humanize(listing.unit.unitType)}
                 />
                 <ToLetInfoTile
@@ -289,47 +286,11 @@ export default async function PublicListingPage({
                   label="Unit size"
                   value={`${listing.unit.sizeSqFt.toLocaleString("en-BD")} sq ft`}
                 />
-                <ToLetInfoTile label="Bedrooms" value={listing.unit.bedrooms} />
+                <ToLetInfoTile label="Balcony" value={listing.unit.balconies} />
                 <ToLetInfoTile
                   label="Bathrooms"
                   value={listing.unit.bathrooms}
                 />
-                <ToLetInfoTile
-                  label="Balconies"
-                  value={listing.unit.balconies}
-                />
-                <ToLetInfoTile
-                  label="Preferred tenant"
-                  value={tenantLabel(listing.preferredTenant)}
-                />
-                <ToLetInfoTile
-                  label="Available from"
-                  value={availableFrom ?? listing.availableFrom}
-                />
-                <ToLetInfoTile
-                  label="Listing status"
-                  value={isBooked ? "Booked" : "Active"}
-                />
-                {isBooked ? (
-                  <>
-                    <ToLetInfoTile
-                      label="Booked on"
-                      value={bookedAt ?? "Booking confirmed"}
-                    />
-                    <ToLetInfoTile
-                      label="Visible until"
-                      value={
-                        marketplaceVisibleUntil ?? "30 days after confirmation"
-                      }
-                    />
-                  </>
-                ) : null}
-                {publishedAt ? (
-                  <ToLetInfoTile label="Published on" value={publishedAt} />
-                ) : null}
-              </div>
-
-              <div className="mt-5 grid gap-3 sm:grid-cols-3">
                 <ToLetFacilityItem
                   label="Drawing room"
                   available={listing.unit.hasDrawingRoom}
@@ -342,23 +303,40 @@ export default async function PublicListingPage({
                   label="Kitchen"
                   available={listing.unit.hasKitchen}
                 />
+                <ToLetInfoTile
+                  label="Preferred tenant"
+                  value={tenantLabel(listing.preferredTenant)}
+                />
               </div>
 
               <div className="mt-5 border-t border-slate-100 pt-5">
                 <p className="text-sm font-semibold text-slate-900">
-                  Property description
+                  Unit description
                 </p>
                 <p className="mt-2 whitespace-pre-line text-sm leading-7 text-slate-700">
                   {listing.description ||
                     "No description provided by the owner."}
                 </p>
               </div>
+              <div className="mt-5 grid gap-4 sm:grid-cols-2">
+                <ToLetInfoTile
+                  label={isBooked ? "Booked on" : "Available from"}
+                  value={
+                    isBooked
+                      ? (bookedAt ?? "Booking confirmed")
+                      : (availableFrom ?? listing.availableFrom)
+                  }
+                />
+              </div>
+              <p className="mt-4 text-sm text-zinc-700">
+                <span className="font-semibold">Listing status:</span>{" "}
+                {isBooked ? "Booked" : "Active"}
+              </p>
             </ToLetDetailsSection>
 
             <ToLetDetailsSection
               id="facilities"
               icon={ShieldCheck}
-              eyebrow="Facilities"
               title="Facilities"
               description="Property facilities are inherited by this Unit. Listing-specific items use the current rental offer."
               embedded
@@ -415,27 +393,24 @@ export default async function PublicListingPage({
                   included={listing.unit.isFurnished}
                 />
               </div>
-              {listing.otherFacilities ? (
-                <div className="mt-4 rounded-lg border border-slate-200 p-4 text-sm leading-6 text-slate-700">
-                  <span className="font-semibold text-slate-950">
-                    Other facilities:{" "}
-                  </span>
-                  {listing.otherFacilities}
-                </div>
-              ) : null}
+              <div className="mt-4 rounded-lg border border-slate-200 p-4 text-sm leading-6 text-slate-700">
+                <span className="font-semibold text-slate-950">
+                  Other facilities:{" "}
+                </span>
+                {listing.otherFacilities || "No other facilities provided."}
+              </div>
             </ToLetDetailsSection>
 
             <ToLetDetailsSection
               id="rent-information"
               icon={WalletCards}
-              eyebrow="Rent information"
-              title="Rental terms"
+              title="Rent information"
               description="The owner controls which prices are visible before booking confirmation."
               embedded
             >
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              <div className="grid gap-4 sm:grid-cols-2">
                 <ToLetRentItem
-                  label="Monthly rent"
+                  label="Rent"
                   value={money(listing.monthlyRent)}
                 />
                 <ToLetRentItem
@@ -450,9 +425,7 @@ export default async function PublicListingPage({
                   <ToLetRentItem
                     key={charge.label}
                     label={charge.label}
-                    value={
-                      charge.included ? "Included in rent" : money(charge.value)
-                    }
+                    value={money(charge.value)}
                     included={charge.included}
                   />
                 ))}
@@ -467,7 +440,6 @@ export default async function PublicListingPage({
             <ToLetDetailsSection
               id="property-information"
               icon={MapPin}
-              eyebrow="Property information"
               title={listing.property.name}
               embedded
             >
@@ -491,6 +463,21 @@ export default async function PublicListingPage({
                   value={humanize(listing.property.buildingType)}
                 />
                 <ToLetSummaryRow label="Location" value={listing.location} />
+                <ToLetSummaryRow
+                  label="Bedrooms"
+                  value={listing.unit.bedrooms}
+                />
+                {publishedAt ? (
+                  <ToLetSummaryRow label="Published on" value={publishedAt} />
+                ) : null}
+                {isBooked ? (
+                  <ToLetSummaryRow
+                    label="Visible until"
+                    value={
+                      marketplaceVisibleUntil ?? "30 days after confirmation"
+                    }
+                  />
+                ) : null}
                 {listing.property.nearbyLandmark ? (
                   <ToLetSummaryRow
                     label="Nearby landmark"
@@ -515,7 +502,7 @@ export default async function PublicListingPage({
                       className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-900 hover:border-blue-300 hover:text-blue-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
                     >
                       <Video className="size-4" aria-hidden="true" />
-                      Watch property video
+                      Watch unit video
                       <ExternalLink className="size-3.5" aria-hidden="true" />
                     </a>
                   ) : null}
