@@ -18,6 +18,7 @@ import { and, asc, count, desc, eq, inArray, isNull } from "drizzle-orm";
 import { z } from "zod";
 
 import { consumerProcedure } from "../index";
+import { canAccessToLetRentalDetails } from "./helpers/tolet-rental-lifecycle";
 import { syncToLetAlertNotifications } from "../services/tolet-alert-notifications";
 import { toLetMarketplaceStatus } from "./helpers/tolet-marketplace-visibility";
 import {
@@ -95,6 +96,11 @@ async function contractContext(bookingCode: string, userId: string) {
 	row.contract = await completeExpiredToLetContract(
 		row.contract as ToLetContractRow,
 	);
+	if (!canAccessToLetRentalDetails(row.contract, userId)) {
+		throw new ORPCError("FORBIDDEN", {
+			message: "This rental period has ended. Find this rental in Rental History.",
+		});
+	}
 	await ensureToLetRentCycles(row.contract as ToLetContractRow);
 	return row;
 }
@@ -589,7 +595,7 @@ export const toLetRentalRouter = {
 			z
 				.object({
 					bookingCode: bookingCodeSchema,
-					alert: z.object(alertFields).strict(),
+					alert: z.object(alertFields).strict().optional(),
 				})
 				.strict(),
 		)
@@ -601,6 +607,9 @@ export const toLetRentalRouter = {
 			if (row.contract.tenantUserId !== context.session.user.id) {
 				throw new ORPCError("FORBIDDEN", { message: "Tenant access required" });
 			}
+			if (row.contract.status === "leaving") {
+				return { contract: await rentalDto(input.bookingCode, context.session.user.id) };
+			}
 			if (row.contract.status !== "active") {
 				throw new ORPCError("CONFLICT", {
 					message: "Only an active rental can start the leave process",
@@ -609,7 +618,7 @@ export const toLetRentalRouter = {
 			const now = new Date();
 			const accessEndsAt = new Date(`${row.contract.endDate}T23:59:59+06:00`);
 			await db.transaction(async (tx) => {
-				await tx
+				const changed = await tx
 					.update(toletRentalContract)
 					.set({
 						status: "leaving",
@@ -617,8 +626,9 @@ export const toLetRentalRouter = {
 						accessEndsAt,
 						updatedAt: now,
 					})
-					.where(eq(toletRentalContract.id, row.contract.id));
-				await tx.insert(toletRentalAlert).values({
+					.where(and(eq(toletRentalContract.id, row.contract.id), eq(toletRentalContract.status, "active")))
+					.returning({ id: toletRentalContract.id });
+				if (changed.length && input.alert) await tx.insert(toletRentalAlert).values({
 					userId: context.session.user.id,
 					sourceContractId: row.contract.id,
 					...input.alert,

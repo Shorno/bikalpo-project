@@ -32,6 +32,7 @@ interface ToLetDetailHeroProps {
   statusDetail?: string;
   actions?: ReactNode;
   showHeading?: boolean;
+  documentOrder?: boolean;
 }
 
 export function ToLetDetailHero({
@@ -54,6 +55,7 @@ export function ToLetDetailHero({
   statusDetail,
   actions,
   showHeading = true,
+  documentOrder = false,
 }: ToLetDetailHeroProps) {
   return (
     <section className="overflow-hidden rounded-lg border border-zinc-200 bg-white">
@@ -63,46 +65,50 @@ export function ToLetDetailHero({
         </div>
 
         <div className="flex min-w-0 flex-col p-5 sm:p-7 lg:p-8">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div className="min-w-0">
-              {showHeading ? (
-                <>
-                  <p className="font-mono text-xs font-semibold tracking-[0.08em] text-blue-700 uppercase">
-                    {code}
-                  </p>
-                  <h1 className="mt-1 text-2xl font-bold tracking-tight text-zinc-950 sm:text-3xl">
-                    {title}
-                  </h1>
-                </>
-              ) : (
-                <>
-                  <p className="text-sm text-zinc-500">Property</p>
-                  <h2 className="mt-1 text-lg font-semibold text-zinc-950">
-                    {propertyName}
-                  </h2>
-                </>
-              )}
+          {!documentOrder ? (
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="min-w-0">
+                {showHeading ? (
+                  <>
+                    <p className="font-mono text-xs font-semibold tracking-[0.08em] text-blue-700 uppercase">
+                      {code}
+                    </p>
+                    <h1 className="mt-1 text-2xl font-bold tracking-tight text-zinc-950 sm:text-3xl">
+                      {title}
+                    </h1>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-sm text-zinc-500">Property</p>
+                    <h2 className="mt-1 text-lg font-semibold text-zinc-950">
+                      {propertyName}
+                    </h2>
+                  </>
+                )}
+              </div>
+              <span
+                className={`inline-flex shrink-0 rounded-full border px-2.5 py-1 text-xs font-semibold ${statusToneClassName[statusTone]}`}
+              >
+                {statusLabel}
+              </span>
             </div>
-            <span
-              className={`inline-flex shrink-0 rounded-full border px-2.5 py-1 text-xs font-semibold ${statusToneClassName[statusTone]}`}
-            >
-              {statusLabel}
-            </span>
-          </div>
+          ) : null}
 
-          <div className="mt-6 border-b border-zinc-200 pb-5">
-            <p className="text-sm text-zinc-500">Monthly rent</p>
-            <p className="mt-1 font-mono text-3xl font-bold tabular-nums text-zinc-950">
-              {monthlyRent}
-            </p>
-            <p className="mt-1 text-xs text-zinc-500">per month</p>
-          </div>
+          {!documentOrder ? (
+            <div className="mt-6 border-b border-zinc-200 pb-5">
+              <p className="text-sm text-zinc-500">Monthly rent</p>
+              <p className="mt-1 font-mono text-3xl font-bold tabular-nums text-zinc-950">
+                {monthlyRent}
+              </p>
+              <p className="mt-1 text-xs text-zinc-500">per month</p>
+            </div>
+          ) : null}
 
           <dl className="divide-y divide-zinc-100 text-sm">
-            {!showHeading ? (
+            {!showHeading && !documentOrder ? (
               <ToLetSummaryRow label="Listing ID" value={code} mono />
             ) : null}
-            {showHeading ? (
+            {showHeading || documentOrder ? (
               <ToLetSummaryRow label="Property Name" value={propertyName} />
             ) : null}
             <ToLetSummaryRow label="Location">
@@ -123,6 +129,16 @@ export function ToLetDetailHero({
               </ToLetSummaryRow>
             ) : null}
             <ToLetSummaryRow label="Size" value={size} mono />
+            {documentOrder ? (
+              <>
+                <ToLetSummaryRow
+                  label="Monthly Rent"
+                  value={monthlyRent}
+                  mono
+                />
+                <ToLetSummaryRow label="Status" value={statusLabel} />
+              </>
+            ) : null}
             <ToLetSummaryRow label={dateLabel} value={dateValue} mono />
           </dl>
 

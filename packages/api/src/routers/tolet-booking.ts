@@ -1,4 +1,5 @@
 import { effectiveUnitAddress } from "../lib/tolet-unit-address";
+import { shouldCompleteToLetContract } from "./helpers/tolet-rental-lifecycle";
 import { db } from "@bikalpo-project/db";
 import {
   type ToletBookingOfferSnapshot,
@@ -599,7 +600,7 @@ export const toLetBookingRouter = {
           ...bookingDto(booking, Boolean(contract)),
           rentalSummary: contract
             ? {
-                status: contract.status,
+                status: shouldCompleteToLetContract(contract) ? "completed" as const : contract.status,
                 monthlyRent: Number(contract.monthlyRent),
                 startDate: contract.startDate,
                 endDate: contract.endDate,

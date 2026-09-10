@@ -179,7 +179,7 @@ export function useRequestToLetLeave() {
   return useMutation({
     ...orpc.toLetRental.requestLeave.mutationOptions(),
     onSuccess: (_data, variables) => {
-      toast.success("Leave scheduled and rental alert created");
+      toast.success(variables.alert ? "Leave scheduled and rental alert created" : "Leave scheduled. Save your next rental preferences below.");
       invalidateRentalContext(queryClient, variables.bookingCode);
     },
     onError: (error) => toast.error(error.message),
