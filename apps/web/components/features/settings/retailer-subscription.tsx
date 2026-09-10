@@ -352,15 +352,19 @@ export function RetailerSubscriptionSection() {
   return (
     <section
       id="subscription-settings"
-      className="flex flex-col p-6 md:col-span-2 xl:col-span-1"
+      className="relative mt-7 flex flex-col rounded-[1.25rem] bg-white p-4 md:col-span-2 md:mt-0 md:rounded-none md:p-6 xl:col-span-1"
       aria-labelledby="user-plan-heading"
     >
       <h2
         id="user-plan-heading"
-        className="flex items-center gap-2 text-sm font-semibold tracking-wide text-gray-950 uppercase"
+        className="absolute -top-6 left-1 flex items-center gap-2 text-sm font-bold tracking-tight text-gray-950 uppercase md:static md:font-semibold md:tracking-wide"
       >
-        <CreditCard className="size-4 text-emerald-700" aria-hidden="true" />
-        User Plan
+        <CreditCard
+          className="hidden size-4 text-emerald-700 md:block"
+          aria-hidden="true"
+        />
+        <span className="md:hidden">Business Plan</span>
+        <span className="hidden md:inline">User Plan</span>
       </h2>
       {subscription.enabled && subscription.isLoading ? (
         <Skeleton className="mt-5 h-64 w-full" />
