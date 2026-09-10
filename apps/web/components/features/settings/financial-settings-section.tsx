@@ -59,11 +59,13 @@ function errorMessage(error: unknown) {
 }
 
 export function FinancialSettingsSection({
+  compactMobile = false,
   editorHref,
   inlineEditor = false,
   onEditorDirtyChange,
   sectionId = "financial-settings",
 }: {
+  compactMobile?: boolean;
   editorHref?: string;
   inlineEditor?: boolean;
   onEditorDirtyChange?: (dirty: boolean) => void;
@@ -92,22 +94,45 @@ export function FinancialSettingsSection({
   return (
     <section
       id={sectionId}
-      className="overflow-hidden rounded-xl border bg-white"
+      className={
+        compactMobile
+          ? "relative mt-7 overflow-visible rounded-[1.25rem] bg-white md:mt-0 md:overflow-hidden md:rounded-xl md:border"
+          : "overflow-hidden rounded-xl border bg-white"
+      }
       aria-labelledby="financial-settings-heading"
     >
-      <div className="border-b bg-gradient-to-r from-emerald-50/70 via-white to-white p-6">
+      <div
+        className={
+          compactMobile
+            ? "absolute -top-6 left-1 md:static md:border-b md:bg-gradient-to-r md:from-emerald-50/70 md:via-white md:to-white md:p-6"
+            : "border-b bg-gradient-to-r from-emerald-50/70 via-white to-white p-6"
+        }
+      >
         <div className="flex items-start gap-3">
-          <span className="flex size-10 shrink-0 items-center justify-center rounded-xl border border-emerald-200 bg-white text-emerald-700 shadow-sm">
+          <span
+            className={`${compactMobile ? "hidden md:flex" : "flex"} size-10 shrink-0 items-center justify-center rounded-xl border border-emerald-200 bg-white text-emerald-700 shadow-sm`}
+          >
             <CircleDollarSign className="size-5" aria-hidden="true" />
           </span>
           <div>
             <h2
               id="financial-settings-heading"
-              className="text-lg font-semibold text-gray-950"
+              className={
+                compactMobile
+                  ? "text-sm font-bold tracking-tight text-gray-950 uppercase md:text-lg md:font-semibold md:normal-case"
+                  : "text-lg font-semibold text-gray-950"
+              }
             >
-              Financial settings
+              <span className={compactMobile ? "md:hidden" : "hidden"}>
+                Finance Info
+              </span>
+              <span className={compactMobile ? "hidden md:inline" : undefined}>
+                Financial settings
+              </span>
             </h2>
-            <p className="mt-1 text-sm text-gray-500">
+            <p
+              className={`mt-1 text-sm text-gray-500 ${compactMobile ? "hidden md:block" : ""}`}
+            >
               Manage the bank and mobile banking accounts connected to this
               business.
             </p>
@@ -116,46 +141,91 @@ export function FinancialSettingsSection({
       </div>
 
       {query.isPending ? (
-        <div className="grid gap-6 p-6 lg:grid-cols-2">
-          <Skeleton className="h-64 rounded-xl" />
-          <Skeleton className="h-64 rounded-xl" />
+        <div
+          className={
+            compactMobile
+              ? "grid grid-cols-2 gap-3 p-4 md:gap-6 md:p-6"
+              : "grid gap-6 p-6 lg:grid-cols-2"
+          }
+        >
+          <Skeleton className="h-24 rounded-xl md:h-64" />
+          <Skeleton className="h-24 rounded-xl md:h-64" />
         </div>
       ) : query.isError ? (
-        <div className="p-6">
+        <div className="p-4 md:p-6">
           <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
             Financial accounts could not be loaded. {errorMessage(query.error)}
           </div>
         </div>
       ) : (
-        <div className="grid lg:grid-cols-2 lg:divide-x">
-          <FinancialAccountPanel
-            type="bank"
-            accounts={bankAccounts}
-            icon={Landmark}
-            title="Bank accounts"
-            description="Accounts used for business banking and transfers."
-            editorHref={editorHref}
-            inlineEditor={inlineEditor}
-            onEditorOpenChange={(open) =>
-              setOpenEditors((current) => ({ ...current, bank: open }))
+        <>
+          {compactMobile && editorHref && (
+            <div className="grid grid-cols-2 divide-x md:hidden">
+              <Link
+                href={editorHref}
+                className="flex min-h-28 flex-col items-center justify-center gap-2 p-3 text-center outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-inset"
+              >
+                <Landmark className="size-5 text-gray-500" aria-hidden="true" />
+                <span className="text-[11px] font-semibold tracking-tight text-gray-950 uppercase">
+                  Bank Account
+                </span>
+                <span className="text-[10px] text-gray-500">
+                  {bankAccounts.length} connected
+                </span>
+              </Link>
+              <Link
+                href={editorHref}
+                className="flex min-h-28 flex-col items-center justify-center gap-2 p-3 text-center outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 focus-visible:ring-inset"
+              >
+                <Smartphone
+                  className="size-5 text-gray-500"
+                  aria-hidden="true"
+                />
+                <span className="text-[11px] font-semibold tracking-tight text-gray-950 uppercase">
+                  Mobile Bank Account
+                </span>
+                <span className="text-[10px] text-gray-500">
+                  {mobileAccounts.length} connected
+                </span>
+              </Link>
+            </div>
+          )}
+          <div
+            className={
+              compactMobile
+                ? "hidden md:grid md:grid-cols-2 md:divide-x"
+                : "grid lg:grid-cols-2 lg:divide-x"
             }
-          />
-          <FinancialAccountPanel
-            type="mobile_banking"
-            accounts={mobileAccounts}
-            icon={Smartphone}
-            title="Mobile banking"
-            description="Mobile financial services available to the business."
-            editorHref={editorHref}
-            inlineEditor={inlineEditor}
-            onEditorOpenChange={(open) =>
-              setOpenEditors((current) => ({
-                ...current,
-                mobile_banking: open,
-              }))
-            }
-          />
-        </div>
+          >
+            <FinancialAccountPanel
+              type="bank"
+              accounts={bankAccounts}
+              icon={Landmark}
+              title="Bank accounts"
+              description="Accounts used for business banking and transfers."
+              editorHref={editorHref}
+              inlineEditor={inlineEditor}
+              onEditorOpenChange={(open) =>
+                setOpenEditors((current) => ({ ...current, bank: open }))
+              }
+            />
+            <FinancialAccountPanel
+              type="mobile_banking"
+              accounts={mobileAccounts}
+              icon={Smartphone}
+              title="Mobile banking"
+              description="Mobile financial services available to the business."
+              editorHref={editorHref}
+              inlineEditor={inlineEditor}
+              onEditorOpenChange={(open) =>
+                setOpenEditors((current) => ({
+                  ...current,
+                  mobile_banking: open,
+                }))
+              }
+            />
+          </div>
+        </>
       )}
     </section>
   );

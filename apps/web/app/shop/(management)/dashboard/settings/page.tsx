@@ -109,12 +109,12 @@ export default function ShopSettingsPage() {
       : "Not provided";
 
   return (
-    <div className="mx-auto max-w-7xl space-y-6">
-      <header>
-        <h1 className="text-2xl font-bold tracking-tight text-gray-950">
+    <div className="-m-4 min-h-screen bg-gray-100 p-3 md:mx-auto md:my-0 md:min-h-0 md:max-w-7xl md:space-y-6 md:bg-transparent md:p-0">
+      <header className="mb-1 md:mb-0">
+        <h1 className="text-base font-bold tracking-tight text-gray-950 uppercase md:text-2xl md:normal-case">
           Business Profile
         </h1>
-        <p className="mt-1 text-sm text-gray-500">
+        <p className="mt-1 hidden text-sm text-gray-500 md:block">
           Review the business information currently connected to your retail
           account.
         </p>
@@ -123,7 +123,7 @@ export default function ShopSettingsPage() {
       {isApplicationError && (
         <div
           role="alert"
-          className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950"
+          className="my-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950 md:my-0"
         >
           Registration details could not be loaded. Some profile fields are
           unavailable.
@@ -139,16 +139,17 @@ export default function ShopSettingsPage() {
 
       <section
         id="profile"
-        className="overflow-hidden rounded-lg border border-gray-200 bg-white"
+        className="overflow-hidden rounded-[1.25rem] bg-white md:rounded-lg md:border md:border-gray-200"
         aria-labelledby="business-identity-heading"
       >
-        <div className="grid md:grid-cols-[minmax(15rem,2fr)_minmax(0,3fr)]">
-          <div className="flex min-h-64 flex-col border-b p-6 md:border-r md:border-b-0">
-            <p className="text-center text-xs font-semibold tracking-wide text-gray-600 uppercase">
-              Company Logo
+        <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)] md:grid-cols-[minmax(15rem,2fr)_minmax(0,3fr)]">
+          <div className="flex min-h-44 flex-col border-r p-3 md:min-h-64 md:p-6">
+            <p className="text-center text-[11px] font-semibold tracking-tight text-gray-700 uppercase md:text-xs md:tracking-wide md:text-gray-600">
+              <span className="md:hidden">Business Logo/(Pic. Front)</span>
+              <span className="hidden md:inline">Company Logo</span>
             </p>
-            <div className="mt-4 flex flex-1 flex-col justify-between gap-4">
-              <div className="relative mx-auto flex min-h-28 w-full max-w-56 flex-1 items-center justify-center">
+            <div className="mt-2 flex flex-1 flex-col justify-between gap-2 md:mt-4 md:gap-4">
+              <div className="relative mx-auto flex min-h-16 w-full max-w-56 flex-1 items-center justify-center md:min-h-28">
                 {user?.shopLogo ? (
                   <Image
                     src={user.shopLogo}
@@ -159,7 +160,7 @@ export default function ShopSettingsPage() {
                   />
                 ) : (
                   <Building2
-                    className="size-14 text-gray-300"
+                    className="size-10 text-gray-300 md:size-14"
                     aria-label="No company logo"
                   />
                 )}
@@ -168,7 +169,7 @@ export default function ShopSettingsPage() {
                 asChild
                 variant="outline"
                 size="sm"
-                className="mx-auto min-w-32"
+                className="mx-auto h-8 min-w-0 max-w-32 px-2 text-[11px] md:min-w-32 md:text-xs"
               >
                 <Link href="/dashboard/settings/profile/edit#business-information">
                   Change Logo
@@ -177,18 +178,21 @@ export default function ShopSettingsPage() {
             </div>
           </div>
 
-          <div className="flex min-h-64 items-center p-6 sm:p-8">
-            <div className="w-full max-w-xl font-sans text-sm leading-6 text-gray-950">
-              <p className="font-mono text-xs font-semibold tracking-wide text-gray-500 tabular-nums">
+          <div className="flex min-h-44 items-center p-3 md:min-h-64 md:p-8">
+            <div className="w-full max-w-xl font-sans text-xs leading-4 text-gray-950 md:text-sm md:leading-6">
+              <p className="mb-1 text-center text-[11px] font-semibold tracking-tight text-gray-700 uppercase md:hidden">
+                Business Profile
+              </p>
+              <p className="font-mono text-[9px] font-semibold tracking-wide text-gray-500 tabular-nums md:text-xs">
                 {businessId}
               </p>
               <h2
                 id="business-identity-heading"
-                className="mt-1 text-xl font-semibold tracking-tight text-gray-950"
+                className="mt-0.5 truncate text-sm font-semibold tracking-tight text-gray-950 md:mt-1 md:text-xl"
               >
                 {businessNameLabel}
               </h2>
-              <dl className="mt-3 space-y-0.5">
+              <dl className="mt-1.5 space-y-0.5 md:mt-3">
                 <ProfileRecordRow
                   label="Type"
                   value={formatLabel(application?.businessCategory)}
@@ -214,7 +218,7 @@ export default function ShopSettingsPage() {
                   value={formatDate(memberSince)}
                 />
               </dl>
-              <div className="mt-3">
+              <div className="mt-2 md:mt-3">
                 <EditSectionLink href="/dashboard/settings/profile/edit#business-information">
                   Edit Business Profile
                 </EditSectionLink>
@@ -226,7 +230,7 @@ export default function ShopSettingsPage() {
 
       <nav
         aria-label="Business settings sections"
-        className="flex gap-1 overflow-x-auto border-b"
+        className="hidden gap-1 overflow-x-auto border-b md:flex"
       >
         <a
           href="#profile-information"
@@ -269,7 +273,7 @@ export default function ShopSettingsPage() {
 
       <section
         id="profile-information"
-        className="grid overflow-hidden rounded-xl border bg-white md:grid-cols-2 xl:grid-cols-3"
+        className="grid gap-1 overflow-visible md:grid-cols-2 md:gap-0 md:overflow-hidden md:rounded-xl md:border md:bg-white xl:grid-cols-3"
         aria-label="Profile information"
       >
         <ProfileSection
@@ -293,6 +297,7 @@ export default function ShopSettingsPage() {
 
         <ProfileSection
           title="Contact Info"
+          mobileTitle="Business Cont."
           icon={ContactRound}
           action={
             <EditSectionLink href="/dashboard/settings/profile/edit#contact-information" />
@@ -315,23 +320,26 @@ export default function ShopSettingsPage() {
 
       <section
         id="storefront-settings"
-        className="overflow-hidden rounded-xl border bg-white"
+        className="relative mt-7 overflow-visible rounded-[1.25rem] bg-white md:mt-0 md:overflow-hidden md:rounded-xl md:border"
         aria-labelledby="storefront-settings-heading"
       >
-        <div className="border-b p-6">
+        <div className="border-b p-4 md:p-6">
           <h2
             id="storefront-settings-heading"
-            className="flex items-center gap-2 text-lg font-semibold text-gray-950"
+            className="absolute -top-6 left-1 flex items-center gap-2 text-sm font-bold tracking-tight text-gray-950 uppercase md:static md:text-lg md:font-semibold md:normal-case"
           >
-            <Clock3 className="size-5 text-emerald-700" aria-hidden="true" />
+            <Clock3
+              className="hidden size-5 text-emerald-700 md:block"
+              aria-hidden="true"
+            />
             Storefront settings
           </h2>
-          <p className="mt-1 text-sm text-gray-500">
+          <p className="mt-1 hidden text-sm text-gray-500 md:block">
             Manage the operating hours shown on your storefront.
           </p>
         </div>
 
-        <div className="space-y-5 p-6">
+        <div className="space-y-5 p-4 md:p-6">
           <div className="grid grid-cols-1 gap-4 sm:max-w-xl sm:grid-cols-2">
             <div className="space-y-2">
               <Label htmlFor="shop-opening-time">Opening time</Label>
@@ -380,7 +388,10 @@ export default function ShopSettingsPage() {
         </div>
       </section>
 
-      <FinancialSettingsSection editorHref="/dashboard/settings/profile/edit#banking-information" />
+      <FinancialSettingsSection
+        compactMobile
+        editorHref="/dashboard/settings/profile/edit#banking-information"
+      />
       <PasswordSecuritySection
         phoneNumber={user?.phoneNumberVerified ? user.phoneNumber : null}
       />
@@ -413,25 +424,90 @@ function EditSectionLink({
 
 function BusinessProfileSkeleton() {
   return (
-    <div className="space-y-6">
-      <div className="space-y-2">
-        <Skeleton className="h-8 w-52" />
-        <Skeleton className="h-4 w-full max-w-lg" />
+    <>
+      <div className="-m-4 min-h-screen bg-gray-100 p-3 md:hidden">
+        <h1 className="mb-1 text-base font-bold tracking-tight text-gray-950 uppercase">
+          Business Profile
+        </h1>
+        <div className="grid min-h-44 grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)] overflow-hidden rounded-[1.25rem] bg-white">
+          <div className="flex flex-col items-center border-r p-3">
+            <p className="text-center text-[11px] font-semibold tracking-tight text-gray-700 uppercase">
+              Business Logo/(Pic. Front)
+            </p>
+            <Skeleton className="my-auto size-14 rounded-xl" />
+            <Skeleton className="h-8 w-28" />
+          </div>
+          <div className="flex flex-col justify-center p-3">
+            <p className="mb-3 text-center text-[11px] font-semibold tracking-tight text-gray-700 uppercase">
+              Business Profile
+            </p>
+            <div className="space-y-2">
+              <Skeleton className="h-3 w-20" />
+              <Skeleton className="h-4 w-32 max-w-full" />
+              <Skeleton className="h-3 w-full" />
+              <Skeleton className="h-3 w-4/5" />
+            </div>
+          </div>
+        </div>
+
+        <MobileSettingsSkeleton title="Business Info" height="h-48" />
+        <MobileSettingsSkeleton title="Business Cont." height="h-48" />
+        <MobileSettingsSkeleton title="Business Plan" height="h-44" />
+
+        <section className="relative mt-7 overflow-visible rounded-[1.25rem] bg-white">
+          <h2 className="absolute -top-6 left-1 text-sm font-bold tracking-tight text-gray-950 uppercase">
+            Finance Info
+          </h2>
+          <div className="grid min-h-28 grid-cols-2 divide-x">
+            <Skeleton className="m-auto h-12 w-24" />
+            <Skeleton className="m-auto h-12 w-24" />
+          </div>
+        </section>
+
+        <MobileSettingsSkeleton title="Password and Security" height="h-32" />
       </div>
-      <Skeleton className="h-64 w-full rounded-lg" />
-      <Skeleton className="h-12 w-full" />
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-        <Skeleton className="h-96 rounded-xl" />
-        <Skeleton className="h-96 rounded-xl" />
-        <Skeleton className="h-96 rounded-xl" />
+
+      <div className="hidden space-y-6 md:block">
+        <div className="space-y-2">
+          <Skeleton className="h-8 w-52" />
+          <Skeleton className="h-4 w-full max-w-lg" />
+        </div>
+        <Skeleton className="h-64 w-full rounded-lg" />
+        <Skeleton className="h-12 w-full" />
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          <Skeleton className="h-96 rounded-xl" />
+          <Skeleton className="h-96 rounded-xl" />
+          <Skeleton className="h-96 rounded-xl" />
+        </div>
       </div>
-    </div>
+    </>
+  );
+}
+
+function MobileSettingsSkeleton({
+  height,
+  title,
+}: {
+  height: string;
+  title: string;
+}) {
+  return (
+    <section className={`relative mt-7 rounded-[1.25rem] bg-white ${height}`}>
+      <h2 className="absolute -top-6 left-1 text-sm font-bold tracking-tight text-gray-950 uppercase">
+        {title}
+      </h2>
+      <div className="space-y-3 p-4">
+        <Skeleton className="h-3 w-full" />
+        <Skeleton className="h-3 w-4/5" />
+        <Skeleton className="h-3 w-11/12" />
+      </div>
+    </section>
   );
 }
 
 function ProfileRecordRow({ label, value }: { label: string; value: string }) {
   return (
-    <div className="grid grid-cols-[4.5rem_minmax(0,1fr)] gap-2">
+    <div className="grid grid-cols-[3.25rem_minmax(0,1fr)] gap-1 md:grid-cols-[4.5rem_minmax(0,1fr)] md:gap-2">
       <dt className="font-medium text-gray-600">{label}</dt>
       <dd className="min-w-0 break-words font-medium text-gray-900">
         : {value}
@@ -442,6 +518,7 @@ function ProfileRecordRow({ label, value }: { label: string; value: string }) {
 
 function ProfileSection({
   title,
+  mobileTitle,
   icon: Icon,
   children,
   className = "",
@@ -449,6 +526,7 @@ function ProfileSection({
   description,
 }: {
   title: string;
+  mobileTitle?: string;
   icon: LucideIcon;
   children: React.ReactNode;
   className?: string;
@@ -457,12 +535,16 @@ function ProfileSection({
 }) {
   return (
     <section
-      className={`flex flex-col border-b p-6 last:border-b-0 md:border-r md:[&:nth-child(2)]:border-r-0 xl:border-b-0 xl:[&:nth-child(2)]:border-r xl:last:border-r-0 ${className}`}
+      className={`relative mt-7 flex flex-col rounded-[1.25rem] bg-white p-4 md:mt-0 md:rounded-none md:border-r md:border-b md:p-6 md:last:border-b-0 md:[&:nth-child(2)]:border-r-0 xl:border-b-0 xl:[&:nth-child(2)]:border-r xl:last:border-r-0 ${className}`}
     >
       <div className="flex items-center justify-between gap-3">
-        <h2 className="flex items-center gap-2 text-sm font-semibold tracking-wide text-gray-950 uppercase">
-          <Icon className="size-4 text-emerald-700" aria-hidden="true" />
-          {title}
+        <h2 className="absolute -top-6 left-1 flex items-center gap-2 text-sm font-bold tracking-tight text-gray-950 uppercase md:static md:font-semibold md:tracking-wide">
+          <Icon
+            className="hidden size-4 text-emerald-700 md:block"
+            aria-hidden="true"
+          />
+          <span className="md:hidden">{mobileTitle || title}</span>
+          <span className="hidden md:inline">{title}</span>
         </h2>
       </div>
       <dl className="mt-5 divide-y">{children}</dl>

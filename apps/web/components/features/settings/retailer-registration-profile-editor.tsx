@@ -1169,34 +1169,6 @@ function BusinessInformationFormSection({
           }))
         }
       />
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        <FormField id="business-area" label="Area">
-          <Input
-            id="business-area"
-            value={form.area}
-            onChange={(event) => update("area", event.target.value)}
-            maxLength={100}
-          />
-        </FormField>
-        <FormField id="business-thana" label="Thana">
-          <Input
-            id="business-thana"
-            value={form.thana}
-            onChange={(event) => update("thana", event.target.value)}
-            minLength={2}
-            maxLength={100}
-            required
-          />
-        </FormField>
-        <FormField id="business-postcode" label="Post code">
-          <Input
-            id="business-postcode"
-            value={form.postCode}
-            onChange={(event) => update("postCode", event.target.value)}
-            maxLength={20}
-          />
-        </FormField>
-      </div>
     </FormSection>
   );
 }
