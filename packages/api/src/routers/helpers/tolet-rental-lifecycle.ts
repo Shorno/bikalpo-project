@@ -20,6 +20,12 @@ export function toLetDhakaDateString(date = new Date()) {
 	}).format(date);
 }
 
+export function isToLetCalendarDate(value: string) {
+	if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+	const date = new Date(`${value}T00:00:00Z`);
+	return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value;
+}
+
 function monthStart(value: string) {
 	return `${value.slice(0, 7)}-01`;
 }
@@ -53,6 +59,9 @@ export function toLetRentCyclesThroughDate(
 	},
 	today = toLetDhakaDateString(),
 ) {
+	// A contract signed in advance must not generate a payable first-month row
+	// before move-in, even when move-in is later in the current calendar month.
+	if (contract.startDate > today || contract.endDate < contract.startDate) return [];
 	const lastMonth = monthStart(
 		contract.endDate < today ? contract.endDate : today,
 	);

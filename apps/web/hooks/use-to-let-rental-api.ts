@@ -8,18 +8,13 @@ import {
 } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { authClient } from "@/lib/auth-client";
+import { toLetCategoryLabel, toLetUnitTypes } from "@bikalpo-project/api/lib/tolet-categories";
+import { toLetAlertAccountQuery } from "@/lib/to-let-alert-cache";
 import { orpc } from "@/utils/orpc";
 
 export const toLetAlertCategoryOptions = [
   { value: "any", label: "Any rental type" },
-  { value: "family_flat", label: "Family To-Let" },
-  { value: "bachelor_room", label: "Bachelor Room" },
-  { value: "sublet", label: "Sublet" },
-  { value: "shop", label: "Shop" },
-  { value: "office", label: "Office" },
-  { value: "warehouse", label: "Warehouse" },
-  { value: "garage", label: "Garage" },
-  { value: "other", label: "Other" },
+  ...toLetUnitTypes.map((value) => ({ value, label: toLetCategoryLabel(value) })),
 ] as const;
 
 export type ToLetAlertCategory =
@@ -27,6 +22,7 @@ export type ToLetAlertCategory =
 
 export interface ToLetRentalContractView {
   contractCode: string;
+  tenantId: string;
   status: "active" | "leaving" | "completed";
   startDate: string;
   endDate: string;
@@ -136,6 +132,7 @@ function invalidateRentalContext(
   queryClient: ReturnType<typeof useQueryClient>,
   bookingCode: string,
 ) {
+  queryClient.invalidateQueries({ queryKey: orpc.toLetRental.getOwnerUnitHistory.key() });
   queryClient.invalidateQueries({
     queryKey: orpc.toLetRental.getForBooking.key({ input: { bookingCode } }),
   });
@@ -181,6 +178,10 @@ export function useRequestToLetLeave() {
     onSuccess: (_data, variables) => {
       toast.success(variables.alert ? "Leave scheduled and rental alert created" : "Leave scheduled. Save your next rental preferences below.");
       invalidateRentalContext(queryClient, variables.bookingCode);
+      if (variables.alert) {
+        queryClient.invalidateQueries({ queryKey: orpc.toLetRental.listAlerts.key() });
+        queryClient.invalidateQueries({ queryKey: orpc.toLetRental.listAlertNotifications.key() });
+      }
     },
     onError: (error) => toast.error(error.message),
   });
@@ -215,20 +216,21 @@ export function useDeleteToLetAlert() {
 }
 
 export function useMyToLetAlerts(enabled = true) {
+  const { data: session, isPending } = authClient.useSession();
+  const options = orpc.toLetRental.listAlerts.queryOptions();
   return useQuery({
-    ...orpc.toLetRental.listAlerts.queryOptions(),
-    enabled,
+    ...options,
+    ...toLetAlertAccountQuery(options.queryKey, session?.user.id, enabled && session?.user.role === "consumer", isPending),
     retry: false,
   });
 }
 
 export function useToLetAlertNotifications(enabled = true, page = 1) {
-  const { data: session } = authClient.useSession();
+  const { data: session, isPending } = authClient.useSession();
   const options = orpc.toLetRental.listAlertNotifications.queryOptions({ input: { page } });
   return useQuery({
     ...options,
-    queryKey: [...options.queryKey, session?.user.id],
-    enabled: enabled && Boolean(session?.user.id),
+    ...toLetAlertAccountQuery(options.queryKey, session?.user.id, enabled && session?.user.role === "consumer", isPending),
     staleTime: 15_000,
     refetchInterval: 60_000,
     retry: false,

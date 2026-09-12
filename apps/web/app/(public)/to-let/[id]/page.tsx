@@ -1,10 +1,12 @@
 import { ChevronRight, ArrowLeft } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { getToLetById } from "@/lib/public-data";
+import { checkAuth } from "@/utils/auth";
 
-export const revalidate = 300;
+export const dynamic = "force-dynamic";
+export const metadata = { robots: { index: false, follow: false } };
 
 interface ToLetDetailsPageProps {
   params: Promise<{ id: string }>;
@@ -14,12 +16,17 @@ export default async function ToLetDetailsPage({
   params,
 }: ToLetDetailsPageProps) {
   const { id } = await params;
+  if (!(await checkAuth())?.user) {
+    redirect(
+      `/login?redirect=${encodeURIComponent(`/to-let/${encodeURIComponent(id)}`)}`,
+    );
+  }
   const toletId = Number(id);
   if (Number.isNaN(toletId)) {
     notFound();
   }
 
-  const listing = await getToLetById(toletId, revalidate);
+  const listing = await getToLetById(toletId, 300);
   if (!listing) {
     notFound();
   }

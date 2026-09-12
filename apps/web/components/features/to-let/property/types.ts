@@ -31,6 +31,10 @@ export interface ToLetUnitListingView {
   availableFrom: string;
   preferredTenant: PreferredTenant;
   hasInternet: boolean;
+  facilityInclusions?:
+    | import("@bikalpo-project/api/lib/tolet-facilities").ToLetFacilityInclusions
+    | null;
+  tourUrl?: string | null;
   otherFacilities: string | null;
   imageUrls: string[];
   videoUrl: string | null;
@@ -45,6 +49,10 @@ export interface ToLetUnitListingView {
 }
 
 export interface ToLetOwnerListingSummary {
+  tourUrl?: string | null;
+  facilityInclusions?:
+    | import("@bikalpo-project/api/lib/tolet-facilities").ToLetFacilityInclusions
+    | null;
   listingCode: string;
   title: string;
   description: string | null;
@@ -59,7 +67,9 @@ export interface ToLetOwnerListingSummary {
 }
 
 export interface ToLetUnitView {
-  addressOverride?: import("@bikalpo-project/api/lib/tolet-unit-address").UnitAddress | null;
+  addressOverride?:
+    | import("@bikalpo-project/api/lib/tolet-unit-address").UnitAddress
+    | null;
   id?: string;
   unitCode: string;
   name: string;
@@ -122,9 +132,4 @@ export interface ToLetPropertyView {
   updatedAt?: Date | string;
 }
 
-export function humanize(value: string) {
-  return value
-    .split("_")
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ");
-}
+export { toLetCategoryLabel as humanize } from "@bikalpo-project/api/lib/tolet-categories";

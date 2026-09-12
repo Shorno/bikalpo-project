@@ -1,4 +1,5 @@
 "use client";
+import { toLetUnitCapabilities } from "@bikalpo-project/api/lib/tolet-categories";
 
 import {
   Archive,
@@ -61,6 +62,8 @@ import {
   useToLetRental,
 } from "@/hooks/use-to-let-rental-api";
 import { IncludedExcludedButtons } from "./included-excluded-buttons";
+import { OwnerUnitPaymentHistory } from "./owner-unit-payment-history";
+import { ToLetFacilityItem } from "../to-let-detail-layout";
 import { propertyFromResponse } from "./property-details-client";
 import {
   ListingStatusBadge,
@@ -100,6 +103,10 @@ type UnitOfferDisplay = {
   preferredTenant?: string;
   hasInternet?: boolean;
   otherFacilities?: string | null;
+  facilityInclusions?:
+    | import("@bikalpo-project/api/lib/tolet-facilities").ToLetFacilityInclusions
+    | null;
+  tourUrl?: string | null;
   imageUrl?: string | null;
   imageUrls?: string[];
   videoUrl?: string | null;
@@ -262,15 +269,10 @@ function UnitInformationPanel({
   offer: UnitOfferDisplay | null;
 }) {
   const listingStatus = offer?.status ?? unit.currentListing?.status ?? null;
-  const residential = [
-    "family_flat",
-    "bachelor_room",
-    "sublet",
-    "other",
-  ].includes(unit.unitType);
-  const showBathrooms =
-    residential || ["office", "shop", "warehouse"].includes(unit.unitType);
-  const showBalconies = residential || unit.unitType === "office";
+  const capabilities = toLetUnitCapabilities(unit.unitType);
+  const residential = capabilities.bedrooms;
+  const showBathrooms = capabilities.bathrooms;
+  const showBalconies = capabilities.balconies;
   const photoCount = new Set(
     [
       ...(offer?.imageUrls ?? unit.currentListing?.imageUrls ?? []),
@@ -282,14 +284,6 @@ function UnitInformationPanel({
     ["Property ID *", property.propertyCode],
     ["Property Name", property.name],
     ["Unit Name / Number *", unit.name],
-    ["Address source", unit.addressOverride ? "Unit-specific address" : "Property registration address"],
-    ["Unit address", (unit.addressOverride ?? property).fullAddress],
-    ["Unit location", [
-      (unit.addressOverride ?? property).area,
-      (unit.addressOverride ?? property).upazila,
-      (unit.addressOverride ?? property).district,
-      (unit.addressOverride ?? property).division,
-    ].filter(Boolean).join(", ")],
     ["Listing Category *", humanize(unit.unitType)],
     ["Floor Number *", formatFloorLabel(unit.floorNumber)],
     ["Unit Size *", `${unit.sizeSqFt} sq ft`],
@@ -310,14 +304,11 @@ function UnitInformationPanel({
         "Not added"
       ),
     ],
-    ...(residential
-      ? ([["Bedrooms *", unit.bedrooms]] as Array<[string, ReactNode]>)
+    ...(showBalconies
+      ? ([["Balconies", unit.balconies]] as Array<[string, ReactNode]>)
       : []),
     ...(showBathrooms
       ? ([["Bathrooms *", unit.bathrooms]] as Array<[string, ReactNode]>)
-      : []),
-    ...(showBalconies
-      ? ([["Balconies", unit.balconies]] as Array<[string, ReactNode]>)
       : []),
     ...(residential
       ? ([
@@ -330,13 +321,6 @@ function UnitInformationPanel({
       "Preferred Tenant *",
       offer?.preferredTenant ? humanize(offer.preferredTenant) : "Not selected",
     ],
-    [
-      "Available From",
-      offer?.availableFrom
-        ? formatBookingDate(offer.availableFrom)
-        : "Not listed",
-    ],
-    ["Listing Status", listingStatus ? humanize(listingStatus) : "Not created"],
   ];
   const description =
     offer?.description ?? unit.description ?? property.description;
@@ -374,6 +358,62 @@ function UnitInformationPanel({
           <p className="text-sm text-gray-500">No description added.</p>
         )}
       </div>
+      <dl className="mt-5 space-y-3 text-sm">
+        <div>
+          <dt className="font-medium text-gray-900">Available From</dt>
+          <dd className="mt-1 text-gray-700">
+            {offer?.availableFrom
+              ? formatBookingDate(offer.availableFrom)
+              : "Not listed"}
+          </dd>
+        </div>
+        <div>
+          <dt className="font-medium text-gray-900">Listing Status</dt>
+          <dd className="mt-1 text-gray-700">
+            {listingStatus ? humanize(listingStatus) : "Not created"}
+          </dd>
+        </div>
+      </dl>
+      <details className="mt-5 border-t border-gray-100 pt-4">
+        <summary className="cursor-pointer text-sm font-medium text-gray-900">
+          Additional unit and address details
+        </summary>
+        <dl className="mt-3 space-y-3 text-sm text-gray-700">
+          {residential ? (
+            <div>
+              <dt>Bedrooms</dt>
+              <dd>{unit.bedrooms}</dd>
+            </div>
+          ) : null}
+          <div>
+            <dt>Address source</dt>
+            <dd>
+              {unit.addressOverride
+                ? "Unit-specific address"
+                : "Property registration address"}
+            </dd>
+          </div>
+          <div>
+            <dt>Address</dt>
+            <dd className="break-words">
+              {(unit.addressOverride ?? property).fullAddress}
+            </dd>
+          </div>
+          <div>
+            <dt>Location</dt>
+            <dd className="break-words">
+              {[
+                (unit.addressOverride ?? property).area,
+                (unit.addressOverride ?? property).upazila,
+                (unit.addressOverride ?? property).district,
+                (unit.addressOverride ?? property).division,
+              ]
+                .filter(Boolean)
+                .join(", ")}
+            </dd>
+          </div>
+        </dl>
+      </details>
     </section>
   );
 }
@@ -388,16 +428,16 @@ function FacilitiesPanel({
   offer: UnitOfferDisplay | null;
 }) {
   const facilities = [
-    ["Water Supply", property.hasWaterSupply],
-    ["Gas Connection", property.hasGasConnection],
-    ["Electricity", property.hasElectricity],
-    ["Internet", offer?.hasInternet ?? false],
-    ["Lift", property.hasLift],
-    ["Parking", property.hasParking],
-    ["Generator", property.hasGenerator],
-    ["Security", property.hasSecurityGuard],
-    ["CCTV", property.hasCctv],
-    ["Furnished", unit.isFurnished],
+    ["water", "Water Supply", property.hasWaterSupply],
+    ["gas", "Gas Connection", property.hasGasConnection],
+    ["electricity", "Electricity", property.hasElectricity],
+    ["internet", "Internet", offer?.hasInternet ?? false],
+    ["lift", "Lift", property.hasLift],
+    ["parking", "Parking", property.hasParking],
+    ["generator", "Generator", property.hasGenerator],
+    ["security", "Security", property.hasSecurityGuard],
+    ["cctv", "CCTV", property.hasCctv],
+    ["furnished", "Furnished", unit.isFurnished],
   ] as const;
 
   return (
@@ -411,21 +451,13 @@ function FacilitiesPanel({
         use the current rental offer.
       </p>
       <div className="mt-5 grid gap-3 lg:grid-cols-2">
-        {facilities.map(([label, available]) => (
-          <div
-            key={label}
-            className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-gray-200 bg-gray-50 p-3"
-          >
-            <div>
-              <p className="text-sm font-medium text-gray-900">{label}</p>
-              <p
-                className={`mt-0.5 text-xs ${available ? "text-emerald-700" : "text-gray-500"}`}
-              >
-                {available ? "Available" : "Not available"}
-              </p>
-            </div>
-            <IncludedExcludedButtons label={label} included={available} />
-          </div>
+        {facilities.map(([key, label, available]) => (
+          <ToLetFacilityItem
+            key={key}
+            label={label}
+            available={available}
+            included={offer?.facilityInclusions?.[key] ?? null}
+          />
         ))}
       </div>
       <div className="mt-5 rounded-lg border border-gray-200 p-4">
@@ -608,7 +640,7 @@ function OwnerContractPanel({
     <div className="mt-5 space-y-6">
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {[
-          ["Tenant ID / Reference", booking.bookingCode],
+          ["Tenant ID", contract?.tenantId ?? "Available after contract activation"],
           ["Tenant Name", booking.contactName],
           ["Phone", booking.contactPhone],
           [
@@ -633,7 +665,7 @@ function OwnerContractPanel({
           <p className="text-xs text-gray-500">Rental Agreement (Image)</p>
           <div className="mt-3 flex min-h-24 items-center justify-center gap-2 rounded-md border border-dashed border-gray-300 bg-white text-sm text-gray-500">
             <FileImage className="size-5 text-gray-400" />
-            No agreement image uploaded
+            Agreement image upload is not available yet
           </div>
         </div>
         <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
@@ -743,70 +775,6 @@ function OwnerContractPanel({
         </div>
       ) : null}
 
-      <div className="border-t border-gray-200 pt-6">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <h3 className="font-semibold text-gray-900">Payment History</h3>
-          <span className="text-xs text-gray-500">Owner view</span>
-        </div>
-        <div className="mt-3 overflow-x-auto rounded-lg border border-gray-200">
-          <table className="w-full min-w-[760px] text-left text-sm">
-            <thead className="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
-              <tr>
-                <th className="px-4 py-3 font-medium">Month</th>
-                <th className="px-4 py-3 font-medium">Tenant Reference</th>
-                <th className="px-4 py-3 font-medium">Tenant Name</th>
-                <th className="px-4 py-3 font-medium">Rent</th>
-                <th className="px-4 py-3 font-medium">OTP</th>
-                <th className="px-4 py-3 font-medium">Payment</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100 bg-white">
-              {contract?.payments.length ? (
-                contract.payments.map((payment) => (
-                  <tr key={payment.cycleMonth}>
-                    <td className="px-4 py-3 text-gray-700">
-                      {payment.cycleMonth.slice(0, 7)}
-                    </td>
-                    <td className="px-4 py-3 font-mono text-xs text-gray-600">
-                      {booking.bookingCode}
-                    </td>
-                    <td className="px-4 py-3 font-medium text-gray-900">
-                      {booking.contactName}
-                    </td>
-                    <td className="px-4 py-3 font-medium text-gray-900">
-                      {formatMoney(payment.amount)}
-                    </td>
-                    <td className="px-4 py-3 font-mono text-gray-700">
-                      {payment.otp ?? "—"}
-                    </td>
-                    <td className="px-4 py-3">
-                      <Badge
-                        variant="outline"
-                        className={
-                          payment.status === "paid"
-                            ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                            : "border-amber-200 bg-amber-50 text-amber-700"
-                        }
-                      >
-                        {humanize(payment.status)}
-                      </Badge>
-                    </td>
-                  </tr>
-                ))
-              ) : (
-                <tr>
-                  <td
-                    colSpan={6}
-                    className="px-4 py-8 text-center text-gray-500"
-                  >
-                    Payment history will appear after the contract starts.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
     </div>
   );
 }
@@ -1061,6 +1029,7 @@ function CurrentTenantSection({
           </p>
         </div>
       )}
+      <OwnerUnitPaymentHistory propertyCode={propertyCode} unitCode={unitCode} />
     </section>
   );
 }
@@ -1380,10 +1349,23 @@ export function UnitDetailsClient({
 
       <section className="overflow-hidden rounded-lg border border-gray-200 bg-white">
         <div className="grid gap-6 p-5 lg:grid-cols-[minmax(0,1.05fr)_minmax(340px,0.95fr)] sm:p-6">
-          <UnitGallery
-            unit={unit}
-            listingImages={displayListing?.imageUrls ?? []}
-          />
+          <div className="min-w-0">
+            <UnitGallery
+              unit={unit}
+              listingImages={displayListing?.imageUrls ?? []}
+            />
+            {displayListing?.tourUrl ? (
+              <a
+                href={displayListing.tourUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="mt-4 inline-flex min-h-10 items-center rounded-md border border-gray-300 px-4 text-sm font-semibold text-blue-700"
+              >
+                Open 360° tour{" "}
+                <span className="sr-only">(opens in a new tab)</span>
+              </a>
+            ) : null}
+          </div>
 
           <div className="min-w-0">
             <div className="flex flex-wrap items-start justify-between gap-3">

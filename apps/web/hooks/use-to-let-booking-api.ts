@@ -53,6 +53,8 @@ export interface ToLetBookingRequestView {
     preferredTenant: "family" | "bachelor" | "office" | "female" | "any";
     hasInternet: boolean;
     otherFacilities: string | null;
+    facilityInclusions?: import("@bikalpo-project/api/lib/tolet-facilities").ToLetFacilityInclusions | null;
+    tourUrl?: string | null;
     imageUrl: string | null;
     property: {
       propertyCode: string;

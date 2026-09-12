@@ -1,5 +1,4 @@
 import { unitLocationLabel } from "../lib/tolet-unit-address";
-import { createHmac } from "node:crypto";
 import { db } from "@bikalpo-project/db";
 import {
 	toletBookingRequest,
@@ -11,15 +10,19 @@ import {
 	toletRentPayment,
 	toletUnit,
 	toletUnitListing,
+	user,
 } from "@bikalpo-project/db/schema";
 import { env } from "@bikalpo-project/env/server";
 import { ORPCError } from "@orpc/server";
-import { and, asc, count, desc, eq, inArray, isNull } from "drizzle-orm";
+import { and, asc, count, desc, eq, inArray, isNull, gte, sql } from "drizzle-orm";
 import { z } from "zod";
 
-import { consumerProcedure } from "../index";
-import { canAccessToLetRentalDetails } from "./helpers/tolet-rental-lifecycle";
+import { consumerProcedure, publicProcedure } from "../index";
+import { canAccessToLetRentalDetails, isToLetCalendarDate, toLetDhakaDateString } from "./helpers/tolet-rental-lifecycle";
+import { toLetRentOtp, verifyToLetRentPayment } from "../services/tolet-rent-payment";
+import { ownerUnitRentalHistoryProcedure } from "./tolet-owner-rental-history";
 import { syncToLetAlertNotifications } from "../services/tolet-alert-notifications";
+import { saveToLetAlert } from "../services/tolet-saved-alerts";
 import { toLetMarketplaceStatus } from "./helpers/tolet-marketplace-visibility";
 import {
 	completeExpiredToLetContract,
@@ -40,7 +43,7 @@ const unitCodeSchema = z
 	.string()
 	.trim()
 	.regex(/^UNT-\d{6,10}$/, "Invalid Unit ID");
-const dateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+const dateSchema = z.string().refine(isToLetCalendarDate, "Enter a valid calendar date (YYYY-MM-DD)");
 
 function publicNumber(code: string) {
 	const value = Number(code.split("-").at(-1));
@@ -52,16 +55,6 @@ function publicNumber(code: string) {
 
 function contractCode(value: number) {
 	return `CTR-${String(value).padStart(6, "0")}`;
-}
-
-function rentOtp(contractId: string, cycleMonth: string) {
-	const digest = createHmac("sha256", env.BETTER_AUTH_SECRET)
-		.update(`tolet-rent:${contractId}:${cycleMonth}`)
-		.digest("hex");
-	return String(Number.parseInt(digest.slice(0, 12), 16) % 1_000_000).padStart(
-		6,
-		"0",
-	);
 }
 
 async function contractContext(bookingCode: string, userId: string) {
@@ -93,9 +86,14 @@ async function contractContext(bookingCode: string, userId: string) {
 	) {
 		throw new ORPCError("NOT_FOUND", { message: "Rental contract not found" });
 	}
+	const previousStatus = row.contract.status;
 	row.contract = await completeExpiredToLetContract(
 		row.contract as ToLetContractRow,
 	);
+	if (previousStatus !== row.contract.status) {
+		const [currentUnit] = await db.select().from(toletUnit).where(eq(toletUnit.id, row.unit.id)).limit(1);
+		if (currentUnit) row.unit = currentUnit;
+	}
 	if (!canAccessToLetRentalDetails(row.contract, userId)) {
 		throw new ORPCError("FORBIDDEN", {
 			message: "This rental period has ended. Find this rental in Rental History.",
@@ -113,6 +111,9 @@ async function rentalDto(bookingCode: string, userId: string) {
 		.where(eq(toletRentPayment.contractId, row.contract.id))
 		.orderBy(asc(toletRentPayment.cycleMonth));
 	const isOwner = row.contract.ownerUserId === userId;
+	const today = toLetDhakaDateString();
+	const canShowOtp = isOwner && ["active", "leaving"].includes(row.contract.status) &&
+		row.contract.startDate <= today && row.contract.endDate >= today;
 	const comments = await db
 		.select()
 		.from(toletRentalComment)
@@ -121,6 +122,7 @@ async function rentalDto(bookingCode: string, userId: string) {
 
 	return {
 		contractCode: contractCode(row.contract.publicNumber),
+		tenantId: row.contract.tenantUserId,
 		status: row.contract.status,
 		startDate: row.contract.startDate,
 		endDate: row.contract.endDate,
@@ -144,8 +146,8 @@ async function rentalDto(bookingCode: string, userId: string) {
 			status: payment.status,
 			verifiedAt: payment.verifiedAt?.toISOString() ?? null,
 			otp:
-				isOwner && payment.status === "pending"
-					? rentOtp(row.contract.id, payment.cycleMonth)
+				canShowOtp && payment.status === "pending" && payment.dueDate <= today
+					? toLetRentOtp(row.contract.id, payment.cycleMonth, env.BETTER_AUTH_SECRET)
 					: null,
 		})),
 		comments: comments.map((comment) => ({
@@ -163,9 +165,12 @@ const alertCategorySchema = z.enum([
 	"family_flat",
 	"bachelor_room",
 	"sublet",
+	"family_sublet",
+	"bachelor_sublet",
 	"shop",
 	"office",
 	"warehouse",
+	"factory",
 	"garage",
 	"other",
 ]);
@@ -199,6 +204,31 @@ function alertDto(alert: typeof toletRentalAlert.$inferSelect) {
 }
 
 export const toLetRentalRouter = {
+	getOwnerUnitHistory: ownerUnitRentalHistoryProcedure,
+	listPublicReviews: publicProcedure
+		.route({ method: "GET", path: "/to-let/reviews", tags: ["To-Let Rental"] })
+		.input(z.object({ page: z.number().int().min(1).max(10000).default(1), limit: z.number().int().min(1).max(20).default(6) }).strict())
+		.handler(async ({ input }) => {
+			if (process.env.TOLET_PUBLIC_REVIEWS_ENABLED !== "true") return { reviews: [] as { id: string; body: string; rating: number | null; createdAt: Date; authorName: string }[], total: 0, page: input.page, limit: input.limit, enabled: false };
+			const scope = and(sql`"tolet_rental_comment"."is_public" = true`, eq(toletRentalComment.authorUserId, toletRentalContract.tenantUserId));
+			const [reviews, totals] = await Promise.all([
+				db.select({ id: toletRentalComment.id, body: toletRentalComment.body, rating: toletRentalComment.rating, createdAt: toletRentalComment.createdAt, authorName: user.name })
+					.from(toletRentalComment).innerJoin(toletRentalContract, eq(toletRentalComment.contractId, toletRentalContract.id)).innerJoin(user, eq(toletRentalComment.authorUserId, user.id))
+					.where(scope).orderBy(desc(toletRentalComment.createdAt), desc(toletRentalComment.id)).limit(input.limit).offset((input.page - 1) * input.limit),
+				db.select({ total: count() }).from(toletRentalComment).innerJoin(toletRentalContract, eq(toletRentalComment.contractId, toletRentalContract.id)).where(scope),
+			]);
+			return { reviews, total: totals[0]?.total ?? 0, page: input.page, limit: input.limit, enabled: true };
+		}),
+	eligibleReviewRentals: consumerProcedure
+		.route({ method: "GET", path: "/to-let/reviews/eligible-rentals", tags: ["To-Let Rental"] })
+		.handler(async ({ context }) => {
+			const rows = await db.select({ publicNumber: toletBookingRequest.publicNumber, title: toletUnit.name, propertyName: toletProperty.name })
+				.from(toletRentalContract).innerJoin(toletBookingRequest, eq(toletRentalContract.bookingRequestId, toletBookingRequest.id))
+				.innerJoin(toletUnit, eq(toletRentalContract.unitId, toletUnit.id)).innerJoin(toletProperty, eq(toletRentalContract.propertyId, toletProperty.id))
+				.where(and(eq(toletRentalContract.tenantUserId, context.session.user.id), inArray(toletRentalContract.status, ["active", "leaving"]), gte(toletRentalContract.endDate, toLetDhakaDateString())))
+				.orderBy(desc(toletRentalContract.createdAt)).limit(100);
+			return { rentals: rows.map(row => ({ bookingCode: `BKG-${String(row.publicNumber).padStart(6, "0")}`, title: `${row.propertyName} · ${row.title}` })) };
+		}),
 	listAlertNotifications: consumerProcedure
 		.route({ method: "GET", path: "/to-let/alert-notifications", tags: ["To-Let Rental"], summary: "Discover and list my matched rental notifications" })
 		.input(z.object({ page: z.number().int().min(1).max(10000).default(1) }))
@@ -282,63 +312,10 @@ export const toLetRentalRouter = {
 		})
 		.input(z.object(alertFields).strict())
 		.handler(async ({ context, input }) => {
-			const [existingAlert] = await db
-				.select()
-				.from(toletRentalAlert)
-				.where(
-					and(
-						eq(toletRentalAlert.userId, context.session.user.id),
-						inArray(toletRentalAlert.status, ["active", "paused"]),
-						eq(toletRentalAlert.preferredCategory, input.preferredCategory),
-						eq(toletRentalAlert.preferredLocation, input.preferredLocation),
-						eq(toletRentalAlert.minimumSizeSqFt, input.minimumSizeSqFt),
-						eq(toletRentalAlert.minimumBedrooms, input.minimumBedrooms),
-						eq(toletRentalAlert.minimumBathrooms, input.minimumBathrooms),
-						eq(toletRentalAlert.minimumBalconies, input.minimumBalconies),
-						eq(toletRentalAlert.balconyPreference, input.balconyPreference),
-						eq(toletRentalAlert.preferredFloor, input.preferredFloor),
-					),
-				)
-				.limit(1);
-
-			if (existingAlert) {
-				if (existingAlert.status === "paused") {
-					const [resumedAlert] = await db
-						.update(toletRentalAlert)
-						.set({ status: "active", updatedAt: new Date() })
-						.where(
-							and(
-								eq(toletRentalAlert.id, existingAlert.id),
-								eq(toletRentalAlert.userId, context.session.user.id),
-							),
-						)
-						.returning();
-					if (resumedAlert) {
-						return { alert: alertDto(resumedAlert) };
-					}
-				}
-				return { alert: alertDto(existingAlert) };
-			}
-
-			const [savedAlertCount] = await db
-				.select({ value: count() })
-				.from(toletRentalAlert)
-				.where(eq(toletRentalAlert.userId, context.session.user.id));
-			if ((savedAlertCount?.value ?? 0) >= 50) {
-				throw new ORPCError("BAD_REQUEST", {
-					message: "You can keep up to 50 saved To-Let alerts",
-				});
-			}
-
-			const [alert] = await db
-				.insert(toletRentalAlert)
-				.values({ userId: context.session.user.id, ...input })
-				.returning();
-			if (!alert) {
-				throw new ORPCError("INTERNAL_SERVER_ERROR", {
-					message: "Unable to save the To-Let alert",
-				});
-			}
+			const alert = await db.transaction(
+				(tx) => saveToLetAlert(tx, context.session.user.id, input),
+				{ isolationLevel: "read committed" },
+			);
 			return { alert: alertDto(alert) };
 		}),
 
@@ -540,7 +517,7 @@ export const toLetRentalRouter = {
 			z
 				.object({
 					bookingCode: bookingCodeSchema,
-					cycleMonth: dateSchema,
+					cycleMonth: dateSchema.refine(value => value.endsWith("-01"), "Select a valid rent month"),
 					referenceName: z.string().trim().min(2).max(150),
 					otp: z.string().regex(/^\d{6}$/, "Enter the 6-digit rent OTP"),
 				})
@@ -554,34 +531,18 @@ export const toLetRentalRouter = {
 			if (row.contract.tenantUserId !== context.session.user.id) {
 				throw new ORPCError("FORBIDDEN", { message: "Tenant access required" });
 			}
-			if (input.otp !== rentOtp(row.contract.id, input.cycleMonth)) {
-				throw new ORPCError("BAD_REQUEST", { message: "Incorrect rent OTP" });
-			}
-			const now = new Date();
-			const [payment] = await db
-				.update(toletRentPayment)
-				.set({
-					referenceName: input.referenceName,
-					status: "paid",
-					verifiedAt: now,
-					updatedAt: now,
-				})
-				.where(
-					and(
-						eq(toletRentPayment.contractId, row.contract.id),
-						eq(toletRentPayment.cycleMonth, input.cycleMonth),
-						eq(toletRentPayment.status, "pending"),
-					),
-				)
-				.returning();
-			if (!payment) {
+			const result = await db.transaction(tx => verifyToLetRentPayment(tx, {
+				...input, contractId: row.contract.id, tenantUserId: context.session.user.id,
+			}, env.BETTER_AUTH_SECRET), { isolationLevel: "read committed" });
+			if (result.status === "forbidden") throw new ORPCError("FORBIDDEN", { message: "Tenant access required" });
+			if (result.status === "rate_limited") throw new ORPCError("TOO_MANY_REQUESTS", { message: "Too many incorrect rent OTP attempts. Try again in 15 minutes." });
+			if (result.status === "incorrect") throw new ORPCError("BAD_REQUEST", { message: "Incorrect rent OTP" });
+			if (result.status !== "paid") {
 				throw new ORPCError("CONFLICT", {
 					message: "This rent cycle is already paid or unavailable",
 				});
 			}
-			return {
-				payment: { cycleMonth: payment.cycleMonth, status: payment.status },
-			};
+			return { payment: result.payment };
 		}),
 
 	requestLeave: consumerProcedure
@@ -628,12 +589,8 @@ export const toLetRentalRouter = {
 					})
 					.where(and(eq(toletRentalContract.id, row.contract.id), eq(toletRentalContract.status, "active")))
 					.returning({ id: toletRentalContract.id });
-				if (changed.length && input.alert) await tx.insert(toletRentalAlert).values({
-					userId: context.session.user.id,
-					sourceContractId: row.contract.id,
-					...input.alert,
-				});
-			});
+				if (changed.length && input.alert) await saveToLetAlert(tx, context.session.user.id, input.alert, row.contract.id);
+			}, { isolationLevel: "read committed" });
 			return {
 				contract: await rentalDto(input.bookingCode, context.session.user.id),
 			};
@@ -652,10 +609,12 @@ export const toLetRentalRouter = {
 					bookingCode: bookingCodeSchema,
 					body: z.string().trim().min(3).max(2000),
 					rating: z.number().int().min(1).max(5).optional(),
+					isPublic: z.boolean().default(false),
 				})
-				.strict(),
+				.strict().refine(value => !value.isPublic || value.rating !== undefined, { message: "A rating is required for public reviews", path: ["rating"] }),
 		)
 		.handler(async ({ context, input }) => {
+			if (input.isPublic && process.env.TOLET_PUBLIC_REVIEWS_ENABLED !== "true") throw new ORPCError("FORBIDDEN", { message: "Public reviews are not enabled yet" });
 			const row = await contractContext(
 				input.bookingCode,
 				context.session.user.id,
@@ -663,7 +622,8 @@ export const toLetRentalRouter = {
 			if (row.contract.tenantUserId !== context.session.user.id) {
 				throw new ORPCError("FORBIDDEN", { message: "Tenant access required" });
 			}
-			const [comment] = await db
+			const comment = await db.transaction(async tx => {
+			const [created] = await tx
 				.insert(toletRentalComment)
 				.values({
 					contractId: row.contract.id,
@@ -672,6 +632,9 @@ export const toLetRentalRouter = {
 					rating: input.rating,
 				})
 				.returning();
+			if (input.isPublic && created) await tx.execute(sql`UPDATE "tolet_rental_comment" SET "is_public" = true WHERE "id" = ${created.id}`);
+			return created;
+			});
 			return { comment };
 		}),
 };

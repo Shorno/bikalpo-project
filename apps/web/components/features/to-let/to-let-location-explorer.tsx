@@ -351,7 +351,7 @@ export function ToLetLocationExplorer({
             </div>
           </div>
 
-          <div className="flex min-h-[420px] min-w-0 flex-col bg-muted/20">
+          <div className="order-first flex min-h-[420px] min-w-0 flex-col bg-muted/20 lg:order-last">
             <div className="flex flex-col gap-3 border-b border-border bg-background px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <p className="text-xs font-semibold tracking-wide text-primary uppercase">

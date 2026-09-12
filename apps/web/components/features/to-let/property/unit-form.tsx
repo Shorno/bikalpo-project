@@ -1,4 +1,5 @@
 "use client";
+import { toLetUnitCapabilities as unitCapabilities } from "@bikalpo-project/api/lib/tolet-categories";
 
 import { Building2, Loader2, Save } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -54,33 +55,6 @@ const emptyUnit: UnitFormValues = {
   description: "",
   imageUrls: [],
 };
-
-const residentialUnitTypes = new Set([
-  "family_flat",
-  "bachelor_room",
-  "sublet",
-  "other",
-]);
-const bathroomUnitTypes = new Set([
-  ...residentialUnitTypes,
-  "office",
-  "shop",
-  "warehouse",
-]);
-const furnishedUnitTypes = new Set([...bathroomUnitTypes, "garage"]);
-
-function unitCapabilities(unitType: string) {
-  const residential = residentialUnitTypes.has(unitType);
-  return {
-    bedrooms: residential,
-    bathrooms: bathroomUnitTypes.has(unitType),
-    balconies: residential || unitType === "office",
-    drawingRoom: residential,
-    diningSpace: residential,
-    kitchen: residential,
-    furnished: furnishedUnitTypes.has(unitType),
-  };
-}
 
 function normalizeUnitValues(values: UnitFormValues): UnitFormValues {
   const capabilities = unitCapabilities(values.unitType);

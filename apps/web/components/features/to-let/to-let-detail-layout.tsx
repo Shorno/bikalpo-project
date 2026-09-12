@@ -33,6 +33,7 @@ interface ToLetDetailHeroProps {
   actions?: ReactNode;
   showHeading?: boolean;
   documentOrder?: boolean;
+  tourUrl?: string | null;
 }
 
 export function ToLetDetailHero({
@@ -56,12 +57,24 @@ export function ToLetDetailHero({
   actions,
   showHeading = true,
   documentOrder = false,
+  tourUrl,
 }: ToLetDetailHeroProps) {
   return (
     <section className="overflow-hidden rounded-lg border border-zinc-200 bg-white">
       <div className="grid gap-0 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.12fr)]">
         <div className="border-b border-zinc-200 p-4 sm:p-6 lg:border-r lg:border-b-0 lg:p-8">
           <PublicListingGallery imageUrls={imageUrls} alt={imageAlt} />
+          {tourUrl ? (
+            <a
+              href={tourUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-4 inline-flex min-h-10 items-center rounded-md border border-zinc-300 px-4 text-sm font-semibold text-blue-700 hover:bg-blue-50"
+            >
+              Open 360° tour{" "}
+              <span className="sr-only">(opens in a new tab)</span>
+            </a>
+          ) : null}
         </div>
 
         <div className="flex min-w-0 flex-col p-5 sm:p-7 lg:p-8">
@@ -259,7 +272,7 @@ export function ToLetFacilityItem({
 }: {
   label: string;
   available: boolean | undefined;
-  included?: boolean;
+  included?: boolean | null;
 }) {
   const recorded = typeof available === "boolean";
   const stateLabel = available
@@ -278,7 +291,11 @@ export function ToLetFacilityItem({
           {stateLabel}
         </p>
       </div>
-      {typeof included === "boolean" ? (
+      {included === null ? (
+        <span className="text-xs text-zinc-500">
+          Rent inclusion: Not recorded
+        </span>
+      ) : typeof included === "boolean" ? (
         <ToLetChoicePair
           positiveLabel="Included"
           negativeLabel="Excluded"

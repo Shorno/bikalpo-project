@@ -42,7 +42,7 @@ import {
 } from "@/schema/to-let-property.schema";
 import { client } from "@/utils/orpc";
 import { PropertyLocationFields } from "./property-location-fields";
-import { PropertyPhoneVerification } from "./property-phone-verification";
+import { PropertyPhoneVerification, type PropertyPhoneProof } from "./property-phone-verification";
 import { PropertyPageHeader } from "./property-ui";
 import fieldStyles from "./property-form-fields.module.css";
 
@@ -138,6 +138,8 @@ function restoreDraftValues(input: unknown): PropertyRegistrationValues | null {
     restored.propertyType = "apartment";
   }
   if (!restored.buildingType) restored.buildingType = "residential";
+  // Drafts are user-controlled and must never restore a verified identity.
+  restored.phoneVerified = false;
   const normalizedDivision = normalizeBangladeshDivision(restored.division);
   if (normalizedDivision) {
     restored.division = normalizedDivision;
@@ -312,6 +314,7 @@ export function PropertyRegistrationWizard() {
   );
   const [errors, setErrors] = useState<FieldErrors>({});
   const [locating, setLocating] = useState(false);
+  const [phoneProof, setPhoneProof] = useState<PropertyPhoneProof | null>(null);
   const [draftReady, setDraftReady] = useState(false);
   const headingRef = useRef<HTMLHeadingElement>(null);
 
@@ -335,13 +338,13 @@ export function PropertyRegistrationWizard() {
         );
         const restoredStep = Number(draft.currentStep);
         if (restoredStep >= 1 && restoredStep <= 4) {
-          setCurrentStep(restoredStep);
+          setCurrentStep(Math.min(restoredStep, 3));
         }
         if (Array.isArray(draft.completedSteps)) {
           setCompletedSteps(
             draft.completedSteps.filter(
               (step): step is number =>
-                Number.isInteger(step) && step >= 1 && step <= 4,
+                Number.isInteger(step) && step >= 1 && step < 3,
             ),
           );
         }
@@ -388,11 +391,11 @@ export function PropertyRegistrationWizard() {
   };
 
   const updatePhone = (mobileNumber: string) => {
+    setPhoneProof(null);
     setValues((current) => ({
       ...current,
       mobileNumber,
-      phoneVerified:
-        mobileNumber === current.mobileNumber ? current.phoneVerified : false,
+      phoneVerified: false,
     }));
   };
 
@@ -536,6 +539,13 @@ export function PropertyRegistrationWizard() {
   };
 
   const submit = async () => {
+    if (!phoneProof || Date.parse(phoneProof.expiresAt) <= Date.now()) {
+      setPhoneProof(null);
+      update("phoneVerified", false);
+      moveToStep(3);
+      setErrors({ phoneVerified: "Verify your property contact number again before registering." });
+      return;
+    }
     for (const step of [1, 2, 3, 4]) {
       const stepErrors = errorsForStep(step);
       if (Object.keys(stepErrors).length > 0) {
@@ -560,6 +570,7 @@ export function PropertyRegistrationWizard() {
     try {
       const result = await createProperty.mutateAsync({
         ...payload,
+        phoneVerificationProof: phoneProof.proof,
         email: payload.email || undefined,
         nearbyLandmark: payload.nearbyLandmark || undefined,
         latitude: payload.latitude ? Number(payload.latitude) : undefined,
@@ -575,8 +586,13 @@ export function PropertyRegistrationWizard() {
           ? `/account/to-let/properties/${propertyCode}?created=1`
           : "/account/to-let/properties",
       );
-    } catch {
-      // Mutation hook owns the user-facing error toast.
+    } catch (error) {
+      // Mutation hook owns the toast. Recover at the correct step when a proof is no longer usable.
+      if (error && typeof error === "object" && "code" in error && error.code === "FORBIDDEN") {
+        setPhoneProof(null);
+        update("phoneVerified", false);
+        moveToStep(3);
+      }
     }
   };
 
@@ -924,7 +940,7 @@ export function PropertyRegistrationWizard() {
                 <PropertyPhoneVerification
                   phone={values.mobileNumber}
                   verified={values.phoneVerified}
-                  onVerified={() => update("phoneVerified", true)}
+                  onVerified={(proof) => { setPhoneProof(proof); update("phoneVerified", true); }}
                 />
                 <FieldMessage message={errors.phoneVerified} />
               </Section>

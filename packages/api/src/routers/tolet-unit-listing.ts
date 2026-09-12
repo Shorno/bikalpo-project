@@ -1,4 +1,5 @@
 import { effectiveUnitAddress, unitLocationLabel } from "../lib/tolet-unit-address";
+import { normalizeFacilityInclusions, toLetFacilityInclusionsSchema } from "../lib/tolet-facilities";
 import { db } from "@bikalpo-project/db";
 import {
   type ToletProperty,
@@ -14,6 +15,7 @@ import { ORPCError } from "@orpc/server";
 import {
   and,
   asc,
+  count,
   desc,
   eq,
   gt,
@@ -92,9 +94,11 @@ export const toletUnitListingFieldsSchema = z
     availableFrom: availableFromSchema,
     preferredTenant: z.enum(["family", "bachelor", "office", "female", "any"]),
     hasInternet: z.boolean().default(false),
+    facilityInclusions: toLetFacilityInclusionsSchema.optional(),
     otherFacilities: optionalTextSchema(2000),
     imageUrls: z.array(z.string().trim().pipe(z.httpUrl().max(2048))).max(12),
     videoUrl: optionalUrlSchema,
+    tourUrl: z.preprocess(value => value === "" ? null : value, z.string().trim().pipe(z.httpUrl().max(2048)).nullable().optional()),
     visibility: z.enum(["public", "qr_only"]),
   })
   .strict();
@@ -171,7 +175,7 @@ function isUniqueViolation(error: unknown) {
   return candidate.code === "23505" || candidate.cause?.code === "23505";
 }
 
-function listingWriteValues(input: ListingFields) {
+function listingWriteValues(input: ListingFields, owned: { property: ToletProperty; unit: ToletUnit }) {
   return {
     title: input.title,
     description: input.description ?? null,
@@ -193,9 +197,17 @@ function listingWriteValues(input: ListingFields) {
     availableFrom: input.availableFrom,
     preferredTenant: input.preferredTenant,
     hasInternet: input.hasInternet,
+    ...(input.facilityInclusions !== undefined ? { facilityInclusions: normalizeFacilityInclusions(input.facilityInclusions, {
+      water: owned.property.hasWaterSupply, gas: owned.property.hasGasConnection,
+      electricity: owned.property.hasElectricity, internet: input.hasInternet,
+      lift: owned.property.hasLift, parking: owned.property.hasParking,
+      generator: owned.property.hasGenerator, security: owned.property.hasSecurityGuard,
+      cctv: owned.property.hasCctv, furnished: owned.unit.isFurnished,
+    }) } : {}),
     otherFacilities: input.otherFacilities ?? null,
     imageUrls: input.imageUrls,
     videoUrl: input.videoUrl ?? null,
+    ...(input.tourUrl !== undefined ? { tourUrl: input.tourUrl } : {}),
     visibility: input.visibility,
   };
 }
@@ -315,6 +327,8 @@ function publicListingDto(row: JoinedListing, now = new Date()) {
     preferredTenant: listing.preferredTenant,
     hasInternet: listing.hasInternet,
     otherFacilities: listing.otherFacilities,
+    facilityInclusions: listing.facilityInclusions,
+    tourUrl: listing.tourUrl,
     imageUrls,
     videoUrl: listing.videoUrl,
     visibility: listing.visibility,
@@ -634,7 +648,7 @@ export const toLetUnitListingRouter = {
         const [created] = await db
           .insert(toletUnitListing)
           .values({
-            ...listingWriteValues(input.data),
+            ...listingWriteValues(input.data, owned),
             unitId: owned.unit.id,
             status: "draft",
           })
@@ -674,7 +688,7 @@ export const toLetUnitListingRouter = {
 
       const [updated] = await db
         .update(toletUnitListing)
-        .set({ ...listingWriteValues(input.data), updatedAt: new Date() })
+        .set({ ...listingWriteValues(input.data, owned), updatedAt: new Date() })
         .where(eq(toletUnitListing.id, owned.listing.id))
         .returning();
       if (!updated) {
@@ -1117,6 +1131,36 @@ export const toLetUnitListingRouter = {
         .limit(300);
 
       return { listings: rows.map((row) => publicListingDto(row, now)) };
+    }),
+
+  listPublicPage: publicProcedure
+    .route({ method: "GET", path: "/to-let/marketplace/browse", tags: ["To-Let Marketplace"] })
+    .input(z.object({ page: z.number().int().min(1).max(10000).default(1), limit: z.number().int().min(1).max(24).default(12), q: z.string().trim().max(200).default(""), type: z.string().max(50).optional() }).strict())
+    .handler(async ({ input }) => {
+      const now = new Date();
+      const search = `%${input.q.replace(/[\\%_]/g, "\\$&")}%`;
+      const scope = and(
+        eq(toletUnitListing.visibility, "public"), publicMarketplaceListingScope(now), eq(toletProperty.status, "active"),
+        input.type ? eq(toletUnit.unitType, input.type) : undefined,
+        input.q ? sql`concat_ws(' ',
+          'LST-' || lpad(${toletUnitListing.publicNumber}::text, greatest(6, length(${toletUnitListing.publicNumber}::text)), '0'),
+          'UNT-' || lpad(${toletUnit.publicNumber}::text, greatest(6, length(${toletUnit.publicNumber}::text)), '0'),
+          'PR-' || extract(year from ${toletProperty.createdAt})::text || '-' || lpad(${toletProperty.publicNumber}::text, greatest(6, length(${toletProperty.publicNumber}::text)), '0'),
+          ${toletUnitListing.title}, ${toletUnitListing.description}, ${toletUnit.name}, ${toletUnit.unitType}, ${toletProperty.name},
+          coalesce(${toletUnit.addressOverride}->>'area', ${toletProperty.area}),
+          coalesce(${toletUnit.addressOverride}->>'district', ${toletProperty.district}),
+          coalesce(${toletUnit.addressOverride}->>'division', ${toletProperty.division}),
+          coalesce(${toletUnit.addressOverride}->>'fullAddress', ${toletProperty.fullAddress})
+        ) ilike ${search}` : undefined,
+      );
+      const [rows, totals] = await Promise.all([
+        db.select({ listing: toletUnitListing, unit: toletUnit, property: toletProperty }).from(toletUnitListing)
+          .innerJoin(toletUnit, eq(toletUnitListing.unitId, toletUnit.id)).innerJoin(toletProperty, eq(toletUnit.propertyId, toletProperty.id))
+          .where(scope).orderBy(desc(toletUnitListing.publishedAt), desc(toletUnitListing.createdAt), desc(toletUnitListing.id)).limit(input.limit).offset((input.page - 1) * input.limit),
+        db.select({ total: count() }).from(toletUnitListing).innerJoin(toletUnit, eq(toletUnitListing.unitId, toletUnit.id))
+          .innerJoin(toletProperty, eq(toletUnit.propertyId, toletProperty.id)).where(scope),
+      ]);
+      return { listings: rows.map(row => publicListingDto(row, now)), total: totals[0]?.total ?? 0, page: input.page, limit: input.limit };
     }),
 
   getPublicByCode: publicProcedure

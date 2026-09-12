@@ -1,0 +1,86 @@
+/* Mobile wireframe adaptation; desktop keeps the existing shared design. */
+@media (max-width: 639px) {
+  .landing > section {
+    padding-block: 24px;
+  }
+
+  .landing h2 {
+    font-size: 20px;
+    line-height: 1.5;
+    overflow-wrap: anywhere;
+  }
+
+  .hero {
+    padding-block: 0 !important;
+  }
+
+  .landing article h2 {
+    font-size: 14px;
+    line-height: 1.4;
+    overflow-wrap: normal;
+  }
+
+  .landing section[aria-label="Current To-Let marketplace data"] article > div {
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .hero h1 {
+    font-size: 28px;
+    line-height: 1.15;
+  }
+
+  .landing input, .landing select, .landing textarea { font-size: 16px; }
+
+  .listings > article > div:last-child > div:first-child {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+  }
+
+  .hero :global(.min-h-\[390px\]) {
+    min-height: 0;
+  }
+
+  .categories > a {
+    flex-direction: column;
+    justify-content: center;
+    text-align: center;
+    padding: 16px 8px;
+    gap: 8px;
+  }
+
+  .categories > a > span:last-child {
+    width: 100%;
+  }
+
+  .categories :global(.truncate) {
+    white-space: normal;
+    overflow: visible;
+  }
+
+  .listings > article {
+    min-width: 0;
+  }
+
+  .listings > article > div:last-child {
+    padding: 10px;
+  }
+
+  .listings :global(.aspect-video) {
+    aspect-ratio: 1 / 1;
+  }
+
+  .listings h3, .listings p, .listings span {
+    overflow-wrap: anywhere;
+  }
+
+  .listings :global(.mt-auto.grid) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .listings :global(.mt-auto.grid) > a {
+    min-height: 44px;
+    padding-inline: 4px;
+  }
+}

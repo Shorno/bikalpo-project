@@ -4,6 +4,7 @@ import {
   filterToLetMarketplaceListings,
   parseToLetSearchParams,
   toLetMarketHref,
+  toLetBrowseHref,
 } from "./to-let-marketplace";
 
 const listings = [
@@ -38,6 +39,11 @@ const listings = [
     unit: { name: "Parking 2", unitType: "garage" },
   },
 ];
+
+test("browse links retain filters and pagination without an anchor", () => {
+  assert.equal(toLetBrowseHref("Dhaka", "garage", 2), "/to-let/listings?q=Dhaka&type=garage&page=2");
+  assert.equal(toLetBrowseHref(""), "/to-let/listings");
+});
 
 test("duplicate and invalid search params are parsed without throwing", () => {
   assert.deepEqual(

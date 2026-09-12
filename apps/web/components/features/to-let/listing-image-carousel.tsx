@@ -153,7 +153,7 @@ export function ListingImageCarousel({
             )}
           </button>
 
-          <div className="pointer-events-none absolute inset-x-0 top-1/2 z-10 flex -translate-y-1/2 justify-between px-2 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+          <div className="pointer-events-none absolute inset-x-0 top-1/2 z-10 flex -translate-y-1/2 justify-between px-2 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100">
             <button
               type="button"
               onClick={showPrevious}

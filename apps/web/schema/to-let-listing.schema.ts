@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { toLetFacilityInclusionsSchema } from "@bikalpo-project/api/lib/tolet-facilities";
 
 const httpUrl = z.string().trim().pipe(z.httpUrl());
 const optionalUrl = z.union([z.literal(""), httpUrl]);
@@ -54,9 +55,11 @@ export const listingDraftSchema = z.object({
     .regex(/^\d{4}-\d{2}-\d{2}$/, "Choose an available date"),
   preferredTenant: z.enum(["family", "bachelor", "office", "female", "any"]),
   hasInternet: z.boolean(),
+  facilityInclusions: toLetFacilityInclusionsSchema.default({}),
   otherFacilities: z.string().trim().max(2000),
   imageUrls: z.array(httpUrl).max(12),
   videoUrl: optionalUrl,
+  tourUrl: optionalUrl.default(""),
   visibility: z.enum(["public", "qr_only"]),
 });
 
