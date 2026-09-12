@@ -290,9 +290,10 @@ export default function ShopSettingsPage() {
             value={application?.businessCategory}
           />
           <DetailRow label="Business Address" value={businessAddress} />
-          <DetailRow label="District" value={application?.district} />
           <DetailRow label="Division" value={application?.division} />
-          <DetailRow label="Thana" value={application?.thana} />
+          <DetailRow label="District" value={application?.district} />
+          <DetailRow label="Upazila / Thana" value={application?.thana} />
+          <DetailRow label="Area" value={application?.area} />
         </ProfileSection>
 
         <ProfileSection

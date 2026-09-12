@@ -7,7 +7,10 @@
 import { z } from "zod";
 import { publicProcedure } from "../index";
 import { env } from "@bikalpo-project/env/server";
-import { normalizeBarikoiReversePlace } from "./barikoi-location";
+import {
+  normalizeBarikoiAutocompletePlace,
+  normalizeBarikoiReversePlace,
+} from "./barikoi-location";
 
 const BARIKOI_BASE = "https://barikoi.xyz/v2/api/search";
 
@@ -43,21 +46,11 @@ export const barikoiRouter = {
       );
       const data: any = await response.json();
 
-      if (data.status === 200 && data.places) {
-        return data.places as Array<{
-          id: number;
-          longitude: number;
-          latitude: number;
-          address: string;
-          address_bn: string;
-          city: string;
-          city_bn: string;
-          area: string;
-          area_bn: string;
-          postCode: number;
-          pType: string;
-          uCode: string;
-        }>;
+      if (data.status === 200 && Array.isArray(data.places)) {
+        return data.places.flatMap((place: Record<string, unknown>) => {
+          const normalized = normalizeBarikoiAutocompletePlace(place);
+          return normalized ? [normalized] : [];
+        });
       }
 
       return [];
