@@ -8,7 +8,6 @@ import {
     pgTable,
     serial,
     text,
-    timestamp,
     varchar,
 } from "drizzle-orm/pg-core";
 import { timestamps } from "./columns.helpers";
