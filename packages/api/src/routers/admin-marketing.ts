@@ -5,19 +5,11 @@ import { db } from "@bikalpo-project/db";
 import {
     marketingMaterial,
     marketingMaterialRequest,
-    user,
 } from "@bikalpo-project/db/schema";
 
 import { adminProcedure } from "../index";
 
 // ── Helpers ─────────────────────────────────────────────────────────
-async function generateRequestNumber(): Promise<string> {
-    const result = await db
-        .select({ cnt: count() })
-        .from(marketingMaterialRequest);
-    const next = (result[0]?.cnt ?? 0) + 1;
-    return `MR-${String(next).padStart(3, "0")}`;
-}
 
 // ── Router ──────────────────────────────────────────────────────────
 export const adminMarketingRouter = {
