@@ -6,7 +6,18 @@ export const retailerThanaSchema = z
   .max(100)
   .nullable()
   .optional();
-export const retailerRequiredThanaSchema = z.string().trim().min(2).max(100);
+export const retailerRequiredThanaSchema = z
+  .string()
+  .trim()
+  .min(2, "Upazila / Thana is required")
+  .max(150);
+
+export const retailerBusinessLocationSchema = z.object({
+  division: z.string().trim().min(2, "Division is required").max(100),
+  district: z.string().trim().min(2, "District is required").max(100),
+  thana: retailerRequiredThanaSchema,
+  area: z.string().trim().min(2, "Area is required").max(150),
+});
 
 const optionalHttpUrlSchema = z
   .string()
@@ -135,10 +146,7 @@ export const retailerRegistrationProfileSchema = z.object({
       tinNumber: nullableText(100),
       tradeLicenseNumber: nullableText(100),
       shopAddress: z.string().trim().min(5).max(500),
-      area: nullableText(100),
-      thana: retailerRequiredThanaSchema,
-      district: nullableText(100),
-      division: nullableText(100),
+      ...retailerBusinessLocationSchema.shape,
       postCode: nullableText(20),
     })
     .and(bangladeshCoordinates),

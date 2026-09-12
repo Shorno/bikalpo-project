@@ -1,9 +1,11 @@
 "use client";
 
+import { retailerBusinessLocationSchema } from "@bikalpo-project/api/routers/helpers/retailer-profile-fields";
 import { useQuery } from "@tanstack/react-query";
 import {
   ArrowLeft,
   Building2,
+  ChevronDown,
   ContactRound,
   FileText,
   Loader2,
@@ -18,8 +20,14 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { LocationPickerSection } from "@/components/features/onboarding/location-picker-section";
 import { FinancialSettingsSection } from "@/components/features/settings/financial-settings-section";
+import { PropertyLocationFields } from "@/components/features/to-let/property/property-location-fields";
 import ImageUploader from "@/components/ImageUploader";
 import { Button } from "@/components/ui/button";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -30,6 +38,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  normalizeBangladeshDistrict,
+  normalizeBangladeshDivision,
+} from "@/constants/bangladesh-locations";
 import {
   BUSINESS_NATURES,
   GENDERS,
@@ -97,6 +110,10 @@ type ProfileForm = {
   storeFrontPhoto: string;
   warehousePhoto: string;
 };
+
+type BusinessLocationErrors = Partial<
+  Record<"division" | "district" | "upazila" | "area", string>
+>;
 
 const DOCUMENT_FIELDS = [
   ["nidDocument", "National ID (NID)"],
@@ -184,6 +201,7 @@ function formFromProfile(
 ): ProfileForm {
   const { account, application } = profile;
   const documents = application.documentUrls ?? {};
+  const division = normalizeBangladeshDivision(text(application.division));
   return {
     profilePhotoUrl: text(application.profilePhotoUrl || account.image),
     ownerName: text(application.ownerName || account.ownerName || account.name),
@@ -213,8 +231,8 @@ function formFromProfile(
     shopAddress: text(account.shopAddress || application.shopAddress),
     area: text(application.area),
     thana: text(application.thana),
-    district: text(application.district),
-    division: text(application.division),
+    district: normalizeBangladeshDistrict(text(application.district), division),
+    division,
     postCode: text(application.postCode),
     latitude: coordinate(application.latitude || account.shopLat),
     longitude: coordinate(application.longitude || account.shopLng),
@@ -405,6 +423,7 @@ export function RetailerRegistrationProfileEditor() {
   const [initialForm, setInitialForm] = useState<ProfileForm>(EMPTY_FORM);
   const [activeUploads, setActiveUploads] = useState(0);
   const [financialEditorDirty, setFinancialEditorDirty] = useState(false);
+  const [showLocationErrors, setShowLocationErrors] = useState(false);
   const uploadedDocuments = useRef(new Map<string, string>());
   const cleanupSessionId = useRef(crypto.randomUUID());
   const navigationApproved = useRef(false);
@@ -429,6 +448,21 @@ export function RetailerRegistrationProfileEditor() {
     [form, initialForm],
   );
   const hasUnsavedChanges = isDirty || financialEditorDirty;
+  const locationResult = retailerBusinessLocationSchema.safeParse(form);
+  const locationErrors: BusinessLocationErrors = {};
+  if (!locationResult.success) {
+    for (const issue of locationResult.error.issues) {
+      const field = issue.path[0] === "thana" ? "upazila" : issue.path[0];
+      if (
+        field === "division" ||
+        field === "district" ||
+        field === "upazila" ||
+        field === "area"
+      ) {
+        locationErrors[field] = issue.message;
+      }
+    }
+  }
 
   useEffect(() => {
     const warn = (event: BeforeUnloadEvent) => {
@@ -543,6 +577,12 @@ export function RetailerRegistrationProfileEditor() {
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (!locationResult.success) {
+      setShowLocationErrors(true);
+      const firstField = Object.keys(locationErrors)[0];
+      document.getElementById(`property-${firstField}`)?.focus();
+      return;
+    }
     try {
       await mutation.mutateAsync({
         applicant: {
@@ -574,10 +614,7 @@ export function RetailerRegistrationProfileEditor() {
           tinNumber: nullable(form.tinNumber),
           tradeLicenseNumber: nullable(form.tradeLicenseNumber),
           shopAddress: form.shopAddress,
-          area: nullable(form.area),
-          thana: form.thana,
-          district: nullable(form.district),
-          division: nullable(form.division),
+          ...locationResult.data,
           postCode: nullable(form.postCode),
           latitude: form.latitude || null,
           longitude: form.longitude || null,
@@ -781,6 +818,7 @@ export function RetailerRegistrationProfileEditor() {
 
         <BusinessInformationFormSection
           form={form}
+          locationErrors={showLocationErrors ? locationErrors : {}}
           setForm={setForm}
           update={update}
           uploadFolder={uploadFolder}
@@ -953,12 +991,7 @@ export function RetailerRegistrationProfileEditor() {
             <Button
               type="submit"
               form="registration-profile-form"
-              disabled={
-                !isDirty ||
-                isSaving ||
-                financialEditorDirty ||
-                !form.thana.trim()
-              }
+              disabled={!isDirty || isSaving || financialEditorDirty}
               className="min-w-32 bg-[#003178] hover:bg-[#00255c]"
             >
               {mutation.isPending ? (
@@ -991,6 +1024,7 @@ function EditorSkeleton() {
 
 function BusinessInformationFormSection({
   form,
+  locationErrors,
   isSaving,
   onUploadStateChange,
   productTypes,
@@ -999,6 +1033,7 @@ function BusinessInformationFormSection({
   uploadFolder,
 }: {
   form: ProfileForm;
+  locationErrors: BusinessLocationErrors;
   isSaving: boolean;
   onUploadStateChange: (uploading: boolean) => void;
   productTypes: Array<{ id: number; name: string }>;
@@ -1139,36 +1174,116 @@ function BusinessInformationFormSection({
         </div>
       </div>
 
-      <LocationPickerSection
-        label="Business location"
-        inputId="business-location-search"
-        description="Search with Barikoi, use the current location, or drag the map pin."
-        summaryLocationLevel="thana"
-        data={{
-          address: form.shopAddress,
-          addressBn: "",
-          area: form.area,
-          thana: form.thana,
-          district: form.district,
-          division: form.division,
-          postCode: form.postCode,
-          latitude: form.latitude,
-          longitude: form.longitude,
-        }}
-        onUpdate={(location) =>
-          setForm((current) => ({
-            ...current,
-            shopAddress: location.address,
-            area: location.area,
-            thana: location.thana || "",
-            district: location.district,
-            division: location.division,
-            postCode: location.postCode,
-            latitude: location.latitude,
-            longitude: location.longitude,
-          }))
-        }
-      />
+      <fieldset disabled={isSaving} className="min-w-0 space-y-4">
+        <legend className="mb-2 text-sm font-medium">Business location</legend>
+        <p className="text-sm text-muted-foreground">
+          Select your division, district, upazila or thana, and area, then enter
+          the full business address.
+        </p>
+        <PropertyLocationFields
+          division={form.division}
+          district={form.district}
+          upazila={form.thana}
+          area={form.area}
+          errors={locationErrors}
+          onChange={(field, value) => {
+            const formField = field === "upazila" ? "thana" : field;
+            setForm((current) =>
+              current[formField] === value
+                ? current
+                : {
+                    ...current,
+                    [formField]: value,
+                    postCode: "",
+                    latitude: 0,
+                    longitude: 0,
+                  },
+            );
+          }}
+        />
+        <FormField id="business-address" label="Full Address *">
+          <Textarea
+            id="business-address"
+            value={form.shopAddress}
+            onChange={(event) => {
+              const shopAddress = event.target.value;
+              setForm((current) =>
+                current.shopAddress === shopAddress
+                  ? current
+                  : { ...current, shopAddress, latitude: 0, longitude: 0 },
+              );
+            }}
+            placeholder="Enter full business address"
+            minLength={5}
+            maxLength={500}
+            rows={3}
+            required
+          />
+        </FormField>
+        <FormField id="business-post-code" label="Post code (optional)">
+          <Input
+            id="business-post-code"
+            value={form.postCode}
+            onChange={(event) => update("postCode", event.target.value)}
+            maxLength={20}
+            className="sm:max-w-xs"
+          />
+        </FormField>
+        <Collapsible className="rounded-lg border p-4">
+          <CollapsibleTrigger asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              className="w-full justify-between px-0 hover:bg-transparent"
+            >
+              Map location (optional)
+              <ChevronDown className="size-4" aria-hidden="true" />
+            </Button>
+          </CollapsibleTrigger>
+          <p className="text-sm text-muted-foreground">
+            {form.latitude && form.longitude
+              ? "A map pin is saved for this address."
+              : "You can save without a map pin. Add one for directions."}
+          </p>
+          <CollapsibleContent className="pt-4">
+            <LocationPickerSection
+              label="Find on map"
+              inputId="business-location-search"
+              description="Search for the business address, use your current location, or drag the map pin to update the location fields."
+              required={false}
+              summaryLocationLevel="thana"
+              data={{
+                address: form.shopAddress,
+                addressBn: "",
+                area: form.area,
+                thana: form.thana,
+                district: form.district,
+                division: form.division,
+                postCode: form.postCode,
+                latitude: form.latitude,
+                longitude: form.longitude,
+              }}
+              onUpdate={(location) => {
+                const division = normalizeBangladeshDivision(location.division);
+                setForm((current) => ({
+                  ...current,
+                  shopAddress: location.address,
+                  area: location.area,
+                  thana: location.thana || "",
+                  district: normalizeBangladeshDistrict(
+                    location.district,
+                    division,
+                  ),
+                  division,
+                  postCode: location.postCode,
+                  latitude: location.latitude,
+                  longitude: location.longitude,
+                }));
+              }}
+            />
+          </CollapsibleContent>
+        </Collapsible>
+      </fieldset>
     </FormSection>
   );
 }
