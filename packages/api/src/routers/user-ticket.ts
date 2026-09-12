@@ -21,7 +21,7 @@ import {
     user,
 } from "@bikalpo-project/db/schema";
 import { ORPCError } from "@orpc/server";
-import { and, count, desc, eq, sql, asc, or } from "drizzle-orm";
+import { and, count, desc, eq, sql, asc, lt, or, isNull } from "drizzle-orm";
 import { z } from "zod";
 
 import { protectedProcedure } from "../index";
@@ -407,12 +407,6 @@ export const userTicketRouter = {
                 })
                 .returning();
 
-            if (!newTicket) {
-                throw new ORPCError("INTERNAL_SERVER_ERROR", {
-                    message: "Could not create support ticket",
-                });
-            }
-
             // Insert file attachments if provided
             if (input.attachments && input.attachments.length > 0) {
                 await db.insert(supportTicketAttachment).values(
@@ -556,6 +550,8 @@ export const userTicketRouter = {
         )
         .handler(async ({ context, input }) => {
             const userId = context.session.user.id;
+            const userRole = context.session.user.role;
+
             // Verify user is creator or assigned handler
             const [ticket] = await db
                 .select()

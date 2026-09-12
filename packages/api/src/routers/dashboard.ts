@@ -1,6 +1,7 @@
 import { db } from "@bikalpo-project/db";
 import { subscriptionStatus } from "@bikalpo-project/db/retailer-subscription-policy";
 import {
+    area,
     retailerSubscription,
     deliveryGroup,
     deliveryGroupInvoice,

@@ -1,4 +1,4 @@
-import { and, asc, count, eq, isNull } from "drizzle-orm";
+import { and, asc, count, desc, eq, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@bikalpo-project/db";
 import { area, sellerAreaMapping } from "@bikalpo-project/db/schema";

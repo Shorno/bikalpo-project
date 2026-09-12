@@ -1,4 +1,4 @@
-import { and, count, desc, eq, gte, isNotNull, sum } from "drizzle-orm";
+import { and, count, desc, eq, gte, isNotNull, sql, sum } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@bikalpo-project/db";
 import { order, orderItem, product } from "@bikalpo-project/db/schema";
@@ -234,6 +234,7 @@ export const adminOrderRouter = {
                     } else if (update.itemId) {
                         const existingItem = existingOrder.items.find((i) => i.id === update.itemId);
                         if (existingItem) {
+                            const quantityDiff = update.quantity - existingItem.quantity;
 
                             const productData = await tx.query.product.findFirst({
                                 where: eq(product.id, update.productId),

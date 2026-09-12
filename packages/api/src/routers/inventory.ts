@@ -1,6 +1,6 @@
 import { db } from "@bikalpo-project/db";
 import { inventory } from "@bikalpo-project/db/schema";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { adminProcedure } from "../index";
 
@@ -81,7 +81,7 @@ export const inventoryRouter = {
             availableQty: z.string(),
             reason: z.string().optional(),
         }))
-        .handler(async ({ input }) => {
+        .handler(async ({ context, input }) => {
             // Check if inventory record exists
             const existing = await db.query.inventory.findFirst({
                 where: and(

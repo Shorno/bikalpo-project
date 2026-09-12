@@ -3,7 +3,6 @@
 import * as React from "react"
 import {
   DayPicker,
-  Root as DayPickerRoot,
   getDefaultClassNames,
   type DayButton,
   type Locale,
@@ -137,9 +136,9 @@ function Calendar({
       components={{
         Root: ({ className, rootRef, ...props }) => {
           return (
-            <DayPickerRoot
+            <div
               data-slot="calendar"
-              rootRef={rootRef}
+              ref={rootRef}
               className={cn(className)}
               {...props}
             />

@@ -12,7 +12,7 @@ import {
 	warehousePosSaleItem,
 } from "@bikalpo-project/db/schema";
 import { ORPCError } from "@orpc/server";
-import { and, desc, eq, gte, inArray, lte, type SQL } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, lte, sql, type SQL } from "drizzle-orm";
 import { z } from "zod";
 import { warehouseProcedure } from "../index";
 
