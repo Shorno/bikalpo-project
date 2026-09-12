@@ -9,7 +9,9 @@
       "default": "./src/*.ts"
     }
   },
-  "scripts": {},
+  "scripts": {
+    "dev:migrate-business-registrations": "tsx --env-file=../../apps/server/.env src/scripts/dev-migrate-business-registrations.ts"
+  },
   "dependencies": {
     "@bikalpo-project/auth": "workspace:*",
     "@bikalpo-project/db": "workspace:*",
