@@ -334,7 +334,72 @@ test("registration profile accepts the complete owner-editable application contr
   );
 });
 
+test("registration profile saves dropdown locations without a map pin", () => {
+  const business = {
+    ...completeRegistrationProfile.business,
+    division: "  Dhaka  ",
+    district: "  Dhaka  ",
+    thana: "  Adabor  ",
+    area: "  Japan Garden City  ",
+    latitude: null,
+    longitude: null,
+  };
+  const parsed = retailerRegistrationProfileSchema.parse({
+    ...completeRegistrationProfile,
+    business,
+  });
+
+  assert.equal(parsed.business.division, "Dhaka");
+  assert.equal(parsed.business.district, "Dhaka");
+  assert.equal(parsed.business.thana, "Adabor");
+  assert.equal(parsed.business.area, "Japan Garden City");
+  assert.equal(parsed.business.latitude, null);
+  assert.equal(parsed.business.longitude, null);
+});
+
+test("registration profile requires every dropdown level before saving", () => {
+  for (const field of ["division", "district", "thana", "area"]) {
+    for (const value of [null, "", "  "]) {
+      const parsed = retailerRegistrationProfileSchema.safeParse({
+        ...completeRegistrationProfile,
+        business: { ...completeRegistrationProfile.business, [field]: value },
+      });
+      assert.equal(parsed.success, false, `${field}: ${value}`);
+    }
+  }
+});
+
+test("registration profile supports the Tolet manual location length limit", () => {
+  for (const field of ["thana", "area"]) {
+    const input = {
+      ...completeRegistrationProfile,
+      business: {
+        ...completeRegistrationProfile.business,
+        [field]: `  ${"a".repeat(150)}  `,
+      },
+    };
+    assert.equal(retailerRegistrationProfileSchema.safeParse(input).success, true);
+    assert.equal(
+      retailerRegistrationProfileSchema.safeParse({
+        ...input,
+        business: { ...input.business, [field]: "a".repeat(151) },
+      }).success,
+      false,
+    );
+  }
+});
+
 test("registration profile requires coordinate pairs and safe document URLs", () => {
+  assert.equal(
+    retailerRegistrationProfileSchema.safeParse({
+      ...completeRegistrationProfile,
+      business: {
+        ...completeRegistrationProfile.business,
+        longitude: null,
+      },
+    }).success,
+    false,
+  );
   assert.equal(
     retailerRegistrationProfileSchema.safeParse({
       ...completeRegistrationProfile,

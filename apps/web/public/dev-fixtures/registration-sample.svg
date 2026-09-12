@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="675" viewBox="0 0 900 675">
+  <rect width="900" height="675" fill="#f1f5f9"/>
+  <rect x="40" y="40" width="820" height="595" rx="24" fill="#fff" stroke="#cbd5e1" stroke-width="3"/>
+  <g fill="#334155" text-anchor="middle" font-family="Arial, sans-serif">
+    <text x="450" y="230" font-size="30" font-weight="bold">BIKALPO DEVELOPMENT SAMPLE</text>
+    <text x="450" y="310" font-size="23">Registration attachment placeholder</text>
+    <text x="450" y="390" font-size="21">No real document or business photo was supplied.</text>
+    <text x="450" y="470" font-size="23" font-weight="bold" fill="#b45309">TEST DATA — NOT VALID FOR VERIFICATION</text>
+  </g>
+</svg>

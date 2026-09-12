@@ -11,10 +11,13 @@ import type {
   LocationAddress,
   LocationData,
 } from "@/constants/seller-registration";
-
 import type { BarikoiPlace } from "@/hooks/use-barikoi-autocomplete";
 import { useBarikoiAutocomplete } from "@/hooks/use-barikoi-autocomplete";
 import { useBarikoiReverseGeocode } from "@/hooks/use-barikoi-reverse-geocode";
+import {
+  getCurrentPositionWithFallback,
+  getGeolocationErrorMessage,
+} from "@/lib/browser-geolocation";
 
 import { RegistrationFieldLabel } from "./registration-primitives";
 
@@ -139,7 +142,7 @@ export function LocationPickerSection({
     });
   };
 
-  const handleUseCurrentLocation = () => {
+  const handleUseCurrentLocation = async () => {
     setLocationError("");
 
     if (!navigator.geolocation) {
@@ -148,55 +151,56 @@ export function LocationPickerSection({
     }
 
     setIsLocating(true);
-    navigator.geolocation.getCurrentPosition(
-      async ({ coords }) => {
-        const { latitude, longitude } = coords;
-        const isInBangladesh =
-          latitude >= 20.5 &&
-          latitude <= 26.7 &&
-          longitude >= 87.9 &&
-          longitude <= 92.7;
+    let currentPosition: GeolocationPosition;
+    try {
+      currentPosition = await getCurrentPositionWithFallback(
+        navigator.geolocation,
+      );
+    } catch (error) {
+      setLocationError(getGeolocationErrorMessage(error));
+      setIsLocating(false);
+      return;
+    }
 
-        if (!isInBangladesh) {
-          setLocationError(
-            "Your current location appears to be outside Bangladesh. Search for the business address or adjust the pin instead.",
-          );
-          setIsLocating(false);
-          return;
-        }
+    try {
+      const { latitude, longitude } = currentPosition.coords;
+      const isInBangladesh =
+        latitude >= 20.5 &&
+        latitude <= 26.7 &&
+        longitude >= 87.9 &&
+        longitude <= 92.7;
 
-        const resolved = await reverseGeocode(latitude, longitude);
-        if (!resolved) {
-          setLocationError(
-            "We found your coordinates but could not resolve the address. Try again or adjust the pin.",
-          );
-          setIsLocating(false);
-          return;
-        }
-
-        setSearchQuery(resolved.address || "");
-        onUpdate({
-          ...data,
-          address: resolved.address || "",
-          addressBn: "",
-          area: resolved.area || "",
-          thana: resolved.thana || "",
-          district: resolved.district || "",
-          division: resolved.division || "",
-          postCode: resolved.postCode || "",
-          latitude,
-          longitude,
-        });
-        setIsLocating(false);
-      },
-      () => {
+      if (!isInBangladesh) {
         setLocationError(
-          "We could not access your current location. Allow location access or search for the business address.",
+          "Your current location appears to be outside Bangladesh. Search for the business address or adjust the pin instead.",
         );
-        setIsLocating(false);
-      },
-      { enableHighAccuracy: true, timeout: 10000 },
-    );
+        return;
+      }
+
+      const resolved = await reverseGeocode(latitude, longitude);
+      if (!resolved) {
+        setLocationError(
+          "We found your coordinates but could not resolve the address. Try again or adjust the pin.",
+        );
+        return;
+      }
+
+      setSearchQuery(resolved.address || "");
+      onUpdate({
+        ...data,
+        address: resolved.address || "",
+        addressBn: "",
+        area: resolved.area || "",
+        thana: resolved.thana || "",
+        district: resolved.district || "",
+        division: resolved.division || "",
+        postCode: resolved.postCode || "",
+        latitude,
+        longitude,
+      });
+    } finally {
+      setIsLocating(false);
+    }
   };
 
   const handleMapPositionChange = (
@@ -295,7 +299,7 @@ export function LocationPickerSection({
         </div>
 
         {showSuggestions && suggestions.length > 0 && (
-          <div className="absolute z-50 mt-1 max-h-60 w-full overflow-y-auto rounded-lg border border-border bg-popover">
+          <div className="absolute z-[1100] mt-1 max-h-60 w-full overflow-y-auto rounded-lg border border-border bg-popover shadow-lg">
             {suggestions.map((place) => (
               <button
                 key={place.id}

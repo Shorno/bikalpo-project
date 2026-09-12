@@ -6,6 +6,38 @@ function text(value: unknown) {
   return "";
 }
 
+function finiteNumber(value: unknown) {
+  const number = typeof value === "number" ? value : Number(text(value));
+  return Number.isFinite(number) ? number : null;
+}
+
+/** Normalize Barikoi autocomplete values before they cross the API boundary. */
+export function normalizeBarikoiAutocompletePlace(
+  place: Record<string, unknown>,
+) {
+  const id = finiteNumber(place.id);
+  const latitude = finiteNumber(place.latitude);
+  const longitude = finiteNumber(place.longitude);
+
+  if (id === null || latitude === null || longitude === null) return null;
+
+  return {
+    id,
+    longitude,
+    latitude,
+    address: text(place.address),
+    address_bn: text(place.address_bn),
+    city: text(place.city),
+    city_bn: text(place.city_bn),
+    area: text(place.area),
+    area_bn: text(place.area_bn),
+    sub_district: text(place.sub_district),
+    postCode: finiteNumber(place.postCode) ?? 0,
+    pType: text(place.pType),
+    uCode: text(place.uCode),
+  };
+}
+
 /** Normalize Barikoi's optional administrative fields for all reverse-geocode consumers. */
 export function normalizeBarikoiReversePlace(place: BarikoiReversePlace) {
   return {

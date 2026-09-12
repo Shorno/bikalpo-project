@@ -1,5 +1,11 @@
 # Retail General Settings business-profile data inventory
 
+## Business location dropdowns (September 2026)
+
+The business editor opened from General Settings reuses Tolet's `PropertyLocationFields`: Division → District → Upazila / Thana → Area, with the same parent-specific lists, local search, and “not listed” entries. The retailer stores Upazila / Thana in its existing `thana` column, and General Settings displays all four location fields.
+
+All four selections and the full business address are required when saving the registration profile. Area and Thana accept up to 150 characters, matching Tolet. Post code and the collapsible map picker are optional. Saved Division/District names use the existing Bangladesh spelling normalizers; saved free-text Thana/Area values stay visible. Changing a dropdown clears its descendants, the previous post code, and both coordinates; editing the full address also clears the coordinates. Reselecting the same option preserves them. No database migration is needed.
+
 ## Reference-field alignment (September 2026)
 
 The retailer settings page now follows the supplied wireframe's field labels and order: Type, Nature, completion, Plan, Since; Business Info; Contact Info; and User Plan. The earlier recommendations below to omit unsupported rows are superseded by this implementation. All requested rows remain visible, with missing contacts shown as “Not provided” and unavailable subscription details shown as “Not available.” Seller approval is no longer used as subscription status.
