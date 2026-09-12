@@ -1,5 +1,6 @@
 import { ArrowRight, Eye, Phone } from "lucide-react";
 import Link from "next/link";
+import { toLetCategoryLabel as humanize } from "@bikalpo-project/api/lib/tolet-categories";
 import { ListingImageCarousel } from "./listing-image-carousel";
 
 export interface PublicUnitListing {
@@ -34,13 +35,6 @@ interface PublicUnitListingCardProps {
   listing: PublicUnitListing;
   href?: string | null;
   phone?: string;
-}
-
-function humanize(value: string) {
-  return value
-    .split("_")
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ");
 }
 
 export function PublicUnitListingCard({

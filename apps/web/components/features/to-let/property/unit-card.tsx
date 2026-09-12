@@ -1,4 +1,5 @@
 "use client";
+import { toLetUnitCapabilities } from "@bikalpo-project/api/lib/tolet-categories";
 
 import {
   Bath,
@@ -83,15 +84,10 @@ export function UnitCard({
   location: string;
 }) {
   const listing = unit.currentListing;
-  const residential = [
-    "family_flat",
-    "bachelor_room",
-    "sublet",
-    "other",
-  ].includes(unit.unitType);
-  const showBathrooms =
-    residential || ["office", "shop", "warehouse"].includes(unit.unitType);
-  const showBalconies = residential || unit.unitType === "office";
+  const capabilities = toLetUnitCapabilities(unit.unitType);
+  const residential = capabilities.bedrooms;
+  const showBathrooms = capabilities.bathrooms;
+  const showBalconies = capabilities.balconies;
   const prefersReducedMotion = usePrefersReducedMotion();
   const markRented = useMarkToLetUnitRented();
   const [slideIndex, setSlideIndex] = useState(0);
@@ -110,7 +106,7 @@ export function UnitCard({
           {
             type: "video" as const,
             url: listing.videoUrl,
-            label: "Open Listing video / 360° tour",
+            label: "Open Listing video",
           },
         ]
       : []),

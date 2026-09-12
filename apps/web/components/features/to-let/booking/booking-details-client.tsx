@@ -18,6 +18,9 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
+import { toLetCategoryLabel } from "@bikalpo-project/api/lib/tolet-categories";
+import { ToLetAlertManager } from "@/components/features/to-let/alerts/to-let-alert-manager";
+import type { ToLetMarketRentalType } from "@/lib/to-let-marketplace";
 import {
   ToLetDetailHero,
   ToLetDetailsSection,
@@ -39,11 +42,8 @@ import {
 } from "@/hooks/use-to-let-booking-api";
 import {
   rentalFromResponse,
-  type ToLetAlertCategory,
   type ToLetRentalContractView,
-  toLetAlertCategoryOptions,
   useAddToLetRentalComment,
-  useCreateToLetAlert,
   useRequestToLetLeave,
   useToLetRental,
   useVerifyToLetRentPayment,
@@ -355,27 +355,7 @@ function BookingDetails({ booking }: { booking: ToLetBookingRequestView }) {
     ? rentalStatusPresentation[contract.status]
     : statusPresentation[booking.status];
   const leave = useRequestToLetLeave();
-  const createAlert = useCreateToLetAlert();
   const [alertOpen, setAlertOpen] = useState(false);
-  const [alert, setAlert] = useState<{
-    preferredCategory: ToLetAlertCategory;
-    preferredLocation: string;
-    minimumSizeSqFt: number;
-    minimumBedrooms: number;
-    minimumBathrooms: number;
-    minimumBalconies: number;
-    balconyPreference: "required" | "optional" | "not_required";
-    preferredFloor: string;
-  }>({
-    preferredCategory: snapshot.unit.unitType as ToLetAlertCategory,
-    preferredLocation: snapshot.property.location,
-    minimumSizeSqFt: snapshot.unit.sizeSqFt,
-    minimumBedrooms: snapshot.unit.bedrooms,
-    minimumBathrooms: snapshot.unit.bathrooms,
-    minimumBalconies: snapshot.unit.balconies,
-    balconyPreference: snapshot.unit.balconies > 0 ? "required" : "optional",
-    preferredFloor: "any",
-  });
   const facilities = snapshot.property.facilities;
   const images = Array.from(
     new Set(
@@ -388,22 +368,34 @@ function BookingDetails({ booking }: { booking: ToLetBookingRequestView }) {
   function openLeaveForm() {
     setAlertOpen(true);
     requestAnimationFrame(() => {
-      const field = document.querySelector<HTMLSelectElement>("#alert-builder select");
+      const field = document.querySelector<HTMLSelectElement>(
+        "#alert-builder select",
+      );
       field?.focus({ preventScroll: true });
-      document.getElementById("alert-builder")?.scrollIntoView({ block: "start" });
+      document
+        .getElementById("alert-builder")
+        ?.scrollIntoView({ block: "start" });
     });
     if (contract?.status === "active" && !leave.isPending) {
       leave.mutate({ bookingCode: booking.bookingCode });
     }
   }
 
-  if (booking.rentalSummary?.status === "completed" || contract?.status === "completed" ||
-      (booking.rentalSummary && rentalQuery.isError)) {
+  if (
+    booking.rentalSummary?.status === "completed" ||
+    contract?.status === "completed" ||
+    (booking.rentalSummary && rentalQuery.isError)
+  ) {
     return (
       <div className="rounded-xl border bg-white p-6">
         <h1 className="text-xl font-semibold">Rental details unavailable</h1>
-        <p className="mt-2 text-sm text-gray-500">Details access ends with the rental period. Completed rentals remain in Rental History. If your rental is still current, please try again.</p>
-        <Button asChild variant="outline" className="mt-4"><Link href="/account/to-let">Back to My Bookings</Link></Button>
+        <p className="mt-2 text-sm text-gray-500">
+          Details access ends with the rental period. Completed rentals remain
+          in Rental History. If your rental is still current, please try again.
+        </p>
+        <Button asChild variant="outline" className="mt-4">
+          <Link href="/account/to-let">Back to My Bookings</Link>
+        </Button>
       </div>
     );
   }
@@ -417,6 +409,7 @@ function BookingDetails({ booking }: { booking: ToLetBookingRequestView }) {
       </Button>
 
       <ToLetDetailHero
+        tourUrl={snapshot.tourUrl}
         documentOrder
         imageUrls={images}
         imageAlt={snapshot.title}
@@ -455,8 +448,18 @@ function BookingDetails({ booking }: { booking: ToLetBookingRequestView }) {
         actions={
           <>
             {contract?.status === "active" || contract?.status === "leaving" ? (
-              <Button onClick={openLeaveForm} disabled={leave.isPending} aria-expanded={alertOpen} aria-controls="alert-builder">
-                  <DoorOpen className="size-4" /> {leave.isPending ? "Scheduling…" : contract.status === "leaving" ? "Leaving · Create alert" : "Leave"}
+              <Button
+                onClick={openLeaveForm}
+                disabled={leave.isPending}
+                aria-expanded={alertOpen}
+                aria-controls="alert-builder"
+              >
+                <DoorOpen className="size-4" />{" "}
+                {leave.isPending
+                  ? "Scheduling…"
+                  : contract.status === "leaving"
+                    ? "Leaving · Create alert"
+                    : "Leave"}
               </Button>
             ) : (
               <Button
@@ -544,7 +547,7 @@ function BookingDetails({ booking }: { booking: ToLetBookingRequestView }) {
             />
             <ToLetInfoTile
               label="Listing category"
-              value={humanize(snapshot.unit.unitType)}
+              value={toLetCategoryLabel(snapshot.unit.unitType)}
             />
             <ToLetInfoTile
               label="Floor number"
@@ -554,27 +557,8 @@ function BookingDetails({ booking }: { booking: ToLetBookingRequestView }) {
               label="Unit size"
               value={`${snapshot.unit.sizeSqFt.toLocaleString()} sq ft`}
             />
-            <ToLetInfoTile label="Bedrooms" value={snapshot.unit.bedrooms} />
+            <ToLetInfoTile label="Balcony" value={snapshot.unit.balconies} />
             <ToLetInfoTile label="Bathrooms" value={snapshot.unit.bathrooms} />
-            <ToLetInfoTile label="Balconies" value={snapshot.unit.balconies} />
-            <ToLetInfoTile
-              label="Preferred tenant"
-              value={tenantLabel(snapshot.preferredTenant)}
-            />
-            <ToLetInfoTile
-              label="Desired move-in"
-              value={formatDate(booking.desiredMoveInDate)}
-            />
-            <ToLetInfoTile
-              label={
-                booking.status === "accepted" ? "Booked on" : "Requested on"
-              }
-              value={formatDate(booking.respondedAt ?? booking.createdAt, true)}
-            />
-            <ToLetInfoTile label="Listing status" value={status.label} />
-          </div>
-
-          <div className="mt-5 grid gap-3 sm:grid-cols-3">
             <ToLetFacilityItem
               label="Drawing room"
               available={snapshot.unit.hasDrawingRoom}
@@ -587,16 +571,38 @@ function BookingDetails({ booking }: { booking: ToLetBookingRequestView }) {
               label="Kitchen"
               available={snapshot.unit.hasKitchen}
             />
+            <ToLetInfoTile
+              label="Preferred tenant"
+              value={tenantLabel(snapshot.preferredTenant)}
+            />
           </div>
 
           <div className="mt-5 border-t border-gray-100 pt-5">
-            <p className="text-sm font-semibold text-gray-900">Description</p>
+            <p className="text-sm font-semibold text-gray-900">
+              Unit Description
+            </p>
             <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-gray-700">
               {snapshot.unit.description ||
                 snapshot.description ||
                 snapshot.property.description ||
                 "No description was captured with this booking."}
             </p>
+          </div>
+          <div className="mt-5 grid gap-4 sm:grid-cols-2">
+            <ToLetInfoTile
+              label={
+                booking.status === "accepted" ? "Booked on" : "Requested on"
+              }
+              value={formatDate(booking.respondedAt ?? booking.createdAt, true)}
+            />
+            <ToLetInfoTile label="Listing status" value={status.label} />
+          </div>
+          <div className="mt-5 grid gap-4 border-t border-gray-100 pt-5 sm:grid-cols-2">
+            <ToLetInfoTile label="Bedrooms" value={snapshot.unit.bedrooms} />
+            <ToLetInfoTile
+              label="Desired move-in"
+              value={formatDate(booking.desiredMoveInDate)}
+            />
           </div>
         </ToLetDetailsSection>
 
@@ -612,52 +618,52 @@ function BookingDetails({ booking }: { booking: ToLetBookingRequestView }) {
             <ToLetFacilityItem
               label="Water supply"
               available={facilities?.hasWaterSupply}
-              included={facilities?.hasWaterSupply}
+              included={snapshot.facilityInclusions?.water ?? null}
             />
             <ToLetFacilityItem
               label="Gas connection"
               available={facilities?.hasGasConnection}
-              included={facilities?.hasGasConnection}
+              included={snapshot.facilityInclusions?.gas ?? null}
             />
             <ToLetFacilityItem
               label="Electricity"
               available={facilities?.hasElectricity}
-              included={facilities?.hasElectricity}
+              included={snapshot.facilityInclusions?.electricity ?? null}
             />
             <ToLetFacilityItem
               label="Internet"
               available={snapshot.hasInternet}
-              included={snapshot.hasInternet}
+              included={snapshot.facilityInclusions?.internet ?? null}
             />
             <ToLetFacilityItem
               label="Lift"
               available={facilities?.hasLift}
-              included={facilities?.hasLift}
+              included={snapshot.facilityInclusions?.lift ?? null}
             />
             <ToLetFacilityItem
               label="Parking"
               available={facilities?.hasParking}
-              included={facilities?.hasParking}
+              included={snapshot.facilityInclusions?.parking ?? null}
             />
             <ToLetFacilityItem
               label="Generator"
               available={facilities?.hasGenerator}
-              included={facilities?.hasGenerator}
+              included={snapshot.facilityInclusions?.generator ?? null}
             />
             <ToLetFacilityItem
               label="Security"
               available={facilities?.hasSecurityGuard}
-              included={facilities?.hasSecurityGuard}
+              included={snapshot.facilityInclusions?.security ?? null}
             />
             <ToLetFacilityItem
               label="CCTV"
               available={facilities?.hasCctv}
-              included={facilities?.hasCctv}
+              included={snapshot.facilityInclusions?.cctv ?? null}
             />
             <ToLetFacilityItem
               label="Furnished"
               available={snapshot.unit.isFurnished}
-              included={snapshot.unit.isFurnished}
+              included={snapshot.facilityInclusions?.furnished ?? null}
             />
           </div>
           {snapshot.otherFacilities ? (
@@ -759,158 +765,48 @@ function BookingDetails({ booking }: { booking: ToLetBookingRequestView }) {
           </ToLetDetailsSection>
         ) : null}
 
-        {alertOpen && <ToLetDetailsSection
-          id="alert-builder"
-          icon={Bell}
-          eyebrow="Create To-Let alert"
-          title="Prepare your next rental preference"
-          description="Prefilled from your current rental. Save your category, location and minimum size to receive matching rental alerts. Closing this form does not cancel your scheduled leave."
-          embedded
-        >
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            <label className="text-xs font-medium text-gray-700">
-              Preferred category
-              <select
-                className="mt-1 h-9 w-full rounded-md border border-gray-200 bg-white px-3"
-                value={alert.preferredCategory}
-                onChange={(event) =>
-                  setAlert((current) => ({
-                    ...current,
-                    preferredCategory: event.target.value as ToLetAlertCategory,
-                  }))
-                }
-              >
-                {toLetAlertCategoryOptions.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="text-xs font-medium text-gray-700">
-              Preferred location
-              <Input
-                className="mt-1"
-                value={alert.preferredLocation}
-                onChange={(event) =>
-                  setAlert((current) => ({
-                    ...current,
-                    preferredLocation: event.target.value,
-                  }))
-                }
-              />
-            </label>
-            <label className="text-xs font-medium text-gray-700">
-              Minimum size
-              <Input
-                className="mt-1"
-                type="number"
-                min={0}
-                value={alert.minimumSizeSqFt}
-                onChange={(event) =>
-                  setAlert((current) => ({
-                    ...current,
-                    minimumSizeSqFt: Number(event.target.value),
-                  }))
-                }
-              />
-            </label>
-            <label className="text-xs font-medium text-gray-700">
-              Bedrooms
-              <Input
-                className="mt-1"
-                type="number"
-                min={0}
-                value={alert.minimumBedrooms}
-                onChange={(event) =>
-                  setAlert((current) => ({
-                    ...current,
-                    minimumBedrooms: Number(event.target.value),
-                  }))
-                }
-              />
-            </label>
-            <label className="text-xs font-medium text-gray-700">
-              Bathrooms
-              <Input
-                className="mt-1"
-                type="number"
-                min={0}
-                value={alert.minimumBathrooms}
-                onChange={(event) =>
-                  setAlert((current) => ({
-                    ...current,
-                    minimumBathrooms: Number(event.target.value),
-                  }))
-                }
-              />
-            </label>
-            <label className="text-xs font-medium text-gray-700">
-              Minimum balconies
-              <Input
-                className="mt-1"
-                type="number"
-                min={0}
-                value={alert.minimumBalconies}
-                onChange={(event) =>
-                  setAlert((current) => ({
-                    ...current,
-                    minimumBalconies: Number(event.target.value),
-                  }))
-                }
-              />
-            </label>
-            <label className="text-xs font-medium text-gray-700">
-              Balcony preference
-              <select
-                className="mt-1 h-9 w-full rounded-md border border-gray-200 bg-white px-3"
-                value={alert.balconyPreference}
-                onChange={(event) =>
-                  setAlert((current) => ({
-                    ...current,
-                    balconyPreference: event.target.value as
-                      | "required"
-                      | "optional"
-                      | "not_required",
-                  }))
-                }
-              >
-                <option value="required">Required</option>
-                <option value="optional">Optional</option>
-                <option value="not_required">Not required</option>
-              </select>
-            </label>
-            <label className="text-xs font-medium text-gray-700">
-              Preferred floor
-              <Input
-                className="mt-1"
-                value={alert.preferredFloor}
-                onChange={(event) =>
-                  setAlert((current) => ({
-                    ...current,
-                    preferredFloor: event.target.value,
-                  }))
-                }
-              />
-            </label>
-          </div>
-          <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-gray-100 pt-5">
-            <p className="text-xs text-gray-500">
-              Details remain accessible through the contract end date. Save your next rental preferences separately.
-            </p>
-            {leave.isError && <p role="alert" className="text-sm text-red-600">{leave.error.message} <button type="button" className="underline" onClick={openLeaveForm}>Retry scheduling leave</button></p>}
-            <Button variant="outline" onClick={() => setAlertOpen(false)}>Close form</Button>
-            <Button
-              disabled={createAlert.isPending || leave.isPending || leave.isError || (contract?.status !== "leaving" && !leave.isSuccess)}
-              onClick={() =>
-                createAlert.mutate(alert, { onSuccess: () => setAlertOpen(false) })
+        {alertOpen && (
+          <ToLetDetailsSection
+            id="alert-builder"
+            icon={Bell}
+            eyebrow="Create To-Let alert"
+            title="Prepare your next rental preference"
+            description="Prefilled from your current rental. Save your category, location and minimum size to receive matching rental alerts. Closing this form does not cancel your scheduled leave."
+            embedded
+          >
+            {leave.isError && (
+              <p role="alert" className="mb-4 text-sm text-red-600">
+                {leave.error.message}{" "}
+                <button
+                  type="button"
+                  className="underline"
+                  onClick={openLeaveForm}
+                >
+                  Retry scheduling leave
+                </button>
+              </p>
+            )}
+            <ToLetAlertManager
+              query={snapshot.property.location}
+              selectedType={snapshot.unit.unitType as ToLetMarketRentalType}
+              initialPreferences={{
+                minimumSizeSqFt: snapshot.unit.sizeSqFt,
+                minimumBedrooms: snapshot.unit.bedrooms,
+                minimumBathrooms: snapshot.unit.bathrooms,
+                minimumBalconies: snapshot.unit.balconies,
+              }}
+              showSavedAlerts={false}
+              focusOnOpen
+              disabled={
+                leave.isPending ||
+                leave.isError ||
+                (contract?.status !== "leaving" && !leave.isSuccess)
               }
-            >
-              <Bell className="size-4" />
-              {createAlert.isPending ? "Saving…" : "Save alert"}
-            </Button>
-          </div>
-        </ToLetDetailsSection>}
+              onSaved={() => setAlertOpen(false)}
+              onClose={() => setAlertOpen(false)}
+            />
+          </ToLetDetailsSection>
+        )}
 
         {contract ? (
           <CommentsSection

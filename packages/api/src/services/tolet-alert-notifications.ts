@@ -1,5 +1,5 @@
 import { db } from "@bikalpo-project/db";
-import { toletAlertNotification, toletProperty, toletRentalAlert, toletUnit, toletUnitListing } from "@bikalpo-project/db/schema";
+import { toletProperty, toletRentalAlert, toletUnit, toletUnitListing } from "@bikalpo-project/db/schema";
 import { and, eq, gte, ne, or, sql } from "drizzle-orm";
 import { alertLocationTerms } from "../routers/helpers/tolet-alert-matching";
 import { toLetListingCutoff } from "../routers/helpers/tolet-marketplace-visibility";

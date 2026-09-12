@@ -1,4 +1,8 @@
 import { unitAddressSchema } from "@bikalpo-project/api/lib/tolet-unit-address";
+import {
+  toLetCategoryLabel,
+  toLetUnitTypes,
+} from "@bikalpo-project/api/lib/tolet-categories";
 import { z } from "zod";
 
 const httpUrl = z.string().trim().max(2048).pipe(z.httpUrl());
@@ -40,6 +44,7 @@ export const propertyTypeValues = [
   "office",
   "market",
   "warehouse",
+  "factory",
   "mixed_use",
   "other",
 ] as const;
@@ -51,6 +56,7 @@ export const propertyTypes = [
   { value: "office", label: "Office" },
   { value: "market", label: "Market" },
   { value: "warehouse", label: "Warehouse" },
+  { value: "factory", label: "Factory" },
   { value: "mixed_use", label: "Mixed Use" },
   { value: "other", label: "Other" },
 ] as const;
@@ -71,27 +77,11 @@ export const buildingTypes = [
   { value: "other", label: "Other" },
 ] as const;
 
-export const unitTypeValues = [
-  "family_flat",
-  "bachelor_room",
-  "office",
-  "shop",
-  "warehouse",
-  "garage",
-  "sublet",
-  "other",
-] as const;
-
-export const unitTypes = [
-  { value: "family_flat", label: "Family Flat" },
-  { value: "bachelor_room", label: "Bachelor Room" },
-  { value: "office", label: "Office" },
-  { value: "shop", label: "Shop" },
-  { value: "warehouse", label: "Warehouse" },
-  { value: "garage", label: "Garage" },
-  { value: "sublet", label: "Sublet" },
-  { value: "other", label: "Other" },
-] as const;
+export const unitTypeValues = toLetUnitTypes;
+export const unitTypes = unitTypeValues.map((value) => ({
+  value,
+  label: toLetCategoryLabel(value),
+}));
 
 export const propertyBasicSchema = z.object({
   name: z.string().trim().min(2, "Property name is required").max(200),

@@ -11,7 +11,8 @@ import {
 } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
+import { checkAuth } from "@/utils/auth";
 import { RequestBookingButton } from "@/components/features/to-let/booking/request-booking-dialog";
 import { ListingViewRecorder } from "@/components/features/to-let/listing-view-recorder";
 import {
@@ -28,13 +29,14 @@ import {
   getToLetQrUnitListingByCode,
 } from "@/lib/public-data";
 
-// Public display data uses the same cache window as product details.
-// Booking mutations still validate current availability in the database.
-export const revalidate = 30;
+// Session checks must run on every request, never in a shared page cache.
+// This authenticated page intentionally does not share a full-route cache.
+export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
   title: "To-Let Listing",
   description: "View a current To-Let listing and its booking status.",
+  robots: { index: false, follow: false },
 };
 
 interface PublicListingPageProps {
@@ -97,7 +99,15 @@ export default async function PublicListingPage({
   searchParams,
 }: PublicListingPageProps) {
   const [{ listingCode }, query] = await Promise.all([params, searchParams]);
-  const { qrToken } = query ?? {};
+  const qrToken =
+    typeof query?.qrToken === "string" ? query.qrToken : undefined;
+  const returnTo = qrToken
+    ? `/to-let/qr/${encodeURIComponent(qrToken)}/listings/${encodeURIComponent(listingCode)}`
+    : `/to-let/listings/${encodeURIComponent(listingCode)}`;
+  // Protect direct URLs and RSC navigation, not only the card's click handler.
+  if (!(await checkAuth())?.user) {
+    redirect(`/login?redirect=${encodeURIComponent(returnTo)}`);
+  }
   const listing = qrToken
     ? await getToLetQrUnitListingByCode(qrToken, listingCode, 0)
     : await getPublicToLetUnitListingByCode(listingCode, 30);
@@ -197,6 +207,7 @@ export default async function PublicListingPage({
 
         <div className="mt-4">
           <ToLetDetailHero
+            tourUrl={listing.tourUrl}
             imageUrls={listing.imageUrls}
             imageAlt={listing.title}
             code={listing.listingCode}
@@ -345,52 +356,52 @@ export default async function PublicListingPage({
                 <ToLetFacilityItem
                   label="Water supply"
                   available={listing.property.hasWaterSupply}
-                  included={listing.property.hasWaterSupply}
+                  included={listing.facilityInclusions?.water ?? null}
                 />
                 <ToLetFacilityItem
                   label="Gas connection"
                   available={listing.property.hasGasConnection}
-                  included={listing.property.hasGasConnection}
+                  included={listing.facilityInclusions?.gas ?? null}
                 />
                 <ToLetFacilityItem
                   label="Electricity"
                   available={listing.property.hasElectricity}
-                  included={listing.property.hasElectricity}
+                  included={listing.facilityInclusions?.electricity ?? null}
                 />
                 <ToLetFacilityItem
                   label="Internet"
                   available={listing.hasInternet}
-                  included={listing.hasInternet}
+                  included={listing.facilityInclusions?.internet ?? null}
                 />
                 <ToLetFacilityItem
                   label="Lift"
                   available={listing.property.hasLift}
-                  included={listing.property.hasLift}
+                  included={listing.facilityInclusions?.lift ?? null}
                 />
                 <ToLetFacilityItem
                   label="Parking"
                   available={listing.property.hasParking}
-                  included={listing.property.hasParking}
+                  included={listing.facilityInclusions?.parking ?? null}
                 />
                 <ToLetFacilityItem
                   label="Generator"
                   available={listing.property.hasGenerator}
-                  included={listing.property.hasGenerator}
+                  included={listing.facilityInclusions?.generator ?? null}
                 />
                 <ToLetFacilityItem
                   label="Security"
                   available={listing.property.hasSecurityGuard}
-                  included={listing.property.hasSecurityGuard}
+                  included={listing.facilityInclusions?.security ?? null}
                 />
                 <ToLetFacilityItem
                   label="CCTV"
                   available={listing.property.hasCctv}
-                  included={listing.property.hasCctv}
+                  included={listing.facilityInclusions?.cctv ?? null}
                 />
                 <ToLetFacilityItem
                   label="Furnished"
                   available={listing.unit.isFurnished}
-                  included={listing.unit.isFurnished}
+                  included={listing.facilityInclusions?.furnished ?? null}
                 />
               </div>
               <div className="mt-4 rounded-lg border border-slate-200 p-4 text-sm leading-6 text-slate-700">

@@ -29,13 +29,16 @@ import { ToLetLocationExplorer } from "@/components/features/to-let/to-let-locat
 import { ToLetSearchButton } from "@/components/features/to-let/to-let-search-button";
 import { Button } from "@/components/ui/button";
 import { listPublicToLetUnitListings } from "@/lib/public-data";
+import { getPublicOrpcClient } from "@/lib/orpc/public-server";
 import {
   filterToLetMarketplaceListings,
   parseToLetSearchParams,
   type ToLetMarketplaceSearchParams,
   type ToLetMarketRentalType,
   toLetMarketHref,
+  toLetBrowseHref,
 } from "@/lib/to-let-marketplace";
+import styles from "./to-let-mobile.module.css";
 
 // Match the public product homepage's server-side catalog cache.
 export const revalidate = 60;
@@ -108,6 +111,9 @@ const rentalTypes: ReadonlyArray<{
     banglaLabel: "অন্যান্য",
     icon: Shapes,
   },
+  { value: "family_sublet", label: "Family Sub-Let", banglaLabel: "ফ্যামিলি সাবলেট", icon: Home },
+  { value: "bachelor_sublet", label: "Bachelor Sub-Let", banglaLabel: "ব্যাচেলর সাবলেট", icon: Users },
+  { value: "factory", label: "Factory", banglaLabel: "কারখানা", icon: Warehouse },
 ];
 
 export default async function ToLetPage({ searchParams }: ToLetPageProps) {
@@ -115,14 +121,15 @@ export default async function ToLetPage({ searchParams }: ToLetPageProps) {
   const { query, selectedType } = parseToLetSearchParams(params);
   let listingsUnavailable = false;
   let unitListings: UnitListing[] = [];
-
-  try {
-    unitListings = await listPublicToLetUnitListings(60);
-  } catch {
-    listingsUnavailable = true;
-  }
-
-  const { queryMatched: queryMatchedListings, filtered: filteredUnitListings } =
+  const [catalogResult, results] = await Promise.allSettled([
+    listPublicToLetUnitListings(60),
+    getPublicOrpcClient(60).toLetUnitListing.listPublicPage({ page: 1, limit: 8, q: query, type: selectedType }),
+  ]);
+  if (catalogResult.status === "fulfilled") unitListings = catalogResult.value;
+  listingsUnavailable = results.status === "rejected";
+  const filteredUnitListings = results.status === "fulfilled" ? results.value.listings : [];
+  const resultCount = results.status === "fulfilled" ? results.value.total : 0;
+  const { queryMatched: queryMatchedListings } =
     filterToLetMarketplaceListings(unitListings, query, selectedType);
   const propertyCount = new Set(
     unitListings.map((listing) => listing.propertyCode),
@@ -152,7 +159,7 @@ export default async function ToLetPage({ searchParams }: ToLetPageProps) {
   const locationPins = areaNames.slice(0, 6);
 
   return (
-    <div className="min-h-screen bg-zinc-50 text-foreground">
+    <div className={`${styles.landing} min-h-screen bg-zinc-50 text-foreground`}>
       <ToLetCatalogHero
         query={query}
         selectedType={selectedType}
@@ -164,9 +171,10 @@ export default async function ToLetPage({ searchParams }: ToLetPageProps) {
         availableListingCount={availableListingCount}
         propertyCount={propertyCount}
         areaCount={areaNames.length}
+        unavailable={catalogResult.status === "rejected"}
       />
 
-      <RentalTypeDirectory listings={unitListings} query={query} />
+      <RentalTypeDirectory listings={queryMatchedListings} query={query} />
 
       <section
         id="listings"
@@ -192,7 +200,7 @@ export default async function ToLetPage({ searchParams }: ToLetPageProps) {
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <Link
-                href="/to-let#listings"
+                href={toLetBrowseHref(query, selectedType)}
                 className="inline-flex min-h-11 items-center gap-2 text-sm font-semibold text-blue-700 hover:underline hover:underline-offset-4"
               >
                 See all listings <ArrowRight className="size-4" />
@@ -221,7 +229,7 @@ export default async function ToLetPage({ searchParams }: ToLetPageProps) {
             <div className="mt-4 flex flex-wrap items-center gap-2 border border-zinc-200 bg-zinc-50 px-4 py-3 text-sm text-zinc-600">
               <Search className="size-4 text-blue-600" aria-hidden="true" />
               <span>
-                {filteredUnitListings.length.toLocaleString("en-BD")} result(s)
+                {resultCount.toLocaleString("en-BD")} result(s)
                 {query ? ` for “${query}”` : ""}
               </span>
               <Link
@@ -239,10 +247,10 @@ export default async function ToLetPage({ searchParams }: ToLetPageProps) {
                 title="Listings are temporarily unavailable"
                 description="The marketplace could not be loaded. Please try again in a moment."
                 actionLabel="Try again"
-                actionHref="/to-let#listings"
+                actionHref={toLetBrowseHref(query, selectedType)}
               />
             ) : filteredUnitListings.length > 0 ? (
-              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              <div className={`${styles.listings} grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-3 xl:grid-cols-4`}>
                 {filteredUnitListings.map((listing) => (
                   <PublicUnitListingCard
                     key={listing.listingCode}
@@ -255,8 +263,14 @@ export default async function ToLetPage({ searchParams }: ToLetPageProps) {
                 title="No matching listing"
                 description="Try another location or rental type. New public listings appear here automatically."
                 actionLabel="View all listings"
-                actionHref="/to-let#listings"
+                actionHref="/to-let/listings"
               />
+            )}
+            {!listingsUnavailable && resultCount > filteredUnitListings.length && (
+              <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-zinc-200 pt-4 text-sm">
+                <p className="text-zinc-600">Showing {filteredUnitListings.length} of {resultCount} matching listings</p>
+                <Link href={toLetBrowseHref(query, selectedType)} className="inline-flex min-h-11 items-center gap-2 font-semibold text-blue-700">View all matches <ArrowRight className="size-4" /></Link>
+              </div>
             )}
           </div>
         </div>
@@ -266,7 +280,7 @@ export default async function ToLetPage({ searchParams }: ToLetPageProps) {
         listings={mapListings}
         locationPins={locationPins}
         selectedType={selectedType}
-        unavailable={listingsUnavailable}
+        unavailable={catalogResult.status === "rejected"}
       />
 
       <TenantJourney />
@@ -290,7 +304,7 @@ function ToLetCatalogHero({
   const visibleTypes = rentalTypes.slice(0, 6);
 
   return (
-    <section className="bg-white">
+    <section className={`${styles.hero} bg-white`}>
       <div className="site-container px-4 py-5 sm:px-6 sm:py-7 lg:px-8">
         <div className="grid gap-4 lg:grid-cols-[15.5rem_minmax(0,1fr)]">
           <aside className="hidden min-h-[390px] overflow-hidden rounded-xl border border-zinc-200 bg-white lg:block">
@@ -437,8 +451,8 @@ function RentalTypeDirectory({
           Listing থেকে আপনার প্রয়োজন অনুযায়ী সঠিক ইউনিট নির্বাচন করুন।
         </p>
 
-        <div className="mt-7 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
-          {rentalTypes.map(({ value, label, banglaLabel, icon: Icon }) => {
+        <div className={`${styles.categories} mt-7 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6`}>
+          {rentalTypes.map(({ value, label, banglaLabel, icon: Icon }, index) => {
             const count = listings.filter(
               (listing) => listing.unit.unitType === value,
             ).length;
@@ -446,7 +460,7 @@ function RentalTypeDirectory({
               <Link
                 key={value}
                 href={toLetMarketHref(query, value)}
-                className="group flex min-h-24 items-center gap-3 rounded-xl border border-zinc-200 bg-white px-4 py-3 transition-colors hover:border-blue-300 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
+                className={`${index >= 4 ? "hidden sm:flex" : "flex"} group min-h-24 items-center gap-3 rounded-xl border border-zinc-200 bg-white px-4 py-3 transition-colors hover:border-blue-300 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600`}
               >
                 <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-zinc-100 text-blue-700 transition-colors group-hover:bg-blue-50">
                   <Icon className="size-5" />
@@ -463,6 +477,14 @@ function RentalTypeDirectory({
             );
           })}
         </div>
+        <details className="mt-3 sm:hidden">
+          <summary className="cursor-pointer py-3 text-sm font-semibold text-blue-700">আরও ইউনিটের ধরন দেখুন</summary>
+          <div className="grid grid-cols-2 gap-3">
+            {rentalTypes.slice(4).map(({ value, banglaLabel }) => (
+              <Link key={value} href={toLetMarketHref(query, value)} className="flex min-h-14 items-center justify-center rounded-xl border border-zinc-200 bg-white p-3 text-sm font-semibold">{banglaLabel}</Link>
+            ))}
+          </div>
+        </details>
       </div>
     </section>
   );
@@ -473,11 +495,13 @@ function MarketplaceSnapshot({
   availableListingCount,
   propertyCount,
   areaCount,
+  unavailable,
 }: {
   listingCount: number;
   availableListingCount: number;
   propertyCount: number;
   areaCount: number;
+  unavailable: boolean;
 }) {
   const stats: ReadonlyArray<{
     label: string;
@@ -498,7 +522,7 @@ function MarketplaceSnapshot({
       icon: CalendarCheck2,
     },
     {
-      label: "Registered properties",
+      label: "Listed properties",
       value: propertyCount,
       description: "Properties represented by current listings",
       icon: Building2,
@@ -528,7 +552,7 @@ function MarketplaceSnapshot({
               </span>
               <div className="min-w-0">
                 <p className="font-mono text-2xl font-bold tabular-nums text-zinc-950">
-                  {value.toLocaleString("en-BD")}
+                  {unavailable ? "—" : value.toLocaleString("en-BD")}
                 </p>
                 <h2 className="mt-1 text-sm font-semibold text-zinc-900">
                   {label}
@@ -541,6 +565,9 @@ function MarketplaceSnapshot({
           </article>
         ))}
       </div>
+      <p className="site-container px-4 pb-5 text-xs text-zinc-600 sm:px-6 lg:px-8" role={unavailable ? "status" : undefined}>
+        {unavailable ? "Marketplace summary is temporarily unavailable." : "Snapshot of up to 300 recent public listings. Browse all listings for the complete catalog."}
+      </p>
     </section>
   );
 }
@@ -641,7 +668,7 @@ function OwnerCallToAction() {
               এবং Tenant Management—সবকিছু এক জায়গায়।
             </p>
           </div>
-          <div className="grid min-w-64 gap-3">
+          <div className="grid min-w-0 gap-3 sm:min-w-64">
             <Button asChild size="lg" className="rounded-md">
               <ToLetAccountLink href="/account/to-let/properties/new">
                 Property Account তৈরি করুন <ArrowRight className="size-4" />

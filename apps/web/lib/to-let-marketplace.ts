@@ -56,6 +56,15 @@ export function toLetMarketHref(query: string, type?: ToLetMarketRentalType) {
   return `/to-let${search ? `?${search}` : ""}#listings`;
 }
 
+export function toLetBrowseHref(query: string, type?: ToLetMarketRentalType, page = 1) {
+  const params = new URLSearchParams();
+  if (query) params.set("q", query);
+  if (type) params.set("type", type);
+  if (page > 1) params.set("page", String(page));
+  const search = params.toString();
+  return `/to-let/listings${search ? `?${search}` : ""}`;
+}
+
 export function searchableToLetListingText(listing: SearchableToLetListing) {
   return [
     listing.listingCode,

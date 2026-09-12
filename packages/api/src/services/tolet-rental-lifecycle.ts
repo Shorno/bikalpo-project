@@ -2,9 +2,9 @@ import { db } from "@bikalpo-project/db";
 import {
 	toletRentalContract,
 	toletRentPayment,
-	toletUnit,
 } from "@bikalpo-project/db/schema";
-import { and, eq, inArray } from "drizzle-orm";
+import { inArray } from "drizzle-orm";
+import { completeToLetRentalInTransaction } from "./tolet-rental-completion";
 
 import {
 	shouldCompleteToLetContract,
@@ -29,34 +29,10 @@ export async function ensureToLetRentCycles(contract: ToLetContractRow) {
 export async function completeExpiredToLetContract(contract: ToLetContractRow) {
 	if (!shouldCompleteToLetContract(contract)) return contract;
 
-	const now = new Date();
-	return db.transaction(async (tx) => {
-		const [updated] = await tx
-			.update(toletRentalContract)
-			.set({ status: "completed", completedAt: now, updatedAt: now })
-			.where(
-				and(
-					eq(toletRentalContract.id, contract.id),
-					inArray(toletRentalContract.status, ["active", "leaving"]),
-				),
-			)
-			.returning();
-
-		if (updated) {
-			await tx
-				.update(toletUnit)
-				.set({ status: "vacant", updatedAt: now })
-				.where(eq(toletUnit.id, contract.unitId));
-			return updated;
-		}
-
-		const [current] = await tx
-			.select()
-			.from(toletRentalContract)
-			.where(eq(toletRentalContract.id, contract.id))
-			.limit(1);
-		return current ?? contract;
-	});
+	return db.transaction(async tx =>
+		(await completeToLetRentalInTransaction(tx, contract.id, contract.unitId)) ?? contract,
+		{ isolationLevel: "read committed" },
+	);
 }
 
 export async function processToLetRentalLifecycle() {

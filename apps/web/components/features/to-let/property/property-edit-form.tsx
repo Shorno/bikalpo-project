@@ -28,7 +28,7 @@ import {
 } from "@/schema/to-let-property.schema";
 import { IncludedExcludedButtons } from "./included-excluded-buttons";
 import { propertyFromResponse } from "./property-details-client";
-import { PropertyPhoneVerification } from "./property-phone-verification";
+import { PropertyPhoneVerification, type PropertyPhoneProof } from "./property-phone-verification";
 import { PropertyLocationFields } from "./property-location-fields";
 import {
   PropertyDetailsSkeleton,
@@ -72,7 +72,7 @@ function initialEditValues(
     frontImageUrl: property.frontImageUrl,
     buildingImageUrl: property.buildingImageUrl ?? "",
     videoUrl: property.videoUrl ?? "",
-    phoneVerified: true,
+    phoneVerified: false,
   };
 }
 
@@ -124,7 +124,7 @@ function LoadedPropertyEditForm({ property }: { property: ToLetPropertyView }) {
   const router = useRouter();
   const mutation = useUpdateToLetProperty();
   const [values, setValues] = useState(() => initialEditValues(property));
-  const [verifiedPhone, setVerifiedPhone] = useState(property.mobileNumber);
+  const [phoneProof, setPhoneProof] = useState<PropertyPhoneProof | null>(null);
   const [errors, setErrors] = useState<Errors>({});
 
   const update = <K extends keyof PropertyEditableValues>(
@@ -141,15 +141,23 @@ function LoadedPropertyEditForm({ property }: { property: ToLetPropertyView }) {
   };
 
   const onPhoneChange = (mobileNumber: string) => {
+    setPhoneProof(null);
     setValues((current) => ({
       ...current,
       mobileNumber,
-      phoneVerified: mobileNumber === verifiedPhone,
+      phoneVerified: false,
     }));
   };
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
+    if (!phoneProof || Date.parse(phoneProof.expiresAt) <= Date.now()) {
+      setPhoneProof(null);
+      update("phoneVerified", false);
+      setErrors({ phoneVerified: "Verify the property contact number before saving." });
+      toast.error("Verify the property contact number before saving");
+      return;
+    }
     const parsed = propertyEditableSchema.safeParse(values);
     if (!parsed.success) {
       const nextErrors: Errors = {};
@@ -168,6 +176,7 @@ function LoadedPropertyEditForm({ property }: { property: ToLetPropertyView }) {
         propertyCode: property.propertyCode,
         data: {
           ...formData,
+          phoneVerificationProof: phoneProof.proof,
           email: formData.email || undefined,
           nearbyLandmark: formData.nearbyLandmark || undefined,
           latitude: formData.latitude ? Number(formData.latitude) : undefined,
@@ -180,7 +189,11 @@ function LoadedPropertyEditForm({ property }: { property: ToLetPropertyView }) {
         },
       });
       router.push(`/account/to-let/properties/${property.propertyCode}`);
-    } catch {
+    } catch (error) {
+      if (error && typeof error === "object" && "code" in error && error.code === "FORBIDDEN") {
+        setPhoneProof(null);
+        update("phoneVerified", false);
+      }
       // Mutation hook displays the API error.
     }
   };
@@ -268,19 +281,17 @@ function LoadedPropertyEditForm({ property }: { property: ToLetPropertyView }) {
         </div>
       </FormSection>
 
-      {values.mobileNumber !== verifiedPhone ? (
-        <FormSection title="Verify changed phone number">
+        <FormSection title="Verify property contact">
           <PropertyPhoneVerification
             phone={values.mobileNumber}
             verified={values.phoneVerified}
-            onVerified={() => {
-              setVerifiedPhone(values.mobileNumber);
+            onVerified={(proof) => {
+              setPhoneProof(proof);
               update("phoneVerified", true);
             }}
           />
           <EditFieldError message={errors.phoneVerified} />
         </FormSection>
-      ) : null}
 
       <FormSection title="Location">
         <div className="grid gap-4 sm:grid-cols-2">

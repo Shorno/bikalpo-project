@@ -1,4 +1,5 @@
 import { unitAddressSchema } from "../lib/tolet-unit-address";
+import { toLetUnitTypes, toLetUnitCapabilities } from "../lib/tolet-categories";
 import { db } from "@bikalpo-project/db";
 import {
 	type ToletProperty,
@@ -15,6 +16,7 @@ import { and, asc, count, desc, eq, inArray, max, ne } from "drizzle-orm";
 import { z } from "zod";
 
 import { consumerProcedure } from "../index";
+import { consumePropertyPhoneProof, requestPropertyPhoneCode, verifyPropertyPhoneCode } from "../lib/tolet-property-phone";
 
 const PROPERTY_TYPES = [
 	"apartment",
@@ -23,6 +25,7 @@ const PROPERTY_TYPES = [
 	"office",
 	"market",
 	"warehouse",
+	"factory",
 	"mixed_use",
 	"other",
 ] as const;
@@ -35,16 +38,7 @@ const BUILDING_TYPES = [
 	"other",
 ] as const;
 
-const UNIT_TYPES = [
-	"family_flat",
-	"bachelor_room",
-	"office",
-	"shop",
-	"warehouse",
-	"garage",
-	"sublet",
-	"other",
-] as const;
+const UNIT_TYPES = toLetUnitTypes;
 
 const propertyCodeSchema = z
 	.string()
@@ -150,6 +144,7 @@ export const toletPropertyFieldsSchema = z
 export const createToletPropertyInputSchema = toletPropertyFieldsSchema
 	.extend({
 		phoneVerified: z.literal(true),
+		phoneVerificationProof: z.string().regex(/^[a-f0-9]{64}$/, "Verify the property contact number"),
 		informationConfirmed: z.literal(true),
 		termsAccepted: z.literal(true),
 		propertyPolicyAccepted: z.literal(true),
@@ -161,6 +156,7 @@ export const updateToletPropertyInputSchema = z
 		propertyCode: propertyCodeSchema,
 		data: toletPropertyFieldsSchema.extend({
 			phoneVerified: z.literal(true),
+			phoneVerificationProof: z.string().regex(/^[a-f0-9]{64}$/, "Verify the property contact number"),
 		}),
 	})
 	.strict();
@@ -273,6 +269,8 @@ function currentListingDto(
 		monthlyRent: Number(listing.monthlyRent),
 		imageUrls: listing.imageUrls,
 		videoUrl: listing.videoUrl,
+		tourUrl: listing.tourUrl,
+		facilityInclusions: listing.facilityInclusions,
 		visibility: listing.visibility,
 		status: listing.status,
 		viewCount: listing.viewCount,
@@ -316,16 +314,11 @@ function propertyWriteValues(input: PropertyFields) {
 }
 
 function unitWriteValues(input: UnitFields) {
-	const residential = [
-		"family_flat",
-		"bachelor_room",
-		"sublet",
-		"other",
-	].includes(input.unitType);
-	const hasBathroom =
-		residential || ["office", "shop", "warehouse"].includes(input.unitType);
-	const hasBalcony = residential || input.unitType === "office";
-	const canBeFurnished = hasBathroom || input.unitType === "garage";
+	const capabilities = toLetUnitCapabilities(input.unitType);
+	const residential = capabilities.bedrooms;
+	const hasBathroom = capabilities.bathrooms;
+	const hasBalcony = capabilities.balconies;
+	const canBeFurnished = capabilities.furnished;
 	return {
 		...(input.addressOverride !== undefined ? { addressOverride: input.addressOverride } : {}),
 		name: input.name,
@@ -407,6 +400,14 @@ async function findOwnedUnit(
 }
 
 export const toLetPropertyRouter = {
+	requestPhoneCode: consumerProcedure
+		.route({ method: "POST", path: "/to-let/owner/property-phone/request", tags: ["To-Let Property Owner"], summary: "Request property contact verification" })
+		.input(z.object({ phone: z.string().trim().max(30) }).strict())
+		.handler(({ context, input }) => requestPropertyPhoneCode(context.session.user.id, input.phone)),
+	verifyPhoneCode: consumerProcedure
+		.route({ method: "POST", path: "/to-let/owner/property-phone/verify", tags: ["To-Let Property Owner"], summary: "Verify property contact without changing the signed-in account" })
+		.input(z.object({ phone: z.string().trim().max(30), code: z.string().regex(/^\d{6}$/) }).strict())
+		.handler(({ context, input }) => verifyPropertyPhoneCode(context.session.user.id, input.phone, input.code)),
 	listMine: consumerProcedure
 		.route({
 			method: "GET",
@@ -542,23 +543,26 @@ export const toLetPropertyRouter = {
 			const userId = context.session.user.id;
 			const now = new Date();
 
-			const [created] = await db
+			const created = await db.transaction(async (tx) => {
+				const phoneVerifiedAt = await consumePropertyPhoneProof(tx, userId, input.mobileNumber, input.phoneVerificationProof);
+				const [property] = await tx
 				.insert(toletProperty)
 				.values({
 					...propertyWriteValues(input),
 					ownerUserId: userId,
-					phoneVerifiedAt: now,
+					phoneVerifiedAt,
 					informationConfirmedAt: now,
 					termsAcceptedAt: now,
 					propertyPolicyAcceptedAt: now,
 				})
 				.returning();
-
-			if (!created) {
+			if (!property) {
 				throw new ORPCError("INTERNAL_SERVER_ERROR", {
 					message: "Property registration failed",
 				});
 			}
+			return property;
+			});
 
 			return { property: propertyDto(created, 0) };
 		}),
@@ -739,6 +743,8 @@ export const toLetPropertyRouter = {
 				}
 				assertPropertyCodeMatches(existing, input.propertyCode);
 				assertPropertyIsWritable(existing);
+				// Legacy phoneVerifiedAt was client asserted; require fresh proof even for unchanged contact numbers.
+				const phoneVerifiedAt = await consumePropertyPhoneProof(tx, userId, input.data.mobileNumber, input.data.phoneVerificationProof);
 
 				const [unitStats] = await tx
 					.select({
@@ -770,7 +776,7 @@ export const toLetPropertyRouter = {
 					.update(toletProperty)
 					.set({
 						...propertyWriteValues(input.data),
-						phoneVerifiedAt: new Date(),
+						phoneVerifiedAt,
 						updatedAt: new Date(),
 					})
 					.where(

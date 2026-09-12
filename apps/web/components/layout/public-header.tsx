@@ -5,6 +5,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { ToLetSearchButton } from "@/components/features/to-let/to-let-search-button";
+import { isToLetRentalType } from "@/lib/to-let-marketplace";
 import { useIsMobile } from "@/hooks/use-mobile";
 import {
   isCustomerStorefrontPreview,
@@ -118,8 +119,12 @@ export function PublicHeader() {
 }
 
 function ToLetHeaderSearch() {
+  const params = useSearchParams();
+  const query = params.get("q") ?? "";
+  const type = params.get("type") ?? undefined;
   return (
     <Form
+      key={`${query}:${type ?? ""}`}
       action="/to-let#listings"
       role="search"
       className="flex h-11 items-center gap-2 rounded-full border border-[var(--header-line)] bg-white px-4 text-[var(--header-ink)] focus-within:outline-2 focus-within:outline-[var(--header-brand)]"
@@ -128,9 +133,12 @@ function ToLetHeaderSearch() {
       <input
         type="search"
         name="q"
+        defaultValue={query}
+        maxLength={200}
         placeholder="Search your listings"
-        className="min-w-0 flex-1 border-0 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+        className="min-w-0 flex-1 border-0 bg-transparent text-base sm:text-sm outline-none placeholder:text-muted-foreground"
       />
+      {isToLetRentalType(type) && <input type="hidden" name="type" value={type} />}
       <ToLetSearchButton className="inline-flex min-h-11 items-center gap-2 rounded-full px-3 text-xs font-semibold text-primary hover:bg-primary/5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:opacity-60" />
     </Form>
   );

@@ -1,5 +1,15 @@
 # To-Let alert notifications
 
+## Production hardening — 2026-09-12
+
+- Saved-alert and inbox query keys are both consumer-specific. Queries are disabled while the session is pending, for guests and for non-consumers. Previous-account placeholder data is never reused; oRPC prefix invalidation still works.
+- Both ordinary Create Alert and optional Leave-with-alert creation use `saveToLetAlert` inside a READ COMMITTED transaction. A per-user `pg_advisory_xact_lock` is acquired before duplicate lookup, paused-alert resume, count and insert. Concurrent same-user writes cannot independently consume the last quota slot; existing duplicates resume/reuse even at the 50-record limit.
+- The Leave transaction rolls back as a unit if creating a new alert would exceed the quota. Existing saved searches are not deleted or migrated. No new schema migration is required for these fixes.
+- Unit tests cover consumer cache separation, logout/pending sessions, prefix invalidation, concurrent identical requests, last-slot contention, separate users and duplicate resume at quota.
+- Opt-in PostgreSQL tests passed against connection-local temporary tables (rolled back), including real cross-connection advisory-lock contention. Existing notification matching/deduplication integration test also passed. No business records were altered.
+- Test commands: `pnpm exec tsx --test apps/web/lib/to-let-alert-cache.test.ts packages/api/src/services/tolet-saved-alerts.test.ts packages/api/src/routers/helpers/tolet-alert-matching.test.ts packages/api/src/routers/helpers/tolet-marketplace-visibility.test.ts`; with `TOLET_ALERT_DB_TEST=1`, `pnpm exec tsx --env-file=apps/server/.env --test packages/api/src/services/tolet-saved-alerts.integration.test.ts packages/api/src/services/tolet-alert-notifications.integration.test.ts`.
+- Still required before production sign-off: confirm target migration 0080/0082, deploy API/web together, authenticated two-account browser smoke test and performance/operational monitoring. No deploy/push performed. This remains in-app polling, not background SMS/email/push.
+
 Consumer dashboard → To-Let → My Alert now shows a persistent inbox and unread badge.
 
 The header Create Alert button opens the inline preferences form. The inbox uses booking-style horizontal cards (stacked on mobile), with an image carousel/count, received date, top-right View Details, rent, room/size facts, facilities and availability. Booking-specific statuses/actions are not copied into alerts.

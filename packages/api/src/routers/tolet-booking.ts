@@ -225,6 +225,8 @@ function offerSnapshotDto(
     preferredTenant: snapshot.listing.preferredTenant,
     hasInternet: snapshot.listing.hasInternet,
     otherFacilities: snapshot.listing.otherFacilities,
+    facilityInclusions: snapshot.listing.facilityInclusions ?? null,
+    tourUrl: snapshot.listing.tourUrl ?? null,
     imageUrl: snapshot.listing.imageUrl || null,
     property: {
       propertyCode: snapshot.property.propertyCode,
@@ -301,6 +303,8 @@ function createOfferSnapshot(
       preferredTenant: listing.preferredTenant,
       hasInternet: listing.hasInternet,
       otherFacilities: listing.otherFacilities,
+      facilityInclusions: listing.facilityInclusions,
+      tourUrl: listing.tourUrl,
     },
     property: {
       propertyCode: formatPropertyCode(property),
