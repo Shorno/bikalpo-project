@@ -1,6 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { Loader2, PlusCircle } from "lucide-react";
+import { type ReactElement, useState } from "react";
+import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -10,10 +12,8 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -21,10 +21,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { PlusCircle, Loader2 } from "lucide-react";
-import { useFilterOptions, useSubmitProductRequest } from "@/hooks/use-catalog-api";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  useFilterOptions,
+  useSubmitProductRequest,
+} from "@/hooks/use-catalog-api";
 
-export function RequestProductModal() {
+export function RequestProductModal({ trigger }: { trigger?: ReactElement }) {
   const [open, setOpen] = useState(false);
   const [typeName, setTypeName] = useState("");
   const [categoryName, setCategoryName] = useState("");
@@ -75,16 +78,24 @@ export function RequestProductModal() {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button variant="outline" className="gap-2 border-dashed border-emerald-300 text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800">
-          <PlusCircle className="h-4 w-4" />
-          Request New Product
-        </Button>
+        {trigger ?? (
+          <Button
+            variant="outline"
+            className="gap-2 border-dashed border-emerald-300 text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800"
+          >
+            <PlusCircle className="h-4 w-4" />
+            Request New Product
+          </Button>
+        )}
       </DialogTrigger>
       <DialogContent className="sm:max-w-[500px]">
         <DialogHeader>
-          <DialogTitle className="text-lg">Request New Product Identity</DialogTitle>
+          <DialogTitle className="text-lg">
+            Request New Product Identity
+          </DialogTitle>
           <DialogDescription>
-            Can&apos;t find your product? Submit a request and admin will review it.
+            Can&apos;t find your product? Submit a request and admin will review
+            it.
           </DialogDescription>
         </DialogHeader>
 
@@ -92,13 +103,21 @@ export function RequestProductModal() {
           {/* Type */}
           <div className="space-y-2">
             <Label htmlFor="req-type">Type</Label>
-            <Select value={typeName} onValueChange={(v) => { setTypeName(v); setCategoryName(""); }}>
+            <Select
+              value={typeName}
+              onValueChange={(v) => {
+                setTypeName(v);
+                setCategoryName("");
+              }}
+            >
               <SelectTrigger id="req-type">
                 <SelectValue placeholder="Select type (optional)" />
               </SelectTrigger>
               <SelectContent>
                 {types.map((t) => (
-                  <SelectItem key={t.id} value={t.name}>{t.name}</SelectItem>
+                  <SelectItem key={t.id} value={t.name}>
+                    {t.name}
+                  </SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -113,7 +132,9 @@ export function RequestProductModal() {
               </SelectTrigger>
               <SelectContent>
                 {filteredCategories.map((c) => (
-                  <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>
+                  <SelectItem key={c.id} value={c.name}>
+                    {c.name}
+                  </SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -165,7 +186,9 @@ export function RequestProductModal() {
             disabled={!productName.trim() || submitMutation.isPending}
             className="bg-emerald-600 hover:bg-emerald-700"
           >
-            {submitMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+            {submitMutation.isPending && (
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            )}
             Submit Request
           </Button>
         </DialogFooter>
