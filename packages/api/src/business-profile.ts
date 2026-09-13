@@ -25,7 +25,6 @@ export function computeProfileCompletion(
     [user?.ownerName, application?.ownerName],
     [user?.phoneNumber, application?.phoneNumber],
     [user?.email, application?.email],
-    [application?.profilePhotoUrl, user?.image],
     [
       user?.shopName,
       user?.warehouseName,

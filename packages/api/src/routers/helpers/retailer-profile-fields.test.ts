@@ -265,19 +265,6 @@ test("shop profile updates omit untouched logo or hours in generated SQL", () =>
 });
 
 const completeRegistrationProfile = {
-  applicant: {
-    profilePhotoUrl: "https://example.com/owner.jpg",
-    ownerName: "  Amina Rahman  ",
-    dateOfBirth: "1990-05-12",
-    gender: "female" as const,
-    personalAddress: "12 Lake Road, Dhaka",
-    personalArea: "Dhanmondi",
-    personalDistrict: "Dhaka",
-    personalDivision: "Dhaka",
-    personalPostCode: "1209",
-    personalLatitude: 23.7461,
-    personalLongitude: 90.3742,
-  },
   business: {
     shopLogo: "https://example.com/shop-logo.png",
     shopName: "  Amina General Store  ",
@@ -319,12 +306,11 @@ const completeRegistrationProfile = {
   },
 };
 
-test("registration profile accepts the complete owner-editable application contract", () => {
+test("registration profile accepts the complete business-editable application contract", () => {
   const parsed = retailerRegistrationProfileSchema.parse(
     completeRegistrationProfile,
   );
 
-  assert.equal(parsed.applicant.ownerName, "Amina Rahman");
   assert.equal(parsed.business.shopName, "Amina General Store");
   assert.equal(parsed.business.area, "Dhanmondi");
   assert.equal(parsed.contacts.telegramUrl, "https://t.me/example");
@@ -378,7 +364,10 @@ test("registration profile supports the Tolet manual location length limit", () 
         [field]: `  ${"a".repeat(150)}  `,
       },
     };
-    assert.equal(retailerRegistrationProfileSchema.safeParse(input).success, true);
+    assert.equal(
+      retailerRegistrationProfileSchema.safeParse(input).success,
+      true,
+    );
     assert.equal(
       retailerRegistrationProfileSchema.safeParse({
         ...input,
@@ -396,16 +385,6 @@ test("registration profile requires coordinate pairs and safe document URLs", ()
       business: {
         ...completeRegistrationProfile.business,
         longitude: null,
-      },
-    }).success,
-    false,
-  );
-  assert.equal(
-    retailerRegistrationProfileSchema.safeParse({
-      ...completeRegistrationProfile,
-      applicant: {
-        ...completeRegistrationProfile.applicant,
-        personalLongitude: null,
       },
     }).success,
     false,

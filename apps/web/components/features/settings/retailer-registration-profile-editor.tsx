@@ -2,6 +2,7 @@
 
 import { retailerBusinessLocationSchema } from "@bikalpo-project/api/routers/helpers/retailer-profile-fields";
 import { useQuery } from "@tanstack/react-query";
+import type { LucideIcon } from "lucide-react";
 import {
   ArrowLeft,
   Building2,
@@ -11,7 +12,6 @@ import {
   Loader2,
   Save,
   ShieldCheck,
-  UserRound,
   X,
 } from "lucide-react";
 import Link from "next/link";
@@ -45,7 +45,6 @@ import {
 } from "@/constants/bangladesh-locations";
 import {
   BUSINESS_NATURES,
-  GENDERS,
   MONTHLY_SALES_VOLUME,
   YEARS_IN_BUSINESS,
 } from "@/constants/seller-registration";
@@ -65,17 +64,6 @@ import { getPublicIdFromUrl } from "@/utils/getPublicIdFromUrl";
 import { client, orpc } from "@/utils/orpc";
 
 type ProfileForm = {
-  profilePhotoUrl: string;
-  ownerName: string;
-  dateOfBirth: string;
-  gender: string;
-  personalAddress: string;
-  personalArea: string;
-  personalDistrict: string;
-  personalDivision: string;
-  personalPostCode: string;
-  personalLatitude: number;
-  personalLongitude: number;
   shopLogo: string;
   shopName: string;
   businessType: string;
@@ -130,17 +118,6 @@ async function deleteCloudinaryAsset(url: string, knownPublicId?: string) {
 }
 
 const EMPTY_FORM: ProfileForm = {
-  profilePhotoUrl: "",
-  ownerName: "",
-  dateOfBirth: "",
-  gender: "",
-  personalAddress: "",
-  personalArea: "",
-  personalDistrict: "",
-  personalDivision: "",
-  personalPostCode: "",
-  personalLatitude: 0,
-  personalLongitude: 0,
   shopLogo: "",
   shopName: "",
   businessType: "retail",
@@ -203,17 +180,6 @@ function formFromProfile(
   const documents = application.documentUrls ?? {};
   const division = normalizeBangladeshDivision(text(application.division));
   return {
-    profilePhotoUrl: text(application.profilePhotoUrl || account.image),
-    ownerName: text(application.ownerName || account.ownerName || account.name),
-    dateOfBirth: text(application.dateOfBirth),
-    gender: text(application.gender),
-    personalAddress: text(application.personalAddress),
-    personalArea: text(application.personalArea),
-    personalDistrict: text(application.personalDistrict),
-    personalDivision: text(application.personalDivision),
-    personalPostCode: text(application.personalPostCode),
-    personalLatitude: coordinate(application.personalLatitude),
-    personalLongitude: coordinate(application.personalLongitude),
     shopLogo: text(account.shopLogo),
     shopName: text(account.shopName || application.shopName),
     businessType: text(
@@ -263,7 +229,7 @@ function FormSection({
 }: {
   children: React.ReactNode;
   description: string;
-  icon: typeof UserRound;
+  icon: LucideIcon;
   id?: string;
   title: string;
 }) {
@@ -585,19 +551,6 @@ export function RetailerRegistrationProfileEditor() {
     }
     try {
       await mutation.mutateAsync({
-        applicant: {
-          profilePhotoUrl: nullable(form.profilePhotoUrl),
-          ownerName: form.ownerName,
-          dateOfBirth: nullable(form.dateOfBirth),
-          gender: nullable(form.gender) as "male" | "female" | "other" | null,
-          personalAddress: nullable(form.personalAddress),
-          personalArea: nullable(form.personalArea),
-          personalDistrict: nullable(form.personalDistrict),
-          personalDivision: nullable(form.personalDivision),
-          personalPostCode: nullable(form.personalPostCode),
-          personalLatitude: form.personalLatitude || null,
-          personalLongitude: form.personalLongitude || null,
-        },
         business: {
           shopLogo: nullable(form.shopLogo),
           shopName: form.shopName,
@@ -720,101 +673,6 @@ export function RetailerRegistrationProfileEditor() {
             Application {profileData.application.applicationNumber || "record"}
           </div>
         </div>
-
-        <FormSection
-          id="applicant-information"
-          title="Applicant information"
-          description="The owner identity and personal location recorded during registration."
-          icon={UserRound}
-        >
-          <div className="grid gap-6 lg:grid-cols-[15rem_minmax(0,1fr)]">
-            <div>
-              <Label>Profile photo</Label>
-              <div className="mt-2">
-                <ImageUploader
-                  value={form.profilePhotoUrl}
-                  onChange={(value) => update("profilePhotoUrl", value)}
-                  folder={`${uploadFolder}/profile-photo`}
-                  maxSizeMB={3}
-                  deleteOnRemove={false}
-                  disabled={isSaving}
-                  onUploadStateChange={onUploadStateChange}
-                />
-              </div>
-            </div>
-            <div className="grid content-start gap-4 sm:grid-cols-2">
-              <FormField id="owner-name" label="Owner name">
-                <Input
-                  id="owner-name"
-                  value={form.ownerName}
-                  onChange={(event) => update("ownerName", event.target.value)}
-                  minLength={2}
-                  maxLength={100}
-                  required
-                />
-              </FormField>
-              <FormField id="date-of-birth" label="Date of birth">
-                <Input
-                  id="date-of-birth"
-                  type="date"
-                  value={form.dateOfBirth}
-                  onChange={(event) =>
-                    update("dateOfBirth", event.target.value)
-                  }
-                />
-              </FormField>
-              <FormField id="gender" label="Gender">
-                <Select
-                  value={form.gender || "not_provided"}
-                  onValueChange={(value) =>
-                    update("gender", value === "not_provided" ? "" : value)
-                  }
-                >
-                  <SelectTrigger id="gender" className="w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="not_provided">Not provided</SelectItem>
-                    {GENDERS.map((gender) => (
-                      <SelectItem key={gender.id} value={gender.id}>
-                        {gender.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </FormField>
-            </div>
-          </div>
-
-          <LocationPickerSection
-            label="Personal location"
-            inputId="personal-location-search"
-            description="Search for the owner's home location or drag the map pin."
-            data={{
-              address: form.personalAddress,
-              addressBn: "",
-              area: form.personalArea,
-              thana: "",
-              district: form.personalDistrict,
-              division: form.personalDivision,
-              postCode: form.personalPostCode,
-              latitude: form.personalLatitude,
-              longitude: form.personalLongitude,
-            }}
-            onUpdate={(location) =>
-              setForm((current) => ({
-                ...current,
-                personalAddress: location.address,
-                personalArea: location.area,
-                personalDistrict: location.district,
-                personalDivision: location.division,
-                personalPostCode: location.postCode,
-                personalLatitude: location.latitude,
-                personalLongitude: location.longitude,
-              }))
-            }
-          />
-        </FormSection>
 
         <BusinessInformationFormSection
           form={form}

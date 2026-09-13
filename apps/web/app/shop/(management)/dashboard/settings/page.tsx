@@ -548,7 +548,7 @@ function ProfileSection({
           <span className="hidden md:inline">{title}</span>
         </h2>
       </div>
-      <dl className="mt-5 divide-y">{children}</dl>
+      <dl className="divide-y md:mt-5">{children}</dl>
       {description && (
         <p className="pt-3 text-xs leading-relaxed text-gray-500">
           {description}
@@ -561,9 +561,9 @@ function ProfileSection({
 
 function DetailRow({ label, value }: { label: string; value: unknown }) {
   return (
-    <div className="grid gap-1 py-3 first:pt-0 sm:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] sm:gap-4">
-      <dt className="text-xs font-medium text-gray-500">{label}</dt>
-      <dd className="break-words text-sm font-medium text-gray-900 sm:text-right">
+    <div className="grid grid-cols-2 gap-4 py-3 text-sm">
+      <dt className="font-medium text-gray-500">{label}</dt>
+      <dd className="min-w-0 break-words text-right font-medium text-gray-950">
         {displayValue(value)}
       </dd>
     </div>

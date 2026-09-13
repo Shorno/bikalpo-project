@@ -20,7 +20,6 @@ import {
   BusinessInformationSection,
   BusinessLocationSection,
   LabeledDocumentsSection,
-  PersonalLocationSection,
   ReferralSection,
   SocialProfilesSection,
   toApplicationDetail,
@@ -143,8 +142,7 @@ export function RetailerRegistrationProfileView() {
             Registration Profile
           </h1>
           <p className="mt-1 max-w-2xl text-sm leading-6 text-gray-500">
-            Review the identity and business information submitted for this
-            retail account.
+            Review the business information submitted for this retail account.
           </p>
         </div>
         <Button asChild className="bg-[#003178] hover:bg-[#00255c]">
@@ -158,24 +156,24 @@ export function RetailerRegistrationProfileView() {
       <header className="overflow-hidden rounded-xl bg-[#003178] text-white">
         <div className="grid gap-6 p-6 md:grid-cols-[auto_minmax(0,1fr)_auto] md:items-center md:p-8">
           <div className="relative flex size-24 items-center justify-center overflow-hidden rounded-xl bg-white/10 ring-1 ring-white/20">
-            {application.profilePhotoUrl || account.image ? (
+            {account.shopLogo ? (
               <Image
-                src={application.profilePhotoUrl || account.image || ""}
-                alt={`${application.ownerName} profile photo`}
+                src={account.shopLogo}
+                alt={`${businessName} logo`}
                 fill
                 unoptimized
                 className="object-cover"
               />
             ) : (
               <span className="text-3xl font-bold">
-                {application.ownerName.slice(0, 1).toUpperCase()}
+                {businessName.slice(0, 1).toUpperCase()}
               </span>
             )}
           </div>
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
               <h2 className="truncate text-2xl font-bold tracking-tight">
-                {application.ownerName}
+                {businessName}
               </h2>
               <span className="inline-flex items-center gap-1 rounded-full bg-emerald-400/15 px-2.5 py-1 text-xs font-semibold text-emerald-100 ring-1 ring-emerald-300/30">
                 <BadgeCheck className="size-3.5" aria-hidden="true" />
@@ -183,14 +181,11 @@ export function RetailerRegistrationProfileView() {
               </span>
             </div>
             <p className="mt-1 text-base font-medium text-blue-100">
-              {businessName}
+              {formatLabel(application.businessNature)}
             </p>
             <div className="mt-4 flex flex-wrap gap-x-6 gap-y-2 text-sm text-blue-100">
               <span>{application.phoneNumber}</span>
               <span>{application.email || account.email}</span>
-              <span>DOB: {formatDate(application.dateOfBirth)}</span>
-              <span>Gender: {formatLabel(application.gender)}</span>
-              <span>{formatLabel(application.businessNature)}</span>
             </div>
           </div>
           <div className="min-w-44 rounded-xl bg-white/10 p-4 ring-1 ring-white/15">
@@ -217,7 +212,7 @@ export function RetailerRegistrationProfileView() {
               value="basic"
               className="min-h-11 whitespace-normal rounded-none px-4 py-3 text-center"
             >
-              Basic Information
+              Business Information
             </TabsTrigger>
             <TabsTrigger
               value="documents"
@@ -248,7 +243,6 @@ export function RetailerRegistrationProfileView() {
               businessTypeLabel="Platform Type"
               applicantStatusLabel={applicationStatus}
             />
-            <PersonalLocationSection data={detail} />
             <BusinessLocationSection data={detail} />
             <ReferralSection data={detail} />
           </TabsContent>
