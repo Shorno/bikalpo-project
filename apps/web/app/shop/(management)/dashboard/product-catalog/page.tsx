@@ -3,23 +3,33 @@
 import { resolveBrandCreationAction } from "@bikalpo-project/db/brand-creation";
 import {
   AlertCircle,
-  BookOpen,
   ChevronLeft,
   ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
+  Clock,
   Eye,
-  Layers3,
-  Package,
+  Filter,
+  Layers,
+  PackageSearch,
   Plus,
+  Search,
   Settings,
 } from "lucide-react";
-import Image from "next/image";
-import Link from "next/link";
-import { useCallback, useMemo, useState } from "react";
-import { CatalogFilterBar } from "@/components/catalog/catalog-filter-bar";
+import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
 import { RequestProductModal } from "@/components/catalog/request-product-modal";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -30,411 +40,534 @@ import {
 } from "@/components/ui/table";
 import { useCatalogHierarchy, useFilterOptions } from "@/hooks/use-catalog-api";
 
-// Debounce hook
+const typeVariantMap: Record<
+  string,
+  "default" | "secondary" | "outline" | "destructive"
+> = {
+  Grocery: "default",
+  Electronics: "secondary",
+  LPG: "outline",
+  Fashion: "secondary",
+  Footwear: "outline",
+};
+
 function useDebounce<T>(value: T, delay: number): T {
   const [debounced, setDebounced] = useState(value);
-  const [timer, setTimer] = useState<ReturnType<typeof setTimeout> | null>(
-    null,
-  );
 
-  const update = useCallback(
-    (v: T) => {
-      if (timer) clearTimeout(timer);
-      const t = setTimeout(() => setDebounced(v), delay);
-      setTimer(t);
-    },
-    [timer, delay],
-  );
-
-  if (value !== debounced && !timer) {
-    update(value);
-  }
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebounced(value), delay);
+    return () => window.clearTimeout(timer);
+  }, [delay, value]);
 
   return debounced;
 }
 
 export default function ProductCatalogPage() {
-  // Filter state
-  const [typeId, setTypeId] = useState<number | undefined>();
-  const [categoryId, setCategoryId] = useState<number | undefined>();
-  const [subCategoryId, setSubCategoryId] = useState<number | undefined>();
+  const router = useRouter();
+  const [selectedTypeId, setSelectedTypeId] = useState<number | undefined>();
+  const [selectedCategoryId, setSelectedCategoryId] = useState<
+    number | undefined
+  >();
+  const [selectedSubCategoryId, setSelectedSubCategoryId] = useState<
+    number | undefined
+  >();
+  const [selectedCoreProductId, setSelectedCoreProductId] = useState<
+    number | undefined
+  >();
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
+  const debouncedSearch = useDebounce(search, 400);
 
-  const debouncedSearch = useDebounce(search, 300);
-
-  // Fetch filter options (types, categories, subcategories)
   const { data: filterData, isLoading: filtersLoading } = useFilterOptions();
-
-  // Fetch catalog items with current filters
-  const { data, isLoading, isError } = useCatalogHierarchy({
-    typeId,
-    categoryId,
-    subCategoryId,
+  const {
+    data,
+    isLoading: loadingCatalog,
+    isError: catalogError,
+    error: catalogErrorMsg,
+    refetch,
+  } = useCatalogHierarchy({
+    typeId: selectedTypeId,
+    categoryId: selectedCategoryId,
+    subCategoryId: selectedSubCategoryId,
+    coreProductId: selectedCoreProductId,
     search: debouncedSearch || undefined,
     page,
-    limit: 50,
+    limit: 20,
   });
 
   const items = data?.items ?? [];
   const pagination = data?.pagination;
-
   const types = filterData?.types ?? [];
-  const categories =
-    filterData?.categories?.filter(
-      (c: any) => !typeId || c.typeId === typeId,
-    ) ?? [];
-  const subCategories =
-    filterData?.subCategories?.filter(
-      (sc: any) => !categoryId || sc.categoryId === categoryId,
-    ) ?? [];
+  const allCategories = filterData?.categories ?? [];
+  const allSubCategories = filterData?.subCategories ?? [];
+  const allCoreProducts = filterData?.coreProducts ?? [];
 
-  // Group items by type for visual separation
-  const groupedByType = useMemo(() => {
-    const map = new Map<string, typeof items>();
-    for (const item of items) {
-      const typeName = item.type?.name ?? "Uncategorized";
-      if (!map.has(typeName)) map.set(typeName, []);
-      map.get(typeName)!.push(item);
-    }
-    return map;
-  }, [items]);
+  const categories = selectedTypeId
+    ? allCategories.filter((category) => category.typeId === selectedTypeId)
+    : allCategories;
+
+  const subCategories = selectedCategoryId
+    ? allSubCategories.filter(
+        (subCategory) => subCategory.categoryId === selectedCategoryId,
+      )
+    : [];
+
+  const coreIdentityOptions = useMemo(() => {
+    const categoryIds = new Set(categories.map((category) => category.id));
+
+    return allCoreProducts.filter((coreProduct) => {
+      if (selectedSubCategoryId) {
+        return coreProduct.subCategoryId === selectedSubCategoryId;
+      }
+      if (selectedCategoryId) {
+        return coreProduct.categoryId === selectedCategoryId;
+      }
+      if (selectedTypeId) {
+        return categoryIds.has(coreProduct.categoryId);
+      }
+      return true;
+    });
+  }, [
+    allCoreProducts,
+    categories,
+    selectedCategoryId,
+    selectedSubCategoryId,
+    selectedTypeId,
+  ]);
+
+  const resetPage = () => setPage(1);
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="flex flex-col items-start justify-between gap-4 md:flex-row md:items-center">
         <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2">
-            <BookOpen className="h-6 w-6 text-emerald-600" />
+          <h1 className="flex items-center gap-3 text-2xl font-bold text-foreground">
+            <div className="rounded-xl bg-emerald-100 p-2">
+              <Layers className="text-emerald-600" size={22} />
+            </div>
             Product Catalog
           </h1>
-          <p className="text-sm text-gray-500 mt-1">
-            Browse the complete product catalog. Type → Category → Sub Category
-            → Core Identity
-          </p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Button asChild variant="outline">
-            <Link href="/dashboard/product-catalog/requests?new=variant_option">
-              <Plus className="mr-2 h-4 w-4" />
-              Request Variant
-            </Link>
+        <div className="flex items-center gap-2">
+          <div className="relative">
+            <Search
+              size={16}
+              className="absolute top-1/2 left-3 -translate-y-1/2 text-muted-foreground"
+            />
+            <Input
+              placeholder="Search products..."
+              value={search}
+              onChange={(event) => {
+                setSearch(event.target.value);
+                resetPage();
+              }}
+              className="w-64 pl-10"
+            />
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => router.push("/dashboard/product-catalog/requests")}
+            className="gap-1.5"
+          >
+            <Clock size={14} />
+            <span className="hidden md:inline">Requests</span>
           </Button>
-          <RequestProductModal />
+          <RequestProductModal
+            trigger={
+              <Button size="sm" className="gap-1.5">
+                <Plus size={14} />
+                <span className="hidden md:inline">Request Product</span>
+              </Button>
+            }
+          />
         </div>
       </div>
 
-      {/* Filter Bar */}
-      <div className="bg-white rounded-lg border shadow-sm p-4">
-        <CatalogFilterBar
-          types={types}
-          categories={categories}
-          subCategories={subCategories}
-          selectedTypeId={typeId}
-          selectedCategoryId={categoryId}
-          selectedSubCategoryId={subCategoryId}
-          search={search}
-          onTypeChange={(v) => {
-            setTypeId(v);
-            setPage(1);
-          }}
-          onCategoryChange={(v) => {
-            setCategoryId(v);
-            setPage(1);
-          }}
-          onSubCategoryChange={(v) => {
-            setSubCategoryId(v);
-            setPage(1);
-          }}
-          onSearchChange={(v) => {
-            setSearch(v);
-            setPage(1);
-          }}
-          totalCount={pagination?.totalCount ?? 0}
-        />
+      <div className="rounded-lg border bg-card p-4">
+        <div className="mb-3 flex items-center gap-2">
+          <Filter size={14} className="text-muted-foreground" />
+          <span className="text-xs font-semibold tracking-wider text-muted-foreground uppercase">
+            Filter By
+          </span>
+        </div>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="space-y-1">
+            <Label className="text-[10px] font-semibold tracking-wider text-muted-foreground uppercase">
+              Type
+            </Label>
+            <Select
+              value={selectedTypeId?.toString() ?? "all"}
+              onValueChange={(value) => {
+                setSelectedTypeId(value === "all" ? undefined : Number(value));
+                setSelectedCategoryId(undefined);
+                setSelectedSubCategoryId(undefined);
+                setSelectedCoreProductId(undefined);
+                resetPage();
+              }}
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="All Types" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Types</SelectItem>
+                {types.map((type) => (
+                  <SelectItem key={type.id} value={type.id.toString()}>
+                    {type.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-1">
+            <Label className="text-[10px] font-semibold tracking-wider text-muted-foreground uppercase">
+              Category
+            </Label>
+            <Select
+              value={selectedCategoryId?.toString() ?? "all"}
+              onValueChange={(value) => {
+                setSelectedCategoryId(
+                  value === "all" ? undefined : Number(value),
+                );
+                setSelectedSubCategoryId(undefined);
+                setSelectedCoreProductId(undefined);
+                resetPage();
+              }}
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="All Categories" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Categories</SelectItem>
+                {categories.map((category) => (
+                  <SelectItem key={category.id} value={category.id.toString()}>
+                    {category.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-1">
+            <Label className="text-[10px] font-semibold tracking-wider text-muted-foreground uppercase">
+              Sub Category
+            </Label>
+            <Select
+              value={selectedSubCategoryId?.toString() ?? "all"}
+              onValueChange={(value) => {
+                setSelectedSubCategoryId(
+                  value === "all" ? undefined : Number(value),
+                );
+                setSelectedCoreProductId(undefined);
+                resetPage();
+              }}
+              disabled={!selectedCategoryId}
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="All Sub Categories" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Sub Categories</SelectItem>
+                {subCategories.map((subCategory) => (
+                  <SelectItem
+                    key={subCategory.id}
+                    value={subCategory.id.toString()}
+                  >
+                    {subCategory.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-1">
+            <Label className="text-[10px] font-semibold tracking-wider text-muted-foreground uppercase">
+              Core Identity
+            </Label>
+            <Select
+              value={selectedCoreProductId?.toString() ?? "all"}
+              onValueChange={(value) => {
+                setSelectedCoreProductId(
+                  value === "all" ? undefined : Number(value),
+                );
+                resetPage();
+              }}
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="All Core Identities" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Core Identities</SelectItem>
+                {coreIdentityOptions.map((coreProduct) => (
+                  <SelectItem
+                    key={coreProduct.id}
+                    value={coreProduct.id.toString()}
+                  >
+                    {coreProduct.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
       </div>
 
-      {/* Product Table */}
-      {isLoading || filtersLoading ? (
-        <CatalogTableSkeleton />
-      ) : isError ? (
-        <div className="bg-white rounded-lg border shadow-sm p-12 text-center">
-          <AlertCircle className="w-12 h-12 text-red-300 mx-auto mb-3" />
-          <p className="text-gray-500 font-medium">Failed to load catalog</p>
-          <p className="text-sm text-gray-400 mt-1">
-            Please try refreshing the page.
+      {loadingCatalog || filtersLoading ? (
+        <div className="flex flex-col items-center justify-center rounded-lg border py-20">
+          <div className="mb-4 h-8 w-8 animate-spin rounded-full border-3 border-emerald-200 border-t-emerald-600" />
+          <p className="text-sm text-muted-foreground">Loading catalog...</p>
+        </div>
+      ) : catalogError ? (
+        <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-red-200 bg-red-50/50 py-20">
+          <AlertCircle className="mb-4 text-red-400" size={40} />
+          <p className="font-semibold text-red-600">Failed to load catalog</p>
+          <p className="mt-1 text-sm text-red-400">
+            {catalogErrorMsg?.message || "Could not connect to the server."}
           </p>
+          <Button
+            variant="destructive"
+            size="sm"
+            className="mt-4"
+            onClick={() => refetch()}
+          >
+            Retry
+          </Button>
         </div>
       ) : items.length === 0 ? (
-        <div className="bg-white rounded-lg border shadow-sm p-12 text-center">
-          <Package className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-          <p className="text-gray-500 font-medium">No products found</p>
-          <p className="text-sm text-gray-400 mt-1">
+        <div className="flex flex-col items-center justify-center rounded-lg border border-dashed py-20">
+          <PackageSearch className="mb-4 text-muted-foreground/30" size={48} />
+          <p className="font-semibold text-muted-foreground">
+            No products found
+          </p>
+          <p className="mt-1 text-sm text-muted-foreground/60">
             {search
-              ? `No results for "${search}". Try different keywords.`
-              : "No products match your current filters."}
+              ? "No products match your search. Try different keywords."
+              : "No products in the catalog yet."}
           </p>
         </div>
       ) : (
         <div className="space-y-4">
-          {/* Grouped Tables */}
-          {Array.from(groupedByType.entries()).map(([typeName, typeItems]) => (
-            <div
-              key={typeName}
-              className="bg-white rounded-lg border shadow-sm overflow-hidden"
-            >
-              {/* Type Header */}
-              <div className="bg-gradient-to-r from-gray-50 to-white px-4 py-2.5 border-b flex items-center gap-2">
-                <Layers3 className="h-4 w-4 text-emerald-600" />
-                <span className="font-semibold text-sm text-gray-700">
-                  {typeName}
-                </span>
-                <Badge variant="secondary" className="text-xs ml-1">
-                  {typeItems.length}
-                </Badge>
-              </div>
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-muted-foreground">
+              Showing{" "}
+              <span className="font-medium text-foreground">
+                {pagination?.totalCount ?? items.length}
+              </span>{" "}
+              products
+            </p>
+          </div>
 
-              <Table>
-                <TableHeader>
-                  <TableRow className="bg-gray-50/50">
-                    <TableHead className="w-[40px] text-center">#</TableHead>
-                    <TableHead className="w-[50px]">Image</TableHead>
-                    <TableHead>Category</TableHead>
-                    <TableHead>Sub Category</TableHead>
-                    <TableHead>Core Identity</TableHead>
-                    <TableHead className="w-[100px]">SKU</TableHead>
-                    <TableHead className="w-[140px] text-center">
-                      Action
-                    </TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {typeItems.map((item, idx) => {
-                    const action = resolveBrandCreationAction({
-                      mode: item.brandCreationMode,
-                      configuredBrandCount: item.shopBrandCount,
-                      addableBrandCount: item.shopAddableBrandCount,
-                    });
-                    return (
-                      <TableRow
-                        key={item.id}
-                        className="group hover:bg-emerald-50/30 transition-colors"
-                      >
-                        <TableCell className="text-center text-xs text-gray-400 font-mono">
-                          {idx + 1}
-                        </TableCell>
-                        <TableCell>
-                          {item.image ? (
-                            <Image
-                              src={item.image}
-                              alt={item.name}
-                              width={36}
-                              height={36}
-                              className="rounded object-cover border"
-                            />
-                          ) : (
-                            <div className="w-9 h-9 bg-gray-100 rounded flex items-center justify-center border">
-                              <Package className="w-4 h-4 text-gray-300" />
-                            </div>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          <span className="text-sm text-gray-600">
-                            {item.category?.name ?? "—"}
-                          </span>
-                        </TableCell>
-                        <TableCell>
-                          <span className="text-sm text-gray-600">
-                            {item.subCategory?.name ?? "—"}
-                          </span>
-                        </TableCell>
-                        <TableCell>
-                          <span className="font-medium text-sm text-gray-900">
-                            {item.name}
-                          </span>
-                        </TableCell>
-                        <TableCell>
-                          <code className="text-xs text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded font-mono">
-                            {item.sku}
-                          </code>
-                        </TableCell>
-                        <TableCell className="text-center">
-                          <div className="flex items-center justify-center gap-1">
-                            <Link
-                              href={`/dashboard/product-catalog/${item.id}`}
-                            >
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="h-7 px-2 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50"
-                              >
-                                <Eye className="h-3.5 w-3.5 mr-1" />
-                                View
-                              </Button>
-                            </Link>
-                            {action.disabled ? (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="h-7 px-2"
-                                disabled
-                              >
-                                {action.label}
-                              </Button>
+          <div className="overflow-hidden rounded-lg border">
+            <Table>
+              <TableHeader className="bg-muted/50">
+                <TableRow>
+                  <TableHead className="w-[50px]">#</TableHead>
+                  <TableHead>Type</TableHead>
+                  <TableHead>Category</TableHead>
+                  <TableHead>Sub Category</TableHead>
+                  <TableHead>Core Identity</TableHead>
+                  <TableHead className="text-right">Action</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {items.map((item, index) => {
+                  const action = resolveBrandCreationAction({
+                    mode: item.brandCreationMode,
+                    configuredBrandCount: item.shopBrandCount,
+                    addableBrandCount: item.shopAddableBrandCount,
+                  });
+                  const rowNumber =
+                    ((pagination?.page ?? page) - 1) *
+                      (pagination?.limit ?? 20) +
+                    index +
+                    1;
+
+                  return (
+                    <TableRow key={item.id}>
+                      <TableCell>
+                        <span className="text-sm font-medium text-muted-foreground">
+                          {rowNumber}
+                        </span>
+                      </TableCell>
+                      <TableCell>
+                        <Badge
+                          variant={
+                            typeVariantMap[item.type?.name ?? ""] || "outline"
+                          }
+                          className="text-xs"
+                        >
+                          {item.type?.name ?? "—"}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <span className="text-sm font-medium text-foreground">
+                          {item.category?.name ?? "—"}
+                        </span>
+                      </TableCell>
+                      <TableCell>
+                        <span className="text-sm text-muted-foreground">
+                          {item.subCategory?.name ?? "—"}
+                        </span>
+                      </TableCell>
+                      <TableCell>
+                        <span className="text-sm font-semibold text-foreground">
+                          {item.name}
+                        </span>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex justify-end gap-1.5">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-7 gap-1 text-xs"
+                            onClick={() =>
+                              router.push(
+                                `/dashboard/product-catalog/${item.id}`,
+                              )
+                            }
+                          >
+                            <Eye size={12} />
+                            View
+                          </Button>
+                          <Button
+                            size="sm"
+                            className="h-7 gap-1 text-xs"
+                            disabled={action.disabled}
+                            onClick={() =>
+                              router.push(
+                                `/dashboard/product-catalog/add/${item.id}`,
+                              )
+                            }
+                          >
+                            {action.kind === "edit_configuration" ? (
+                              <Settings size={12} />
                             ) : (
-                              <Link
-                                href={`/dashboard/product-catalog/add/${item.id}`}
-                              >
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="h-7 px-2 text-blue-600 hover:text-blue-700 hover:bg-blue-50"
-                                >
-                                  {action.kind === "edit_configuration" ? (
-                                    <Settings className="h-3.5 w-3.5 mr-1" />
-                                  ) : (
-                                    <Plus className="h-3.5 w-3.5 mr-1" />
-                                  )}
-                                  {action.label}
-                                </Button>
-                              </Link>
+                              <Plus size={12} />
                             )}
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            </div>
-          ))}
+                            {action.kind === "add_brands"
+                              ? "Add"
+                              : action.label}
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </div>
 
-          {/* Pagination */}
-          {pagination && pagination.totalPages > 1 && (
-            <div className="flex items-center justify-between px-1">
-              <p className="text-sm text-gray-500">
-                Page {pagination.page} of {pagination.totalPages}
-                {" · "}
-                {pagination.totalCount} total products
-              </p>
-              <div className="flex gap-1">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={page <= 1}
-                  onClick={() => setPage((p) => Math.max(1, p - 1))}
-                  className="h-8"
-                >
-                  <ChevronLeft className="h-4 w-4" />
-                </Button>
-                {Array.from(
-                  { length: Math.min(pagination.totalPages, 5) },
-                  (_, i) => {
-                    const start = Math.max(
-                      1,
-                      Math.min(page - 2, pagination.totalPages - 4),
-                    );
-                    const p = start + i;
-                    if (p > pagination.totalPages) return null;
-                    return (
-                      <Button
-                        key={p}
-                        variant={p === page ? "default" : "outline"}
-                        size="sm"
-                        onClick={() => setPage(p)}
-                        className="h-8 w-8 p-0"
-                      >
-                        {p}
-                      </Button>
-                    );
-                  },
-                )}
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={page >= pagination.totalPages}
-                  onClick={() => setPage((p) => p + 1)}
-                  className="h-8"
-                >
-                  <ChevronRight className="h-4 w-4" />
-                </Button>
-              </div>
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-muted-foreground">
+              Page {pagination?.page ?? page} of {pagination?.totalPages ?? 1}
+            </p>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="icon"
+                className="h-8 w-8"
+                onClick={() => setPage(1)}
+                disabled={page <= 1}
+              >
+                <ChevronsLeft size={14} />
+              </Button>
+              <Button
+                variant="outline"
+                size="icon"
+                className="h-8 w-8"
+                onClick={() => setPage((current) => Math.max(1, current - 1))}
+                disabled={page <= 1}
+              >
+                <ChevronLeft size={14} />
+              </Button>
+              <Button
+                variant="outline"
+                size="icon"
+                className="h-8 w-8"
+                onClick={() => setPage((current) => current + 1)}
+                disabled={page >= (pagination?.totalPages ?? 1)}
+              >
+                <ChevronRight size={14} />
+              </Button>
+              <Button
+                variant="outline"
+                size="icon"
+                className="h-8 w-8"
+                onClick={() => setPage(pagination?.totalPages ?? 1)}
+                disabled={page >= (pagination?.totalPages ?? 1)}
+              >
+                <ChevronsRight size={14} />
+              </Button>
             </div>
-          )}
+          </div>
         </div>
       )}
 
-      {/* Request CTA */}
-      <div className="bg-gradient-to-r from-emerald-50 to-teal-50 rounded-lg border border-emerald-200 p-6 flex flex-col sm:flex-row items-center justify-between gap-4">
-        <div>
-          <h3 className="font-semibold text-gray-800">
+      <div className="flex items-center gap-4 rounded-lg border border-amber-200 bg-amber-50 p-5">
+        <div className="shrink-0 rounded-xl bg-amber-100 p-2.5">
+          <AlertCircle className="text-amber-600" size={20} />
+        </div>
+        <div className="flex-1">
+          <p className="text-sm font-semibold text-amber-900">
             Can&apos;t find your product?
-          </h3>
-          <p className="text-sm text-gray-600 mt-0.5">
-            Request a new product identity and it will be added to the catalog
-            after admin review.
+          </p>
+          <p className="mt-0.5 text-xs text-amber-700">
+            If your product is not listed, request a new product identity.
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Button asChild variant="outline">
-            <Link href="/dashboard/product-catalog/requests?new=variant_option">
-              Request Variant
-            </Link>
-          </Button>
-          <RequestProductModal />
+        <RequestProductModal
+          trigger={
+            <Button
+              size="sm"
+              className="shrink-0 bg-amber-500 text-white hover:bg-amber-600"
+            >
+              + Request
+            </Button>
+          }
+        />
+      </div>
+
+      <div className="rounded-lg border bg-muted/50 p-5">
+        <h3 className="mb-3 text-xs font-bold tracking-wider text-muted-foreground uppercase">
+          About This Catalog
+        </h3>
+        <div className="grid grid-cols-1 gap-4 text-xs text-muted-foreground md:grid-cols-3">
+          <div className="space-y-1.5">
+            <p className="font-semibold text-foreground">📌 Important</p>
+            <ul className="list-inside list-disc space-y-1 text-[11px]">
+              <li>Core Identity is system-controlled</li>
+              <li>New products must be requested</li>
+              <li>Duplicate identity not allowed</li>
+              <li>SKU is auto-generated &amp; immutable</li>
+            </ul>
+          </div>
+          <div className="space-y-1.5">
+            <p className="font-semibold text-foreground">✔ What you can do</p>
+            <ul className="list-inside list-disc space-y-1 text-[11px]">
+              <li>Browse all available products</li>
+              <li>Add products to your shop catalog</li>
+              <li>Request new product identities</li>
+              <li>Track your requests</li>
+            </ul>
+          </div>
+          <div className="space-y-1.5">
+            <p className="font-semibold text-foreground">
+              📚 Product Structure
+            </p>
+            <p className="text-[11px] leading-relaxed">
+              All products follow the hierarchy:
+              <br />
+              <span className="font-medium text-foreground">
+                Type → Category → SubCategory → Core Identity → Variant
+              </span>
+              <br />
+              Each retailer can browse the full catalog and add variants to
+              their shop catalog.
+            </p>
+          </div>
         </div>
       </div>
-    </div>
-  );
-}
-
-function CatalogTableSkeleton() {
-  return (
-    <div className="bg-white rounded-lg border shadow-sm overflow-hidden">
-      <div className="bg-gray-50 px-4 py-2.5 border-b">
-        <Skeleton className="h-4 w-32" />
-      </div>
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead className="w-[40px]">#</TableHead>
-            <TableHead className="w-[50px]">Image</TableHead>
-            <TableHead>Category</TableHead>
-            <TableHead>Sub Category</TableHead>
-            <TableHead>Core Identity</TableHead>
-            <TableHead className="w-[100px]">SKU</TableHead>
-            <TableHead className="w-[80px]">Action</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {Array.from({ length: 8 }).map((_, i) => (
-            <TableRow key={i}>
-              <TableCell>
-                <Skeleton className="h-4 w-6" />
-              </TableCell>
-              <TableCell>
-                <Skeleton className="h-9 w-9 rounded" />
-              </TableCell>
-              <TableCell>
-                <Skeleton className="h-4 w-20" />
-              </TableCell>
-              <TableCell>
-                <Skeleton className="h-4 w-20" />
-              </TableCell>
-              <TableCell>
-                <Skeleton className="h-4 w-32" />
-              </TableCell>
-              <TableCell>
-                <Skeleton className="h-4 w-20" />
-              </TableCell>
-              <TableCell>
-                <Skeleton className="h-6 w-14 mx-auto" />
-              </TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
     </div>
   );
 }

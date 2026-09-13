@@ -10201,6 +10201,7 @@ const publicCatalogEndpoints = {
         typeId: z.number().nullish(),
         categoryId: z.number().nullish(),
         subCategoryId: z.number().nullish(),
+        coreProductId: z.number().nullish(),
         search: z.string().nullish(),
         page: z.number().optional().default(1),
         limit: z.number().optional().default(50),
@@ -10216,6 +10217,10 @@ const publicCatalogEndpoints = {
       const conditions: SQL[] = [
         eq(coreProductIdentity.creatorSource, "admin"),
       ];
+
+      if (input.coreProductId) {
+        conditions.push(eq(coreProductIdentity.id, input.coreProductId));
+      }
 
       if (input.search?.trim()) {
         conditions.push(
@@ -10559,29 +10564,44 @@ const publicCatalogEndpoints = {
    * Get filter options for the catalog: active types, categories, subcategories.
    */
   getPublicFilterOptions: publicProcedure.handler(async () => {
-    const [types, categories, subCategories, brands] = await Promise.all([
-      db.query.productType.findMany({
-        where: eq(productType.isActive, true),
-        orderBy: [productType.displayOrder, productType.name],
-        columns: { id: true, name: true, slug: true },
-      }),
-      db.query.category.findMany({
-        where: eq(category.isActive, true),
-        orderBy: [category.displayOrder, category.name],
-        columns: { id: true, name: true, slug: true, typeId: true },
-      }),
-      db.query.subCategory.findMany({
-        where: eq(subCategory.isActive, true),
-        orderBy: [subCategory.displayOrder, subCategory.name],
-        columns: { id: true, name: true, slug: true, categoryId: true },
-      }),
-      db.query.brand.findMany({
-        orderBy: [brand.name],
-        columns: { id: true, name: true },
-      }),
-    ]);
+    const [types, categories, subCategories, coreProducts, brands] =
+      await Promise.all([
+        db.query.productType.findMany({
+          where: eq(productType.isActive, true),
+          orderBy: [productType.displayOrder, productType.name],
+          columns: { id: true, name: true, slug: true },
+        }),
+        db.query.category.findMany({
+          where: eq(category.isActive, true),
+          orderBy: [category.displayOrder, category.name],
+          columns: { id: true, name: true, slug: true, typeId: true },
+        }),
+        db.query.subCategory.findMany({
+          where: eq(subCategory.isActive, true),
+          orderBy: [subCategory.displayOrder, subCategory.name],
+          columns: { id: true, name: true, slug: true, categoryId: true },
+        }),
+        db.query.coreProductIdentity.findMany({
+          where: and(
+            eq(coreProductIdentity.isActive, true),
+            eq(coreProductIdentity.creatorSource, "admin"),
+          ),
+          orderBy: [coreProductIdentity.name],
+          columns: {
+            id: true,
+            name: true,
+            slug: true,
+            categoryId: true,
+            subCategoryId: true,
+          },
+        }),
+        db.query.brand.findMany({
+          orderBy: [brand.name],
+          columns: { id: true, name: true },
+        }),
+      ]);
 
-    return { types, categories, subCategories, brands };
+    return { types, categories, subCategories, coreProducts, brands };
   }),
 
   /**

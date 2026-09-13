@@ -13,6 +13,7 @@ export function useCatalogHierarchy(filters: {
   typeId?: number;
   categoryId?: number;
   subCategoryId?: number;
+  coreProductId?: number;
   search?: string;
   page?: number;
   limit?: number;
@@ -23,6 +24,7 @@ export function useCatalogHierarchy(filters: {
         typeId: filters.typeId,
         categoryId: filters.categoryId,
         subCategoryId: filters.subCategoryId,
+        coreProductId: filters.coreProductId,
         search: filters.search || undefined,
         page: filters.page ?? 1,
         limit: filters.limit ?? 50,
