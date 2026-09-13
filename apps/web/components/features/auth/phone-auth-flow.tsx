@@ -1,12 +1,12 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
 import { isShopPortalRole } from "@bikalpo-project/auth/shop-staff-access";
+import { useEffect, useRef, useState } from "react";
 import { authClient } from "@/lib/auth-client";
 import { getDeliverySubdomainUrl } from "@/lib/delivery-routing";
+import { getDevelopmentOtp } from "@/lib/development-otp";
 import { getSalesSubdomainUrl } from "@/lib/sales-routing";
 import { getShopSubdomainUrl } from "@/lib/shop-routing";
-import { client } from "@/utils/orpc";
 
 type AuthStep = "phone" | "otp" | "name" | "done";
 type AuthMethod = "phone" | "email";
@@ -143,10 +143,10 @@ export function PhoneAuthFlow({ onComplete }: PhoneAuthFlowProps) {
       setStep("otp");
 
       try {
-        const result = await client.devOtp.get({ phoneNumber: fullPhone });
-        if (result?.code) {
+        const code = await getDevelopmentOtp(fullPhone);
+        if (code) {
           setOtpAutoFilling(true);
-          const digits = result.code.split("");
+          const digits = code.split("");
           digits.forEach((digit: string, index: number) => {
             setTimeout(
               () => {

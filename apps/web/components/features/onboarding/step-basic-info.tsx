@@ -10,8 +10,8 @@ import { Field, FieldGroup } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 
 import { authClient } from "@/lib/auth-client";
+import { getDevelopmentOtp } from "@/lib/development-otp";
 import { cn } from "@/lib/utils";
-import { client } from "@/utils/orpc";
 
 import {
   RegistrationActions,
@@ -73,10 +73,10 @@ export function StepBasicInfo({ data, onUpdate, onNext }: StepBasicInfoProps) {
       setOtpAutoFilling(true);
 
       try {
-        const result = await client.devOtp.get({ phoneNumber: fullPhone });
+        const code = await getDevelopmentOtp(fullPhone);
 
-        if (result?.code) {
-          const digits = result.code.split("");
+        if (code) {
+          const digits = code.split("");
 
           digits.forEach((digit: string, index: number) => {
             setTimeout(

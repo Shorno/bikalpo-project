@@ -22,13 +22,13 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { authClient } from "@/lib/auth-client";
+import { getDevelopmentOtp } from "@/lib/development-otp";
 import {
   getPasswordResetErrorMessage,
   maskPhoneNumber,
   type ResetPasswordWithOtpValues,
   resetPasswordWithOtpSchema,
 } from "@/lib/password-security";
-import { client } from "@/utils/orpc";
 
 const INITIAL_VALUES: ResetPasswordWithOtpValues = {
   confirmPassword: "",
@@ -89,13 +89,11 @@ export function PasswordResetOtpDialog({
       setOtpSent(true);
       toast.success("Password reset OTP sent");
 
-      if (process.env.NODE_ENV === "development") {
-        try {
-          const result = await client.devOtp.get({ phoneNumber });
-          if (result?.code) updateValue("otp", result.code);
-        } catch {
-          // Device OTP auto-fill remains available through autocomplete.
-        }
+      try {
+        const code = await getDevelopmentOtp(phoneNumber);
+        if (code) updateValue("otp", code);
+      } catch {
+        // Device OTP auto-fill remains available through autocomplete.
       }
     } catch {
       setMessage("The OTP could not be sent. Check your connection and retry.");

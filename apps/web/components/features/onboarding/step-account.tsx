@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useRef, useState } from "react";
 import { authClient } from "@/lib/auth-client";
-import { client } from "@/utils/orpc";
+import { getDevelopmentOtp } from "@/lib/development-otp";
 
 interface StepAccountProps {
   data: {
@@ -41,20 +41,23 @@ export function StepAccount({ data, onUpdate, onNext }: StepAccountProps) {
 
       // Auto-fill: fetch OTP from server and fill the input boxes
       try {
-        const result = await client.devOtp.get({ phoneNumber: fullPhone });
-        if (result?.code) {
-          const digits = result.code.split("");
+        const code = await getDevelopmentOtp(fullPhone);
+        if (code) {
+          const digits = code.split("");
           digits.forEach((digit: string, index: number) => {
-            setTimeout(() => {
-              setOtpValues((prev) => {
-                const newValues = [...prev];
-                newValues[index] = digit;
-                return newValues;
-              });
-              if (index === digits.length - 1) {
-                setOtpAutoFilling(false);
-              }
-            }, 200 * (index + 1) + 1000);
+            setTimeout(
+              () => {
+                setOtpValues((prev) => {
+                  const newValues = [...prev];
+                  newValues[index] = digit;
+                  return newValues;
+                });
+                if (index === digits.length - 1) {
+                  setOtpAutoFilling(false);
+                }
+              },
+              200 * (index + 1) + 1000,
+            );
           });
         } else {
           setOtpAutoFilling(false);
@@ -84,7 +87,7 @@ export function StepAccount({ data, onUpdate, onNext }: StepAccountProps) {
 
   const handleOtpKeyDown = (
     index: number,
-    e: React.KeyboardEvent<HTMLInputElement>
+    e: React.KeyboardEvent<HTMLInputElement>,
   ) => {
     if (e.key === "Backspace" && !otpValues[index] && index > 0) {
       otpRefs.current[index - 1]?.focus();
@@ -124,7 +127,10 @@ export function StepAccount({ data, onUpdate, onNext }: StepAccountProps) {
 
   const isOtpComplete = otpValues.every((v) => v !== "");
   const canProceed =
-    data.otpVerified && data.fullName && data.password && data.password.length >= 6;
+    data.otpVerified &&
+    data.fullName &&
+    data.password &&
+    data.password.length >= 6;
 
   return (
     <div className="w-full max-w-lg mx-auto">
@@ -144,9 +150,7 @@ export function StepAccount({ data, onUpdate, onNext }: StepAccountProps) {
         >
           Create Your Account
         </h2>
-        <p className="text-gray-500">
-          Verify your phone number to get started
-        </p>
+        <p className="text-gray-500">Verify your phone number to get started</p>
       </div>
 
       {/* Phone + OTP Section */}
@@ -177,7 +181,12 @@ export function StepAccount({ data, onUpdate, onNext }: StepAccountProps) {
             {!data.otpVerified && (
               <button
                 onClick={handleSendOtp}
-                disabled={!data.phone || data.phone.length < 11 || otpAutoFilling || isSending}
+                disabled={
+                  !data.phone ||
+                  data.phone.length < 11 ||
+                  otpAutoFilling ||
+                  isSending
+                }
                 className="px-4 py-3 bg-[#003178] text-white text-sm font-semibold rounded-lg hover:bg-[#003178]/90 disabled:opacity-50 disabled:cursor-not-allowed transition-all whitespace-nowrap"
               >
                 {isSending ? "Sending..." : otpSent ? "Resend" : "Send OTP"}
@@ -207,7 +216,9 @@ export function StepAccount({ data, onUpdate, onNext }: StepAccountProps) {
               {otpValues.map((value, index) => (
                 <input
                   key={index}
-                  ref={(el) => { otpRefs.current[index] = el; }}
+                  ref={(el) => {
+                    otpRefs.current[index] = el;
+                  }}
                   type="text"
                   inputMode="numeric"
                   maxLength={1}
@@ -290,9 +301,7 @@ export function StepAccount({ data, onUpdate, onNext }: StepAccountProps) {
               <input
                 type="email"
                 value={data.email}
-                onChange={(e) =>
-                  onUpdate({ ...data, email: e.target.value })
-                }
+                onChange={(e) => onUpdate({ ...data, email: e.target.value })}
                 placeholder="your@email.com"
                 className="w-full px-4 py-3 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#003178]/20 focus:border-[#003178] transition-all"
               />
