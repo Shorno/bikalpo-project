@@ -27,7 +27,6 @@ import {
   Search,
   Settings,
 } from "lucide-react";
-import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { Badge } from "@/components/ui/badge";
@@ -317,22 +316,9 @@ export default function WarehouseCatalogPage() {
           const cp = row.original.coreProduct;
 
           return (
-            <div className="flex items-center gap-2.5">
-              {cp.image && (
-                <Image
-                  src={cp.image}
-                  alt={cp.name}
-                  width={32}
-                  height={32}
-                  className="w-8 h-8 rounded-lg object-cover border"
-                />
-              )}
-              <div>
-                <span className="text-sm font-semibold text-foreground">
-                  {cp.name}
-                </span>
-              </div>
-            </div>
+            <span className="text-sm font-semibold text-foreground">
+              {cp.name}
+            </span>
           );
         },
       },
@@ -373,7 +359,7 @@ export default function WarehouseCatalogPage() {
                 ) : (
                   <Plus size={12} />
                 )}
-                {action.label}
+                {action.kind === "add_brands" ? "Add" : action.label}
               </Button>
             </div>
           );
