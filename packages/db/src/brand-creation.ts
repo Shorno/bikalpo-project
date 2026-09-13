@@ -2,6 +2,12 @@ export const BRAND_CREATION_MODES = ["batch", "single"] as const;
 
 export type BrandCreationMode = (typeof BRAND_CREATION_MODES)[number];
 
+export const RETAILER_BRAND_CREATION_MODE =
+  "single" satisfies BrandCreationMode;
+
+export const WAREHOUSE_BRAND_CREATION_MODE =
+  "single" satisfies BrandCreationMode;
+
 export type BrandCreationAction =
   | { kind: "add_brands"; label: "Add Brands"; disabled: false }
   | {

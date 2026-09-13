@@ -39,6 +39,7 @@ type CoreProductBrandManagementProps = {
   backHref: string;
   addHref: string;
   addActionLabel?: string;
+  emptyStateAddActionLabel?: string;
   editConfigurationHref: string;
   productEditHref: (productId: number) => string;
 };
@@ -50,6 +51,7 @@ export function CoreProductBrandManagement({
   backHref,
   addHref,
   addActionLabel,
+  emptyStateAddActionLabel,
   editConfigurationHref,
   productEditHref,
 }: CoreProductBrandManagementProps) {
@@ -140,8 +142,10 @@ export function CoreProductBrandManagement({
               <Package className="mx-auto h-8 w-8 text-muted-foreground/50" />
               <p className="mt-3 text-sm font-medium">No brand products yet</p>
               <p className="mt-1 text-xs text-muted-foreground">
-                Use {isSingleMode ? "Add Brand" : "Add Brands"} to create the
-                first product.
+                Use{" "}
+                {emptyStateAddActionLabel ??
+                  (isSingleMode ? "Add Brand" : "Add Brands")}{" "}
+                to create the first product.
               </p>
             </div>
           ) : (

@@ -16,7 +16,10 @@ import {
   normalizeLoginSecurityPreferences,
 } from "@bikalpo-project/auth/login-security-policy";
 import { db } from "@bikalpo-project/db";
-import { countAddableBrands } from "@bikalpo-project/db/brand-creation";
+import {
+  countAddableBrands,
+  RETAILER_BRAND_CREATION_MODE,
+} from "@bikalpo-project/db/brand-creation";
 import {
   buildProductTypeFulfillmentProfile,
   FULFILLMENT_MODE_LABELS,
@@ -10341,7 +10344,7 @@ const publicCatalogEndpoints = {
           sku: composedSku,
           image: cp.image,
           description: cp.description,
-          brandCreationMode: cp.brandCreationMode,
+          brandCreationMode: RETAILER_BRAND_CREATION_MODE,
           type: cp.category?.type
             ? {
                 id: cp.category.type.id,
