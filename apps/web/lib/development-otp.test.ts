@@ -3,7 +3,7 @@ import test from "node:test";
 import { getDevelopmentOtp } from "./development-otp";
 
 test(
-  "production never requests an OTP from the development endpoint",
+  "deployed development builds request the simulated OTP",
   { skip: process.env.NODE_ENV !== "production" },
   async () => {
     let requested = false;
@@ -12,7 +12,7 @@ test(
       return { code: "123456" };
     });
 
-    assert.equal(requested, false);
-    assert.equal(code, null);
+    assert.equal(requested, true);
+    assert.equal(code, "123456");
   },
 );

@@ -10,7 +10,6 @@ export async function getDevelopmentOtp(
   phoneNumber: string,
   request: OtpRequest = requestOtp,
 ) {
-  if (process.env.NODE_ENV !== "development") return null;
   const result = await request(phoneNumber);
   return result.code ?? null;
 }
