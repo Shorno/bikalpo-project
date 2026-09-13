@@ -17,7 +17,6 @@ test("combines saved account identity with registration answers", () => {
   assert.equal(
     computeProfileCompletion(
       {
-        profilePhotoUrl: "https://example.com/photo.jpg",
         businessCategory: "Grocery",
         district: "Dhaka",
         bankName: "Business bank",
@@ -47,6 +46,6 @@ test("legacy application identity and document lists count once per category", (
       },
       {},
     ),
-    56,
+    63,
   );
 });

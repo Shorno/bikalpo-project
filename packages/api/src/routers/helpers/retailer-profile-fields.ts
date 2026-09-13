@@ -108,29 +108,6 @@ export const retailerShopProfileSchema = z
 
 /** Complete post-approval registration profile contract for a Shop Owner. */
 export const retailerRegistrationProfileSchema = z.object({
-  applicant: z
-    .object({
-      profilePhotoUrl: nullableHttpUrlSchema,
-      ownerName: z.string().trim().min(2).max(100),
-      dateOfBirth: nullableText(10),
-      gender: z.enum(["male", "female", "other"]).nullable(),
-      personalAddress: nullableText(500),
-      personalArea: nullableText(100),
-      personalDistrict: nullableText(100),
-      personalDivision: nullableText(100),
-      personalPostCode: nullableText(20),
-      personalLatitude: z.number().min(20.5).max(26.7).nullable(),
-      personalLongitude: z.number().min(87.9).max(92.7).nullable(),
-    })
-    .refine(
-      (value) =>
-        (value.personalLatitude === null) ===
-        (value.personalLongitude === null),
-      {
-        message: "Latitude and longitude must be provided together",
-        path: ["personalLongitude"],
-      },
-    ),
   business: z
     .object({
       shopLogo: nullableHttpUrlSchema,

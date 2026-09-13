@@ -2138,7 +2138,7 @@ const mutations = {
       };
     }),
 
-  /** Update the complete owner-editable registration profile in one transaction. */
+  /** Update the business registration profile in one transaction. */
   updateRegistrationProfile: shopOwnerProcedure
     .route({
       method: "POST",
@@ -2202,19 +2202,6 @@ const mutations = {
                   reviewedBy: null,
                 }
               : {}),
-            profilePhotoUrl: input.applicant.profilePhotoUrl,
-            ownerName: input.applicant.ownerName,
-            dateOfBirth: input.applicant.dateOfBirth,
-            gender: input.applicant.gender,
-            personalAddress: input.applicant.personalAddress,
-            personalArea: input.applicant.personalArea,
-            personalDistrict: input.applicant.personalDistrict,
-            personalDivision: input.applicant.personalDivision,
-            personalPostCode: input.applicant.personalPostCode,
-            personalLatitude:
-              input.applicant.personalLatitude?.toString() ?? null,
-            personalLongitude:
-              input.applicant.personalLongitude?.toString() ?? null,
             shopName: input.business.shopName,
             businessType: input.business.businessType,
             productTypeId: selectedProductType?.id ?? null,
@@ -2250,9 +2237,6 @@ const mutations = {
         await tx
           .update(user)
           .set({
-            name: input.applicant.ownerName,
-            image: input.applicant.profilePhotoUrl,
-            ownerName: input.applicant.ownerName,
             shopName: input.business.shopName,
             shopLogo: input.business.shopLogo,
             businessType: input.business.businessType,
