@@ -1,10 +1,10 @@
 "use client";
 
-import { useState, useRef } from "react";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useRef, useState } from "react";
 import { authClient } from "@/lib/auth-client";
-import { client } from "@/utils/orpc";
+import { getDevelopmentOtp } from "@/lib/development-otp";
 
 export default function B2BLoginPage() {
   const router = useRouter();
@@ -31,20 +31,23 @@ export default function B2BLoginPage() {
 
       // Auto-fill OTP from server
       try {
-        const result = await client.devOtp.get({ phoneNumber: fullPhone });
-        if (result?.code) {
-          const digits = result.code.split("");
+        const code = await getDevelopmentOtp(fullPhone);
+        if (code) {
+          const digits = code.split("");
           digits.forEach((digit: string, index: number) => {
-            setTimeout(() => {
-              setOtpValues((prev) => {
-                const newValues = [...prev];
-                newValues[index] = digit;
-                return newValues;
-              });
-              if (index === digits.length - 1) {
-                setOtpAutoFilling(false);
-              }
-            }, 200 * (index + 1) + 800);
+            setTimeout(
+              () => {
+                setOtpValues((prev) => {
+                  const newValues = [...prev];
+                  newValues[index] = digit;
+                  return newValues;
+                });
+                if (index === digits.length - 1) {
+                  setOtpAutoFilling(false);
+                }
+              },
+              200 * (index + 1) + 800,
+            );
           });
         } else {
           setOtpAutoFilling(false);
@@ -72,7 +75,7 @@ export default function B2BLoginPage() {
 
   const handleOtpKeyDown = (
     index: number,
-    e: React.KeyboardEvent<HTMLInputElement>
+    e: React.KeyboardEvent<HTMLInputElement>,
   ) => {
     if (e.key === "Backspace" && !otpValues[index] && index > 0) {
       otpRefs.current[index - 1]?.focus();
@@ -164,8 +167,7 @@ export default function B2BLoginPage() {
               disabled={!phone || phone.length < 11 || isSending}
               className="w-full py-3 rounded-lg text-white font-bold text-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed hover:scale-[1.01]"
               style={{
-                background:
-                  "linear-gradient(135deg, #003178 0%, #0d47a1 100%)",
+                background: "linear-gradient(135deg, #003178 0%, #0d47a1 100%)",
               }}
             >
               {isSending ? (
@@ -210,7 +212,11 @@ export default function B2BLoginPage() {
               {/* Verify Button */}
               <button
                 onClick={handleVerify}
-                disabled={otpValues.join("").length !== 6 || isVerifying || otpAutoFilling}
+                disabled={
+                  otpValues.join("").length !== 6 ||
+                  isVerifying ||
+                  otpAutoFilling
+                }
                 className="w-full py-3 rounded-lg text-white font-bold text-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed hover:scale-[1.01]"
                 style={{
                   background:
