@@ -399,10 +399,6 @@ export default function WarehouseCatalogPage() {
             </div>
             Product Catalog
           </h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            Browse the complete product catalog. Type → Category → Sub Category
-            → Core Identity
-          </p>
         </div>
         <div className="flex items-center gap-2">
           <div className="relative">
