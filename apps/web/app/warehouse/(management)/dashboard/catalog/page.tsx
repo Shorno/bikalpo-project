@@ -25,7 +25,6 @@ import {
   PackageSearch,
   Plus,
   Search,
-  Settings,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
@@ -354,12 +353,8 @@ export default function WarehouseCatalogPage() {
                   router.push(`/warehouse/dashboard/catalog/add/${cpId}`)
                 }
               >
-                {action.kind === "edit_configuration" ? (
-                  <Settings size={12} />
-                ) : (
-                  <Plus size={12} />
-                )}
-                {action.kind === "add_brands" ? "Add" : action.label}
+                <Plus size={12} />
+                {action.disabled ? action.label : "Add"}
               </Button>
             </div>
           );

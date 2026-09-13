@@ -67,6 +67,7 @@ export default function RetailerCoreProductBrandManagementPage() {
       backHref={CATALOG_URL}
       addHref={`${CATALOG_URL}/add/${coreProductId}`}
       addActionLabel="Add"
+      emptyStateAddActionLabel="Add"
       editConfigurationHref={`${CATALOG_URL}/add/${coreProductId}`}
       productEditHref={(productId) => `/dashboard/products/${productId}/edit`}
     />

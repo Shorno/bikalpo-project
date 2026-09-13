@@ -14,8 +14,8 @@ import {
 } from "@bikalpo-project/db";
 import {
   countAddableBrands,
-  shouldDeactivateOmittedBrands,
   validateBrandCreationSubmission,
+  WAREHOUSE_BRAND_CREATION_MODE,
 } from "@bikalpo-project/db/brand-creation";
 import {
   checkoutPromotion,
@@ -7265,7 +7265,7 @@ const catalogBrowse = {
           name: cp.name,
           slug: cp.slug,
           image: cp.image,
-          brandCreationMode: cp.brandCreationMode,
+          brandCreationMode: WAREHOUSE_BRAND_CREATION_MODE,
           products: cpProducts.map((p: any) => ({
             ...p,
             variants: p.variants.map((v: any) => ({
@@ -8190,7 +8190,7 @@ const warehouseProductCreation = {
       });
 
       return {
-        core,
+        core: { ...core, brandCreationMode: WAREHOUSE_BRAND_CREATION_MODE },
         version: warehouseTemplate?.version ?? null,
         sourceAdminTemplateVersion:
           warehouseTemplate?.sourceAdminTemplateVersion ??
@@ -8283,7 +8283,7 @@ const warehouseProductCreation = {
           });
         }
         const submission = validateBrandCreationSubmission(
-          core.brandCreationMode,
+          WAREHOUSE_BRAND_CREATION_MODE,
           input.brands.length,
         );
         if (!submission.valid) {
@@ -8353,9 +8353,7 @@ const warehouseProductCreation = {
             and(
               eq(warehouseVariantAlias.warehouseId, warehouseId),
               eq(warehouseVariantAlias.coreProductId, core.id),
-              shouldDeactivateOmittedBrands(core.brandCreationMode)
-                ? undefined
-                : inArray(warehouseVariantAlias.variantOptionId, optionIds),
+              inArray(warehouseVariantAlias.variantOptionId, optionIds),
             ),
           );
         if (input.variantAliases.length > 0) {
@@ -8697,35 +8695,6 @@ const warehouseProductCreation = {
               retailPrice: null,
             });
             sortOrder++;
-          }
-        }
-
-        if (shouldDeactivateOmittedBrands(core.brandCreationMode)) {
-          const selectedBrands = new Set(brandIds);
-          for (const product of existingProducts) {
-            if (
-              product.brandId === null ||
-              selectedBrands.has(product.brandId)
-            ) {
-              continue;
-            }
-            await assertNoLiveStock(
-              product.variants.map((variant) => variant.id),
-              product.name,
-            );
-            await tx
-              .update(productTable)
-              .set({ status: "inactive" })
-              .where(eq(productTable.id, product.id));
-            await tx
-              .update(productVariant)
-              .set({ isActive: false })
-              .where(eq(productVariant.productId, product.id));
-            await tx
-              .update(productVariantPrice)
-              .set({ isActive: false })
-              .where(eq(productVariantPrice.productId, product.id));
-            deactivated.push(product.id);
           }
         }
 

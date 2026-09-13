@@ -1,6 +1,6 @@
 import { db } from "@bikalpo-project/db";
 import {
-  shouldDeactivateOmittedBrands,
+  RETAILER_BRAND_CREATION_MODE,
   validateBrandCreationSubmission,
 } from "@bikalpo-project/db/brand-creation";
 import { shouldEnableWarehouseCylinderExchange } from "@bikalpo-project/db/fulfillment";
@@ -461,7 +461,7 @@ export const shopProductConfigEndpoints = {
       );
 
       return {
-        core,
+        core: { ...core, brandCreationMode: RETAILER_BRAND_CREATION_MODE },
         version: shopTemplate?.version ?? null,
         sourceAdminTemplateVersion:
           shopTemplate?.sourceAdminTemplateVersion ??
@@ -557,7 +557,7 @@ export const shopProductConfigEndpoints = {
           });
         }
         const submission = validateBrandCreationSubmission(
-          core.brandCreationMode,
+          RETAILER_BRAND_CREATION_MODE,
           input.brands.length,
         );
         if (!submission.valid) {
@@ -748,33 +748,6 @@ export const shopProductConfigEndpoints = {
             optionMap,
             details: input.details,
           });
-        }
-
-        if (shouldDeactivateOmittedBrands(core.brandCreationMode)) {
-          const selectedBrands = new Set(brandIds);
-          for (const row of existingProducts) {
-            if (row.brandId === null || selectedBrands.has(row.brandId))
-              continue;
-            await assertNoShopStock(
-              tx,
-              shopId,
-              row.variants.map((variant) => variant.id),
-              row.name,
-            );
-            await tx
-              .update(product)
-              .set({ status: "inactive" })
-              .where(eq(product.id, row.id));
-            await tx
-              .update(productVariant)
-              .set({ isActive: false })
-              .where(eq(productVariant.productId, row.id));
-            await tx
-              .update(productVariantPrice)
-              .set({ isActive: false, updatedAt: new Date() })
-              .where(eq(productVariantPrice.productId, row.id));
-            deactivated.push(row.id);
-          }
         }
 
         await tx
