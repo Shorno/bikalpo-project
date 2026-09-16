@@ -14,10 +14,7 @@ export default function EditProductClient({ product }: EditProductClientProps) {
 
   if (isCoreManaged) {
     return (
-      <ProductEditForm
-        product={product}
-        backHref={`/dashboard/admin/products/core/${product.coreProductId}`}
-      />
+      <ProductEditForm product={product} backHref="/dashboard/admin/products" />
     );
   }
 
