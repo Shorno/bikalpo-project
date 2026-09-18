@@ -18,6 +18,7 @@ export type ReferenceCatalogVariant = {
 };
 
 export type ReferenceCatalogVariantPrice = {
+  brandId?: number | null;
   consumerPrice: string | number;
   id: number;
   isActive?: boolean | null;
@@ -128,6 +129,79 @@ function isCanonicalReferenceVariant(
     variant.catalogVariantId != null &&
     variant.catalogVariant?.isActive === true &&
     variant.catalogVariant.configurationState === "configured"
+  );
+}
+
+function getConfiguredVariantPrice(
+  variant: ReferenceCatalogVariant,
+  variantPrices: readonly ReferenceCatalogVariantPrice[],
+) {
+  const activePrices = variantPrices.filter(
+    (price) => price.isActive !== false,
+  );
+
+  return (
+    (variant.sourceVariantPriceId != null
+      ? activePrices.find((price) => price.id === variant.sourceVariantPriceId)
+      : undefined) ??
+    (variant.sourceVariantOptionId != null
+      ? activePrices.find(
+          (price) => price.variantOptionId === variant.sourceVariantOptionId,
+        )
+      : undefined)
+  );
+}
+
+/**
+ * Public discovery is intentionally stricter than the admin editing state.
+ * Every active price and generated variant must form one complete, positive,
+ * brand-scoped canonical selection before the product can be published.
+ */
+export function isAdminReferenceProductComplete(
+  product: ReferenceCatalogPriceSource,
+  now: Date = new Date(),
+): boolean {
+  if (
+    product.creatorSource !== "admin" ||
+    product.coreProductId == null ||
+    product.brandId == null
+  ) {
+    return false;
+  }
+
+  const activeVariants = (product.variants ?? []).filter(
+    (variant) => variant.isActive === true,
+  );
+  const activePrices = (product.variantPrices ?? []).filter(
+    (price) => price.isActive !== false,
+  );
+  if (activeVariants.length === 0 || activePrices.length === 0) return false;
+
+  const eligibleVariants = activeVariants.filter((variant) =>
+    isOpenOrderReferenceSelectionEligible({ product, variant, now }),
+  );
+  if (eligibleVariants.length !== activeVariants.length) return false;
+
+  const everyVariantHasPrice = eligibleVariants.every((variant) => {
+    const configuredPrice = getConfiguredVariantPrice(variant, activePrices);
+    return (
+      configuredPrice != null &&
+      configuredPrice.brandId === product.brandId &&
+      asNumber(configuredPrice.consumerPrice) > 0
+    );
+  });
+  if (!everyVariantHasPrice) return false;
+
+  return activePrices.every(
+    (price) =>
+      price.brandId === product.brandId &&
+      asNumber(price.consumerPrice) > 0 &&
+      eligibleVariants.some(
+        (variant) =>
+          variant.sourceVariantPriceId === price.id ||
+          (variant.sourceVariantPriceId == null &&
+            variant.sourceVariantOptionId === price.variantOptionId),
+      ),
   );
 }
 

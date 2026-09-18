@@ -27,7 +27,7 @@ This context describes how products keep a shared identity while each owner cont
 ## Language
 
 **Core Product Identity**:
-The shared root identity for one kind of product across admin, warehouse, and retailer configurations.
+The reusable shared root for one kind of product across admin, warehouse, and retailer configurations. It owns the default name and image and may have many Brand Products.
 _Avoid_: Admin product, master SKU
 
 **Admin Preset**:
@@ -77,6 +77,10 @@ _Avoid_: Normal order, closed order
 **Reference Price**:
 The public catalog amount used to help a consumer estimate an Open Order; it is not the final payable retailer price.
 _Avoid_: Selling price, guaranteed price
+
+**Reference Product Completeness**:
+The publishable state of an Admin Brand Product whose active variants are all linked to configured Catalog Variants and each has a positive, brand-specific Reference Price. Incomplete products remain editable in Admin but are absent from public discovery.
+_Avoid_: Active status, product draft, base-price fallback
 
 **Eligible Retailer**:
 An active retailer in the consumer's service area and within the ten-kilometre Open Order radius that can supply every requested Catalog Variant in full.

@@ -17,12 +17,7 @@ import { useMemo, useState } from "react";
 import { StarRating } from "@/components/features/reviews/star-rating";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from "@/components/ui/tabs";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import { resolveBrandScope, scopeVariantPrices } from "../_lib/brand-scope";
 
@@ -103,11 +98,15 @@ export function WebViewDetailClient({
   brandId = null,
   reviews,
   stats,
+  listingUrl = LISTING_URL,
+  listingLabel = "Web View",
 }: {
   product: DetailProduct;
   brandId?: number | null;
   reviews: Review[];
   stats: ReviewStats;
+  listingUrl?: string;
+  listingLabel?: string;
 }) {
   const { brands, hasSingleBrand, defaultBrandId } = useMemo(
     () => resolveBrandScope(product),
@@ -177,8 +176,8 @@ export function WebViewDetailClient({
     <div className="mx-auto w-full max-w-6xl space-y-5">
       {/* Breadcrumb */}
       <nav className="flex flex-wrap items-center gap-1.5 text-sm text-muted-foreground">
-        <Link href={LISTING_URL} className="hover:text-foreground">
-          Web View
+        <Link href={listingUrl} className="hover:text-foreground">
+          {listingLabel}
         </Link>
         <ChevronRight className="h-3.5 w-3.5" />
         <span>{categoryName}</span>
@@ -198,7 +197,7 @@ export function WebViewDetailClient({
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex min-w-0 items-center gap-3">
           <Button asChild variant="outline" size="sm">
-            <Link href={LISTING_URL}>
+            <Link href={listingUrl}>
               <ArrowLeft className="h-4 w-4" />
               Back
             </Link>
@@ -214,7 +213,7 @@ export function WebViewDetailClient({
           <Button asChild variant="outline" size="sm">
             <Link href={`/dashboard/admin/products/${product.id}/edit`}>
               <Pencil className="h-4 w-4" />
-              Edit
+              Edit Product
             </Link>
           </Button>
           {storefrontHref ? (
