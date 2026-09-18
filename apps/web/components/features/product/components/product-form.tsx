@@ -1133,8 +1133,8 @@ export default function ProductForm({
     <div className="min-h-screen bg-muted/30">
       {/* Command bar */}
       <div className="sticky top-0 z-20 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
-        <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-2.5">
-          <div className="flex min-w-0 items-center gap-3">
+        <div className="mx-auto flex max-w-6xl flex-col items-stretch gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:py-2.5">
+          <div className="flex min-w-0 w-full items-center gap-3 sm:w-auto">
             <Button
               asChild
               variant="ghost"
@@ -1164,7 +1164,7 @@ export default function ProductForm({
               </div>
             </div>
           </div>
-          <div className="flex shrink-0 items-center gap-2">
+          <div className="flex w-full shrink-0 items-center justify-end gap-1.5 sm:w-auto sm:gap-2">
             {isEdit && product?.id ? (
               <DeleteProductDialog
                 productId={product.id}
@@ -1178,6 +1178,7 @@ export default function ProductForm({
               type="button"
               variant="ghost"
               size="sm"
+              className="max-sm:px-2 max-sm:text-xs"
               onClick={() => router.push(listHref)}
               disabled={isPending}
             >
@@ -1187,6 +1188,7 @@ export default function ProductForm({
               type="button"
               variant="outline"
               size="sm"
+              className="max-sm:px-2 max-sm:text-xs"
               onClick={() => {
                 form.setFieldValue("status", "draft");
                 form.handleSubmit();
@@ -1197,6 +1199,7 @@ export default function ProductForm({
             </Button>
             <Button
               size="sm"
+              className="max-sm:px-2 max-sm:text-xs"
               onClick={() => {
                 if (editAdapter?.publishOnSave) {
                   form.setFieldValue("status", "active");
