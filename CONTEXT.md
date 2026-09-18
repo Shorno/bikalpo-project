@@ -78,6 +78,10 @@ _Avoid_: Normal order, closed order
 The public catalog amount used to help a consumer estimate an Open Order; it is not the final payable retailer price.
 _Avoid_: Selling price, guaranteed price
 
+**Reference Product Completeness**:
+The publishable state of an Admin Brand Product whose active variants are all linked to configured Catalog Variants and each has a positive, brand-specific Reference Price. Incomplete products remain editable in Admin but are absent from public discovery.
+_Avoid_: Active status, product draft, base-price fallback
+
 **Eligible Retailer**:
 An active retailer in the consumer's service area and within the ten-kilometre Open Order radius that can supply every requested Catalog Variant in full.
 _Avoid_: Candidate seller, partially matched retailer

@@ -213,7 +213,7 @@ export function WebViewDetailClient({
           <Button asChild variant="outline" size="sm">
             <Link href={`/dashboard/admin/products/${product.id}/edit`}>
               <Pencil className="h-4 w-4" />
-              Edit
+              Edit Product
             </Link>
           </Button>
           {storefrontHref ? (

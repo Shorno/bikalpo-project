@@ -253,7 +253,7 @@ export default function ProductCatalogTable({
         cell: ({ row }) => (
           <div className="flex justify-end">
             <Button size="sm" variant="outline" asChild>
-              <Link href={`${ADMIN_BASE}/products/${row.original.id}/edit`}>
+              <Link href={`${ADMIN_BASE}/products/${row.original.id}`}>
                 <Eye className="size-4" />
                 View
               </Link>
@@ -473,7 +473,7 @@ export default function ProductCatalogTable({
               </StatusRow>
             ) : (
               table.getRowModel().rows.map((row) => {
-                const productHref = `${ADMIN_BASE}/products/${row.original.id}/edit`;
+                const productHref = `${ADMIN_BASE}/products/${row.original.id}`;
                 const openProduct = () => {
                   if (isMobile) router.push(productHref);
                 };

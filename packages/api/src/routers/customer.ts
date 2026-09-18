@@ -132,6 +132,7 @@ import {
   getReferenceProductEffectivePrice,
   getReferenceSellerKey,
   getReferenceVariantUnitPrice,
+  isAdminReferenceProductComplete,
   isOpenOrderReferenceSelectionEligible,
   referenceProductCanExchange,
   sortReferenceProducts,
@@ -1696,6 +1697,7 @@ const queries = {
           },
           variantPrices: {
             columns: {
+              brandId: true,
               consumerPrice: true,
               id: true,
               isActive: true,
@@ -1706,13 +1708,7 @@ const queries = {
       });
 
       const referenceProducts = referenceProductRows.filter(
-        (referenceProduct) =>
-          referenceProduct.variants.some((variant) =>
-            isOpenOrderReferenceSelectionEligible({
-              product: referenceProduct,
-              variant,
-            }),
-          ),
+        (referenceProduct) => isAdminReferenceProductComplete(referenceProduct),
       );
 
       const productIds = referenceProducts.map(
@@ -2157,6 +2153,12 @@ const queries = {
         },
         orderBy: [asc(productVariant.sortOrder)],
       });
+      if (
+        isAdminReference &&
+        !isAdminReferenceProductComplete({ ...found, variants: variantRows })
+      ) {
+        throw new ORPCError("NOT_FOUND", { message: "Product not found" });
+      }
       const variants = variantRows.filter((variant) =>
         isAdminReference
           ? isOpenOrderReferenceSelectionEligible({
@@ -2338,6 +2340,9 @@ const queries = {
             where: and(
               eq(product.categoryId, cat.id),
               eq(product.inStock, true),
+              eq(product.creatorSource, "admin"),
+              isNotNull(product.coreProductId),
+              isNotNull(product.brandId),
               ...getWebViewProductConditions(),
             ),
             with: {
@@ -2355,6 +2360,7 @@ const queries = {
                   price: true,
                   productId: true,
                   sourceVariantPriceId: true,
+                  sourceVariantOptionId: true,
                   variantType: true,
                   visibilityRole: true,
                 },
@@ -2369,13 +2375,24 @@ const queries = {
                   },
                 },
               },
+              variantPrices: {
+                columns: {
+                  brandId: true,
+                  consumerPrice: true,
+                  id: true,
+                  isActive: true,
+                  variantOptionId: true,
+                },
+              },
             },
-            limit: prodLimit,
             orderBy: [desc(product.createdAt)],
           });
+          const completeProducts = products
+            .filter((productRow) => isAdminReferenceProductComplete(productRow))
+            .slice(0, prodLimit);
 
           // Batch-fetch review stats
-          const pIds = products.map((p) => p.id);
+          const pIds = completeProducts.map((p) => p.id);
           const reviewStatsMap: Record<
             number,
             { averageRating: number; totalReviews: number }
@@ -2401,7 +2418,7 @@ const queries = {
           }
 
           // Batch-fetch seller counts
-          const coreIds = products
+          const coreIds = completeProducts
             .map((p) => p.coreProductId)
             .filter((id): id is number => id != null);
           const sellerCountMap: Record<number, number> = {};
@@ -2423,7 +2440,7 @@ const queries = {
           }
 
           // Serialize products with enrichments (compute min variant price in JS)
-          const serializedProducts = products.map((p) => {
+          const serializedProducts = completeProducts.map((p) => {
             const activeVariants = (p.variants || []).filter(
               (v) => v.isActive !== false,
             );
@@ -2440,7 +2457,11 @@ const queries = {
               ? getReferenceCylinderPricing(p)
               : null;
 
-            const { variants: _variants, ...productData } = p;
+            const {
+              variantPrices: _variantPrices,
+              variants: _variants,
+              ...productData
+            } = p;
             return {
               ...productData,
               canExchange: cylinderPricing?.exchangeAvailable ?? false,
