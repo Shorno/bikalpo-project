@@ -36,7 +36,7 @@ import {
 import { z } from "zod";
 
 import { adminProcedure, publicProcedure } from "../index";
-import { generateSku } from "./helpers/generate-sku";
+import { generateSku, nextSkuCode } from "./helpers/generate-sku";
 import {
   applyGeneratedVariantExchangeSettings,
   attachExchangeSettingsToVariantPrices,
@@ -88,6 +88,7 @@ const createProductSchema = z.object({
 
   // === New fields for Core Identity-driven flow ===
   coreProductId: z.number().int().optional().nullable(),
+  newCoreProductName: z.string().trim().min(1).max(150).optional(),
   shortDescription: z.string().optional().nullable(),
   videoUrl: z.string().optional().nullable(),
   // Behavior settings
@@ -133,9 +134,11 @@ const createProductSchema = z.object({
     .optional(),
 });
 
-const updateProductSchema = createProductSchema.extend({
-  id: z.number(),
-});
+const updateProductSchema = createProductSchema
+  .omit({ newCoreProductName: true })
+  .extend({
+    id: z.number(),
+  });
 
 const consumerPriceListParamsSchema = z.object({
   search: z.string().optional(),
@@ -159,6 +162,14 @@ const updateConsumerReferencePriceSchema = z.object({
 });
 
 type ConsumerPriceListInput = z.infer<typeof consumerPriceListParamsSchema>;
+
+function slugifyCoreProductName(name: string) {
+  return name
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "");
+}
 
 async function fetchConsumerReferencePriceData(input: ConsumerPriceListInput) {
   const conditions: SQL[] = [
@@ -697,11 +708,17 @@ export const productRouter = {
         brandIds = [],
         ...productData
       } = input;
-      const coreProductId = productData.coreProductId;
+      const requestedCoreProductId = productData.coreProductId;
+      const newCoreProductName = productData.newCoreProductName?.trim();
 
-      if (!coreProductId) {
+      if (!requestedCoreProductId && !newCoreProductName) {
         throw new ORPCError("BAD_REQUEST", {
-          message: "Select an admin core product before creating products",
+          message: "Select or enter a core product identity",
+        });
+      }
+      if (requestedCoreProductId && newCoreProductName) {
+        throw new ORPCError("BAD_REQUEST", {
+          message: "Choose an existing core identity or create a new one",
         });
       }
       if (brandIds.length === 0) {
@@ -742,6 +759,107 @@ export const productRouter = {
       }
 
       const products = await db.transaction(async (tx) => {
+        let coreProductId = requestedCoreProductId;
+
+        if (!coreProductId && newCoreProductName) {
+          const coreSlug = slugifyCoreProductName(newCoreProductName);
+          if (!coreSlug) {
+            throw new ORPCError("BAD_REQUEST", {
+              message: "Enter a core identity name with letters or numbers",
+            });
+          }
+
+          const activeCategory = await tx.query.category.findFirst({
+            where: and(
+              eq(categoryTable.id, productData.categoryId),
+              eq(categoryTable.isActive, true),
+            ),
+            columns: { id: true, typeId: true },
+          });
+          const activeType = activeCategory?.typeId
+            ? await tx.query.productType.findFirst({
+                where: and(
+                  eq(productType.id, activeCategory.typeId),
+                  eq(productType.isActive, true),
+                ),
+                columns: { id: true },
+              })
+            : null;
+          const activeSubCategory = productData.subCategoryId
+            ? await tx.query.subCategory.findFirst({
+                where: and(
+                  eq(subCategory.id, productData.subCategoryId),
+                  eq(subCategory.categoryId, productData.categoryId),
+                  eq(subCategory.isActive, true),
+                ),
+                columns: { id: true },
+              })
+            : null;
+          if (
+            !activeCategory ||
+            !activeType ||
+            (productData.subCategoryId && !activeSubCategory)
+          ) {
+            throw new ORPCError("BAD_REQUEST", {
+              message:
+                "Core identities require an active Type, Category, and Sub Category path",
+            });
+          }
+
+          const duplicateCore = await tx.query.coreProductIdentity.findFirst({
+            where: or(
+              eq(coreProductIdentity.name, newCoreProductName),
+              eq(coreProductIdentity.slug, coreSlug),
+            ),
+            columns: { id: true },
+          });
+          if (duplicateCore) {
+            throw new ORPCError("CONFLICT", {
+              message:
+                "That core identity already exists. Select it from the search results instead.",
+            });
+          }
+
+          const coreSkuScope = productData.subCategoryId
+            ? sql`${coreProductIdentity.subCategoryId} = ${productData.subCategoryId}`
+            : sql`${coreProductIdentity.categoryId} = ${productData.categoryId} AND ${coreProductIdentity.subCategoryId} IS NULL`;
+          const coreSku = await nextSkuCode(
+            coreProductIdentity,
+            coreProductIdentity.sku,
+            3,
+            coreSkuScope,
+            tx,
+          );
+          const [createdCore] = await tx
+            .insert(coreProductIdentity)
+            .values({
+              sku: coreSku,
+              name: newCoreProductName,
+              slug: coreSlug,
+              description: productData.description ?? null,
+              image: productData.image,
+              categoryId: productData.categoryId,
+              subCategoryId: productData.subCategoryId ?? null,
+              createdById: context.session.user.id,
+              creatorSource: "admin",
+              isActive: true,
+              brandCreationMode: "batch",
+            })
+            .returning({ id: coreProductIdentity.id });
+          if (!createdCore) {
+            throw new ORPCError("INTERNAL_SERVER_ERROR", {
+              message: "Could not create the core product identity",
+            });
+          }
+          coreProductId = createdCore.id;
+        }
+
+        if (!coreProductId) {
+          throw new ORPCError("BAD_REQUEST", {
+            message: "Select or enter a core product identity",
+          });
+        }
+
         const core = await tx.query.coreProductIdentity.findFirst({
           where: eq(coreProductIdentity.id, coreProductId),
           with: {
@@ -766,16 +884,6 @@ export const productRouter = {
         );
         if (!submission.valid) {
           throw new ORPCError("BAD_REQUEST", { message: submission.message });
-        }
-
-        // A Core Identity created inline from the product combobox starts with
-        // the local placeholder. Replace it with the product image once the
-        // complete product is successfully saved in this transaction.
-        if (core.image === "/placeholder-image.svg") {
-          await tx
-            .update(coreProductIdentity)
-            .set({ image: productData.image })
-            .where(eq(coreProductIdentity.id, coreProductId));
         }
 
         const brandRows = await tx.query.brand.findMany({

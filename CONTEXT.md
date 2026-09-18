@@ -27,7 +27,7 @@ This context describes how products keep a shared identity while each owner cont
 ## Language
 
 **Core Product Identity**:
-The reusable shared root for one kind of product across admin, warehouse, and retailer configurations. One Core Product Identity may have many Brand Products.
+The reusable shared root for one kind of product across admin, warehouse, and retailer configurations. It owns the default name and image and may have many Brand Products.
 _Avoid_: Admin product, master SKU
 
 **Admin Preset**:
