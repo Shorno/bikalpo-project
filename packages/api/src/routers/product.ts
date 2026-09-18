@@ -586,7 +586,9 @@ export const productRouter = {
         where: eq(product.creatorSource, "admin"),
         orderBy: [desc(product.createdAt)],
         with: {
-          category: true,
+          category: {
+            with: { type: true },
+          },
           subCategory: true,
           brand: true,
           images: true,
@@ -674,9 +676,9 @@ export const productRouter = {
     }),
 
   /**
-   * First-time admin product creation for a core product.
-   * One submission stores the initial shared template and creates one
-   * independent product per selected brand.
+   * Admin Brand Product creation from a reusable Core Product Identity.
+   * One submission stores shared defaults and creates one independent product
+   * per selected brand.
    */
   create: adminProcedure
     .route({
@@ -684,7 +686,8 @@ export const productRouter = {
       path: "/products",
       tags: ["Product Management"],
       summary: "Create per-brand products",
-      description: "Create the initial admin products for a core product",
+      description:
+        "Create brand products from a reusable admin core product identity",
     })
     .input(createProductSchema)
     .handler(async ({ context, input }) => {
@@ -765,21 +768,14 @@ export const productRouter = {
           throw new ORPCError("BAD_REQUEST", { message: submission.message });
         }
 
-        // Product existence is the single source of truth for "already
-        // created". A leftover generation template does not block Add — it is
-        // overwritten by the upsert below.
-        const existingProduct = await tx.query.product.findFirst({
-          where: and(
-            eq(product.coreProductId, coreProductId),
-            eq(product.creatorSource, "admin"),
-          ),
-          columns: { id: true },
-        });
-        if (existingProduct) {
-          throw new ORPCError("CONFLICT", {
-            message:
-              "This core product has already been created. Use Edit instead.",
-          });
+        // A Core Identity created inline from the product combobox starts with
+        // the local placeholder. Replace it with the product image once the
+        // complete product is successfully saved in this transaction.
+        if (core.image === "/placeholder-image.svg") {
+          await tx
+            .update(coreProductIdentity)
+            .set({ image: productData.image })
+            .where(eq(coreProductIdentity.id, coreProductId));
         }
 
         const brandRows = await tx.query.brand.findMany({
@@ -791,6 +787,27 @@ export const productRouter = {
           });
         }
         const brandMap = new Map(brandRows.map((row) => [row.id, row]));
+
+        const existingBrandProducts = await tx.query.product.findMany({
+          where: and(
+            eq(product.coreProductId, coreProductId),
+            eq(product.creatorSource, "admin"),
+            inArray(product.brandId, brandIds),
+          ),
+          columns: { brandId: true },
+        });
+        if (existingBrandProducts.length > 0) {
+          const duplicateBrandNames = existingBrandProducts
+            .map((existing) =>
+              existing.brandId
+                ? brandMap.get(existing.brandId)?.name
+                : undefined,
+            )
+            .filter((name): name is string => Boolean(name));
+          throw new ORPCError("CONFLICT", {
+            message: `A product already exists for ${duplicateBrandNames.join(", ")} under this core identity. Choose another brand or edit the existing product.`,
+          });
+        }
 
         const requestedVariantIds = [
           ...new Set(variantPrices.map((row) => row.variantOptionId)),
@@ -858,8 +875,8 @@ export const productRouter = {
           status: productData.status,
         } satisfies AdminProductGenerationTemplateDetails;
 
-        // Upsert: overwrite any stale template left over from a previous
-        // setup that was fully deleted, so re-adding a core always works.
+        // Keep the reusable admin preset current for future Brand Products.
+        // Existing Brand Products remain independent and are not rewritten.
         await tx
           .insert(adminProductGenerationTemplate)
           .values({
