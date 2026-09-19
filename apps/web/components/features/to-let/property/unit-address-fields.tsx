@@ -136,9 +136,9 @@ export function UnitAddressFields({
   return (
     <fieldset
       disabled={capturing}
-      className="rounded-lg border border-gray-200 bg-white p-5 sm:p-6"
+      className="rounded-lg border border-border bg-card p-5 sm:p-6"
     >
-      <h2 className="font-semibold text-gray-900">Unit address</h2>
+      <h2 className="font-semibold text-foreground">Unit address</h2>
       <fieldset className="mt-4 space-y-3">
         <legend className="sr-only">Choose which address this unit uses</legend>
         <label className="flex cursor-pointer items-center gap-2 text-sm">

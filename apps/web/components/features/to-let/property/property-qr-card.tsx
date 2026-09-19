@@ -45,22 +45,22 @@ export function PropertyQrCard(props: {
   };
 
   return (
-    <aside className="rounded-lg border border-gray-200 bg-white p-5">
+    <aside className="rounded-lg border border-border bg-white p-5">
       <div className="flex items-center gap-3">
         <span className="flex size-10 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600">
           <QrCode className="size-5" />
         </span>
         <div>
-          <h2 className="font-semibold text-gray-900">Permanent QR identity</h2>
-          <p className="font-mono text-xs text-gray-500">{propertyCode}</p>
+          <h2 className="font-semibold text-foreground">Permanent QR identity</h2>
+          <p className="font-mono text-xs text-muted-foreground">{propertyCode}</p>
         </div>
       </div>
       <div data-property-qr-poster className="mt-5">
         <PropertyQrPoster {...props} qrUrl={qrUrl} ref={posterRef} />
       </div>
-      <div className="mt-4 flex items-start gap-2 rounded-lg bg-gray-50 p-3">
+      <div className="mt-4 flex items-start gap-2 rounded-lg bg-muted/30 p-3">
         <ShieldCheck className="mt-0.5 size-4 shrink-0 text-emerald-600" />
-        <p className="text-xs leading-5 text-gray-600">
+        <p className="text-xs leading-5 text-muted-foreground">
           This permanent QR opens the property's available To-Let units. Public
           Listings can appear in browse and search; QR Only Listings remain
           accessible through this poster.

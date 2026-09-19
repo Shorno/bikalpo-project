@@ -45,20 +45,20 @@ export function OwnerUnitPaymentHistory({
   return (
     <section
       aria-labelledby="owner-payment-history-title"
-      className="mt-6 min-w-0 border-t border-gray-200 pt-6"
+      className="mt-6 min-w-0 border-t border-border pt-6"
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h3
           id="owner-payment-history-title"
-          className="font-semibold text-gray-900"
+          className="font-semibold text-foreground"
         >
           Payment History
         </h3>
-        <span className="text-sm text-gray-500">
+        <span className="text-sm text-muted-foreground">
           Owner view · All rental contracts
         </span>
       </div>
-      <p className="mt-2 text-sm leading-6 text-gray-600">
+      <p className="mt-2 text-sm leading-6 text-muted-foreground">
         Current and previous tenants for this unit. Vacant rows mean no rental
         contract was recorded under your account for that month. Months without
         a started contract have no charge.
@@ -66,13 +66,13 @@ export function OwnerUnitPaymentHistory({
       {sessionPending || query.isLoading ? (
         <p
           role="status"
-          className="flex items-center gap-2 py-8 text-sm text-gray-600"
+          className="flex items-center gap-2 py-8 text-sm text-muted-foreground"
         >
           <Loader2 aria-hidden="true" className="size-4 animate-spin" />
           Loading payment history
         </p>
       ) : !session?.user ? (
-        <p className="py-6 text-sm text-gray-600">
+        <p className="py-6 text-sm text-muted-foreground">
           Sign in to the property owner account to view payment history.
         </p>
       ) : query.isError ? (
@@ -92,14 +92,14 @@ export function OwnerUnitPaymentHistory({
           </Button>
         </div>
       ) : !data?.rows.length ? (
-        <p className="py-8 text-sm text-gray-600">
+        <p className="py-8 text-sm text-muted-foreground">
           No rental payment history yet. Records appear after the first signed
           contract starts.
         </p>
       ) : (
         <>
           <div
-            className="mt-4 overflow-x-auto rounded-lg border border-gray-200"
+            className="mt-4 overflow-x-auto rounded-lg border border-border"
             role="region"
             aria-label="Unit payment history table"
             tabIndex={0}
@@ -110,7 +110,7 @@ export function OwnerUnitPaymentHistory({
                 {data.periodFrom && monthLabel(data.periodFrom)} to{" "}
                 {data.periodTo && monthLabel(data.periodTo)}
               </caption>
-              <thead className="bg-gray-50 text-xs text-gray-600">
+              <thead className="bg-muted/30 text-xs text-muted-foreground">
                 <tr>
                   {[
                     "Month",
@@ -130,44 +130,44 @@ export function OwnerUnitPaymentHistory({
                   ))}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100 bg-white">
+              <tbody className="divide-y divide-gray-100 bg-card">
                 {data.rows.map((row) => (
                   <tr key={row.key}>
                     <th
                       scope="row"
-                      className="whitespace-nowrap px-4 py-3 font-medium text-gray-700"
+                      className="whitespace-nowrap px-4 py-3 font-medium text-foreground"
                     >
                       {monthLabel(row.cycleMonth)}
                     </th>
-                    <td className="max-w-44 break-all px-4 py-3 font-mono text-xs text-gray-600">
+                    <td className="max-w-44 break-all px-4 py-3 font-mono text-xs text-muted-foreground">
                       {row.tenantId ?? "—"}
                     </td>
                     <td className="min-w-36 max-w-56 break-words px-4 py-3">
-                      <span className="font-medium text-gray-900">
+                      <span className="font-medium text-foreground">
                         {row.tenantName}
                       </span>
                       {row.bookingCode ? (
-                        <span className="mt-1 block font-mono text-xs text-gray-500">
+                        <span className="mt-1 block font-mono text-xs text-muted-foreground">
                           {row.bookingCode}
                         </span>
                       ) : null}
                       {row.referenceName ? (
-                        <span className="mt-1 block text-xs text-gray-600">
+                        <span className="mt-1 block text-xs text-muted-foreground">
                           Received by: {row.referenceName}
                         </span>
                       ) : null}
                     </td>
-                    <td className="whitespace-nowrap px-4 py-3 font-mono font-medium tabular-nums text-gray-900">
+                    <td className="whitespace-nowrap px-4 py-3 font-mono font-medium tabular-nums text-foreground">
                       {row.amount === null
                         ? "—"
                         : `৳${new Intl.NumberFormat("en-BD").format(row.amount)}`}
                     </td>
-                    <td className="px-4 py-3 font-mono tabular-nums text-gray-700">
+                    <td className="px-4 py-3 font-mono tabular-nums text-foreground">
                       {row.otp ?? "—"}
                     </td>
                     <td className="px-4 py-3">
                       {row.status === "vacant" ? (
-                        <span className="text-gray-500">No charge</span>
+                        <span className="text-muted-foreground">No charge</span>
                       ) : (
                         <>
                           <Badge
@@ -181,7 +181,7 @@ export function OwnerUnitPaymentHistory({
                             {row.status === "paid" ? "Paid" : "Pending"}
                           </Badge>
                           {!row.recorded ? (
-                            <span className="mt-1 block text-xs text-gray-500">
+                            <span className="mt-1 block text-xs text-muted-foreground">
                               Awaiting cycle record
                             </span>
                           ) : null}
@@ -198,7 +198,7 @@ export function OwnerUnitPaymentHistory({
               aria-label="Payment history months"
               className="mt-4 flex flex-wrap items-center justify-between gap-3"
             >
-              <p className="text-sm text-gray-600">
+              <p className="text-sm text-muted-foreground">
                 {data.periodFrom && monthLabel(data.periodFrom)} –{" "}
                 {data.periodTo && monthLabel(data.periodTo)}
               </p>

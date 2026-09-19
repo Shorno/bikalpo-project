@@ -17,6 +17,7 @@ import { adminInvoiceRouter } from "./admin-invoice";
 import { adminItemRequestRouter } from "./admin-item-request";
 import { adminLandingRouter } from "./admin-landing";
 import { adminMarketingRouter } from "./admin-marketing";
+import { toLetBannerRouter } from "./tolet-banner";
 import { adminOfferRouter } from "./admin-offer";
 import { adminOfferTemplateRouter } from "./admin-offer-template";
 import { adminOrderRouter } from "./admin-order";
@@ -179,6 +180,7 @@ export const appRouter = {
   userInvite: userInviteRouter,
   adminUserManagement: adminUserManagementRouter,
   adminMarketing: adminMarketingRouter,
+  toLetBanner: toLetBannerRouter,
   marketing: marketingRouter,
   userTicket: userTicketRouter,
   userComplaint: userComplaintRouter,

@@ -112,8 +112,8 @@ export function PublicListingGallery({
 
   if (images.length === 0) {
     return (
-      <div className="flex aspect-video flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-zinc-300 bg-zinc-50 text-zinc-500">
-        <span className="flex size-12 items-center justify-center rounded-full border border-zinc-200 bg-white">
+      <div className="flex aspect-video flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-border bg-muted/30 text-muted-foreground">
+        <span className="flex size-12 items-center justify-center rounded-full border border-border bg-card">
           <ImageIcon className="size-5" aria-hidden="true" />
         </span>
         <p className="text-sm font-medium">No photos available</p>
@@ -133,7 +133,7 @@ export function PublicListingGallery({
       <div
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}
-        className="group relative aspect-video touch-pan-y overflow-hidden rounded-lg border border-zinc-200 bg-zinc-100"
+        className="group relative aspect-video touch-pan-y overflow-hidden rounded-lg border border-border bg-muted"
       >
         <Image
           key={activeImage}
@@ -154,7 +154,7 @@ export function PublicListingGallery({
             <button
               type="button"
               onClick={showPrevious}
-              className="absolute left-3 top-1/2 flex size-10 -translate-y-1/2 items-center justify-center rounded-full border border-white/70 bg-white/90 text-zinc-900 transition hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 sm:opacity-0 sm:group-focus-within:opacity-100 sm:group-hover:opacity-100"
+              className="absolute left-3 top-1/2 flex size-10 -translate-y-1/2 items-center justify-center rounded-full border border-white/70 bg-white/90 text-foreground transition hover:bg-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:opacity-0 sm:group-focus-within:opacity-100 sm:group-hover:opacity-100"
               aria-label="Show previous photo"
             >
               <ChevronLeft className="size-5" aria-hidden="true" />
@@ -162,7 +162,7 @@ export function PublicListingGallery({
             <button
               type="button"
               onClick={showNext}
-              className="absolute right-3 top-1/2 flex size-10 -translate-y-1/2 items-center justify-center rounded-full border border-white/70 bg-white/90 text-zinc-900 transition hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 sm:opacity-0 sm:group-focus-within:opacity-100 sm:group-hover:opacity-100"
+              className="absolute right-3 top-1/2 flex size-10 -translate-y-1/2 items-center justify-center rounded-full border border-white/70 bg-white/90 text-foreground transition hover:bg-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:opacity-0 sm:group-focus-within:opacity-100 sm:group-hover:opacity-100"
               aria-label="Show next photo"
             >
               <ChevronRight className="size-5" aria-hidden="true" />
@@ -192,11 +192,11 @@ export function PublicListingGallery({
               onClick={() => setActiveIndex(index)}
               aria-label={`Show photo ${index + 1} of ${images.length}`}
               aria-pressed={index === activeIndex}
-              className={`relative aspect-[4/3] w-20 shrink-0 overflow-hidden rounded-md border-2 bg-zinc-100 transition sm:w-24 ${
+              className={`relative aspect-[4/3] w-20 shrink-0 overflow-hidden rounded-md border-2 bg-muted transition sm:w-24 ${
                 index === activeIndex
-                  ? "border-blue-600 ring-2 ring-blue-100"
+                  ? "border-primary ring-2 ring-ring"
                   : "border-transparent opacity-75 hover:opacity-100"
-              } focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-600 focus-visible:ring-offset-2`}
+              } focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2`}
             >
               <Image
                 src={imageUrl}

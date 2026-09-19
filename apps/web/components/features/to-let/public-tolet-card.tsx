@@ -17,8 +17,8 @@ export function PublicToLetCard({ listing }: PublicToLetCardProps) {
 
   return (
     <Link href={`/to-let/${listing.id}`} className="block">
-      <article className="bg-white rounded-xl border border-gray-100 overflow-hidden shadow-sm hover:shadow-md transition-shadow">
-        <div className="relative aspect-video bg-slate-100">
+      <article className="bg-card rounded-xl border border-border overflow-hidden shadow-sm hover:shadow-md transition-shadow">
+        <div className="relative aspect-video bg-muted">
           <Image
             src={imageUrl}
             alt={listing.title}
@@ -29,14 +29,14 @@ export function PublicToLetCard({ listing }: PublicToLetCardProps) {
         </div>
 
         <div className="p-4 space-y-2">
-          <h3 className="text-lg font-semibold text-gray-900">
+          <h3 className="text-lg font-semibold text-foreground">
             {listing.title}
           </h3>
-          <p className="text-sm text-gray-500">{listing.location}</p>
+          <p className="text-sm text-muted-foreground">{listing.location}</p>
           {listing.area && (
-            <p className="text-sm text-gray-500">Area: {listing.area}</p>
+            <p className="text-sm text-muted-foreground">Area: {listing.area}</p>
           )}
-          <p className="text-sm text-gray-700 line-clamp-2">
+          <p className="text-sm text-foreground line-clamp-2">
             {listing.description}
           </p>
 
@@ -44,12 +44,12 @@ export function PublicToLetCard({ listing }: PublicToLetCardProps) {
             <span className="font-bold text-emerald-600">{`৳ ${Number(
               listing.rent,
             ).toLocaleString()}/month`}</span>
-            <div className="text-xs font-medium text-blue-600 flex items-center gap-1">
+            <div className="text-xs font-medium text-primary flex items-center gap-1">
               Details <ArrowRight className="w-3 h-3" />
             </div>
           </div>
 
-          <p className="text-xs text-gray-500">
+          <p className="text-xs text-muted-foreground">
             Contact: {listing.contactInfo}
           </p>
         </div>

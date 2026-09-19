@@ -28,9 +28,9 @@ export function PropertyPageHeader({
           </Button>
         ) : null}
         <div className="min-w-0">
-          <h1 className="text-2xl font-bold text-gray-900">{title}</h1>
+          <h1 className="text-2xl font-bold text-foreground">{title}</h1>
           {description ? (
-            <p className="mt-1 text-sm text-gray-500">{description}</p>
+            <p className="mt-1 text-sm text-muted-foreground">{description}</p>
           ) : null}
         </div>
       </div>
@@ -41,22 +41,22 @@ export function PropertyPageHeader({
 
 const propertyStatusStyles: Record<PropertyStatus, string> = {
   active: "border-emerald-200 bg-emerald-50 text-emerald-700",
-  inactive: "border-gray-200 bg-gray-100 text-gray-600",
+  inactive: "border-border bg-muted text-muted-foreground",
   blocked: "border-red-200 bg-red-50 text-red-700",
 };
 
 const unitStatusStyles: Record<UnitStatus, string> = {
   vacant: "border-emerald-200 bg-emerald-50 text-emerald-700",
-  booked: "border-blue-200 bg-blue-50 text-blue-700",
+  booked: "border-primary/20 bg-primary/5 text-primary",
   occupied: "border-violet-200 bg-violet-50 text-violet-700",
-  inactive: "border-gray-200 bg-gray-100 text-gray-600",
+  inactive: "border-border bg-muted text-muted-foreground",
 };
 
 const listingStatusStyles: Record<ListingStatus, string> = {
   draft: "border-amber-200 bg-amber-50 text-amber-700",
   active: "border-emerald-200 bg-emerald-50 text-emerald-700",
-  paused: "border-blue-200 bg-blue-50 text-blue-700",
-  closed: "border-gray-200 bg-gray-100 text-gray-600",
+  paused: "border-primary/20 bg-primary/5 text-primary",
+  closed: "border-border bg-muted text-muted-foreground",
 };
 
 export function PropertyStatusBadge({ status }: { status: PropertyStatus }) {
@@ -100,10 +100,10 @@ export function PropertyErrorState({
   onRetry?: () => void;
 }) {
   return (
-    <div className="rounded-lg border border-red-200 bg-white p-8 text-center">
+    <div className="rounded-lg border border-red-200 bg-card p-8 text-center">
       <AlertCircle className="mx-auto size-10 text-red-400" />
-      <h2 className="mt-3 font-semibold text-gray-900">Something went wrong</h2>
-      <p className="mx-auto mt-1 max-w-md text-sm text-gray-500">{message}</p>
+      <h2 className="mt-3 font-semibold text-foreground">Something went wrong</h2>
+      <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">{message}</p>
       {onRetry ? (
         <Button variant="outline" onClick={onRetry} className="mt-4">
           Try again
@@ -127,7 +127,7 @@ export function PropertiesListSkeleton() {
         {[1, 2].map((item) => (
           <div
             key={item}
-            className="overflow-hidden rounded-lg border border-gray-200 bg-white"
+            className="overflow-hidden rounded-lg border border-border bg-card"
           >
             <Skeleton className="aspect-[16/7] w-full rounded-none" />
             <div className="space-y-3 p-4">
@@ -159,18 +159,18 @@ export function PropertyDetailsSkeleton() {
 
 export function PropertyEmptyState() {
   return (
-    <div className="rounded-lg border border-gray-200 bg-white p-10 text-center sm:p-14">
+    <div className="rounded-lg border border-border bg-card p-10 text-center sm:p-14">
       <span className="mx-auto flex size-14 items-center justify-center rounded-full bg-emerald-50 text-emerald-600">
         <Building2 className="size-7" />
       </span>
-      <h2 className="mt-4 text-lg font-semibold text-gray-900">
+      <h2 className="mt-4 text-lg font-semibold text-foreground">
         No properties added yet
       </h2>
-      <p className="mx-auto mt-1 max-w-md text-sm text-gray-500">
+      <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">
         Register your first property to create reusable units and prepare for
         To-Let listings.
       </p>
-      <Button asChild className="mt-5 bg-emerald-600 hover:bg-emerald-700">
+      <Button asChild className="mt-5 bg-primary text-primary-foreground hover:bg-primary/90">
         <Link href="/account/to-let/properties/new">
           <Plus />
           Register Property

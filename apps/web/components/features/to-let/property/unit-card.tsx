@@ -196,8 +196,8 @@ export function UnitCard({
         : "Book Now";
 
   return (
-    <article className="overflow-hidden rounded-lg border border-gray-200 bg-white">
-      <header className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 px-4 py-3">
+    <article className="overflow-hidden rounded-lg border border-border bg-card">
+      <header className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-3">
         <div className="flex items-center gap-2">
           {listing?.status === "active" ? (
             <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 ring-1 ring-inset ring-emerald-200">
@@ -209,19 +209,19 @@ export function UnitCard({
           {unit.status === "vacant" &&
           listing?.status &&
           listing.status !== "active" ? (
-            <span className="text-xs font-medium text-gray-500">
+            <span className="text-xs font-medium text-muted-foreground">
               {humanize(listing.status)} Listing
             </span>
           ) : null}
         </div>
 
-        <span className="flex items-center gap-1.5 text-xs font-medium text-gray-600">
-          <Eye className="size-3.5 text-gray-400" /> View:{" "}
+        <span className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+          <Eye className="size-3.5 text-muted-foreground" /> View:{" "}
           {listing?.viewCount ?? 0} Views
         </span>
       </header>
 
-      <div className="relative aspect-[16/9] bg-gray-100">
+      <div className="relative aspect-[16/9] bg-muted">
         {activeSlide?.type === "image" ? (
           <Image
             src={activeSlide.url}
@@ -242,7 +242,7 @@ export function UnitCard({
             <span className="text-sm font-semibold">{activeSlide.label}</span>
           </a>
         ) : (
-          <div className="flex size-full flex-col items-center justify-center gap-2 text-gray-400">
+          <div className="flex size-full flex-col items-center justify-center gap-2 text-muted-foreground">
             <Building2 className="size-12" />
             <span className="text-sm">No media added</span>
           </div>
@@ -258,7 +258,7 @@ export function UnitCard({
                   current === 0 ? media.length - 1 : current - 1,
                 )
               }
-              className="absolute left-3 top-1/2 flex size-8 -translate-y-1/2 items-center justify-center rounded-full border border-gray-200 bg-white/90 text-gray-800 transition-colors hover:bg-white"
+              className="absolute left-3 top-1/2 flex size-8 -translate-y-1/2 items-center justify-center rounded-full border border-border bg-white/90 text-foreground transition-colors hover:bg-card"
             >
               <ChevronLeft className="size-4" />
             </button>
@@ -268,7 +268,7 @@ export function UnitCard({
               onClick={() =>
                 setSlideIndex((current) => (current + 1) % media.length)
               }
-              className="absolute right-3 top-1/2 flex size-8 -translate-y-1/2 items-center justify-center rounded-full border border-gray-200 bg-white/90 text-gray-800 transition-colors hover:bg-white"
+              className="absolute right-3 top-1/2 flex size-8 -translate-y-1/2 items-center justify-center rounded-full border border-border bg-white/90 text-foreground transition-colors hover:bg-card"
             >
               <ChevronRight className="size-4" />
             </button>
@@ -281,7 +281,7 @@ export function UnitCard({
                   onClick={() => setSlideIndex(index)}
                   className={`size-1.5 rounded-full ${
                     index === slideIndex % media.length
-                      ? "bg-white"
+                      ? "bg-card"
                       : "bg-white/50"
                   }`}
                 />
@@ -292,7 +292,7 @@ export function UnitCard({
       </div>
 
       <div className="p-4">
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 pb-3 font-mono text-xs text-gray-500">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border pb-3 font-mono text-xs text-muted-foreground">
           <span>
             Unit: {unit.name} ({formatFloorLabel(unit.floorNumber)})
           </span>
@@ -305,7 +305,7 @@ export function UnitCard({
               <Layers3 className="size-3.5" />
               {humanize(unit.unitType)}
             </p>
-            <h3 className="mt-1 truncate text-lg font-semibold text-gray-900">
+            <h3 className="mt-1 truncate text-lg font-semibold text-foreground">
               {listing?.title || unit.name}
             </h3>
           </div>
@@ -313,52 +313,52 @@ export function UnitCard({
           {listing ? (
             <p className="shrink-0 text-right text-lg font-bold text-emerald-700">
               {formatRent(listing.monthlyRent)}
-              <span className="block text-xs font-normal text-gray-500">
+              <span className="block text-xs font-normal text-muted-foreground">
                 per month
               </span>
             </p>
           ) : (
-            <span className="rounded-md bg-gray-100 px-2 py-1 text-xs font-medium text-gray-600">
+            <span className="rounded-md bg-muted px-2 py-1 text-xs font-medium text-muted-foreground">
               {humanize(unit.unitType)}
             </span>
           )}
         </div>
 
         {listing?.description || unit.description ? (
-          <p className="mt-3 line-clamp-2 text-sm leading-6 text-gray-600">
+          <p className="mt-3 line-clamp-2 text-sm leading-6 text-muted-foreground">
             {listing?.description || unit.description}
           </p>
         ) : null}
 
-        <div className="mt-4 grid grid-cols-2 gap-2 text-xs text-gray-600">
+        <div className="mt-4 grid grid-cols-2 gap-2 text-xs text-muted-foreground">
           {residential ? (
             <span className="flex items-center gap-1.5">
-              <BedDouble className="size-3.5 text-gray-400" /> {unit.bedrooms}{" "}
+              <BedDouble className="size-3.5 text-muted-foreground" /> {unit.bedrooms}{" "}
               bed
             </span>
           ) : null}
           {showBathrooms ? (
             <span className="flex items-center gap-1.5">
-              <Bath className="size-3.5 text-gray-400" /> {unit.bathrooms} bath
+              <Bath className="size-3.5 text-muted-foreground" /> {unit.bathrooms} bath
             </span>
           ) : null}
           {showBalconies ? (
             <span className="flex items-center gap-1.5">
-              <Building2 className="size-3.5 text-gray-400" /> {unit.balconies}{" "}
+              <Building2 className="size-3.5 text-muted-foreground" /> {unit.balconies}{" "}
               balcony
             </span>
           ) : null}
           <span className="flex items-center gap-1.5">
-            <Ruler className="size-3.5 text-gray-400" />
+            <Ruler className="size-3.5 text-muted-foreground" />
             {unit.sizeSqFt.toLocaleString("en-BD")} sq ft
           </span>
           <span className="col-span-2 flex items-center gap-1.5">
-            <MapPin className="size-3.5 shrink-0 text-gray-400" />
+            <MapPin className="size-3.5 shrink-0 text-muted-foreground" />
             <span className="truncate">{location}</span>
           </span>
         </div>
 
-        <div className="mt-4 flex flex-wrap gap-2 border-t border-gray-100 pt-4">
+        <div className="mt-4 flex flex-wrap gap-2 border-t border-border pt-4">
           <Button variant="outline" size="sm" asChild className="flex-1">
             <Link href={detailsHref}>Details</Link>
           </Button>

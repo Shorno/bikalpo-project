@@ -10,8 +10,8 @@ export function PropertyCard({ property }: { property: ToLetPropertyView }) {
   const imageUrl = property.coverImageUrl || "/placeholder-image.svg";
 
   return (
-    <article className="overflow-hidden rounded-lg border border-gray-200 bg-white">
-      <div className="relative aspect-[16/7] bg-gray-100">
+    <article className="overflow-hidden rounded-lg border border-border bg-card">
+      <div className="relative aspect-[16/7] bg-muted">
         <Image
           src={imageUrl}
           alt={`${property.name} cover`}
@@ -31,25 +31,25 @@ export function PropertyCard({ property }: { property: ToLetPropertyView }) {
             <Building2 className="size-4" />
           </span>
           <div className="min-w-0 flex-1">
-            <h2 className="truncate font-semibold text-gray-900">
+            <h2 className="truncate font-semibold text-foreground">
               {property.name}
             </h2>
-            <p className="mt-0.5 font-mono text-xs text-gray-500">
+            <p className="mt-0.5 font-mono text-xs text-muted-foreground">
               {property.propertyCode}
             </p>
           </div>
         </div>
 
-        <div className="mt-4 space-y-2 text-sm text-gray-600">
+        <div className="mt-4 space-y-2 text-sm text-muted-foreground">
           <p className="flex items-start gap-2">
-            <MapPin className="mt-0.5 size-4 shrink-0 text-gray-400" />
+            <MapPin className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
             <span className="line-clamp-2">
               {property.area}, {property.district}, {property.division}
             </span>
           </p>
-          <div className="flex items-center justify-between gap-3 rounded-lg bg-gray-50 px-3 py-2">
+          <div className="flex items-center justify-between gap-3 rounded-lg bg-muted/30 px-3 py-2">
             <span>{humanize(property.propertyType)}</span>
-            <span className="font-medium text-gray-900">
+            <span className="font-medium text-foreground">
               {unitCount} of {property.declaredTotalUnits} units created
             </span>
           </div>

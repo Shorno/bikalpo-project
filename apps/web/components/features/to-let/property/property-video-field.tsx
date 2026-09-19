@@ -73,7 +73,7 @@ export function PropertyVideoField({
   return (
     <div className="space-y-3">
       <div
-        className="inline-grid grid-cols-2 overflow-hidden rounded-md border border-gray-200 bg-white"
+        className="inline-grid grid-cols-2 overflow-hidden rounded-md border border-border bg-card"
         role="group"
         aria-label="Building video source"
       >
@@ -85,9 +85,9 @@ export function PropertyVideoField({
           aria-pressed={source === "upload"}
           onClick={() => setSource("upload")}
           className={cn(
-            "rounded-none border-r border-gray-200",
+            "rounded-none border-r border-border",
             source === "upload" &&
-              "bg-emerald-600 text-white hover:bg-emerald-700 hover:text-white",
+              "bg-primary text-primary-foreground hover:bg-primary/90 hover:text-white",
           )}
         >
           <UploadCloud /> Upload Video
@@ -102,7 +102,7 @@ export function PropertyVideoField({
           className={cn(
             "rounded-none",
             source === "link" &&
-              "bg-emerald-600 text-white hover:bg-emerald-700 hover:text-white",
+              "bg-primary text-primary-foreground hover:bg-primary/90 hover:text-white",
           )}
         >
           <Link2 /> Add Video Link
@@ -117,7 +117,7 @@ export function PropertyVideoField({
           subjectLabel={subjectLabel}
         />
       ) : (
-        <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+        <div className="rounded-lg border border-border bg-muted/30 p-4">
           <Input
             id="property-video-link"
             type="url"
@@ -127,9 +127,9 @@ export function PropertyVideoField({
             aria-label="Building video link"
             placeholder="https://youtube.com/... or a public video URL"
             onChange={(event) => onChange(event.target.value)}
-            className="bg-white"
+            className="bg-card"
           />
-          <p className="mt-2 text-xs text-gray-500">
+          <p className="mt-2 text-xs text-muted-foreground">
             Paste a public YouTube, Facebook, Google Drive, or direct video
             link. Keep the video within 90 seconds.
           </p>
@@ -159,7 +159,7 @@ export function PropertyVideoField({
       )}
 
       {hasVideo ? (
-        <p className="text-xs text-gray-500">
+        <p className="text-xs text-muted-foreground">
           Remove the current video before switching to the other source.
         </p>
       ) : null}

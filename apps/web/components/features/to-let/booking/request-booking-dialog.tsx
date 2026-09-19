@@ -127,7 +127,7 @@ export function RequestBookingButton({
       type="button"
       onClick={submitBooking}
       disabled={isCheckingSession || createBooking.isPending}
-      className="h-10 w-full bg-blue-700 text-white hover:bg-blue-800"
+      className="h-10 w-full bg-primary/90 text-white hover:bg-primary/90"
     >
       {createBooking.isPending ? (
         <Loader2 className="animate-spin" aria-hidden="true" />

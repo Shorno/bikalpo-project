@@ -64,7 +64,7 @@ const statusConfig: Record<
   },
   cancelled: {
     label: "Cancelled",
-    className: "border-gray-200 bg-gray-100 text-gray-600",
+    className: "border-border bg-muted text-muted-foreground",
     icon: Ban,
   },
 };
@@ -147,7 +147,7 @@ function RentalStatusBadge({
       variant="outline"
       className={
         status === "completed"
-          ? "border-gray-200 bg-gray-100 text-gray-600"
+          ? "border-border bg-muted text-muted-foreground"
           : status === "leaving"
             ? "border-amber-200 bg-amber-50 text-amber-800"
             : "border-emerald-200 bg-emerald-50 text-emerald-700"
@@ -184,15 +184,15 @@ function EmptyBookings({ tab }: { tab: BookingTab }) {
   const copy = emptyCopy[tab];
 
   return (
-    <div className="rounded-lg border border-dashed border-gray-300 bg-white px-6 py-12 text-center">
+    <div className="rounded-lg border border-dashed border-border bg-card px-6 py-12 text-center">
       <span className="mx-auto flex size-12 items-center justify-center rounded-full bg-emerald-50 text-emerald-600">
         <CalendarCheck className="size-6" />
       </span>
-      <h2 className="mt-4 font-semibold text-gray-900">{copy.title}</h2>
-      <p className="mx-auto mt-1 max-w-md text-sm leading-6 text-gray-500">
+      <h2 className="mt-4 font-semibold text-foreground">{copy.title}</h2>
+      <p className="mx-auto mt-1 max-w-md text-sm leading-6 text-muted-foreground">
         {copy.description}
       </p>
-      <Button asChild className="mt-5 bg-emerald-600 hover:bg-emerald-700">
+      <Button asChild className="mt-5 bg-primary text-primary-foreground hover:bg-primary/90">
         <Link href="/to-let">Browse To-Let listings</Link>
       </Button>
     </div>
@@ -244,14 +244,14 @@ function BookingCard({
   ].filter((value): value is string => Boolean(value));
 
   return (
-    <article className="overflow-hidden rounded-xl border border-gray-200 bg-white">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-100 px-4 py-3 sm:px-5">
+    <article className="overflow-hidden rounded-xl border border-border bg-card">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border px-4 py-3 sm:px-5">
         <div>
-          <p className="text-xs text-gray-500">
+          <p className="text-xs text-muted-foreground">
             {booking.status === "accepted" ? "Booked" : "Requested"} on{" "}
             {formatDate(booking.respondedAt ?? booking.createdAt, true)}
           </p>
-          <p className="mt-1 font-semibold text-gray-900">
+          <p className="mt-1 font-semibold text-foreground">
             ID # {booking.bookingCode}
           </p>
         </div>
@@ -284,10 +284,10 @@ function BookingCard({
               <p className="text-xs font-semibold text-emerald-700">
                 {humanize(snapshot.unit.unitType)} · {snapshot.listingCode}
               </p>
-              <h2 className="mt-1 text-lg font-semibold text-gray-900">
+              <h2 className="mt-1 text-lg font-semibold text-foreground">
                 {snapshot.title}
               </h2>
-              <p className="mt-1 text-sm text-gray-500">
+              <p className="mt-1 text-sm text-muted-foreground">
                 {snapshot.property.name} · {snapshot.unit.name}
               </p>
             </div>
@@ -295,18 +295,18 @@ function BookingCard({
               <p className="text-lg font-bold text-emerald-700">
                 {formatMoney(rental?.monthlyRent ?? snapshot.monthlyRent)}
               </p>
-              <p className="text-xs text-gray-500">
+              <p className="text-xs text-muted-foreground">
                 {rental ? "contract monthly rent" : "requested monthly rent"}
               </p>
             </div>
           </div>
 
-          <p className="flex items-start gap-2 text-sm text-gray-600">
-            <MapPin className="mt-0.5 size-4 shrink-0 text-gray-400" />
+          <p className="flex items-start gap-2 text-sm text-muted-foreground">
+            <MapPin className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
             {snapshot.property.location}
           </p>
 
-          <div className="flex flex-wrap gap-x-4 gap-y-2 text-sm text-gray-600">
+          <div className="flex flex-wrap gap-x-4 gap-y-2 text-sm text-muted-foreground">
             {unitFacts.map((fact) => {
               const Icon = fact.icon;
               return (
@@ -314,15 +314,15 @@ function BookingCard({
                   key={fact.label}
                   className="inline-flex items-center gap-1.5"
                 >
-                  <Icon className="size-4 text-gray-400" /> {fact.label}
+                  <Icon className="size-4 text-muted-foreground" /> {fact.label}
                 </span>
               );
             })}
           </div>
 
           {facilityLabels.length > 0 ? (
-            <p className="text-sm text-gray-600">
-              <span className="font-medium text-gray-900">Facilities:</span>{" "}
+            <p className="text-sm text-muted-foreground">
+              <span className="font-medium text-foreground">Facilities:</span>{" "}
               {facilityLabels.slice(0, 3).join(" · ")}
               {facilityLabels.length > 3
                 ? ` +${facilityLabels.length - 3} more`
@@ -330,18 +330,18 @@ function BookingCard({
             </p>
           ) : null}
 
-          <div className="grid gap-3 rounded-lg bg-gray-50 p-3 text-sm sm:grid-cols-2">
+          <div className="grid gap-3 rounded-lg bg-muted/30 p-3 text-sm sm:grid-cols-2">
             <p>
-              <span className="text-gray-500">Move-in preference:</span>{" "}
-              <span className="font-medium text-gray-900">
+              <span className="text-muted-foreground">Move-in preference:</span>{" "}
+              <span className="font-medium text-foreground">
                 {booking.desiredMoveInDate
                   ? formatDate(booking.desiredMoveInDate)
                   : "Not specified"}
               </span>
             </p>
             <p>
-              <span className="text-gray-500">Available from:</span>{" "}
-              <span className="font-medium text-gray-900">
+              <span className="text-muted-foreground">Available from:</span>{" "}
+              <span className="font-medium text-foreground">
                 {formatDate(snapshot.availableFrom)}
               </span>
             </p>
@@ -349,10 +349,10 @@ function BookingCard({
 
           {booking.message ? (
             <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 Your message
               </p>
-              <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-gray-700">
+              <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-foreground">
                 {booking.message}
               </p>
             </div>
@@ -374,16 +374,16 @@ function BookingCard({
           ) : null}
 
           {booking.responseNote ? (
-            <div className="rounded-lg border border-gray-200 bg-white p-3 text-sm">
-              <p className="font-semibold text-gray-900">Owner response</p>
-              <p className="mt-1 whitespace-pre-wrap leading-6 text-gray-600">
+            <div className="rounded-lg border border-border bg-card p-3 text-sm">
+              <p className="font-semibold text-foreground">Owner response</p>
+              <p className="mt-1 whitespace-pre-wrap leading-6 text-muted-foreground">
                 {booking.responseNote}
               </p>
             </div>
           ) : null}
 
-          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-gray-100 pt-4">
-            <p className="text-xs text-gray-500">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4">
+            <p className="text-xs text-muted-foreground">
               Offer captured {formatDate(snapshot.capturedAt, true)}
             </p>
             {booking.status === "pending" ? (
@@ -466,11 +466,11 @@ export function MyBookingsClient() {
 
   if (query.isError) {
     return (
-      <div className="rounded-lg border border-red-200 bg-white px-6 py-10 text-center">
-        <h1 className="text-xl font-semibold text-gray-900">
+      <div className="rounded-lg border border-red-200 bg-card px-6 py-10 text-center">
+        <h1 className="text-xl font-semibold text-foreground">
           Booking requests could not be loaded
         </h1>
-        <p className="mt-2 text-sm text-gray-500">
+        <p className="mt-2 text-sm text-muted-foreground">
           Please try again. Your saved requests have not been changed.
         </p>
         <Button
@@ -504,8 +504,8 @@ export function MyBookingsClient() {
     <div className="space-y-5">
       <div>
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">My Bookings</h1>
-          <p className="mt-1 text-sm leading-6 text-gray-500">
+          <h1 className="text-2xl font-bold text-foreground">My Bookings</h1>
+          <p className="mt-1 text-sm leading-6 text-muted-foreground">
             Track booking requests, confirmed units and your rental history.
           </p>
         </div>
@@ -513,7 +513,7 @@ export function MyBookingsClient() {
 
       <Tabs defaultValue="all" className="w-full">
         <div className="overflow-x-auto pb-1">
-          <TabsList className="inline-flex h-auto w-max min-w-full justify-start bg-gray-100 p-1">
+          <TabsList className="inline-flex h-auto w-max min-w-full justify-start bg-muted p-1">
             {tabs.map(({ value, label, icon: Icon }) => (
               <TabsTrigger
                 key={value}
@@ -523,7 +523,7 @@ export function MyBookingsClient() {
               >
                 <Icon className="size-4" />
                 <span>{label}</span>
-                <span className="rounded-full bg-gray-200 px-1.5 py-0.5 text-[11px] font-semibold text-gray-700">
+                <span className="rounded-full bg-muted px-1.5 py-0.5 text-[11px] font-semibold text-foreground">
                   {counts[value]}
                 </span>
               </TabsTrigger>

@@ -31,7 +31,7 @@ export function IncludedExcludedButtons({
       <label
         htmlFor={`${id}-yes`}
         className={cn(
-          "flex min-h-9 cursor-pointer items-center gap-2 text-sm text-gray-700",
+          "flex min-h-9 cursor-pointer items-center gap-2 text-sm text-foreground",
           !onChange && "cursor-default",
         )}
       >
@@ -45,7 +45,7 @@ export function IncludedExcludedButtons({
       <label
         htmlFor={`${id}-no`}
         className={cn(
-          "flex min-h-9 cursor-pointer items-center gap-2 text-sm text-gray-700",
+          "flex min-h-9 cursor-pointer items-center gap-2 text-sm text-foreground",
           !onChange && "cursor-default",
         )}
       >

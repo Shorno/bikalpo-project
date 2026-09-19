@@ -155,7 +155,7 @@ export default async function PublicListingPage({
     : null;
 
   return (
-    <div className="min-h-screen bg-zinc-50">
+    <div className="min-h-screen bg-muted/30">
       <ListingViewRecorder
         key={`${listingCode}:${qrToken ?? "public"}`}
         listingCode={listingCode}
@@ -163,43 +163,43 @@ export default async function PublicListingPage({
       />
       <nav
         aria-label="Breadcrumb"
-        className="border-b border-zinc-200 bg-white"
+        className="border-b border-border bg-card"
       >
-        <ol className="site-container flex min-h-12 items-center gap-2 px-4 text-xs text-zinc-500 sm:px-6 lg:px-8">
+        <ol className="site-container flex min-h-12 items-center gap-2 px-4 text-xs text-muted-foreground sm:px-6 lg:px-8">
           <li>
-            <Link href="/" className="hover:text-blue-700">
+            <Link href="/" className="hover:text-primary">
               Home
             </Link>
           </li>
           <ChevronRight className="size-3.5" aria-hidden="true" />
           <li>
-            <Link href="/to-let" className="hover:text-blue-700">
+            <Link href="/to-let" className="hover:text-primary">
               To-Let
             </Link>
           </li>
           <ChevronRight className="size-3.5" aria-hidden="true" />
-          <li className="max-w-40 truncate text-zinc-700 sm:max-w-none">
+          <li className="max-w-40 truncate text-foreground sm:max-w-none">
             {humanize(listing.unit.unitType)}
           </li>
           <ChevronRight className="size-3.5" aria-hidden="true" />
-          <li className="font-mono text-zinc-700">{listing.listingCode}</li>
+          <li className="font-mono text-foreground">{listing.listingCode}</li>
         </ol>
       </nav>
 
       <main className="site-container px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
-        <header className="flex flex-wrap items-center gap-4 rounded-lg border border-zinc-200 bg-white px-4 py-3">
+        <header className="flex flex-wrap items-center gap-4 rounded-lg border border-border bg-card px-4 py-3">
           <Link
             href={qrToken ? `/to-let/qr/${qrToken}` : "/to-let"}
-            className="inline-flex min-h-10 items-center gap-2 rounded-md border border-zinc-300 px-3 text-sm font-semibold text-zinc-900 transition-colors hover:border-blue-300 hover:text-blue-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
+            className="inline-flex min-h-10 items-center gap-2 rounded-md border border-border px-3 text-sm font-semibold text-foreground transition-colors hover:border-primary/20 hover:text-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
           >
             <ArrowLeft className="size-4" aria-hidden="true" />
             Back
           </Link>
           <div className="min-w-0">
-            <h1 className="text-lg font-bold text-zinc-950 sm:text-xl">
+            <h1 className="text-lg font-bold text-foreground sm:text-xl">
               {listing.title}
             </h1>
-            <p className="mt-0.5 font-mono text-xs text-zinc-500">
+            <p className="mt-0.5 font-mono text-xs text-muted-foreground">
               {listing.listingCode}
             </p>
           </div>
@@ -255,7 +255,7 @@ export default async function PublicListingPage({
                 )}
                 <a
                   href={`tel:${listing.contact.phone}`}
-                  className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-900 transition-colors hover:border-blue-300 hover:text-blue-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
+                  className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-border bg-card px-4 py-2 text-sm font-semibold text-foreground transition-colors hover:border-primary/20 hover:text-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
                 >
                   <Phone className="size-4" aria-hidden="true" />
                   Call owner
@@ -320,11 +320,11 @@ export default async function PublicListingPage({
                 />
               </div>
 
-              <div className="mt-5 border-t border-slate-100 pt-5">
-                <p className="text-sm font-semibold text-slate-900">
+              <div className="mt-5 border-t border-border pt-5">
+                <p className="text-sm font-semibold text-foreground">
                   Unit description
                 </p>
-                <p className="mt-2 whitespace-pre-line text-sm leading-7 text-slate-700">
+                <p className="mt-2 whitespace-pre-line text-sm leading-7 text-foreground">
                   {listing.description ||
                     "No description provided by the owner."}
                 </p>
@@ -339,7 +339,7 @@ export default async function PublicListingPage({
                   }
                 />
               </div>
-              <p className="mt-4 text-sm text-zinc-700">
+              <p className="mt-4 text-sm text-foreground">
                 <span className="font-semibold">Listing status:</span>{" "}
                 {isBooked ? "Booked" : "Active"}
               </p>
@@ -404,8 +404,8 @@ export default async function PublicListingPage({
                   included={listing.facilityInclusions?.furnished ?? null}
                 />
               </div>
-              <div className="mt-4 rounded-lg border border-slate-200 p-4 text-sm leading-6 text-slate-700">
-                <span className="font-semibold text-slate-950">
+              <div className="mt-4 rounded-lg border border-border p-4 text-sm leading-6 text-foreground">
+                <span className="font-semibold text-foreground">
                   Other facilities:{" "}
                 </span>
                 {listing.otherFacilities || "No other facilities provided."}
@@ -441,7 +441,7 @@ export default async function PublicListingPage({
                   />
                 ))}
               </div>
-              <div className="mt-4 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
+              <div className="mt-4 rounded-lg border border-primary/20 bg-primary/5 px-4 py-3 text-sm text-primary">
                 <span className="font-semibold">Payment method:</span> Monthly
                 OTP Verification activates after an approved booking and active
                 contract.
@@ -454,7 +454,7 @@ export default async function PublicListingPage({
               title={listing.property.name}
               embedded
             >
-              <dl className="divide-y divide-slate-200 border-y border-slate-200 text-sm">
+              <dl className="divide-y divide-slate-200 border-y border-border text-sm">
                 <ToLetSummaryRow
                   label="Property ID"
                   value={listing.propertyCode}
@@ -510,7 +510,7 @@ export default async function PublicListingPage({
                       href={listing.videoUrl}
                       target="_blank"
                       rel="noreferrer"
-                      className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-900 hover:border-blue-300 hover:text-blue-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
+                      className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-border px-4 py-2 text-sm font-semibold text-foreground hover:border-primary/20 hover:text-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
                     >
                       <Video className="size-4" aria-hidden="true" />
                       Watch unit video
@@ -522,7 +522,7 @@ export default async function PublicListingPage({
                       href={mapHref}
                       target="_blank"
                       rel="noreferrer"
-                      className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-900 hover:border-blue-300 hover:text-blue-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600"
+                      className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-border px-4 py-2 text-sm font-semibold text-foreground hover:border-primary/20 hover:text-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
                     >
                       <MapPin className="size-4" aria-hidden="true" />
                       Open in Google Maps

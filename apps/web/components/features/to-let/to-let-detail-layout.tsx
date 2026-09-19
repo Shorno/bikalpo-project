@@ -5,11 +5,11 @@ import { PublicListingGallery } from "@/components/features/to-let/public-listin
 type StatusTone = "blue" | "emerald" | "amber" | "red" | "neutral";
 
 const statusToneClassName: Record<StatusTone, string> = {
-  blue: "border-blue-200 bg-blue-50 text-blue-800",
+  blue: "border-primary/20 bg-primary/5 text-primary",
   emerald: "border-emerald-200 bg-emerald-50 text-emerald-800",
   amber: "border-amber-200 bg-amber-50 text-amber-800",
   red: "border-red-200 bg-red-50 text-red-800",
-  neutral: "border-slate-200 bg-slate-50 text-slate-700",
+  neutral: "border-border bg-muted/30 text-foreground",
 };
 
 interface ToLetDetailHeroProps {
@@ -60,16 +60,16 @@ export function ToLetDetailHero({
   tourUrl,
 }: ToLetDetailHeroProps) {
   return (
-    <section className="overflow-hidden rounded-lg border border-zinc-200 bg-white">
+    <section className="overflow-hidden rounded-lg border border-border bg-card">
       <div className="grid gap-0 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.12fr)]">
-        <div className="border-b border-zinc-200 p-4 sm:p-6 lg:border-r lg:border-b-0 lg:p-8">
+        <div className="border-b border-border p-4 sm:p-6 lg:border-r lg:border-b-0 lg:p-8">
           <PublicListingGallery imageUrls={imageUrls} alt={imageAlt} />
           {tourUrl ? (
             <a
               href={tourUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="mt-4 inline-flex min-h-10 items-center rounded-md border border-zinc-300 px-4 text-sm font-semibold text-blue-700 hover:bg-blue-50"
+              className="mt-4 inline-flex min-h-10 items-center rounded-md border border-border px-4 text-sm font-semibold text-primary hover:bg-primary/5"
             >
               Open 360° tour{" "}
               <span className="sr-only">(opens in a new tab)</span>
@@ -83,17 +83,17 @@ export function ToLetDetailHero({
               <div className="min-w-0">
                 {showHeading ? (
                   <>
-                    <p className="font-mono text-xs font-semibold tracking-[0.08em] text-blue-700 uppercase">
+                    <p className="font-mono text-xs font-semibold tracking-[0.08em] text-primary uppercase">
                       {code}
                     </p>
-                    <h1 className="mt-1 text-2xl font-bold tracking-tight text-zinc-950 sm:text-3xl">
+                    <h1 className="mt-1 text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
                       {title}
                     </h1>
                   </>
                 ) : (
                   <>
-                    <p className="text-sm text-zinc-500">Property</p>
-                    <h2 className="mt-1 text-lg font-semibold text-zinc-950">
+                    <p className="text-sm text-muted-foreground">Property</p>
+                    <h2 className="mt-1 text-lg font-semibold text-foreground">
                       {propertyName}
                     </h2>
                   </>
@@ -108,12 +108,12 @@ export function ToLetDetailHero({
           ) : null}
 
           {!documentOrder ? (
-            <div className="mt-6 border-b border-zinc-200 pb-5">
-              <p className="text-sm text-zinc-500">Monthly rent</p>
-              <p className="mt-1 font-mono text-3xl font-bold tabular-nums text-zinc-950">
+            <div className="mt-6 border-b border-border pb-5">
+              <p className="text-sm text-muted-foreground">Monthly rent</p>
+              <p className="mt-1 font-mono text-3xl font-bold tabular-nums text-foreground">
                 {monthlyRent}
               </p>
-              <p className="mt-1 text-xs text-zinc-500">per month</p>
+              <p className="mt-1 text-xs text-muted-foreground">per month</p>
             </div>
           ) : null}
 
@@ -126,7 +126,7 @@ export function ToLetDetailHero({
             ) : null}
             <ToLetSummaryRow label="Location">
               <span className="inline-flex items-start gap-2">
-                <MapPin className="mt-0.5 size-4 shrink-0 text-blue-600" />
+                <MapPin className="mt-0.5 size-4 shrink-0 text-primary" />
                 <span>{location}</span>
               </span>
             </ToLetSummaryRow>
@@ -135,8 +135,8 @@ export function ToLetDetailHero({
             <ToLetSummaryRow label="Category" value={category} />
             {typeof viewCount === "number" ? (
               <ToLetSummaryRow label="Views">
-                <span className="inline-flex items-center gap-2 font-mono font-semibold text-zinc-900">
-                  <Eye className="size-4 text-blue-600" />
+                <span className="inline-flex items-center gap-2 font-mono font-semibold text-foreground">
+                  <Eye className="size-4 text-primary" />
                   {viewCount.toLocaleString("en-BD")}
                 </span>
               </ToLetSummaryRow>
@@ -164,7 +164,7 @@ export function ToLetDetailHero({
           ) : null}
 
           {actions ? (
-            <div className="mt-auto flex flex-wrap gap-2 border-t border-zinc-200 pt-4">
+            <div className="mt-auto flex flex-wrap gap-2 border-t border-border pt-4">
               {actions}
             </div>
           ) : null}
@@ -179,7 +179,7 @@ export function ToLetSummaryRow({
   value,
   children,
   mono = false,
-  valueClassName = "font-semibold text-zinc-900",
+  valueClassName = "font-semibold text-foreground",
 }: {
   label: string;
   value?: ReactNode;
@@ -189,7 +189,7 @@ export function ToLetSummaryRow({
 }) {
   return (
     <div className="grid grid-cols-[7.5rem_minmax(0,1fr)] items-start gap-4 py-2.5">
-      <dt className="text-zinc-500">{label}</dt>
+      <dt className="text-muted-foreground">{label}</dt>
       <dd
         className={`min-w-0 ${valueClassName} ${mono ? "font-mono tabular-nums" : ""}`}
       >
@@ -219,24 +219,24 @@ export function ToLetDetailsSection({
   return (
     <section
       id={id}
-      className={`scroll-mt-28 overflow-hidden bg-white ${
-        embedded ? "" : "rounded-lg border border-zinc-200"
+      className={`scroll-mt-28 overflow-hidden bg-card ${
+        embedded ? "" : "rounded-lg border border-border"
       }`}
     >
-      <div className="border-b border-zinc-200 px-5 py-4 sm:px-6">
+      <div className="border-b border-border px-5 py-4 sm:px-6">
         <div className="flex items-start gap-3">
-          <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-700">
+          <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/5 text-primary">
             <Icon className="size-5" aria-hidden="true" />
           </span>
           <div>
             {eyebrow ? (
-              <p className="text-[11px] font-semibold tracking-[0.12em] text-blue-700 uppercase">
+              <p className="text-[11px] font-semibold tracking-[0.12em] text-primary uppercase">
                 {eyebrow}
               </p>
             ) : null}
-            <h2 className="text-lg font-semibold text-zinc-950">{title}</h2>
+            <h2 className="text-lg font-semibold text-foreground">{title}</h2>
             {description ? (
-              <p className="mt-1 max-w-3xl text-sm leading-6 text-zinc-500">
+              <p className="mt-1 max-w-3xl text-sm leading-6 text-muted-foreground">
                 {description}
               </p>
             ) : null}
@@ -257,8 +257,8 @@ export function ToLetInfoTile({
 }) {
   return (
     <div className="min-w-0">
-      <p className="text-sm font-medium text-zinc-900">{label}</p>
-      <p className="mt-1 flex min-h-10 items-center break-words rounded-md border border-zinc-200 bg-zinc-50 px-3 text-sm font-medium text-zinc-700 tabular-nums">
+      <p className="text-sm font-medium text-foreground">{label}</p>
+      <p className="mt-1 flex min-h-10 items-center break-words rounded-md border border-border bg-muted/30 px-3 text-sm font-medium text-foreground tabular-nums">
         {value}
       </p>
     </div>
@@ -282,17 +282,17 @@ export function ToLetFacilityItem({
       : "Not recorded";
 
   return (
-    <div className="flex min-h-16 flex-wrap items-center justify-between gap-3 rounded-lg border border-zinc-200 bg-zinc-50 p-3">
+    <div className="flex min-h-16 flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-muted/30 p-3">
       <div className="min-w-0">
-        <p className="text-sm font-semibold text-zinc-900">{label}</p>
+        <p className="text-sm font-semibold text-foreground">{label}</p>
         <p
-          className={`mt-0.5 text-xs ${available ? "text-blue-700" : recorded ? "text-zinc-500" : "text-amber-700"}`}
+          className={`mt-0.5 text-xs ${available ? "text-primary" : recorded ? "text-muted-foreground" : "text-amber-700"}`}
         >
           {stateLabel}
         </p>
       </div>
       {included === null ? (
-        <span className="text-xs text-zinc-500">
+        <span className="text-xs text-muted-foreground">
           Rent inclusion: Not recorded
         </span>
       ) : typeof included === "boolean" ? (
@@ -324,11 +324,11 @@ export function ToLetRentItem({
 }) {
   return (
     <div className="min-w-0">
-      <p className="text-sm font-medium text-zinc-900">{label}</p>
-      <div className="mt-1 flex min-h-12 flex-wrap items-center justify-between gap-3 rounded-md border border-zinc-200 bg-zinc-50 px-3 py-2">
+      <p className="text-sm font-medium text-foreground">{label}</p>
+      <div className="mt-1 flex min-h-12 flex-wrap items-center justify-between gap-3 rounded-md border border-border bg-muted/30 px-3 py-2">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <p className="break-words font-mono text-sm font-semibold text-zinc-800 tabular-nums">
+            <p className="break-words font-mono text-sm font-semibold text-foreground tabular-nums">
               {value}
             </p>
           </div>
@@ -353,20 +353,20 @@ export function ToLetDetailsShell({
   children: ReactNode;
 }) {
   return (
-    <section className="overflow-hidden rounded-lg border border-zinc-200 bg-white">
+    <section className="overflow-hidden rounded-lg border border-border bg-card">
       <nav
         aria-label="Details sections"
-        className="sticky top-0 z-20 overflow-x-auto border-b border-zinc-200 bg-white/95 px-3 backdrop-blur [scrollbar-width:none]"
+        className="sticky top-0 z-20 overflow-x-auto border-b border-border bg-white/95 px-3 backdrop-blur [scrollbar-width:none]"
       >
         <div className="flex h-12 min-w-max items-center gap-1">
           {items.map((item, index) => (
             <a
               key={item.href}
               href={item.href}
-              className={`inline-flex h-12 items-center border-b-2 px-3 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-blue-600 ${
+              className={`inline-flex h-12 items-center border-b-2 px-3 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring ${
                 index === 0
-                  ? "border-blue-600 text-blue-700"
-                  : "border-transparent text-zinc-600 hover:text-zinc-950"
+                  ? "border-primary text-primary"
+                  : "border-transparent text-muted-foreground hover:text-foreground"
               }`}
             >
               {item.label}
@@ -391,14 +391,14 @@ function ToLetChoicePair({
   recorded?: boolean;
 }) {
   return (
-    <span className="inline-flex shrink-0 items-center gap-3 text-xs text-zinc-600">
+    <span className="inline-flex shrink-0 items-center gap-3 text-xs text-muted-foreground">
       <span className="inline-flex items-center gap-1.5">
         <span
           aria-hidden="true"
           className={`flex size-4 items-center justify-center rounded-full border ${
             recorded && positive
-              ? "border-blue-600 bg-blue-600 text-white"
-              : "border-zinc-300 bg-white text-transparent"
+              ? "border-primary bg-primary text-white"
+              : "border-border bg-card text-transparent"
           }`}
         >
           <Check className="size-2.5" />
@@ -411,7 +411,7 @@ function ToLetChoicePair({
           className={`flex size-4 items-center justify-center rounded-full border ${
             recorded && !positive
               ? "border-zinc-700 bg-zinc-700 text-white"
-              : "border-zinc-300 bg-white text-transparent"
+              : "border-border bg-card text-transparent"
           }`}
         >
           <X className="size-2.5" />

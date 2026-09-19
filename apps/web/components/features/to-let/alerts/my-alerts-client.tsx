@@ -22,9 +22,9 @@ export function MyAlertsClient() {
             <span className="flex size-10 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700">
               <Bell className="size-5" aria-hidden="true" />
             </span>
-            <h1 className="text-2xl font-bold text-gray-900">My Alert</h1>
+            <h1 className="text-2xl font-bold text-foreground">My Alert</h1>
           </div>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-gray-500">
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
             Save the type and location you need, then manage your To-Let search
             preferences from one place.
           </p>
@@ -43,7 +43,7 @@ export function MyAlertsClient() {
         </div>
       </header>
 
-      {showForm && <section id="alert-preferences-panel" aria-labelledby="alert-preferences-heading" className="rounded-xl border border-border bg-white p-4 sm:p-6">
+      {showForm && <section id="alert-preferences-panel" aria-labelledby="alert-preferences-heading" className="rounded-xl border border-border bg-card p-4 sm:p-6">
         <h2 id="alert-preferences-heading" className="mb-5 text-lg font-semibold">Create alert & manage preferences</h2>
         <ToLetAlertManager onClose={closeForm} />
       </section>}

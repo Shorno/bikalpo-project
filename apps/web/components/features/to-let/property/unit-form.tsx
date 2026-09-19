@@ -109,7 +109,7 @@ function UnitToggle({
   onChange: (checked: boolean) => void;
 }) {
   return (
-    <label className="flex min-h-12 cursor-pointer items-center justify-between rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-700">
+    <label className="flex min-h-12 cursor-pointer items-center justify-between rounded-lg border border-border px-3 py-2 text-sm text-foreground">
       {label}
       <Switch checked={checked} onCheckedChange={onChange} />
     </label>
@@ -231,8 +231,8 @@ function LoadedUnitForm({
         errors={errors}
       />
 
-      <section className="rounded-lg border border-gray-200 bg-white p-5 sm:p-6">
-        <h2 className="font-semibold text-gray-900">Unit identity</h2>
+      <section className="rounded-lg border border-border bg-card p-5 sm:p-6">
+        <h2 className="font-semibold text-foreground">Unit identity</h2>
         <div className="mt-4 grid gap-4 sm:grid-cols-2">
           <div className="space-y-1.5">
             <Label htmlFor="unit-name">Unit Name / Number *</Label>
@@ -287,7 +287,7 @@ function LoadedUnitForm({
               }
               aria-invalid={Boolean(errors.floorNumber)}
             />
-            <p className="text-xs text-gray-500">
+            <p className="text-xs text-muted-foreground">
               Use 0 for ground floor and a negative number for a basement. The
               highest floor is {property.totalFloors}.
             </p>
@@ -307,7 +307,7 @@ function LoadedUnitForm({
                 aria-invalid={Boolean(errors.sizeSqFt)}
                 className="pr-16"
               />
-              <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-sm text-gray-500">
+              <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-sm text-muted-foreground">
                 sq ft
               </span>
             </div>
@@ -316,8 +316,8 @@ function LoadedUnitForm({
         </div>
       </section>
 
-      <section className="rounded-lg border border-gray-200 bg-white p-5 sm:p-6">
-        <h2 className="font-semibold text-gray-900">Physical details</h2>
+      <section className="rounded-lg border border-border bg-card p-5 sm:p-6">
+        <h2 className="font-semibold text-foreground">Physical details</h2>
         <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
           {(
             [
@@ -356,7 +356,7 @@ function LoadedUnitForm({
               key === "isFurnished" ? (
                 <div
                   key={key}
-                  className="flex min-h-14 items-center justify-between gap-3 rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-700"
+                  className="flex min-h-14 items-center justify-between gap-3 rounded-lg border border-border px-3 py-2 text-sm text-foreground"
                 >
                   {label}
                   <IncludedExcludedButtons
@@ -376,7 +376,7 @@ function LoadedUnitForm({
             )}
         </div>
         {values.unitType && !Object.values(capabilities).some(Boolean) ? (
-          <p className="mt-4 rounded-lg border border-gray-200 bg-gray-50 p-4 text-sm text-gray-600">
+          <p className="mt-4 rounded-lg border border-border bg-muted/30 p-4 text-sm text-muted-foreground">
             This unit type does not need residential room details.
           </p>
         ) : null}
@@ -393,11 +393,11 @@ function LoadedUnitForm({
         </div>
       </section>
 
-      <section className="rounded-lg border border-gray-200 bg-white p-5 sm:p-6">
-        <h2 className="font-semibold text-gray-900">
+      <section className="rounded-lg border border-border bg-card p-5 sm:p-6">
+        <h2 className="font-semibold text-foreground">
           Unit photos{!unit ? " *" : ""}
         </h2>
-        <p className="mt-1 text-sm text-gray-500">
+        <p className="mt-1 text-sm text-muted-foreground">
           {unit
             ? "Add up to 8 reusable JPG, PNG or WebP photos."
             : "Add 1 to 8 reusable JPG, PNG or WebP photos. At least one photo is required."}
@@ -414,7 +414,7 @@ function LoadedUnitForm({
         </div>
       </section>
 
-      <div className="sticky bottom-0 z-10 -mx-4 border-t border-gray-200 bg-white px-4 py-4 sm:static sm:mx-0 sm:border-0 sm:bg-transparent sm:px-0 sm:py-0">
+      <div className="sticky bottom-0 z-10 -mx-4 border-t border-border bg-card px-4 py-4 sm:static sm:mx-0 sm:border-0 sm:bg-transparent sm:px-0 sm:py-0">
         <div className="flex justify-end gap-3">
           <Button
             type="button"
@@ -427,7 +427,7 @@ function LoadedUnitForm({
           <Button
             type="submit"
             disabled={isPending}
-            className="bg-emerald-600 hover:bg-emerald-700"
+            className="bg-primary text-primary-foreground hover:bg-primary/90"
           >
             {isPending ? (
               <Loader2 className="size-4 animate-spin" />

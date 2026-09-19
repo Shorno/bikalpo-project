@@ -1,5 +1,6 @@
 import Form from "next/form";
 import Link from "next/link";
+import { toLetCategoryLabel, toLetUnitTypes } from "@bikalpo-project/api/lib/tolet-categories";
 import { PublicUnitListingCard } from "@/components/features/to-let/public-unit-listing-card";
 import { getPublicOrpcClient } from "@/lib/orpc/public-server";
 import { parseToLetSearchParams, toLetBrowseHref, type ToLetMarketplaceSearchParams } from "@/lib/to-let-marketplace";
@@ -26,7 +27,19 @@ export default async function ListingsPage({ searchParams }: { searchParams: Pro
       <ToLetSearchButton className="inline-flex min-h-11 items-center gap-2 rounded-md bg-primary px-5 text-primary-foreground disabled:opacity-60" />
       {(q || type) && <Link className="inline-flex min-h-11 items-center text-primary" href="/to-let/listings">Clear filters</Link>}
     </Form>
-    <p className="mb-5 text-sm text-muted-foreground">{result.total} matching listings</p>
+    <nav aria-label="Listing categories" className="mb-5 flex gap-2 overflow-x-auto pb-2 md:flex-wrap">
+      {[undefined, ...toLetUnitTypes].map(category => (
+        <Link
+          key={category ?? "all"}
+          href={toLetBrowseHref(q, category)}
+          aria-current={type === category ? "page" : undefined}
+          className={`inline-flex min-h-11 shrink-0 items-center whitespace-nowrap rounded-md border px-3 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring ${type === category ? "border-primary bg-primary text-primary-foreground" : "border-border bg-card text-muted-foreground hover:bg-muted hover:text-foreground"}`}
+        >
+          {category ? toLetCategoryLabel(category) : "All listings"}
+        </Link>
+      ))}
+    </nav>
+    <p className="mb-5 text-sm text-muted-foreground">{result.total} matching listings{type ? ` · ${toLetCategoryLabel(type)}` : ""}</p>
     {result.listings.length ? <div className={`${styles.listings} grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-3 xl:grid-cols-4`}>{result.listings.map(listing => <PublicUnitListingCard key={listing.listingCode} listing={listing} />)}</div> : <p className="rounded-lg border p-8">No listings on this page. Try another search or return to the first page.</p>}
     <nav aria-label="Listing pages" className="mt-8 flex items-center justify-between gap-4">
       {page > 1 ? <Link className="inline-flex min-h-11 items-center text-primary" href={href(page - 1)}>Previous</Link> : <span />}
