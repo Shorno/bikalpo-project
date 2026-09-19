@@ -36,7 +36,7 @@ import {
 import { z } from "zod";
 
 import { adminProcedure, publicProcedure } from "../index";
-import { generateSku } from "./helpers/generate-sku";
+import { generateSku, nextSkuCode } from "./helpers/generate-sku";
 import {
   applyGeneratedVariantExchangeSettings,
   attachExchangeSettingsToVariantPrices,
@@ -88,6 +88,7 @@ const createProductSchema = z.object({
 
   // === New fields for Core Identity-driven flow ===
   coreProductId: z.number().int().optional().nullable(),
+  newCoreProductName: z.string().trim().min(1).max(150).optional(),
   shortDescription: z.string().optional().nullable(),
   videoUrl: z.string().optional().nullable(),
   // Behavior settings
@@ -133,9 +134,11 @@ const createProductSchema = z.object({
     .optional(),
 });
 
-const updateProductSchema = createProductSchema.extend({
-  id: z.number(),
-});
+const updateProductSchema = createProductSchema
+  .omit({ newCoreProductName: true })
+  .extend({
+    id: z.number(),
+  });
 
 const consumerPriceListParamsSchema = z.object({
   search: z.string().optional(),
@@ -159,6 +162,14 @@ const updateConsumerReferencePriceSchema = z.object({
 });
 
 type ConsumerPriceListInput = z.infer<typeof consumerPriceListParamsSchema>;
+
+function slugifyCoreProductName(name: string) {
+  return name
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "");
+}
 
 async function fetchConsumerReferencePriceData(input: ConsumerPriceListInput) {
   const conditions: SQL[] = [
@@ -586,7 +597,9 @@ export const productRouter = {
         where: eq(product.creatorSource, "admin"),
         orderBy: [desc(product.createdAt)],
         with: {
-          category: true,
+          category: {
+            with: { type: true },
+          },
           subCategory: true,
           brand: true,
           images: true,
@@ -674,9 +687,9 @@ export const productRouter = {
     }),
 
   /**
-   * First-time admin product creation for a core product.
-   * One submission stores the initial shared template and creates one
-   * independent product per selected brand.
+   * Admin Brand Product creation from a reusable Core Product Identity.
+   * One submission stores shared defaults and creates one independent product
+   * per selected brand.
    */
   create: adminProcedure
     .route({
@@ -684,7 +697,8 @@ export const productRouter = {
       path: "/products",
       tags: ["Product Management"],
       summary: "Create per-brand products",
-      description: "Create the initial admin products for a core product",
+      description:
+        "Create brand products from a reusable admin core product identity",
     })
     .input(createProductSchema)
     .handler(async ({ context, input }) => {
@@ -694,11 +708,17 @@ export const productRouter = {
         brandIds = [],
         ...productData
       } = input;
-      const coreProductId = productData.coreProductId;
+      const requestedCoreProductId = productData.coreProductId;
+      const newCoreProductName = productData.newCoreProductName?.trim();
 
-      if (!coreProductId) {
+      if (!requestedCoreProductId && !newCoreProductName) {
         throw new ORPCError("BAD_REQUEST", {
-          message: "Select an admin core product before creating products",
+          message: "Select or enter a core product identity",
+        });
+      }
+      if (requestedCoreProductId && newCoreProductName) {
+        throw new ORPCError("BAD_REQUEST", {
+          message: "Choose an existing core identity or create a new one",
         });
       }
       if (brandIds.length === 0) {
@@ -739,6 +759,107 @@ export const productRouter = {
       }
 
       const products = await db.transaction(async (tx) => {
+        let coreProductId = requestedCoreProductId;
+
+        if (!coreProductId && newCoreProductName) {
+          const coreSlug = slugifyCoreProductName(newCoreProductName);
+          if (!coreSlug) {
+            throw new ORPCError("BAD_REQUEST", {
+              message: "Enter a core identity name with letters or numbers",
+            });
+          }
+
+          const activeCategory = await tx.query.category.findFirst({
+            where: and(
+              eq(categoryTable.id, productData.categoryId),
+              eq(categoryTable.isActive, true),
+            ),
+            columns: { id: true, typeId: true },
+          });
+          const activeType = activeCategory?.typeId
+            ? await tx.query.productType.findFirst({
+                where: and(
+                  eq(productType.id, activeCategory.typeId),
+                  eq(productType.isActive, true),
+                ),
+                columns: { id: true },
+              })
+            : null;
+          const activeSubCategory = productData.subCategoryId
+            ? await tx.query.subCategory.findFirst({
+                where: and(
+                  eq(subCategory.id, productData.subCategoryId),
+                  eq(subCategory.categoryId, productData.categoryId),
+                  eq(subCategory.isActive, true),
+                ),
+                columns: { id: true },
+              })
+            : null;
+          if (
+            !activeCategory ||
+            !activeType ||
+            (productData.subCategoryId && !activeSubCategory)
+          ) {
+            throw new ORPCError("BAD_REQUEST", {
+              message:
+                "Core identities require an active Type, Category, and Sub Category path",
+            });
+          }
+
+          const duplicateCore = await tx.query.coreProductIdentity.findFirst({
+            where: or(
+              eq(coreProductIdentity.name, newCoreProductName),
+              eq(coreProductIdentity.slug, coreSlug),
+            ),
+            columns: { id: true },
+          });
+          if (duplicateCore) {
+            throw new ORPCError("CONFLICT", {
+              message:
+                "That core identity already exists. Select it from the search results instead.",
+            });
+          }
+
+          const coreSkuScope = productData.subCategoryId
+            ? sql`${coreProductIdentity.subCategoryId} = ${productData.subCategoryId}`
+            : sql`${coreProductIdentity.categoryId} = ${productData.categoryId} AND ${coreProductIdentity.subCategoryId} IS NULL`;
+          const coreSku = await nextSkuCode(
+            coreProductIdentity,
+            coreProductIdentity.sku,
+            3,
+            coreSkuScope,
+            tx,
+          );
+          const [createdCore] = await tx
+            .insert(coreProductIdentity)
+            .values({
+              sku: coreSku,
+              name: newCoreProductName,
+              slug: coreSlug,
+              description: productData.description ?? null,
+              image: productData.image,
+              categoryId: productData.categoryId,
+              subCategoryId: productData.subCategoryId ?? null,
+              createdById: context.session.user.id,
+              creatorSource: "admin",
+              isActive: true,
+              brandCreationMode: "batch",
+            })
+            .returning({ id: coreProductIdentity.id });
+          if (!createdCore) {
+            throw new ORPCError("INTERNAL_SERVER_ERROR", {
+              message: "Could not create the core product identity",
+            });
+          }
+          coreProductId = createdCore.id;
+        }
+
+        if (!coreProductId) {
+          throw new ORPCError("BAD_REQUEST", {
+            message: "Select or enter a core product identity",
+          });
+        }
+
         const core = await tx.query.coreProductIdentity.findFirst({
           where: eq(coreProductIdentity.id, coreProductId),
           with: {
@@ -765,23 +886,6 @@ export const productRouter = {
           throw new ORPCError("BAD_REQUEST", { message: submission.message });
         }
 
-        // Product existence is the single source of truth for "already
-        // created". A leftover generation template does not block Add — it is
-        // overwritten by the upsert below.
-        const existingProduct = await tx.query.product.findFirst({
-          where: and(
-            eq(product.coreProductId, coreProductId),
-            eq(product.creatorSource, "admin"),
-          ),
-          columns: { id: true },
-        });
-        if (existingProduct) {
-          throw new ORPCError("CONFLICT", {
-            message:
-              "This core product has already been created. Use Edit instead.",
-          });
-        }
-
         const brandRows = await tx.query.brand.findMany({
           where: inArray(brandTable.id, brandIds),
         });
@@ -791,6 +895,27 @@ export const productRouter = {
           });
         }
         const brandMap = new Map(brandRows.map((row) => [row.id, row]));
+
+        const existingBrandProducts = await tx.query.product.findMany({
+          where: and(
+            eq(product.coreProductId, coreProductId),
+            eq(product.creatorSource, "admin"),
+            inArray(product.brandId, brandIds),
+          ),
+          columns: { brandId: true },
+        });
+        if (existingBrandProducts.length > 0) {
+          const duplicateBrandNames = existingBrandProducts
+            .map((existing) =>
+              existing.brandId
+                ? brandMap.get(existing.brandId)?.name
+                : undefined,
+            )
+            .filter((name): name is string => Boolean(name));
+          throw new ORPCError("CONFLICT", {
+            message: `A product already exists for ${duplicateBrandNames.join(", ")} under this core identity. Choose another brand or edit the existing product.`,
+          });
+        }
 
         const requestedVariantIds = [
           ...new Set(variantPrices.map((row) => row.variantOptionId)),
@@ -858,8 +983,8 @@ export const productRouter = {
           status: productData.status,
         } satisfies AdminProductGenerationTemplateDetails;
 
-        // Upsert: overwrite any stale template left over from a previous
-        // setup that was fully deleted, so re-adding a core always works.
+        // Keep the reusable admin preset current for future Brand Products.
+        // Existing Brand Products remain independent and are not rewritten.
         await tx
           .insert(adminProductGenerationTemplate)
           .values({

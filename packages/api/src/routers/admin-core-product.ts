@@ -156,6 +156,7 @@ export const adminCoreProductRouter = {
           // "Configured" = at least one admin product exists (any status),
           // which is the true source of truth for the listing action.
           hasConfiguration: configuredBrandIds.length > 0,
+          configuredBrandIds,
           configuredBrandCount: configuredBrandIds.length,
           addableBrandCount: countAddableBrands(
             activeBrandIds,
@@ -297,6 +298,7 @@ export const adminCoreProductRouter = {
           hasConfiguration: Boolean(existingProduct),
           configuredProducts,
           configuredBrands,
+          configuredBrandIds: configuredBrands.map((brand) => brand.id),
           variantOptions,
           packVariantCount: variantOptions.filter(
             (option) => option.variantType === "pack",

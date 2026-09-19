@@ -12,6 +12,7 @@ import {
   Check,
   ChevronDown,
   ChevronRight,
+  ChevronsUpDown,
   Info,
   Loader,
   Plus,
@@ -33,6 +34,14 @@ import AdditionalImagesUploader from "@/components/AdditionalImagesUploader";
 import ImageUploader from "@/components/ImageUploader";
 import { Button } from "@/components/ui/button";
 import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
+import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -41,6 +50,11 @@ import {
 } from "@/components/ui/dialog";
 import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import RichTextEditor from "@/components/ui/rich-text-editor";
 import {
   Select,
@@ -97,6 +111,127 @@ type BrandConfig = {
    */
   variantSettings: Record<number, VariantPriceSettings>;
 };
+
+type CoreProductOption = {
+  id: number;
+  name: string;
+};
+
+function CoreProductCombobox({
+  options,
+  selected,
+  disabled,
+  onSelect,
+  onCreate,
+}: {
+  options: CoreProductOption[];
+  selected?: CoreProductOption;
+  disabled: boolean;
+  onSelect: (id: number) => void;
+  onCreate: (name: string) => boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const search = query.trim();
+  const matches = options.filter((option) =>
+    option.name.toLowerCase().includes(search.toLowerCase()),
+  );
+  const canCreate =
+    search.length >= 2 &&
+    matches.length === 0 &&
+    !options.some(
+      (option) => option.name.toLowerCase() === search.toLowerCase(),
+    );
+
+  const choose = (id: number) => {
+    onSelect(id);
+    setQuery("");
+    setOpen(false);
+  };
+
+  const create = () => {
+    if (!canCreate) return;
+    const created = onCreate(search);
+    if (created) {
+      setQuery("");
+      setOpen(false);
+    }
+  };
+
+  return (
+    <Popover
+      open={open}
+      onOpenChange={(nextOpen) => {
+        setOpen(nextOpen);
+        if (!nextOpen) setQuery("");
+      }}
+    >
+      <PopoverTrigger asChild>
+        <Button
+          type="button"
+          variant="outline"
+          role="combobox"
+          aria-expanded={open}
+          aria-label="Select or add a core identity"
+          disabled={disabled}
+          className="w-full justify-between font-normal"
+        >
+          <span
+            className={selected ? "truncate" : "truncate text-muted-foreground"}
+          >
+            {selected?.name ??
+              (disabled ? "Select a category first" : "Search core identity")}
+          </span>
+          <ChevronsUpDown className="size-4 shrink-0 text-muted-foreground" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent
+        align="start"
+        className="w-[var(--radix-popover-trigger-width)] p-0"
+      >
+        <Command shouldFilter={false}>
+          <CommandInput
+            placeholder="Search or add a core identity"
+            value={query}
+            onValueChange={setQuery}
+            maxLength={150}
+          />
+          <CommandList>
+            <CommandEmpty>
+              {search.length < 2
+                ? "Type at least 2 characters to add a new core identity."
+                : "No core identity found."}
+            </CommandEmpty>
+            <CommandGroup>
+              {matches.map((option) => (
+                <CommandItem
+                  key={option.id}
+                  value={String(option.id)}
+                  data-checked={option.id === selected?.id}
+                  onSelect={() => choose(option.id)}
+                >
+                  <span className="truncate">{option.name}</span>
+                </CommandItem>
+              ))}
+              {canCreate && (
+                <CommandItem
+                  value={`create-${search}`}
+                  onSelect={create}
+                  className="text-primary"
+                >
+                  <Plus className="size-4" />
+                  <span className="truncate">
+                    Add &ldquo;{search}&rdquo; as a new core identity
+                  </span>
+                </CommandItem>
+              )}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  );
+}
 
 type ProductRuleTrackingType = "none" | "batch" | "serial";
 
@@ -285,6 +420,9 @@ export default function ProductForm({
   const [selectedCoreProductId, setSelectedCoreProductId] = useState<
     number | null
   >((product as any)?.coreProductId ?? initialCoreProductIdForCreate);
+  const [newCoreProductName, setNewCoreProductName] = useState<string | null>(
+    null,
+  );
   const isStructureLocked =
     structureLocked && isEdit && selectedCoreProductId !== null;
   const [initializedCoreProductId, setInitializedCoreProductId] = useState<
@@ -380,7 +518,7 @@ export default function ProductForm({
     : [];
 
   // Core products filtered by category
-  const { data: coreProductsData } = useQuery({
+  const coreProductsQuery = useQuery({
     ...orpc.adminCoreProduct.getAll.queryOptions({
       input: {
         categoryId: selectedCategory ?? undefined,
@@ -389,10 +527,8 @@ export default function ProductForm({
     }),
     enabled: !usesExternalEditAdapter,
   });
+  const coreProductsData = coreProductsQuery.data;
   const coreProducts = coreProductsData?.coreProducts ?? [];
-  const selectableCoreProducts = coreProducts.filter(
-    (coreProduct: any) => !coreProduct.hasConfiguration,
-  );
 
   const lockedCoreProductQuery = useQuery({
     ...orpc.adminCoreProduct.getById.queryOptions({
@@ -424,7 +560,35 @@ export default function ProductForm({
   );
   const lockedCoreProduct =
     editAdapter?.coreProduct ?? lockedCoreProductQuery.data?.coreProduct;
-  const activeCoreProduct = lockedCoreProduct ?? selectedCoreProduct;
+  const draftCoreCategory = allCategories.find(
+    (category: any) => category.id === selectedCategory,
+  );
+  const draftCoreProduct =
+    newCoreProductName && selectedCategory
+      ? {
+          id: -1,
+          name: newCoreProductName,
+          slug: generateSlug(newCoreProductName),
+          image: "",
+          categoryId: selectedCategory,
+          subCategoryId: selectedSubCategoryId,
+          brandCreationMode: "batch",
+          configuredBrandIds: [],
+          category: {
+            ...draftCoreCategory,
+            type: productTypes.find(
+              (type: any) => type.id === draftCoreCategory?.typeId,
+            ),
+          },
+          subCategory: allSubcategories.find(
+            (subCategory: any) => subCategory.id === selectedSubCategoryId,
+          ),
+        }
+      : undefined;
+  const activeCoreProduct =
+    lockedCoreProduct ?? selectedCoreProduct ?? draftCoreProduct;
+  const hasSelectedCoreIdentity =
+    selectedCoreProductId !== null || newCoreProductName !== null;
   const isSingleBrandCreation =
     !isStructureLocked &&
     (activeCoreProduct as any)?.brandCreationMode === "single";
@@ -474,28 +638,37 @@ export default function ProductForm({
     ? allSubcategories.filter((sc: any) => sc.categoryId === selectedCategory)
     : [];
 
-  // Brands already configured (exclude from add-brand dropdown)
-  const configuredBrandIds = new Set(brandConfigs.map((bc) => bc.brandId));
+  // A Core Identity is reusable. Only the same Core Identity + Brand pair is
+  // unique, so keep existing Brand Products out of this create flow.
+  const configuredBrandIds = new Set<number>([
+    ...((activeCoreProduct as any)?.configuredBrandIds ?? []),
+    ...brandConfigs.map((bc) => bc.brandId),
+  ]);
   const availableBrands = allBrands.filter(
-    (b: any) => !configuredBrandIds.has(b.id),
+    (b: any) => b.isActive !== false && !configuredBrandIds.has(b.id),
   );
 
-  const handleError = () => {
+  const handleError = (error: Error) => {
     toast.error(
-      `An unexpected error occurred while ${isEdit ? "updating" : "creating"} the product.`,
+      error.message ||
+        `An unexpected error occurred while ${isEdit ? "updating" : "creating"} the product.`,
     );
   };
 
   const createMutation = useMutation({
     ...orpc.product.create.mutationOptions(),
     onSuccess: async () => {
-      queryClient.invalidateQueries({ queryKey: ["admin-products"] });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["admin-products"] }),
+        queryClient.invalidateQueries({
+          queryKey: orpc.product.getAdminWebViewProducts.key(),
+        }),
+        queryClient.invalidateQueries({
+          queryKey: orpc.adminCoreProduct.getAll.key(),
+        }),
+      ]);
       toast.success("Product created successfully");
-      router.push(
-        isSingleBrandCreation && selectedCoreProductId
-          ? `/dashboard/admin/products/core/${selectedCoreProductId}/edit`
-          : "/dashboard/admin/products",
-      );
+      router.push(listHref);
     },
     onError: handleError,
   });
@@ -509,7 +682,12 @@ export default function ProductForm({
       if (editAdapter) {
         await editAdapter.onUpdated?.();
       } else {
-        queryClient.invalidateQueries({ queryKey: ["admin-products"] });
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: ["admin-products"] }),
+          queryClient.invalidateQueries({
+            queryKey: orpc.product.getAdminWebViewProducts.key(),
+          }),
+        ]);
       }
       toast.success("Product updated successfully");
       router.push(listHref);
@@ -656,6 +834,10 @@ export default function ProductForm({
       const payload = {
         ...value,
         coreProductId: isStructureLocked ? undefined : selectedCoreProductId,
+        newCoreProductName:
+          !isStructureLocked && newCoreProductName
+            ? newCoreProductName
+            : undefined,
         brandIds: isStructureLocked
           ? undefined
           : brandIds.length > 0
@@ -679,6 +861,12 @@ export default function ProductForm({
 
   const applyCoreProductToForm = useCallback(
     (cp: any) => {
+      if (cp.id !== selectedCoreProductId) {
+        setBrandConfigs([]);
+        setActiveBrandId(null);
+        setCollapsedBrandIds(new Set());
+      }
+      setNewCoreProductName(null);
       setSelectedCoreProductId(cp.id);
       setSelectedTypeId(cp.category?.typeId ?? null);
       setSelectedCategory(cp.categoryId);
@@ -690,7 +878,7 @@ export default function ProductForm({
       form.setFieldValue("subCategoryId", cp.subCategoryId ?? undefined);
       form.setFieldValue("coreProductId", cp.id);
     },
-    [form],
+    [form, selectedCoreProductId],
   );
 
   // When a core product is selected, auto-fill fields
@@ -702,6 +890,33 @@ export default function ProductForm({
         applyCoreProductToForm(cp);
       }
     }
+  };
+
+  const handleCoreProductCreate = (name: string) => {
+    if (!selectedCategory) return false;
+
+    const normalizedName = name.trim();
+    const slug = generateSlug(normalizedName);
+    if (!slug) {
+      toast.error("Enter a core identity name with letters or numbers");
+      return false;
+    }
+
+    setSelectedCoreProductId(null);
+    setNewCoreProductName(normalizedName);
+    setBrandConfigs([]);
+    setActiveBrandId(null);
+    setCollapsedBrandIds(new Set());
+    form.setFieldValue("name", normalizedName);
+    form.setFieldValue("slug", slug);
+    form.setFieldValue("image", "");
+    form.setFieldValue("categoryId", selectedCategory);
+    form.setFieldValue("subCategoryId", selectedSubCategoryId ?? undefined);
+    form.setFieldValue("coreProductId", null);
+    toast.info(
+      `Core identity “${normalizedName}” will be created with this product`,
+    );
+    return true;
   };
 
   useEffect(() => {
@@ -721,18 +936,6 @@ export default function ProductForm({
     initializedCoreProductId,
     isCoreIdentityLocked,
   ]);
-
-  useEffect(() => {
-    if (
-      !isEdit &&
-      isCoreIdentityLocked &&
-      lockedCoreProduct?.hasConfiguration
-    ) {
-      router.replace(
-        `/dashboard/admin/products/core/${lockedCoreProduct.id}/edit`,
-      );
-    }
-  }, [isCoreIdentityLocked, isEdit, lockedCoreProduct, router]);
 
   useEffect(() => {
     if (
@@ -922,7 +1125,7 @@ export default function ProductForm({
     ? "The core product this listing is based on."
     : isCoreIdentityLocked
       ? "This product is based on the selected core identity."
-      : selectedCoreProductId
+      : hasSelectedCoreIdentity
         ? "The core product this listing is based on."
         : "Choose the core product this listing is based on.";
 
@@ -930,8 +1133,8 @@ export default function ProductForm({
     <div className="min-h-screen bg-muted/30">
       {/* Command bar */}
       <div className="sticky top-0 z-20 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
-        <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-2.5">
-          <div className="flex min-w-0 items-center gap-3">
+        <div className="mx-auto flex max-w-6xl flex-col items-stretch gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:py-2.5">
+          <div className="flex min-w-0 w-full items-center gap-3 sm:w-auto">
             <Button
               asChild
               variant="ghost"
@@ -961,7 +1164,7 @@ export default function ProductForm({
               </div>
             </div>
           </div>
-          <div className="flex shrink-0 items-center gap-2">
+          <div className="flex w-full shrink-0 items-center justify-end gap-1.5 sm:w-auto sm:gap-2">
             {isEdit && product?.id ? (
               <DeleteProductDialog
                 productId={product.id}
@@ -975,6 +1178,7 @@ export default function ProductForm({
               type="button"
               variant="ghost"
               size="sm"
+              className="max-sm:px-2 max-sm:text-xs"
               onClick={() => router.push(listHref)}
               disabled={isPending}
             >
@@ -984,6 +1188,7 @@ export default function ProductForm({
               type="button"
               variant="outline"
               size="sm"
+              className="max-sm:px-2 max-sm:text-xs"
               onClick={() => {
                 form.setFieldValue("status", "draft");
                 form.handleSubmit();
@@ -994,6 +1199,7 @@ export default function ProductForm({
             </Button>
             <Button
               size="sm"
+              className="max-sm:px-2 max-sm:text-xs"
               onClick={() => {
                 if (editAdapter?.publishOnSave) {
                   form.setFieldValue("status", "active");
@@ -1058,7 +1264,7 @@ export default function ProductForm({
                         Core identity could not be loaded.
                       </div>
                     )
-                  ) : selectedCoreProductId ? (
+                  ) : hasSelectedCoreIdentity ? (
                     <IdentitySummaryRow
                       image={activeCoreProduct?.image}
                       name={activeCoreProduct?.name ?? "Core identity"}
@@ -1077,6 +1283,7 @@ export default function ProductForm({
                           className="h-8 shrink-0"
                           onClick={() => {
                             setSelectedCoreProductId(null);
+                            setNewCoreProductName(null);
                             form.setFieldValue("coreProductId", null);
                           }}
                         >
@@ -1099,6 +1306,7 @@ export default function ProductForm({
                             setSelectedCategory(null);
                             setSelectedSubCategoryId(null);
                             setSelectedCoreProductId(null);
+                            setNewCoreProductName(null);
                             form.setFieldValue("categoryId", 0);
                             form.setFieldValue("subCategoryId", undefined);
                             form.setFieldValue("coreProductId", null);
@@ -1130,6 +1338,7 @@ export default function ProductForm({
                             setSelectedCategory(val || null);
                             setSelectedSubCategoryId(null);
                             setSelectedCoreProductId(null);
+                            setNewCoreProductName(null);
                             form.setFieldValue("categoryId", val);
                             form.setFieldValue("subCategoryId", undefined);
                             form.setFieldValue("coreProductId", null);
@@ -1164,6 +1373,7 @@ export default function ProductForm({
                             const val = v === "none" ? null : Number(v);
                             setSelectedSubCategoryId(val);
                             setSelectedCoreProductId(null);
+                            setNewCoreProductName(null);
                             form.setFieldValue(
                               "subCategoryId",
                               val ?? undefined,
@@ -1189,37 +1399,19 @@ export default function ProductForm({
                       {/* Core identity */}
                       <Field>
                         <FieldLabel>Core identity *</FieldLabel>
-                        <Select
-                          value={
-                            selectedCoreProductId
-                              ? String(selectedCoreProductId)
-                              : "0"
-                          }
-                          onValueChange={(v) => {
-                            const val = Number(v);
-                            handleCoreProductSelect(val || null);
-                          }}
+                        <CoreProductCombobox
+                          key={`${selectedCategory ?? "none"}-${selectedSubCategoryId ?? "all"}`}
+                          options={coreProducts}
+                          selected={selectedCoreProduct}
                           disabled={!selectedCategory}
-                        >
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select core product" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="0" disabled>
-                              Select core identity
-                            </SelectItem>
-                            {selectableCoreProducts.map((cp: any) => (
-                              <SelectItem key={cp.id} value={String(cp.id)}>
-                                {cp.name}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                          onSelect={handleCoreProductSelect}
+                          onCreate={handleCoreProductCreate}
+                        />
                       </Field>
                     </div>
                   )}
 
-                  {(selectedCoreProductId || isEdit) && (
+                  {(hasSelectedCoreIdentity || isEdit) && (
                     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                       <form.Field name="name">
                         {(field) => (
@@ -1256,7 +1448,7 @@ export default function ProductForm({
               </FormSection>
 
               {/* ── Brands and variants ── */}
-              {(selectedCoreProductId || isEdit) &&
+              {(hasSelectedCoreIdentity || isEdit) &&
                 (isStructureLocked ? (
                   <FormSection
                     title="Brand and variants"
@@ -1423,7 +1615,7 @@ export default function ProductForm({
                 ))}
 
               {/* ── Description ── */}
-              {(selectedCoreProductId || isEdit) && (
+              {(hasSelectedCoreIdentity || isEdit) && (
                 <FormSection
                   title="Description"
                   description="How this product appears to customers."

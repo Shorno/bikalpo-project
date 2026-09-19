@@ -6,10 +6,122 @@ import {
   getReferenceProductEffectivePrice,
   getReferenceSellerKey,
   getReferenceVariantUnitPrice,
+  isAdminReferenceProductComplete,
   isOpenOrderReferenceSelectionEligible,
   referenceProductCanExchange,
   sortReferenceProducts,
 } from "./reference-product-catalog";
+
+const completeAdminReferenceProduct = {
+  brandId: 16,
+  coreProductId: 1,
+  creatorSource: "admin",
+  id: 2,
+  price: "1900.00",
+  scheduledAt: null,
+  status: "active",
+  visibility: "public",
+  variantPrices: [
+    {
+      brandId: 16,
+      consumerPrice: "1520.00",
+      id: 4,
+      isActive: true,
+      variantOptionId: 9,
+    },
+  ],
+  variants: [
+    {
+      catalogVariant: {
+        brandId: 16,
+        configurationState: "configured",
+        coreProductId: 1,
+        isActive: true,
+      },
+      catalogVariantId: 5,
+      isActive: true,
+      price: "1520.00",
+      productId: 2,
+      sourceVariantPriceId: 4,
+      sourceVariantOptionId: 9,
+    },
+  ],
+} as const;
+
+test("only complete admin reference products are publicly discoverable", () => {
+  assert.equal(
+    isAdminReferenceProductComplete(completeAdminReferenceProduct),
+    true,
+  );
+
+  const incompleteProducts = [
+    { ...completeAdminReferenceProduct, brandId: null },
+    { ...completeAdminReferenceProduct, variants: [] },
+    { ...completeAdminReferenceProduct, variantPrices: [] },
+    {
+      ...completeAdminReferenceProduct,
+      variantPrices: [
+        {
+          ...completeAdminReferenceProduct.variantPrices[0],
+          consumerPrice: "0",
+        },
+      ],
+    },
+    {
+      ...completeAdminReferenceProduct,
+      variants: [
+        {
+          ...completeAdminReferenceProduct.variants[0],
+          catalogVariant: {
+            ...completeAdminReferenceProduct.variants[0].catalogVariant,
+            configurationState: "draft",
+          },
+        },
+      ],
+    },
+  ];
+
+  for (const product of incompleteProducts) {
+    assert.equal(isAdminReferenceProductComplete(product), false);
+  }
+});
+
+test("a reference product is incomplete when any active variant lacks pricing", () => {
+  assert.equal(
+    isAdminReferenceProductComplete({
+      ...completeAdminReferenceProduct,
+      variants: [
+        ...completeAdminReferenceProduct.variants,
+        {
+          ...completeAdminReferenceProduct.variants[0],
+          catalogVariantId: 6,
+          sourceVariantPriceId: 5,
+          sourceVariantOptionId: 10,
+        },
+      ],
+    }),
+    false,
+  );
+});
+
+test("a reference product is incomplete when an active price lacks a variant", () => {
+  assert.equal(
+    isAdminReferenceProductComplete({
+      ...completeAdminReferenceProduct,
+      variantPrices: [
+        ...completeAdminReferenceProduct.variantPrices,
+        {
+          brandId: 16,
+          consumerPrice: "1750.00",
+          id: 5,
+          isActive: true,
+          variantOptionId: 10,
+        },
+      ],
+    }),
+    false,
+  );
+});
 
 test("an exact active consumer price is the canonical reference variant price", () => {
   const variant = {
