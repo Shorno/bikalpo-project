@@ -241,6 +241,10 @@ function getAdminNavGroups(pendingApplications = 0): NavGroup[] {
       ],
     },
     {
+      label: "To-Let",
+      items: [{ title: "Banner & Title", url: `${ADMIN_BASE}/to-let`, icon: ImageIcon }],
+    },
+    {
       label: "Marketing",
       items: [
         {

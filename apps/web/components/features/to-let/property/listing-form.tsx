@@ -195,10 +195,10 @@ function FormSection({
   children: React.ReactNode;
 }) {
   return (
-    <section className="rounded-lg border border-gray-200 bg-white p-5 sm:p-6">
-      <h2 className="font-semibold text-gray-900">{title}</h2>
+    <section className="rounded-lg border border-border bg-card p-5 sm:p-6">
+      <h2 className="font-semibold text-foreground">{title}</h2>
       {description ? (
-        <p className="mt-1 text-sm text-gray-500">{description}</p>
+        <p className="mt-1 text-sm text-muted-foreground">{description}</p>
       ) : null}
       <div className="mt-4">{children}</div>
     </section>
@@ -214,8 +214,8 @@ function ReadonlyField({
 }) {
   return (
     <div className="space-y-1.5">
-      <p className="text-sm font-medium text-gray-900">{label}</p>
-      <div className="flex min-h-10 items-center rounded-md border border-gray-200 bg-gray-50 px-3 text-sm font-medium text-gray-800">
+      <p className="text-sm font-medium text-foreground">{label}</p>
+      <div className="flex min-h-10 items-center rounded-md border border-border bg-muted/30 px-3 text-sm font-medium text-foreground">
         {value}
       </div>
     </div>
@@ -239,7 +239,7 @@ function MoneyField({
     <div className="space-y-1.5">
       <Label htmlFor={id}>{label}</Label>
       <div className="relative">
-        <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-sm text-gray-400">
+        <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-sm text-muted-foreground">
           ৳
         </span>
         <Input
@@ -268,7 +268,7 @@ function ChargeIncluded({
   onChange: (checked: boolean) => void;
 }) {
   return (
-    <div className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-600">
+    <div className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
       <span>Included in monthly rent</span>
       <IncludedExcludedButtons
         label={`${label} in monthly rent`}
@@ -289,7 +289,7 @@ function PriceVisibility({
   onChange: (checked: boolean) => void;
 }) {
   return (
-    <label className="mt-2 flex cursor-pointer items-center justify-between rounded-lg border border-gray-200 bg-white px-3 py-2 text-xs text-gray-600">
+    <label className="mt-2 flex cursor-pointer items-center justify-between rounded-lg border border-border bg-card px-3 py-2 text-xs text-muted-foreground">
       <span>Show {label} to visitors before contract</span>
       <Switch
         aria-label={`Show ${label} to visitors before contract`}
@@ -487,7 +487,7 @@ function LoadedListingForm({
               type="button"
               onClick={renewVisibility}
               disabled={isPending}
-              className="bg-emerald-600 hover:bg-emerald-700"
+              className="bg-primary text-primary-foreground hover:bg-primary/90"
             >
               {publishListing.isPending ? (
                 <Loader2 className="animate-spin" />
@@ -507,17 +507,17 @@ function LoadedListingForm({
       />
 
       {listing ? (
-        <div className="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-3 rounded-lg border border-border bg-card p-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex flex-wrap items-center gap-2">
             <ListingStatusBadge status={listing.status} />
             <Badge variant="outline">
               {listing.visibility === "public" ? "Public" : "QR Only"}
             </Badge>
-            <span className="font-mono text-xs text-gray-500">
+            <span className="font-mono text-xs text-muted-foreground">
               {listing.listingCode}
             </span>
           </div>
-          <div className="text-sm text-gray-600">
+          <div className="text-sm text-muted-foreground">
             {formatMoney(listing.monthlyRent)} / month · {listing.viewCount}{" "}
             views
           </div>
@@ -526,7 +526,7 @@ function LoadedListingForm({
 
       <nav
         aria-label="Listing creation progress"
-        className="rounded-lg border border-gray-200 bg-white px-3 py-4 sm:px-5"
+        className="rounded-lg border border-border bg-card px-3 py-4 sm:px-5"
       >
         <ol className="flex items-center">
           {steps.map((step, index) => {
@@ -550,8 +550,8 @@ function LoadedListingForm({
                       active
                         ? "border-emerald-600 text-emerald-700 ring-4 ring-emerald-50"
                         : completed
-                          ? "border-emerald-600 bg-emerald-600 text-white"
-                          : "border-gray-300 text-gray-400",
+                          ? "border-primary bg-primary text-primary-foreground"
+                          : "border-border text-muted-foreground",
                     )}
                   >
                     {completed ? <Check className="size-4" /> : step.id}
@@ -559,7 +559,7 @@ function LoadedListingForm({
                   <span
                     className={cn(
                       "hidden text-xs sm:block",
-                      active ? "text-emerald-700" : "text-gray-500",
+                      active ? "text-emerald-700" : "text-muted-foreground",
                     )}
                   >
                     {step.label}
@@ -569,7 +569,7 @@ function LoadedListingForm({
                   <span
                     className={cn(
                       "mx-1 h-px flex-1 sm:mx-3",
-                      completed ? "bg-emerald-500" : "bg-gray-200",
+                      completed ? "bg-emerald-500" : "bg-muted",
                     )}
                   />
                 ) : null}
@@ -711,8 +711,8 @@ function LoadedListingForm({
                 : []),
             ].map(([label, included]) => (
               <div key={String(label)} className="space-y-1.5">
-                <p className="text-sm font-medium text-gray-900">{label}</p>
-                <div className="flex min-h-10 items-center rounded-md border border-gray-200 bg-gray-50 px-3">
+                <p className="text-sm font-medium text-foreground">{label}</p>
+                <div className="flex min-h-10 items-center rounded-md border border-border bg-muted/30 px-3">
                   <IncludedExcludedButtons
                     label={String(label)}
                     included={Boolean(included)}
@@ -743,7 +743,7 @@ function LoadedListingForm({
                     <label
                       key={option.value}
                       htmlFor={`preferred-${option.value}`}
-                      className="flex min-h-10 cursor-pointer items-center gap-2 rounded-md border border-gray-200 px-3 text-sm text-gray-700"
+                      className="flex min-h-10 cursor-pointer items-center gap-2 rounded-md border border-border px-3 text-sm text-foreground"
                     >
                       <RadioGroupItem
                         id={`preferred-${option.value}`}
@@ -826,15 +826,15 @@ function LoadedListingForm({
               ].map((facility) => (
                 <div
                   key={facility.label}
-                  className="space-y-2 border-b border-gray-100 pb-4"
+                  className="space-y-2 border-b border-border pb-4"
                 >
-                  <p className="text-sm font-medium text-gray-900">
+                  <p className="text-sm font-medium text-foreground">
                     {facility.label}
                   </p>
                   <label
                     htmlFor={`facility-${facility.label.toLowerCase().replaceAll(" ", "-")}`}
                     className={cn(
-                      "flex min-h-9 items-center gap-2 text-sm text-gray-700",
+                      "flex min-h-9 items-center gap-2 text-sm text-foreground",
                       facility.onChange ? "cursor-pointer" : "cursor-default",
                     )}
                   >
@@ -849,11 +849,11 @@ function LoadedListingForm({
                     />
                     Available
                   </label>
-                  <label className="flex flex-wrap items-center gap-2 text-sm text-gray-700">
+                  <label className="flex flex-wrap items-center gap-2 text-sm text-foreground">
                     <span>Rent inclusion</span>
                     <select
                       aria-label={`${facility.label} rent inclusion`}
-                      className="h-10 min-w-0 rounded-md border border-gray-300 bg-white px-2 text-base sm:text-sm"
+                      className="h-10 min-w-0 rounded-md border border-border bg-card px-2 text-base sm:text-sm"
                       disabled={!facility.available}
                       value={
                         !facility.available
@@ -939,7 +939,7 @@ function LoadedListingForm({
                 placeholder="https://your-tour-provider.com/..."
                 aria-describedby="tour-url-help"
               />
-              <p id="tour-url-help" className="text-sm text-gray-500">
+              <p id="tour-url-help" className="text-sm text-muted-foreground">
                 Add a hosted interactive 360° tour. It opens separately from the
                 listing video.
               </p>
@@ -962,22 +962,22 @@ function LoadedListingForm({
                 value={property.mobileNumber}
               />
             </div>
-            <p className="mt-3 text-xs text-gray-500">
+            <p className="mt-3 text-xs text-muted-foreground">
               The verified Property contact is used for calls and booking
               requests. Update it from Edit Property when needed.
             </p>
           </FormSection>
 
-          <details open className="rounded-lg border border-gray-200 bg-white">
-            <summary className="cursor-pointer px-5 py-4 text-sm font-semibold text-gray-900 sm:px-6">
+          <details open className="rounded-lg border border-border bg-card">
+            <summary className="cursor-pointer px-5 py-4 text-sm font-semibold text-foreground sm:px-6">
               Publishing and visitor visibility
             </summary>
-            <div className="space-y-6 border-t border-gray-100 px-5 py-5 sm:px-6">
+            <div className="space-y-6 border-t border-border px-5 py-5 sm:px-6">
               <div>
-                <h3 className="text-sm font-semibold text-gray-900">
+                <h3 className="text-sm font-semibold text-foreground">
                   Listing visibility
                 </h3>
-                <p className="mt-1 text-xs text-gray-500">
+                <p className="mt-1 text-xs text-muted-foreground">
                   Choose where this active Listing can be discovered.
                 </p>
                 <div className="mt-3 grid gap-3 sm:grid-cols-2">
@@ -991,27 +991,27 @@ function LoadedListingForm({
                         aria-pressed={selected}
                         onClick={() => update("visibility", option.value)}
                         className={cn(
-                          "flex items-start gap-3 rounded-lg border p-4 text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600",
+                          "flex items-start gap-3 rounded-lg border p-4 text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring",
                           selected
-                            ? "border-emerald-500 bg-emerald-50"
-                            : "border-gray-200 bg-white hover:border-emerald-300",
+                            ? "border-primary bg-primary/5"
+                            : "border-border bg-card hover:border-primary/20",
                         )}
                       >
                         <span
                           className={cn(
                             "flex size-9 shrink-0 items-center justify-center rounded-lg",
                             selected
-                              ? "bg-emerald-600 text-white"
-                              : "bg-gray-100 text-gray-500",
+                              ? "bg-primary text-primary-foreground"
+                              : "bg-muted text-muted-foreground",
                           )}
                         >
                           <Icon className="size-4.5" />
                         </span>
                         <span>
-                          <span className="block font-medium text-gray-900">
+                          <span className="block font-medium text-foreground">
                             {option.label}
                           </span>
-                          <span className="mt-1 block text-xs leading-5 text-gray-600">
+                          <span className="mt-1 block text-xs leading-5 text-muted-foreground">
                             {option.description}
                           </span>
                         </span>
@@ -1023,7 +1023,7 @@ function LoadedListingForm({
               </div>
 
               <div>
-                <h3 className="text-sm font-semibold text-gray-900">
+                <h3 className="text-sm font-semibold text-foreground">
                   Visitor price details
                 </h3>
                 <div className="mt-3 grid gap-3 sm:grid-cols-2">
@@ -1093,14 +1093,14 @@ function LoadedListingForm({
                   key={label}
                   className="grid gap-1 py-3 sm:grid-cols-[10rem_1fr]"
                 >
-                  <dt className="text-sm text-gray-500">{label}</dt>
-                  <dd className="text-sm font-medium text-gray-900">{value}</dd>
+                  <dt className="text-sm text-muted-foreground">{label}</dt>
+                  <dd className="text-sm font-medium text-foreground">{value}</dd>
                 </div>
               ))}
             </dl>
 
-            <div className="mt-6 border-t border-gray-100 pt-5">
-              <h3 className="text-sm font-semibold text-gray-900">
+            <div className="mt-6 border-t border-border pt-5">
+              <h3 className="text-sm font-semibold text-foreground">
                 Facilities
               </h3>
               <div className="mt-3 grid gap-x-8 gap-y-2 sm:grid-cols-2">
@@ -1120,22 +1120,22 @@ function LoadedListingForm({
                   .map(([label]) => (
                     <div
                       key={String(label)}
-                      className="flex items-center gap-2 text-sm text-gray-700"
+                      className="flex items-center gap-2 text-sm text-foreground"
                     >
                       <Check className="size-4 text-emerald-600" /> {label}
                     </div>
                   ))}
               </div>
               {values.otherFacilities ? (
-                <p className="mt-3 text-sm leading-6 text-gray-600">
+                <p className="mt-3 text-sm leading-6 text-muted-foreground">
                   {values.otherFacilities}
                 </p>
               ) : null}
             </div>
 
-            <div className="mt-6 border-t border-gray-100 pt-5">
-              <h3 className="text-sm font-semibold text-gray-900">Media</h3>
-              <div className="mt-3 space-y-2 text-sm text-gray-700">
+            <div className="mt-6 border-t border-border pt-5">
+              <h3 className="text-sm font-semibold text-foreground">Media</h3>
+              <div className="mt-3 space-y-2 text-sm text-foreground">
                 <p className="flex items-center gap-2">
                   <Check className="size-4 text-emerald-600" />
                   {String(values.imageUrls.length).padStart(2, "0")} Photos
@@ -1165,7 +1165,7 @@ function LoadedListingForm({
                 </div>
               </div>
               <div className="mt-4 flex flex-wrap gap-2">
-                <Button asChild className="bg-emerald-600 hover:bg-emerald-700">
+                <Button asChild className="bg-primary text-primary-foreground hover:bg-primary/90">
                   <Link href={liveHref} target="_blank" prefetch={false}>
                     <Eye /> View Listing
                   </Link>
@@ -1195,7 +1195,7 @@ function LoadedListingForm({
         </div>
       ) : null}
 
-      <div className="sticky bottom-0 z-10 -mx-4 border-t border-gray-200 bg-white px-4 py-4 sm:static sm:mx-0 sm:rounded-lg sm:border sm:px-5">
+      <div className="sticky bottom-0 z-10 -mx-4 border-t border-border bg-card px-4 py-4 sm:static sm:mx-0 sm:rounded-lg sm:border sm:px-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
           {currentStep > 1 ? (
             <Button
@@ -1215,7 +1215,7 @@ function LoadedListingForm({
               type="button"
               onClick={next}
               disabled={isPending}
-              className="bg-emerald-600 hover:bg-emerald-700"
+              className="bg-primary text-primary-foreground hover:bg-primary/90"
             >
               Save &amp; Continue <ArrowRight />
             </Button>
@@ -1272,7 +1272,7 @@ function LoadedListingForm({
                   type="button"
                   onClick={() => save(true)}
                   disabled={isPending}
-                  className="bg-emerald-600 hover:bg-emerald-700"
+                  className="bg-primary text-primary-foreground hover:bg-primary/90"
                 >
                   {isPending ? (
                     <Loader2 className="animate-spin" />

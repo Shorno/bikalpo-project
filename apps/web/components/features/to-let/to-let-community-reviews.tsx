@@ -9,6 +9,25 @@ import { orpc } from "@/utils/orpc";
 import { Button } from "@/components/ui/button";
 import { ToLetAccountLink } from "./to-let-account-link";
 
+const demoReviews = [
+  { name: "আরিফ — নমুনা প্রোফাইল", rating: 5, body: "এলাকা ও বাসার ধরন বেছে একসঙ্গে কয়েকটি লিস্টিং দেখতে সুবিধা হয়েছে। ছবি আর রুমের তথ্য পাশাপাশি থাকায় তুলনা করা সহজ।" },
+  { name: "নাবিলা — নমুনা প্রোফাইল", rating: 4, body: "মোবাইল থেকে ফ্ল্যাটের বিস্তারিত দেখতে পেরেছি। লোকেশন আর বাসার আয়তন এক জায়গায় পাওয়াটা কাজে লেগেছে।" },
+  { name: "সায়েম — নমুনা প্রোফাইল", rating: 5, body: "পরিবারের জন্য বাসা খুঁজতে category filter ব্যবহার করেছি। পছন্দের লিস্টিং থেকে মালিকের সঙ্গে যোগাযোগের অপশন সহজে পাওয়া যায়।" },
+];
+
+function DemoReviews() {
+  return <div>
+    <p className="mb-5 rounded-md border border-border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">Demo / নমুনা — নিচের নাম, রেটিং ও মন্তব্য শুধু design preview; বাস্তব গ্রাহকের review নয়।</p>
+    <div className="space-y-4">{demoReviews.map(review => <figure key={review.name} className="rounded-lg border border-border p-4 sm:p-5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <figcaption className="text-sm font-semibold">{review.name}</figcaption>
+        <span role="img" aria-label={`Sample rating: ${review.rating} out of 5 stars`} className="flex gap-1 text-amber-600">{[1, 2, 3, 4, 5].map(n => <Star key={n} aria-hidden="true" className={`size-4 ${n <= review.rating ? "fill-current" : ""}`} />)}</span>
+      </div>
+      <blockquote className="mt-3 text-sm leading-7 text-muted-foreground">{review.body}</blockquote>
+    </figure>)}</div>
+  </div>;
+}
+
 export function ToLetCommunityReviews({ all = false, page = 1 }: { all?: boolean; page?: number }) {
   const client = useQueryClient();
   const [hydrated, setHydrated] = useState(false);
@@ -45,15 +64,17 @@ export function ToLetCommunityReviews({ all = false, page = 1 }: { all?: boolean
           <div className="min-w-0" aria-live="polite">
             {reviews.isPending ? <div className="space-y-4" role="status" aria-label="Loading reviews">{[1,2,3].map(n => <div key={n} className="h-28 animate-pulse rounded-lg bg-muted motion-reduce:animate-none" />)}</div>
             : reviews.isError ? <div role="alert"><p>মতামত লোড করা যায়নি।</p><Button variant="outline" className="mt-3" onClick={() => reviews.refetch()}>আবার চেষ্টা করুন</Button></div>
+            : reviews.data.enabled === false && page === 1 ? <DemoReviews />
             : !reviews.data.reviews.length ? <p className="py-8 text-muted-foreground">{reviews.data.enabled === false ? "Public reviews চালু হলে এখানে ভাড়াটিয়াদের প্রকাশিত মতামত দেখা যাবে।" : page > 1 ? "এই পেজে কোনো মতামত নেই।" : "এখনো কোনো public review নেই। আপনার অভিজ্ঞতা জানান।"}</p>
             : <div className="divide-y divide-border">{reviews.data.reviews.map(review => <figure key={review.id} className="py-6 first:pt-0">
                 <div className="flex flex-wrap items-center justify-between gap-3">
-                  <span className="text-xs text-muted-foreground">Verified tenant</span>
+                  <span className="min-w-0 break-words text-sm font-semibold md:hidden">{review.authorName}</span>
+                  <span className="hidden text-xs text-muted-foreground md:inline">Verified tenant</span>
                   {review.rating && <span role="img" aria-label={review.rating + " out of 5 stars"} className="flex gap-1 text-amber-600">{[1,2,3,4,5].map(n => <Star key={n} aria-hidden="true" className={"size-4 " + (n <= review.rating! ? "fill-current" : "")} />)}</span>}
                 </div>
                 <blockquote className="mt-3 whitespace-pre-wrap break-words text-base leading-8 [overflow-wrap:anywhere]">{review.body}</blockquote>
                 <figcaption className="mt-4 flex flex-wrap justify-between gap-3 text-sm">
-                  <span className="min-w-0 break-words font-semibold">{review.authorName}</span>
+                  <span className="hidden min-w-0 break-words font-semibold md:inline">{review.authorName}</span>
                   <time dateTime={new Date(review.createdAt).toISOString()} className="text-xs text-muted-foreground">{new Intl.DateTimeFormat("bn-BD", { dateStyle: "medium", timeZone: "Asia/Dhaka" }).format(new Date(review.createdAt))}</time>
                 </figcaption>
               </figure>)}</div>}

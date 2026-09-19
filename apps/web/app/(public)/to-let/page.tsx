@@ -1,5 +1,7 @@
 import {
   ArrowRight,
+  Bell,
+  ArrowDown,
   BadgeCheck,
   Briefcase,
   Building2,
@@ -10,7 +12,6 @@ import {
   Home,
   KeyRound,
   type LucideIcon,
-  MapPin,
   Search,
   Shapes,
   Store,
@@ -19,11 +20,13 @@ import {
 } from "lucide-react";
 import type { Metadata } from "next";
 import Form from "next/form";
-import Image from "next/image";
+import { ToLetHeroBanner } from "@/components/features/to-let/to-let-hero-banner";
+import type { ToLetBannerSlide } from "@bikalpo-project/api/lib/tolet-banner";
 import Link from "next/link";
-import { PublicUnitListingCard } from "@/components/features/to-let/public-unit-listing-card";
+import { LandingListingGrid } from "@/components/features/to-let/landing-listing-grid";
+import { AlertDashboardLink } from "@/components/features/to-let/alerts/alert-dashboard-link";
+import { RentalTypeCarousel } from "@/components/features/to-let/rental-type-carousel";
 import { ToLetAccountLink } from "@/components/features/to-let/to-let-account-link";
-import { ToLetAlertDialog } from "@/components/features/to-let/to-let-alert-dialog";
 import { ToLetCommunityReviews } from "@/components/features/to-let/to-let-community-reviews";
 import { ToLetLocationExplorer } from "@/components/features/to-let/to-let-location-explorer";
 import { ToLetSearchButton } from "@/components/features/to-let/to-let-search-button";
@@ -121,9 +124,11 @@ export default async function ToLetPage({ searchParams }: ToLetPageProps) {
   const { query, selectedType } = parseToLetSearchParams(params);
   let listingsUnavailable = false;
   let unitListings: UnitListing[] = [];
-  const [catalogResult, results] = await Promise.allSettled([
+  const [catalogResult, results, platformResult, bannerResult] = await Promise.allSettled([
     listPublicToLetUnitListings(60),
-    getPublicOrpcClient(60).toLetUnitListing.listPublicPage({ page: 1, limit: 8, q: query, type: selectedType }),
+    getPublicOrpcClient(60).toLetUnitListing.listPublicPage({ page: 1, limit: selectedType ? 4 : 8, q: query, type: selectedType }),
+    getPublicOrpcClient(60).landing.getPlatformStats(),
+    getPublicOrpcClient(60).toLetBanner.getPublic(),
   ]);
   if (catalogResult.status === "fulfilled") unitListings = catalogResult.value;
   listingsUnavailable = results.status === "rejected";
@@ -131,9 +136,6 @@ export default async function ToLetPage({ searchParams }: ToLetPageProps) {
   const resultCount = results.status === "fulfilled" ? results.value.total : 0;
   const { queryMatched: queryMatchedListings } =
     filterToLetMarketplaceListings(unitListings, query, selectedType);
-  const propertyCount = new Set(
-    unitListings.map((listing) => listing.propertyCode),
-  ).size;
   const areaNames = Array.from(
     new Map(
       unitListings
@@ -144,9 +146,6 @@ export default async function ToLetPage({ searchParams }: ToLetPageProps) {
         ]),
     ).values(),
   );
-  const availableListingCount = unitListings.filter(
-    (listing) => listing.marketplaceStatus === "available",
-  ).length;
   const mapListings = [...unitListings]
     .sort((left, right) =>
       left.marketplaceStatus === right.marketplaceStatus
@@ -159,19 +158,16 @@ export default async function ToLetPage({ searchParams }: ToLetPageProps) {
   const locationPins = areaNames.slice(0, 6);
 
   return (
-    <div className={`${styles.landing} min-h-screen bg-zinc-50 text-foreground`}>
+    <div className={`${styles.landing} min-h-screen bg-muted/30 text-foreground`}>
       <ToLetCatalogHero
         query={query}
         selectedType={selectedType}
         listings={queryMatchedListings}
+        slides={bannerResult.status === "fulfilled" ? bannerResult.value.slides : []}
       />
 
-      <MarketplaceSnapshot
-        listingCount={unitListings.length}
-        availableListingCount={availableListingCount}
-        propertyCount={propertyCount}
-        areaCount={areaNames.length}
-        unavailable={catalogResult.status === "rejected"}
+      <PlatformSnapshot
+        stats={platformResult.status === "fulfilled" ? platformResult.value : null}
       />
 
       <RentalTypeDirectory listings={queryMatchedListings} query={query} />
@@ -179,43 +175,47 @@ export default async function ToLetPage({ searchParams }: ToLetPageProps) {
       <section
         id="listings"
         aria-labelledby="recent-listings-heading"
-        className="scroll-mt-28 border-y border-zinc-200 bg-white py-12 sm:py-16"
+        className="scroll-mt-28 border-y border-border bg-card py-12 sm:py-16"
       >
         <div className="site-container px-4 sm:px-6 lg:px-8">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
             <div>
-              <p className="text-xs font-semibold tracking-[0.14em] text-blue-700 uppercase">
+              <p className="text-xs font-semibold tracking-[0.14em] text-primary uppercase">
                 Curated listings
               </p>
               <h2
                 id="recent-listings-heading"
-                className="mt-2 text-2xl font-bold tracking-tight text-zinc-950 sm:text-3xl"
+                className="mt-2 text-2xl font-bold tracking-tight text-foreground sm:text-3xl"
               >
                 সাম্প্রতিক ও ভেরিফাইড To-Let লিস্টিং
               </h2>
-              <p className="mt-2 text-sm text-zinc-500">
-                Available ও recently booked unit দেখুন, তারপর সরাসরি Call বা View
-                Details করুন।
-              </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <Link
                 href={toLetBrowseHref(query, selectedType)}
-                className="inline-flex min-h-11 items-center gap-2 text-sm font-semibold text-blue-700 hover:underline hover:underline-offset-4"
+                className="inline-flex min-h-11 items-center gap-2 text-sm font-semibold text-primary hover:underline hover:underline-offset-4"
               >
                 See all listings <ArrowRight className="size-4" />
               </Link>
-              <ToLetAlertDialog query={query} selectedType={selectedType} />
             </div>
           </div>
 
-          <div className="mt-7 flex gap-2 overflow-x-auto pb-2 [scrollbar-width:thin]">
+          <div className="relative mt-7 md:hidden">
+            <nav aria-label="Listing categories" className="flex gap-2 overflow-x-auto pb-2 pr-7 [&>*]:shrink-0 [&>*]:whitespace-nowrap">
+              <FilterChip href={toLetMarketHref(query)} active={!selectedType} label="All" />
+              {rentalTypes.map(type => (
+                <FilterChip key={type.value} href={toLetMarketHref(query, type.value)} active={selectedType === type.value} label={type.label.replace(" To-Let", "")} />
+              ))}
+            </nav>
+            <span aria-hidden="true" className="pointer-events-none absolute right-0 top-0 flex h-10 w-6 items-center justify-center bg-background"><ArrowRight className="size-4" /></span>
+          </div>
+          <div className="mt-7 hidden flex-wrap items-start gap-2 md:flex">
             <FilterChip
               href={toLetMarketHref(query)}
               active={!selectedType}
               label="All listings"
             />
-            {rentalTypes.map((type) => (
+            {rentalTypes.filter(type => ["family_flat", "bachelor_room", "sublet"].includes(type.value)).map((type) => (
               <FilterChip
                 key={type.value}
                 href={toLetMarketHref(query, type.value)}
@@ -223,21 +223,38 @@ export default async function ToLetPage({ searchParams }: ToLetPageProps) {
                 label={type.label.replace(" To-Let", "")}
               />
             ))}
+            {[
+              { label: "Commercial", values: ["shop", "office", "warehouse", "garage", "factory"] },
+              { label: "More", values: ["family_sublet", "bachelor_sublet", "other"] },
+            ].map(group => (
+              <details key={group.label} className="relative">
+                <summary className={`flex min-h-10 cursor-pointer list-none items-center gap-2 rounded-md border px-3 text-sm font-medium focus-visible:outline-2 focus-visible:outline-ring ${selectedType && group.values.includes(selectedType) ? "border-primary bg-primary text-primary-foreground" : "border-border bg-card text-muted-foreground hover:bg-muted"}`}>
+                  {selectedType && group.values.includes(selectedType) ? rentalTypes.find(item => item.value === selectedType)?.label : group.label}
+                  <ChevronRight className="size-3.5 rotate-90" aria-hidden="true" />
+                </summary>
+                <div className="absolute left-0 top-full z-20 mt-2 min-w-44 rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-md">
+                  {rentalTypes.filter(type => group.values.includes(type.value)).map(type => (
+                    <Link key={type.value} href={toLetMarketHref(query, type.value)} aria-current={selectedType === type.value ? "page" : undefined} className="flex min-h-11 items-center rounded-md px-3 text-sm hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring">{type.label}</Link>
+                  ))}
+                </div>
+              </details>
+            ))}
           </div>
 
-          {query || selectedType ? (
-            <div className="mt-4 flex flex-wrap items-center gap-2 border border-zinc-200 bg-zinc-50 px-4 py-3 text-sm text-zinc-600">
-              <Search className="size-4 text-blue-600" aria-hidden="true" />
+          {!listingsUnavailable ? (
+            <div className="mt-4 flex flex-wrap items-center gap-2 border border-border bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
+              <Search className="size-4 text-primary" aria-hidden="true" />
               <span>
                 {resultCount.toLocaleString("en-BD")} result(s)
+                {selectedType ? ` · ${rentalTypes.find(type => type.value === selectedType)?.label}` : ""}
                 {query ? ` for “${query}”` : ""}
               </span>
-              <Link
+              {(query || selectedType) && <Link
                 href="/to-let#listings"
-                className="ml-auto font-semibold text-blue-700 hover:underline"
+                className="ml-auto font-semibold text-primary hover:underline"
               >
                 Clear filters
-              </Link>
+              </Link>}
             </div>
           ) : null}
 
@@ -250,14 +267,7 @@ export default async function ToLetPage({ searchParams }: ToLetPageProps) {
                 actionHref={toLetBrowseHref(query, selectedType)}
               />
             ) : filteredUnitListings.length > 0 ? (
-              <div className={`${styles.listings} grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-3 xl:grid-cols-4`}>
-                {filteredUnitListings.map((listing) => (
-                  <PublicUnitListingCard
-                    key={listing.listingCode}
-                    listing={listing}
-                  />
-                ))}
-              </div>
+              <LandingListingGrid key={`${query}:${selectedType ?? "all"}`} initialListings={filteredUnitListings} total={resultCount} query={query} type={selectedType} />
             ) : (
               <ListingMessage
                 title="No matching listing"
@@ -266,13 +276,20 @@ export default async function ToLetPage({ searchParams }: ToLetPageProps) {
                 actionHref="/to-let/listings"
               />
             )}
-            {!listingsUnavailable && resultCount > filteredUnitListings.length && (
-              <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-zinc-200 pt-4 text-sm">
-                <p className="text-zinc-600">Showing {filteredUnitListings.length} of {resultCount} matching listings</p>
-                <Link href={toLetBrowseHref(query, selectedType)} className="inline-flex min-h-11 items-center gap-2 font-semibold text-blue-700">View all matches <ArrowRight className="size-4" /></Link>
-              </div>
-            )}
           </div>
+        </div>
+      </section>
+
+      <section aria-labelledby="to-let-alert-heading" className="border-b border-border bg-card py-6 sm:py-8">
+        <div className="site-container flex flex-col gap-5 px-4 sm:px-6 md:flex-row md:items-center md:justify-between lg:px-8">
+          <div className="flex items-start gap-3">
+            <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/5 text-primary"><Bell className="size-5" aria-hidden="true" /></span>
+            <div className="max-w-2xl">
+              <h2 id="to-let-alert-heading" className="text-lg font-semibold text-foreground">পছন্দের বাসার খবর পেতে To-Let Alert</h2>
+              <p className="mt-2 text-sm leading-6 text-muted-foreground">Dashboard-এ এলাকা, ইউনিটের ধরন ও প্রয়োজন অনুযায়ী alert তৈরি করুন। আপনার শর্তের সঙ্গে মিলে নতুন listing এলে alert dashboard-এ notification দেখতে পারবেন। সেখান থেকেই alert যোগ, pause বা delete করা যাবে।</p>
+            </div>
+          </div>
+          <AlertDashboardLink />
         </div>
       </section>
 
@@ -296,20 +313,22 @@ function ToLetCatalogHero({
   query,
   selectedType,
   listings,
+  slides,
 }: {
   query: string;
   selectedType?: ToLetMarketRentalType;
   listings: UnitListing[];
+  slides: ToLetBannerSlide[];
 }) {
   const visibleTypes = rentalTypes.slice(0, 6);
 
   return (
-    <section className={`${styles.hero} bg-white`}>
+    <section className={`${styles.hero} bg-card`}>
       <div className="site-container px-4 py-5 sm:px-6 sm:py-7 lg:px-8">
         <div className="grid gap-4 lg:grid-cols-[15.5rem_minmax(0,1fr)]">
-          <aside className="hidden min-h-[390px] overflow-hidden rounded-xl border border-zinc-200 bg-white lg:block">
-            <div className="flex h-14 items-center gap-2 border-b border-zinc-200 px-4 text-sm font-semibold text-zinc-950">
-              <Building2 className="size-4 text-blue-600" />
+          <aside className="hidden min-h-[460px] overflow-hidden rounded-xl border border-border bg-card lg:block">
+            <div className="flex h-14 items-center gap-2 border-b border-border px-4 text-sm font-semibold text-foreground">
+              <Building2 className="size-4 text-primary" />
               Browse rental types
             </div>
             <nav aria-label="Browse To-Let by rental type">
@@ -321,60 +340,39 @@ function ToLetCatalogHero({
                   <Link
                     key={value}
                     href={toLetMarketHref(query, value)}
-                    className="flex min-h-14 items-center gap-3 border-b border-zinc-100 px-4 text-sm text-zinc-700 transition-colors hover:bg-zinc-50 hover:text-blue-700 focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-blue-600"
+                    className="flex min-h-14 items-center gap-3 border-b border-border px-4 text-sm text-foreground transition-colors hover:bg-muted/30 hover:text-primary focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring"
                   >
-                    <span className="flex size-8 items-center justify-center rounded-md bg-zinc-100 text-zinc-600">
+                    <span className="flex size-8 items-center justify-center rounded-md bg-muted text-muted-foreground">
                       <Icon className="size-4" aria-hidden="true" />
                     </span>
                     <span className="min-w-0 flex-1 truncate font-medium">
                       {label}
                     </span>
-                    <span className="font-mono text-xs tabular-nums text-zinc-400">
+                    <span className="font-mono text-xs tabular-nums text-muted-foreground">
                       {count}
                     </span>
-                    <ChevronRight className="size-3.5 text-zinc-400" />
+                    <ChevronRight className="size-3.5 text-muted-foreground" />
                   </Link>
                 );
               })}
             </nav>
           </aside>
 
-          <div className="relative min-h-[390px] overflow-hidden rounded-xl bg-zinc-800">
-            <Image
-              src="/images/to-let-hero.png"
-              alt="A modern rental home at sunset"
-              fill
-              priority
-              className="object-cover"
-              sizes="(max-width: 1024px) 100vw, 980px"
-            />
-            <div className="absolute inset-0 bg-zinc-950/65" />
-            <div className="relative flex min-h-[390px] max-w-3xl flex-col justify-center px-6 py-9 text-white sm:px-10 lg:px-12">
-              <p className="text-xs font-semibold tracking-[0.16em] text-blue-200 uppercase">
-                Bikalpo To-Let
-              </p>
-              <h1 className="mt-4 max-w-2xl text-4xl font-bold leading-[1.08] tracking-[-0.035em] sm:text-5xl">
-                Bangladesh&apos;s most trusted digital To-Let platform
-              </h1>
-              <p className="mt-5 max-w-xl text-sm leading-7 text-zinc-100 sm:text-base">
-                Find, compare and contact the owner directly for your desired
-                house, flat, sublet, shop, office or garage in one place. Send a
-                Booking Request online.
-              </p>
+          <ToLetHeroBanner slides={slides} className={`${styles.heroBanner} relative min-h-[420px] overflow-hidden rounded-xl bg-zinc-800 sm:min-h-[460px]`}>
 
               <Form
                 key={`${query}:${selectedType ?? "all"}`}
                 action="/to-let#listings"
-                className="mt-7 grid max-w-2xl gap-2 rounded-lg bg-white p-2 sm:grid-cols-[minmax(0,1fr)_11rem_auto]"
+                className="mt-7 grid max-w-2xl gap-2 rounded-lg bg-card p-2 sm:grid-cols-[minmax(0,1fr)_11rem_auto]"
               >
                 <label className="relative block">
                   <span className="sr-only">Search To-Let listings</span>
-                  <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-zinc-400" />
+                  <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
                   <input
                     name="q"
                     defaultValue={query}
                     placeholder="Area, property or listing ID"
-                    className="h-11 w-full rounded-md border-0 bg-zinc-100 pl-10 pr-3 text-sm text-zinc-950 outline-none ring-blue-200 placeholder:text-zinc-500 focus:ring-4"
+                    className="h-11 w-full rounded-md border-0 bg-muted pl-10 pr-3 text-sm text-foreground outline-none ring-ring placeholder:text-muted-foreground focus:ring-4"
                   />
                 </label>
                 <label>
@@ -382,7 +380,7 @@ function ToLetCatalogHero({
                   <select
                     name="type"
                     defaultValue={selectedType ?? ""}
-                    className="h-11 w-full rounded-md border-0 bg-zinc-100 px-3 text-sm text-zinc-700 outline-none ring-blue-200 focus:ring-4"
+                    className="h-11 w-full rounded-md border-0 bg-muted px-3 text-sm text-foreground outline-none ring-ring focus:ring-4"
                   >
                     <option value="">All types</option>
                     {rentalTypes.map((type) => (
@@ -398,7 +396,7 @@ function ToLetCatalogHero({
               <div className="mt-5 flex flex-wrap items-center gap-4 text-sm">
                 <Link
                   href="#listings"
-                  className="inline-flex min-h-11 items-center gap-2 rounded-md bg-blue-600 px-4 font-semibold text-white transition-colors hover:bg-blue-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+                  className="inline-flex min-h-11 items-center gap-2 rounded-md bg-primary px-4 font-semibold text-white transition-colors hover:bg-primary/90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
                 >
                   Browse listings <ArrowRight className="size-4" />
                 </Link>
@@ -409,22 +407,9 @@ function ToLetCatalogHero({
                   List your property
                 </ToLetAccountLink>
               </div>
-            </div>
-          </div>
+          </ToLetHeroBanner>
         </div>
 
-        <div className="mt-4 flex gap-3 overflow-x-auto pb-1 lg:hidden">
-          {visibleTypes.map(({ value, label, icon: Icon }) => (
-            <Link
-              key={value}
-              href={toLetMarketHref(query, value)}
-              className="flex min-w-36 items-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 py-3 text-sm font-medium text-zinc-700"
-            >
-              <Icon className="size-4 text-blue-600" />
-              {label}
-            </Link>
-          ))}
-        </div>
       </div>
     </section>
   );
@@ -438,21 +423,14 @@ function RentalTypeDirectory({
   query: string;
 }) {
   return (
-    <section className="border-b border-zinc-200 bg-zinc-50 py-12 sm:py-16">
+    <section className="border-b border-border bg-muted/30 py-12 sm:py-16">
       <div className="site-container px-4 sm:px-6 lg:px-8">
-        <p className="text-xs font-semibold tracking-[0.14em] text-blue-700 uppercase">
-          Explore rental types
-        </p>
-        <h2 className="text-2xl font-bold tracking-tight text-zinc-950 sm:text-3xl">
+        <h2 className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
           যে ধরনের ইউনিট খুঁজছেন, সেখান থেকেই শুরু করুন
         </h2>
-        <p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-500">
-          ফ্যামিলি, ব্যাচেলর, সাবলেট, অফিস, দোকান ও গুদামঘরসহ বিভিন্ন ধরনের To-Let
-          Listing থেকে আপনার প্রয়োজন অনুযায়ী সঠিক ইউনিট নির্বাচন করুন।
-        </p>
 
-        <div className={`${styles.categories} mt-7 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6`}>
-          {rentalTypes.map(({ value, label, banglaLabel, icon: Icon }, index) => {
+        <RentalTypeCarousel>
+          {rentalTypes.map(({ value, label, banglaLabel, icon: Icon }) => {
             const count = listings.filter(
               (listing) => listing.unit.unitType === value,
             ).length;
@@ -460,114 +438,67 @@ function RentalTypeDirectory({
               <Link
                 key={value}
                 href={toLetMarketHref(query, value)}
-                className={`${index >= 4 ? "hidden sm:flex" : "flex"} group min-h-24 items-center gap-3 rounded-xl border border-zinc-200 bg-white px-4 py-3 transition-colors hover:border-blue-300 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600`}
+                className="group flex min-h-24 items-center gap-3 rounded-xl border border-border bg-card px-4 py-3 transition-colors hover:border-ring hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
               >
-                <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-zinc-100 text-blue-700 transition-colors group-hover:bg-blue-50">
+                <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-muted text-foreground transition-colors group-hover:bg-secondary group-hover:text-secondary-foreground group-focus-visible:bg-secondary group-focus-visible:text-secondary-foreground">
                   <Icon className="size-5" />
                 </span>
                 <span className="min-w-0">
-                  <span className="block truncate text-sm font-semibold text-zinc-950">
+                  <span className="block truncate text-sm font-semibold text-foreground">
                     {label}
                   </span>
-                  <span className="mt-0.5 block truncate text-xs text-zinc-500">
+                  <span className="mt-0.5 block truncate text-xs text-muted-foreground">
                     {banglaLabel} · {count.toLocaleString("en-BD")}
                   </span>
                 </span>
               </Link>
             );
           })}
-        </div>
-        <details className="mt-3 sm:hidden">
-          <summary className="cursor-pointer py-3 text-sm font-semibold text-blue-700">আরও ইউনিটের ধরন দেখুন</summary>
-          <div className="grid grid-cols-2 gap-3">
-            {rentalTypes.slice(4).map(({ value, banglaLabel }) => (
-              <Link key={value} href={toLetMarketHref(query, value)} className="flex min-h-14 items-center justify-center rounded-xl border border-zinc-200 bg-white p-3 text-sm font-semibold">{banglaLabel}</Link>
-            ))}
-          </div>
-        </details>
+        </RentalTypeCarousel>
       </div>
     </section>
   );
 }
 
-function MarketplaceSnapshot({
-  listingCount,
-  availableListingCount,
-  propertyCount,
-  areaCount,
-  unavailable,
+function PlatformSnapshot({
+  stats,
 }: {
-  listingCount: number;
-  availableListingCount: number;
-  propertyCount: number;
-  areaCount: number;
-  unavailable: boolean;
+  stats: { registeredUsers: number; activeSellers: number; productsAndServices: number; dailyOrders: number } | null;
 }) {
-  const stats: ReadonlyArray<{
-    label: string;
-    value: number;
-    description: string;
-    icon: LucideIcon;
-  }> = [
-    {
-      label: "Published listings",
-      value: listingCount,
-      description: "Live and recently booked units",
-      icon: KeyRound,
-    },
-    {
-      label: "Available to book",
-      value: availableListingCount,
-      description: "Accepting booking requests now",
-      icon: CalendarCheck2,
-    },
-    {
-      label: "Listed properties",
-      value: propertyCount,
-      description: "Properties represented by current listings",
-      icon: Building2,
-    },
-    {
-      label: "Areas represented",
-      value: areaCount,
-      description: "Locations covered by current listings",
-      icon: MapPin,
-    },
+  const items = [
+    { label: "Registered Users", value: stats?.registeredUsers },
+    { label: "Active Sellers", value: stats?.activeSellers },
+    { label: "Products & Services", value: stats?.productsAndServices },
+    { label: "Daily Orders", value: stats?.dailyOrders },
   ];
 
   return (
     <section
-      aria-label="Current To-Let marketplace data"
-      className="border-b border-zinc-200 bg-white"
+      aria-label="Bikalpo platform statistics"
+      className="border-b border-border bg-card"
     >
       <div className="site-container grid grid-cols-2 gap-3 px-4 py-7 sm:px-6 lg:grid-cols-4 lg:px-8">
-        {stats.map(({ label, value, description, icon: Icon }) => (
+        {items.map(({ label, value }) => (
           <article
             key={label}
-            className="rounded-xl border border-zinc-200 bg-white px-3 py-4 sm:px-5"
+            className="rounded-xl border border-border bg-card px-3 py-4 sm:px-5"
           >
-            <div className="flex items-start gap-3">
-              <span className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-700">
-                <Icon className="size-4.5" aria-hidden="true" />
-              </span>
               <div className="min-w-0">
-                <p className="font-mono text-2xl font-bold tabular-nums text-zinc-950">
-                  {unavailable ? "—" : value.toLocaleString("en-BD")}
+                <p className="font-mono text-2xl font-bold tabular-nums text-foreground">
+                  {value === undefined ? "—" : value.toLocaleString("en-BD")}
                 </p>
-                <h2 className="mt-1 text-sm font-semibold text-zinc-900">
+                <h2 className="mt-1 text-sm font-semibold text-foreground">
                   {label}
                 </h2>
-                <p className="mt-1 hidden text-xs leading-5 text-zinc-500 sm:block">
-                  {description}
-                </p>
               </div>
-            </div>
           </article>
         ))}
       </div>
-      <p className="site-container px-4 pb-5 text-xs text-zinc-600 sm:px-6 lg:px-8" role={unavailable ? "status" : undefined}>
-        {unavailable ? "Marketplace summary is temporarily unavailable." : "Snapshot of up to 300 recent public listings. Browse all listings for the complete catalog."}
-      </p>
+      {!stats && (
+        <p className="site-container px-4 pb-5 text-xs text-muted-foreground sm:px-6 lg:px-8" role="status">
+          Platform statistics are temporarily unavailable.
+        </p>
+      )}
     </section>
   );
 }
@@ -575,73 +506,60 @@ function MarketplaceSnapshot({
 function TenantJourney() {
   const steps: ReadonlyArray<{
     title: string;
-    details: readonly [string, string];
     icon: LucideIcon;
   }> = [
     {
       title: "Find listings",
-      details: ["Location Search", "Map Search"],
       icon: Search,
     },
     {
       title: "View details",
-      details: ["Property Details", "Photo Gallery"],
       icon: Eye,
     },
     {
       title: "Request a booking",
-      details: ["Booking Request", "Select Date"],
       icon: CalendarCheck2,
     },
     {
       title: "Join as a tenant",
-      details: ["Owner Approval", "Booking Confirm"],
       icon: BadgeCheck,
     },
   ];
 
   return (
-    <section className="border-b border-zinc-200 bg-zinc-50 py-12 sm:py-16">
+    <section id="to-let-journey" className="border-b border-border bg-muted/30 py-12 sm:py-16">
       <div className="site-container px-4 sm:px-6 lg:px-8">
-        <p className="text-xs font-semibold tracking-[0.14em] text-blue-700 uppercase">
+        <h2 className="text-center text-xl font-semibold md:hidden">Your To-Let Journey</h2>
+        <p className="hidden text-xs font-semibold tracking-[0.14em] text-primary uppercase md:block">
           Tenant journey
         </p>
-        <div className="mt-2 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-          <h2 className="max-w-3xl text-2xl font-bold tracking-tight text-zinc-950 sm:text-3xl">
+        <div className="mt-2 hidden flex-col gap-3 md:flex lg:flex-row lg:items-end lg:justify-between">
+          <h2 className="max-w-3xl text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
             From listing search to digital booking and tenant connection
           </h2>
-          <p className="text-sm font-medium text-zinc-500">
-            Fewer steps, more assurance.
-          </p>
         </div>
-        <p className="mt-3 max-w-3xl text-sm leading-6 text-zinc-500">
-          From finding verified listings to Booking Confirm, Tenant Link and
-          Monthly Rent—a fully digital experience.
-        </p>
 
-        <ol className="mt-8 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          {steps.map(({ title, details, icon: Icon }, index) => (
+        <ol className="mt-6 space-y-3 text-center md:hidden">
+          {["Find Listing", "View Details", "Booking Request", "Join / Move In"].map((label, index) => <li key={label}>
+            <div className="flex items-center justify-center gap-3 py-2"><span className="flex size-8 shrink-0 items-center justify-center rounded-full border border-border text-sm font-semibold">{index + 1}</span><span className="font-medium">{label}</span></div>
+            {index < 3 && <ArrowDown className="mx-auto mt-2 size-4 text-muted-foreground" aria-hidden="true" />}
+          </li>)}
+        </ol>
+        <ol className="mt-8 hidden gap-3 md:grid md:grid-cols-2 lg:grid-cols-4">
+          {steps.map(({ title, icon: Icon }, index) => (
             <li
               key={title}
-              className="rounded-xl border border-zinc-200 bg-white p-5"
+              className="rounded-xl border border-border bg-card p-5"
             >
               <div className="flex items-center justify-between gap-3">
-                <span className="flex size-10 items-center justify-center rounded-lg bg-blue-50 text-blue-700">
+                <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-muted text-foreground">
                   <Icon className="size-5" aria-hidden="true" />
                 </span>
-                <span className="font-mono text-sm font-semibold text-zinc-400">
+                <h3 className="min-w-0 flex-1 font-semibold text-foreground">{title}</h3>
+                <span className="shrink-0 font-mono text-sm font-semibold text-muted-foreground">
                   {String(index + 1).padStart(2, "0")}
                 </span>
               </div>
-              <h3 className="mt-5 font-semibold text-zinc-950">{title}</h3>
-              <ul className="mt-3 space-y-1.5 text-sm text-zinc-500">
-                {details.map((detail) => (
-                  <li key={detail} className="flex items-center gap-2">
-                    <span className="size-1.5 rounded-full bg-blue-600" />
-                    {detail}
-                  </li>
-                ))}
-              </ul>
             </li>
           ))}
         </ol>
@@ -652,18 +570,19 @@ function TenantJourney() {
 
 function OwnerCallToAction() {
   return (
-    <section className="bg-zinc-50 py-12 sm:py-16">
+    <section id="register-property" className="bg-muted/30 py-12 sm:py-16">
       <div className="site-container px-4 sm:px-6 lg:px-8">
-        <div className="grid gap-8 rounded-xl border border-zinc-200 bg-white p-6 sm:p-8 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center lg:p-10">
+        <Button asChild size="lg" className="min-h-12 w-full md:hidden"><ToLetAccountLink href="/account/to-let/properties/new">Register Property <ArrowRight className="size-4" /></ToLetAccountLink></Button>
+        <div className="hidden gap-8 rounded-xl border border-border bg-card p-6 sm:p-8 md:grid lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center lg:p-10">
           <div className="max-w-3xl">
-            <h2 className="text-2xl font-bold tracking-tight text-zinc-950 sm:text-3xl">
+            <h2 className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
               একটি Property নিবন্ধন করুন, হাজারো ভাড়াটিয়ার কাছে পৌঁছান—এক প্ল্যাটফর্মে
             </h2>
-            <p className="mt-4 text-sm leading-7 text-zinc-600">
+            <p className="mt-4 text-sm leading-7 text-muted-foreground">
               Bikalpo-তে Property Account তৈরি করে আপনার ফ্ল্যাট, বাসা, অফিস, দোকান,
               গ্যারেজ, গুদাম বা যেকোনো ভাড়ার ইউনিটের জন্য Verified Listing প্রকাশ করুন।
             </p>
-            <p className="mt-3 text-sm leading-7 text-zinc-500">
+            <p className="mt-3 text-sm leading-7 text-muted-foreground">
               Permanent Property ID, QR Code, Smart Booking, Social Media Share
               এবং Tenant Management—সবকিছু এক জায়গায়।
             </p>
@@ -699,10 +618,10 @@ function FilterChip({
     <Link
       href={href}
       aria-current={active ? "page" : undefined}
-      className={`inline-flex min-h-10 shrink-0 items-center rounded-md border px-3 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-600 ${
+      className={`inline-flex min-h-10 shrink-0 items-center rounded-md border px-3 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring ${
         active
-          ? "border-blue-600 bg-blue-600 text-white"
-          : "border-zinc-200 bg-white text-zinc-600 hover:border-blue-300 hover:text-blue-700"
+          ? "border-primary bg-primary text-white"
+          : "border-border bg-card text-muted-foreground hover:border-primary/20 hover:text-primary"
       }`}
     >
       {label}
@@ -722,15 +641,15 @@ function ListingMessage({
   actionHref: string;
 }) {
   return (
-    <div className="border border-dashed border-zinc-300 bg-zinc-50 px-6 py-14 text-center">
-      <Building2 className="mx-auto size-9 text-zinc-400" />
-      <h3 className="mt-4 text-lg font-semibold text-zinc-950">{title}</h3>
-      <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-zinc-500">
+    <div className="border border-dashed border-border bg-muted/30 px-6 py-14 text-center">
+      <Building2 className="mx-auto size-9 text-muted-foreground" />
+      <h3 className="mt-4 text-lg font-semibold text-foreground">{title}</h3>
+      <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-muted-foreground">
         {description}
       </p>
       <Link
         href={actionHref}
-        className="mt-5 inline-flex min-h-10 items-center rounded-md bg-blue-600 px-4 text-sm font-semibold text-white hover:bg-blue-700"
+        className="mt-5 inline-flex min-h-10 items-center rounded-md bg-primary px-4 text-sm font-semibold text-white hover:bg-primary/90"
       >
         {actionLabel}
       </Link>

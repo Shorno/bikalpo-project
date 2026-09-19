@@ -89,12 +89,12 @@ function PhoneChallenge({ normalizedPhone, verified, onVerified }: {
 
   const remaining = Math.max(0, Math.ceil((retryAt - now) / 1_000));
   return (
-    <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+    <div className="rounded-lg border border-border bg-muted/30 p-4">
       <div className="flex items-start gap-3">
         <ShieldCheck aria-hidden="true" className="mt-0.5 size-5 shrink-0 text-emerald-600" />
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-semibold text-gray-900">Verify property contact</p>
-          <p className="mt-0.5 text-sm text-gray-600">
+          <p className="text-sm font-semibold text-foreground">Verify property contact</p>
+          <p className="mt-0.5 text-sm text-muted-foreground">
             {normalizedPhone ? `Verify ${normalizedPhone} without changing your account login number.` : "Enter a valid Bangladesh mobile number in Basic Information."}
           </p>
         </div>
@@ -105,13 +105,13 @@ function PhoneChallenge({ normalizedPhone, verified, onVerified }: {
           onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); void verifyCode(); } }}
           placeholder="Enter 6-digit code" aria-label="Property contact verification code" aria-invalid={Boolean(error)}
           aria-describedby={error ? "property-phone-error" : "property-phone-help"} disabled={busy !== null}
-          className="h-11 min-w-0 bg-white font-mono text-base" />
+          className="h-11 min-w-0 bg-card font-mono text-base" />
         <Button type="button" onClick={() => void verifyCode()} disabled={code.length !== 6 || busy !== null}
-          className="h-11 shrink-0 bg-emerald-600 hover:bg-emerald-700">
+          className="h-11 shrink-0 bg-primary text-primary-foreground hover:bg-primary/90">
           {busy === "verify" ? <Loader2 aria-hidden="true" className="size-4 animate-spin" /> : null} Verify OTP
         </Button>
       </div> : null}
-      {requested ? <p id="property-phone-help" className="mt-2 text-sm text-gray-600">Codes expire after 5 minutes. Only the latest code works.</p> : null}
+      {requested ? <p id="property-phone-help" className="mt-2 text-sm text-muted-foreground">Codes expire after 5 minutes. Only the latest code works.</p> : null}
       {developmentCode ? <p role="status" className="mt-3 text-sm text-amber-900">
         Local development only — no SMS sent. Test code: <span className="font-mono font-semibold">{developmentCode}</span>
       </p> : null}

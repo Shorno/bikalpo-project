@@ -1,4 +1,55 @@
 /* Mobile wireframe adaptation; desktop keeps the existing shared design. */
+@media (max-width: 767px) {
+  .heroBanner {
+    min-height: 0;
+    background: var(--card);
+    border: 1px solid var(--border);
+  }
+  .heroBanner > img { height: 260px !important; object-position: center 40%; }
+  .heroBanner > div[aria-hidden="true"] {
+    height: 260px;
+    background: linear-gradient(to bottom, rgb(0 0 0 / 5%) 20%, rgb(0 0 0 / 78%) 100%);
+  }
+  .heroBanner > div:last-child { min-height: 0; padding: 0; }
+  .heroBanner [data-slot="hero-heading"] {
+    min-height: 260px;
+    display: flex;
+    align-items: flex-end;
+    padding: 24px;
+  }
+  .heroBanner [data-slot="hero-heading"] > p { display: none; }
+  .heroBanner h1 { margin: 0; font-size: 28px; line-height: 1.16; text-wrap: balance; text-shadow: none; }
+  .heroBanner [data-slot="banner-controls"] { color: var(--primary); padding: 0 16px; flex-wrap: wrap; }
+  .heroBanner form {
+    margin: 0;
+    padding: 20px;
+    gap: 10px;
+    grid-template-columns: minmax(0, 1fr) 104px;
+    border-radius: 0;
+  }
+  .heroBanner form > label:first-child { grid-column: 1 / -1; }
+  .heroBanner form input, .heroBanner form select { border: 1px solid var(--border); background: var(--background); height: 48px; }
+  .heroBanner form button { height: 48px; padding-inline: 12px; }
+  .heroBanner form + div {
+    margin: 0 20px;
+    padding: 8px 0 16px;
+    border-top: 1px solid var(--border);
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .heroBanner form + div a { display: inline-flex; min-height: 44px; align-items: center; padding: 0; color: var(--primary); background: transparent; font-size: 12px; }
+  .categories {
+    grid-template-columns: none;
+    grid-auto-flow: column;
+    grid-auto-columns: 44%;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scroll-snap-type: x mandatory;
+    scroll-padding-inline: 2px;
+    padding: 2px 2px 12px;
+  }
+  .categories > a { scroll-snap-align: start; min-width: 0; }
+}
 @media (max-width: 639px) {
   .landing > section {
     padding-block: 24px;
@@ -36,10 +87,6 @@
     flex-direction: column;
     align-items: flex-start;
     gap: 4px;
-  }
-
-  .hero :global(.min-h-\[390px\]) {
-    min-height: 0;
   }
 
   .categories > a {

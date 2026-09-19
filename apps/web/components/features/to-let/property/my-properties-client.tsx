@@ -38,7 +38,7 @@ export function MyPropertiesClient() {
         title="My Properties"
         description="Register properties and manage their reusable physical units."
         action={
-          <Button asChild className="bg-emerald-600 hover:bg-emerald-700">
+          <Button asChild className="bg-primary text-primary-foreground hover:bg-primary/90">
             <Link href="/account/to-let/properties/new">
               <Plus />
               Add Property

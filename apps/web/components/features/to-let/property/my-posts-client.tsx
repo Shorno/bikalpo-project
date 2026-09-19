@@ -92,8 +92,8 @@ const filterOptions: Array<{ value: PostFilter; label: string }> = [
 const statusStyles: Record<OwnerPost["managementStatus"], string> = {
   draft: "border-amber-200 bg-amber-50 text-amber-700",
   active: "border-emerald-200 bg-emerald-50 text-emerald-700",
-  paused: "border-blue-200 bg-blue-50 text-blue-700",
-  closed: "border-gray-200 bg-gray-100 text-gray-600",
+  paused: "border-primary/20 bg-primary/5 text-primary",
+  closed: "border-border bg-muted text-muted-foreground",
   booked: "border-sky-200 bg-sky-50 text-sky-700",
   contract: "border-violet-200 bg-violet-50 text-violet-700",
 };
@@ -106,7 +106,7 @@ function statusLabel(post: OwnerPost) {
 
 function MyPostsLoading() {
   return (
-    <div className="flex min-h-64 items-center justify-center rounded-lg border border-gray-200 bg-white text-sm text-gray-500">
+    <div className="flex min-h-64 items-center justify-center rounded-lg border border-border bg-card text-sm text-muted-foreground">
       <Loader2 className="mr-2 size-4 animate-spin" /> Loading My Posts
     </div>
   );
@@ -163,7 +163,7 @@ export function MyPostsClient() {
         title="My Posts"
         description="Manage every current Unit advertisement from one place."
         action={
-          <Button asChild className="bg-emerald-600 hover:bg-emerald-700">
+          <Button asChild className="bg-primary text-primary-foreground hover:bg-primary/90">
             <Link href="/account/to-let/properties">
               <Building2 /> My Property
             </Link>
@@ -172,7 +172,7 @@ export function MyPostsClient() {
       />
 
       <div
-        className="flex flex-wrap gap-2 border-b border-gray-200 pb-3"
+        className="flex flex-wrap gap-2 border-b border-border pb-3"
         role="group"
         aria-label="Filter To-Let posts"
       >
@@ -192,7 +192,7 @@ export function MyPostsClient() {
               onClick={() => setFilter(option.value)}
               className={cn(
                 filter === option.value &&
-                  "bg-emerald-600 text-white hover:bg-emerald-700",
+                  "bg-primary text-primary-foreground hover:bg-primary/90",
               )}
             >
               {option.label} <span aria-hidden="true">({count})</span>
@@ -202,14 +202,14 @@ export function MyPostsClient() {
       </div>
 
       {visiblePosts.length === 0 ? (
-        <div className="rounded-lg border border-gray-200 bg-white px-6 py-14 text-center">
-          <Megaphone className="mx-auto size-10 text-gray-300" />
-          <h2 className="mt-3 font-semibold text-gray-900">
+        <div className="rounded-lg border border-border bg-card px-6 py-14 text-center">
+          <Megaphone className="mx-auto size-10 text-muted-foreground" />
+          <h2 className="mt-3 font-semibold text-foreground">
             {posts.length === 0
               ? "No To-Let posts yet"
               : "No posts in this status"}
           </h2>
-          <p className="mx-auto mt-1 max-w-md text-sm text-gray-500">
+          <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">
             {posts.length === 0
               ? "Create a Unit from My Property, then create and publish its Listing."
               : "Choose another status to see your current Unit advertisements."}
@@ -242,10 +242,10 @@ export function MyPostsClient() {
             return (
               <article
                 key={post.listingCode}
-                className="overflow-hidden rounded-lg border border-gray-200 bg-white"
+                className="overflow-hidden rounded-lg border border-border bg-card"
               >
                 <div className="grid md:grid-cols-[220px_minmax(0,1fr)]">
-                  <div className="relative min-h-44 bg-gray-100 md:min-h-full">
+                  <div className="relative min-h-44 bg-muted md:min-h-full">
                     {post.imageUrls[0] ? (
                       <Image
                         src={post.imageUrls[0]}
@@ -257,7 +257,7 @@ export function MyPostsClient() {
                         unoptimized={post.imageUrls[0].startsWith("http")}
                       />
                     ) : (
-                      <div className="flex size-full min-h-44 items-center justify-center text-gray-300">
+                      <div className="flex size-full min-h-44 items-center justify-center text-muted-foreground">
                         <Building2 className="size-12" />
                       </div>
                     )}
@@ -273,27 +273,27 @@ export function MyPostsClient() {
                           >
                             {statusLabel(post)}
                           </Badge>
-                          <span className="font-mono text-xs text-gray-500">
+                          <span className="font-mono text-xs text-muted-foreground">
                             {post.listingCode}
                           </span>
                         </div>
-                        <h2 className="mt-2 text-lg font-semibold text-gray-900">
+                        <h2 className="mt-2 text-lg font-semibold text-foreground">
                           {post.title}
                         </h2>
-                        <p className="mt-1 flex items-center gap-1.5 text-sm text-gray-500">
+                        <p className="mt-1 flex items-center gap-1.5 text-sm text-muted-foreground">
                           <MapPin className="size-3.5 shrink-0" />
                           <span className="truncate">{post.location}</span>
                         </p>
                       </div>
                       <p className="text-lg font-bold text-emerald-700">
                         {formatMoney(post.monthlyRent)}
-                        <span className="block text-right text-xs font-normal text-gray-500">
+                        <span className="block text-right text-xs font-normal text-muted-foreground">
                           per month
                         </span>
                       </p>
                     </div>
 
-                    <div className="mt-4 grid gap-2 text-sm text-gray-600 sm:grid-cols-2 lg:grid-cols-4">
+                    <div className="mt-4 grid gap-2 text-sm text-muted-foreground sm:grid-cols-2 lg:grid-cols-4">
                       <span>{post.propertyName}</span>
                       <span>{post.unitName}</span>
                       <span className="flex items-center gap-1.5">
@@ -308,7 +308,7 @@ export function MyPostsClient() {
                       </span>
                     </div>
 
-                    <div className="mt-4 flex flex-wrap gap-2 border-t border-gray-100 pt-4">
+                    <div className="mt-4 flex flex-wrap gap-2 border-t border-border pt-4">
                       <Button asChild variant="outline" size="sm">
                         <Link href={detailsHref}>Unit Details</Link>
                       </Button>

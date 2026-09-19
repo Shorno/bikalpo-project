@@ -145,7 +145,7 @@ function UnitGallery({
 
   if (!selectedImage) {
     return (
-      <div className="flex aspect-video items-center justify-center rounded-lg border border-dashed border-gray-300 bg-gray-50 text-sm text-gray-400">
+      <div className="flex aspect-video items-center justify-center rounded-lg border border-dashed border-border bg-muted/30 text-sm text-muted-foreground">
         No Unit photos added yet
       </div>
     );
@@ -153,7 +153,7 @@ function UnitGallery({
 
   return (
     <div className="space-y-3">
-      <div className="group relative aspect-[4/3] overflow-hidden rounded-lg bg-gray-100 sm:aspect-video lg:aspect-[4/3]">
+      <div className="group relative aspect-[4/3] overflow-hidden rounded-lg bg-muted sm:aspect-video lg:aspect-[4/3]">
         <Image
           src={selectedImage}
           alt={`${unit.name} photo ${activeImage + 1}`}
@@ -172,7 +172,7 @@ function UnitGallery({
                   current === 0 ? imageUrls.length - 1 : current - 1,
                 )
               }
-              className="absolute left-3 top-1/2 flex size-9 -translate-y-1/2 items-center justify-center rounded-full bg-white/90 text-gray-800 shadow-sm transition-colors hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
+              className="absolute left-3 top-1/2 flex size-9 -translate-y-1/2 items-center justify-center rounded-full bg-white/90 text-foreground shadow-sm transition-colors hover:bg-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
             >
               <ChevronLeft className="size-5" />
             </button>
@@ -184,7 +184,7 @@ function UnitGallery({
                   current === imageUrls.length - 1 ? 0 : current + 1,
                 )
               }
-              className="absolute right-3 top-1/2 flex size-9 -translate-y-1/2 items-center justify-center rounded-full bg-white/90 text-gray-800 shadow-sm transition-colors hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
+              className="absolute right-3 top-1/2 flex size-9 -translate-y-1/2 items-center justify-center rounded-full bg-white/90 text-foreground shadow-sm transition-colors hover:bg-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
             >
               <ChevronRight className="size-5" />
             </button>
@@ -195,7 +195,7 @@ function UnitGallery({
         </span>
       </div>
       <div>
-        <p className="mb-2 text-xs font-medium uppercase tracking-wide text-gray-500">
+        <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
           Thumbnail gallery
         </p>
         <div className="flex gap-2 overflow-x-auto pb-1">
@@ -326,59 +326,59 @@ function UnitInformationPanel({
     offer?.description ?? unit.description ?? property.description;
 
   return (
-    <section className="rounded-lg border border-gray-200 bg-white p-5 sm:p-6">
+    <section className="rounded-lg border border-border bg-card p-5 sm:p-6">
       <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">
         Overview
       </p>
-      <h2 className="mt-1 text-xl font-semibold text-gray-900">
+      <h2 className="mt-1 text-xl font-semibold text-foreground">
         Unit Information
       </h2>
       <dl className="mt-5 grid gap-4 sm:grid-cols-2">
         {overviewRows.map(([label, value]) => (
           <div key={String(label)}>
-            <dt className="text-sm font-medium text-gray-900">{label}</dt>
-            <dd className="mt-1 flex min-h-10 items-center rounded-md border border-gray-200 bg-gray-50 px-3 text-sm text-gray-700">
+            <dt className="text-sm font-medium text-foreground">{label}</dt>
+            <dd className="mt-1 flex min-h-10 items-center rounded-md border border-border bg-muted/30 px-3 text-sm text-foreground">
               {value}
             </dd>
           </div>
         ))}
       </dl>
 
-      <div className="mt-5 border-t border-gray-100 pt-5">
+      <div className="mt-5 border-t border-border pt-5">
         {description ? (
           <>
-            <h3 className="text-sm font-semibold text-gray-900">
+            <h3 className="text-sm font-semibold text-foreground">
               Property Description
             </h3>
-            <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-gray-600">
+            <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-muted-foreground">
               {description}
             </p>
           </>
         ) : (
-          <p className="text-sm text-gray-500">No description added.</p>
+          <p className="text-sm text-muted-foreground">No description added.</p>
         )}
       </div>
       <dl className="mt-5 space-y-3 text-sm">
         <div>
-          <dt className="font-medium text-gray-900">Available From</dt>
-          <dd className="mt-1 text-gray-700">
+          <dt className="font-medium text-foreground">Available From</dt>
+          <dd className="mt-1 text-foreground">
             {offer?.availableFrom
               ? formatBookingDate(offer.availableFrom)
               : "Not listed"}
           </dd>
         </div>
         <div>
-          <dt className="font-medium text-gray-900">Listing Status</dt>
-          <dd className="mt-1 text-gray-700">
+          <dt className="font-medium text-foreground">Listing Status</dt>
+          <dd className="mt-1 text-foreground">
             {listingStatus ? humanize(listingStatus) : "Not created"}
           </dd>
         </div>
       </dl>
-      <details className="mt-5 border-t border-gray-100 pt-4">
-        <summary className="cursor-pointer text-sm font-medium text-gray-900">
+      <details className="mt-5 border-t border-border pt-4">
+        <summary className="cursor-pointer text-sm font-medium text-foreground">
           Additional unit and address details
         </summary>
-        <dl className="mt-3 space-y-3 text-sm text-gray-700">
+        <dl className="mt-3 space-y-3 text-sm text-foreground">
           {residential ? (
             <div>
               <dt>Bedrooms</dt>
@@ -441,12 +441,12 @@ function FacilitiesPanel({
   ] as const;
 
   return (
-    <section className="rounded-lg border border-gray-200 bg-white p-5 sm:p-6">
+    <section className="rounded-lg border border-border bg-card p-5 sm:p-6">
       <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">
         Step 3
       </p>
-      <h2 className="mt-1 font-semibold text-gray-900">Facilities</h2>
-      <p className="mt-1 text-sm text-gray-500">
+      <h2 className="mt-1 font-semibold text-foreground">Facilities</h2>
+      <p className="mt-1 text-sm text-muted-foreground">
         Property facilities are inherited by this Unit. Listing-specific items
         use the current rental offer.
       </p>
@@ -460,11 +460,11 @@ function FacilitiesPanel({
           />
         ))}
       </div>
-      <div className="mt-5 rounded-lg border border-gray-200 p-4">
-        <h3 className="text-sm font-semibold text-gray-900">
+      <div className="mt-5 rounded-lg border border-border p-4">
+        <h3 className="text-sm font-semibold text-foreground">
           Other Facilities
         </h3>
-        <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-gray-600">
+        <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-muted-foreground">
           {offer?.otherFacilities || "No other facilities added."}
         </p>
       </div>
@@ -499,19 +499,19 @@ function RentPanel({
   ] as const;
 
   return (
-    <section className="rounded-lg border border-gray-200 bg-white p-5 sm:p-6">
+    <section className="rounded-lg border border-border bg-card p-5 sm:p-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <p className="text-xs font-semibold uppercase tracking-wide text-amber-600">
             Rent information
           </p>
-          <h2 className="mt-1 font-semibold text-gray-900">
+          <h2 className="mt-1 font-semibold text-foreground">
             Rental terms
-            <span className="ml-1 font-normal text-gray-500">
+            <span className="ml-1 font-normal text-muted-foreground">
               (after contract for tenant)
             </span>
           </h2>
-          <p className="mt-1 text-sm text-gray-500">
+          <p className="mt-1 text-sm text-muted-foreground">
             {offer
               ? `Terms captured from ${offer.listingCode}.`
               : "No rental Listing has been created for this Unit yet."}
@@ -529,20 +529,20 @@ function RentPanel({
         {rentRows.map(([label, value]) => (
           <div
             key={label}
-            className="rounded-lg border border-gray-200 bg-gray-50 p-4"
+            className="rounded-lg border border-border bg-muted/30 p-4"
           >
-            <dt className="text-xs text-gray-500">{label}</dt>
-            <dd className="mt-1 font-semibold text-gray-900">{value}</dd>
+            <dt className="text-xs text-muted-foreground">{label}</dt>
+            <dd className="mt-1 font-semibold text-foreground">{value}</dd>
           </div>
         ))}
       </dl>
       <div className="mt-3 grid gap-3 sm:grid-cols-2">
         {charges.map(([label, amount, included]) => (
-          <div key={label} className="rounded-lg border border-gray-200 p-4">
+          <div key={label} className="rounded-lg border border-border p-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <p className="text-xs text-gray-500">{label}</p>
-                <p className="mt-1 font-semibold text-gray-900">
+                <p className="text-xs text-muted-foreground">{label}</p>
+                <p className="mt-1 font-semibold text-foreground">
                   {displayMoney(amount)}
                 </p>
               </div>
@@ -554,28 +554,28 @@ function RentPanel({
             </div>
           </div>
         ))}
-        <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
-          <p className="text-xs text-gray-500">Payment Method</p>
-          <p className="mt-1 font-semibold text-gray-900">Monthly OTP</p>
-          <p className="mt-1 text-xs text-gray-500">
+        <div className="rounded-lg border border-border bg-muted/30 p-4">
+          <p className="text-xs text-muted-foreground">Payment Method</p>
+          <p className="mt-1 font-semibold text-foreground">Monthly OTP</p>
+          <p className="mt-1 text-xs text-muted-foreground">
             Tenant confirms each monthly rent cycle with the owner OTP.
           </p>
         </div>
       </div>
 
-      <div className="mt-6 border-t border-gray-200 pt-6">
+      <div className="mt-6 border-t border-border pt-6">
         <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">
           Step 4 · Contact
         </p>
         <div className="mt-3 grid gap-3 sm:grid-cols-2">
-          <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
-            <p className="text-xs text-gray-500">Contact Person</p>
-            <p className="mt-1 font-semibold text-gray-900">
+          <div className="rounded-lg border border-border bg-muted/30 p-4">
+            <p className="text-xs text-muted-foreground">Contact Person</p>
+            <p className="mt-1 font-semibold text-foreground">
               {property.ownerName}
             </p>
           </div>
-          <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
-            <p className="text-xs text-gray-500">Contact Number</p>
+          <div className="rounded-lg border border-border bg-muted/30 p-4">
+            <p className="text-xs text-muted-foreground">Contact Number</p>
             <a
               className="mt-1 inline-flex font-semibold text-emerald-700 hover:underline"
               href={`tel:${property.mobileNumber}`}
@@ -593,7 +593,7 @@ const bookingStatusStyles: Record<ToLetBookingStatus, string> = {
   pending: "border-amber-200 bg-amber-50 text-amber-700",
   accepted: "border-emerald-200 bg-emerald-50 text-emerald-700",
   rejected: "border-red-200 bg-red-50 text-red-700",
-  cancelled: "border-gray-200 bg-gray-100 text-gray-600",
+  cancelled: "border-border bg-muted text-muted-foreground",
 };
 
 function BookingStatusBadge({ status }: { status: ToLetBookingStatus }) {
@@ -630,7 +630,7 @@ function OwnerContractPanel({
 
   if (query.isLoading) {
     return (
-      <div className="mt-5 flex items-center justify-center rounded-lg border border-dashed border-gray-200 py-10 text-sm text-gray-500">
+      <div className="mt-5 flex items-center justify-center rounded-lg border border-dashed border-border py-10 text-sm text-muted-foreground">
         <Loader2 className="mr-2 size-4 animate-spin" /> Loading rental contract
       </div>
     );
@@ -650,10 +650,10 @@ function OwnerContractPanel({
         ].map(([label, value]) => (
           <div
             key={label}
-            className="rounded-lg border border-gray-200 bg-gray-50 p-4"
+            className="rounded-lg border border-border bg-muted/30 p-4"
           >
-            <p className="text-xs text-gray-500">{label}</p>
-            <p className="mt-1 break-words font-semibold text-gray-900">
+            <p className="text-xs text-muted-foreground">{label}</p>
+            <p className="mt-1 break-words font-semibold text-foreground">
               {value}
             </p>
           </div>
@@ -661,18 +661,18 @@ function OwnerContractPanel({
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2">
-        <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
-          <p className="text-xs text-gray-500">Rental Agreement (Image)</p>
-          <div className="mt-3 flex min-h-24 items-center justify-center gap-2 rounded-md border border-dashed border-gray-300 bg-white text-sm text-gray-500">
-            <FileImage className="size-5 text-gray-400" />
+        <div className="rounded-lg border border-border bg-muted/30 p-4">
+          <p className="text-xs text-muted-foreground">Rental Agreement (Image)</p>
+          <div className="mt-3 flex min-h-24 items-center justify-center gap-2 rounded-md border border-dashed border-border bg-card text-sm text-muted-foreground">
+            <FileImage className="size-5 text-muted-foreground" />
             Agreement image upload is not available yet
           </div>
         </div>
-        <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+        <div className="rounded-lg border border-border bg-muted/30 p-4">
           <div className="flex flex-wrap items-start justify-between gap-2">
             <div>
-              <p className="text-xs text-gray-500">Rental Contract</p>
-              <p className="mt-1 font-semibold text-gray-900">
+              <p className="text-xs text-muted-foreground">Rental Contract</p>
+              <p className="mt-1 font-semibold text-foreground">
                 {contract?.contractCode ?? "Pending activation"}
               </p>
             </div>
@@ -690,7 +690,7 @@ function OwnerContractPanel({
               </Badge>
             )}
           </div>
-          <p className="mt-3 text-sm text-gray-600">
+          <p className="mt-3 text-sm text-muted-foreground">
             {contract
               ? `${formatBookingDate(contract.startDate)} – ${formatBookingDate(contract.endDate)} · Monthly Rent OTP on the 1st day`
               : "Accepting the Booking reserves the Unit. Activate the contract only after the agreement is signed."}
@@ -699,39 +699,39 @@ function OwnerContractPanel({
       </div>
 
       {!contract ? (
-        <div className="rounded-lg border border-blue-200 bg-blue-50 p-4">
-          <p className="text-sm font-semibold text-blue-900">
+        <div className="rounded-lg border border-primary/20 bg-primary/5 p-4">
+          <p className="text-sm font-semibold text-primary">
             Sign and activate rental contract
           </p>
-          <p className="mt-1 text-xs leading-5 text-blue-800">
+          <p className="mt-1 text-xs leading-5 text-primary">
             The accepted Booking remains Booked until both parties sign.
             Activation then links the tenant, makes the Unit Occupied and
             creates the Monthly Rent OTP cycle on the 1st day of every month.
           </p>
           <div className="mt-3 grid gap-3 sm:grid-cols-2">
-            <label className="text-xs font-medium text-gray-700">
+            <label className="text-xs font-medium text-foreground">
               Start date
               <Input
                 type="date"
                 value={startDate}
                 onChange={(event) => setStartDate(event.target.value)}
-                className="mt-1 bg-white"
+                className="mt-1 bg-card"
               />
             </label>
-            <label className="text-xs font-medium text-gray-700">
+            <label className="text-xs font-medium text-foreground">
               End date
               <Input
                 type="date"
                 min={startDate}
                 value={endDate}
                 onChange={(event) => setEndDate(event.target.value)}
-                className="mt-1 bg-white"
+                className="mt-1 bg-card"
               />
             </label>
           </div>
           <label
             htmlFor={`contract-signed-${booking.bookingCode}`}
-            className="mt-3 flex cursor-pointer items-start gap-2 rounded-md border border-blue-200 bg-white p-3 text-sm text-gray-700"
+            className="mt-3 flex cursor-pointer items-start gap-2 rounded-md border border-primary/20 bg-card p-3 text-sm text-foreground"
           >
             <Checkbox
               id={`contract-signed-${booking.bookingCode}`}
@@ -745,7 +745,7 @@ function OwnerContractPanel({
             </span>
           </label>
           <Button
-            className="mt-3 bg-blue-700 hover:bg-blue-800"
+            className="mt-3 bg-primary/90 hover:bg-primary/90"
             disabled={
               activate.isPending ||
               !startDate ||
@@ -794,16 +794,16 @@ function OwnerBookingRequestCard({
   const snapshot = booking.offerSnapshot;
 
   return (
-    <article className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+    <article className="rounded-lg border border-border bg-muted/30 p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <div className="flex flex-wrap items-center gap-2">
-            <h3 className="font-semibold text-gray-900">
+            <h3 className="font-semibold text-foreground">
               {booking.contactName}
             </h3>
             <BookingStatusBadge status={booking.status} />
           </div>
-          <p className="mt-1 text-xs text-gray-500">
+          <p className="mt-1 text-xs text-muted-foreground">
             {booking.bookingCode} · Requested{" "}
             {formatBookingDate(booking.createdAt, true)}
           </p>
@@ -812,37 +812,37 @@ function OwnerBookingRequestCard({
           <span className="block font-bold text-emerald-700">
             {formatMoney(snapshot.monthlyRent)}
           </span>
-          <span className="text-xs text-gray-500">snapshot monthly rent</span>
+          <span className="text-xs text-muted-foreground">snapshot monthly rent</span>
         </p>
       </div>
 
       <div className="mt-4 grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
         <div className="flex items-start gap-2">
-          <Phone className="mt-0.5 size-4 shrink-0 text-gray-400" />
+          <Phone className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
           <div>
-            <p className="text-xs text-gray-500">Contact</p>
+            <p className="text-xs text-muted-foreground">Contact</p>
             <a
               href={`tel:${booking.contactPhone}`}
-              className="font-medium text-gray-900 hover:text-emerald-700 hover:underline"
+              className="font-medium text-foreground hover:text-emerald-700 hover:underline"
             >
               {booking.contactPhone}
             </a>
           </div>
         </div>
         <div className="flex items-start gap-2">
-          <CalendarDays className="mt-0.5 size-4 shrink-0 text-gray-400" />
+          <CalendarDays className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
           <div>
-            <p className="text-xs text-gray-500">Preferred move-in</p>
-            <p className="font-medium text-gray-900">
+            <p className="text-xs text-muted-foreground">Preferred move-in</p>
+            <p className="font-medium text-foreground">
               {formatBookingDate(booking.desiredMoveInDate)}
             </p>
           </div>
         </div>
         <div className="flex items-start gap-2">
-          <Megaphone className="mt-0.5 size-4 shrink-0 text-gray-400" />
+          <Megaphone className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
           <div>
-            <p className="text-xs text-gray-500">Offer snapshot</p>
-            <p className="font-medium text-gray-900">
+            <p className="text-xs text-muted-foreground">Offer snapshot</p>
+            <p className="font-medium text-foreground">
               {snapshot.listingCode} · {snapshot.title}
             </p>
           </div>
@@ -850,29 +850,29 @@ function OwnerBookingRequestCard({
       </div>
 
       {booking.message ? (
-        <div className="mt-4 rounded-lg border border-gray-200 bg-white p-3">
-          <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500">
+        <div className="mt-4 rounded-lg border border-border bg-card p-3">
+          <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             <MessageSquareText className="size-3.5" /> Request message
           </p>
-          <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-gray-700">
+          <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-foreground">
             {booking.message}
           </p>
         </div>
       ) : null}
 
       {booking.responseNote ? (
-        <div className="mt-3 rounded-lg border border-gray-200 bg-white p-3">
-          <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+        <div className="mt-3 rounded-lg border border-border bg-card p-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             Your response
           </p>
-          <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-gray-700">
+          <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-foreground">
             {booking.responseNote}
           </p>
         </div>
       ) : null}
 
       {booking.status === "pending" ? (
-        <div className="mt-4 flex flex-wrap justify-end gap-2 border-t border-gray-200 pt-4">
+        <div className="mt-4 flex flex-wrap justify-end gap-2 border-t border-border pt-4">
           <AlertDialog>
             <AlertDialogTrigger asChild>
               <Button
@@ -896,7 +896,7 @@ function OwnerBookingRequestCard({
               <div className="space-y-2">
                 <label
                   htmlFor={`reject-note-${booking.bookingCode}`}
-                  className="text-sm font-medium text-gray-900"
+                  className="text-sm font-medium text-foreground"
                 >
                   Response note (optional)
                 </label>
@@ -931,7 +931,7 @@ function OwnerBookingRequestCard({
           <AlertDialog>
             <AlertDialogTrigger asChild>
               <Button
-                className="bg-emerald-600 hover:bg-emerald-700"
+                className="bg-primary text-primary-foreground hover:bg-primary/90"
                 disabled={isPending}
               >
                 <CheckCircle2 /> Accept
@@ -983,14 +983,14 @@ function CurrentTenantSection({
   onRetry: () => void;
 }) {
   return (
-    <section className="rounded-lg border border-gray-200 bg-white p-5 sm:p-6">
+    <section className="rounded-lg border border-border bg-card p-5 sm:p-6">
       <div className="flex items-start gap-3">
-        <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
+        <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/5 text-primary">
           <UserRound className="size-5" />
         </span>
         <div>
-          <h2 className="font-semibold text-gray-900">Current Tenant Info</h2>
-          <p className="mt-1 text-sm leading-6 text-gray-600">
+          <h2 className="font-semibold text-foreground">Current Tenant Info</h2>
+          <p className="mt-1 text-sm leading-6 text-muted-foreground">
             The accepted Booking contact, signed contract dates and owner-only
             monthly payment history appear here.
           </p>
@@ -998,7 +998,7 @@ function CurrentTenantSection({
       </div>
 
       {isLoading ? (
-        <div className="mt-5 flex items-center justify-center rounded-lg border border-dashed border-gray-200 py-10 text-sm text-gray-500">
+        <div className="mt-5 flex items-center justify-center rounded-lg border border-dashed border-border py-10 text-sm text-muted-foreground">
           <Loader2 className="mr-2 size-4 animate-spin" /> Loading tenant
           information
         </div>
@@ -1008,7 +1008,7 @@ function CurrentTenantSection({
           <Button
             variant="outline"
             size="sm"
-            className="mt-3 bg-white"
+            className="mt-3 bg-card"
             onClick={onRetry}
           >
             Try again
@@ -1021,10 +1021,10 @@ function CurrentTenantSection({
           unitCode={unitCode}
         />
       ) : (
-        <div className="mt-5 rounded-lg border border-dashed border-gray-300 px-5 py-9 text-center">
-          <UserRound className="mx-auto size-7 text-gray-400" />
-          <h3 className="mt-3 font-medium text-gray-900">No current tenant</h3>
-          <p className="mt-1 text-sm text-gray-500">
+        <div className="mt-5 rounded-lg border border-dashed border-border px-5 py-9 text-center">
+          <UserRound className="mx-auto size-7 text-muted-foreground" />
+          <h3 className="mt-3 font-medium text-foreground">No current tenant</h3>
+          <p className="mt-1 text-sm text-muted-foreground">
             This section will update after an owner accepts a Booking Request.
           </p>
         </div>
@@ -1080,15 +1080,15 @@ function OwnerBookingRequestsSection({
   };
 
   return (
-    <section className="rounded-lg border border-gray-200 bg-white p-5 sm:p-6">
+    <section className="rounded-lg border border-border bg-card p-5 sm:p-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="flex items-start gap-3">
-          <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-600">
+          <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/5 text-primary">
             <UserRound className="size-5" />
           </span>
           <div>
-            <h2 className="font-semibold text-gray-900">Booking Requests</h2>
-            <p className="mt-1 text-sm leading-6 text-gray-600">
+            <h2 className="font-semibold text-foreground">Booking Requests</h2>
+            <p className="mt-1 text-sm leading-6 text-muted-foreground">
               Review the available request history for this Listing cycle and
               accept or reject pending requests.
             </p>
@@ -1097,7 +1097,7 @@ function OwnerBookingRequestsSection({
         {!query.isLoading && !query.isError ? (
           <Badge
             variant="outline"
-            className="border-blue-200 bg-blue-50 text-blue-700"
+            className="border-primary/20 bg-primary/5 text-primary"
           >
             {pendingCount} pending · {allBookings.length} total
           </Badge>
@@ -1105,7 +1105,7 @@ function OwnerBookingRequestsSection({
       </div>
 
       {query.isLoading ? (
-        <div className="mt-5 flex items-center justify-center rounded-lg border border-dashed border-gray-200 py-10 text-sm text-gray-500">
+        <div className="mt-5 flex items-center justify-center rounded-lg border border-dashed border-border py-10 text-sm text-muted-foreground">
           <Loader2 className="mr-2 size-4 animate-spin" /> Loading requests
         </div>
       ) : query.isError ? (
@@ -1114,19 +1114,19 @@ function OwnerBookingRequestsSection({
           <Button
             variant="outline"
             size="sm"
-            className="mt-3 bg-white"
+            className="mt-3 bg-card"
             onClick={() => query.refetch()}
           >
             Try again
           </Button>
         </div>
       ) : allBookings.length === 0 ? (
-        <div className="mt-5 rounded-lg border border-dashed border-gray-300 px-5 py-9 text-center">
-          <Clock3 className="mx-auto size-7 text-gray-400" />
-          <h3 className="mt-3 font-medium text-gray-900">
+        <div className="mt-5 rounded-lg border border-dashed border-border px-5 py-9 text-center">
+          <Clock3 className="mx-auto size-7 text-muted-foreground" />
+          <h3 className="mt-3 font-medium text-foreground">
             No booking requests yet
           </h3>
-          <p className="mt-1 text-sm text-gray-500">
+          <p className="mt-1 text-sm text-muted-foreground">
             New requests for the current active Listing will appear here.
           </p>
         </div>
@@ -1314,7 +1314,7 @@ export function UnitDetailsClient({
         </p>
         <nav
           aria-label="Breadcrumb"
-          className="flex flex-wrap items-center gap-1.5 text-sm text-gray-500"
+          className="flex flex-wrap items-center gap-1.5 text-sm text-muted-foreground"
         >
           <Link href="/" className="hover:text-emerald-700 hover:underline">
             Home
@@ -1334,7 +1334,7 @@ export function UnitDetailsClient({
             {property.name}
           </Link>
           <ChevronRight className="size-3.5" />
-          <span aria-current="page" className="font-medium text-gray-700">
+          <span aria-current="page" className="font-medium text-foreground">
             {unit.name}
           </span>
         </nav>
@@ -1347,7 +1347,7 @@ export function UnitDetailsClient({
         action={<UnitStatusBadge status={unit.status} />}
       />
 
-      <section className="overflow-hidden rounded-lg border border-gray-200 bg-white">
+      <section className="overflow-hidden rounded-lg border border-border bg-card">
         <div className="grid gap-6 p-5 lg:grid-cols-[minmax(0,1.05fr)_minmax(340px,0.95fr)] sm:p-6">
           <div className="min-w-0">
             <UnitGallery
@@ -1359,7 +1359,7 @@ export function UnitDetailsClient({
                 href={displayListing.tourUrl}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="mt-4 inline-flex min-h-10 items-center rounded-md border border-gray-300 px-4 text-sm font-semibold text-blue-700"
+                className="mt-4 inline-flex min-h-10 items-center rounded-md border border-border px-4 text-sm font-semibold text-primary"
               >
                 Open 360° tour{" "}
                 <span className="sr-only">(opens in a new tab)</span>
@@ -1373,7 +1373,7 @@ export function UnitDetailsClient({
                 <p className="text-sm font-medium text-emerald-700">
                   {property.name}
                 </p>
-                <h2 className="mt-1 text-xl font-semibold text-gray-900">
+                <h2 className="mt-1 text-xl font-semibold text-foreground">
                   {unit.name}
                 </h2>
               </div>
@@ -1382,7 +1382,7 @@ export function UnitDetailsClient({
               ) : null}
             </div>
 
-            <dl className="mt-4 divide-y divide-gray-100 border-y border-gray-100">
+            <dl className="mt-4 divide-y divide-gray-100 border-y border-border">
               {[
                 ["Property ID", property.propertyCode],
                 ["Unit ID", unit.unitCode],
@@ -1414,8 +1414,8 @@ export function UnitDetailsClient({
                   key={String(label)}
                   className="grid grid-cols-[130px_1fr] gap-3 py-2 text-sm"
                 >
-                  <dt className="text-gray-500">{label}</dt>
-                  <dd className="font-medium text-gray-900">{value}</dd>
+                  <dt className="text-muted-foreground">{label}</dt>
+                  <dd className="font-medium text-foreground">{value}</dd>
                 </div>
               ))}
             </dl>
@@ -1431,7 +1431,7 @@ export function UnitDetailsClient({
                 </Button>
               ) : null}
               {unit.status === "vacant" && !isBlocked ? (
-                <Button asChild className="bg-emerald-600 hover:bg-emerald-700">
+                <Button asChild className="bg-primary text-primary-foreground hover:bg-primary/90">
                   <Link href={listingHref}>
                     <Megaphone />
                     {listing ? "Manage Listing" : "Create Listing"}
@@ -1540,10 +1540,10 @@ export function UnitDetailsClient({
         ) : null}
       </section>
 
-      <section className="overflow-hidden rounded-lg border border-gray-200 bg-white">
+      <section className="overflow-hidden rounded-lg border border-border bg-card">
         <nav
           aria-label="Unit details sections"
-          className="sticky top-0 z-20 overflow-x-auto border-b border-gray-200 bg-white/95 px-3 backdrop-blur"
+          className="sticky top-0 z-20 overflow-x-auto border-b border-border bg-white/95 px-3 backdrop-blur"
         >
           <div className="flex h-12 min-w-max items-center gap-2">
             {sectionNavigation.map(({ id, label }) => (
@@ -1555,7 +1555,7 @@ export function UnitDetailsClient({
                 className={`h-12 border-b-2 px-3 text-sm font-medium transition-colors ${
                   activeSection === id
                     ? "border-emerald-600 text-emerald-700"
-                    : "border-transparent text-gray-600 hover:text-gray-900"
+                    : "border-transparent text-muted-foreground hover:text-foreground"
                 }`}
               >
                 {label}

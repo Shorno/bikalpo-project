@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronLeft, ChevronRight, Images, Pause, Play } from "lucide-react";
+import { ChevronLeft, ChevronRight, Images } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import {
@@ -81,7 +81,7 @@ export function ListingImageCarousel({
           href={galleryHref}
           aria-label={`View ${alt} details`}
           className={cn(
-            "flex aspect-video items-center justify-center bg-slate-100 text-sm text-slate-500 focus-visible:outline-2 focus-visible:outline-offset-[-4px] focus-visible:outline-primary",
+            "flex aspect-video items-center justify-center bg-muted text-sm text-muted-foreground focus-visible:outline-2 focus-visible:outline-offset-[-4px] focus-visible:outline-primary",
             className,
           )}
         >
@@ -92,7 +92,7 @@ export function ListingImageCarousel({
     return (
       <div
         className={cn(
-          "flex aspect-video items-center justify-center bg-slate-100 text-sm text-slate-500",
+          "flex aspect-video items-center justify-center bg-muted text-sm text-muted-foreground",
           className,
         )}
       >
@@ -107,7 +107,7 @@ export function ListingImageCarousel({
     <div
       role="region"
       className={cn(
-        "group relative aspect-video overflow-hidden bg-slate-100",
+        "group/gallery relative aspect-video overflow-hidden bg-muted",
         className,
       )}
       aria-roledescription="carousel"
@@ -139,25 +139,21 @@ export function ListingImageCarousel({
           <button
             type="button"
             onClick={() => setIsUserPaused((paused) => !paused)}
-            className="absolute right-2 top-2 z-10 inline-flex size-11 items-center justify-center rounded-full bg-black/65 text-white hover:bg-black/80 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+            className="sr-only focus:not-sr-only focus:absolute focus:left-2 focus:top-2 focus:z-20 focus:rounded-md focus:bg-black/80 focus:px-3 focus:py-2 focus:text-sm focus:text-white"
             aria-label={
               isUserPaused
                 ? "Resume automatic slideshow"
                 : "Pause automatic slideshow"
             }
           >
-            {isUserPaused ? (
-              <Play className="size-3.5" aria-hidden="true" />
-            ) : (
-              <Pause className="size-3.5" aria-hidden="true" />
-            )}
+            {isUserPaused ? "Resume slideshow" : "Pause slideshow"}
           </button>
 
-          <div className="pointer-events-none absolute inset-x-0 top-1/2 z-10 flex -translate-y-1/2 justify-between px-2 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100">
+          <div className="pointer-events-none absolute inset-x-0 top-1/2 z-10 hidden -translate-y-1/2 justify-between px-2 opacity-0 transition-opacity md:flex group-hover/gallery:opacity-100 group-focus-within/gallery:opacity-100 [@media(hover:none)]:hidden">
             <button
               type="button"
               onClick={showPrevious}
-              className="pointer-events-auto inline-flex size-11 items-center justify-center rounded-full bg-black/65 text-white hover:bg-black/80 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+              className="pointer-events-auto relative inline-flex size-8 items-center justify-center rounded-full bg-black/65 text-white after:absolute after:-inset-1.5 hover:bg-black/80 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
               aria-label="Show previous photo"
             >
               <ChevronLeft className="size-4" aria-hidden="true" />
@@ -165,7 +161,7 @@ export function ListingImageCarousel({
             <button
               type="button"
               onClick={showNext}
-              className="pointer-events-auto inline-flex size-11 items-center justify-center rounded-full bg-black/65 text-white hover:bg-black/80 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+              className="pointer-events-auto relative inline-flex size-8 items-center justify-center rounded-full bg-black/65 text-white after:absolute after:-inset-1.5 hover:bg-black/80 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
               aria-label="Show next photo"
             >
               <ChevronRight className="size-4" aria-hidden="true" />
@@ -177,11 +173,11 @@ export function ListingImageCarousel({
       {galleryHref ? (
         <Link
           href={galleryHref}
-          className="absolute bottom-3 right-3 z-10 inline-flex h-9 min-w-12 items-center justify-center gap-1 rounded-lg bg-zinc-950/90 px-2.5 text-white transition-colors after:absolute after:-inset-1 hover:bg-zinc-950 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+          className="absolute bottom-2 right-2 z-10 inline-flex h-7 min-w-9 items-center justify-center gap-1 rounded-md bg-zinc-950/90 px-1.5 text-white transition-colors after:absolute after:-inset-2 md:bottom-3 md:right-3 md:h-9 md:min-w-12 md:rounded-lg md:px-2.5 md:after:-inset-1 hover:bg-zinc-950 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
           aria-label={`Open ${alt} photo gallery`}
         >
-          <Images className="size-5" aria-hidden="true" />
-          <span className="text-xs font-semibold tabular-nums">
+          <Images className="size-3.5 md:size-5" aria-hidden="true" />
+          <span className="text-[10px] font-semibold tabular-nums md:text-xs">
             {images.length}
           </span>
         </Link>
@@ -189,11 +185,11 @@ export function ListingImageCarousel({
         <button
           type="button"
           onClick={showNext}
-          className="absolute bottom-3 right-3 z-10 inline-flex h-9 min-w-12 items-center justify-center gap-1 rounded-lg bg-zinc-950/90 px-2.5 text-white transition-colors after:absolute after:-inset-1 hover:bg-zinc-950 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+          className="absolute bottom-2 right-2 z-10 inline-flex h-7 min-w-9 items-center justify-center gap-1 rounded-md bg-zinc-950/90 px-1.5 text-white transition-colors after:absolute after:-inset-2 md:bottom-3 md:right-3 md:h-9 md:min-w-12 md:rounded-lg md:px-2.5 md:after:-inset-1 hover:bg-zinc-950 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
           aria-label={`Show next photo. Photo ${activeIndex + 1} of ${images.length} is currently shown`}
         >
-          <Images className="size-5" aria-hidden="true" />
-          <span className="text-xs font-semibold tabular-nums">
+          <Images className="size-3.5 md:size-5" aria-hidden="true" />
+          <span className="text-[10px] font-semibold tabular-nums md:text-xs">
             {images.length}
           </span>
         </button>

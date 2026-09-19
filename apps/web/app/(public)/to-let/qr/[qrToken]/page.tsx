@@ -32,9 +32,9 @@ export default async function QrPropertyPage({ params }: QrPropertyPageProps) {
   return (
     <div className="min-h-screen bg-gradient-to-b from-gray-50 to-white">
       <div className="site-container px-4 py-8 md:py-12">
-        <section className="overflow-hidden rounded-xl border border-gray-100 bg-white shadow-sm">
+        <section className="overflow-hidden rounded-xl border border-border bg-white shadow-sm">
           <div className="grid md:grid-cols-[minmax(0,1fr)_2fr]">
-            <div className="relative aspect-video bg-slate-100 md:aspect-auto">
+            <div className="relative aspect-video bg-muted md:aspect-auto">
               {property.coverImageUrl ? (
                 <Image
                   src={property.coverImageUrl}
@@ -45,30 +45,30 @@ export default async function QrPropertyPage({ params }: QrPropertyPageProps) {
                   unoptimized={property.coverImageUrl.startsWith("http")}
                 />
               ) : (
-                <div className="flex h-full items-center justify-center text-sm text-slate-500">
+                <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
                   No property photo available
                 </div>
               )}
             </div>
             <div className="p-6 md:p-8">
-              <p className="text-sm font-medium text-blue-600">
+              <p className="text-sm font-medium text-primary">
                 Verified property
               </p>
-              <h1 className="mt-1 text-2xl font-bold text-gray-900">
+              <h1 className="mt-1 text-2xl font-bold text-foreground">
                 {property.name}
               </h1>
-              <p className="mt-3 flex items-center gap-2 text-sm text-gray-600">
+              <p className="mt-3 flex items-center gap-2 text-sm text-muted-foreground">
                 <MapPin className="h-4 w-4 shrink-0" />
                 {[property.area, property.district, property.division]
                   .filter(Boolean)
                   .join(", ")}
               </p>
-              <p className="mt-3 flex items-center gap-2 text-sm text-gray-600">
+              <p className="mt-3 flex items-center gap-2 text-sm text-muted-foreground">
                 <Building2 className="h-4 w-4 shrink-0" />
                 {property.propertyType} / {property.buildingType}
               </p>
               {property.nearbyLandmark && (
-                <p className="mt-3 text-sm text-gray-600">
+                <p className="mt-3 text-sm text-muted-foreground">
                   Near {property.nearbyLandmark}
                 </p>
               )}
@@ -80,17 +80,17 @@ export default async function QrPropertyPage({ params }: QrPropertyPageProps) {
           <div className="mb-4">
             <h2
               id="available-units-heading"
-              className="text-xl font-semibold text-gray-900"
+              className="text-xl font-semibold text-foreground"
             >
               Available units
             </h2>
-            <p className="mt-1 text-sm text-gray-500">
+            <p className="mt-1 text-sm text-muted-foreground">
               These listings are currently available at this property.
             </p>
           </div>
 
           {listings.length === 0 ? (
-            <div className="rounded-xl border border-dashed border-gray-200 bg-white p-10 text-center text-gray-500">
+            <div className="rounded-xl border border-dashed border-border bg-white p-10 text-center text-muted-foreground">
               No units are currently available at this property.
             </div>
           ) : (

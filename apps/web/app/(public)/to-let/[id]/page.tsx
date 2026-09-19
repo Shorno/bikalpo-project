@@ -39,17 +39,17 @@ export default async function ToLetDetailsPage({
   return (
     <div className="bg-gradient-to-b from-gray-50 to-white min-h-screen">
       <div className="site-container px-4 py-8 md:py-12">
-        <div className="mb-4 text-sm text-gray-600">
+        <div className="mb-4 text-sm text-muted-foreground">
           <nav className="flex items-center gap-2">
-            <Link href="/" className="hover:text-gray-900">
+            <Link href="/" className="hover:text-foreground">
               Home
             </Link>
             <ChevronRight className="h-4 w-4" />
-            <Link href="/to-let" className="hover:text-gray-900">
+            <Link href="/to-let" className="hover:text-foreground">
               To-Let
             </Link>
             <ChevronRight className="h-4 w-4" />
-            <span className="text-gray-500 truncate max-w-xs">
+            <span className="text-muted-foreground truncate max-w-xs">
               {listing.title}
             </span>
           </nav>
@@ -58,14 +58,14 @@ export default async function ToLetDetailsPage({
         <div className="mb-6">
           <Link
             href="/to-let"
-            className="inline-flex items-center gap-2 text-sm text-blue-600 hover:text-blue-700"
+            className="inline-flex items-center gap-2 text-sm text-primary hover:text-primary"
           >
             <ArrowLeft className="h-4 w-4" /> Back to listings
           </Link>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          <div className="lg:col-span-2 bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
+          <div className="lg:col-span-2 bg-card rounded-xl border border-border shadow-sm overflow-hidden">
             <div className="relative h-72 sm:h-96">
               <Image
                 src={imageUrl}
@@ -77,27 +77,27 @@ export default async function ToLetDetailsPage({
               />
             </div>
             <div className="p-6">
-              <h1 className="text-2xl font-bold text-gray-900">
+              <h1 className="text-2xl font-bold text-foreground">
                 {listing.title}
               </h1>
-              <p className="text-sm text-gray-500 mt-1">{listing.location}</p>
-              <p className="text-sm text-gray-500 mt-1">
+              <p className="text-sm text-muted-foreground mt-1">{listing.location}</p>
+              <p className="text-sm text-muted-foreground mt-1">
                 Contact: {listing.contactInfo}
               </p>
 
               <div className="mt-4 flex flex-wrap gap-3 text-sm">
                 {listing.area && (
-                  <span className="px-3 py-1 bg-blue-50 text-blue-700 rounded-full">
+                  <span className="px-3 py-1 bg-primary/5 text-primary rounded-full">
                     Area: {listing.area}
                   </span>
                 )}
                 {listing.bedrooms != null && (
-                  <span className="px-3 py-1 bg-blue-50 text-blue-700 rounded-full">
+                  <span className="px-3 py-1 bg-primary/5 text-primary rounded-full">
                     Bedrooms: {listing.bedrooms}
                   </span>
                 )}
                 {listing.bathrooms != null && (
-                  <span className="px-3 py-1 bg-blue-50 text-blue-700 rounded-full">
+                  <span className="px-3 py-1 bg-primary/5 text-primary rounded-full">
                     Bathrooms: {listing.bathrooms}
                   </span>
                 )}
@@ -110,10 +110,10 @@ export default async function ToLetDetailsPage({
                 <span className="text-3xl font-bold text-emerald-600">
                   ৳ {Number(listing.rent).toLocaleString()}
                 </span>
-                <span className="text-sm text-gray-500">/ month</span>
+                <span className="text-sm text-muted-foreground">/ month</span>
               </div>
 
-              <div className="mt-6 prose prose-sm prose-slate text-gray-700 max-w-none">
+              <div className="mt-6 prose prose-sm prose-slate text-foreground max-w-none">
                 <h2 className="text-lg font-semibold">Description</h2>
                 <p>{listing.description || "No description provided."}</p>
               </div>
@@ -121,11 +121,11 @@ export default async function ToLetDetailsPage({
           </div>
 
           <aside className="space-y-4">
-            <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
-              <h3 className="text-sm font-semibold text-gray-900">
+            <div className="bg-card rounded-xl border border-border shadow-sm p-4">
+              <h3 className="text-sm font-semibold text-foreground">
                 Quick Info
               </h3>
-              <ul className="mt-2 space-y-2 text-sm text-gray-600">
+              <ul className="mt-2 space-y-2 text-sm text-muted-foreground">
                 <li>
                   <span className="font-medium">Rent:</span> ৳{" "}
                   {Number(listing.rent).toLocaleString()}/month

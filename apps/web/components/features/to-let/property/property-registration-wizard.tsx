@@ -217,10 +217,10 @@ function Section({
   children: React.ReactNode;
 }) {
   return (
-    <section className="border-b border-gray-100 pb-6 last:border-0 last:pb-0">
-      <h2 className="font-semibold text-gray-900">{title}</h2>
+    <section className="border-b border-border pb-6 last:border-0 last:pb-0">
+      <h2 className="font-semibold text-foreground">{title}</h2>
       {description ? (
-        <p className="mt-1 text-sm text-gray-500">{description}</p>
+        <p className="mt-1 text-sm text-muted-foreground">{description}</p>
       ) : null}
       <div className="mt-4">{children}</div>
     </section>
@@ -247,13 +247,13 @@ function FacilityRadioField({
       aria-invalid={Boolean(error)}
       className={cn(
         "rounded-lg border px-4 py-3",
-        error ? "border-red-300" : "border-gray-200",
+        error ? "border-red-300" : "border-border",
       )}
     >
-      <legend className="px-1 text-sm font-medium text-gray-900">
+      <legend className="px-1 text-sm font-medium text-foreground">
         {label}
       </legend>
-      <div className="mt-2 flex items-center gap-6 text-sm text-gray-700">
+      <div className="mt-2 flex items-center gap-6 text-sm text-foreground">
         <label className="flex cursor-pointer items-center gap-2">
           <input
             type="radio"
@@ -610,10 +610,10 @@ export function PropertyRegistrationWizard() {
         backHref="/account/to-let/properties"
       />
 
-      <div className="overflow-hidden rounded-lg border border-gray-200 bg-white">
+      <div className="overflow-hidden rounded-lg border border-border bg-card">
         <nav
           aria-label="Property registration progress"
-          className="border-b border-gray-200 bg-gray-50 px-4 py-4 sm:px-6"
+          className="border-b border-border bg-muted/30 px-4 py-4 sm:px-6"
         >
           <ol className="flex items-center">
             {steps.map((step, index) => {
@@ -633,10 +633,10 @@ export function PropertyRegistrationWizard() {
                       className={cn(
                         "flex size-8 items-center justify-center rounded-full border text-xs font-semibold",
                         completed
-                          ? "border-emerald-600 bg-emerald-600 text-white"
+                          ? "border-primary bg-primary text-primary-foreground"
                           : active
-                            ? "border-emerald-600 bg-white text-emerald-700 ring-4 ring-emerald-50"
-                            : "border-gray-300 bg-white text-gray-400",
+                            ? "border-emerald-600 bg-card text-emerald-700 ring-4 ring-emerald-50"
+                            : "border-border bg-card text-muted-foreground",
                       )}
                     >
                       {completed ? <Check className="size-4" /> : step.id}
@@ -644,7 +644,7 @@ export function PropertyRegistrationWizard() {
                     <span
                       className={cn(
                         "hidden truncate text-xs font-medium sm:block",
-                        active ? "text-emerald-700" : "text-gray-500",
+                        active ? "text-emerald-700" : "text-muted-foreground",
                       )}
                     >
                       {step.label}
@@ -654,7 +654,7 @@ export function PropertyRegistrationWizard() {
                     <span
                       className={cn(
                         "mx-2 h-px flex-1 sm:mx-4",
-                        completed ? "bg-emerald-500" : "bg-gray-200",
+                        completed ? "bg-emerald-500" : "bg-muted",
                       )}
                     />
                   ) : null}
@@ -665,14 +665,14 @@ export function PropertyRegistrationWizard() {
         </nav>
 
         <div className="p-5 sm:p-7">
-          <div className="mb-6 border-b border-gray-100 pb-5">
+          <div className="mb-6 border-b border-border pb-5">
             <p className="text-xs font-medium uppercase tracking-wide text-emerald-600">
               Step {currentStep} of 4
             </p>
             <h2
               ref={headingRef}
               tabIndex={-1}
-              className="mt-1 text-lg font-semibold text-gray-900 outline-none"
+              className="mt-1 text-lg font-semibold text-foreground outline-none"
             >
               {currentStep === 1
                 ? "Basic Information"
@@ -950,7 +950,7 @@ export function PropertyRegistrationWizard() {
           {currentStep === 4 ? (
             <div className="space-y-6">
               <Section title="Property information">
-                <dl className="divide-y divide-gray-100 rounded-lg border border-gray-200 px-4">
+                <dl className="divide-y divide-gray-100 rounded-lg border border-border px-4">
                   {[
                     ["Property Name", values.name],
                     [
@@ -973,8 +973,8 @@ export function PropertyRegistrationWizard() {
                       key={label}
                       className="grid gap-1 py-3 text-sm sm:grid-cols-[11rem_1fr]"
                     >
-                      <dt className="text-gray-500">{label}</dt>
-                      <dd className="font-medium text-gray-900">{value}</dd>
+                      <dt className="text-muted-foreground">{label}</dt>
+                      <dd className="font-medium text-foreground">{value}</dd>
                     </div>
                   ))}
                 </dl>
@@ -988,7 +988,7 @@ export function PropertyRegistrationWizard() {
                         key={label}
                         className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800"
                       >
-                        <span className="flex size-5 items-center justify-center rounded-full border border-emerald-600 bg-emerald-600 text-white">
+                        <span className="flex size-5 items-center justify-center rounded-full border border-primary bg-primary text-primary-foreground">
                           <Check className="size-3" />
                         </span>
                         {label}
@@ -996,7 +996,7 @@ export function PropertyRegistrationWizard() {
                     ))}
                   </div>
                 ) : (
-                  <p className="text-sm text-gray-500">
+                  <p className="text-sm text-muted-foreground">
                     No facilities selected.
                   </p>
                 )}
@@ -1010,14 +1010,14 @@ export function PropertyRegistrationWizard() {
                   ].map(([label, done]) => (
                     <div
                       key={String(label)}
-                      className="flex items-center gap-2 text-sm text-gray-700"
+                      className="flex items-center gap-2 text-sm text-foreground"
                     >
                       <span
                         className={cn(
                           "flex size-5 items-center justify-center rounded-full border",
                           done
-                            ? "border-emerald-600 bg-emerald-600 text-white"
-                            : "border-gray-300 bg-white text-transparent",
+                            ? "border-primary bg-primary text-primary-foreground"
+                            : "border-border bg-card text-transparent",
                         )}
                       >
                         <Check className="size-3" />
@@ -1062,7 +1062,7 @@ export function PropertyRegistrationWizard() {
                     },
                   ].map((item) => (
                     <div key={item.key}>
-                      <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-gray-200 p-3 text-sm text-gray-700">
+                      <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-border p-3 text-sm text-foreground">
                         <Checkbox
                           checked={values[item.key]}
                           onCheckedChange={(checked) =>
@@ -1080,7 +1080,7 @@ export function PropertyRegistrationWizard() {
             </div>
           ) : null}
 
-          <div className="sticky bottom-0 z-10 -mx-5 -mb-5 mt-7 border-t border-gray-200 bg-white px-5 py-4 sm:static sm:mx-0 sm:mb-0 sm:px-0 sm:pb-0">
+          <div className="sticky bottom-0 z-10 -mx-5 -mb-5 mt-7 border-t border-border bg-card px-5 py-4 sm:static sm:mx-0 sm:mb-0 sm:px-0 sm:pb-0">
             <div className="flex gap-3">
               {currentStep > 1 ? (
                 <Button
@@ -1099,7 +1099,7 @@ export function PropertyRegistrationWizard() {
                 size="lg"
                 onClick={currentStep === 4 ? submit : next}
                 disabled={createProperty.isPending}
-                className="flex-1 bg-emerald-600 hover:bg-emerald-700"
+                className="flex-1 bg-primary text-primary-foreground hover:bg-primary/90"
               >
                 {createProperty.isPending ? (
                   <>

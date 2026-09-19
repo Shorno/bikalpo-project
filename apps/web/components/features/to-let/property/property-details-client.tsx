@@ -52,9 +52,9 @@ export function propertyFromResponse(data: unknown): ToLetPropertyView | null {
 
 function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
   return (
-    <div className="grid gap-1 border-b border-gray-100 py-3 text-sm last:border-0 sm:grid-cols-[10rem_1fr]">
-      <dt className="text-gray-500">{label}</dt>
-      <dd className="font-medium text-gray-900">{value}</dd>
+    <div className="grid gap-1 border-b border-border py-3 text-sm last:border-0 sm:grid-cols-[10rem_1fr]">
+      <dt className="text-muted-foreground">{label}</dt>
+      <dd className="font-medium text-foreground">{value}</dd>
     </div>
   );
 }
@@ -152,7 +152,7 @@ export function PropertyDetailsClient({
                 <Button
                   size="sm"
                   asChild
-                  className="bg-emerald-600 hover:bg-emerald-700"
+                  className="bg-primary text-primary-foreground hover:bg-primary/90"
                 >
                   <Link
                     href={`/account/to-let/properties/${property.propertyCode}/units/${units[0].unitCode}/listing`}
@@ -245,9 +245,9 @@ export function PropertyDetailsClient({
         }
       />
 
-      <section className="overflow-hidden rounded-lg border border-gray-200 bg-white">
+      <section className="overflow-hidden rounded-lg border border-border bg-card">
         <div className="grid lg:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)]">
-          <div className="relative min-h-72 bg-gray-100 lg:min-h-full">
+          <div className="relative min-h-72 bg-muted lg:min-h-full">
             <Image
               src={imageUrl}
               alt={`${property.name} property`}
@@ -267,10 +267,10 @@ export function PropertyDetailsClient({
                 <Building2 className="size-5" />
               </span>
               <div>
-                <h2 className="font-semibold text-gray-900">
+                <h2 className="font-semibold text-foreground">
                   Property Information
                 </h2>
-                <p className="mt-1 flex items-start gap-1.5 text-sm text-gray-500">
+                <p className="mt-1 flex items-start gap-1.5 text-sm text-muted-foreground">
                   <MapPin className="mt-0.5 size-4 shrink-0" />
                   {property.fullAddress}, {property.area}, {property.district}
                 </p>
@@ -312,7 +312,7 @@ export function PropertyDetailsClient({
             </dl>
 
             {!isBlocked ? (
-              <div className="mt-5 flex flex-wrap gap-2 border-t border-gray-100 pt-5">
+              <div className="mt-5 flex flex-wrap gap-2 border-t border-border pt-5">
                 <Button variant="outline" asChild>
                   <Link
                     href={`/account/to-let/properties/${property.propertyCode}/edit`}
@@ -326,7 +326,7 @@ export function PropertyDetailsClient({
                   ) : (
                     <Button
                       asChild
-                      className="bg-emerald-600 hover:bg-emerald-700"
+                      className="bg-primary text-primary-foreground hover:bg-primary/90"
                     >
                       <Link
                         href={`/account/to-let/properties/${property.propertyCode}/units/new`}
@@ -338,7 +338,7 @@ export function PropertyDetailsClient({
                 ) : (
                   <Button
                     asChild
-                    className="bg-emerald-600 hover:bg-emerald-700"
+                    className="bg-primary text-primary-foreground hover:bg-primary/90"
                   >
                     <a href="#property-units">
                       <Building2 /> Manage Units
@@ -354,8 +354,8 @@ export function PropertyDetailsClient({
       <section id="property-units" className="scroll-mt-24 space-y-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h2 className="text-lg font-semibold text-gray-900">My To-Let</h2>
-            <p className="text-sm text-gray-500">
+            <h2 className="text-lg font-semibold text-foreground">My To-Let</h2>
+            <p className="text-sm text-muted-foreground">
               Manage every Unit and its current To-Let Listing.
             </p>
           </div>
@@ -379,12 +379,12 @@ export function PropertyDetailsClient({
         </div>
 
         {units.length === 0 ? (
-          <div className="rounded-lg border border-dashed border-gray-300 bg-white p-8 text-center">
-            <Building2 className="mx-auto size-10 text-gray-300" />
-            <h3 className="mt-3 font-semibold text-gray-900">
+          <div className="rounded-lg border border-dashed border-border bg-card p-8 text-center">
+            <Building2 className="mx-auto size-10 text-muted-foreground" />
+            <h3 className="mt-3 font-semibold text-foreground">
               No units created yet
             </h3>
-            <p className="mt-1 text-sm text-gray-500">
+            <p className="mt-1 text-sm text-muted-foreground">
               Add the first physical unit for this property.
             </p>
           </div>
@@ -404,8 +404,8 @@ export function PropertyDetailsClient({
       </section>
 
       <div className="grid gap-5 lg:grid-cols-[minmax(0,2fr)_minmax(260px,1fr)]">
-        <section className="rounded-lg border border-gray-200 bg-white p-5">
-          <h2 className="font-semibold text-gray-900">Facilities</h2>
+        <section className="rounded-lg border border-border bg-card p-5">
+          <h2 className="font-semibold text-foreground">Facilities</h2>
           <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
             {facilityLabels.map(([key, label]) => {
               const available = Boolean(property[key]);
@@ -415,7 +415,7 @@ export function PropertyDetailsClient({
                   className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-sm ${
                     available
                       ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                      : "border-gray-200 bg-gray-50 text-gray-400"
+                      : "border-border bg-muted/30 text-muted-foreground"
                   }`}
                 >
                   <Check className="size-3.5" /> {label}
@@ -424,7 +424,7 @@ export function PropertyDetailsClient({
             })}
           </div>
           {property.description ? (
-            <p className="mt-4 whitespace-pre-wrap text-sm leading-6 text-gray-600">
+            <p className="mt-4 whitespace-pre-wrap text-sm leading-6 text-muted-foreground">
               {property.description}
             </p>
           ) : null}

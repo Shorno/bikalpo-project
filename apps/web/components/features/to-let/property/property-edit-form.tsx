@@ -92,8 +92,8 @@ function FormSection({
   children: React.ReactNode;
 }) {
   return (
-    <section className="rounded-lg border border-gray-200 bg-white p-5 sm:p-6">
-      <h2 className="font-semibold text-gray-900">{title}</h2>
+    <section className="rounded-lg border border-border bg-card p-5 sm:p-6">
+      <h2 className="font-semibold text-foreground">{title}</h2>
       <div className="mt-4">{children}</div>
     </section>
   );
@@ -109,7 +109,7 @@ function EditToggle({
   onChange: (checked: boolean) => void;
 }) {
   return (
-    <div className="flex min-h-14 items-center justify-between gap-3 rounded-lg border border-gray-200 px-3 py-2 text-sm">
+    <div className="flex min-h-14 items-center justify-between gap-3 rounded-lg border border-border px-3 py-2 text-sm">
       {label}
       <IncludedExcludedButtons
         label={label}
@@ -449,7 +449,7 @@ function LoadedPropertyEditForm({ property }: { property: ToLetPropertyView }) {
         </div>
       </FormSection>
 
-      <div className="sticky bottom-0 z-10 -mx-4 border-t border-gray-200 bg-white px-4 py-4 sm:static sm:mx-0 sm:border-0 sm:bg-transparent sm:px-0 sm:py-0">
+      <div className="sticky bottom-0 z-10 -mx-4 border-t border-border bg-card px-4 py-4 sm:static sm:mx-0 sm:border-0 sm:bg-transparent sm:px-0 sm:py-0">
         <div className="flex justify-end gap-3">
           <Button
             type="button"
@@ -462,7 +462,7 @@ function LoadedPropertyEditForm({ property }: { property: ToLetPropertyView }) {
           <Button
             type="submit"
             disabled={mutation.isPending || !values.phoneVerified}
-            className="bg-emerald-600 hover:bg-emerald-700"
+            className="bg-primary text-primary-foreground hover:bg-primary/90"
           >
             {mutation.isPending ? (
               <Loader2 className="animate-spin" />
