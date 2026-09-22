@@ -14,7 +14,9 @@ import {
   ListIcon,
   MapPinIcon,
   MegaphoneIcon,
+  MonitorIcon,
   PackageIcon,
+  PackagePlusIcon,
   ReceiptIcon,
   Settings2,
   ShoppingCartIcon,
@@ -58,17 +60,24 @@ function getAdminNavGroups(pendingApplications = 0): NavGroup[] {
       label: "Product System",
       items: [
         {
-          title: "Product Catalog",
+          title: "Catalog",
           url: `${ADMIN_BASE}/products`,
           icon: PackageIcon,
-          items: [
-            { title: "All Products", url: `${ADMIN_BASE}/products` },
-            {
-              title: "Product Price",
-              url: `${ADMIN_BASE}/product-price`,
-            },
-            { title: "Web View", url: `${ADMIN_BASE}/web-view` },
-          ],
+        },
+        {
+          title: "Web View",
+          url: `${ADMIN_BASE}/web-view`,
+          icon: MonitorIcon,
+        },
+        {
+          title: "Create Product",
+          url: `${ADMIN_BASE}/products/new`,
+          icon: PackagePlusIcon,
+        },
+        {
+          title: "Price",
+          url: `${ADMIN_BASE}/product-price`,
+          icon: DollarSignIcon,
         },
         {
           title: "Setup",
