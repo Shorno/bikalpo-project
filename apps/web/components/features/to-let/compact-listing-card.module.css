@@ -6,7 +6,6 @@
   .compact [data-slot="metadata"] span { font-size: 10px; line-height: 16px; }
   .compact [data-slot="metadata"] svg { display: none; }
   .compact [data-slot="summary"] { margin-top: 10px; }
-  .compact [data-slot="rent"] { display: none; }
   .compact h3 { margin-top: 0; font-size: 12px; line-height: 18px; }
   .compact ul { margin-top: 6px; gap: 2px 6px; font-size: 10px; line-height: 16px; }
   .compact li { gap: 0; }

@@ -172,7 +172,7 @@ function UnitGallery({
                   current === 0 ? imageUrls.length - 1 : current - 1,
                 )
               }
-              className="absolute left-3 top-1/2 flex size-9 -translate-y-1/2 items-center justify-center rounded-full bg-white/90 text-foreground shadow-sm transition-colors hover:bg-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
+              className="absolute left-3 top-1/2 flex size-9 -translate-y-1/2 items-center justify-center rounded-full border border-border bg-card text-foreground transition-colors hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
             >
               <ChevronLeft className="size-5" />
             </button>
@@ -184,18 +184,18 @@ function UnitGallery({
                   current === imageUrls.length - 1 ? 0 : current + 1,
                 )
               }
-              className="absolute right-3 top-1/2 flex size-9 -translate-y-1/2 items-center justify-center rounded-full bg-white/90 text-foreground shadow-sm transition-colors hover:bg-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
+              className="absolute right-3 top-1/2 flex size-9 -translate-y-1/2 items-center justify-center rounded-full border border-border bg-card text-foreground transition-colors hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
             >
               <ChevronRight className="size-5" />
             </button>
           </>
         ) : null}
-        <span className="absolute bottom-3 right-3 rounded-full bg-black/60 px-2.5 py-1 text-xs font-medium text-white">
+        <span className="absolute bottom-3 right-3 rounded-full bg-black/70 px-2.5 py-1 font-mono text-xs font-medium text-white tabular-nums">
           {activeImage + 1} / {imageUrls.length}
         </span>
       </div>
       <div>
-        <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+        <p className="mb-2 text-xs font-medium text-muted-foreground">
           Thumbnail gallery
         </p>
         <div className="flex gap-2 overflow-x-auto pb-1">
@@ -206,10 +206,10 @@ function UnitGallery({
               aria-label={`Show photo ${index + 1}`}
               aria-pressed={activeImage === index}
               onClick={() => setActiveImage(index)}
-              className={`relative size-16 shrink-0 overflow-hidden rounded-md border-2 ${
+              className={`relative size-16 shrink-0 overflow-hidden rounded-md border-2 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring ${
                 activeImage === index
-                  ? "border-emerald-600"
-                  : "border-transparent"
+                  ? "border-primary"
+                  : "border-transparent hover:border-border"
               }`}
             >
               <Image
@@ -246,6 +246,72 @@ function formatFloorLabel(floorNumber: number) {
 
   return `${floorNumber}${suffix} Floor`;
 }
+
+function SectionHeader({
+  title,
+  description,
+  action,
+}: {
+  title: ReactNode;
+  description?: ReactNode;
+  action?: ReactNode;
+}) {
+  return (
+    <div className="flex flex-wrap items-start justify-between gap-3">
+      <div className="min-w-0">
+        <h2 className="text-lg font-semibold tracking-tight text-foreground">
+          {title}
+        </h2>
+        {description ? (
+          <p className="mt-1 max-w-prose text-sm leading-6 text-muted-foreground">
+            {description}
+          </p>
+        ) : null}
+      </div>
+      {action}
+    </div>
+  );
+}
+
+function Field({
+  label,
+  children,
+  className = "",
+  mono = false,
+}: {
+  label: ReactNode;
+  children: ReactNode;
+  className?: string;
+  mono?: boolean;
+}) {
+  return (
+    <div className={`min-w-0 ${className}`}>
+      <dt className="text-sm font-medium text-foreground">{label}</dt>
+      <dd
+        className={`mt-1.5 flex min-h-10 items-center break-words rounded-md border border-border bg-muted/30 px-3 py-2 text-sm text-foreground ${
+          mono ? "font-mono tabular-nums" : ""
+        }`}
+      >
+        {children}
+      </dd>
+    </div>
+  );
+}
+
+const monoOverviewLabels = new Set([
+  "Property ID *",
+  "Unit Size *",
+  "Balconies",
+  "Bathrooms *",
+]);
+
+const heroMonoLabels = new Set([
+  "Property ID",
+  "Unit ID",
+  "Views (Post on)",
+  "Size",
+  "Monthly Rent",
+]);
 
 const unitSectionNavigation = [
   { id: "unit-information", label: "Unit Information" },
@@ -296,7 +362,7 @@ function UnitInformationPanel({
           href={offer.videoUrl}
           target="_blank"
           rel="noreferrer"
-          className="font-medium text-emerald-700 hover:underline"
+          className="font-medium text-primary underline-offset-4 hover:underline"
         >
           View unit / listing video
         </a>
@@ -327,91 +393,71 @@ function UnitInformationPanel({
 
   return (
     <section className="rounded-lg border border-border bg-card p-5 sm:p-6">
-      <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">
-        Overview
-      </p>
-      <h2 className="mt-1 text-xl font-semibold text-foreground">
-        Unit Information
-      </h2>
+      <SectionHeader title="Unit Information" />
       <dl className="mt-5 grid gap-4 sm:grid-cols-2">
         {overviewRows.map(([label, value]) => (
-          <div key={String(label)}>
-            <dt className="text-sm font-medium text-foreground">{label}</dt>
-            <dd className="mt-1 flex min-h-10 items-center rounded-md border border-border bg-muted/30 px-3 text-sm text-foreground">
-              {value}
-            </dd>
-          </div>
+          <Field
+            key={String(label)}
+            label={label}
+            mono={monoOverviewLabels.has(String(label))}
+          >
+            {value}
+          </Field>
         ))}
+        <Field label="Property Description" className="sm:col-span-2">
+          <span
+            className={`whitespace-pre-wrap leading-6 ${description ? "" : "text-muted-foreground"}`}
+          >
+            {description || "No description added."}
+          </span>
+        </Field>
+        <Field label="Available From">
+          {offer?.availableFrom
+            ? formatBookingDate(offer.availableFrom)
+            : "Not listed"}
+        </Field>
+        <Field label="Listing Status">
+          {listingStatus ? humanize(listingStatus) : "Not created"}
+        </Field>
       </dl>
-
-      <div className="mt-5 border-t border-border pt-5">
-        {description ? (
-          <>
-            <h3 className="text-sm font-semibold text-foreground">
-              Property Description
-            </h3>
-            <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-muted-foreground">
-              {description}
-            </p>
-          </>
-        ) : (
-          <p className="text-sm text-muted-foreground">No description added.</p>
-        )}
-      </div>
-      <dl className="mt-5 space-y-3 text-sm">
-        <div>
-          <dt className="font-medium text-foreground">Available From</dt>
-          <dd className="mt-1 text-foreground">
-            {offer?.availableFrom
-              ? formatBookingDate(offer.availableFrom)
-              : "Not listed"}
-          </dd>
-        </div>
-        <div>
-          <dt className="font-medium text-foreground">Listing Status</dt>
-          <dd className="mt-1 text-foreground">
-            {listingStatus ? humanize(listingStatus) : "Not created"}
-          </dd>
-        </div>
-      </dl>
-      <details className="mt-5 border-t border-border pt-4">
-        <summary className="cursor-pointer text-sm font-medium text-foreground">
+      <details className="group mt-6 rounded-md border border-border">
+        <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 px-4 text-sm font-medium text-foreground hover:bg-muted/30 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring">
           Additional unit and address details
+          <ChevronRight
+            className="size-4 text-muted-foreground transition-transform group-open:rotate-90"
+            aria-hidden="true"
+          />
         </summary>
-        <dl className="mt-3 space-y-3 text-sm text-foreground">
+        <dl className="grid gap-x-6 gap-y-3 border-t border-border px-4 py-4 text-sm sm:grid-cols-[10rem_minmax(0,1fr)]">
           {residential ? (
-            <div>
-              <dt>Bedrooms</dt>
-              <dd>{unit.bedrooms}</dd>
-            </div>
+            <>
+              <dt className="text-muted-foreground">Bedrooms</dt>
+              <dd className="font-mono tabular-nums text-foreground">
+                {unit.bedrooms}
+              </dd>
+            </>
           ) : null}
-          <div>
-            <dt>Address source</dt>
-            <dd>
-              {unit.addressOverride
-                ? "Unit-specific address"
-                : "Property registration address"}
-            </dd>
-          </div>
-          <div>
-            <dt>Address</dt>
-            <dd className="break-words">
-              {(unit.addressOverride ?? property).fullAddress}
-            </dd>
-          </div>
-          <div>
-            <dt>Location</dt>
-            <dd className="break-words">
-              {[
-                (unit.addressOverride ?? property).area,
-                (unit.addressOverride ?? property).upazila,
-                (unit.addressOverride ?? property).district,
-                (unit.addressOverride ?? property).division,
-              ]
-                .filter(Boolean)
-                .join(", ")}
-            </dd>
-          </div>
+          <dt className="text-muted-foreground">Address source</dt>
+          <dd className="text-foreground">
+            {unit.addressOverride
+              ? "Unit-specific address"
+              : "Property registration address"}
+          </dd>
+          <dt className="text-muted-foreground">Address</dt>
+          <dd className="break-words text-foreground">
+            {(unit.addressOverride ?? property).fullAddress}
+          </dd>
+          <dt className="text-muted-foreground">Location</dt>
+          <dd className="break-words text-foreground">
+            {[
+              (unit.addressOverride ?? property).area,
+              (unit.addressOverride ?? property).upazila,
+              (unit.addressOverride ?? property).district,
+              (unit.addressOverride ?? property).division,
+            ]
+              .filter(Boolean)
+              .join(", ")}
+          </dd>
         </dl>
       </details>
     </section>
@@ -442,14 +488,10 @@ function FacilitiesPanel({
 
   return (
     <section className="rounded-lg border border-border bg-card p-5 sm:p-6">
-      <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">
-        Step 3
-      </p>
-      <h2 className="mt-1 font-semibold text-foreground">Facilities</h2>
-      <p className="mt-1 text-sm text-muted-foreground">
-        Property facilities are inherited by this Unit. Listing-specific items
-        use the current rental offer.
-      </p>
+      <SectionHeader
+        title="Facilities"
+        description="Property facilities are inherited by this Unit. Listing-specific items use the current rental offer."
+      />
       <div className="mt-5 grid gap-3 lg:grid-cols-2">
         {facilities.map(([key, label, available]) => (
           <ToLetFacilityItem
@@ -460,14 +502,15 @@ function FacilitiesPanel({
           />
         ))}
       </div>
-      <div className="mt-5 rounded-lg border border-border p-4">
-        <h3 className="text-sm font-semibold text-foreground">
-          Other Facilities
-        </h3>
-        <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-muted-foreground">
-          {offer?.otherFacilities || "No other facilities added."}
-        </p>
-      </div>
+      <dl className="mt-5">
+        <Field label="Other Facilities">
+          <span
+            className={`whitespace-pre-wrap leading-6 ${offer?.otherFacilities ? "" : "text-muted-foreground"}`}
+          >
+            {offer?.otherFacilities || "No other facilities added."}
+          </span>
+        </Field>
+      </dl>
     </section>
   );
 }
@@ -500,90 +543,70 @@ function RentPanel({
 
   return (
     <section className="rounded-lg border border-border bg-card p-5 sm:p-6">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-wide text-amber-600">
-            Rent information
-          </p>
-          <h2 className="mt-1 font-semibold text-foreground">
+      <SectionHeader
+        title={
+          <>
             Rental terms
-            <span className="ml-1 font-normal text-muted-foreground">
+            <span className="ml-1.5 text-sm font-normal text-muted-foreground">
               (after contract for tenant)
             </span>
-          </h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {offer
-              ? `Terms captured from ${offer.listingCode}.`
-              : "No rental Listing has been created for this Unit yet."}
-          </p>
-        </div>
-        {canEdit ? (
-          <Button variant="outline" asChild>
-            <Link href={listingHref}>
-              {offer ? "Edit rental Listing" : "Create Listing"}
-            </Link>
-          </Button>
-        ) : null}
-      </div>
-      <dl className="mt-5 grid gap-3 sm:grid-cols-2">
+          </>
+        }
+        description={
+          offer
+            ? `Terms captured from ${offer.listingCode}.`
+            : "No rental Listing has been created for this Unit yet."
+        }
+        action={
+          canEdit ? (
+            <Button variant="outline" asChild>
+              <Link href={listingHref}>
+                <Edit2 />
+                {offer ? "Edit rental Listing" : "Create Listing"}
+              </Link>
+            </Button>
+          ) : null
+        }
+      />
+      <dl className="mt-5 grid gap-4 sm:grid-cols-2">
         {rentRows.map(([label, value]) => (
-          <div
-            key={label}
-            className="rounded-lg border border-border bg-muted/30 p-4"
-          >
-            <dt className="text-xs text-muted-foreground">{label}</dt>
-            <dd className="mt-1 font-semibold text-foreground">{value}</dd>
-          </div>
+          <Field key={label} label={label} mono>
+            <span className="font-semibold">{value}</span>
+          </Field>
         ))}
-      </dl>
-      <div className="mt-3 grid gap-3 sm:grid-cols-2">
         {charges.map(([label, amount, included]) => (
-          <div key={label} className="rounded-lg border border-border p-4">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <p className="text-xs text-muted-foreground">{label}</p>
-                <p className="mt-1 font-semibold text-foreground">
-                  {displayMoney(amount)}
-                </p>
-              </div>
-              <IncludedExcludedButtons
-                label={label}
-                included={Boolean(included)}
-                className="min-w-40"
-              />
-            </div>
-          </div>
+          <Field key={label} label={label}>
+            <span className="flex w-full flex-wrap items-center justify-between gap-2">
+              <span className="font-mono font-semibold tabular-nums">
+                {displayMoney(amount)}
+              </span>
+              <IncludedExcludedButtons label={label} included={Boolean(included)} />
+            </span>
+          </Field>
         ))}
-        <div className="rounded-lg border border-border bg-muted/30 p-4">
-          <p className="text-xs text-muted-foreground">Payment Method</p>
-          <p className="mt-1 font-semibold text-foreground">Monthly OTP</p>
-          <p className="mt-1 text-xs text-muted-foreground">
-            Tenant confirms each monthly rent cycle with the owner OTP.
-          </p>
-        </div>
-      </div>
+        <Field label="Payment Method">
+          <span>
+            <span className="block font-semibold">Monthly OTP</span>
+            <span className="mt-0.5 block text-xs text-muted-foreground">
+              Tenant confirms each monthly rent cycle with the owner OTP.
+            </span>
+          </span>
+        </Field>
+      </dl>
 
-      <div className="mt-6 border-t border-border pt-6">
-        <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">
-          Step 4 · Contact
-        </p>
-        <div className="mt-3 grid gap-3 sm:grid-cols-2">
-          <div className="rounded-lg border border-border bg-muted/30 p-4">
-            <p className="text-xs text-muted-foreground">Contact Person</p>
-            <p className="mt-1 font-semibold text-foreground">
-              {property.ownerName}
-            </p>
-          </div>
-          <div className="rounded-lg border border-border bg-muted/30 p-4">
-            <p className="text-xs text-muted-foreground">Contact Number</p>
+      <div className="mt-8 border-t border-border pt-6">
+        <h3 className="text-base font-semibold text-foreground">Contact</h3>
+        <dl className="mt-4 grid gap-4 sm:grid-cols-2">
+          <Field label="Contact Person">{property.ownerName}</Field>
+          <Field label="Contact Number" mono>
             <a
-              className="mt-1 inline-flex font-semibold text-emerald-700 hover:underline"
+              className="font-medium text-primary underline-offset-4 hover:underline"
               href={`tel:${property.mobileNumber}`}
             >
               {property.mobileNumber}
             </a>
-          </div>
-        </div>
+          </Field>
+        </dl>
       </div>
     </section>
   );
@@ -809,7 +832,7 @@ function OwnerBookingRequestCard({
           </p>
         </div>
         <p className="text-right">
-          <span className="block font-bold text-emerald-700">
+          <span className="block font-mono font-bold text-foreground tabular-nums">
             {formatMoney(snapshot.monthlyRent)}
           </span>
           <span className="text-xs text-muted-foreground">snapshot monthly rent</span>
@@ -823,7 +846,7 @@ function OwnerBookingRequestCard({
             <p className="text-xs text-muted-foreground">Contact</p>
             <a
               href={`tel:${booking.contactPhone}`}
-              className="font-medium text-foreground hover:text-emerald-700 hover:underline"
+              className="font-mono font-medium text-foreground tabular-nums underline-offset-4 hover:text-primary hover:underline"
             >
               {booking.contactPhone}
             </a>
@@ -984,18 +1007,10 @@ function CurrentTenantSection({
 }) {
   return (
     <section className="rounded-lg border border-border bg-card p-5 sm:p-6">
-      <div className="flex items-start gap-3">
-        <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/5 text-primary">
-          <UserRound className="size-5" />
-        </span>
-        <div>
-          <h2 className="font-semibold text-foreground">Current Tenant Info</h2>
-          <p className="mt-1 text-sm leading-6 text-muted-foreground">
-            The accepted Booking contact, signed contract dates and owner-only
-            monthly payment history appear here.
-          </p>
-        </div>
-      </div>
+      <SectionHeader
+        title="Current Tenant Info"
+        description="The accepted Booking contact, signed contract dates and owner-only monthly payment history appear here."
+      />
 
       {isLoading ? (
         <div className="mt-5 flex items-center justify-center rounded-lg border border-dashed border-border py-10 text-sm text-muted-foreground">
@@ -1081,28 +1096,20 @@ function OwnerBookingRequestsSection({
 
   return (
     <section className="rounded-lg border border-border bg-card p-5 sm:p-6">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="flex items-start gap-3">
-          <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/5 text-primary">
-            <UserRound className="size-5" />
-          </span>
-          <div>
-            <h2 className="font-semibold text-foreground">Booking Requests</h2>
-            <p className="mt-1 text-sm leading-6 text-muted-foreground">
-              Review the available request history for this Listing cycle and
-              accept or reject pending requests.
-            </p>
-          </div>
-        </div>
-        {!query.isLoading && !query.isError ? (
-          <Badge
-            variant="outline"
-            className="border-primary/20 bg-primary/5 text-primary"
-          >
-            {pendingCount} pending · {allBookings.length} total
-          </Badge>
-        ) : null}
-      </div>
+      <SectionHeader
+        title="Booking Requests"
+        description="Review the available request history for this Listing cycle and accept or reject pending requests."
+        action={
+          !query.isLoading && !query.isError ? (
+            <Badge
+              variant="outline"
+              className="border-primary/20 bg-primary/5 font-mono text-primary tabular-nums"
+            >
+              {pendingCount} pending · {allBookings.length} total
+            </Badge>
+          ) : null
+        }
+      />
 
       {query.isLoading ? (
         <div className="mt-5 flex items-center justify-center rounded-lg border border-dashed border-border py-10 text-sm text-muted-foreground">
@@ -1308,28 +1315,25 @@ export function UnitDetailsClient({
 
   return (
     <div className="space-y-5">
-      <div className="space-y-2">
-        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-700">
-          Unit Details
-        </p>
+      <div>
         <nav
           aria-label="Breadcrumb"
           className="flex flex-wrap items-center gap-1.5 text-sm text-muted-foreground"
         >
-          <Link href="/" className="hover:text-emerald-700 hover:underline">
+          <Link href="/" className="underline-offset-4 hover:text-primary hover:underline">
             Home
           </Link>
           <ChevronRight className="size-3.5" />
           <Link
             href="/account/to-let/properties"
-            className="hover:text-emerald-700 hover:underline"
+            className="underline-offset-4 hover:text-primary hover:underline"
           >
             Property
           </Link>
           <ChevronRight className="size-3.5" />
           <Link
             href={`/account/to-let/properties/${property.propertyCode}`}
-            className="hover:text-emerald-700 hover:underline"
+            className="underline-offset-4 hover:text-primary hover:underline"
           >
             {property.name}
           </Link>
@@ -1370,7 +1374,7 @@ export function UnitDetailsClient({
           <div className="min-w-0">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
-                <p className="text-sm font-medium text-emerald-700">
+                <p className="text-sm font-medium text-muted-foreground">
                   {property.name}
                 </p>
                 <h2 className="mt-1 text-xl font-semibold text-foreground">
@@ -1382,7 +1386,7 @@ export function UnitDetailsClient({
               ) : null}
             </div>
 
-            <dl className="mt-4 divide-y divide-gray-100 border-y border-border">
+            <dl className="mt-4 divide-y divide-border border-y border-border">
               {[
                 ["Property ID", property.propertyCode],
                 ["Unit ID", unit.unitCode],
@@ -1412,10 +1416,16 @@ export function UnitDetailsClient({
               ].map(([label, value]) => (
                 <div
                   key={String(label)}
-                  className="grid grid-cols-[130px_1fr] gap-3 py-2 text-sm"
+                  className="grid grid-cols-[8.5rem_minmax(0,1fr)] gap-3 py-2.5 text-sm"
                 >
                   <dt className="text-muted-foreground">{label}</dt>
-                  <dd className="font-medium text-foreground">{value}</dd>
+                  <dd
+                    className={`break-words font-medium text-foreground ${
+                      heroMonoLabels.has(String(label)) ? "font-mono tabular-nums" : ""
+                    }`}
+                  >
+                    {value}
+                  </dd>
                 </div>
               ))}
             </dl>
@@ -1543,7 +1553,7 @@ export function UnitDetailsClient({
       <section className="overflow-hidden rounded-lg border border-border bg-card">
         <nav
           aria-label="Unit details sections"
-          className="sticky top-0 z-20 overflow-x-auto border-b border-border bg-white/95 px-3 backdrop-blur"
+          className="sticky top-0 z-20 overflow-x-auto border-b border-border bg-card px-3 [scrollbar-width:none]"
         >
           <div className="flex h-12 min-w-max items-center gap-2">
             {sectionNavigation.map(({ id, label }) => (
@@ -1552,9 +1562,9 @@ export function UnitDetailsClient({
                 type="button"
                 aria-current={activeSection === id ? "location" : undefined}
                 onClick={() => scrollToSection(id)}
-                className={`h-12 border-b-2 px-3 text-sm font-medium transition-colors ${
+                className={`h-12 border-b-2 px-3 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring ${
                   activeSection === id
-                    ? "border-emerald-600 text-emerald-700"
+                    ? "border-primary text-primary"
                     : "border-transparent text-muted-foreground hover:text-foreground"
                 }`}
               >
@@ -1564,7 +1574,7 @@ export function UnitDetailsClient({
           </div>
         </nav>
 
-        <div className="divide-y divide-gray-200">
+        <div className="divide-y divide-border">
           <div
             id="unit-information"
             className="scroll-mt-16 [&>section]:rounded-none [&>section]:border-0"

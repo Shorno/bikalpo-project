@@ -1,5 +1,6 @@
 "use client";
 
+import { HiddenAmount } from "@/components/features/to-let/hidden-amount";
 import {
   Ban,
   Bath,
@@ -88,9 +89,11 @@ function humanize(value: string) {
 }
 
 function formatMoney(value: number | null) {
-  return value === null
-    ? "Price hidden"
-    : `৳${new Intl.NumberFormat("en-BD").format(value)}`;
+  return value === null ? (
+    <HiddenAmount />
+  ) : (
+    `৳${new Intl.NumberFormat("en-BD").format(value)}`
+  );
 }
 
 function formatDate(value: string, includeTime = false) {

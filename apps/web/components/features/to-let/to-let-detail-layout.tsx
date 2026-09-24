@@ -23,7 +23,7 @@ interface ToLetDetailHeroProps {
   unitName: string;
   category: string;
   size: string;
-  monthlyRent: string;
+  monthlyRent: ReactNode;
   statusLabel: string;
   statusTone?: StatusTone;
   dateLabel: string;
@@ -261,6 +261,106 @@ export function ToLetInfoTile({
       <p className="mt-1 flex min-h-10 items-center break-words rounded-md border border-border bg-muted/30 px-3 text-sm font-medium text-foreground tabular-nums">
         {value}
       </p>
+    </div>
+  );
+}
+
+export function ToLetYesNoTile({
+  label,
+  value,
+}: {
+  label: string;
+  value: boolean | undefined;
+}) {
+  return (
+    <div className="min-w-0">
+      <p className="text-sm font-medium text-foreground">{label}</p>
+      <div className="mt-1 flex min-h-10 items-center rounded-md border border-border bg-muted/30 px-3">
+        <ToLetChoicePair
+          positiveLabel="Yes"
+          negativeLabel="No"
+          positive={value === true}
+          recorded={typeof value === "boolean"}
+        />
+      </div>
+    </div>
+  );
+}
+
+export function ToLetOptionTile({
+  label,
+  options,
+  value,
+}: {
+  label: string;
+  options: ReadonlyArray<{ value: string; label: string }>;
+  value: string;
+}) {
+  return (
+    <div className="min-w-0">
+      <p className="text-sm font-medium text-foreground">{label}</p>
+      <ul className="mt-1 grid grid-cols-2 gap-2 sm:grid-cols-4">
+        {options.map((option) => {
+          const selected = option.value === value;
+          return (
+            <li
+              key={option.value}
+              aria-current={selected ? "true" : undefined}
+              className={`flex min-h-10 items-center gap-2 rounded-md border px-3 text-sm ${
+                selected
+                  ? "border-primary bg-primary/5 font-semibold text-primary"
+                  : "border-border bg-muted/30 text-muted-foreground"
+              }`}
+            >
+              <span
+                aria-hidden="true"
+                className={`flex size-4 shrink-0 items-center justify-center rounded-full border ${
+                  selected ? "border-primary" : "border-border bg-card"
+                }`}
+              >
+                {selected ? <span className="size-2 rounded-full bg-primary" /> : null}
+              </span>
+              {option.label}
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
+export function ToLetFacilityRow({
+  label,
+  available,
+  included,
+}: {
+  label: string;
+  available: boolean | undefined;
+  included: boolean | null | undefined;
+}) {
+  return (
+    <div className="space-y-2">
+      <p className="text-sm font-medium text-foreground">{label}</p>
+      <div className="flex min-h-12 flex-wrap items-center justify-between gap-x-4 gap-y-2 rounded-md border border-border bg-muted/30 px-4 py-2">
+        <span className="inline-flex items-center gap-2 text-sm text-foreground">
+          <span
+            aria-hidden="true"
+            className={`flex size-4 items-center justify-center rounded-sm border ${
+              available ? "border-primary bg-primary text-white" : "border-border bg-card text-transparent"
+            }`}
+          >
+            <Check className="size-3" />
+          </span>
+          <span className="sr-only">{available ? "Available: " : "Not available: "}</span>
+          {label}
+        </span>
+        <ToLetChoicePair
+          positiveLabel="Included"
+          negativeLabel="Excluded"
+          positive={included === true}
+          recorded={available === true && typeof included === "boolean"}
+        />
+      </div>
     </div>
   );
 }

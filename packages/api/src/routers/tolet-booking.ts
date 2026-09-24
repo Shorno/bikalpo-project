@@ -601,7 +601,7 @@ export const toLetBookingRouter = {
 
       return {
         bookings: rows.map(({ booking, contract }) => ({
-          ...bookingDto(booking, Boolean(contract)),
+          ...bookingDto(booking, Boolean(contract) || booking.status === "accepted"),
           rentalSummary: contract
             ? {
                 status: shouldCompleteToLetContract(contract) ? "completed" as const : contract.status,

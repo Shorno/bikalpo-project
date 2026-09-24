@@ -1,5 +1,6 @@
 "use client";
 
+import { HiddenAmount } from "@/components/features/to-let/hidden-amount";
 import {
   ArrowLeft,
   Bell,
@@ -129,9 +130,11 @@ function tenantLabel(value: string) {
 }
 
 function formatMoney(value: number | null) {
-  return value === null
-    ? "—"
-    : `৳${new Intl.NumberFormat("en-BD").format(value)}`;
+  return value === null ? (
+    <HiddenAmount />
+  ) : (
+    `৳${new Intl.NumberFormat("en-BD").format(value)}`
+  );
 }
 
 function formatDate(value: string | null, includeTime = false) {
