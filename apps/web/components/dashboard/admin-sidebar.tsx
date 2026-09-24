@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import {
   ActivityIcon,
   Boxes,
+  Building2Icon,
   ClipboardListIcon,
   ContactIcon,
   DollarSignIcon,
@@ -184,11 +185,6 @@ function getAdminNavGroups(pendingApplications = 0): NavGroup[] {
           ],
         },
         {
-          title: "To-Let Listings",
-          url: `${ADMIN_BASE}/to-let`,
-          icon: StoreIcon,
-        },
-        {
           title: "Offer Structures",
           url: `${ADMIN_BASE}/offers`,
           icon: GiftIcon,
@@ -251,7 +247,10 @@ function getAdminNavGroups(pendingApplications = 0): NavGroup[] {
     },
     {
       label: "To-Let",
-      items: [{ title: "Banner & Title", url: `${ADMIN_BASE}/to-let`, icon: ImageIcon }],
+      items: [
+        { title: "Banner & Title", url: `${ADMIN_BASE}/to-let`, icon: ImageIcon },
+        { title: "Units", url: `${ADMIN_BASE}/to-let/units`, icon: Building2Icon },
+      ],
     },
     {
       label: "Marketing",

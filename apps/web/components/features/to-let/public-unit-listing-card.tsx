@@ -105,18 +105,7 @@ export function PublicUnitListingCard({
         </div>
 
         <div data-slot="summary" className="mt-4">
-          <p data-slot="rent" className="text-xl font-bold tracking-tight tabular-nums text-foreground sm:text-2xl">
-            {listing.monthlyRent === null
-              ? "— — —"
-              : `৳${listing.monthlyRent.toLocaleString("en-BD")}`}
-            <span className="ml-1 text-xs font-normal tracking-normal text-muted-foreground">
-              / Month
-            </span>
-            {listing.monthlyRent === null && (
-              <span className="sr-only">Rent hidden by owner</span>
-            )}
-          </p>
-          <h3 className="mt-2 text-sm font-semibold leading-6 text-foreground sm:text-base">
+          <h3 className="text-sm font-semibold leading-6 text-foreground sm:text-base">
             {detailHref ? (
               <Link
                 href={detailHref}

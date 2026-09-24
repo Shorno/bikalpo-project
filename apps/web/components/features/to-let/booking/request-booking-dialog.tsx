@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { CalendarCheck, CheckCircle2, Loader2 } from "lucide-react";
+import { ArrowRight, CheckCircle2, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -131,14 +131,15 @@ export function RequestBookingButton({
     >
       {createBooking.isPending ? (
         <Loader2 className="animate-spin" aria-hidden="true" />
-      ) : (
-        <CalendarCheck aria-hidden="true" />
-      )}
+      ) : null}
       {isCheckingSession
         ? "Checking account..."
         : createBooking.isPending
           ? "Sending request..."
-          : "Request Booking"}
+          : "Booking Request"}
+      {isCheckingSession || createBooking.isPending ? null : (
+        <ArrowRight aria-hidden="true" />
+      )}
     </Button>
   );
 }

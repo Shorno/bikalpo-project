@@ -18,6 +18,7 @@ import { adminItemRequestRouter } from "./admin-item-request";
 import { adminLandingRouter } from "./admin-landing";
 import { adminMarketingRouter } from "./admin-marketing";
 import { toLetBannerRouter } from "./tolet-banner";
+import { adminToLetUnitRouter } from "./admin-tolet-unit";
 import { adminOfferRouter } from "./admin-offer";
 import { adminOfferTemplateRouter } from "./admin-offer-template";
 import { adminOrderRouter } from "./admin-order";
@@ -158,6 +159,7 @@ export const appRouter = {
   toLetRental: toLetRentalRouter,
   toLetUnitListing: toLetUnitListingRouter,
   adminToLet: adminToLetRouter,
+  adminToLetUnit: adminToLetUnitRouter,
   adminWarehouseAssignment: adminWarehouseAssignmentRouter,
   adminShopCategoryAssignment: adminShopCategoryAssignmentRouter,
   adminArea: adminAreaRouter,

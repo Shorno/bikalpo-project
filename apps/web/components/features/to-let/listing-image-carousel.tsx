@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronLeft, ChevronRight, Images } from "lucide-react";
+import { ChevronLeft, ChevronRight, Image as ImageIcon } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import {
@@ -39,6 +39,11 @@ export function ListingImageCarousel({
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
   const hasMultipleImages = images.length > 1;
   const isPaused = isInteractionPaused || isUserPaused;
+  const dotCount = Math.min(images.length, 5);
+  const activeDot =
+    images.length <= 5
+      ? activeIndex
+      : Math.round((activeIndex / (images.length - 1)) * (dotCount - 1));
 
   useEffect(() => {
     setActiveIndex((index) => Math.min(index, Math.max(images.length - 1, 0)));
@@ -170,30 +175,51 @@ export function ListingImageCarousel({
         </>
       )}
 
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-x-0 bottom-0 z-[5] h-14 bg-gradient-to-t from-black/40 to-transparent md:h-16"
+      />
+
+      {hasMultipleImages ? (
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute bottom-3 left-1/2 z-10 flex -translate-x-1/2 items-center gap-1 md:bottom-4"
+        >
+          {Array.from({ length: dotCount }, (_, index) => (
+            <span
+              key={index}
+              className={cn(
+                "h-1.5 rounded-full bg-white shadow-sm transition-all duration-300",
+                index === activeDot ? "w-3.5 opacity-100" : "w-1.5 opacity-60",
+              )}
+            />
+          ))}
+        </div>
+      ) : null}
+
       {galleryHref ? (
         <Link
           href={galleryHref}
-          className="absolute bottom-2 right-2 z-10 inline-flex h-7 min-w-9 items-center justify-center gap-1 rounded-md bg-zinc-950/90 px-1.5 text-white transition-colors after:absolute after:-inset-2 md:bottom-3 md:right-3 md:h-9 md:min-w-12 md:rounded-lg md:px-2.5 md:after:-inset-1 hover:bg-zinc-950 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+          className={photoBadgeClassName}
           aria-label={`Open ${alt} photo gallery`}
         >
-          <Images className="size-3.5 md:size-5" aria-hidden="true" />
-          <span className="text-[10px] font-semibold tabular-nums md:text-xs">
-            {images.length}
-          </span>
+          <ImageIcon className="size-3 md:size-3.5" aria-hidden="true" />
+          <span className="tabular-nums">{images.length}</span>
         </Link>
       ) : hasMultipleImages ? (
         <button
           type="button"
           onClick={showNext}
-          className="absolute bottom-2 right-2 z-10 inline-flex h-7 min-w-9 items-center justify-center gap-1 rounded-md bg-zinc-950/90 px-1.5 text-white transition-colors after:absolute after:-inset-2 md:bottom-3 md:right-3 md:h-9 md:min-w-12 md:rounded-lg md:px-2.5 md:after:-inset-1 hover:bg-zinc-950 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+          className={photoBadgeClassName}
           aria-label={`Show next photo. Photo ${activeIndex + 1} of ${images.length} is currently shown`}
         >
-          <Images className="size-3.5 md:size-5" aria-hidden="true" />
-          <span className="text-[10px] font-semibold tabular-nums md:text-xs">
-            {images.length}
-          </span>
+          <ImageIcon className="size-3 md:size-3.5" aria-hidden="true" />
+          <span className="tabular-nums">{images.length}</span>
         </button>
       ) : null}
     </div>
   );
 }
+
+const photoBadgeClassName =
+  "absolute bottom-2 right-2 z-10 inline-flex h-6 items-center gap-1 rounded-full bg-black/45 px-2 text-[11px] font-medium text-white ring-1 ring-white/20 backdrop-blur-md transition-colors after:absolute after:-inset-2 hover:bg-black/60 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white md:bottom-3 md:right-3 md:h-7 md:px-2.5 md:text-xs";
