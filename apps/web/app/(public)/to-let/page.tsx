@@ -572,10 +572,9 @@ function OwnerCallToAction() {
   return (
     <section id="register-property" className="bg-muted/30 py-12 sm:py-16">
       <div className="site-container px-4 sm:px-6 lg:px-8">
-        <Button asChild size="lg" className="min-h-12 w-full md:hidden"><ToLetAccountLink href="/account/to-let/properties/new">Register Property <ArrowRight className="size-4" /></ToLetAccountLink></Button>
-        <div className="hidden gap-8 rounded-xl border border-border bg-card p-6 sm:p-8 md:grid lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center lg:p-10">
+        <div className="grid gap-6 rounded-xl border border-border bg-card p-5 sm:gap-8 sm:p-8 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center lg:p-10">
           <div className="max-w-3xl">
-            <h2 className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
+            <h2 className="text-xl leading-snug font-bold tracking-tight text-foreground sm:text-3xl">
               একটি Property নিবন্ধন করুন, হাজারো ভাড়াটিয়ার কাছে পৌঁছান—এক প্ল্যাটফর্মে
             </h2>
             <p className="mt-4 text-sm leading-7 text-muted-foreground">
@@ -588,12 +587,12 @@ function OwnerCallToAction() {
             </p>
           </div>
           <div className="grid min-w-0 gap-3 sm:min-w-64">
-            <Button asChild size="lg" className="rounded-md">
+            <Button asChild size="lg" className="min-h-11 rounded-md">
               <ToLetAccountLink href="/account/to-let/properties/new">
                 Property Account তৈরি করুন <ArrowRight className="size-4" />
               </ToLetAccountLink>
             </Button>
-            <Button asChild size="lg" variant="outline" className="rounded-md">
+            <Button asChild size="lg" variant="outline" className="min-h-11 rounded-md">
               <ToLetAccountLink href="/account/to-let/properties">
                 নতুন To-Let পোস্ট করুন <ArrowRight className="size-4" />
               </ToLetAccountLink>
