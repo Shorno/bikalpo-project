@@ -1,6 +1,6 @@
 import { ArrowRight, Bath, BedDouble, Eye, MapPin, Phone, Fence } from "lucide-react";
 import Link from "next/link";
-import { toLetCategoryLabel as humanize } from "@bikalpo-project/api/lib/tolet-categories";
+import { toLetCategoryLabel as humanize, toLetUnitCapabilities } from "@bikalpo-project/api/lib/tolet-categories";
 import { ListingImageCarousel } from "./listing-image-carousel";
 import styles from "./compact-listing-card.module.css";
 
@@ -58,11 +58,16 @@ export function PublicUnitListingCard({
     isGarage && listing.property.nearbyLandmark?.trim()
       ? `${listing.property.nearbyLandmark.trim()} (${listing.property.name})`
       : listing.location;
+  const mobileArea = listing.location.split(",")[0]?.trim() || listing.location;
+  const mobileUnitSummary = isGarage
+    ? "Garage"
+    : `${listing.unit.unitType === "warehouse" ? "Godown" : unitType} (${listing.unit.sizeSqFt.toLocaleString("en-BD")} S.F)`;
   const rooms = [
-    { value: listing.unit.bedrooms, label: "Bed", icon: BedDouble },
-    { value: listing.unit.bathrooms, label: "Bath", icon: Bath },
-    { value: listing.unit.balconies, label: "Balcony", icon: Fence },
+    { value: listing.unit.bedrooms, label: "Bed", mobileLabel: "Bed", icon: BedDouble },
+    { value: listing.unit.bathrooms, label: "Bath", mobileLabel: "Bathroom", icon: Bath },
+    { value: listing.unit.balconies, label: "Balcony", mobileLabel: "Balcony", icon: Fence },
   ].filter(({ value }) => value > 0);
+  const isResidential = toLetUnitCapabilities(listing.unit.unitType).bedrooms;
   const generatedDefaultTitle = `${listing.property.name} - ${listing.unit.name}`;
   const displayTitle =
     listing.title.trim().localeCompare(generatedDefaultTitle, undefined, {
@@ -72,7 +77,7 @@ export function PublicUnitListingCard({
       : listing.title;
 
   return (
-    <article className={`${compactMobile ? styles.compact : ""} group flex h-full min-w-0 flex-col overflow-hidden rounded-xl border border-border bg-card text-card-foreground transition-colors hover:border-primary/40 focus-within:border-primary`}>
+    <article data-residential={isResidential || undefined} className={`${compactMobile ? styles.compact : ""} group flex h-full min-w-0 flex-col overflow-hidden rounded-xl border border-border bg-card text-card-foreground transition-colors hover:border-primary/40 focus-within:border-primary`}>
       <div className="relative">
         <ListingImageCarousel
           imageUrls={listing.imageUrls}
@@ -95,7 +100,7 @@ export function PublicUnitListingCard({
             {listing.viewCount.toLocaleString("en-BD")} views
           </span>
           <span className="break-all text-xs tabular-nums text-muted-foreground">
-            ID: {listing.listingCode}
+            <MobileAlt compactMobile={compactMobile} desktop={`ID: ${listing.listingCode}`} mobile={listing.listingCode} />
           </span>
         </div>
 
@@ -117,27 +122,27 @@ export function PublicUnitListingCard({
                 href={detailHref}
                 className="rounded-sm hover:text-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
               >
-                {unitSummary}
+                <MobileAlt compactMobile={compactMobile} desktop={unitSummary} mobile={mobileUnitSummary} />
               </Link>
             ) : (
-              unitSummary
+              <MobileAlt compactMobile={compactMobile} desktop={unitSummary} mobile={mobileUnitSummary} />
             )}
           </h3>
         </div>
 
         {!isGarage && rooms.length > 0 ? (
           <ul className="mt-3 flex flex-wrap gap-x-3 gap-y-2 text-xs text-muted-foreground" aria-label="Room details">
-            {rooms.map(({ value, label, icon: Icon }) => (
+            {rooms.map(({ value, label, mobileLabel, icon: Icon }) => (
               <li key={label} className="inline-flex items-center gap-1.5">
                 <Icon className="size-3.5 shrink-0" aria-hidden="true" />
-                <span>{value} {label}</span>
+                <MobileAlt compactMobile={compactMobile} desktop={`${value} ${label}`} mobile={`${value} ${mobileLabel}`} />
               </li>
             ))}
           </ul>
         ) : null}
         <div data-slot="location" className="mt-3 mb-5 flex items-start gap-1.5 text-xs leading-5 text-muted-foreground sm:text-sm">
           <MapPin className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
-          <p className="line-clamp-2 break-words">{location}</p>
+          <p className="line-clamp-2 break-words"><MobileAlt compactMobile={compactMobile} desktop={location} mobile={mobileArea} /></p>
         </div>
 
         <div
@@ -177,4 +182,12 @@ export function PublicUnitListingCard({
       </div>
     </article>
   );
+}
+
+function MobileAlt({ compactMobile, desktop, mobile }: { compactMobile: boolean; desktop: string; mobile: string }) {
+  if (!compactMobile || desktop === mobile) return <span>{desktop}</span>;
+  return <>
+    <span className="md:hidden">{mobile}</span>
+    <span className="hidden md:inline">{desktop}</span>
+  </>;
 }

@@ -186,11 +186,13 @@ function LoadedUnitForm({
           `/account/to-let/properties/${property.propertyCode}/units/${unit.unitCode}`,
         );
       } else {
-        await createMutation.mutateAsync({
+        const created = await createMutation.mutateAsync({
           propertyCode: property.propertyCode,
           data,
         });
-        router.push(`/account/to-let/properties/${property.propertyCode}`);
+        router.push(
+          `/account/to-let/properties/${property.propertyCode}/units/${created.unit.unitCode}/listing`,
+        );
       }
     } catch {
       // Mutation hooks display API errors.
