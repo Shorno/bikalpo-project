@@ -16,8 +16,10 @@ import {
     user,
 } from "@bikalpo-project/db/schema";
 import { and, count, desc, eq, gte, sql } from "drizzle-orm";
+import { z } from "zod";
 
 import { adminProcedure } from "../index";
+import { getDashboardPerformance } from "./helpers/dashboard-performance";
 
 /** Safe wrapper – if a query throws, return the fallback value instead of crashing the entire handler */
 async function safe<T>(fn: () => Promise<T>, fallback: T): Promise<T> {
@@ -30,6 +32,18 @@ async function safe<T>(fn: () => Promise<T>, fallback: T): Promise<T> {
 }
 
 export const dashboardRouter = {
+    getPerformance: adminProcedure
+        .route({
+            method: "GET",
+            path: "/dashboard/performance",
+            tags: ["Dashboard"],
+            summary: "Get live user and order performance",
+        })
+        .input(z.object({
+            usersPeriod: z.enum(["daily", "monthly", "yearly"]).default("daily"),
+            ordersPeriod: z.enum(["daily", "monthly", "yearly"]).default("daily"),
+        }))
+        .handler(({ input }) => getDashboardPerformance(input)),
     /**
      * Get admin dashboard statistics – B2B + B2C overview
      * REST: GET /dashboard/stats
