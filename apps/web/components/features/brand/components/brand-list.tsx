@@ -2,9 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { useBrandColumns } from "@/components/features/brand/components/brand-columns";
-import BrandCsvActions from "@/components/features/brand/components/brand-csv-actions";
 import BrandTable from "@/components/features/brand/components/brand-table";
-import NewBrandDialog from "@/components/features/brand/components/new-brand-dialog";
 import {
   SetupErrorState,
   SetupPageHeader,
@@ -23,11 +21,10 @@ export default function BrandList() {
   } = useQuery(orpc.brand.getAdminAll.queryOptions());
 
   return (
-    <SetupPageShell>
+    <SetupPageShell width="wide">
       <SetupPageHeader
-        action={<NewBrandDialog />}
         count={brands.length}
-        secondaryActions={<BrandCsvActions brands={brands} />}
+        description="Manage brands used across the product catalog."
         title="Brands"
       />
       {isLoading ? (

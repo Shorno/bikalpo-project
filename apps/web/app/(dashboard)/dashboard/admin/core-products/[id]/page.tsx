@@ -1,7 +1,7 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { LoaderCircle, Power, Trash2 } from "lucide-react";
+import { LoaderCircle, Pencil, Power, Trash2 } from "lucide-react";
 import { useParams, useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -10,22 +10,12 @@ import EditCoreProductDialog from "@/components/features/core-product/components
 import {
   ActiveStatusBadge,
   SetupDetailHeader,
-  SetupEmptySection,
   SetupErrorState,
-  SetupMetricStrip,
-  SetupRelatedTable,
   SetupSection,
 } from "@/components/features/product-setup";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { ADMIN_BASE } from "@/lib/routes";
 import { orpc } from "@/utils/orpc";
 
@@ -65,43 +55,18 @@ export default function CoreProductDetailPage() {
   const identity = data?.coreProduct;
   if (!identity) return null;
 
+  const configuredVariantTypes = [
+    identity.packVariantCount > 0 ? "Pack Based" : null,
+    identity.looseVariantCount > 0 ? "Loose" : null,
+  ].filter((type): type is string => type !== null);
+
   return (
-    <div className="space-y-5">
+    <div className="mx-auto w-full max-w-4xl space-y-5">
       <SetupDetailHeader
-        actions={
-          <>
-            <Button onClick={() => setShowEdit(true)} variant="outline">
-              Edit
-            </Button>
-            <Button
-              disabled={toggleMutation.isPending}
-              onClick={() => toggleMutation.mutate()}
-              variant="outline"
-            >
-              {toggleMutation.isPending ? (
-                <LoaderCircle
-                  aria-hidden="true"
-                  className="size-4 animate-spin"
-                />
-              ) : (
-                <Power aria-hidden="true" className="size-4" />
-              )}
-              {identity.isActive ? "Disable" : "Enable"}
-            </Button>
-            <Button onClick={() => setShowDelete(true)} variant="destructive">
-              <Trash2 aria-hidden="true" className="size-4" />
-              Delete
-            </Button>
-          </>
-        }
         backHref={`${ADMIN_BASE}/core-products`}
         backLabel="Back to Core Identities"
-        code={identity.sku}
-        hierarchy={[identity.category.name, identity.subCategory?.name]
-          .filter(Boolean)
-          .join(" / ")}
-        name={identity.name}
-        status={<ActiveStatusBadge isActive={identity.isActive} />}
+        code={`ID ${identity.id}`}
+        name="Core Product Details"
       />
       <EditCoreProductDialog
         coreProduct={identity}
@@ -115,20 +80,12 @@ export default function CoreProductDetailPage() {
         open={showDelete}
       />
 
-      <SetupMetricStrip
-        metrics={[
-          {
-            label: "Configured brands",
-            value: identity.configuredBrands.length,
-          },
-          { label: "Pack variants", value: identity.packVariantCount },
-          { label: "Loose variants", value: identity.looseVariantCount },
-          { label: "Products", value: identity.configuredProducts.length },
-        ]}
-      />
-
-      <SetupSection title="Identity details">
-        <dl className="grid gap-x-8 gap-y-4 p-4 text-sm sm:grid-cols-2 lg:grid-cols-4">
+      <section className="rounded-lg border bg-card">
+        <dl className="grid gap-x-8 gap-y-5 p-5 text-sm sm:grid-cols-2">
+          <div>
+            <dt className="text-xs text-muted-foreground">Product name</dt>
+            <dd className="mt-1 font-semibold">{identity.name}</dd>
+          </div>
           <div>
             <dt className="text-xs text-muted-foreground">Type</dt>
             <dd className="mt-1 font-medium">
@@ -146,119 +103,74 @@ export default function CoreProductDetailPage() {
             </dd>
           </div>
           <div>
-            <dt className="text-xs text-muted-foreground">Top brand</dt>
-            <dd className="mt-1 font-medium">
-              {identity.topBrand?.name ?? "—"}
+            <dt className="text-xs text-muted-foreground">Status</dt>
+            <dd className="mt-1">
+              <ActiveStatusBadge isActive={identity.isActive} />
             </dd>
           </div>
-          {identity.description && (
-            <div className="sm:col-span-2 lg:col-span-4">
-              <dt className="text-xs text-muted-foreground">Description</dt>
-              <dd className="mt-1 max-w-3xl text-muted-foreground">
-                {identity.description}
-              </dd>
-            </div>
-          )}
-        </dl>
-      </SetupSection>
-
-      <div className="grid gap-5 xl:grid-cols-2">
-        <SetupSection
-          description="Derived from configured products; no obsolete brand-mode flags are stored."
-          title="Configured brands"
-        >
-          {identity.configuredBrands.length === 0 ? (
-            <SetupEmptySection
-              description="Configure a product to establish brand usage for this identity."
-              title="No configured brands"
-            />
-          ) : (
-            <div className="divide-y">
-              {identity.configuredBrands.map((brand) => (
-                <div
-                  className="flex items-center justify-between px-4 py-3"
-                  key={brand.id}
-                >
-                  <span className="text-sm font-medium">{brand.name}</span>
-                  <span className="font-mono text-xs tabular-nums text-muted-foreground">
-                    {brand.productCount} products
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
-        </SetupSection>
-
-        <SetupSection
-          description="Pack and Loose structure derived from scoped Variant Options in configured products."
-          title="Variant structure"
-        >
-          {identity.variantOptions.length === 0 ? (
-            <SetupEmptySection
-              description="No variants have been configured for this identity."
-              title="No variant structure"
-            />
-          ) : (
-            <div className="divide-y">
-              {identity.variantOptions.map((variant) => (
-                <div
-                  className="flex items-center justify-between gap-3 px-4 py-3"
-                  key={variant.id}
-                >
-                  <div>
-                    <p className="text-sm font-medium">{variant.name}</p>
-                    <p className="font-mono text-xs text-muted-foreground">
-                      {[variant.size, variant.unit].filter(Boolean).join(" ")}
-                    </p>
-                  </div>
-                  <Badge variant="outline">
-                    {variant.variantType === "pack" ? "Pack" : "Loose"}
+          <div>
+            <dt className="text-xs text-muted-foreground">
+              Default Brand Support
+            </dt>
+            <dd className="mt-1 font-medium">
+              {identity.brandCreationMode === "batch"
+                ? "Multi Brand"
+                : "Single Brand"}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-xs text-muted-foreground">
+              Variant Type Support
+            </dt>
+            <dd className="mt-1 flex flex-wrap gap-2">
+              {configuredVariantTypes.length > 0 ? (
+                configuredVariantTypes.map((type) => (
+                  <Badge key={type} variant="outline">
+                    {type}
                   </Badge>
-                </div>
-              ))}
-            </div>
-          )}
-        </SetupSection>
+                ))
+              ) : (
+                <span className="font-medium">None</span>
+              )}
+            </dd>
+          </div>
+        </dl>
+      </section>
+
+      <div className="rounded-lg border bg-card p-5">
+        <p className="text-xs text-muted-foreground">Used In Products</p>
+        <p className="mt-1 text-lg font-semibold tabular-nums">
+          {identity.configuredProducts.length.toLocaleString()}{" "}
+          {identity.configuredProducts.length === 1 ? "product" : "products"}
+        </p>
       </div>
 
-      <SetupSection
-        action={
-          <Button asChild size="sm" variant="outline">
-            <a href={`${ADMIN_BASE}/setup-requests`}>Review Setup Requests</a>
+      <SetupSection title="Action">
+        <div className="flex flex-wrap gap-2 p-5">
+          <Button onClick={() => setShowEdit(true)} variant="outline">
+            <Pencil aria-hidden="true" className="size-4" />
+            Edit Identity
           </Button>
-        }
-        description="Admin, warehouse, and shop product records configured from this identity."
-        title="Configured products"
-      >
-        {identity.configuredProducts.length === 0 ? (
-          <SetupEmptySection
-            description="No product records are currently configured from this identity."
-            title="No configured products"
-          />
-        ) : (
-          <SetupRelatedTable>
-            <TableHeader className="bg-muted/40">
-              <TableRow>
-                <TableHead>Product</TableHead>
-                <TableHead>Brand</TableHead>
-                <TableHead>Owner source</TableHead>
-                <TableHead>Status</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {identity.configuredProducts.map((product) => (
-                <TableRow key={product.id}>
-                  <TableCell className="font-medium">{product.name}</TableCell>
-                  <TableCell>{product.brand?.name ?? "—"}</TableCell>
-                  <TableCell className="capitalize">
-                    {product.creatorSource}
-                  </TableCell>
-                  <TableCell className="capitalize">{product.status}</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </SetupRelatedTable>
-        )}
+          <Button
+            disabled={toggleMutation.isPending}
+            onClick={() => toggleMutation.mutate()}
+            variant="outline"
+          >
+            {toggleMutation.isPending ? (
+              <LoaderCircle
+                aria-hidden="true"
+                className="size-4 animate-spin"
+              />
+            ) : (
+              <Power aria-hidden="true" className="size-4" />
+            )}
+            {identity.isActive ? "Disable" : "Enable"}
+          </Button>
+          <Button onClick={() => setShowDelete(true)} variant="destructive">
+            <Trash2 aria-hidden="true" className="size-4" />
+            Delete
+          </Button>
+        </div>
       </SetupSection>
     </div>
   );

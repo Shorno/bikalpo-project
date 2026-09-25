@@ -15,6 +15,7 @@ import {
 } from "@tanstack/react-table";
 import {
   ArrowUpDown,
+  Clock3,
   Eye,
   Loader2,
   PackagePlus,
@@ -47,6 +48,7 @@ import { ADMIN_BASE } from "@/lib/routes";
 
 const ALL = "all";
 const PAGE_SIZE = 10;
+const PAGE_SIZE_OPTIONS = [10, 20, 50];
 
 export type CatalogProduct = {
   id: number;
@@ -318,34 +320,36 @@ export default function ProductCatalogTable({
 
   const hasFilters = search.trim().length > 0 || columnFilters.length > 0;
   const filteredCount = table.getFilteredRowModel().rows.length;
-  const pageCount = table.getPageCount();
+  const pageCount = Math.max(1, table.getPageCount());
   const currentPage = table.getState().pagination.pageIndex + 1;
+  const firstRow =
+    filteredCount === 0 ? 0 : (currentPage - 1) * pagination.pageSize + 1;
+  const lastRow = Math.min(currentPage * pagination.pageSize, filteredCount);
 
   return (
-    <section className="overflow-hidden rounded-xl border bg-card shadow-sm">
-      <div className="border-b p-4">
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[1.5fr_repeat(4,1fr)]">
-          <div className="space-y-1.5">
-            <Label
-              htmlFor="product-catalog-search"
-              className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground"
-            >
-              Search
-            </Label>
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                id="product-catalog-search"
-                value={search}
-                onChange={(event) => {
-                  setSearch(event.target.value);
-                  table.setPageIndex(0);
-                }}
-                placeholder="Product name or ID…"
-                className="pl-9"
-              />
-            </div>
-          </div>
+    <>
+      <section
+        aria-label="Product filters"
+        className="rounded-xl border bg-card p-4 shadow-sm"
+      >
+        <div className="relative mb-4 w-full sm:w-2/3">
+          <Search
+            className="absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+            aria-hidden="true"
+          />
+          <Input
+            id="product-catalog-search"
+            aria-label="Search products"
+            value={search}
+            onChange={(event) => {
+              setSearch(event.target.value);
+              table.setPageIndex(0);
+            }}
+            placeholder="Search products..."
+            className="h-11 pl-10"
+          />
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <FilterSelect
             label="Type"
             value={typeFilter}
@@ -382,180 +386,232 @@ export default function ProductCatalogTable({
           />
         </div>
         {hasFilters ? (
-          <div className="mt-3 flex justify-end border-t pt-3">
+          <div className="mt-4 flex justify-end border-t pt-3">
             <Button variant="ghost" size="sm" onClick={clearFilters}>
               <X className="size-4" />
               Clear filters
             </Button>
           </div>
         ) : null}
+      </section>
+
+      <div className="flex justify-center">
+        <div className="flex flex-wrap items-center justify-center gap-2">
+          <Button asChild variant="outline" size="sm">
+            <Link href={`${ADMIN_BASE}/setup-requests`}>
+              <Clock3 className="size-4" />
+              Requests
+            </Link>
+          </Button>
+          <Button asChild size="sm">
+            <Link href={`${ADMIN_BASE}/products/new`}>
+              <PackagePlus className="size-4" />
+              Create Product
+            </Link>
+          </Button>
+        </div>
       </div>
 
-      <div className="overflow-x-auto">
-        <Table className="min-w-[760px]">
-          <TableHeader>
-            {table.getHeaderGroups().map((headerGroup) => (
-              <TableRow key={headerGroup.id} className="hover:bg-transparent">
-                {headerGroup.headers.map((header) => (
-                  <TableHead
-                    key={header.id}
-                    className={
-                      header.column.id === "productId"
-                        ? "w-36"
-                        : header.column.id === "actions"
-                          ? "hidden text-right md:table-cell"
-                          : undefined
-                    }
-                  >
-                    {header.isPlaceholder
-                      ? null
-                      : flexRender(
-                          header.column.columnDef.header,
-                          header.getContext(),
-                        )}
-                  </TableHead>
-                ))}
-              </TableRow>
-            ))}
-          </TableHeader>
-          <TableBody>
-            {isLoading ? (
-              <StatusRow colSpan={columns.length}>
-                <span className="inline-flex items-center gap-2 text-muted-foreground">
-                  <Loader2 className="size-4 animate-spin" />
-                  Loading catalog…
-                </span>
-              </StatusRow>
-            ) : isError ? (
-              <StatusRow colSpan={columns.length}>
-                <div className="space-y-3">
-                  <div>
-                    <p className="font-medium">Could not load products</p>
-                    <p className="text-sm text-muted-foreground">
-                      Please retry the catalog request.
-                    </p>
-                  </div>
-                  <Button variant="outline" size="sm" onClick={onRetry}>
-                    Try again
-                  </Button>
-                </div>
-              </StatusRow>
-            ) : data.length === 0 ? (
-              <StatusRow colSpan={columns.length} tall>
-                <div className="flex flex-col items-center">
-                  <PackagePlus className="size-8 text-muted-foreground" />
-                  <p className="mt-3 font-medium">No products yet</p>
-                  <p className="mt-1 max-w-md text-sm text-muted-foreground">
-                    Create a product with its brand and variant configuration to
-                    add it to the catalog.
-                  </p>
-                  <Button asChild size="sm" className="mt-4">
-                    <Link href={`${ADMIN_BASE}/products/new`}>
-                      <PackagePlus className="size-4" />
-                      Create Product
-                    </Link>
-                  </Button>
-                </div>
-              </StatusRow>
-            ) : table.getRowModel().rows.length === 0 ? (
-              <StatusRow colSpan={columns.length}>
-                <div className="space-y-3">
-                  <div>
-                    <p className="font-medium">No products found</p>
-                    <p className="text-sm text-muted-foreground">
-                      Try a different search or filter.
-                    </p>
-                  </div>
-                  <Button variant="outline" size="sm" onClick={clearFilters}>
-                    Clear filters
-                  </Button>
-                </div>
-              </StatusRow>
-            ) : (
-              table.getRowModel().rows.map((row) => {
-                const productHref = `${ADMIN_BASE}/products/${row.original.id}`;
-                const openProduct = () => {
-                  if (isMobile) router.push(productHref);
-                };
-
-                return (
+      <div className="space-y-4">
+        <section
+          aria-label="Products"
+          className="overflow-hidden rounded-xl border bg-card shadow-sm"
+        >
+          <div className="overflow-x-auto">
+            <Table className="min-w-[760px]">
+              <TableHeader>
+                {table.getHeaderGroups().map((headerGroup) => (
                   <TableRow
-                    key={row.id}
-                    role={isMobile ? "link" : undefined}
-                    tabIndex={isMobile ? 0 : undefined}
-                    aria-label={
-                      isMobile ? `View ${row.original.name}` : undefined
-                    }
-                    onClick={openProduct}
-                    onKeyDown={(event) => {
-                      if (
-                        isMobile &&
-                        (event.key === "Enter" || event.key === " ")
-                      ) {
-                        event.preventDefault();
-                        router.push(productHref);
-                      }
-                    }}
-                    className="max-md:cursor-pointer max-md:focus-visible:bg-muted/60 max-md:focus-visible:outline-none"
+                    key={headerGroup.id}
+                    className="hover:bg-transparent"
                   >
-                    {row.getVisibleCells().map((cell) => (
-                      <TableCell
-                        key={cell.id}
+                    {headerGroup.headers.map((header) => (
+                      <TableHead
+                        key={header.id}
                         className={
-                          cell.column.id === "productId"
-                            ? "font-mono text-sm font-medium tabular-nums"
-                            : cell.column.id === "product"
-                              ? "font-medium"
-                              : cell.column.id === "actions"
-                                ? "hidden md:table-cell"
-                                : undefined
+                          header.column.id === "productId"
+                            ? "w-36"
+                            : header.column.id === "actions"
+                              ? "hidden text-right md:table-cell"
+                              : undefined
                         }
                       >
-                        {flexRender(
-                          cell.column.columnDef.cell,
-                          cell.getContext(),
-                        )}
-                      </TableCell>
+                        {header.isPlaceholder
+                          ? null
+                          : flexRender(
+                              header.column.columnDef.header,
+                              header.getContext(),
+                            )}
+                      </TableHead>
                     ))}
                   </TableRow>
-                );
-              })
-            )}
-          </TableBody>
-        </Table>
-      </div>
+                ))}
+              </TableHeader>
+              <TableBody>
+                {isLoading ? (
+                  <StatusRow colSpan={columns.length}>
+                    <span className="inline-flex items-center gap-2 text-muted-foreground">
+                      <Loader2 className="size-4 animate-spin" />
+                      Loading catalog…
+                    </span>
+                  </StatusRow>
+                ) : isError ? (
+                  <StatusRow colSpan={columns.length}>
+                    <div className="space-y-3">
+                      <div>
+                        <p className="font-medium">Could not load products</p>
+                        <p className="text-sm text-muted-foreground">
+                          Please retry the catalog request.
+                        </p>
+                      </div>
+                      <Button variant="outline" size="sm" onClick={onRetry}>
+                        Try again
+                      </Button>
+                    </div>
+                  </StatusRow>
+                ) : data.length === 0 ? (
+                  <StatusRow colSpan={columns.length} tall>
+                    <div className="flex flex-col items-center">
+                      <PackagePlus className="size-8 text-muted-foreground" />
+                      <p className="mt-3 font-medium">No products yet</p>
+                      <p className="mt-1 max-w-md text-sm text-muted-foreground">
+                        Create a product with its brand and variant
+                        configuration to add it to the catalog.
+                      </p>
+                      <Button asChild size="sm" className="mt-4">
+                        <Link href={`${ADMIN_BASE}/products/new`}>
+                          <PackagePlus className="size-4" />
+                          Create Product
+                        </Link>
+                      </Button>
+                    </div>
+                  </StatusRow>
+                ) : table.getRowModel().rows.length === 0 ? (
+                  <StatusRow colSpan={columns.length}>
+                    <div className="space-y-3">
+                      <div>
+                        <p className="font-medium">No products found</p>
+                        <p className="text-sm text-muted-foreground">
+                          Try a different search or filter.
+                        </p>
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={clearFilters}
+                      >
+                        Clear filters
+                      </Button>
+                    </div>
+                  </StatusRow>
+                ) : (
+                  table.getRowModel().rows.map((row) => {
+                    const productHref = `${ADMIN_BASE}/products/${row.original.id}`;
+                    const openProduct = () => {
+                      if (isMobile) router.push(productHref);
+                    };
 
-      {!isLoading && !isError && data.length > 0 ? (
-        <div className="flex flex-col items-center justify-between gap-3 border-t p-4 text-sm sm:flex-row">
-          <span className="text-muted-foreground">
-            {filteredCount} of {data.length} products
-          </span>
-          {pageCount > 1 ? (
-            <div className="flex items-center gap-2">
-              <span className="text-muted-foreground">
-                Page {currentPage} of {pageCount}
-              </span>
+                    return (
+                      <TableRow
+                        key={row.id}
+                        role={isMobile ? "link" : undefined}
+                        tabIndex={isMobile ? 0 : undefined}
+                        aria-label={
+                          isMobile ? `View ${row.original.name}` : undefined
+                        }
+                        onClick={openProduct}
+                        onKeyDown={(event) => {
+                          if (
+                            isMobile &&
+                            (event.key === "Enter" || event.key === " ")
+                          ) {
+                            event.preventDefault();
+                            router.push(productHref);
+                          }
+                        }}
+                        className="max-md:cursor-pointer max-md:focus-visible:bg-muted/60 max-md:focus-visible:outline-none"
+                      >
+                        {row.getVisibleCells().map((cell) => (
+                          <TableCell
+                            key={cell.id}
+                            className={
+                              cell.column.id === "productId"
+                                ? "font-mono text-sm font-medium tabular-nums"
+                                : cell.column.id === "product"
+                                  ? "font-medium"
+                                  : cell.column.id === "actions"
+                                    ? "hidden md:table-cell"
+                                    : undefined
+                            }
+                          >
+                            {flexRender(
+                              cell.column.columnDef.cell,
+                              cell.getContext(),
+                            )}
+                          </TableCell>
+                        ))}
+                      </TableRow>
+                    );
+                  })
+                )}
+              </TableBody>
+            </Table>
+          </div>
+        </section>
+
+        {!isLoading && !isError && data.length > 0 ? (
+          <nav
+            aria-label="Catalog pagination"
+            className="flex flex-col gap-3 text-sm sm:flex-row sm:items-center sm:justify-between"
+          >
+            <p className="font-mono text-xs tabular-nums text-muted-foreground">
+              {firstRow}–{lastRow} of {filteredCount}
+            </p>
+            <div className="flex items-center justify-between gap-2 sm:justify-end">
+              <Select
+                value={String(pagination.pageSize)}
+                onValueChange={(value) =>
+                  setPagination({ pageIndex: 0, pageSize: Number(value) })
+                }
+              >
+                <SelectTrigger
+                  aria-label="Rows per page"
+                  className="h-11 w-28 shadow-none sm:h-9"
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent align="end">
+                  {PAGE_SIZE_OPTIONS.map((option) => (
+                    <SelectItem key={option} value={String(option)}>
+                      {option} rows
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
               <Button
-                variant="outline"
-                size="sm"
+                className="h-11 sm:h-9"
                 disabled={!table.getCanPreviousPage()}
                 onClick={() => table.previousPage()}
+                variant="outline"
               >
                 Previous
               </Button>
+              <span className="min-w-16 text-center font-mono text-xs tabular-nums text-muted-foreground">
+                {currentPage} / {pageCount}
+              </span>
               <Button
-                variant="outline"
-                size="sm"
+                className="h-11 sm:h-9"
                 disabled={!table.getCanNextPage()}
                 onClick={() => table.nextPage()}
+                variant="outline"
               >
                 Next
               </Button>
             </div>
-          ) : null}
-        </div>
-      ) : null}
-    </section>
+          </nav>
+        ) : null}
+      </div>
+    </>
   );
 }
 

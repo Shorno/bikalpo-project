@@ -3,6 +3,7 @@
 import type { ColumnDef } from "@tanstack/react-table";
 import {
   ActiveStatusBadge,
+  SetupActionRow,
   SetupEntityTable,
   SetupToolbar,
 } from "@/components/features/product-setup";
@@ -63,6 +64,9 @@ export default function ProductTypeTable({
         searchPlaceholder="Search Type Name"
         searchValue={search}
       />
+      <SetupActionRow>
+        <NewTypeDialog />
+      </SetupActionRow>
       <SetupEntityTable
         columns={columns}
         data={data}

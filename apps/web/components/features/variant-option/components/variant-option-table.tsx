@@ -5,6 +5,7 @@ import { parseAsString, useQueryState } from "nuqs";
 import { type ReactNode, useMemo } from "react";
 import {
   ActiveStatusBadge,
+  SetupActionRow,
   SetupEntityTable,
   SetupToolbar,
 } from "@/components/features/product-setup";
@@ -16,6 +17,7 @@ interface VariantOptionTableProps {
   types?: { id: number; name: string }[];
   categories?: { id: number; name: string; typeId: number | null }[];
   emptyAction?: ReactNode;
+  actions?: ReactNode;
 }
 
 export default function VariantOptionTable({
@@ -24,6 +26,7 @@ export default function VariantOptionTable({
   types = [],
   categories = [],
   emptyAction,
+  actions,
 }: VariantOptionTableProps) {
   const [search, setSearch] = useQueryState(
     "q",
@@ -172,6 +175,7 @@ export default function VariantOptionTable({
         searchPlaceholder="Search variant name or SKU"
         searchValue={search}
       />
+      {actions && <SetupActionRow>{actions}</SetupActionRow>}
       <SetupEntityTable
         columns={columns}
         data={filteredData}

@@ -4,16 +4,29 @@ import { cn } from "@/lib/utils";
 type SetupPageShellProps = {
   children: ReactNode;
   className?: string;
+  width?: "compact" | "standard" | "wide" | "expanded";
 };
 
-/**
- * Centered container for the product setup pages. These tables carry 4-7 narrow
- * columns, so a capped measure keeps the row content and its action column
- * within a comfortable scan distance.
- */
-export function SetupPageShell({ children, className }: SetupPageShellProps) {
+const widthClasses = {
+  compact: "max-w-3xl",
+  standard: "max-w-4xl",
+  wide: "max-w-5xl",
+  expanded: "max-w-6xl",
+} as const;
+
+export function SetupPageShell({
+  children,
+  className,
+  width,
+}: SetupPageShellProps) {
   return (
-    <div className={cn("mx-auto w-full max-w-7xl space-y-5", className)}>
+    <div
+      className={cn(
+        "mx-auto w-full space-y-5",
+        width ? widthClasses[width] : "max-w-7xl",
+        className,
+      )}
+    >
       {children}
     </div>
   );

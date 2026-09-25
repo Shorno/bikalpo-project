@@ -30,7 +30,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { cn } from "@/lib/utils";
 
 type MobileRowDefinition<TData> = {
   href?: (row: TData) => string;
@@ -142,29 +141,84 @@ export function SetupEntityTable<TData, TValue>({
     },
   });
 
+  const footer = (
+    <div className="flex flex-col gap-3 text-sm sm:flex-row sm:items-center sm:justify-between">
+      <p className="font-mono text-xs tabular-nums text-muted-foreground">
+        {totalItems === 0 ? 0 : (effectivePage - 1) * effectivePageSize + 1}–
+        {Math.min(effectivePage * effectivePageSize, totalItems)} of{" "}
+        {totalItems}
+      </p>
+      <div className="flex items-center justify-between gap-2 sm:justify-end">
+        <Select
+          onValueChange={(value) => {
+            changePageSize(Number(value));
+            changePage(1);
+          }}
+          value={String(effectivePageSize)}
+        >
+          <SelectTrigger
+            aria-label="Rows per page"
+            className="h-11 w-28 shadow-none sm:h-9"
+          >
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent align="end">
+            {pageSizeOptions.map((option) => (
+              <SelectItem key={option} value={String(option)}>
+                {option} rows
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Button
+          className="h-11 sm:h-9"
+          disabled={effectivePage <= 1}
+          onClick={() => changePage(effectivePage - 1)}
+          variant="outline"
+        >
+          Previous
+        </Button>
+        <span className="min-w-16 text-center font-mono text-xs tabular-nums text-muted-foreground">
+          {effectivePage} / {pageCount}
+        </span>
+        <Button
+          className="h-11 sm:h-9"
+          disabled={effectivePage >= pageCount}
+          onClick={() => changePage(effectivePage + 1)}
+          variant="outline"
+        >
+          Next
+        </Button>
+      </div>
+    </div>
+  );
+
   if (data.length === 0) {
     return (
-      <div className="flex min-h-64 flex-col items-center justify-center rounded-lg border border-dashed px-6 py-12 text-center">
-        <h2 className="text-sm font-semibold">{emptyTitle}</h2>
-        <p className="mt-1 max-w-md text-sm text-muted-foreground">
-          {emptyDescription}
-        </p>
-        {emptyAction && <div className="mt-4">{emptyAction}</div>}
+      <div className="space-y-4">
+        <div className="flex min-h-64 flex-col items-center justify-center rounded-xl border border-dashed bg-card px-6 py-12 text-center shadow-sm">
+          <h2 className="text-sm font-semibold">{emptyTitle}</h2>
+          <p className="mt-1 max-w-md text-sm text-muted-foreground">
+            {emptyDescription}
+          </p>
+          {emptyAction && <div className="mt-4">{emptyAction}</div>}
+        </div>
+        {footer}
       </div>
     );
   }
 
   return (
-    <div className="space-y-3">
-      <div className="hidden overflow-hidden rounded-lg border md:block">
+    <div className="space-y-4">
+      <div className="hidden overflow-hidden rounded-xl border bg-card shadow-sm md:block">
         <div className="overflow-x-auto">
           <Table>
-            <TableHeader className="bg-muted/50">
+            <TableHeader>
               {table.getHeaderGroups().map((headerGroup) => (
                 <TableRow key={headerGroup.id}>
                   {headerGroup.headers.map((header) => (
                     <TableHead
-                      className="h-11 whitespace-nowrap text-xs font-semibold uppercase tracking-wide text-muted-foreground"
+                      className="h-10 whitespace-nowrap text-sm font-medium text-foreground"
                       key={header.id}
                     >
                       {header.isPlaceholder ? null : header.column.getCanSort() ? (
@@ -204,9 +258,9 @@ export function SetupEntityTable<TData, TValue>({
             </TableHeader>
             <TableBody>
               {table.getRowModel().rows.map((row) => (
-                <TableRow className="h-12 hover:bg-muted/30" key={row.id}>
+                <TableRow className="h-11 hover:bg-muted/30" key={row.id}>
                   {row.getVisibleCells().map((cell) => (
-                    <TableCell className="py-2.5" key={cell.id}>
+                    <TableCell className="py-2" key={cell.id}>
                       {flexRender(
                         cell.column.columnDef.cell,
                         cell.getContext(),
@@ -220,7 +274,7 @@ export function SetupEntityTable<TData, TValue>({
         </div>
       </div>
 
-      <div className="divide-y overflow-hidden rounded-lg border md:hidden">
+      <div className="divide-y overflow-hidden rounded-xl border bg-card shadow-sm md:hidden">
         {table.getRowModel().rows.map((tableRow, index) => {
           const row = tableRow.original;
           const meta = mobile.meta?.(row) ?? [];
@@ -275,59 +329,7 @@ export function SetupEntityTable<TData, TValue>({
         })}
       </div>
 
-      <div className="flex flex-col gap-3 text-sm sm:flex-row sm:items-center sm:justify-between">
-        <p className="font-mono text-xs tabular-nums text-muted-foreground">
-          {totalItems === 0 ? 0 : (effectivePage - 1) * effectivePageSize + 1}–
-          {Math.min(effectivePage * effectivePageSize, totalItems)} of{" "}
-          {totalItems}
-        </p>
-        <div className="flex items-center justify-between gap-2 sm:justify-end">
-          <Select
-            onValueChange={(value) => {
-              changePageSize(Number(value));
-              changePage(1);
-            }}
-            value={String(effectivePageSize)}
-          >
-            <SelectTrigger
-              aria-label="Rows per page"
-              className="h-11 w-28 shadow-none sm:h-9"
-            >
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent align="end">
-              {pageSizeOptions.map((option) => (
-                <SelectItem key={option} value={String(option)}>
-                  {option} rows
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Button
-            className="h-11 sm:h-9"
-            disabled={effectivePage <= 1}
-            onClick={() => changePage(effectivePage - 1)}
-            variant="outline"
-          >
-            Previous
-          </Button>
-          <span
-            className={cn(
-              "min-w-16 text-center font-mono text-xs tabular-nums text-muted-foreground",
-            )}
-          >
-            {effectivePage} / {pageCount}
-          </span>
-          <Button
-            className="h-11 sm:h-9"
-            disabled={effectivePage >= pageCount}
-            onClick={() => changePage(effectivePage + 1)}
-            variant="outline"
-          >
-            Next
-          </Button>
-        </div>
-      </div>
+      {footer}
     </div>
   );
 }

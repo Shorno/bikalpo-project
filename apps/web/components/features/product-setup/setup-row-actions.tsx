@@ -50,3 +50,14 @@ export function SetupRowActions({
     </div>
   );
 }
+
+export function SetupViewButton({ href }: { href: string }) {
+  return (
+    <Button asChild size="sm" variant="outline">
+      <Link href={href}>
+        <Eye aria-hidden="true" className="size-4" />
+        View
+      </Link>
+    </Button>
+  );
+}

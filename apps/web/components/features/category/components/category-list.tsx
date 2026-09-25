@@ -3,7 +3,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useCategoryColumns } from "@/components/features/category/components/category-columns";
 import CategoryTable from "@/components/features/category/components/category-table";
-import NewCategoryDialog from "@/components/features/category/components/new-category-dialog";
 import {
   SetupErrorState,
   SetupPageHeader,
@@ -26,10 +25,10 @@ export default function CategoryList() {
   }));
 
   return (
-    <SetupPageShell>
+    <SetupPageShell width="standard">
       <SetupPageHeader
-        action={<NewCategoryDialog />}
         count={categories.length}
+        description="Organize product categories within their types."
         title="Categories"
       />
       {categoriesQuery.isLoading || typesQuery.isLoading ? (

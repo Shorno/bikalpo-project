@@ -7,7 +7,6 @@ import {
   CheckCircle2,
   ChevronRight,
   Clock3,
-  Download,
   FileText,
   ImageIcon,
   type Layers3,
@@ -26,9 +25,9 @@ import { parseAsString, useQueryState } from "nuqs";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
+  SetupActionRow,
   SetupEntityTable,
   SetupErrorState,
-  SetupMetricStrip,
   SetupPageHeader,
   SetupPageShell,
   SetupStatusBadge,
@@ -391,46 +390,6 @@ function payloadSummary(
   ];
 }
 
-function exportRequests(
-  requests: CatalogApprovalRequest[],
-  options: RequestOptions | undefined,
-) {
-  const headers = [
-    "#",
-    "Request Type",
-    "Requested Item",
-    "Parent Mapping",
-    "Requested By",
-    "Requester Role",
-    "Status",
-    "Request Date",
-  ];
-  const rows = requests.map((request, index) => [
-    index + 1,
-    requestTypeLabels[request.requestType],
-    itemName(request),
-    parentMapping(request, options),
-    requesterName(request),
-    formatRole(request.requester?.role),
-    statusLabels[request.status],
-    formatDate(request.createdAt),
-  ]);
-  const csv = [headers, ...rows]
-    .map((row) =>
-      row
-        .map((value) => `"${String(value ?? "").replace(/"/g, '""')}"`)
-        .join(","),
-    )
-    .join("\r\n");
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = `setup-requests-${new Date().toISOString().slice(0, 10)}.csv`;
-  link.click();
-  URL.revokeObjectURL(url);
-}
-
 export default function AdminSetupRequestsPage() {
   const queryClient = useQueryClient();
   const [search, setSearch] = useQueryState(
@@ -626,39 +585,16 @@ export default function AdminSetupRequestsPage() {
   );
 
   return (
-    <SetupPageShell>
+    <SetupPageShell width="expanded">
       <SetupPageHeader
-        count={stats.total}
-        secondaryActions={
-          <>
-            <Button variant="outline" onClick={refresh} disabled={isRefreshing}>
-              {isRefreshing ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <RefreshCw className="h-4 w-4" />
-              )}
-              Refresh
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() => exportRequests(requests, options)}
-              disabled={requests.length === 0}
-            >
-              <Download className="h-4 w-4" />
-              Export
-            </Button>
-          </>
-        }
-        title="Setup Requests"
-      />
-
-      <SetupMetricStrip
+        description="Review product setup requests from shops and warehouses."
         metrics={[
           { label: "Total", value: stats.total },
           { label: "Pending", value: stats.pending },
           { label: "Approved", value: stats.approved },
           { label: "Rejected", value: stats.rejected },
         ]}
+        title="Setup Requests"
       />
 
       <SetupToolbar
@@ -674,7 +610,6 @@ export default function AdminSetupRequestsPage() {
               { value: "variant_option", label: "Variant" },
               { value: "core_product", label: "Core Identity" },
             ],
-            widthClassName: "md:w-44",
           },
           {
             key: "status",
@@ -700,7 +635,6 @@ export default function AdminSetupRequestsPage() {
               { value: "this_month", label: "This month" },
               { value: "all", label: "All time" },
             ],
-            widthClassName: "md:w-44",
           },
         ]}
         hasActiveFilters={Boolean(
@@ -719,6 +653,17 @@ export default function AdminSetupRequestsPage() {
         searchPlaceholder="Search item or requester"
         searchValue={search}
       />
+
+      <SetupActionRow>
+        <Button variant="outline" onClick={refresh} disabled={isRefreshing}>
+          {isRefreshing ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <RefreshCw className="h-4 w-4" />
+          )}
+          Refresh
+        </Button>
+      </SetupActionRow>
 
       {requestsQuery.isLoading ||
       statsQuery.isLoading ||

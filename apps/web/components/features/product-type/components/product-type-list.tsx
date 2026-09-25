@@ -7,7 +7,6 @@ import {
   SetupPageHeader,
   SetupPageShell,
 } from "@/components/features/product-setup";
-import NewTypeDialog from "@/components/features/product-type/components/new-type-dialog";
 import { useProductTypeColumns } from "@/components/features/product-type/components/product-type-columns";
 import { resolveProductTypeProfile } from "@/components/features/product-type/components/product-type-row";
 import ProductTypeTable from "@/components/features/product-type/components/product-type-table";
@@ -67,10 +66,10 @@ export default function ProductTypeList() {
   const resetPage = () => void setPage(1);
 
   return (
-    <SetupPageShell>
+    <SetupPageShell width="compact">
       <SetupPageHeader
-        action={<NewTypeDialog />}
         count={total}
+        description="Manage product types and their fulfillment behavior."
         title="Types"
       />
       {isLoading ? (
