@@ -1,387 +1,240 @@
-import { and, count, desc, eq, ilike, isNotNull, isNull, or, sql, type Column, type SQL } from "drizzle-orm";
-import { z } from "zod";
 import { db } from "@bikalpo-project/db";
-import {
-    sellerApplication,
-    warehouseApplication,
-} from "@bikalpo-project/db/schema";
+import { and, type SQL, sql } from "drizzle-orm";
+import { z } from "zod";
 import { BUSINESS_NATURES } from "../business-registration";
 import { adminProcedure } from "../index";
 
 const applicationStatusSchema = z.enum(["pending", "approved", "rejected"]);
-const listStatusSchema = z.enum(["pending", "approved", "rejected", "all"]);
-const applicationTypeSchema = z.enum(["seller", "warehouse", "all"]);
-const referralFilterSchema = z.enum(["direct", "invited", "all"]);
-const businessNatureFilterSchema = z.enum(["all", "unspecified", ...BUSINESS_NATURES]);
-
 const listInputSchema = z.object({
-    search: z.string().optional(),
-    status: listStatusSchema.default("all"),
-    type: applicationTypeSchema.default("all"),
-    businessNature: businessNatureFilterSchema.default("all"),
-    district: z.string().optional(),
-    referral: referralFilterSchema.default("all"),
-    page: z.number().default(1),
-    limit: z.number().default(20),
+  search: z.string().optional(),
+  status: z
+    .enum([
+      "all",
+      "active",
+      "verified",
+      "pending",
+      "suspended",
+      "approved",
+      "rejected",
+    ])
+    .default("all"),
+  type: z.enum(["seller", "warehouse", "all"]).default("all"),
+  businessNature: z
+    .enum(["all", "unspecified", ...BUSINESS_NATURES])
+    .default("all"),
+  businessType: z.string().optional(),
+  district: z.string().optional(),
+  referral: z.enum(["direct", "invited", "all"]).default("all"),
+  page: z.number().int().min(1).default(1),
+  limit: z.number().int().min(1).max(100).default(20),
 });
-
-const overviewInputSchema = listInputSchema.omit({
-    status: true,
-    page: true,
-    limit: true,
-});
-
-type ApplicationStatus = z.infer<typeof applicationStatusSchema>;
+const overviewInputSchema = listInputSchema.omit({ page: true, limit: true });
+type RequestFilters = z.infer<typeof overviewInputSchema>;
 
 export type UnifiedApplicationRow = {
-    id: string;
-    type: "seller" | "warehouse";
-    applicationNumber: string | null;
-    businessName: string;
-    ownerName: string;
-    phoneNumber: string;
-    location: string | null;
-    businessNature: string | null;
-    productTypeName: string | null;
-    status: ApplicationStatus;
-    createdAt: Date;
-    detailHref: string;
+  id: string;
+  type: "seller" | "warehouse";
+  applicationNumber: string | null;
+  businessName: string;
+  ownerName: string;
+  phoneNumber: string;
+  location: string | null;
+  businessNature: string | null;
+  productTypeName: string | null;
+  status: z.infer<typeof applicationStatusSchema>;
+  createdAt: Date;
+  detailHref: string;
 };
 
-function buildSearchCondition(
-    search: string,
-    ownerName: Column,
-    phoneNumber: Column,
-    applicationNumber: Column,
-    businessName: Column,
-): SQL {
-    const term = `%${search.trim()}%`;
-    return or(
-        ilike(ownerName, term),
-        ilike(phoneNumber, term),
-        ilike(applicationNumber, term),
-        ilike(businessName, term),
-    )!;
+function rowsFromResult<T>(result: unknown): T[] {
+  return Array.isArray(result)
+    ? (result as T[])
+    : ((result as { rows?: T[] }).rows ?? []);
 }
 
-function buildSellerConditions(input: z.infer<typeof listInputSchema>) {
-    const conditions: SQL[] = [];
-
-    if (input.status !== "all") {
-        conditions.push(eq(sellerApplication.status, input.status));
-    }
-    if (input.district && input.district !== "all") {
-        conditions.push(eq(sellerApplication.district, input.district));
-    }
-    if (input.businessNature === "unspecified") {
-        conditions.push(isNull(sellerApplication.businessNature));
-    } else if (input.businessNature !== "all") {
-        conditions.push(eq(sellerApplication.businessNature, input.businessNature));
-    }
-    if (input.referral === "direct") {
-        conditions.push(isNull(sellerApplication.referralId));
-    } else if (input.referral === "invited") {
-        conditions.push(isNotNull(sellerApplication.referralId));
-    }
-    if (input.search?.trim()) {
-        conditions.push(
-            buildSearchCondition(
-                input.search,
-                sellerApplication.ownerName,
-                sellerApplication.phoneNumber,
-                sellerApplication.applicationNumber,
-                sellerApplication.shopName,
-            ),
-        );
-    }
-
-    return conditions.length > 0 ? and(...conditions) : undefined;
+// One request projection keeps filtering, counts and pagination on the same data.
+function requestsCte(): SQL {
+  return sql`
+    requests AS (
+      SELECT id, 'seller'::text AS type, user_id, application_number,
+        shop_name AS business_name, owner_name, phone_number,
+        district, area, business_nature, product_type_id, business_category,
+        referral_id, status, created_at
+      FROM seller_application
+      UNION ALL
+      SELECT id, 'warehouse'::text AS type, user_id, application_number,
+        warehouse_name AS business_name, owner_name, phone_number,
+        district, area, business_nature, product_type_id, business_category,
+        referral_id, status, created_at
+      FROM warehouse_application
+    ), projected_requests AS (
+      SELECT r.id, r.type, r.application_number AS "applicationNumber",
+        r.business_name AS "businessName", r.owner_name AS "ownerName",
+        r.phone_number AS "phoneNumber",
+        COALESCE(NULLIF(r.district, ''), NULLIF(r.area, '')) AS location,
+        r.business_nature AS "businessNature",
+        COALESCE(NULLIF(pt.name, ''), NULLIF(r.business_category, '')) AS "productTypeName",
+        r.referral_id AS "referralId", r.status, r.created_at AS "createdAt",
+        COALESCE(u.banned, false) AS suspended, lk.status AS "kycStatus"
+      FROM requests r
+      JOIN "user" u ON u.id = r.user_id
+      LEFT JOIN product_type pt ON pt.id = r.product_type_id
+      LEFT JOIN LATERAL (
+        SELECT status FROM kyc_verification
+        WHERE user_id = r.user_id
+        ORDER BY created_at DESC, id DESC LIMIT 1
+      ) lk ON true
+    )
+  `;
 }
 
-function buildWarehouseConditions(input: z.infer<typeof listInputSchema>) {
-    const conditions: SQL[] = [];
-
-    if (input.status !== "all") {
-        conditions.push(eq(warehouseApplication.status, input.status));
-    }
-    if (input.district && input.district !== "all") {
-        conditions.push(eq(warehouseApplication.district, input.district));
-    }
-    if (input.businessNature === "unspecified") {
-        conditions.push(isNull(warehouseApplication.businessNature));
-    } else if (input.businessNature !== "all") {
-        conditions.push(eq(warehouseApplication.businessNature, input.businessNature));
-    }
-    if (input.referral === "direct") {
-        conditions.push(isNull(warehouseApplication.referralId));
-    } else if (input.referral === "invited") {
-        conditions.push(isNotNull(warehouseApplication.referralId));
-    }
-    if (input.search?.trim()) {
-        conditions.push(
-            buildSearchCondition(
-                input.search,
-                warehouseApplication.ownerName,
-                warehouseApplication.phoneNumber,
-                warehouseApplication.applicationNumber,
-                warehouseApplication.warehouseName,
-            ),
-        );
-    }
-
-    return conditions.length > 0 ? and(...conditions) : undefined;
-}
-
-type SellerApplicationListRow = {
-    id: string;
-    applicationNumber: string | null;
-    shopName: string;
-    ownerName: string;
-    phoneNumber: string;
-    district: string | null;
-    area: string | null;
-    businessNature: string | null;
-    businessCategory: string | null;
-    status: string;
-    createdAt: Date;
-    productType?: { name: string } | null;
-};
-
-type WarehouseApplicationListRow = {
-    id: string;
-    applicationNumber: string | null;
-    warehouseName: string;
-    ownerName: string;
-    phoneNumber: string;
-    district: string | null;
-    area: string | null;
-    businessNature: string | null;
-    businessCategory: string | null;
-    status: string;
-    createdAt: Date;
-    productType?: { name: string } | null;
-};
-
-function mapSellerRow(app: SellerApplicationListRow): UnifiedApplicationRow {
-    return {
-        id: app.id,
-        type: "seller",
-        applicationNumber: app.applicationNumber,
-        businessName: app.shopName,
-        ownerName: app.ownerName,
-        phoneNumber: app.phoneNumber,
-        location: app.district || app.area || null,
-        businessNature: app.businessNature,
-        productTypeName: app.productType?.name ?? app.businessCategory,
-        status: app.status as ApplicationStatus,
-        createdAt: app.createdAt,
-        detailHref: `/dashboard/admin/user-overview/approval/seller/${app.id}`,
-    };
-}
-
-function mapWarehouseRow(app: WarehouseApplicationListRow): UnifiedApplicationRow {
-    return {
-        id: app.id,
-        type: "warehouse",
-        applicationNumber: app.applicationNumber,
-        businessName: app.warehouseName,
-        ownerName: app.ownerName,
-        phoneNumber: app.phoneNumber,
-        location: app.district || app.area || null,
-        businessNature: app.businessNature,
-        productTypeName: app.productType?.name ?? app.businessCategory,
-        status: app.status as ApplicationStatus,
-        createdAt: app.createdAt,
-        detailHref: `/dashboard/admin/user-overview/approval/warehouse/${app.id}`,
-    };
-}
-
-async function loadApplications(input: z.infer<typeof listInputSchema>) {
-    const includeSeller = input.type === "all" || input.type === "seller";
-    const includeWarehouse = input.type === "all" || input.type === "warehouse";
-    const productTypeColumns = {
-        columns: { id: true, name: true },
-    } as const;
-
-    const [sellerRows, warehouseRows] = await Promise.all([
-        includeSeller
-            ? db.query.sellerApplication.findMany({
-                  where: buildSellerConditions(input),
-                  with: { productType: productTypeColumns },
-                  orderBy: [desc(sellerApplication.createdAt)],
-              })
-            : Promise.resolve([]),
-        includeWarehouse
-            ? db.query.warehouseApplication.findMany({
-                  where: buildWarehouseConditions(input),
-                  with: { productType: productTypeColumns },
-                  orderBy: [desc(warehouseApplication.createdAt)],
-              })
-            : Promise.resolve([]),
-    ]);
-
-    return [
-        ...sellerRows.map((row) => mapSellerRow(row as SellerApplicationListRow)),
-        ...warehouseRows.map((row) =>
-            mapWarehouseRow(row as WarehouseApplicationListRow),
-        ),
-    ].sort(
-        (a, b) =>
-            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-    );
-}
-
-async function loadApplicationCounts(input: z.infer<typeof listInputSchema>) {
-    const includeSeller = input.type === "all" || input.type === "seller";
-    const includeWarehouse = input.type === "all" || input.type === "warehouse";
-    const [sellerRows, warehouseRows] = await Promise.all([
-        includeSeller
-            ? db
-                  .select({ status: sellerApplication.status, count: count() })
-                  .from(sellerApplication)
-                  .where(buildSellerConditions(input))
-                  .groupBy(sellerApplication.status)
-            : Promise.resolve([]),
-        includeWarehouse
-            ? db
-                  .select({ status: warehouseApplication.status, count: count() })
-                  .from(warehouseApplication)
-                  .where(buildWarehouseConditions(input))
-                  .groupBy(warehouseApplication.status)
-            : Promise.resolve([]),
-    ]);
-
-    const countStatus = (
-        rows: Array<{ status: string; count: number }>,
-        status: ApplicationStatus,
-    ) => Number(rows.find((row) => row.status === status)?.count ?? 0);
-    const seller = {
-        pending: countStatus(sellerRows, "pending"),
-        approved: countStatus(sellerRows, "approved"),
-        rejected: countStatus(sellerRows, "rejected"),
-    };
-    const warehouse = {
-        pending: countStatus(warehouseRows, "pending"),
-        approved: countStatus(warehouseRows, "approved"),
-        rejected: countStatus(warehouseRows, "rejected"),
-    };
-
-    return { seller, warehouse };
+function requestWhere(filters: RequestFilters): SQL {
+  const conditions: SQL[] = [];
+  if (filters.status === "suspended") conditions.push(sql`p.suspended IS TRUE`);
+  else if (filters.status === "verified") {
+    conditions.push(sql`p."kycStatus" = 'verified' AND p.suspended IS FALSE`);
+  } else if (filters.status === "active") {
+    conditions.push(sql`p.status = 'approved' AND p.suspended IS FALSE`);
+  } else if (filters.status === "pending") {
+    conditions.push(sql`p.status = 'pending' AND p.suspended IS FALSE`);
+  } else if (filters.status !== "all") {
+    // Retained for existing callers that filter by the application decision.
+    conditions.push(sql`p.status = ${filters.status}`);
+  }
+  if (filters.type !== "all") conditions.push(sql`p.type = ${filters.type}`);
+  if (filters.businessNature === "unspecified")
+    conditions.push(sql`p."businessNature" IS NULL`);
+  else if (filters.businessNature !== "all")
+    conditions.push(sql`p."businessNature" = ${filters.businessNature}`);
+  if (filters.businessType && filters.businessType !== "all")
+    conditions.push(sql`p."productTypeName" = ${filters.businessType}`);
+  if (filters.district && filters.district !== "all")
+    conditions.push(sql`p.location = ${filters.district}`);
+  if (filters.referral === "direct")
+    conditions.push(sql`p."referralId" IS NULL`);
+  else if (filters.referral === "invited")
+    conditions.push(sql`p."referralId" IS NOT NULL`);
+  if (filters.search?.trim()) {
+    const term = "%" + filters.search.trim().replace(/[\\%_]/g, "\\$&") + "%";
+    conditions.push(sql`(
+      p."ownerName" ILIKE ${term} OR p."phoneNumber" ILIKE ${term}
+      OR p."applicationNumber" ILIKE ${term} OR p."businessName" ILIKE ${term}
+    )`);
+  }
+  return and(...conditions) ?? sql`TRUE`;
 }
 
 export const adminApplicationRouter = {
-    getOverview: adminProcedure
-        .route({
-            method: "GET",
-            path: "/admin/applications/overview",
-            tags: ["Admin Application"],
-            summary: "Get Shop Owner and Warehouse Owner application KPI counts",
-        })
-        .input(overviewInputSchema)
-        .handler(async ({ input }) => {
-            const counts = await loadApplicationCounts({
-                ...input,
-                status: "all",
-                page: 1,
-                limit: 1,
-            });
-            const pendingShopOwner = counts.seller.pending;
-            const pendingWarehouseOwner = counts.warehouse.pending;
-            const pending = pendingShopOwner + pendingWarehouseOwner;
-            const approved = counts.seller.approved + counts.warehouse.approved;
-            const rejected = counts.seller.rejected + counts.warehouse.rejected;
+  getOverview: adminProcedure
+    .route({
+      method: "GET",
+      path: "/admin/applications/overview",
+      tags: ["Admin Application"],
+      summary: "Get filtered application counts",
+    })
+    .input(overviewInputSchema)
+    .handler(async ({ input }) => {
+      const filters = overviewInputSchema.parse(input);
+      const result = await db.execute(sql`
+        WITH ${requestsCte()}
+        SELECT count(*)::int AS total,
+          count(*) FILTER (WHERE p.status = 'pending')::int AS pending,
+          count(*) FILTER (WHERE p.status = 'approved')::int AS approved,
+          count(*) FILTER (WHERE p.status = 'rejected')::int AS rejected,
+          count(*) FILTER (WHERE p.suspended)::int AS suspended,
+          count(*) FILTER (WHERE p.status = 'pending' AND p.type = 'seller')::int AS "pendingShopOwner",
+          count(*) FILTER (WHERE p.status = 'pending' AND p.type = 'warehouse')::int AS "pendingWarehouseOwner"
+        FROM projected_requests p WHERE ${requestWhere(filters)}
+      `);
+      const counts = rowsFromResult<{
+        total: number;
+        pending: number;
+        approved: number;
+        rejected: number;
+        suspended: number;
+        pendingShopOwner: number;
+        pendingWarehouseOwner: number;
+      }>(result)[0];
+      if (!counts) throw new Error("Application counts returned no result");
+      return { ...counts, frozen: null };
+    }),
 
-            return {
-                total: pending + approved + rejected,
-                pending,
-                approved,
-                rejected,
-                pendingShopOwner,
-                pendingWarehouseOwner,
-            };
-        }),
+  getFilterOptions: adminProcedure
+    .route({
+      method: "GET",
+      path: "/admin/applications/filter-options",
+      tags: ["Admin Application"],
+      summary: "Get recorded request filter options",
+    })
+    .handler(async () => {
+      const result = await db.execute(sql`
+        WITH ${requestsCte()}
+        SELECT DISTINCT location, "businessNature", "productTypeName"
+        FROM projected_requests
+      `);
+      const rows = rowsFromResult<{
+        location: string | null;
+        businessNature: string | null;
+        productTypeName: string | null;
+      }>(result);
+      const distinct = (values: (string | null)[]) =>
+        [
+          ...new Set(values.filter((value): value is string => Boolean(value))),
+        ].sort((a, b) => a.localeCompare(b));
+      return {
+        districts: distinct(rows.map((row) => row.location)),
+        businessTypes: distinct(rows.map((row) => row.productTypeName)),
+        businessNatures: [
+          ...(rows.some((row) => !row.businessNature)
+            ? ["unspecified" as const]
+            : []),
+          ...BUSINESS_NATURES.filter((nature) =>
+            rows.some((row) => row.businessNature === nature),
+          ),
+        ],
+      };
+    }),
 
-    getFilterOptions: adminProcedure
-        .route({
-            method: "GET",
-            path: "/admin/applications/filter-options",
-            tags: ["Admin Application"],
-            summary: "Get filter dropdown options for applications list",
-        })
-        .handler(async () => {
-            const [
-                sellerDistricts,
-                warehouseDistricts,
-                sellerBusinessNatures,
-                warehouseBusinessNatures,
-            ] = await Promise.all([
-                db
-                    .selectDistinct({ district: sellerApplication.district })
-                    .from(sellerApplication)
-                    .where(
-                        sql`${sellerApplication.district} IS NOT NULL AND ${sellerApplication.district} != ''`,
-                    ),
-                db
-                    .selectDistinct({ district: warehouseApplication.district })
-                    .from(warehouseApplication)
-                    .where(
-                        sql`${warehouseApplication.district} IS NOT NULL AND ${warehouseApplication.district} != ''`,
-                    ),
-                db
-                    .selectDistinct({ businessNature: sellerApplication.businessNature })
-                    .from(sellerApplication),
-                db
-                    .selectDistinct({
-                        businessNature: warehouseApplication.businessNature,
-                    })
-                    .from(warehouseApplication),
-            ]);
-
-            const districts = [
-                ...new Set(
-                    [
-                        ...sellerDistricts.map((r) => r.district),
-                        ...warehouseDistricts.map((r) => r.district),
-                    ].filter((d): d is string => Boolean(d)),
-                ),
-            ].sort((a, b) => a.localeCompare(b));
-
-            const rawBusinessNatures = [
-                ...sellerBusinessNatures.map((row) => row.businessNature),
-                ...warehouseBusinessNatures.map((row) => row.businessNature),
-            ];
-            const businessNatures = [
-                ...(rawBusinessNatures.some((nature) => !nature)
-                    ? (["unspecified"] as const)
-                    : []),
-                ...BUSINESS_NATURES.filter((nature) =>
-                    rawBusinessNatures.includes(nature),
-                ),
-            ];
-
-            return { districts, businessNatures };
-        }),
-
-    list: adminProcedure
-        .route({
-            method: "GET",
-            path: "/admin/applications",
-            tags: ["Admin Application"],
-            summary: "List Shop Owner and Warehouse Owner applications",
-        })
-        .input(listInputSchema)
-        .handler(async ({ input }) => {
-            const merged = await loadApplications(input);
-
-            const total = merged.length;
-            const offset = (input.page - 1) * input.limit;
-            const items = merged.slice(offset, offset + input.limit);
-
-            return {
-                items,
-                total,
-                page: input.page,
-                limit: input.limit,
-            };
-        }),
+  list: adminProcedure
+    .route({
+      method: "GET",
+      path: "/admin/applications",
+      tags: ["Admin Application"],
+      summary: "List retailer and warehouse requests",
+    })
+    .input(listInputSchema)
+    .handler(async ({ input }) => {
+      const filters = listInputSchema.parse(input);
+      const where = requestWhere(filters);
+      const [countResult, listResult] = await Promise.all([
+        db.execute(sql`
+          WITH ${requestsCte()}
+          SELECT count(*)::int AS total FROM projected_requests p WHERE ${where}
+        `),
+        db.execute(sql`
+          WITH ${requestsCte()}
+          SELECT p.id, p.type, p."applicationNumber", p."businessName",
+            p."ownerName", p."phoneNumber", p.location, p."businessNature",
+            p."productTypeName", p.status, p."createdAt"
+          FROM projected_requests p WHERE ${where}
+          ORDER BY p."createdAt" DESC, p.type, p.id
+          LIMIT ${filters.limit} OFFSET ${(filters.page - 1) * filters.limit}
+        `),
+      ]);
+      const count = rowsFromResult<{ total: number }>(countResult)[0];
+      if (!count) throw new Error("Application count returned no result");
+      const items = rowsFromResult<Omit<UnifiedApplicationRow, "detailHref">>(
+        listResult,
+      ).map((row) => ({
+        ...row,
+        detailHref:
+          "/dashboard/admin/user-overview/approval/" + row.type + "/" + row.id,
+      }));
+      return {
+        items,
+        total: count.total,
+        page: filters.page,
+        limit: filters.limit,
+      };
+    }),
 };

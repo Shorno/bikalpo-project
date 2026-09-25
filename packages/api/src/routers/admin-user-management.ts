@@ -21,6 +21,7 @@ import { BUSINESS_NATURES } from "../business-registration";
 import { computeProfileCompletion } from "../business-profile";
 import { adminProcedure } from "../index";
 import { DASHBOARD_TIME_ZONE } from "./helpers/dashboard-period";
+import { getUserBusinessPerformance } from "./helpers/user-business-performance";
 import { userSubscriptionPlanName } from "./helpers/user-subscription-plan";
 import {
   userRegistrationTrend,
@@ -623,12 +624,13 @@ export const adminUserManagementRouter = {
       const latestSession = await db
         .select({
           createdAt: session.createdAt,
+          updatedAt: session.updatedAt,
           userAgent: session.userAgent,
           ipAddress: session.ipAddress,
         })
         .from(session)
         .where(eq(session.userId, input.userId))
-        .orderBy(desc(session.createdAt))
+        .orderBy(desc(session.updatedAt), desc(session.createdAt))
         .limit(1);
 
       let application: Record<string, unknown> | null = null;
@@ -688,7 +690,27 @@ export const adminUserManagementRouter = {
         trialFallback: found.role === "warehouse",
       });
 
+      const reviews = [
+        latestKyc?.reviewedAt ? {
+          notes: latestKyc.adminNotes,
+          reviewedAt: latestKyc.reviewedAt,
+          reviewedBy: latestKyc.reviewedBy,
+        } : null,
+        application?.reviewedAt ? {
+          notes: (application.adminNotes as string | null) ?? null,
+          reviewedAt: application.reviewedAt as Date,
+          reviewedBy: (application.reviewedBy as string | null) ?? null,
+        } : null,
+      ].filter((review) => review !== null)
+        .sort((a, b) => new Date(b.reviewedAt).getTime() - new Date(a.reviewedAt).getTime());
+      const lastReview = reviews[0] ?? null;
+      const reviewer = lastReview?.reviewedBy ? await db.query.user.findFirst({
+        where: eq(user.id, lastReview.reviewedBy),
+        columns: { name: true },
+      }) : null;
+
       return {
+        lastReview: lastReview ? { ...lastReview, reviewerName: reviewer?.name ?? null } : null,
         planName,
         subscription: currentSubscription ? { ...retailerSubscriptionDto(currentSubscription), planName } : null,
         user: {
@@ -701,6 +723,7 @@ export const adminUserManagementRouter = {
           banReason: found.banReason,
           image: found.image,
           shopName: found.shopName,
+          shopLogo: found.shopLogo,
           shopSlug: found.shopSlug,
           shopAddress: found.shopAddress,
           ownerName: found.ownerName,
@@ -720,6 +743,7 @@ export const adminUserManagementRouter = {
         loginActivity: latestSession[0]
           ? {
               lastLoginAt: latestSession[0].createdAt,
+              lastActiveAt: latestSession[0].updatedAt,
               userAgent: latestSession[0].userAgent,
               ipAddress: latestSession[0].ipAddress,
             }
@@ -751,6 +775,25 @@ export const adminUserManagementRouter = {
             }
           : null,
       };
+    }),
+
+  getPerformance: adminProcedure
+    .route({
+      method: "GET",
+      path: "/admin/users/{userId}/performance",
+      tags: ["User Management"],
+      summary: "Get recorded business sales-order performance",
+    })
+    .input(userIdSchema)
+    .handler(async ({ input }) => {
+      const account = await db.query.user.findFirst({
+        where: eq(user.id, input.userId),
+        columns: { id: true, role: true, businessType: true },
+      });
+      if (!account || (account.role !== "warehouse" && account.role !== "shop_owner")) {
+        throw new ORPCError("NOT_FOUND", { message: "Business account not found" });
+      }
+      return getUserBusinessPerformance({ ...account, role: account.role });
     }),
 
   verify: adminProcedure
@@ -857,6 +900,9 @@ export const adminUserManagementRouter = {
           )
           .optional(),
         shopName: z.string().optional(),
+        shopLogo: z.string().trim().url().max(2048)
+          .refine((value) => /^https?:\/\//i.test(value), "Logo URL must use http or https")
+          .nullable().optional(),
         shopAddress: z.string().optional(),
         ownerName: z.string().optional(),
         warehouseName: z.string().optional(),
@@ -867,11 +913,15 @@ export const adminUserManagementRouter = {
       const { userId, ...updates } = input;
       const currentUser = await db.query.user.findFirst({
         where: eq(user.id, userId),
-        columns: { id: true, email: true, phoneNumber: true },
+        columns: { id: true, email: true, phoneNumber: true, role: true },
       });
 
       if (!currentUser) {
         throw new ORPCError("NOT_FOUND", { message: "User not found" });
+      }
+
+      if (input.shopLogo !== undefined && currentUser.role !== "shop_owner") {
+        throw new ORPCError("BAD_REQUEST", { message: "This account does not have a shop logo field" });
       }
 
       const cleanUpdates: Record<string, string | boolean | null> = Object.fromEntries(

@@ -1,25 +1,20 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { format, formatDistanceToNow } from "date-fns";
-import { Loader2 } from "lucide-react";
+import {
+  Loader2,
+  LockKeyhole,
+  Pencil,
+  SearchX,
+  ShieldCheck,
+  UnlockKeyhole,
+} from "lucide-react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import {
-  AdminReviewSection,
-  BankAndTaxSection,
-  BusinessInformationSection,
-  BusinessLocationSection,
-  LabeledDocumentsSection,
-  PersonalLocationSection,
-  ReferralSection,
-  SocialProfilesSection,
-  toApplicationDetail,
-} from "@/components/features/admin/application-detail-sections";
+import { toApplicationDetail } from "@/components/features/admin/application-detail-sections";
 import { KycVerifyDialog } from "@/components/features/admin/kyc-verify-dialog";
-import { SubscriptionDetails } from "@/components/features/settings/retailer-subscription";
+import ImageUploader from "@/components/ImageUploader";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -31,665 +26,446 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { ADMIN_BASE } from "@/lib/routes";
 import { client, orpc } from "@/utils/orpc";
+import { PerformanceContent, type UserDetailData } from "./user-detail-content";
+import { UserDetailsLayout } from "./user-details-layout";
 import { UserProfileHero } from "./user-profile-hero";
 
-const BUSINESS_TYPE_LABELS: Record<string, string> = {
-  retail: "Retail Shop",
-  restaurant: "Restaurant",
-  warehouse: "Warehouse",
-};
-
-const APPLICATION_STATUS_LABELS: Record<string, string> = {
-  pending: "Pending Review",
-  approved: "Approved",
-  rejected: "Rejected",
-};
-
-function parseUserAgent(ua: string | null): string {
-  if (!ua) return "Unknown";
-  if (ua.includes("Android")) return "Android";
-  if (ua.includes("iPhone") || ua.includes("iPad")) return "iOS";
-  if (ua.includes("Windows")) return "Windows";
-  if (ua.includes("Mac")) return "macOS";
-  if (ua.includes("Linux")) return "Linux";
-  return "Desktop";
-}
-
-interface UserDetailClientProps {
+export function UserDetailClient({
+  userId,
+  segment,
+}: {
   userId: string;
-}
-
-export function UserDetailClient({ userId }: UserDetailClientProps) {
-  const router = useRouter();
+  segment: "retailers" | "wholesalers";
+}) {
   const queryClient = useQueryClient();
-
-  const [suspendDialogOpen, setSuspendDialogOpen] = useState(false);
+  const [suspendOpen, setSuspendOpen] = useState(false);
   const [suspendReason, setSuspendReason] = useState("");
-  const [verifyDialogOpen, setVerifyDialogOpen] = useState(false);
+  const [verifyOpen, setVerifyOpen] = useState(false);
   const [verifyNotes, setVerifyNotes] = useState("");
-  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [logoOpen, setLogoOpen] = useState(false);
+  const [logo, setLogo] = useState("");
+  const [uploading, setUploading] = useState(false);
+  const query = useQuery(
+    orpc.adminUserManagement.getById.queryOptions({ input: { userId } }),
+  );
+  const { data } = query;
+  const refresh = () => {
+    void queryClient.invalidateQueries();
+  };
 
-  const { data, isLoading, isError, error } = useQuery({
-    ...orpc.adminUserManagement.getById.queryOptions({
-      input: { userId },
-    }),
-  });
-
-  const suspendMutation = useMutation({
-    mutationFn: (params: { userId: string; reason?: string }) =>
-      client.adminUserManagement.suspend(params),
+  const suspend = useMutation({
+    mutationFn: () =>
+      client.adminUserManagement.suspend({
+        userId,
+        reason: suspendReason || undefined,
+      }),
     onSuccess: () => {
-      toast.success("User suspended");
-      queryClient.invalidateQueries();
-      setSuspendDialogOpen(false);
+      toast.success("Seller suspended");
+      refresh();
+      setSuspendOpen(false);
       setSuspendReason("");
     },
-    onError: (err) => toast.error(err.message || "Failed to suspend"),
+    onError: (error) =>
+      toast.error(error.message || "Failed to suspend seller"),
   });
-
-  const activateMutation = useMutation({
-    mutationFn: (params: { userId: string }) =>
-      client.adminUserManagement.activate(params),
+  const activate = useMutation({
+    mutationFn: () => client.adminUserManagement.activate({ userId }),
     onSuccess: () => {
-      toast.success("User activated");
-      queryClient.invalidateQueries();
+      toast.success("Seller reactivated");
+      refresh();
     },
-    onError: (err) => toast.error(err.message || "Failed to activate"),
+    onError: (error) =>
+      toast.error(error.message || "Failed to reactivate seller"),
   });
-
-  const updateMutation = useMutation({
-    mutationFn: (params: Record<string, string>) =>
-      client.adminUserManagement.updateInfo({ userId, ...params }),
+  const update = useMutation({
+    mutationFn: (updates: Record<string, string>) =>
+      client.adminUserManagement.updateInfo({ userId, ...updates }),
     onSuccess: () => {
-      toast.success("User info updated");
-      queryClient.invalidateQueries();
-      setEditDialogOpen(false);
+      toast.success("Seller details updated");
+      refresh();
+      setEditOpen(false);
     },
-    onError: (err) => toast.error(err.message || "Failed to update"),
+    onError: (error) => toast.error(error.message || "Failed to update seller"),
   });
-
-  const verifyMutation = useMutation({
-    mutationFn: (params: { userId: string; adminNotes?: string }) =>
-      client.adminUserManagement.verify(params),
+  const verify = useMutation({
+    mutationFn: () =>
+      client.adminUserManagement.verify({
+        userId,
+        adminNotes: verifyNotes || undefined,
+      }),
     onSuccess: () => {
       toast.success("KYC verified");
-      queryClient.invalidateQueries();
-      setVerifyDialogOpen(false);
+      refresh();
+      setVerifyOpen(false);
       setVerifyNotes("");
     },
-    onError: (err) => toast.error(err.message || "Failed to verify KYC"),
+    onError: (error) => toast.error(error.message || "Failed to verify KYC"),
+  });
+  const updateLogo = useMutation({
+    mutationFn: () =>
+      client.adminUserManagement.updateInfo({ userId, shopLogo: logo || null }),
+    onSuccess: () => {
+      toast.success("Company logo updated");
+      refresh();
+      setLogoOpen(false);
+    },
+    onError: (error) => toast.error(error.message || "Failed to update logo"),
   });
 
-  if (isLoading) {
+  const backUrl = ADMIN_BASE + "/user-overview/" + segment;
+  const backLabel = segment === "retailers" ? "Retailers" : "Wholesalers";
+
+  if (query.isLoading)
     return (
-      <div className="flex min-h-[60vh] items-center justify-center">
-        <div className="text-center">
-          <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-3 border-gray-200 border-t-[#003178]" />
-          <p className="text-sm text-gray-400">Loading user...</p>
-        </div>
+      <div
+        role="status"
+        aria-label="Loading user details"
+        className="space-y-6"
+      >
+        <Skeleton className="h-8 w-40" />
+        <Skeleton className="h-80 w-full rounded-xl" />
+        <Skeleton className="h-12 w-full" />
+        <Skeleton className="h-72 w-full rounded-xl" />
       </div>
     );
-  }
-
-  if (isError || !data?.user) {
+  if (query.isError || !data?.user)
     return (
-      <div className="flex min-h-[60vh] flex-col items-center justify-center gap-4">
-        <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-gray-100">
-          <span className="material-symbols-outlined text-3xl text-gray-300">
-            search_off
-          </span>
-        </div>
-        <p className="text-gray-500">
-          {isError
-            ? `Error: ${error?.message || "Failed to load user"}`
-            : "User not found"}
+      <div
+        role="alert"
+        className="flex min-h-80 flex-col items-center justify-center gap-4 text-center"
+      >
+        <SearchX className="size-10 text-muted-foreground" aria-hidden />
+        <h1 className="text-lg font-semibold">Could not load user details</h1>
+        <p className="text-sm text-muted-foreground">
+          {query.error?.message || "User not found."}
         </p>
-        <Link
-          href={`${ADMIN_BASE}/user-overview/wholesalers`}
-          className="flex items-center gap-2 text-sm font-semibold text-[#003178] hover:underline"
-        >
-          <span className="material-symbols-outlined text-lg">arrow_back</span>
-          Back to Users
-        </Link>
+        <div className="flex gap-3">
+          <Button variant="outline" asChild>
+            <Link href={backUrl}>Back to {backLabel}</Link>
+          </Button>
+          <Button
+            disabled={query.isFetching}
+            onClick={() => void query.refetch()}
+          >
+            Retry
+          </Button>
+        </div>
       </div>
     );
-  }
 
-  const {
-    user: userData,
-    loginActivity,
-    application,
-    applicationId,
-    applicationStatus,
-    accountMeta,
-  } = data;
-  const isWarehouse = userData.role === "warehouse";
-  const isSuspended = userData.banned === true;
-  const isActionPending =
-    suspendMutation.isPending || activateMutation.isPending;
-  const canVerify =
-    accountMeta.canVerifyKyc ??
-    (accountMeta.kycStatus !== "verified" &&
-      (userData.role === "shop_owner" || userData.role === "warehouse"));
-
-  const backUrl = `${ADMIN_BASE}/user-overview/${isWarehouse ? "wholesalers" : "retailers"}`;
-  const backLabel = isWarehouse ? "All Warehouse Owners" : "All Shop Owners";
-  const businessName = isWarehouse
-    ? userData.warehouseName || userData.name
-    : userData.shopName || userData.name;
-  const businessAddress = isWarehouse
-    ? userData.warehouseAddress || ""
-    : userData.shopAddress || "";
-
-  const detail = application
-    ? toApplicationDetail(application, businessAddress)
-    : toApplicationDetail(
-        {
-          ownerName: userData.ownerName || userData.name,
-          phoneNumber: userData.phoneNumber || "",
-          email: userData.email,
-        },
-        businessAddress,
-      );
-
-  const appRecord = application as Record<string, unknown> | null;
-  const territory = appRecord?.area as string | undefined;
-  const adminNotes = (appRecord?.adminNotes as string | null) ?? "";
-  const applicationHref = applicationId
-    ? `${ADMIN_BASE}/user-overview/approval/${isWarehouse ? "warehouse" : "seller"}/${applicationId}`
-    : null;
-
-  const sellingModeBadge =
-    !isWarehouse && userData.businessType === "retail" ? (
-      <div className="flex justify-between text-sm">
-        <span className="text-gray-500">Selling Mode</span>
-        <span className="inline-flex rounded-full border border-green-100 bg-green-50 px-2 py-0.5 text-xs font-semibold text-green-700">
-          B2C Enabled
-        </span>
-      </div>
-    ) : !isWarehouse && userData.businessType === "restaurant" ? (
-      <div className="flex justify-between text-sm">
-        <span className="text-gray-500">Selling Mode</span>
-        <span className="inline-flex rounded-full border border-blue-100 bg-blue-50 px-2 py-0.5 text-xs font-semibold text-blue-700">
-          Buyer Only
-        </span>
-      </div>
-    ) : null;
-
-  const applicationStatusLabel = applicationStatus
-    ? APPLICATION_STATUS_LABELS[applicationStatus.status] ||
-      applicationStatus.status
-    : undefined;
+  const isWarehouse = data.user.role === "warehouse";
+  const isSuspended = data.user.banned === true;
+  const businessName =
+    (isWarehouse ? data.user.warehouseName : data.user.shopName) ||
+    data.user.name;
+  const app = data.application as Record<string, unknown> | null;
+  const storedAddress = isWarehouse
+    ? data.user.warehouseAddress
+    : data.user.shopAddress;
+  const applicationAddress =
+    app?.[isWarehouse ? "warehouseAddress" : "shopAddress"];
+  const businessAddress =
+    storedAddress ||
+    (typeof applicationAddress === "string" ? applicationAddress : "");
+  const detail = toApplicationDetail(app || {}, businessAddress);
+  const actionPending = suspend.isPending || activate.isPending;
+  const SuspendIcon = isSuspended ? UnlockKeyhole : LockKeyhole;
 
   return (
-    <section className="px-4 py-6 sm:px-6 sm:py-8">
-      {/* eslint-disable-next-line @next/next/no-page-custom-font */}
-      <link
-        href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&family=Inter:wght@400;500;600&display=swap"
-        rel="stylesheet"
-      />
-      {/* eslint-disable-next-line @next/next/no-page-custom-font */}
-      <link
-        href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap"
-        rel="stylesheet"
-      />
-
-      <div
-        className="mx-auto max-w-6xl"
-        style={{ fontFamily: "'Inter', sans-serif" }}
-      >
-        <Button
-          variant="ghost"
-          onClick={() => router.push(backUrl)}
-          className="mb-5 flex items-center gap-1.5 px-0 text-sm text-gray-500 hover:bg-transparent hover:text-[#003178]"
-        >
-          <span className="material-symbols-outlined text-lg">arrow_back</span>
-          {backLabel}
-        </Button>
-
-        <UserProfileHero
-          data={detail}
-          pageTitle={businessName}
-          profileLabel={
-            isWarehouse ? "Warehouse Owner Profile" : "Shop Owner Profile"
-          }
-          businessName={businessName}
-          territory={territory}
-          displayId={accountMeta.displayId}
-          accountStatus={accountMeta.accountStatus}
-          kycStatus={accountMeta.kycStatus}
-          profileCompletion={accountMeta.profileCompletion}
-          joinedAt={userData.createdAt}
-          lastActiveAt={loginActivity?.lastLoginAt}
-          isSuspended={isSuspended}
-          isActionPending={isActionPending}
-          canVerify={canVerify}
-          isVerifying={verifyMutation.isPending}
-          onEdit={() => setEditDialogOpen(true)}
-          onSuspend={() => setSuspendDialogOpen(true)}
-          onActivate={() => activateMutation.mutate({ userId })}
-          onVerify={() => setVerifyDialogOpen(true)}
-        />
-
-        <div className="grid gap-6 lg:grid-cols-3">
-          <div className="lg:col-span-2">
-            {application ? (
-              <Tabs defaultValue="basic">
-                <TabsList className="mb-4">
-                  <TabsTrigger value="basic">Basic Information</TabsTrigger>
-                  <TabsTrigger value="documents">Documents</TabsTrigger>
-                  <TabsTrigger value="social">Social</TabsTrigger>
-                  <TabsTrigger value="notes">Admin Notes</TabsTrigger>
-                </TabsList>
-
-                <TabsContent value="basic" className="space-y-5">
-                  <BusinessInformationSection
-                    data={detail}
-                    businessName={businessName}
-                    businessNameLabel={
-                      isWarehouse ? "Warehouse Name" : "Shop Name"
-                    }
-                    businessType={
-                      !isWarehouse
-                        ? BUSINESS_TYPE_LABELS[userData.businessType || ""] ||
-                          userData.businessType
-                        : undefined
-                    }
-                    businessTypeLabel={
-                      !isWarehouse ? "Platform Type" : undefined
-                    }
-                    sellingModeBadge={sellingModeBadge}
-                    applicantStatusLabel={applicationStatusLabel}
-                  />
-                  <PersonalLocationSection data={detail} />
-                  <BusinessLocationSection data={detail} />
-                  <BankAndTaxSection data={detail} />
-                  <ReferralSection data={detail} />
-                </TabsContent>
-
-                <TabsContent value="documents" className="space-y-5">
-                  <LabeledDocumentsSection data={detail} />
-                </TabsContent>
-
-                <TabsContent value="social" className="space-y-5">
-                  <SocialProfilesSection data={detail} />
-                </TabsContent>
-
-                <TabsContent value="notes" className="space-y-5">
-                  <AdminReviewSection
-                    isPending={false}
-                    adminNotes=""
-                    onAdminNotesChange={() => {}}
-                    existingNotes={adminNotes}
-                  />
-                </TabsContent>
-              </Tabs>
-            ) : (
-              <div className="rounded-xl border border-gray-200 bg-white p-5">
-                <p className="text-sm text-gray-500">
-                  No linked application record. Basic account data is shown in
-                  the profile header above.
-                </p>
-              </div>
-            )}
-          </div>
-
-          <div className="space-y-5 self-start lg:sticky lg:top-6">
-            <div className="rounded-xl border border-gray-100 bg-white p-5">
-              <div className="mb-3 flex items-center gap-2">
-                <span
-                  className="material-symbols-outlined text-lg text-[#003178]"
-                  style={{ fontVariationSettings: "'FILL' 1" }}
+    <>
+      <UserDetailsLayout
+        backHref={backUrl}
+        backLabel={backLabel}
+        businessName={businessName}
+        detail={detail}
+        data={data}
+        performance={<PerformanceContent userId={userId} />}
+        hero={
+          <UserProfileHero
+            data={data}
+            detail={detail}
+            businessName={businessName}
+            onChangeLogo={() => {
+              setLogo(data.user.shopLogo || "");
+              setLogoOpen(true);
+            }}
+            actions={
+              <>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  aria-label="Edit seller"
+                  title="Edit seller"
+                  onClick={() => setEditOpen(true)}
                 >
-                  login
-                </span>
-                <h3 className="text-sm font-bold text-gray-900">
-                  Login Activity
-                </h3>
-              </div>
-              {loginActivity ? (
-                <div className="space-y-2 text-sm">
-                  <div className="flex justify-between gap-4">
-                    <span className="text-gray-500">Last Active</span>
-                    <span className="text-right font-medium text-gray-900">
-                      {formatDistanceToNow(
-                        new Date(loginActivity.lastLoginAt),
-                        {
-                          addSuffix: true,
-                        },
-                      )}
-                    </span>
-                  </div>
-                  <div className="flex justify-between gap-4">
-                    <span className="text-gray-500">Device</span>
-                    <span className="font-medium text-gray-900">
-                      {parseUserAgent(loginActivity.userAgent)}
-                    </span>
-                  </div>
-                  <div className="flex justify-between gap-4">
-                    <span className="text-gray-500">IP Address</span>
-                    <span className="font-mono text-xs text-gray-900">
-                      {loginActivity.ipAddress || "—"}
-                    </span>
-                  </div>
-                </div>
+                  <Pencil className="size-4" />
+                </Button>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  aria-label={
+                    data.accountMeta.canVerifyKyc
+                      ? "Verify KYC"
+                      : "KYC verified"
+                  }
+                  title={
+                    data.accountMeta.canVerifyKyc
+                      ? "Verify KYC"
+                      : "KYC verified"
+                  }
+                  disabled={!data.accountMeta.canVerifyKyc || verify.isPending}
+                  onClick={() => setVerifyOpen(true)}
+                >
+                  <ShieldCheck className="size-4" />
+                </Button>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  aria-label={
+                    isSuspended ? "Reactivate seller" : "Suspend seller"
+                  }
+                  title={isSuspended ? "Reactivate seller" : "Suspend seller"}
+                  disabled={actionPending}
+                  onClick={() =>
+                    isSuspended ? activate.mutate() : setSuspendOpen(true)
+                  }
+                >
+                  <SuspendIcon className="size-4" />
+                </Button>
+              </>
+            }
+          />
+        }
+        actions={
+          <>
+            <Button variant="outline" onClick={() => setEditOpen(true)}>
+              <Pencil className="size-4" aria-hidden />
+              Edit Seller
+            </Button>
+            <Button
+              variant={isSuspended ? "outline" : "destructive"}
+              disabled={actionPending}
+              onClick={() =>
+                isSuspended ? activate.mutate() : setSuspendOpen(true)
+              }
+            >
+              {actionPending ? (
+                <Loader2 className="size-4 animate-spin" />
               ) : (
-                <p className="text-sm text-gray-400">
-                  No login activity recorded
-                </p>
+                <SuspendIcon className="size-4" aria-hidden />
               )}
-            </div>
-
-            {applicationHref && (
-              <Button variant="outline" className="w-full text-sm" asChild>
-                <Link href={applicationHref}>View Application Record</Link>
-              </Button>
-            )}
-
-            {userData.businessType === "retail" && !isWarehouse && (
-              <div className="rounded-xl border border-gray-100 bg-white p-5">
-                <h3 className="mb-3 text-sm font-bold text-gray-900">
-                  User Plan
-                </h3>
-                {data.subscription ? (
-                  <SubscriptionDetails current={data.subscription} />
-                ) : (
-                  <p className="text-sm font-medium text-[#003178]">
-                    {data.planName}
-                  </p>
-                )}
-              </div>
-            )}
-            {(isWarehouse || userData.businessType !== "retail") && (
-              <div className="rounded-xl border border-gray-100 bg-white p-5">
-                <div className="mb-3 flex items-center gap-2">
-                  <span
-                    className="material-symbols-outlined text-lg text-[#003178]"
-                    style={{ fontVariationSettings: "'FILL' 1" }}
-                  >
-                    workspace_premium
-                  </span>
-                  <h3 className="text-sm font-bold text-gray-900">
-                    Selected Plan
-                  </h3>
-                </div>
-                <p className="text-sm font-medium text-[#003178]">
-                  {data.planName}
-                </p>
-              </div>
-            )}
-
-            <div className="rounded-xl border border-gray-100 bg-white p-5">
-              <div className="mb-3 flex items-center gap-2">
-                <span
-                  className="material-symbols-outlined text-lg text-[#003178]"
-                  style={{ fontVariationSettings: "'FILL' 1" }}
-                >
-                  timeline
-                </span>
-                <h3 className="text-sm font-bold text-gray-900">Timeline</h3>
-              </div>
-              <div className="space-y-2 text-sm">
-                <div className="flex justify-between gap-4">
-                  <span className="text-gray-500">Registered</span>
-                  <span className="text-right text-gray-900">
-                    {format(new Date(userData.createdAt), "d MMM yyyy")}
-                  </span>
-                </div>
-                {applicationStatus?.status === "approved" &&
-                  applicationStatus.reviewedAt && (
-                    <div className="flex justify-between gap-4">
-                      <span className="text-gray-500">
-                        Application Approved
-                      </span>
-                      <span className="text-right text-gray-900">
-                        {format(
-                          new Date(applicationStatus.reviewedAt),
-                          "d MMM yyyy",
-                        )}
-                      </span>
-                    </div>
-                  )}
-                {accountMeta.kycReviewedAt && (
-                  <div className="flex justify-between gap-4">
-                    <span className="text-gray-500">KYC Verified</span>
-                    <span className="text-right text-gray-900">
-                      {format(
-                        new Date(accountMeta.kycReviewedAt),
-                        "d MMM yyyy",
-                      )}
-                    </span>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <KycVerifyDialog
-        open={verifyDialogOpen}
-        onOpenChange={setVerifyDialogOpen}
-        subjectName={businessName}
-        notes={verifyNotes}
-        onNotesChange={setVerifyNotes}
-        isPending={verifyMutation.isPending}
-        onConfirm={() =>
-          verifyMutation.mutate({
-            userId,
-            adminNotes: verifyNotes || undefined,
-          })
+              {isSuspended ? "Reactivate Seller" : "Suspend Seller"}
+            </Button>
+          </>
         }
       />
 
-      <Dialog open={suspendDialogOpen} onOpenChange={setSuspendDialogOpen}>
+      <KycVerifyDialog
+        open={verifyOpen}
+        onOpenChange={setVerifyOpen}
+        subjectName={businessName}
+        notes={verifyNotes}
+        onNotesChange={setVerifyNotes}
+        isPending={verify.isPending}
+        onConfirm={() => verify.mutate()}
+      />
+      <Dialog
+        open={suspendOpen}
+        onOpenChange={(open) => {
+          if (!suspend.isPending) setSuspendOpen(open);
+        }}
+      >
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Suspend User</DialogTitle>
+            <DialogTitle>Suspend Seller</DialogTitle>
             <DialogDescription>
-              This will immediately block <strong>{businessName}</strong> from
-              accessing the platform.
+              This will block {businessName} from accessing the platform until
+              the account is reactivated.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2">
-            <Label>Reason (recommended)</Label>
+            <Label htmlFor="suspension-reason">Reason (optional)</Label>
             <Textarea
-              placeholder="Why is this user being suspended?"
+              id="suspension-reason"
               value={suspendReason}
-              onChange={(e) => setSuspendReason(e.target.value)}
+              onChange={(event) => setSuspendReason(event.target.value)}
               rows={3}
+              placeholder="Reason for suspending this account"
             />
           </div>
           <DialogFooter>
             <Button
               variant="outline"
-              onClick={() => {
-                setSuspendDialogOpen(false);
-                setSuspendReason("");
-              }}
-              disabled={suspendMutation.isPending}
+              disabled={suspend.isPending}
+              onClick={() => setSuspendOpen(false)}
             >
               Cancel
             </Button>
             <Button
-              className="bg-red-600 hover:bg-red-700"
-              onClick={() =>
-                suspendMutation.mutate({
-                  userId,
-                  reason: suspendReason || undefined,
-                })
-              }
-              disabled={suspendMutation.isPending}
+              variant="destructive"
+              disabled={suspend.isPending}
+              onClick={() => suspend.mutate()}
             >
-              {suspendMutation.isPending && (
-                <Loader2 className="mr-2 size-4 animate-spin" />
-              )}
-              Suspend
+              {suspend.isPending && <Loader2 className="size-4 animate-spin" />}
+              Suspend Seller
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
       <EditUserDialog
-        open={editDialogOpen}
-        onOpenChange={setEditDialogOpen}
-        user={userData}
+        open={editOpen}
+        onOpenChange={setEditOpen}
+        user={data.user}
         isWarehouse={isWarehouse}
-        onSave={(updates) => updateMutation.mutate(updates)}
-        isPending={updateMutation.isPending}
+        pending={update.isPending}
+        onSave={(values) => update.mutate(values)}
       />
-    </section>
+      {!isWarehouse && (
+        <Dialog
+          open={logoOpen}
+          onOpenChange={(open) => {
+            if (!uploading && !updateLogo.isPending) setLogoOpen(open);
+          }}
+        >
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Change Logo</DialogTitle>
+              <DialogDescription>
+                Update the company logo for {businessName}.
+              </DialogDescription>
+            </DialogHeader>
+            <ImageUploader
+              value={logo}
+              onChange={setLogo}
+              folder={"registration-profiles/" + userId + "/shop-logo"}
+              deleteOnRemove={false}
+              disabled={updateLogo.isPending}
+              onUploadStateChange={setUploading}
+            />
+            <DialogFooter>
+              <Button
+                variant="outline"
+                disabled={uploading || updateLogo.isPending}
+                onClick={() => setLogoOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                disabled={
+                  uploading ||
+                  updateLogo.isPending ||
+                  logo === (data.user.shopLogo || "")
+                }
+                onClick={() => updateLogo.mutate()}
+              >
+                {updateLogo.isPending && (
+                  <Loader2 className="size-4 animate-spin" />
+                )}
+                Save Logo
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
+    </>
   );
+}
+
+function editValues(user: UserDetailData["user"]) {
+  return {
+    name: user.name,
+    phoneNumber: user.phoneNumber || "",
+    ownerName: user.ownerName || "",
+    shopName: user.shopName || "",
+    shopAddress: user.shopAddress || "",
+    warehouseName: user.warehouseName || "",
+    warehouseAddress: user.warehouseAddress || "",
+  };
 }
 
 function EditUserDialog({
   open,
   onOpenChange,
-  user: userData,
+  user,
   isWarehouse,
+  pending,
   onSave,
-  isPending,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  user: {
-    name: string;
-    phoneNumber: string | null;
-    ownerName: string | null;
-    shopName: string | null;
-    shopAddress: string | null;
-    warehouseName: string | null;
-    warehouseAddress: string | null;
-  };
+  user: UserDetailData["user"];
   isWarehouse: boolean;
-  onSave: (updates: Record<string, string>) => void;
-  isPending: boolean;
+  pending: boolean;
+  onSave: (values: Record<string, string>) => void;
 }) {
-  const [formData, setFormData] = useState({
-    name: userData.name,
-    phoneNumber: userData.phoneNumber || "",
-    ownerName: userData.ownerName || "",
-    shopName: userData.shopName || "",
-    shopAddress: userData.shopAddress || "",
-    warehouseName: userData.warehouseName || "",
-    warehouseAddress: userData.warehouseAddress || "",
-  });
-
+  const [values, setValues] = useState(() => editValues(user));
   useEffect(() => {
-    if (open) {
-      setFormData({
-        name: userData.name,
-        phoneNumber: userData.phoneNumber || "",
-        ownerName: userData.ownerName || "",
-        shopName: userData.shopName || "",
-        shopAddress: userData.shopAddress || "",
-        warehouseName: userData.warehouseName || "",
-        warehouseAddress: userData.warehouseAddress || "",
-      });
-    }
-  }, [open, userData]);
-
+    if (open) setValues(editValues(user));
+  }, [open, user]);
+  const fields: { key: keyof typeof values; label: string }[] = [
+    { key: "name", label: "Name" },
+    { key: "phoneNumber", label: "Phone" },
+    { key: "ownerName", label: "Owner Name" },
+    ...(isWarehouse
+      ? [
+          { key: "warehouseName" as const, label: "Warehouse Name" },
+          { key: "warehouseAddress" as const, label: "Warehouse Address" },
+        ]
+      : [
+          { key: "shopName" as const, label: "Shop Name" },
+          { key: "shopAddress" as const, label: "Shop Address" },
+        ]),
+  ];
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!pending) onOpenChange(next);
+      }}
+    >
+      <DialogContent className="max-h-[85dvh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Edit User Info</DialogTitle>
+          <DialogTitle>Edit Seller</DialogTitle>
           <DialogDescription>
-            Update basic account and business details.
+            Update the existing account and business details.
           </DialogDescription>
         </DialogHeader>
-        <div className="grid gap-3">
-          <div>
-            <Label>Name</Label>
-            <Input
-              value={formData.name}
-              onChange={(e) =>
-                setFormData((f) => ({ ...f, name: e.target.value }))
-              }
-            />
-          </div>
-          <div>
-            <Label>Phone</Label>
-            <Input
-              value={formData.phoneNumber}
-              onChange={(e) =>
-                setFormData((f) => ({ ...f, phoneNumber: e.target.value }))
-              }
-            />
-          </div>
-          <div>
-            <Label>Owner Name</Label>
-            <Input
-              value={formData.ownerName}
-              onChange={(e) =>
-                setFormData((f) => ({ ...f, ownerName: e.target.value }))
-              }
-            />
-          </div>
-          {isWarehouse ? (
-            <>
-              <div>
-                <Label>Warehouse Name</Label>
-                <Input
-                  value={formData.warehouseName}
-                  onChange={(e) =>
-                    setFormData((f) => ({
-                      ...f,
-                      warehouseName: e.target.value,
-                    }))
-                  }
-                />
-              </div>
-              <div>
-                <Label>Warehouse Address</Label>
-                <Input
-                  value={formData.warehouseAddress}
-                  onChange={(e) =>
-                    setFormData((f) => ({
-                      ...f,
-                      warehouseAddress: e.target.value,
-                    }))
-                  }
-                />
-              </div>
-            </>
-          ) : (
-            <>
-              <div>
-                <Label>Shop Name</Label>
-                <Input
-                  value={formData.shopName}
-                  onChange={(e) =>
-                    setFormData((f) => ({ ...f, shopName: e.target.value }))
-                  }
-                />
-              </div>
-              <div>
-                <Label>Shop Address</Label>
-                <Input
-                  value={formData.shopAddress}
-                  onChange={(e) =>
-                    setFormData((f) => ({
-                      ...f,
-                      shopAddress: e.target.value,
-                    }))
-                  }
-                />
-              </div>
-            </>
-          )}
+        <div className="space-y-4">
+          {fields.map(({ key, label }) => (
+            <div key={key} className="space-y-2">
+              <Label htmlFor={"edit-user-" + key}>{label}</Label>
+              <Input
+                id={"edit-user-" + key}
+                value={values[key]}
+                disabled={pending}
+                onChange={(event) =>
+                  setValues((previous) => ({
+                    ...previous,
+                    [key]: event.target.value,
+                  }))
+                }
+              />
+            </div>
+          ))}
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
+          <Button
+            variant="outline"
+            disabled={pending}
+            onClick={() => onOpenChange(false)}
+          >
             Cancel
           </Button>
-          <Button onClick={() => onSave(formData)} disabled={isPending}>
-            {isPending && <Loader2 className="mr-2 size-4 animate-spin" />}
-            Save Changes
+          <Button
+            disabled={pending || !values.name.trim()}
+            onClick={() => onSave(values)}
+          >
+            {pending && <Loader2 className="size-4 animate-spin" />}Save Changes
           </Button>
         </DialogFooter>
       </DialogContent>

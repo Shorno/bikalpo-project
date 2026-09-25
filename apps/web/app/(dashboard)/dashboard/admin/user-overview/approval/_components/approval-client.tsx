@@ -10,14 +10,16 @@ import {
   AlertCircle,
   ChevronLeft,
   ChevronRight,
-  ChevronsLeft,
-  ChevronsRight,
   Inbox,
+  RotateCcw,
   Search,
+  X,
 } from "lucide-react";
-import { parseAsInteger, parseAsString, useQueryState } from "nuqs";
-import { useMemo } from "react";
+import { parseAsInteger, parseAsString, useQueryStates } from "nuqs";
+import { useEffect } from "react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -25,6 +27,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
   TableBody,
@@ -34,141 +37,80 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { BUSINESS_NATURES } from "@/constants/seller-registration";
-import { cn } from "@/lib/utils";
+import { useDebounce } from "@/hooks/use-debounce";
 import { orpc } from "@/utils/orpc";
-import { type ApplicationRow, applicationColumns } from "./application-columns";
+import { MissingValue } from "../../_components/user-detail-content";
+import { applicationColumns } from "./application-columns";
 
-type StatusFilter = "all" | "pending" | "approved" | "rejected";
-type TypeFilter = "all" | "seller" | "warehouse";
-type ReferralFilter = "all" | "direct" | "invited";
-type BusinessNatureFilter =
-  | "all"
-  | "unspecified"
-  | (typeof BUSINESS_NATURES)[number]["id"];
-
+const STATUSES = ["all", "active", "verified", "pending", "suspended"] as const;
+type Status = (typeof STATUSES)[number];
 const PAGE_SIZE = 20;
 
-const KPI_BLOCKS: {
-  key: StatusFilter;
-  label: string;
-}[] = [
-  {
-    key: "all",
-    label: "Total Requests",
-  },
-  {
-    key: "pending",
-    label: "Pending",
-  },
-  {
-    key: "approved",
-    label: "Approved",
-  },
-  {
-    key: "rejected",
-    label: "Rejected",
-  },
-];
-
-function generatePageNumbers(
-  current: number,
-  total: number,
-): (number | "...")[] {
-  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
-  const pages: (number | "...")[] = [1];
-  if (current > 3) pages.push("...");
-  const start = Math.max(2, current - 1);
-  const end = Math.min(total - 1, current + 1);
-  for (let i = start; i <= end; i++) pages.push(i);
-  if (current < total - 2) pages.push("...");
-  pages.push(total);
-  return pages;
-}
-
-function formatBusinessNature(value: string) {
-  if (value === "unspecified") return "Unspecified (legacy)";
-  return BUSINESS_NATURES.find((nature) => nature.id === value)?.label ?? value;
-}
-
 export function ApprovalClient() {
-  const [statusValue, setStatus] = useQueryState(
-    "status",
-    parseAsString.withDefault("pending").withOptions({ clearOnDefault: true }),
+  const [params, setParams] = useQueryStates(
+    {
+      status: parseAsString.withDefault("all"),
+      businessType: parseAsString.withDefault("all"),
+      district: parseAsString.withDefault("all"),
+      q: parseAsString.withDefault(""),
+      page: parseAsInteger.withDefault(1),
+      // Existing overview links can scope requests; expose their removable scope.
+      type: parseAsString.withDefault("all"),
+      nature: parseAsString.withDefault("all"),
+      referral: parseAsString.withDefault("all"),
+    },
+    { clearOnDefault: true },
   );
-  const [typeValue, setType] = useQueryState(
-    "type",
-    parseAsString.withDefault("all").withOptions({ clearOnDefault: true }),
+  const status: Status = STATUSES.includes(params.status as Status)
+    ? (params.status as Status)
+    : params.status === "approved"
+      ? "active"
+      : "all";
+  const type =
+    params.type === "seller" || params.type === "warehouse"
+      ? params.type
+      : "all";
+  const nature =
+    params.nature === "unspecified" ||
+    BUSINESS_NATURES.some((item) => item.id === params.nature)
+      ? (params.nature as
+          | "unspecified"
+          | (typeof BUSINESS_NATURES)[number]["id"])
+      : "all";
+  const referral =
+    params.referral === "direct" || params.referral === "invited"
+      ? params.referral
+      : "all";
+  const search = useDebounce(params.q.trim(), 250);
+  const page = Math.max(1, params.page);
+  const filters = {
+    search: search || undefined,
+    status,
+    type,
+    businessNature: nature,
+    referral,
+    businessType:
+      params.businessType === "all" ? undefined : params.businessType,
+    district: params.district === "all" ? undefined : params.district,
+  } as const;
+  const overview = useQuery(
+    orpc.adminApplication.getOverview.queryOptions({ input: filters }),
   );
-  const [businessNatureValue, setBusinessNature] = useQueryState(
-    "nature",
-    parseAsString.withDefault("all").withOptions({ clearOnDefault: true }),
+  const options = useQuery(
+    orpc.adminApplication.getFilterOptions.queryOptions(),
   );
-  const [district, setDistrict] = useQueryState(
-    "district",
-    parseAsString.withDefault("all").withOptions({ clearOnDefault: true }),
-  );
-  const [referralValue, setReferral] = useQueryState(
-    "referral",
-    parseAsString.withDefault("all").withOptions({ clearOnDefault: true }),
-  );
-  const [search, setSearch] = useQueryState(
-    "q",
-    parseAsString.withDefault("").withOptions({ clearOnDefault: true }),
-  );
-  const [page, setPage] = useQueryState(
-    "page",
-    parseAsInteger.withDefault(1).withOptions({ clearOnDefault: true }),
-  );
-  const status = statusValue as StatusFilter;
-  const type = typeValue as TypeFilter;
-  const businessNature = businessNatureValue as BusinessNatureFilter;
-  const referral = referralValue as ReferralFilter;
-
-  const overviewInput = useMemo(
-    () => ({
-      search: search.trim() || undefined,
-      type,
-      businessNature,
-      referral,
-      district: district !== "all" ? district : undefined,
+  const requests = useQuery(
+    orpc.adminApplication.list.queryOptions({
+      input: { ...filters, page, limit: PAGE_SIZE },
     }),
-    [search, type, businessNature, referral, district],
   );
-
-  const { data: overview } = useQuery({
-    ...orpc.adminApplication.getOverview.queryOptions({
-      input: overviewInput,
-    }),
-  });
-
-  const { data: filterOptions } = useQuery({
-    ...orpc.adminApplication.getFilterOptions.queryOptions(),
-  });
-
-  const listInput = useMemo(
-    () => ({
-      ...overviewInput,
-      status,
-      page,
-      limit: PAGE_SIZE,
-    }),
-    [overviewInput, status, page],
-  );
-
-  const {
-    data: listData,
-    isLoading,
-    isError,
-  } = useQuery({
-    ...orpc.adminApplication.list.queryOptions({ input: listInput }),
-  });
-
-  const items = (listData?.items ?? []) as ApplicationRow[];
-  const totalCount = listData?.total ?? 0;
-  const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
-  const showFrom = totalCount > 0 ? (page - 1) * PAGE_SIZE + 1 : 0;
-  const showTo = Math.min(page * PAGE_SIZE, totalCount);
-
+  const items = requests.data?.items ?? [];
+  const total = requests.data?.total ?? 0;
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  useEffect(() => {
+    if (requests.data && page > totalPages)
+      void setParams({ page: totalPages });
+  }, [requests.data, page, totalPages, setParams]);
   const table = useReactTable({
     data: items,
     columns: applicationColumns,
@@ -176,326 +118,377 @@ export function ApprovalClient() {
     manualPagination: true,
     pageCount: totalPages,
   });
-
-  const selectStatus = (next: StatusFilter) => {
-    void setStatus(next);
-    void setPage(1);
-  };
-
-  const counts: Record<StatusFilter, number> = {
-    all: overview?.total ?? 0,
-    pending: overview?.pending ?? 0,
-    approved: overview?.approved ?? 0,
-    rejected: overview?.rejected ?? 0,
-  };
+  const reset = () =>
+    void setParams({
+      status: null,
+      businessType: null,
+      district: null,
+      q: null,
+      page: null,
+      type: null,
+      nature: null,
+      referral: null,
+    });
+  const scope = [
+    ...(type !== "all"
+      ? [
+          {
+            key: "type" as const,
+            label: type === "warehouse" ? "Warehouses" : "Retailers",
+          },
+        ]
+      : []),
+    ...(nature !== "all"
+      ? [
+          {
+            key: "nature" as const,
+            label:
+              BUSINESS_NATURES.find((item) => item.id === nature)?.label ||
+              "Unspecified nature",
+          },
+        ]
+      : []),
+    ...(referral !== "all"
+      ? [
+          {
+            key: "referral" as const,
+            label:
+              referral === "invited" ? "Invited requests" : "Direct requests",
+          },
+        ]
+      : []),
+  ];
+  const businessTypes = [
+    ...new Set([
+      ...(options.data?.businessTypes ?? []),
+      ...(params.businessType !== "all" ? [params.businessType] : []),
+    ]),
+  ];
+  const locations = [
+    ...new Set([
+      ...(options.data?.districts ?? []),
+      ...(params.district !== "all" ? [params.district] : []),
+    ]),
+  ];
+  const kpis = [
+    {
+      label: "Total Requests",
+      value: overview.data?.total,
+      hint: "Requests matching the current search and filters.",
+    },
+    {
+      label: "Frozen",
+      value: overview.data?.frozen,
+      hint: "Frozen request status is not currently recorded.",
+    },
+    {
+      label: "Suspended",
+      value: overview.data?.suspended,
+      hint: "Matching requests whose linked account is suspended.",
+    },
+  ];
 
   return (
-    <div className="space-y-5">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-            <h1 className="text-2xl font-semibold tracking-tight">
-              Approval &amp; Verification
-            </h1>
-            {(overview?.pending ?? 0) > 0 && (
-              <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
-                <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
-                {overview?.pending} awaiting review
-              </span>
-            )}
-          </div>
-          <p className="mt-0.5 text-sm text-muted-foreground">
-            Onboarding and verification workflow for Shop Owner and Warehouse
-            Owner requests
-          </p>
+    <div className="min-w-0 space-y-6">
+      <h1 className="sr-only">Approval</h1>
+      <section
+        aria-label="Request filters"
+        className="space-y-4 rounded-xl border bg-card p-4 sm:p-6"
+      >
+        <div className="relative">
+          <Search
+            className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+            aria-hidden
+          />
+          <Input
+            type="search"
+            aria-label="Search requests by name, ID, business or phone"
+            placeholder="Search by name, ID, business or phone..."
+            value={params.q}
+            onChange={(event) =>
+              void setParams({ q: event.target.value, page: 1 })
+            }
+            className="h-9 bg-background pl-9"
+          />
         </div>
-      </div>
-
-      <section className="overflow-hidden rounded-xl border bg-background shadow-sm">
-        <header className="border-b bg-muted/30 px-4 py-3">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-foreground">
-            Application Performance
-          </h2>
-        </header>
-        <div className="grid grid-cols-2 gap-px bg-border sm:grid-cols-4">
-          {KPI_BLOCKS.map((block) => {
-            const isActive = status === block.key;
-
-            return (
-              <button
-                key={block.key}
-                type="button"
-                onClick={() => selectStatus(block.key)}
-                className={cn(
-                  "flex min-h-[76px] flex-col items-start justify-center bg-background px-4 py-3 text-left transition-colors hover:bg-muted/50 focus-visible:z-10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
-                  isActive && "bg-primary/5 hover:bg-primary/5",
-                )}
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="w-full space-y-2 sm:w-40">
+            <Label htmlFor="request-status">Status</Label>
+            <Select
+              value={status}
+              onValueChange={(value) =>
+                void setParams({ status: value, page: 1 })
+              }
+            >
+              <SelectTrigger id="request-status" className="h-9 w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {STATUSES.map((value) => (
+                  <SelectItem key={value} value={value}>
+                    {value === "all"
+                      ? "All"
+                      : value.charAt(0).toUpperCase() + value.slice(1)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="w-full space-y-2 sm:w-52">
+            <Label htmlFor="request-business-type">Business Type</Label>
+            <Select
+              value={params.businessType}
+              onValueChange={(value) =>
+                void setParams({ businessType: value, page: 1 })
+              }
+            >
+              <SelectTrigger id="request-business-type" className="h-9 w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All</SelectItem>
+                {businessTypes.map((value) => (
+                  <SelectItem key={value} value={value}>
+                    {value}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="w-full space-y-2 sm:w-44">
+            <Label htmlFor="request-location">Location</Label>
+            <Select
+              value={params.district}
+              onValueChange={(value) =>
+                void setParams({ district: value, page: 1 })
+              }
+            >
+              <SelectTrigger id="request-location" className="h-9 w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All</SelectItem>
+                {locations.map((value) => (
+                  <SelectItem key={value} value={value}>
+                    {value}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <Button
+            variant="outline"
+            className="h-9 w-full sm:ml-auto sm:w-auto"
+            onClick={reset}
+          >
+            <RotateCcw className="size-3.5" aria-hidden />
+            Reset Filter
+          </Button>
+        </div>
+        {scope.length > 0 && (
+          <div
+            role="group"
+            aria-label="Filters from overview"
+            className="flex flex-wrap gap-2"
+          >
+            {scope.map((item) => (
+              <Button
+                key={item.key}
+                variant="secondary"
+                size="sm"
+                onClick={() => void setParams({ [item.key]: null, page: 1 })}
+                aria-label={"Remove " + item.label + " filter"}
               >
-                <span className="text-xs text-muted-foreground">
-                  {block.label}
-                </span>
-                <span
-                  className={cn(
-                    "mt-0.5 font-mono text-xl font-semibold tabular-nums text-foreground",
-                    isActive && "text-primary",
-                  )}
-                >
-                  {counts[block.key].toLocaleString()}
-                </span>
-                {block.key === "pending" && overview && (
-                  <span className="mt-0.5 text-[11px] text-muted-foreground">
-                    Shop Owner {overview.pendingShopOwner} · Warehouse Owner{" "}
-                    {overview.pendingWarehouseOwner}
-                  </span>
-                )}
-              </button>
-            );
-          })}
-        </div>
-      </section>
-
-      <div className="overflow-hidden rounded-xl border bg-background shadow-sm">
-        <div className="flex flex-wrap items-center gap-2 border-b bg-muted/30 px-4 py-3">
-          <div className="relative min-w-[200px] flex-1 sm:max-w-sm">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <input
-              value={search}
-              onChange={(e) => {
-                void setSearch(e.target.value);
-                void setPage(1);
-              }}
-              placeholder="Name / Phone / Request ID..."
-              className="h-9 w-full rounded-md border bg-background pl-9 pr-3 text-sm outline-none transition-colors placeholder:text-muted-foreground focus:border-ring focus:ring-2 focus:ring-ring/20"
-            />
-          </div>
-          <Select
-            value={status}
-            onValueChange={(v) => selectStatus(v as StatusFilter)}
-          >
-            <SelectTrigger className="h-9 w-[130px]">
-              <SelectValue placeholder="Status" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Status</SelectItem>
-              <SelectItem value="pending">Pending</SelectItem>
-              <SelectItem value="approved">Approved</SelectItem>
-              <SelectItem value="rejected">Rejected</SelectItem>
-            </SelectContent>
-          </Select>
-          <Select
-            value={type}
-            onValueChange={(v) => {
-              void setType(v);
-              void setPage(1);
-            }}
-          >
-            <SelectTrigger className="h-9 w-[130px]">
-              <SelectValue placeholder="Type" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Types</SelectItem>
-              <SelectItem value="seller">Shop Owner</SelectItem>
-              <SelectItem value="warehouse">Warehouse Owner</SelectItem>
-            </SelectContent>
-          </Select>
-          <Select
-            value={businessNature}
-            onValueChange={(v) => {
-              void setBusinessNature(v);
-              void setPage(1);
-            }}
-          >
-            <SelectTrigger className="h-9 w-[180px]">
-              <SelectValue placeholder="Business Nature" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Business Natures</SelectItem>
-              {(filterOptions?.businessNatures ?? []).map((nature) => (
-                <SelectItem key={nature} value={nature}>
-                  {formatBusinessNature(nature)}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select
-            value={district}
-            onValueChange={(v) => {
-              void setDistrict(v);
-              void setPage(1);
-            }}
-          >
-            <SelectTrigger className="h-9 w-[140px]">
-              <SelectValue placeholder="Location" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Locations</SelectItem>
-              {(filterOptions?.districts ?? []).map((d) => (
-                <SelectItem key={d} value={d}>
-                  {d}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select
-            value={referral}
-            onValueChange={(v) => {
-              void setReferral(v);
-              void setPage(1);
-            }}
-          >
-            <SelectTrigger className="h-9 w-[130px]">
-              <SelectValue placeholder="Referral" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Referral</SelectItem>
-              <SelectItem value="direct">Direct</SelectItem>
-              <SelectItem value="invited">Invited</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-
-        {isLoading ? (
-          <div className="divide-y">
-            {Array.from({ length: 8 }).map((_, i) => (
-              <div key={i} className="flex items-center gap-4 px-4 py-3.5">
-                <div className="h-4 w-28 animate-pulse rounded bg-muted" />
-                <div className="h-4 w-32 animate-pulse rounded bg-muted" />
-                <div className="h-4 w-24 animate-pulse rounded bg-muted" />
-                <div className="ml-auto h-5 w-20 animate-pulse rounded-full bg-muted" />
-              </div>
+                {item.label}
+                <X className="size-3" aria-hidden />
+              </Button>
             ))}
           </div>
-        ) : isError ? (
-          <div className="grid min-h-[320px] place-items-center text-center">
-            <div>
-              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-red-50">
-                <AlertCircle className="h-6 w-6 text-red-500" />
-              </div>
-              <h2 className="mt-3 font-semibold">Failed to load requests</h2>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Try refreshing or adjusting your filters.
-              </p>
-            </div>
-          </div>
-        ) : items.length === 0 ? (
-          <div className="grid min-h-[320px] place-items-center text-center">
-            <div>
-              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-muted">
-                <Inbox className="h-6 w-6 text-muted-foreground" />
-              </div>
-              <h2 className="mt-3 font-semibold">No requests found</h2>
-              <p className="mt-1 max-w-sm text-sm text-muted-foreground">
-                Requests matching your current filters will appear here.
-              </p>
-            </div>
-          </div>
-        ) : (
-          <Table>
-            <TableHeader>
-              {table.getHeaderGroups().map((headerGroup) => (
-                <TableRow
-                  key={headerGroup.id}
-                  className="bg-muted/30 hover:bg-muted/30"
-                >
-                  {headerGroup.headers.map((header) => (
-                    <TableHead
-                      key={header.id}
-                      className="px-4 text-xs font-semibold uppercase tracking-wider"
-                    >
-                      {header.isPlaceholder
-                        ? null
-                        : flexRender(
-                            header.column.columnDef.header,
-                            header.getContext(),
-                          )}
-                    </TableHead>
-                  ))}
-                </TableRow>
-              ))}
-            </TableHeader>
-            <TableBody>
-              {table.getRowModel().rows.map((row) => (
-                <TableRow key={row.id}>
-                  {row.getVisibleCells().map((cell) => (
-                    <TableCell key={cell.id} className="px-4 py-3">
-                      {flexRender(
-                        cell.column.columnDef.cell,
-                        cell.getContext(),
-                      )}
-                    </TableCell>
-                  ))}
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
         )}
+        {options.isError && (
+          <div
+            role="alert"
+            className="flex flex-wrap items-center gap-3 text-sm"
+          >
+            <p>Could not load filter options.</p>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void options.refetch()}
+            >
+              Retry filters
+            </Button>
+          </div>
+        )}
+      </section>
 
-        {!isLoading && !isError && totalCount > 0 && (
-          <div className="flex flex-col gap-3 border-t px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-            <span className="text-sm text-muted-foreground">
-              Showing {showFrom}–{showTo} of {totalCount} requests
-            </span>
-            <div className="flex items-center gap-1.5">
-              <Button
-                variant="outline"
-                size="icon"
-                className="h-8 w-8"
-                disabled={page <= 1}
-                onClick={() => void setPage(1)}
-              >
-                <ChevronsLeft className="h-4 w-4" />
-              </Button>
-              <Button
-                variant="outline"
-                size="icon"
-                className="h-8 w-8"
-                disabled={page <= 1}
-                onClick={() => void setPage(page - 1)}
-              >
-                <ChevronLeft className="h-4 w-4" />
-              </Button>
-              {generatePageNumbers(page, totalPages).map((p, i) =>
-                p === "..." ? (
-                  <span
-                    key={`dot-${i}`}
-                    className="px-1 text-xs text-muted-foreground"
-                  >
-                    …
-                  </span>
+      <section aria-labelledby="request-summary-heading" className="space-y-3">
+        <h2
+          id="request-summary-heading"
+          className="text-sm font-semibold tracking-tight"
+        >
+          Quick Summary
+        </h2>
+        <dl className="grid gap-4 sm:grid-cols-3">
+          {kpis.map((kpi) => (
+            <div
+              key={kpi.label}
+              title={kpi.hint}
+              className="rounded-xl border bg-card p-5 sm:p-6"
+            >
+              <dt className="text-sm text-muted-foreground">{kpi.label}</dt>
+              <dd className="mt-2 font-mono text-3xl font-semibold tabular-nums">
+                {overview.isPending ? (
+                  <Skeleton className="h-9 w-20" />
+                ) : kpi.value == null ? (
+                  <MissingValue />
                 ) : (
-                  <Button
-                    key={p}
-                    variant={p === page ? "default" : "outline"}
-                    size="icon"
-                    className="h-8 w-8 text-xs"
-                    onClick={() => void setPage(p as number)}
-                  >
-                    {p}
-                  </Button>
-                ),
-              )}
-              <Button
-                variant="outline"
-                size="icon"
-                className="h-8 w-8"
-                disabled={page >= totalPages}
-                onClick={() => void setPage(page + 1)}
-              >
-                <ChevronRight className="h-4 w-4" />
-              </Button>
-              <Button
-                variant="outline"
-                size="icon"
-                className="h-8 w-8"
-                disabled={page >= totalPages}
-                onClick={() => void setPage(totalPages)}
-              >
-                <ChevronsRight className="h-4 w-4" />
-              </Button>
+                  kpi.value.toLocaleString("en-US")
+                )}
+              </dd>
             </div>
+          ))}
+        </dl>
+        {overview.isError && (
+          <div
+            role="alert"
+            className="flex flex-wrap items-center gap-3 text-sm"
+          >
+            <p>Could not load the summary.</p>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => void overview.refetch()}
+            >
+              Retry summary
+            </Button>
           </div>
         )}
-      </div>
+      </section>
+
+      <section
+        aria-labelledby="request-list-heading"
+        className="min-w-0 space-y-3"
+      >
+        <h2
+          id="request-list-heading"
+          className="text-sm font-semibold tracking-tight"
+        >
+          Retailer Request List
+        </h2>
+        <div
+          className="min-w-0 overflow-hidden rounded-xl border bg-card"
+          aria-busy={requests.isFetching}
+        >
+          {requests.isPending ? (
+            <div
+              role="status"
+              aria-label="Loading requests"
+              className="space-y-4 p-5"
+            >
+              {Array.from({ length: 6 }, (_, index) => (
+                <Skeleton key={index} className="h-7 w-full" />
+              ))}
+            </div>
+          ) : requests.isError ? (
+            <div
+              role="alert"
+              className="flex min-h-60 flex-col items-center justify-center gap-3 p-6 text-center"
+            >
+              <AlertCircle
+                className="size-8 text-muted-foreground"
+                aria-hidden
+              />
+              <p>Could not load requests.</p>
+              <Button variant="outline" onClick={() => void requests.refetch()}>
+                Retry requests
+              </Button>
+            </div>
+          ) : items.length === 0 ? (
+            <div className="flex min-h-60 flex-col items-center justify-center gap-3 p-6 text-center">
+              <Inbox className="size-8 text-muted-foreground" aria-hidden />
+              <p className="font-medium">No requests found</p>
+              <p className="text-sm text-muted-foreground">
+                No requests match the current search and filters.
+              </p>
+              <Button variant="outline" size="sm" onClick={reset}>
+                Reset Filter
+              </Button>
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                {table.getHeaderGroups().map((group) => (
+                  <TableRow
+                    key={group.id}
+                    className="bg-muted/30 hover:bg-muted/30"
+                  >
+                    {group.headers.map((header) => (
+                      <TableHead
+                        key={header.id}
+                        className="px-4 text-xs font-semibold uppercase tracking-wider"
+                      >
+                        {flexRender(
+                          header.column.columnDef.header,
+                          header.getContext(),
+                        )}
+                      </TableHead>
+                    ))}
+                  </TableRow>
+                ))}
+              </TableHeader>
+              <TableBody>
+                {table.getRowModel().rows.map((row) => (
+                  <TableRow key={row.id}>
+                    {row.getVisibleCells().map((cell) => (
+                      <TableCell key={cell.id} className="px-4 py-3">
+                        {flexRender(
+                          cell.column.columnDef.cell,
+                          cell.getContext(),
+                        )}
+                      </TableCell>
+                    ))}
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+          {!requests.isPending && !requests.isError && total > 0 && (
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t px-4 py-3">
+              <p className="text-sm text-muted-foreground">
+                Showing {(page - 1) * PAGE_SIZE + 1}–
+                {Math.min(page * PAGE_SIZE, total)} of {total} requests
+              </p>
+              <nav
+                aria-label="Request pagination"
+                className="flex items-center gap-3"
+              >
+                <Button
+                  variant="outline"
+                  size="icon"
+                  aria-label="Previous page"
+                  disabled={page <= 1}
+                  onClick={() => void setParams({ page: page - 1 })}
+                >
+                  <ChevronLeft className="size-4" />
+                </Button>
+                <span className="text-sm tabular-nums">
+                  Page {page} of {totalPages}
+                </span>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  aria-label="Next page"
+                  disabled={page >= totalPages}
+                  onClick={() => void setParams({ page: page + 1 })}
+                >
+                  <ChevronRight className="size-4" />
+                </Button>
+              </nav>
+            </div>
+          )}
+        </div>
+      </section>
     </div>
   );
 }
