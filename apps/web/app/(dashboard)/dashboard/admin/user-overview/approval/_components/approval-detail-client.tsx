@@ -198,7 +198,16 @@ export function ApprovalDetailClient({
       ...current.user,
       shopLogo:
         !isWarehouse && hasBusinessAccount ? current.user.shopLogo : null,
+      shopOpeningTime:
+        !isWarehouse && hasBusinessAccount
+          ? current.user.shopOpeningTime
+          : null,
+      shopClosingTime:
+        !isWarehouse && hasBusinessAccount
+          ? current.user.shopClosingTime
+          : null,
     },
+    financialAccounts: hasBusinessAccount ? current.financialAccounts : [],
     planName,
     subscription: subscription ? { ...subscription, planName } : null,
     application: record,

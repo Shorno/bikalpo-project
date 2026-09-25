@@ -1,4 +1,4 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import type { db } from "./index";
 import {
   DEFAULT_SUBSCRIPTION_PLANS,
@@ -58,9 +58,42 @@ export async function retailerSubscriptionEligibility(
     ),
     limit: 2,
   });
-  if (applications.length === 0) return "missing_application" as const;
   if (applications.length > 1) return "ambiguous_application" as const;
-  return "eligible" as const;
+  if (applications.length === 1) return "eligible" as const;
+
+  // Older profile saves reset the approved application to pending and cleared
+  // its review metadata. Preserve access only for an approved account whose
+  // original registration already qualified for a provisioned subscription.
+  const application = await tx.query.sellerApplication.findFirst({
+    where: eq(sellerApplication.userId, shopId),
+    orderBy: [desc(sellerApplication.createdAt)],
+    columns: {
+      status: true,
+      businessType: true,
+      reviewedAt: true,
+      reviewedBy: true,
+      createdAt: true,
+    },
+  });
+  if (
+    application?.status !== "pending" ||
+    application.businessType !== "retail" ||
+    application.reviewedAt !== null ||
+    application.reviewedBy !== null
+  )
+    return "missing_application" as const;
+
+  const provisioned = await tx.query.retailerSubscription.findFirst({
+    where: and(
+      eq(retailerSubscription.shopId, shopId),
+      eq(retailerSubscription.planCode, "free"),
+      inArray(retailerSubscription.source, ["approval", "backfill"]),
+    ),
+    columns: { startsAt: true },
+  });
+  return provisioned && application.createdAt <= provisioned.startsAt
+    ? ("eligible" as const)
+    : ("missing_application" as const);
 }
 
 /** Provisioning and purchase writers share the same per-owner transaction lock. */

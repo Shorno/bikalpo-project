@@ -10,6 +10,7 @@ import {
   AdminNotesContent,
   BusinessInformation,
   DocumentsContent,
+  FinancialInformation,
   PlanContent,
   type UserDetailData,
 } from "./user-detail-content";
@@ -77,8 +78,17 @@ export function UserDetailsLayout({
             ))}
           </TabsList>
         </div>
-        <TabsContent value="basic">
-          <BusinessInformation detail={detail} businessName={businessName} />
+        <TabsContent value="basic" className="space-y-5">
+          <BusinessInformation
+            detail={detail}
+            businessName={businessName}
+            openingTime={data.user.shopOpeningTime}
+            closingTime={data.user.shopClosingTime}
+          />
+          <FinancialInformation
+            accounts={data.financialAccounts}
+            detail={detail}
+          />
         </TabsContent>
         <TabsContent value="documents">
           <DocumentsContent detail={detail} />

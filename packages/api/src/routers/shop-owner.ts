@@ -2157,13 +2157,7 @@ const mutations = {
         orderBy: [desc(sellerApplication.createdAt)],
         columns: {
           id: true,
-          binNumber: true,
-          businessNature: true,
-          businessType: true,
           documentUrls: true,
-          productTypeId: true,
-          tinNumber: true,
-          tradeLicenseNumber: true,
         },
       });
 
@@ -2183,28 +2177,20 @@ const mutations = {
         storeFront: input.documents.storeFront ?? undefined,
         warehouse: input.documents.warehouse ?? undefined,
       };
-      const documentsChanged =
-        JSON.stringify(application.documentUrls ?? {}) !==
-        JSON.stringify(documentUrls);
-      const governedProfileChanged =
-        application.businessType !== input.business.businessType ||
-        application.productTypeId !== input.business.productTypeId ||
-        application.businessNature !== input.business.businessNature ||
-        application.binNumber !== input.business.binNumber ||
-        application.tinNumber !== input.business.tinNumber ||
-        application.tradeLicenseNumber !== input.business.tradeLicenseNumber;
+      const documentsChanged = (
+        Object.keys(input.documents) as (keyof typeof input.documents)[]
+      ).some(
+        (key) =>
+          (application.documentUrls?.[key]?.trim() || null) !==
+          input.documents[key],
+      );
 
       await db.transaction(async (tx) => {
         await tx
           .update(sellerApplication)
           .set({
-            ...(governedProfileChanged
-              ? {
-                  status: "pending" as const,
-                  reviewedAt: null,
-                  reviewedBy: null,
-                }
-              : {}),
+            // Profile edits do not undo the admin's registration approval.
+            // Actual document changes use the separate KYC review below.
             shopName: input.business.shopName,
             businessType: input.business.businessType,
             productTypeId: selectedProductType?.id ?? null,
@@ -2261,11 +2247,9 @@ const mutations = {
         success: true,
         message: documentsChanged
           ? "Profile updated and documents submitted for verification"
-          : governedProfileChanged
-            ? "Profile updated and governed changes submitted for review"
-            : "Registration profile updated",
+          : "Registration profile updated",
         verificationReset: documentsChanged,
-        applicationReviewRequested: governedProfileChanged,
+        applicationReviewRequested: false,
       };
     }),
 
