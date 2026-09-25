@@ -1,5 +1,6 @@
 "use client";
 
+import { isPhoneAuthEmail } from "@bikalpo-project/auth/phone-identity";
 import { useQuery } from "@tanstack/react-query";
 import { formatDistanceToNow } from "date-fns";
 import { ArrowUpRight, FileText } from "lucide-react";
@@ -129,89 +130,233 @@ function SocialLink({ value }: { value?: string | null }) {
 export function BusinessInformation({
   detail,
   businessName,
+  openingTime,
+  closingTime,
 }: {
   detail: ApplicationDetailData;
   businessName: string;
+  openingTime?: string | null;
+  closingTime?: string | null;
 }) {
   return (
-    <section
-      aria-labelledby="business-information-heading"
-      className="space-y-3"
-    >
-      <h2
-        id="business-information-heading"
-        className="text-sm font-semibold tracking-tight"
+    <div className="space-y-5">
+      <section
+        aria-labelledby="business-information-heading"
+        className="space-y-3"
       >
-        Business Information
-      </h2>
-      <div className="grid min-w-0 overflow-hidden rounded-xl border bg-card md:grid-cols-2">
-        <div className="min-w-0 border-b md:border-r md:border-b-0">
-          <h3 className="border-b bg-muted/20 px-4 py-4 text-sm font-semibold sm:px-6">
-            Business Info
-          </h3>
-          <div className="p-4 sm:p-6">
-            <p className="mb-5 break-words font-semibold">{businessName}</p>
-            <DetailFields
-              fields={[
-                {
-                  label: "Business Type",
-                  value: detail.productTypeName || detail.businessCategory,
-                },
-                {
-                  label: "Coverage",
-                  value: [detail.area, detail.district, detail.division]
-                    .filter(Boolean)
-                    .join(", "),
-                  hint: "Location recorded in the business application.",
-                },
-                { label: "Address", value: detail.businessAddress },
-                {
-                  label: "Nature",
-                  value: businessNatureLabel(detail.businessNature),
-                },
-                { label: "Experience", value: detail.yearsInBusiness },
-                { label: "Sales Volume", value: detail.monthlyRevenue },
-              ]}
-            />
+        <h2
+          id="business-information-heading"
+          className="text-sm font-semibold tracking-tight"
+        >
+          Business Information
+        </h2>
+        <div className="grid min-w-0 overflow-hidden rounded-xl border bg-card md:grid-cols-2">
+          <div className="min-w-0 border-b md:border-r md:border-b-0">
+            <h3 className="border-b bg-muted/20 px-4 py-4 text-sm font-semibold sm:px-6">
+              Business Info
+            </h3>
+            <div className="p-4 sm:p-6">
+              <p className="mb-5 break-words font-semibold">{businessName}</p>
+              <DetailFields
+                fields={[
+                  {
+                    label: "Business Type",
+                    value: detail.productTypeName || detail.businessCategory,
+                  },
+                  {
+                    label: "Coverage",
+                    value: [detail.area, detail.district, detail.division]
+                      .filter(Boolean)
+                      .join(", "),
+                    hint: "Saved business location.",
+                  },
+                  { label: "Address", value: detail.businessAddress },
+                  {
+                    label: "Nature",
+                    value: businessNatureLabel(detail.businessNature),
+                  },
+                  { label: "Experience", value: detail.yearsInBusiness },
+                  { label: "Sales Volume", value: detail.monthlyRevenue },
+                ]}
+              />
+            </div>
+          </div>
+          <div className="min-w-0">
+            <h3 className="border-b bg-muted/20 px-4 py-4 text-sm font-semibold sm:px-6">
+              Social Network
+            </h3>
+            <div className="p-4 sm:p-6">
+              <DetailFields
+                fields={[
+                  {
+                    label: "Facebook",
+                    value: <SocialLink value={detail.facebookUrl} />,
+                  },
+                  { label: "WhatsApp", value: detail.whatsappNumber },
+                  {
+                    label: "Instagram",
+                    value: <SocialLink value={detail.instagramUrl} />,
+                  },
+                  {
+                    label: "Website",
+                    value: <SocialLink value={detail.websiteUrl} />,
+                  },
+                  {
+                    label: "TikTok",
+                    value: <SocialLink value={detail.tiktokUrl} />,
+                  },
+                  ...[
+                    { label: "Messenger", url: detail.messengerUrl },
+                    { label: "Telegram", url: detail.telegramUrl },
+                    { label: "X / Twitter", url: detail.twitterUrl },
+                  ]
+                    .filter(({ url }) => Boolean(url))
+                    .map(({ label, url }) => ({
+                      label,
+                      value: <SocialLink value={url} />,
+                    })),
+                ]}
+              />
+              <DetailFields
+                className="mt-5 border-t pt-5"
+                fields={[
+                  { label: "Referral ID", value: detail.referralId },
+                  { label: "Relation" },
+                ]}
+              />
+            </div>
           </div>
         </div>
-        <div className="min-w-0">
-          <h3 className="border-b bg-muted/20 px-4 py-4 text-sm font-semibold sm:px-6">
-            Social Network
-          </h3>
-          <div className="p-4 sm:p-6">
-            <DetailFields
-              fields={[
-                {
-                  label: "Facebook",
-                  value: <SocialLink value={detail.facebookUrl} />,
-                },
-                { label: "WhatsApp", value: detail.whatsappNumber },
-                {
-                  label: "Instagram",
-                  value: <SocialLink value={detail.instagramUrl} />,
-                },
-                {
-                  label: "Website",
-                  value: <SocialLink value={detail.websiteUrl} />,
-                },
-                {
-                  label: "TikTok",
-                  value: <SocialLink value={detail.tiktokUrl} />,
-                },
-              ]}
-            />
-            <DetailFields
-              className="mt-5 border-t pt-5"
-              fields={[
-                { label: "Referral ID", value: detail.referralId },
-                { label: "Relation" },
-              ]}
-            />
-          </div>
-        </div>
+      </section>
+      <div className="grid items-start gap-5 md:grid-cols-2">
+        <DetailSection title="Contact Information">
+          <DetailFields
+            fields={[
+              { label: "Owner Name", value: detail.ownerName },
+              { label: "Mobile Number", value: detail.phoneNumber },
+              {
+                label: "Email Address",
+                value: isPhoneAuthEmail(detail.email ?? "")
+                  ? null
+                  : detail.email,
+              },
+              ...(openingTime || closingTime
+                ? [
+                    { label: "Opening Time", value: openingTime },
+                    { label: "Closing Time", value: closingTime },
+                  ]
+                : []),
+            ]}
+          />
+        </DetailSection>
+        <DetailSection title="Business Location">
+          <DetailFields
+            fields={[
+              { label: "Division", value: detail.division },
+              { label: "District", value: detail.district },
+              { label: "Upazila / Thana", value: detail.thana },
+              { label: "Area", value: detail.area },
+              { label: "Post Code", value: detail.postCode },
+              ...(detail.latitude || detail.longitude
+                ? [
+                    { label: "Latitude", value: detail.latitude },
+                    { label: "Longitude", value: detail.longitude },
+                  ]
+                : []),
+            ]}
+          />
+        </DetailSection>
       </div>
-    </section>
+      {(detail.tradeLicenseNumber || detail.tinNumber || detail.binNumber) && (
+        <DetailSection title="Business Registration">
+          <DetailFields
+            className="max-w-2xl"
+            fields={[
+              {
+                label: "Trade License Number",
+                value: detail.tradeLicenseNumber,
+              },
+              { label: "TIN Number", value: detail.tinNumber },
+              { label: "BIN Number", value: detail.binNumber },
+            ]}
+          />
+        </DetailSection>
+      )}
+    </div>
+  );
+}
+
+function maskAccountNumber(value?: string | null) {
+  if (!value) return null;
+  const number = value.replace(/\s/g, "");
+  return number.length > 4 ? `${"•".repeat(8)}${number.slice(-4)}` : number;
+}
+
+export function FinancialInformation({
+  accounts = [],
+  detail,
+}: {
+  accounts: UserDetailData["financialAccounts"];
+  detail: ApplicationDetailData;
+}) {
+  const groups = [
+    { type: "bank", title: "Bank Accounts" },
+    { type: "mobile_banking", title: "Mobile Banking" },
+  ] as const;
+  const hasRegistrationBank = Boolean(
+    detail.bankName || detail.bankAccountName || detail.bankAccountNumber,
+  );
+  if (!accounts.length && !hasRegistrationBank) return null;
+  return (
+    <div className="grid items-start gap-5 md:grid-cols-2">
+      {groups.map(({ type, title }) => {
+        const saved = accounts.filter((account) => account.type === type);
+        if (!saved.length) return null;
+        return (
+          <DetailSection key={type} title={title}>
+            <div className="divide-y">
+              {saved.map((account) => (
+                <div
+                  key={account.id}
+                  className="space-y-4 py-5 first:pt-0 last:pb-0"
+                >
+                  <h3 className="break-words text-sm font-semibold">
+                    {account.providerName}
+                  </h3>
+                  <DetailFields
+                    fields={[
+                      { label: "Account Name", value: account.accountName },
+                      {
+                        label: "Account Number",
+                        value: maskAccountNumber(account.accountNumber),
+                      },
+                      {
+                        label: "Status",
+                        value: account.isActive ? "Active" : "Inactive",
+                      },
+                    ]}
+                  />
+                </div>
+              ))}
+            </div>
+          </DetailSection>
+        );
+      })}
+      {hasRegistrationBank && (
+        <DetailSection title="Registration Bank Details">
+          <DetailFields
+            fields={[
+              { label: "Bank Name", value: detail.bankName },
+              { label: "Account Name", value: detail.bankAccountName },
+              {
+                label: "Account Number",
+                value: maskAccountNumber(detail.bankAccountNumber),
+              },
+            ]}
+          />
+        </DetailSection>
+      )}
+    </div>
   );
 }
 
@@ -298,6 +443,13 @@ export function DocumentsContent({
         {fields.map(([title, url]) => (
           <DocumentCard key={`${title}-${url}`} title={title} url={url} />
         ))}
+        {detail.documentUrls?.warehouse && (
+          <DocumentCard
+            key={detail.documentUrls.warehouse}
+            title="Warehouse Photo"
+            url={detail.documentUrls.warehouse}
+          />
+        )}
       </div>
     </section>
   );

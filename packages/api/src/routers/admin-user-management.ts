@@ -22,6 +22,7 @@ import { computeProfileCompletion } from "../business-profile";
 import { adminProcedure } from "../index";
 import { DASHBOARD_TIME_ZONE } from "./helpers/dashboard-period";
 import { getUserBusinessPerformance } from "./helpers/user-business-performance";
+import { getUserFinancialAccounts } from "./helpers/user-financial-accounts";
 import { userSubscriptionPlanName } from "./helpers/user-subscription-plan";
 import {
   userRegistrationTrend,
@@ -678,11 +679,12 @@ export const adminUserManagementRouter = {
 
       const kycStatus = deriveKycStatus(latestKyc?.status);
       const applicationNumber = application?.applicationNumber as string | null | undefined;
-      const [currentSubscription, planCatalog] = await Promise.all([
+      const [currentSubscription, planCatalog, financialAccounts] = await Promise.all([
         db.query.retailerSubscription.findFirst({
           where: and(eq(retailerSubscription.shopId, found.id), eq(retailerSubscription.isCurrent, true)),
         }),
         db.select().from(retailerSubscriptionPlan),
+        getUserFinancialAccounts(found.id, found.role),
       ]);
       const planName = userSubscriptionPlanName(planCatalog, {
         selectedPlan: application?.selectedPlan,
@@ -710,6 +712,7 @@ export const adminUserManagementRouter = {
       }) : null;
 
       return {
+        financialAccounts,
         lastReview: lastReview ? { ...lastReview, reviewerName: reviewer?.name ?? null } : null,
         planName,
         subscription: currentSubscription ? { ...retailerSubscriptionDto(currentSubscription), planName } : null,
@@ -735,6 +738,8 @@ export const adminUserManagementRouter = {
           warehouseAddress: found.warehouseAddress,
           shopLat: found.shopLat,
           shopLng: found.shopLng,
+          shopOpeningTime: found.role === "shop_owner" ? found.shopOpeningTime : null,
+          shopClosingTime: found.role === "shop_owner" ? found.shopClosingTime : null,
           warehouseLat: found.warehouseLat,
           warehouseLng: found.warehouseLng,
           createdAt: found.createdAt,
@@ -905,12 +910,17 @@ export const adminUserManagementRouter = {
           .nullable().optional(),
         shopAddress: z.string().optional(),
         ownerName: z.string().optional(),
+        businessPhoneNumber: z.string().trim().refine(
+          (value) => normalizeBangladeshPhoneNumber(value) !== null,
+          "Enter a valid Bangladesh business phone number",
+        ).optional(),
+        businessEmail: z.union([z.string().trim().email(), z.literal("")]).optional(),
         warehouseName: z.string().optional(),
         warehouseAddress: z.string().optional(),
       }),
     )
     .handler(async ({ input }) => {
-      const { userId, ...updates } = input;
+      const { userId, businessPhoneNumber, businessEmail, ...updates } = input;
       const currentUser = await db.query.user.findFirst({
         where: eq(user.id, userId),
         columns: { id: true, email: true, phoneNumber: true, role: true },
@@ -923,6 +933,17 @@ export const adminUserManagementRouter = {
       if (input.shopLogo !== undefined && currentUser.role !== "shop_owner") {
         throw new ORPCError("BAD_REQUEST", { message: "This account does not have a shop logo field" });
       }
+
+      const editsBusinessContact = businessPhoneNumber !== undefined || businessEmail !== undefined;
+      const isBusiness = currentUser.role === "shop_owner" || currentUser.role === "warehouse";
+      if (editsBusinessContact && !isBusiness) {
+        throw new ORPCError("BAD_REQUEST", { message: "This account does not have a business profile" });
+      }
+      const applicationUpdates = {
+        ...(input.ownerName !== undefined ? { ownerName: input.ownerName } : {}),
+        ...(businessPhoneNumber !== undefined ? { phoneNumber: normalizeBangladeshPhoneNumber(businessPhoneNumber)! } : {}),
+        ...(businessEmail !== undefined ? { email: businessEmail || null } : {}),
+      };
 
       const cleanUpdates: Record<string, string | boolean | null> = Object.fromEntries(
         Object.entries(updates).filter(([_, v]) => v !== undefined),
@@ -974,13 +995,37 @@ export const adminUserManagementRouter = {
         }
       }
 
-      if (Object.keys(cleanUpdates).length === 0) {
+      if (Object.keys(cleanUpdates).length === 0 && !editsBusinessContact) {
         throw new ORPCError("BAD_REQUEST", {
           message: "No fields to update",
         });
       }
 
-      await db.update(user).set(cleanUpdates).where(eq(user.id, userId));
+      await db.transaction(async (tx) => {
+        if (isBusiness && Object.keys(applicationUpdates).length) {
+          const application = currentUser.role === "shop_owner"
+            ? await tx.query.sellerApplication.findFirst({
+                where: eq(sellerApplication.userId, userId),
+                orderBy: [desc(sellerApplication.createdAt)],
+                columns: { id: true },
+              })
+            : await tx.query.warehouseApplication.findFirst({
+                where: eq(warehouseApplication.userId, userId),
+                orderBy: [desc(warehouseApplication.createdAt)],
+                columns: { id: true },
+              });
+          if (!application && editsBusinessContact) {
+            throw new ORPCError("BAD_REQUEST", { message: "No business registration profile exists for this account" });
+          }
+          if (application) {
+            const table = currentUser.role === "shop_owner" ? sellerApplication : warehouseApplication;
+            await tx.update(table).set(applicationUpdates).where(eq(table.id, application.id));
+          }
+        }
+        if (Object.keys(cleanUpdates).length) {
+          await tx.update(user).set(cleanUpdates).where(eq(user.id, userId));
+        }
+      });
 
       return { success: true };
     }),

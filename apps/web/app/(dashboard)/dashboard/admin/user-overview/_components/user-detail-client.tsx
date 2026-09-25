@@ -32,6 +32,7 @@ import { ADMIN_BASE } from "@/lib/routes";
 import { client, orpc } from "@/utils/orpc";
 import { PerformanceContent, type UserDetailData } from "./user-detail-content";
 import { UserDetailsLayout } from "./user-details-layout";
+import { profileContacts } from "./user-profile-contacts";
 import { UserProfileHero } from "./user-profile-hero";
 
 export function UserDetailClient({
@@ -172,7 +173,19 @@ export function UserDetailClient({
   const businessAddress =
     storedAddress ||
     (typeof applicationAddress === "string" ? applicationAddress : "");
-  const detail = toApplicationDetail(app || {}, businessAddress);
+  const detail = toApplicationDetail(
+    {
+      ...app,
+      ...profileContacts(data.user, app),
+      latitude:
+        app?.latitude ||
+        (isWarehouse ? data.user.warehouseLat : data.user.shopLat),
+      longitude:
+        app?.longitude ||
+        (isWarehouse ? data.user.warehouseLng : data.user.shopLng),
+    },
+    businessAddress,
+  );
   const actionPending = suspend.isPending || activate.isPending;
   const SuspendIcon = isSuspended ? UnlockKeyhole : LockKeyhole;
 
@@ -321,6 +334,7 @@ export function UserDetailClient({
         open={editOpen}
         onOpenChange={setEditOpen}
         user={data.user}
+        application={app}
         isWarehouse={isWarehouse}
         pending={update.isPending}
         onSave={(values) => update.mutate(values)}
@@ -376,11 +390,17 @@ export function UserDetailClient({
   );
 }
 
-function editValues(user: UserDetailData["user"]) {
+function editValues(
+  user: UserDetailData["user"],
+  application: UserDetailData["application"],
+) {
+  const contacts = profileContacts(user, application);
   return {
     name: user.name,
     phoneNumber: user.phoneNumber || "",
-    ownerName: user.ownerName || "",
+    ownerName: contacts.ownerName,
+    businessPhoneNumber: contacts.phoneNumber,
+    businessEmail: contacts.email || "",
     shopName: user.shopName || "",
     shopAddress: user.shopAddress || "",
     warehouseName: user.warehouseName || "",
@@ -392,6 +412,7 @@ function EditUserDialog({
   open,
   onOpenChange,
   user,
+  application,
   isWarehouse,
   pending,
   onSave,
@@ -399,18 +420,35 @@ function EditUserDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
   user: UserDetailData["user"];
+  application: UserDetailData["application"];
   isWarehouse: boolean;
   pending: boolean;
   onSave: (values: Record<string, string>) => void;
 }) {
-  const [values, setValues] = useState(() => editValues(user));
+  const initialValues = editValues(user, application);
+  const [values, setValues] = useState(() => editValues(user, application));
   useEffect(() => {
-    if (open) setValues(editValues(user));
-  }, [open, user]);
+    if (open) setValues(editValues(user, application));
+  }, [open, user, application]);
+  const changes = Object.fromEntries(
+    Object.entries(values).filter(
+      ([key, value]) =>
+        value !== initialValues[key as keyof typeof initialValues],
+    ),
+  );
   const fields: { key: keyof typeof values; label: string }[] = [
-    { key: "name", label: "Name" },
-    { key: "phoneNumber", label: "Phone" },
+    { key: "name", label: "Account Name" },
+    { key: "phoneNumber", label: "Sign-in Phone" },
     { key: "ownerName", label: "Owner Name" },
+    ...(application
+      ? [
+          {
+            key: "businessPhoneNumber" as const,
+            label: "Business Mobile Number",
+          },
+          { key: "businessEmail" as const, label: "Business Email Address" },
+        ]
+      : []),
     ...(isWarehouse
       ? [
           { key: "warehouseName" as const, label: "Warehouse Name" },
@@ -462,8 +500,12 @@ function EditUserDialog({
             Cancel
           </Button>
           <Button
-            disabled={pending || !values.name.trim()}
-            onClick={() => onSave(values)}
+            disabled={
+              pending ||
+              !values.name.trim() ||
+              Object.keys(changes).length === 0
+            }
+            onClick={() => onSave(changes)}
           >
             {pending && <Loader2 className="size-4 animate-spin" />}Save Changes
           </Button>
