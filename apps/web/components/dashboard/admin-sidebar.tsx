@@ -195,7 +195,7 @@ function getAdminNavGroups(pendingApplications = 0): NavGroup[] {
       label: "User Overviews",
       items: [
         {
-          title: "Shop Owners",
+          title: "Retailers",
           url: `${ADMIN_BASE}/user-overview/retailers`,
           icon: StoreIcon,
           activePrefixes: [`${ADMIN_BASE}/user-overview/retailers`],
@@ -248,8 +248,16 @@ function getAdminNavGroups(pendingApplications = 0): NavGroup[] {
     {
       label: "To-Let",
       items: [
-        { title: "Banner & Title", url: `${ADMIN_BASE}/to-let`, icon: ImageIcon },
-        { title: "Units", url: `${ADMIN_BASE}/to-let/units`, icon: Building2Icon },
+        {
+          title: "Banner & Title",
+          url: `${ADMIN_BASE}/to-let`,
+          icon: ImageIcon,
+        },
+        {
+          title: "Units",
+          url: `${ADMIN_BASE}/to-let/units`,
+          icon: Building2Icon,
+        },
       ],
     },
     {

@@ -52,9 +52,17 @@ export function RetailerSubscriptionsManagement() {
         : client.adminRetailerSubscription.createPlan(input);
     },
     onSuccess: async () => {
-      await queryClient.invalidateQueries({
-        queryKey: orpc.adminRetailerSubscription.listPlans.key(),
-      });
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: orpc.adminRetailerSubscription.listPlans.key(),
+        }),
+        queryClient.invalidateQueries({
+          queryKey: orpc.adminUserManagement.list.key(),
+        }),
+        queryClient.invalidateQueries({
+          queryKey: orpc.adminUserManagement.getById.key(),
+        }),
+      ]);
       setEditing(undefined);
       toast.success("Subscription plan saved");
     },

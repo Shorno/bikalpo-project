@@ -1,26 +1,22 @@
 "use client";
 
+import { computeProfileCompletion } from "@bikalpo-project/api/business-profile";
+import { userSubscriptionPlanName } from "@bikalpo-project/api/routers/helpers/user-subscription-plan";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { format } from "date-fns";
-import { Loader2 } from "lucide-react";
+import {
+  ArrowUpRight,
+  Check,
+  Loader2,
+  SearchX,
+  ShieldCheck,
+  X,
+} from "lucide-react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
-import {
-  AdminReviewSection,
-  APPLICATION_STATUS_CONFIG,
-  ApplicationReviewHero,
-  BankAndTaxSection,
-  BusinessInformationSection,
-  BusinessLocationSection,
-  LabeledDocumentsSection,
-  PersonalLocationSection,
-  ReferralSection,
-  SocialProfilesSection,
-  toApplicationDetail,
-} from "@/components/features/admin/application-detail-sections";
+import { toApplicationDetail } from "@/components/features/admin/application-detail-sections";
 import { KycVerifyDialog } from "@/components/features/admin/kyc-verify-dialog";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -30,26 +26,20 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Label } from "@/components/ui/label";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { ADMIN_BASE } from "@/lib/routes";
 import { client, orpc } from "@/utils/orpc";
+import {
+  PerformanceContent,
+  type UserDetailData,
+} from "../../_components/user-detail-content";
+import { UserDetailsLayout } from "../../_components/user-details-layout";
+import { UserProfileHero } from "../../_components/user-profile-hero";
 
 export type ApprovalType = "seller" | "warehouse";
-
-const BUSINESS_TYPE_LABELS: Record<string, string> = {
-  retail: "Retail Shop",
-  restaurant: "Restaurant",
-  warehouse: "Warehouse",
-};
-
-const PLAN_LABELS: Record<string, string> = {
-  free_trial: "Free Trial (14 days)",
-  starter: "Starter — ৳999/mo",
-  growth: "Growth — ৳2,499/mo",
-};
-
-const APPROVAL_LIST_URL = `${ADMIN_BASE}/user-overview/approval`;
+const APPROVAL_LIST_URL = ADMIN_BASE + "/user-overview/approval";
 
 export function ApprovalDetailClient({
   type,
@@ -58,473 +48,389 @@ export function ApprovalDetailClient({
   type: ApprovalType;
   applicationId: string;
 }) {
-  const router = useRouter();
-  const queryClient = useQueryClient();
   const isWarehouse = type === "warehouse";
-
-  const [actionType, setActionType] = useState<"approve" | "reject" | null>(
-    null,
-  );
-  const [adminNotes, setAdminNotes] = useState("");
-  const [verifyKycOpen, setVerifyKycOpen] = useState(false);
-  const [verifyKycNotes, setVerifyKycNotes] = useState("");
-
-  // Both queries are declared unconditionally to keep hook order stable; only
-  // the one matching the route's type is enabled.
-  const sellerQuery = useQuery({
+  const queryClient = useQueryClient();
+  const [action, setAction] = useState<"approve" | "reject" | null>(null);
+  const [notes, setNotes] = useState("");
+  const [verifyOpen, setVerifyOpen] = useState(false);
+  const [verifyNotes, setVerifyNotes] = useState("");
+  const seller = useQuery({
     ...orpc.sellerApplication.getById.queryOptions({
       input: { applicationId },
     }),
     enabled: !isWarehouse,
   });
-
-  const warehouseQuery = useQuery({
+  const warehouse = useQuery({
     ...orpc.warehouseApplication.getById.queryOptions({
       input: { applicationId },
     }),
     enabled: isWarehouse,
   });
-
-  const {
-    data: application,
-    isLoading,
-    isError,
-    error,
-  } = isWarehouse ? warehouseQuery : sellerQuery;
-
-  const approveMutation = useMutation({
-    mutationFn: (params: { applicationId: string; adminNotes?: string }) =>
-      isWarehouse
-        ? client.warehouseApplication.approve(params)
-        : client.sellerApplication.approve(params),
-    onSuccess: () => {
+  const request = isWarehouse ? warehouse : seller;
+  const application = request.data;
+  const account = useQuery({
+    ...orpc.adminUserManagement.getById.queryOptions({
+      input: { userId: application?.userId || "" },
+    }),
+    enabled: Boolean(application?.userId),
+  });
+  const catalog = useQuery(
+    orpc.adminRetailerSubscription.listPlans.queryOptions(),
+  );
+  const refresh = () => void queryClient.invalidateQueries();
+  const decision = useMutation({
+    mutationFn: (choice: "approve" | "reject") => {
+      const input = { applicationId, adminNotes: notes.trim() || undefined };
+      const api = isWarehouse
+        ? client.warehouseApplication
+        : client.sellerApplication;
+      return choice === "approve" ? api.approve(input) : api.reject(input);
+    },
+    onSuccess: (_, choice) => {
       toast.success(
-        isWarehouse
-          ? "Application approved — user upgraded to Warehouse Owner"
-          : "Application approved — user upgraded to Shop Owner",
+        choice === "approve" ? "Application approved" : "Application rejected",
       );
-      queryClient.invalidateQueries();
-      setActionType(null);
-      setAdminNotes("");
+      refresh();
+      setAction(null);
+      setNotes("");
     },
-    onError: (err) => toast.error(err.message || "Failed to approve"),
+    onError: (error) =>
+      toast.error(error.message || "Could not update the request"),
   });
-
-  const rejectMutation = useMutation({
-    mutationFn: (params: { applicationId: string; adminNotes?: string }) =>
-      isWarehouse
-        ? client.warehouseApplication.reject(params)
-        : client.sellerApplication.reject(params),
-    onSuccess: () => {
-      toast.success("Application rejected");
-      queryClient.invalidateQueries();
-      setActionType(null);
-      setAdminNotes("");
-    },
-    onError: (err) => toast.error(err.message || "Failed to reject"),
-  });
-
-  const verifyKycMutation = useMutation({
-    mutationFn: (params: { userId: string; adminNotes?: string }) =>
-      client.adminUserManagement.verify(params),
+  const verify = useMutation({
+    mutationFn: (userId: string) =>
+      client.adminUserManagement.verify({
+        userId,
+        adminNotes: verifyNotes.trim() || undefined,
+      }),
     onSuccess: () => {
       toast.success("KYC verified");
-      queryClient.invalidateQueries();
-      setVerifyKycOpen(false);
-      setVerifyKycNotes("");
+      refresh();
+      setVerifyOpen(false);
+      setVerifyNotes("");
     },
-    onError: (err) => toast.error(err.message || "Failed to verify KYC"),
+    onError: (error) => toast.error(error.message || "Could not verify KYC"),
   });
 
-  const handleConfirmAction = () => {
-    if (!actionType) return;
-    const payload = { applicationId, adminNotes: adminNotes || undefined };
-    if (actionType === "approve") {
-      approveMutation.mutate(payload);
-    } else {
-      rejectMutation.mutate(payload);
-    }
-  };
-
-  const isActionPending = approveMutation.isPending || rejectMutation.isPending;
-
-  if (isLoading) {
+  if (
+    request.isPending ||
+    (application && account.isPending) ||
+    catalog.isPending
+  ) {
     return (
-      <div className="flex min-h-[60vh] items-center justify-center">
-        <div className="text-center">
-          <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-3 border-gray-200 border-t-[#003178]" />
-          <p className="text-sm text-gray-400">Loading application...</p>
-        </div>
+      <div
+        role="status"
+        aria-label="Loading request details"
+        className="space-y-6"
+      >
+        <Skeleton className="h-8 w-40" />
+        <Skeleton className="h-80 w-full rounded-xl" />
+        <Skeleton className="h-12 w-full" />
+        <Skeleton className="h-72 w-full rounded-xl" />
       </div>
     );
   }
-
-  if (isError || !application) {
+  if (
+    request.isError ||
+    account.isError ||
+    catalog.isError ||
+    !application ||
+    !account.data ||
+    !catalog.data
+  ) {
     return (
-      <div className="flex min-h-[60vh] flex-col items-center justify-center gap-4">
-        <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-gray-100">
-          <span className="material-symbols-outlined text-3xl text-gray-300">
-            search_off
-          </span>
-        </div>
-        <p className="text-gray-500">
-          {isError
-            ? `Error: ${error?.message || "Failed to load application"}`
-            : "Application not found"}
+      <div
+        role="alert"
+        className="flex min-h-80 flex-col items-center justify-center gap-4 text-center"
+      >
+        <SearchX className="size-10 text-muted-foreground" aria-hidden />
+        <h1 className="text-lg font-semibold">
+          Could not load request details
+        </h1>
+        <p className="text-sm text-muted-foreground">
+          {request.error?.message ||
+            account.error?.message ||
+            catalog.error?.message ||
+            "Request not found."}
         </p>
-        <Link
-          href={APPROVAL_LIST_URL}
-          className="flex items-center gap-2 text-sm font-semibold text-[#003178] hover:underline"
-        >
-          <span className="material-symbols-outlined text-lg">arrow_back</span>
-          Back to Approval
-        </Link>
+        <div className="flex gap-3">
+          <Button variant="outline" asChild>
+            <Link href={APPROVAL_LIST_URL}>All Requests</Link>
+          </Button>
+          <Button
+            disabled={
+              request.isFetching || account.isFetching || catalog.isFetching
+            }
+            onClick={() => {
+              void request.refetch();
+              void catalog.refetch();
+              if (application?.userId) void account.refetch();
+            }}
+          >
+            Retry
+          </Button>
+        </div>
       </div>
     );
   }
 
-  // Seller and warehouse applications share every field used below except the
-  // business name/address, which are named per table.
+  // Keep the selected request's snapshot, even if this user has a newer application.
   const record = application as unknown as Record<string, unknown>;
-  const businessName = (
-    isWarehouse ? record.warehouseName : record.shopName
-  ) as string;
-  const businessAddress = (
-    isWarehouse ? record.warehouseAddress : record.shopAddress
-  ) as string;
-  const businessType = record.businessType as string | undefined;
-  const selectedPlan = record.selectedPlan as string | undefined;
-  const reviewedAt = record.reviewedAt as string | Date | null;
-  const existingNotes = record.adminNotes as string | null;
-
-  const status = application.status as keyof typeof APPLICATION_STATUS_CONFIG;
-  const config = APPLICATION_STATUS_CONFIG[status];
-  const isPending = application.status === "pending";
-  const kycStatus =
-    (record.kycStatus as
-      | "verified"
-      | "pending"
-      | "failed"
-      | "unverified"
-      | undefined) ?? "unverified";
-  const canVerifyKyc = kycStatus !== "verified";
+  const businessName = String(
+    record[isWarehouse ? "warehouseName" : "shopName"] || application.ownerName,
+  );
+  const businessAddress = String(
+    record[isWarehouse ? "warehouseAddress" : "shopAddress"] || "",
+  );
   const detail = toApplicationDetail(record, businessAddress);
-
-  const sellingModeBadge =
-    !isWarehouse && businessType === "retail" ? (
-      <div className="flex justify-between text-sm">
-        <span className="text-gray-500">Selling Mode</span>
-        <span className="inline-flex rounded-full border border-green-100 bg-green-50 px-2 py-0.5 text-xs font-semibold text-green-700">
-          B2C Enabled
-        </span>
-      </div>
-    ) : !isWarehouse && businessType === "restaurant" ? (
-      <div className="flex justify-between text-sm">
-        <span className="text-gray-500">Selling Mode</span>
-        <span className="inline-flex rounded-full border border-blue-100 bg-blue-50 px-2 py-0.5 text-xs font-semibold text-blue-700">
-          Buyer Only
-        </span>
-      </div>
-    ) : null;
+  const current = account.data;
+  const hasBusinessAccount =
+    current.user.role === (isWarehouse ? "warehouse" : "shop_owner");
+  const subscription = hasBusinessAccount ? current.subscription : null;
+  const planName = userSubscriptionPlanName(catalog.data, {
+    selectedPlan: application.selectedPlan,
+    subscription,
+    trialFallback: isWarehouse,
+  });
+  const data: UserDetailData = {
+    ...current,
+    user: {
+      ...current.user,
+      shopLogo:
+        !isWarehouse && hasBusinessAccount ? current.user.shopLogo : null,
+    },
+    planName,
+    subscription: subscription ? { ...subscription, planName } : null,
+    application: record,
+    applicationId,
+    applicationStatus: {
+      type,
+      status: application.status,
+      appliedAt: application.createdAt,
+      reviewedAt: application.reviewedAt,
+    },
+    accountMeta: {
+      ...current.accountMeta,
+      profileCompletion: computeProfileCompletion(record, current.user),
+    },
+    lastReview: application.reviewedAt
+      ? {
+          notes: application.adminNotes,
+          reviewedAt: application.reviewedAt,
+          reviewedBy: application.reviewedBy,
+          reviewerName: application.reviewer?.name ?? null,
+        }
+      : null,
+  };
+  const isPending = application.status === "pending";
+  const showBusinessPerformance =
+    application.status === "approved" && hasBusinessAccount;
+  const profileHref = showBusinessPerformance
+    ? ADMIN_BASE +
+      "/user-overview/" +
+      (isWarehouse ? "wholesalers/" : "retailers/") +
+      current.user.id
+    : null;
+  const verifyLabel = data.accountMeta.canVerifyKyc
+    ? "Verify KYC"
+    : "KYC verified";
 
   return (
-    <section className="px-4 py-6 sm:px-6 sm:py-8">
-      {/* eslint-disable-next-line @next/next/no-page-custom-font */}
-      <link
-        href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&family=Inter:wght@400;500;600&display=swap"
-        rel="stylesheet"
-      />
-      {/* eslint-disable-next-line @next/next/no-page-custom-font */}
-      <link
-        href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap"
-        rel="stylesheet"
-      />
-
-      <div
-        className="mx-auto max-w-6xl"
-        style={{ fontFamily: "'Inter', sans-serif" }}
-      >
-        <Button
-          variant="ghost"
-          onClick={() => router.push(APPROVAL_LIST_URL)}
-          className="mb-5 flex items-center gap-1.5 px-0 text-sm text-gray-500 hover:bg-transparent hover:text-[#003178]"
-        >
-          <span className="material-symbols-outlined text-lg">arrow_back</span>
-          All Requests
-        </Button>
-
-        <ApplicationReviewHero
-          data={detail}
-          pageTitle={businessName}
-          createdAt={application.createdAt}
-          status={status}
-          isPending={isPending}
-          kycStatus={kycStatus}
-          canVerifyKyc={canVerifyKyc}
-          isVerifyingKyc={verifyKycMutation.isPending}
-          onApprove={() => setActionType("approve")}
-          onReject={() => setActionType("reject")}
-          onVerifyKyc={() => setVerifyKycOpen(true)}
-        />
-
-        <div className="grid gap-6 lg:grid-cols-3">
-          <div className="lg:col-span-2">
-            <Tabs defaultValue="basic">
-              <TabsList className="mb-4">
-                <TabsTrigger value="basic">Basic Information</TabsTrigger>
-                <TabsTrigger value="documents">Documents</TabsTrigger>
-                <TabsTrigger value="social">Social</TabsTrigger>
-                <TabsTrigger value="review">Review</TabsTrigger>
-              </TabsList>
-
-              <TabsContent value="basic" className="space-y-5">
-                <BusinessInformationSection
-                  data={detail}
-                  businessName={businessName}
-                  businessNameLabel={
-                    isWarehouse ? "Warehouse Name" : "Shop Name"
-                  }
-                  businessType={
-                    !isWarehouse && businessType
-                      ? BUSINESS_TYPE_LABELS[businessType] || businessType
-                      : undefined
-                  }
-                  businessTypeLabel={!isWarehouse ? "Platform Type" : undefined}
-                  sellingModeBadge={sellingModeBadge}
-                />
-                <PersonalLocationSection data={detail} />
-                <BusinessLocationSection data={detail} />
-                <BankAndTaxSection data={detail} />
-                <ReferralSection data={detail} />
-              </TabsContent>
-
-              <TabsContent value="documents" className="space-y-5">
-                <LabeledDocumentsSection data={detail} />
-              </TabsContent>
-
-              <TabsContent value="social" className="space-y-5">
-                <SocialProfilesSection data={detail} />
-              </TabsContent>
-
-              <TabsContent value="review" className="space-y-5">
-                <AdminReviewSection
-                  isPending={isPending}
-                  adminNotes={adminNotes}
-                  onAdminNotesChange={setAdminNotes}
-                  existingNotes={existingNotes}
-                />
+    <>
+      <UserDetailsLayout
+        title="Request Details"
+        backHref={APPROVAL_LIST_URL}
+        backLabel="All Requests"
+        headingAside={
+          <Badge variant="outline" className="capitalize">
+            {application.status}
+          </Badge>
+        }
+        businessName={businessName}
+        detail={detail}
+        data={data}
+        hero={
+          <UserProfileHero
+            data={data}
+            detail={detail}
+            businessName={businessName}
+            actions={
+              <>
                 {isPending && (
-                  <div className="flex flex-wrap gap-2">
+                  <>
                     <Button
-                      onClick={() => setActionType("approve")}
-                      disabled={isActionPending}
-                      className="bg-green-600 hover:bg-green-700"
+                      variant="outline"
+                      size="icon"
+                      aria-label="Approve application"
+                      title="Approve application"
+                      disabled={decision.isPending}
+                      onClick={() => setAction("approve")}
                     >
-                      Approve Application
+                      <Check className="size-4" />
                     </Button>
                     <Button
                       variant="outline"
-                      onClick={() => setActionType("reject")}
-                      disabled={isActionPending}
-                      className="border-red-200 text-red-600 hover:bg-red-50"
+                      size="icon"
+                      aria-label="Reject application"
+                      title="Reject application"
+                      disabled={decision.isPending}
+                      onClick={() => setAction("reject")}
                     >
-                      Reject Application
+                      <X className="size-4" />
                     </Button>
-                  </div>
+                  </>
                 )}
-              </TabsContent>
-            </Tabs>
-          </div>
-
-          <div className="space-y-5 self-start lg:sticky lg:top-6">
-            {selectedPlan && (
-              <div className="rounded-xl border border-gray-100 bg-white p-5">
-                <div className="mb-3 flex items-center gap-2">
-                  <span
-                    className="material-symbols-outlined text-lg text-[#003178]"
-                    style={{ fontVariationSettings: "'FILL' 1" }}
-                  >
-                    workspace_premium
-                  </span>
-                  <h3 className="text-sm font-bold text-gray-900">
-                    Selected Plan
-                  </h3>
-                </div>
-                <div className="rounded-lg bg-[#003178]/5 px-4 py-3 text-center">
-                  <p className="text-sm font-bold text-[#003178]">
-                    {PLAN_LABELS[selectedPlan] || selectedPlan}
-                  </p>
-                </div>
-              </div>
-            )}
-
-            <div className="rounded-xl border border-gray-100 bg-white p-5">
-              <div className="mb-4 flex items-center gap-2">
-                <span
-                  className="material-symbols-outlined text-lg text-[#003178]"
-                  style={{ fontVariationSettings: "'FILL' 1" }}
+                <Button
+                  variant="outline"
+                  size="icon"
+                  aria-label={verifyLabel}
+                  title={verifyLabel}
+                  disabled={!data.accountMeta.canVerifyKyc || verify.isPending}
+                  onClick={() => setVerifyOpen(true)}
                 >
-                  timeline
-                </span>
-                <h3 className="text-sm font-bold text-gray-900">Timeline</h3>
-              </div>
-              <div className="space-y-3">
-                <div className="flex items-start gap-3">
-                  <div className="flex flex-col items-center">
-                    <div className="flex h-6 w-6 items-center justify-center rounded-full bg-blue-100">
-                      <span
-                        className="material-symbols-outlined text-xs text-blue-600"
-                        style={{ fontVariationSettings: "'FILL' 1" }}
-                      >
-                        check
-                      </span>
-                    </div>
-                    {(reviewedAt || isPending) && (
-                      <div className="mt-1 h-4 w-0.5 bg-gray-200" />
-                    )}
-                  </div>
-                  <div className="-mt-0.5">
-                    <p className="text-xs font-semibold text-gray-900">
-                      Submitted
-                    </p>
-                    <p className="text-[10px] text-gray-400">
-                      {format(new Date(application.createdAt), "MMM d, h:mm a")}
-                    </p>
-                  </div>
-                </div>
-
-                {reviewedAt ? (
-                  <div className="flex items-start gap-3">
-                    <div
-                      className={`flex h-6 w-6 items-center justify-center rounded-full ${
-                        status === "approved" ? "bg-green-100" : "bg-red-100"
-                      }`}
+                  <ShieldCheck className="size-4" />
+                </Button>
+                {profileHref && (
+                  <Button variant="outline" size="icon" asChild>
+                    <Link
+                      href={profileHref}
+                      aria-label="View profile"
+                      title="View profile"
                     >
-                      <span
-                        className={`material-symbols-outlined text-xs ${config.color}`}
-                        style={{ fontVariationSettings: "'FILL' 1" }}
-                      >
-                        {status === "approved" ? "check" : "close"}
-                      </span>
-                    </div>
-                    <div className="-mt-0.5">
-                      <p className="text-xs font-semibold capitalize text-gray-900">
-                        {application.status}
-                      </p>
-                      <p className="text-[10px] text-gray-400">
-                        {format(new Date(reviewedAt), "MMM d, h:mm a")}
-                      </p>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="flex items-start gap-3">
-                    <div className="flex h-6 w-6 items-center justify-center rounded-full border border-amber-200 bg-amber-50">
-                      <span className="h-2 w-2 animate-pulse rounded-full bg-amber-500" />
-                    </div>
-                    <div className="-mt-0.5">
-                      <p className="text-xs font-semibold text-gray-900">
-                        Awaiting Review
-                      </p>
-                      <p className="text-[10px] text-gray-400">
-                        Pending decision
-                      </p>
-                    </div>
-                  </div>
+                      <ArrowUpRight className="size-4" />
+                    </Link>
+                  </Button>
                 )}
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
+              </>
+            }
+          />
+        }
+        performance={
+          <PerformanceContent
+            userId={showBusinessPerformance ? application.userId : undefined}
+          />
+        }
+        actions={
+          isPending ? (
+            <>
+              <Button
+                disabled={decision.isPending}
+                onClick={() => setAction("approve")}
+              >
+                <Check className="size-4" aria-hidden />
+                Approve Application
+              </Button>
+              <Button
+                variant="destructive"
+                disabled={decision.isPending}
+                onClick={() => setAction("reject")}
+              >
+                <X className="size-4" aria-hidden />
+                Reject Application
+              </Button>
+            </>
+          ) : (
+            <>
+              {profileHref && (
+                <Button variant="outline" asChild>
+                  <Link href={profileHref}>
+                    View Profile
+                    <ArrowUpRight className="size-4" aria-hidden />
+                  </Link>
+                </Button>
+              )}
+              {data.accountMeta.canVerifyKyc && (
+                <Button
+                  variant="outline"
+                  disabled={verify.isPending}
+                  onClick={() => setVerifyOpen(true)}
+                >
+                  <ShieldCheck className="size-4" aria-hidden />
+                  Verify KYC
+                </Button>
+              )}
+              {!profileHref && !data.accountMeta.canVerifyKyc && (
+                <p className="text-sm text-muted-foreground">
+                  This request has already been reviewed.
+                </p>
+              )}
+            </>
+          )
+        }
+      />
       <Dialog
-        open={!!actionType}
+        open={action !== null}
         onOpenChange={(open) => {
-          if (!open) setActionType(null);
+          if (!open && !decision.isPending) setAction(null);
         }}
       >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>
-              {actionType === "approve" ? "Approve" : "Reject"} Application
+              {action === "approve" ? "Approve" : "Reject"} Application
             </DialogTitle>
             <DialogDescription>
-              {actionType === "approve"
-                ? `Approving will upgrade "${businessName}" to a ${
-                    isWarehouse ? "Warehouse Owner" : "Shop Owner"
-                  } account.`
-                : `Rejecting will deny "${businessName}'s" application.`}
-              {actionType === "approve" &&
+              {action === "approve"
+                ? 'Approve "' +
+                  businessName +
+                  '" as a ' +
+                  (isWarehouse ? "warehouse" : "retailer") +
+                  " account."
+                : 'Reject the application for "' + businessName + '".'}
+              {action === "approve" &&
                 !isWarehouse &&
-                businessType === "retail" && (
-                  <span className="mt-1 block text-green-600">
-                    Retail type — will be seller-enabled (can sell B2C)
-                  </span>
-                )}
-              {actionType === "approve" &&
-                !isWarehouse &&
-                businessType === "restaurant" && (
-                  <span className="mt-1 block text-blue-600">
-                    Restaurant type — buyer-only (wholesale purchasing)
+                record.businessType === "restaurant" && (
+                  <span className="mt-2 block">
+                    This restaurant account can buy wholesale and will not
+                    receive a retail storefront.
                   </span>
                 )}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2">
-            <span className="text-sm font-medium">
-              Admin Notes {actionType === "reject" && "(recommended)"}
-            </span>
+            <Label htmlFor="request-review-notes">
+              Admin Notes {action === "reject" ? "(recommended)" : "(optional)"}
+            </Label>
             <Textarea
-              placeholder={
-                actionType === "approve"
-                  ? "Optional notes for the applicant..."
-                  : "Reason for rejection..."
-              }
-              value={adminNotes}
-              onChange={(e) => setAdminNotes(e.target.value)}
+              id="request-review-notes"
+              value={notes}
+              disabled={decision.isPending}
+              onChange={(event) => setNotes(event.target.value)}
               rows={3}
             />
           </div>
           <DialogFooter>
             <Button
               variant="outline"
-              onClick={() => setActionType(null)}
-              disabled={isActionPending}
+              disabled={decision.isPending}
+              onClick={() => setAction(null)}
             >
               Cancel
             </Button>
             <Button
-              onClick={handleConfirmAction}
-              disabled={isActionPending}
-              className={
-                actionType === "approve"
-                  ? "bg-green-600 hover:bg-green-700"
-                  : "bg-red-600 hover:bg-red-700"
-              }
+              variant={action === "reject" ? "destructive" : "default"}
+              disabled={decision.isPending}
+              onClick={() => {
+                if (action) decision.mutate(action);
+              }}
             >
-              {isActionPending && (
-                <Loader2 className="mr-2 size-4 animate-spin" />
+              {decision.isPending && (
+                <Loader2 className="size-4 animate-spin" />
               )}
-              {actionType === "approve" ? "Approve" : "Reject"}
+              {action === "approve" ? "Approve" : "Reject"}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
       <KycVerifyDialog
-        open={verifyKycOpen}
-        onOpenChange={setVerifyKycOpen}
+        open={verifyOpen}
+        onOpenChange={setVerifyOpen}
         subjectName={businessName}
-        notes={verifyKycNotes}
-        onNotesChange={setVerifyKycNotes}
-        isPending={verifyKycMutation.isPending}
-        onConfirm={() =>
-          verifyKycMutation.mutate({
-            userId: application.userId,
-            adminNotes: verifyKycNotes || undefined,
-          })
-        }
+        notes={verifyNotes}
+        onNotesChange={setVerifyNotes}
+        isPending={verify.isPending}
+        onConfirm={() => verify.mutate(application.userId)}
       />
-    </section>
+    </>
   );
 }

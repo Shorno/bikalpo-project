@@ -22,7 +22,7 @@ export default async function WholesalerDetailPage({
         </div>
       }
     >
-      <UserDetailClient userId={id} />
+      <UserDetailClient userId={id} segment="wholesalers" />
     </Suspense>
   );
 }

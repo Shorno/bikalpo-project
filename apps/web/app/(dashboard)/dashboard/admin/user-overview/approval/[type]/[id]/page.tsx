@@ -5,8 +5,8 @@ import {
 } from "../../_components/approval-detail-client";
 
 export const metadata = {
-  title: "Application Details | Admin",
-  description: "Review a Shop Owner or Warehouse Owner onboarding request",
+  title: "Request Details | Admin",
+  description: "Review a retailer or warehouse request",
 };
 
 const VALID_TYPES: ApprovalType[] = ["seller", "warehouse"];

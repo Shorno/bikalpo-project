@@ -7,6 +7,7 @@ import { db } from "@bikalpo-project/db";
 import {
   kycVerification,
   retailerSubscription,
+  retailerSubscriptionPlan,
   sellerApplication,
   session,
   user,
@@ -19,6 +20,13 @@ import { z } from "zod";
 import { BUSINESS_NATURES } from "../business-registration";
 import { computeProfileCompletion } from "../business-profile";
 import { adminProcedure } from "../index";
+import { DASHBOARD_TIME_ZONE } from "./helpers/dashboard-period";
+import { getUserBusinessPerformance } from "./helpers/user-business-performance";
+import { userSubscriptionPlanName } from "./helpers/user-subscription-plan";
+import {
+  userRegistrationTrend,
+  userRegistrationWindow,
+} from "./helpers/user-registration-trend";
 import { retailerSubscriptionDto } from "./retailer-subscription";
 import {
   deriveKycStatus,
@@ -143,6 +151,7 @@ type ProjectedUserRow = {
   sellerStatus: string | null;
   createdAt: Date;
   applicationNumber: string | null;
+  selectedPlan: string | null;
   appStatus: string | null;
   district: string | null;
   area: string | null;
@@ -151,6 +160,12 @@ type ProjectedUserRow = {
   kycStatus: string | null;
   approvedAt: Date | null;
   accountStatus: AccountStatus;
+};
+
+type ListedUserRow = ProjectedUserRow & {
+  subscriptionPlanId: string | null;
+  subscriptionPlanCode: string | null;
+  subscriptionPlanName: string | null;
 };
 
 function rowsFromResult<T>(result: unknown): T[] {
@@ -182,6 +197,7 @@ function projectedUsersCte(role: UserRole): SQL {
         u.seller_status AS "sellerStatus",
         u.created_at AS "createdAt",
         la.application_number AS "applicationNumber",
+        la.selected_plan AS "selectedPlan",
         la.status AS "appStatus",
         la.district,
         la.area,
@@ -201,6 +217,7 @@ function projectedUsersCte(role: UserRole): SQL {
       LEFT JOIN LATERAL (
         SELECT
           application_number,
+          selected_plan,
           status,
           district,
           area,
@@ -289,11 +306,16 @@ export const adminUserManagementRouter = {
       const offset = (page - 1) * pageSize;
       const projection = projectedUsersCte(role);
       const whereClause = projectedUserWhere(input);
-      const [listResult, countResult] = await Promise.all([
-        db.execute<ProjectedUserRow>(sql`
+      const [listResult, countResult, planCatalog] = await Promise.all([
+        db.execute<ListedUserRow>(sql`
           WITH ${projection}
-          SELECT *
+          SELECT p.*,
+            subscription.plan_id AS "subscriptionPlanId",
+            subscription.plan_code AS "subscriptionPlanCode",
+            subscription.plan_name AS "subscriptionPlanName"
           FROM projected_users p
+          LEFT JOIN retailer_subscription subscription
+            ON subscription.shop_id = p.id AND subscription.is_current = true
           ${whereClause}
           ORDER BY p."createdAt" DESC
           LIMIT ${pageSize}
@@ -305,8 +327,9 @@ export const adminUserManagementRouter = {
           FROM projected_users p
           ${whereClause}
         `),
+        db.select().from(retailerSubscriptionPlan),
       ]);
-      const rows = rowsFromResult<ProjectedUserRow>(listResult);
+      const rows = rowsFromResult<ListedUserRow>(listResult);
       const totalCount = Number(rowsFromResult<{ count: number }>(countResult)[0]?.count ?? 0);
       const isShopOwner = role === "shop_owner";
 
@@ -318,6 +341,16 @@ export const adminUserManagementRouter = {
         return {
           id: row.id,
           applicationNumber: row.applicationNumber,
+          selectedPlan: row.selectedPlan,
+          planName: userSubscriptionPlanName(planCatalog, {
+            selectedPlan: row.selectedPlan,
+            trialFallback: role === "warehouse",
+            subscription: row.subscriptionPlanId ? {
+              planId: row.subscriptionPlanId,
+              planCode: row.subscriptionPlanCode ?? "",
+              planName: row.subscriptionPlanName ?? "",
+            } : null,
+          }),
           businessName,
           ownerName: row.ownerName || row.name,
           phoneNumber: row.phoneNumber,
@@ -480,6 +513,55 @@ export const adminUserManagementRouter = {
       };
     }),
 
+  getRegistrationTrend: adminProcedure
+    .route({
+      method: "GET",
+      path: "/admin/users/registration-trend",
+      tags: ["User Management"],
+      summary: "Get 30-day registrations and active-user growth",
+    })
+    .input(userOverviewFiltersSchema)
+    .handler(async ({ input }) => {
+      const window = userRegistrationWindow(new Date());
+      // Like the status KPI counts, the summary describes the entire cohort
+      // selected by search, location and business type, regardless of the
+      // status selected for the list. Registration is not approval activity.
+      const whereClause = projectedUserWhere(input, { includeStatus: false });
+      const result = await db.execute<{
+        current: number;
+        previous: number;
+        activeByDay: { date: string; value: number }[];
+      }>(sql`
+        WITH ${projectedUsersCte(input.role)}, registrations AS (
+          SELECT p."createdAt", p."accountStatus"
+          FROM projected_users p
+          ${whereClause}
+          AND p."createdAt" >= ${window.previousStart.toISOString()}::timestamp
+          AND p."createdAt" < ${window.end.toISOString()}::timestamp
+        ), active_by_day AS (
+          SELECT
+            to_char("createdAt" AT TIME ZONE 'UTC' AT TIME ZONE ${DASHBOARD_TIME_ZONE}, 'YYYY-MM-DD') AS date,
+            COUNT(*)::int AS value
+          FROM registrations
+          WHERE "accountStatus" = 'active'
+            AND "createdAt" >= ${window.start.toISOString()}::timestamp
+          GROUP BY 1
+        )
+        SELECT
+          COUNT(*) FILTER (WHERE "createdAt" >= ${window.start.toISOString()}::timestamp)::int AS current,
+          COUNT(*) FILTER (WHERE "createdAt" < ${window.start.toISOString()}::timestamp)::int AS previous,
+          COALESCE((SELECT json_agg(active_by_day ORDER BY date) FROM active_by_day), '[]'::json) AS "activeByDay"
+        FROM registrations
+      `);
+      const counts = rowsFromResult<{
+        current: number;
+        previous: number;
+        activeByDay: { date: string; value: number }[];
+      }>(result)[0];
+      if (!counts) throw new Error("Registration aggregate query returned no result");
+      return userRegistrationTrend(window, counts);
+    }),
+
   getFilterOptions: adminProcedure
     .route({
       method: "GET",
@@ -542,12 +624,13 @@ export const adminUserManagementRouter = {
       const latestSession = await db
         .select({
           createdAt: session.createdAt,
+          updatedAt: session.updatedAt,
           userAgent: session.userAgent,
           ipAddress: session.ipAddress,
         })
         .from(session)
         .where(eq(session.userId, input.userId))
-        .orderBy(desc(session.createdAt))
+        .orderBy(desc(session.updatedAt), desc(session.createdAt))
         .limit(1);
 
       let application: Record<string, unknown> | null = null;
@@ -595,14 +678,41 @@ export const adminUserManagementRouter = {
 
       const kycStatus = deriveKycStatus(latestKyc?.status);
       const applicationNumber = application?.applicationNumber as string | null | undefined;
-      const currentSubscription = found.role === "shop_owner" && found.businessType === "retail"
-        ? await db.query.retailerSubscription.findFirst({
-            where: and(eq(retailerSubscription.shopId, found.id), eq(retailerSubscription.isCurrent, true)),
-          })
-        : null;
+      const [currentSubscription, planCatalog] = await Promise.all([
+        db.query.retailerSubscription.findFirst({
+          where: and(eq(retailerSubscription.shopId, found.id), eq(retailerSubscription.isCurrent, true)),
+        }),
+        db.select().from(retailerSubscriptionPlan),
+      ]);
+      const planName = userSubscriptionPlanName(planCatalog, {
+        selectedPlan: application?.selectedPlan,
+        subscription: currentSubscription,
+        trialFallback: found.role === "warehouse",
+      });
+
+      const reviews = [
+        latestKyc?.reviewedAt ? {
+          notes: latestKyc.adminNotes,
+          reviewedAt: latestKyc.reviewedAt,
+          reviewedBy: latestKyc.reviewedBy,
+        } : null,
+        application?.reviewedAt ? {
+          notes: (application.adminNotes as string | null) ?? null,
+          reviewedAt: application.reviewedAt as Date,
+          reviewedBy: (application.reviewedBy as string | null) ?? null,
+        } : null,
+      ].filter((review) => review !== null)
+        .sort((a, b) => new Date(b.reviewedAt).getTime() - new Date(a.reviewedAt).getTime());
+      const lastReview = reviews[0] ?? null;
+      const reviewer = lastReview?.reviewedBy ? await db.query.user.findFirst({
+        where: eq(user.id, lastReview.reviewedBy),
+        columns: { name: true },
+      }) : null;
 
       return {
-        subscription: currentSubscription ? retailerSubscriptionDto(currentSubscription) : null,
+        lastReview: lastReview ? { ...lastReview, reviewerName: reviewer?.name ?? null } : null,
+        planName,
+        subscription: currentSubscription ? { ...retailerSubscriptionDto(currentSubscription), planName } : null,
         user: {
           id: found.id,
           name: found.name,
@@ -613,6 +723,7 @@ export const adminUserManagementRouter = {
           banReason: found.banReason,
           image: found.image,
           shopName: found.shopName,
+          shopLogo: found.shopLogo,
           shopSlug: found.shopSlug,
           shopAddress: found.shopAddress,
           ownerName: found.ownerName,
@@ -632,6 +743,7 @@ export const adminUserManagementRouter = {
         loginActivity: latestSession[0]
           ? {
               lastLoginAt: latestSession[0].createdAt,
+              lastActiveAt: latestSession[0].updatedAt,
               userAgent: latestSession[0].userAgent,
               ipAddress: latestSession[0].ipAddress,
             }
@@ -663,6 +775,25 @@ export const adminUserManagementRouter = {
             }
           : null,
       };
+    }),
+
+  getPerformance: adminProcedure
+    .route({
+      method: "GET",
+      path: "/admin/users/{userId}/performance",
+      tags: ["User Management"],
+      summary: "Get recorded business sales-order performance",
+    })
+    .input(userIdSchema)
+    .handler(async ({ input }) => {
+      const account = await db.query.user.findFirst({
+        where: eq(user.id, input.userId),
+        columns: { id: true, role: true, businessType: true },
+      });
+      if (!account || (account.role !== "warehouse" && account.role !== "shop_owner")) {
+        throw new ORPCError("NOT_FOUND", { message: "Business account not found" });
+      }
+      return getUserBusinessPerformance({ ...account, role: account.role });
     }),
 
   verify: adminProcedure
@@ -769,6 +900,9 @@ export const adminUserManagementRouter = {
           )
           .optional(),
         shopName: z.string().optional(),
+        shopLogo: z.string().trim().url().max(2048)
+          .refine((value) => /^https?:\/\//i.test(value), "Logo URL must use http or https")
+          .nullable().optional(),
         shopAddress: z.string().optional(),
         ownerName: z.string().optional(),
         warehouseName: z.string().optional(),
@@ -779,11 +913,15 @@ export const adminUserManagementRouter = {
       const { userId, ...updates } = input;
       const currentUser = await db.query.user.findFirst({
         where: eq(user.id, userId),
-        columns: { id: true, email: true, phoneNumber: true },
+        columns: { id: true, email: true, phoneNumber: true, role: true },
       });
 
       if (!currentUser) {
         throw new ORPCError("NOT_FOUND", { message: "User not found" });
+      }
+
+      if (input.shopLogo !== undefined && currentUser.role !== "shop_owner") {
+        throw new ORPCError("BAD_REQUEST", { message: "This account does not have a shop logo field" });
       }
 
       const cleanUpdates: Record<string, string | boolean | null> = Object.fromEntries(

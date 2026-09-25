@@ -3,8 +3,8 @@ import { Suspense } from "react";
 import { UserDetailClient } from "../../_components/user-detail-client";
 
 export const metadata = {
-  title: "Shop Owner Details | Admin",
-  description: "View and manage Shop Owner account details",
+  title: "Retailer Details | Admin",
+  description: "View and manage retailer account details",
 };
 
 export default async function RetailerDetailPage({
@@ -22,7 +22,7 @@ export default async function RetailerDetailPage({
         </div>
       }
     >
-      <UserDetailClient userId={id} />
+      <UserDetailClient userId={id} segment="retailers" />
     </Suspense>
   );
 }
