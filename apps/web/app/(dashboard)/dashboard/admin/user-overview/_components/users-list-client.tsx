@@ -37,25 +37,21 @@ import {
 } from "@/components/ui/table";
 import { BUSINESS_NATURES } from "@/constants/seller-registration";
 import { ADMIN_BASE } from "@/lib/routes";
-import { cn } from "@/lib/utils";
 import { orpc } from "@/utils/orpc";
 import type { UserRow } from "./user-columns";
 import { retailerColumns, wholesalerColumns } from "./user-columns";
 import {
+  UserOverviewPerformancePanel,
   type UsersKpiKey,
-  UsersPerformancePanel,
-} from "./users-performance-panel";
-import { WholesalerPerformancePanel } from "./wholesaler-performance-panel";
+} from "./user-overview-performance-panel";
 
 type StatusFilter = "all" | "active" | "pending" | "suspended";
-type KycFilter = "all" | "verified" | "unverified" | "pending" | "failed";
 type BusinessNatureFilter =
   | "all"
   | "unspecified"
   | (typeof BUSINESS_NATURES)[number]["id"];
 
 const PAGE_SIZE = 20;
-const TREND_DAYS = 30;
 
 function generatePageNumbers(
   current: number,
@@ -72,12 +68,11 @@ function generatePageNumbers(
   return pages;
 }
 
-function deriveActiveKpis(status: StatusFilter, kyc: KycFilter): UsersKpiKey[] {
+function deriveActiveKpis(status: StatusFilter): UsersKpiKey[] {
   const active: UsersKpiKey[] = [];
   if (status === "all") active.push("total");
   if (status === "active") active.push("active");
   if (status === "suspended") active.push("suspended");
-  if (kyc === "verified") active.push("verifiedKyc");
   return active;
 }
 
@@ -89,7 +84,6 @@ function formatBusinessNature(value: string) {
 interface UsersListClientProps {
   portalRole: "warehouse" | "shop_owner";
   title: string;
-  description: string;
   columns: ColumnDef<UserRow>[];
   emptyLabel: string;
 }
@@ -97,14 +91,15 @@ interface UsersListClientProps {
 export function UsersListClient({
   portalRole,
   title,
-  description,
   columns,
   emptyLabel,
 }: UsersListClientProps) {
   const role = portalRole;
   const isWholesaler = role === "warehouse";
+  const userType = isWholesaler ? "wholesaler" : "retailer";
+  const listTitle = `${isWholesaler ? "Wholesaler" : "Retailer"} User List`;
+  const summaryHeadingId = `${userType}-summary-heading`;
   const [status, setStatus] = useState<StatusFilter>("all");
-  const [kyc, setKyc] = useState<KycFilter>("all");
   const [businessNature, setBusinessNature] =
     useState<BusinessNatureFilter>("all");
   const [district, setDistrict] = useState("all");
@@ -127,12 +122,12 @@ export function UsersListClient({
     () => ({
       role,
       status,
-      kyc,
+      kyc: "all" as const,
       businessNature,
       district: district !== "all" ? district : undefined,
       search: debouncedSearch || undefined,
     }),
-    [role, status, kyc, businessNature, district, debouncedSearch],
+    [role, status, businessNature, district, debouncedSearch],
   );
 
   const statsQuery = useQuery({
@@ -141,18 +136,10 @@ export function UsersListClient({
     }),
   });
 
-  const { data: trendData, isLoading: isTrendLoading } = useQuery({
-    ...orpc.adminUserManagement.getGrowthTrend.queryOptions({
-      input: { ...overviewFilters, days: TREND_DAYS },
-    }),
-    enabled: !isWholesaler,
-  });
-
   const registrationQuery = useQuery({
     ...orpc.adminUserManagement.getRegistrationTrend.queryOptions({
       input: overviewFilters,
     }),
-    enabled: isWholesaler,
   });
 
   const applicationType = role === "shop_owner" ? "seller" : "warehouse";
@@ -160,9 +147,9 @@ export function UsersListClient({
     ...orpc.adminApplication.getOverview.queryOptions({
       input: {
         type: applicationType,
-        businessNature: isWholesaler ? businessNature : "all",
-        district: isWholesaler ? overviewFilters.district : undefined,
-        search: isWholesaler ? overviewFilters.search : undefined,
+        businessNature,
+        district: overviewFilters.district,
+        search: overviewFilters.search,
         referral: "all",
       },
     }),
@@ -206,20 +193,16 @@ export function UsersListClient({
   });
 
   const stats = statsQuery.data?.stats;
-  const activeKpis = deriveActiveKpis(status, kyc);
-  const pendingApplications = applicationsQuery.data?.pending ?? 0;
+  const activeKpis = deriveActiveKpis(status);
   const applicationParams = new URLSearchParams({
     status: "pending",
     type: applicationType,
   });
-  if (isWholesaler) {
-    if (businessNature !== "all")
-      applicationParams.set("nature", businessNature);
-    if (overviewFilters.district)
-      applicationParams.set("district", overviewFilters.district);
-    if (overviewFilters.search)
-      applicationParams.set("q", overviewFilters.search);
-  }
+  if (businessNature !== "all") applicationParams.set("nature", businessNature);
+  if (overviewFilters.district)
+    applicationParams.set("district", overviewFilters.district);
+  if (overviewFilters.search)
+    applicationParams.set("q", overviewFilters.search);
   const pendingApplicationsHref = `${ADMIN_BASE}/user-overview/approval?${applicationParams}`;
 
   const selectKpi = (key: UsersKpiKey) => {
@@ -231,29 +214,14 @@ export function UsersListClient({
       case "suspended":
         setStatus("suspended");
         break;
-      case "verifiedKyc":
-        setKyc("verified");
-        break;
       default:
         setStatus("all");
     }
   };
 
   const filters = (
-    <div
-      className={cn(
-        "flex flex-wrap items-center gap-2 px-4 py-3",
-        isWholesaler
-          ? "gap-3 rounded-xl border bg-card p-4 sm:p-6"
-          : "border-b bg-muted/30",
-      )}
-    >
-      <div
-        className={cn(
-          "relative",
-          isWholesaler ? "w-full" : "min-w-[200px] flex-1 sm:max-w-sm",
-        )}
-      >
+    <div className="flex flex-wrap items-center gap-3 rounded-xl border bg-card p-4 sm:p-6">
+      <div className="relative w-full">
         <Search
           className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground"
           aria-hidden
@@ -276,7 +244,7 @@ export function UsersListClient({
       >
         <SelectTrigger
           aria-label="Account status"
-          className={cn("h-9", isWholesaler ? "w-full sm:w-36" : "w-[130px]")}
+          className="h-9 w-full sm:w-36"
         >
           <SelectValue placeholder="Status" />
         </SelectTrigger>
@@ -295,17 +263,13 @@ export function UsersListClient({
         }}
       >
         <SelectTrigger
-          aria-label={isWholesaler ? "Business type" : "Business nature"}
-          className={cn("h-9", isWholesaler ? "w-full sm:w-48" : "w-[180px]")}
+          aria-label="Business type"
+          className="h-9 w-full sm:w-48"
         >
-          <SelectValue
-            placeholder={isWholesaler ? "Business Type" : "Business Nature"}
-          />
+          <SelectValue placeholder="Business Type" />
         </SelectTrigger>
         <SelectContent>
-          <SelectItem value="all">
-            {isWholesaler ? "All Business Types" : "All Business Natures"}
-          </SelectItem>
+          <SelectItem value="all">All Business Types</SelectItem>
           {(filterOptions?.businessNatures ?? []).map((nature) => (
             <SelectItem key={nature} value={nature}>
               {formatBusinessNature(nature)}
@@ -320,10 +284,7 @@ export function UsersListClient({
           setPage(1);
         }}
       >
-        <SelectTrigger
-          aria-label="Location"
-          className={cn("h-9", isWholesaler ? "w-full sm:w-40" : "w-[140px]")}
-        >
+        <SelectTrigger aria-label="Location" className="h-9 w-full sm:w-40">
           <SelectValue placeholder="Location" />
         </SelectTrigger>
         <SelectContent>
@@ -335,47 +296,24 @@ export function UsersListClient({
           ))}
         </SelectContent>
       </Select>
-      {!isWholesaler && (
-        <Select
-          value={kyc}
-          onValueChange={(v) => {
-            setKyc(v as KycFilter);
-            setPage(1);
-          }}
-        >
-          <SelectTrigger aria-label="KYC status" className="h-9 w-[130px]">
-            <SelectValue placeholder="KYC" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All KYC</SelectItem>
-            <SelectItem value="verified">Verified</SelectItem>
-            <SelectItem value="unverified">Unverified</SelectItem>
-            <SelectItem value="pending">Pending</SelectItem>
-            <SelectItem value="failed">Failed</SelectItem>
-          </SelectContent>
-        </Select>
-      )}
-      {isWholesaler && (
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="h-9 w-full gap-2 sm:ml-auto sm:w-auto"
-          onClick={() => {
-            if (timerRef.current) clearTimeout(timerRef.current);
-            setSearch("");
-            setDebouncedSearch("");
-            setStatus("all");
-            setKyc("all");
-            setBusinessNature("all");
-            setDistrict("all");
-            setPage(1);
-          }}
-        >
-          <RotateCcw className="size-3.5" aria-hidden />
-          Reset Filter
-        </Button>
-      )}
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className="h-9 w-full gap-2 sm:ml-auto sm:w-auto"
+        onClick={() => {
+          if (timerRef.current) clearTimeout(timerRef.current);
+          setSearch("");
+          setDebouncedSearch("");
+          setStatus("all");
+          setBusinessNature("all");
+          setDistrict("all");
+          setPage(1);
+        }}
+      >
+        <RotateCcw className="size-3.5" aria-hidden />
+        Reset Filter
+      </Button>
     </div>
   );
 
@@ -390,98 +328,57 @@ export function UsersListClient({
 
   return (
     <div className="min-w-0 space-y-6">
-      {isWholesaler ? (
-        <>
-          <h1 className="sr-only">{title}</h1>
-          {filters}
-          <section
-            aria-labelledby="wholesaler-summary-heading"
-            className="space-y-3"
+      <h1 className="sr-only">{title}</h1>
+      {filters}
+      <section aria-labelledby={summaryHeadingId} className="space-y-3">
+        <h2
+          id={summaryHeadingId}
+          className="text-sm font-semibold tracking-tight"
+        >
+          Quick Summary
+        </h2>
+        {performanceError && (
+          <div
+            role="alert"
+            className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-sm"
           >
-            <h2
-              id="wholesaler-summary-heading"
-              className="text-sm font-semibold tracking-tight"
-            >
-              Quick Summary
-            </h2>
-            {performanceError && (
-              <div
-                role="alert"
-                className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-sm"
-              >
-                <p>
-                  Could not load all performance data. Previously loaded values
-                  may be out of date.
-                </p>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={performanceFetching}
-                  onClick={() => {
-                    void statsQuery.refetch();
-                    void registrationQuery.refetch();
-                    void applicationsQuery.refetch();
-                  }}
-                >
-                  Retry
-                </Button>
-              </div>
-            )}
-            <WholesalerPerformancePanel
-              stats={stats}
-              trend={registrationQuery.data}
-              loading={
-                statsQuery.isLoading ||
-                registrationQuery.isLoading ||
-                applicationsQuery.isLoading
-              }
-              activeKpis={activeKpis}
-              pendingApplications={applicationsQuery.data?.pending}
-              pendingApplicationsHref={pendingApplicationsHref}
-              onSelectKpi={selectKpi}
-            />
-          </section>
-        </>
-      ) : (
-        <>
-          <div>
-            <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-              <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
-              {pendingApplications > 0 && (
-                <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground">
-                  <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
-                  {pendingApplications} pending review
-                </span>
-              )}
-            </div>
-            <p className="mt-0.5 text-sm text-muted-foreground">
-              {description}
+            <p>
+              Could not load all performance data. Previously loaded values may
+              be out of date.
             </p>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={performanceFetching}
+              onClick={() => {
+                void statsQuery.refetch();
+                void registrationQuery.refetch();
+                void applicationsQuery.refetch();
+              }}
+            >
+              Retry
+            </Button>
           </div>
-          <UsersPerformancePanel
-            stats={stats}
-            trend={trendData}
-            isTrendLoading={isTrendLoading}
-            activeKpis={activeKpis}
-            pendingApplications={pendingApplications}
-            pendingApplicationsHref={pendingApplicationsHref}
-            onSelectKpi={selectKpi}
-          />
-        </>
-      )}
-
-      <section
-        aria-label={isWholesaler ? "Wholesaler User List" : title}
-        className="space-y-3"
-      >
-        {isWholesaler && (
-          <h2 className="text-sm font-semibold tracking-tight">
-            Wholesaler User List
-          </h2>
         )}
-        <div className="overflow-hidden rounded-xl border bg-background">
-          {!isWholesaler && filters}
+        <UserOverviewPerformancePanel
+          userType={userType}
+          stats={stats}
+          trend={registrationQuery.data}
+          loading={
+            statsQuery.isLoading ||
+            registrationQuery.isLoading ||
+            applicationsQuery.isLoading
+          }
+          activeKpis={activeKpis}
+          pendingApplications={applicationsQuery.data?.pending}
+          pendingApplicationsHref={pendingApplicationsHref}
+          onSelectKpi={selectKpi}
+        />
+      </section>
 
+      <section aria-label={listTitle} className="space-y-3">
+        <h2 className="text-sm font-semibold tracking-tight">{listTitle}</h2>
+        <div className="overflow-hidden rounded-xl border bg-background">
           {isLoading ? (
             <div className="divide-y">
               {Array.from({ length: 8 }).map((_, i) => (

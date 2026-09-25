@@ -21,10 +21,14 @@ import {
 } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
-import type {
-  UsersKpiKey,
-  UsersPerformanceStats,
-} from "./users-performance-panel";
+
+export type UsersKpiKey = "total" | "active" | "suspended";
+
+export type UsersPerformanceStats = {
+  total: number;
+  active: number;
+  suspended: number;
+};
 
 type RegistrationTrend = ReturnType<typeof userRegistrationTrend>;
 const numberFormat = new Intl.NumberFormat("en-US", {
@@ -83,7 +87,8 @@ function Growth({
   );
 }
 
-export function WholesalerPerformancePanel({
+export function UserOverviewPerformancePanel({
+  userType,
   stats,
   trend,
   loading,
@@ -92,6 +97,7 @@ export function WholesalerPerformancePanel({
   pendingApplicationsHref,
   onSelectKpi,
 }: {
+  userType: "retailer" | "wholesaler";
   stats?: UsersPerformanceStats;
   trend?: RegistrationTrend;
   loading: boolean;
@@ -100,6 +106,8 @@ export function WholesalerPerformancePanel({
   pendingApplicationsHref: string;
   onSelectKpi: (key: UsersKpiKey) => void;
 }) {
+  const userTypeLabel = userType === "retailer" ? "Retailer" : "Wholesaler";
+  const headingId = `${userType}-performance-heading`;
   const metrics = [
     {
       label: "New Users",
@@ -116,13 +124,13 @@ export function WholesalerPerformancePanel({
       label: "Applying",
       value: pendingApplications,
       href: pendingApplicationsHref,
-      description: "Warehouse applications awaiting approval.",
+      description: `${userTypeLabel} applications awaiting approval.`,
     },
     {
       label: "Suspended",
       value: stats?.suspended,
       key: "suspended" as const,
-      description: "Suspended warehouse accounts.",
+      description: `Suspended ${userType} accounts.`,
     },
   ];
   const dateFormat = new Intl.DateTimeFormat("en-US", {
@@ -134,13 +142,13 @@ export function WholesalerPerformancePanel({
   return (
     <Card
       role="region"
-      aria-labelledby="wholesaler-performance-heading"
+      aria-labelledby={headingId}
       aria-busy={loading}
       className="min-w-0 gap-0 border py-0 shadow-none ring-0"
     >
       <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3 border-b bg-muted/20 px-4 py-4 sm:px-6">
         <h2
-          id="wholesaler-performance-heading"
+          id={headingId}
           className="flex items-center gap-2 text-sm font-semibold tracking-tight sm:gap-3 sm:text-base"
         >
           <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground sm:size-9">
@@ -164,8 +172,8 @@ export function WholesalerPerformancePanel({
             <DialogHeader className="pr-8">
               <DialogTitle>Users Performance</DialogTitle>
               <DialogDescription>
-                Wholesaler users matching the search, location and business type
-                filters. Time zone: {trend?.timeZone}.
+                {userTypeLabel} users matching the search, location and business
+                type filters. Time zone: {trend?.timeZone}.
               </DialogDescription>
             </DialogHeader>
             <dl className="grid grid-cols-2 gap-x-6 gap-y-3 border-y py-4 text-sm">
@@ -173,8 +181,7 @@ export function WholesalerPerformancePanel({
                 {
                   label: "Total Users",
                   value: stats?.total,
-                  description:
-                    "All registered warehouse accounts in this cohort.",
+                  description: `All registered ${userType} accounts matching these filters.`,
                 },
                 ...metrics,
               ].map((metric) => (
@@ -339,7 +346,7 @@ export function WholesalerPerformancePanel({
                   value: { label: "Active Users", color: "var(--primary)" },
                 }}
                 className="h-48 w-full aspect-auto"
-                aria-label="Daily registrations of currently active wholesaler users in the last 30 days. Exact counts are available in View Report."
+                aria-label={`Daily registrations of currently active ${userType} users in the last 30 days. Exact counts are available in View Report.`}
               >
                 <LineChart
                   accessibilityLayer

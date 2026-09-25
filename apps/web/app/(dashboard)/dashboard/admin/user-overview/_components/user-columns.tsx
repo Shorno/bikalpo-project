@@ -5,7 +5,6 @@ import { ArrowRight } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { ADMIN_BASE } from "@/lib/routes";
-import { cn } from "@/lib/utils";
 
 export type UserKycStatus = "verified" | "pending" | "failed" | "unverified";
 
@@ -26,35 +25,9 @@ export type UserRow = {
   createdAt: Date | string;
 };
 
-const ACCOUNT_STYLES = {
-  active: { label: "Active", dot: "bg-emerald-600" },
-  pending: { label: "Pending", dot: "bg-amber-500" },
-  suspended: { label: "Suspended", dot: "bg-red-500" },
-} as const;
-
-const KYC_STYLES = {
-  verified: { label: "Verified", dot: "bg-emerald-600" },
-  pending: { label: "Pending", dot: "bg-amber-500" },
-  failed: { label: "Failed", dot: "bg-red-500" },
-  unverified: { label: "Unverified", dot: "bg-muted-foreground/40" },
-} as const;
-
-function DotLabel({ config }: { config: { label: string; dot: string } }) {
-  return (
-    <span className="inline-flex items-center gap-1.5 text-xs font-medium text-foreground">
-      <span
-        className={cn("h-1.5 w-1.5 shrink-0 rounded-full", config.dot)}
-        aria-hidden
-      />
-      {config.label}
-    </span>
-  );
-}
-
 function buildBaseColumns(
   listSegment: "retailers" | "wholesalers",
 ): ColumnDef<UserRow>[] {
-  const isWholesaler = listSegment === "wholesalers";
   return [
     {
       accessorKey: "applicationNumber",
@@ -69,16 +42,9 @@ function buildBaseColumns(
       accessorKey: "businessName",
       header: "Business Name",
       cell: ({ row }) => (
-        <div>
-          <p className="font-medium text-foreground">
-            {row.original.businessName}
-          </p>
-          {!isWholesaler && (
-            <p className="text-xs text-muted-foreground">
-              {row.original.ownerName}
-            </p>
-          )}
-        </div>
+        <p className="font-medium text-foreground">
+          {row.original.businessName}
+        </p>
       ),
     },
     {
@@ -90,66 +56,24 @@ function buildBaseColumns(
         </span>
       ),
     },
-    ...(isWholesaler
-      ? ([
-          {
-            accessorKey: "planName",
-            header: "Plan",
-            cell: ({ row }) => (
-              <span className="text-sm text-muted-foreground">
-                {row.original.planName}
-              </span>
-            ),
-          },
-        ] satisfies ColumnDef<UserRow>[])
-      : ([
-          {
-            accessorKey: "kycStatus",
-            header: "KYC",
-            cell: ({ row }) => (
-              <DotLabel
-                config={
-                  KYC_STYLES[row.original.kycStatus] ?? KYC_STYLES.unverified
-                }
-              />
-            ),
-          },
-          {
-            accessorKey: "accountStatus",
-            header: "Status",
-            cell: ({ row }) => (
-              <DotLabel config={ACCOUNT_STYLES[row.original.accountStatus]} />
-            ),
-          },
-        ] satisfies ColumnDef<UserRow>[])),
+    {
+      accessorKey: "planName",
+      header: "Plan",
+      cell: ({ row }) => (
+        <span className="text-sm text-muted-foreground">
+          {row.original.planName}
+        </span>
+      ),
+    },
     {
       accessorKey: "businessNatureLabel",
-      header: isWholesaler ? "Business Type" : "Business Nature",
+      header: "Business Type",
       cell: ({ row }) => (
-        <span
-          className={
-            isWholesaler
-              ? "text-sm text-muted-foreground"
-              : "text-xs font-medium uppercase tracking-wide text-muted-foreground"
-          }
-        >
+        <span className="text-sm text-muted-foreground">
           {row.original.businessNatureLabel}
         </span>
       ),
     },
-    ...(!isWholesaler
-      ? ([
-          {
-            accessorKey: "productTypeName",
-            header: "Product Type",
-            cell: ({ row }) => (
-              <span className="text-sm text-muted-foreground">
-                {row.original.productTypeName || "—"}
-              </span>
-            ),
-          },
-        ] satisfies ColumnDef<UserRow>[])
-      : []),
     {
       id: "actions",
       header: "Action",

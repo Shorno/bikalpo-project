@@ -13,7 +13,6 @@ export default function WholesalersPage() {
     <UsersListClient
       portalRole="warehouse"
       title="Wholesalers"
-      description="Manage accounts authorized for the Warehouse Owner portal"
       columns={wholesalerColumns}
       emptyLabel="Warehouse Owners matching your current filters will appear here."
     />
