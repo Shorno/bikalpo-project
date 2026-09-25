@@ -5,6 +5,7 @@ import { parseAsString, useQueryState } from "nuqs";
 import { useMemo } from "react";
 import {
   ActiveStatusBadge,
+  SetupActionRow,
   SetupEntityTable,
   SetupToolbar,
 } from "@/components/features/product-setup";
@@ -63,7 +64,6 @@ export default function CategoryTable({
                 label: option.name,
               })),
             ],
-            widthClassName: "md:w-44",
           },
           {
             key: "status",
@@ -87,6 +87,9 @@ export default function CategoryTable({
         searchPlaceholder="Search Category Name"
         searchValue={search}
       />
+      <SetupActionRow>
+        <NewCategoryDialog />
+      </SetupActionRow>
       <SetupEntityTable
         columns={columns}
         data={filteredData}

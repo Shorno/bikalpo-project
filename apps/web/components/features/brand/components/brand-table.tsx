@@ -5,6 +5,7 @@ import { parseAsString, useQueryState } from "nuqs";
 import { useMemo } from "react";
 import {
   ActiveStatusBadge,
+  SetupActionRow,
   SetupEntityTable,
   SetupToolbar,
 } from "@/components/features/product-setup";
@@ -68,7 +69,6 @@ export default function BrandTable({ columns, data }: BrandTableProps) {
                 label: option.name,
               })),
             ],
-            widthClassName: "md:w-48",
           },
           {
             key: "status",
@@ -94,6 +94,9 @@ export default function BrandTable({ columns, data }: BrandTableProps) {
         searchPlaceholder="Search Brand Name"
         searchValue={search}
       />
+      <SetupActionRow>
+        <NewBrandDialog />
+      </SetupActionRow>
       <SetupEntityTable
         columns={columns}
         data={filteredData}

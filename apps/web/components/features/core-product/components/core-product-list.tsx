@@ -10,7 +10,6 @@ import TableSkeleton from "@/components/table-skeleton";
 import { orpc } from "@/utils/orpc";
 import { useCoreProductColumns } from "./core-product-columns";
 import CoreProductTable from "./core-product-table";
-import NewCoreProductDialog from "./new-core-product-dialog";
 
 export default function CoreProductList() {
   const columns = useCoreProductColumns();
@@ -20,18 +19,10 @@ export default function CoreProductList() {
   const coreProducts = data?.coreProducts ?? [];
 
   return (
-    <SetupPageShell>
+    <SetupPageShell width="wide">
       <SetupPageHeader
-        action={<NewCoreProductDialog />}
         count={coreProducts.length}
-        secondaryActions={
-          <a
-            className="inline-flex h-10 items-center rounded-md border px-4 text-sm font-medium hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            href="/dashboard/admin/setup-requests"
-          >
-            Review requests
-          </a>
-        }
+        description="Browse reusable product identities and their setup."
         title="Core Identities"
       />
       {isLoading ? (

@@ -1,3 +1,4 @@
+export * from "./setup-action-row";
 export * from "./setup-delete-dialog";
 export * from "./setup-detail";
 export * from "./setup-entity-table";

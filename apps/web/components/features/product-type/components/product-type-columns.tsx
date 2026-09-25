@@ -7,8 +7,10 @@ import type {
 } from "@bikalpo-project/db/fulfillment";
 import type { ColumnDef } from "@tanstack/react-table";
 import Link from "next/link";
-import { ActiveStatusBadge } from "@/components/features/product-setup";
-import { Button } from "@/components/ui/button";
+import {
+  ActiveStatusBadge,
+  SetupViewButton,
+} from "@/components/features/product-setup";
 
 export type ProductTypeRow = {
   id: number;
@@ -64,9 +66,7 @@ export function useProductTypeColumns(): ColumnDef<ProductTypeRow, unknown>[] {
       enableSorting: false,
       cell: ({ row }) => (
         <div className="flex justify-end">
-          <Button asChild className="h-9" size="sm" variant="ghost">
-            <Link href={`/dashboard/admin/types/${row.original.id}`}>View</Link>
-          </Button>
+          <SetupViewButton href={`/dashboard/admin/types/${row.original.id}`} />
         </div>
       ),
       size: 80,

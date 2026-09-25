@@ -21,7 +21,6 @@ import {
   ReceiptIcon,
   Settings2,
   ShoppingCartIcon,
-  StoreIcon,
   TruckIcon,
   Undo2Icon,
   Users2Icon,
@@ -54,6 +53,41 @@ function getAdminNavGroups(pendingApplications = 0): NavGroup[] {
           title: "Dashboard",
           url: ADMIN_BASE,
           icon: LayoutDashboardIcon,
+        },
+      ],
+    },
+    {
+      label: "User Management",
+      hideLabel: true,
+      items: [
+        {
+          title: "User Management",
+          url: `${ADMIN_BASE}/user-overview/wholesalers`,
+          icon: Users2Icon,
+          activePrefixes: [`${ADMIN_BASE}/user-overview/`],
+          items: [
+            {
+              title: "Warehouse Users",
+              url: `${ADMIN_BASE}/user-overview/wholesalers`,
+              activePrefixes: [`${ADMIN_BASE}/user-overview/wholesalers`],
+            },
+            {
+              title: "Retailer Users",
+              url: `${ADMIN_BASE}/user-overview/retailers`,
+              activePrefixes: [`${ADMIN_BASE}/user-overview/retailers`],
+            },
+            {
+              title: "Consumers",
+              url: `${ADMIN_BASE}/user-overview/consumers`,
+              activePrefixes: [`${ADMIN_BASE}/user-overview/consumers`],
+            },
+            {
+              title: "Approval",
+              url: `${ADMIN_BASE}/user-overview/approval`,
+              badge: pendingApplications,
+              activePrefixes: [`${ADMIN_BASE}/user-overview/approval`],
+            },
+          ],
         },
       ],
     },
@@ -188,30 +222,6 @@ function getAdminNavGroups(pendingApplications = 0): NavGroup[] {
           title: "Offer Structures",
           url: `${ADMIN_BASE}/offers`,
           icon: GiftIcon,
-        },
-      ],
-    },
-    {
-      label: "User Overviews",
-      items: [
-        {
-          title: "Retailers",
-          url: `${ADMIN_BASE}/user-overview/retailers`,
-          icon: StoreIcon,
-          activePrefixes: [`${ADMIN_BASE}/user-overview/retailers`],
-        },
-        {
-          title: "Warehouse Owners",
-          url: `${ADMIN_BASE}/user-overview/wholesalers`,
-          icon: WarehouseIcon,
-          activePrefixes: [`${ADMIN_BASE}/user-overview/wholesalers`],
-        },
-        {
-          title: "Approval",
-          url: `${ADMIN_BASE}/user-overview/approval`,
-          icon: ClipboardListIcon,
-          badge: pendingApplications,
-          activePrefixes: [`${ADMIN_BASE}/user-overview/approval`],
         },
       ],
     },

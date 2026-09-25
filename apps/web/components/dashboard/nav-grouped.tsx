@@ -29,7 +29,13 @@ export type NavItem = {
   badge?: number;
   activePrefixes?: string[];
   defaultOpen?: boolean;
-  items?: { title: string; url: string; badge?: number; icon?: LucideIcon }[];
+  items?: {
+    title: string;
+    url: string;
+    badge?: number;
+    icon?: LucideIcon;
+    activePrefixes?: string[];
+  }[];
 };
 
 export type NavGroup = {
@@ -71,8 +77,8 @@ export function NavGrouped({ groups }: { groups: NavGroup[] }) {
             {group.items.map((item) => {
               // Items with sub-items → collapsible
               if (item.items && item.items.length > 0) {
-                const isChildActive = item.items.some(
-                  (sub) => pathname === sub.url,
+                const isChildActive = item.items.some((sub) =>
+                  isNavItemActive(pathname, sub),
                 );
                 const isParentActive = isNavItemActive(pathname, item);
 
@@ -101,7 +107,7 @@ export function NavGrouped({ groups }: { groups: NavGroup[] }) {
                       <CollapsibleContent>
                         <SidebarMenuSub>
                           {item.items.map((sub) => {
-                            const isSubActive = pathname === sub.url;
+                            const isSubActive = isNavItemActive(pathname, sub);
                             return (
                               <SidebarMenuSubItem key={sub.title}>
                                 <SidebarMenuSubButton
@@ -114,6 +120,7 @@ export function NavGrouped({ groups }: { groups: NavGroup[] }) {
                                   >
                                     {sub.icon && <sub.icon size={16} />}
                                     <span>{sub.title}</span>
+                                    <NavBadge count={sub.badge} />
                                   </Link>
                                 </SidebarMenuSubButton>
                               </SidebarMenuSubItem>

@@ -6,7 +6,6 @@ import {
   SetupPageHeader,
   SetupPageShell,
 } from "@/components/features/product-setup";
-import NewSubcategoryDialog from "@/components/features/subcategory/components/new-subcategory-dialog";
 import {
   type SubcategoryWithCategory,
   useSubcategoryColumns,
@@ -54,7 +53,7 @@ export default function SubcategoryListPage() {
 
   if (subcategoriesQuery.isLoading || categoriesQuery.isLoading) {
     return (
-      <SetupPageShell className="space-y-6">
+      <SetupPageShell className="space-y-6" width="standard">
         <div className="flex items-center justify-between">
           <Skeleton className="h-8 w-64" />
           <Skeleton className="h-9 w-40" />
@@ -66,7 +65,7 @@ export default function SubcategoryListPage() {
 
   if (subcategoriesQuery.isError || categoriesQuery.isError) {
     return (
-      <SetupPageShell>
+      <SetupPageShell width="standard">
         <SetupErrorState
           onRetry={() => {
             void subcategoriesQuery.refetch();
@@ -78,15 +77,10 @@ export default function SubcategoryListPage() {
   }
 
   return (
-    <SetupPageShell>
+    <SetupPageShell width="standard">
       <SetupPageHeader
-        action={
-          <NewSubcategoryDialog
-            variant="standalone"
-            categories={categoriesList}
-          />
-        }
         count={subcategories?.length ?? 0}
+        description="Manage sub categories under the product taxonomy."
         title="Sub Categories"
       />
 

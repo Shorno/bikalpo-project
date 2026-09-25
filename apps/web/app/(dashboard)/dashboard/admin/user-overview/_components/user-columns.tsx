@@ -67,7 +67,7 @@ function buildBaseColumns(
     },
     {
       accessorKey: "businessNatureLabel",
-      header: "Business Type",
+      header: listSegment === "retailers" ? "Type" : "Business Type",
       cell: ({ row }) => (
         <span className="text-sm text-muted-foreground">
           {row.original.businessNatureLabel}

@@ -4,8 +4,10 @@ import type { SubCategory } from "@bikalpo-project/db/schema";
 import type { ColumnDef } from "@tanstack/react-table";
 import Link from "next/link";
 import { useMemo } from "react";
-import { ActiveStatusBadge } from "@/components/features/product-setup";
-import { Button } from "@/components/ui/button";
+import {
+  ActiveStatusBadge,
+  SetupViewButton,
+} from "@/components/features/product-setup";
 import { ADMIN_BASE } from "@/lib/routes";
 
 export interface SubcategoryWithCategory extends SubCategory {
@@ -62,11 +64,9 @@ export function useSubcategoryColumns() {
         enableSorting: false,
         cell: ({ row }) => (
           <div className="flex justify-end">
-            <Button asChild className="h-9" size="sm" variant="ghost">
-              <Link href={`${ADMIN_BASE}/subcategories/${row.original.id}`}>
-                View
-              </Link>
-            </Button>
+            <SetupViewButton
+              href={`${ADMIN_BASE}/subcategories/${row.original.id}`}
+            />
           </div>
         ),
       },

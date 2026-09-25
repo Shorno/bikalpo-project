@@ -8,6 +8,7 @@ import { adminAreaAnalyticsRouter } from "./admin-area-analytics";
 import { adminAssistedInviteRouter } from "./admin-assisted-invite";
 import { adminBrandUpdateRouter } from "./admin-brand-update";
 import { adminComplaintRouter } from "./admin-complaint";
+import { adminConsumerManagementRouter } from "./admin-consumer-management";
 import { adminCoreProductRouter } from "./admin-core-product";
 import { adminCustomerHomeTabRouter } from "./admin-customer-home-tab";
 import { adminEmployeeReportRouter } from "./admin-employee-report";
@@ -181,6 +182,7 @@ export const appRouter = {
   adminReward: adminRewardRouter,
   userInvite: userInviteRouter,
   adminUserManagement: adminUserManagementRouter,
+  adminConsumerManagement: adminConsumerManagementRouter,
   adminMarketing: adminMarketingRouter,
   toLetBanner: toLetBannerRouter,
   marketing: marketingRouter,

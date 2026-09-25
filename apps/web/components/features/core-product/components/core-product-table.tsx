@@ -1,13 +1,17 @@
 "use client";
 
 import type { ColumnDef } from "@tanstack/react-table";
+import Link from "next/link";
 import { parseAsString, useQueryState } from "nuqs";
 import { useMemo } from "react";
 import {
   ActiveStatusBadge,
+  SetupActionRow,
   SetupEntityTable,
   SetupToolbar,
 } from "@/components/features/product-setup";
+import { Button } from "@/components/ui/button";
+import { ADMIN_BASE } from "@/lib/routes";
 import type { CoreProductWithRelations } from "./core-product-columns";
 import NewCoreProductDialog from "./new-core-product-dialog";
 
@@ -159,6 +163,12 @@ export default function CoreProductTable({
         searchPlaceholder="Search Core Identity name or SKU"
         searchValue={search}
       />
+      <SetupActionRow>
+        <Button asChild variant="outline">
+          <Link href={`${ADMIN_BASE}/setup-requests`}>Review requests</Link>
+        </Button>
+        <NewCoreProductDialog />
+      </SetupActionRow>
       <SetupEntityTable
         columns={columns}
         data={filteredData}

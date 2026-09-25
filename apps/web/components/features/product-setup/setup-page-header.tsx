@@ -1,51 +1,55 @@
-import { ChevronRight } from "lucide-react";
-import Link from "next/link";
+import { Layers3 } from "lucide-react";
 import type { ReactNode } from "react";
-import { ADMIN_BASE } from "@/lib/routes";
 
 type SetupPageHeaderProps = {
   title: string;
+  description: string;
   count?: number;
-  action?: ReactNode;
-  secondaryActions?: ReactNode;
+  metrics?: Array<{ label: string; value: ReactNode }>;
 };
 
 export function SetupPageHeader({
   title,
+  description,
   count,
-  action,
-  secondaryActions,
+  metrics,
 }: SetupPageHeaderProps) {
+  const displayedMetrics =
+    metrics ?? (count === undefined ? [] : [{ label: title, value: count }]);
+
   return (
-    <header className="space-y-3 border-b pb-5">
-      <nav
-        aria-label="Breadcrumb"
-        className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground"
-      >
-        <Link className="hover:text-foreground" href={ADMIN_BASE}>
-          Product System
-        </Link>
-        <ChevronRight aria-hidden="true" className="size-3.5" />
-        <span aria-current="page">Setup</span>
-      </nav>
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+    <header className="overflow-hidden rounded-xl border bg-card shadow-sm">
+      <div className="flex items-center gap-3.5 p-5">
+        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary ring-1 ring-inset ring-primary/15">
+          <Layers3 aria-hidden="true" className="size-5" />
+        </span>
         <div className="min-w-0">
-          <div className="flex flex-wrap items-baseline gap-2.5">
-            <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
-            {count !== undefined && (
-              <span className="font-mono text-xs tabular-nums text-muted-foreground">
-                {count.toLocaleString()} total
-              </span>
-            )}
-          </div>
+          <h1 className="text-lg font-semibold tracking-tight">{title}</h1>
+          <p className="mt-0.5 text-sm text-muted-foreground">{description}</p>
         </div>
-        {(action || secondaryActions) && (
-          <div className="flex shrink-0 flex-wrap items-center gap-2 [&_button]:min-h-11 sm:[&_button]:min-h-9">
-            {secondaryActions}
-            {action}
-          </div>
-        )}
       </div>
+      {displayedMetrics.length > 0 && (
+        <dl
+          className="grid divide-x border-t bg-muted/30"
+          style={{
+            gridTemplateColumns: `repeat(${displayedMetrics.length}, minmax(0, 1fr))`,
+          }}
+        >
+          {displayedMetrics.map((metric) => (
+            <div
+              className="flex flex-col px-4 py-3.5 text-center"
+              key={metric.label}
+            >
+              <dt className="order-2 mt-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                {metric.label}
+              </dt>
+              <dd className="order-1 text-lg font-semibold leading-none tabular-nums">
+                {metric.value}
+              </dd>
+            </div>
+          ))}
+        </dl>
+      )}
     </header>
   );
 }

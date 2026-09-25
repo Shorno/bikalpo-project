@@ -1,14 +1,11 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { Layers3, PackagePlus } from "lucide-react";
-import Link from "next/link";
+import { Layers3 } from "lucide-react";
 import { useMemo } from "react";
 import ProductCatalogTable, {
   type CatalogProduct,
 } from "@/components/features/product/components/product-catalog-table";
-import { Button } from "@/components/ui/button";
-import { ADMIN_BASE } from "@/lib/routes";
 import { orpc } from "@/utils/orpc";
 
 export default function ProductsPage() {
@@ -33,26 +30,18 @@ export default function ProductsPage() {
   return (
     <div className="space-y-5">
       <header className="overflow-hidden rounded-xl border bg-card shadow-sm">
-        <div className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-3.5">
-            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary ring-1 ring-inset ring-primary/15">
-              <Layers3 className="size-5" />
-            </span>
-            <div>
-              <h1 className="text-lg font-semibold tracking-tight">
-                Product Catalog
-              </h1>
-              <p className="mt-0.5 text-sm text-muted-foreground">
-                Browse configured products by type, category, and sub category.
-              </p>
-            </div>
+        <div className="flex items-center gap-3.5 p-5">
+          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary ring-1 ring-inset ring-primary/15">
+            <Layers3 className="size-5" />
+          </span>
+          <div>
+            <h1 className="text-lg font-semibold tracking-tight">
+              Product Catalog
+            </h1>
+            <p className="mt-0.5 text-sm text-muted-foreground">
+              Browse configured products by type, category, and sub category.
+            </p>
           </div>
-          <Button asChild>
-            <Link href={`${ADMIN_BASE}/products/new`}>
-              <PackagePlus className="size-4" />
-              Create Product
-            </Link>
-          </Button>
         </div>
         <div className="grid grid-cols-3 divide-x border-t bg-muted/30">
           <CatalogStat label="Products" value={stats.products} />

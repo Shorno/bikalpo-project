@@ -275,6 +275,7 @@ export const adminCoreProductRouter = {
           });
         }
         for (const price of configuredProduct.variantPrices) {
+          if (!price.isActive) continue;
           const option = price.variantOption;
           const current = variantMap.get(option.id);
           variantMap.set(option.id, {

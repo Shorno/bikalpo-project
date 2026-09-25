@@ -8,7 +8,6 @@ import {
   SetupPageHeader,
   SetupPageShell,
 } from "@/components/features/product-setup";
-import VariantBulkActions from "@/components/features/variant-option/components/variant-bulk-actions";
 import {
   useVariantOptionColumns,
   type VariantOptionRow,
@@ -58,7 +57,7 @@ export default function VariantOptionsPage() {
     categoriesQuery.isLoading
   ) {
     return (
-      <SetupPageShell className="space-y-6">
+      <SetupPageShell className="space-y-6" width="expanded">
         <div className="flex items-center justify-between">
           <Skeleton className="h-8 w-64" />
           <Skeleton className="h-9 w-40" />
@@ -70,7 +69,7 @@ export default function VariantOptionsPage() {
 
   if (variantsQuery.isError || typesQuery.isError || categoriesQuery.isError) {
     return (
-      <SetupPageShell>
+      <SetupPageShell width="expanded">
         <SetupErrorState
           onRetry={() => {
             void variantsQuery.refetch();
@@ -83,16 +82,10 @@ export default function VariantOptionsPage() {
   }
 
   return (
-    <SetupPageShell>
+    <SetupPageShell width="expanded">
       <SetupPageHeader
-        action={
-          <Button onClick={() => setShowCreate(true)}>
-            <Plus aria-hidden="true" className="size-4" />
-            Create Variant
-          </Button>
-        }
         count={variantOptions?.length ?? 0}
-        secondaryActions={<VariantBulkActions />}
+        description="Manage canonical variant definitions and their scope."
         title="Variants"
       />
       <VariantOptionDialog
@@ -102,6 +95,12 @@ export default function VariantOptionsPage() {
       />
 
       <VariantOptionTable
+        actions={
+          <Button onClick={() => setShowCreate(true)}>
+            <Plus aria-hidden="true" className="size-4" />
+            Create Variant
+          </Button>
+        }
         columns={columns}
         data={(variantOptions as VariantOptionRow[]) ?? []}
         emptyAction={
