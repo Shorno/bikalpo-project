@@ -102,6 +102,7 @@ test(
           district,
           businessNature: "wholesaler",
           businessCategory: "Test Product Type",
+          selectedPlan: "monthly",
           status: "approved",
           reviewedAt: new Date(),
         },
@@ -132,6 +133,7 @@ test(
           accountStatus: string;
           businessNature: string | null;
           productTypeName: string | null;
+          selectedPlan: string | null;
         }>;
         pagination: { totalCount: number };
       }>(adminUserManagementRouter.list, adminContext, {
@@ -152,6 +154,7 @@ test(
         accountStatus: "active",
         businessNature: "wholesaler",
         productTypeName: "Test Product Type",
+        selectedPlan: "monthly",
       });
 
       const warehouseStats = await invokeProcedure<{
@@ -197,6 +200,38 @@ test(
       assert.equal(growth.previousApprovals, 0);
       assert.equal(growth.points.length, 30);
       assert.equal(growth.points.at(-1)?.value, 1);
+
+      // A longstanding account approved today is not a new registration.
+      const registrations = await invokeProcedure<{
+        newUsers: number;
+        growthPercent: number | null;
+        points: Array<{ value: number }>;
+      }>(adminUserManagementRouter.getRegistrationTrend, adminContext, {
+        role: "warehouse",
+        status: "all",
+        kyc: "verified",
+        district,
+        businessNature: "wholesaler",
+        search: suffix,
+      });
+      assert.equal(registrations.newUsers, 0);
+      assert.equal(registrations.growthPercent, 0);
+      assert.ok(registrations.points.every((point) => point.value === 0));
+
+      // A new suspended registration counts as new, but is never plotted as active.
+      const suspendedRegistrations = await invokeProcedure<{
+        newUsers: number;
+        points: Array<{ value: number }>;
+      }>(adminUserManagementRouter.getRegistrationTrend, adminContext, {
+        role: "warehouse",
+        status: "all",
+        kyc: "all",
+        district,
+        businessNature: "distributor",
+        search: suffix,
+      });
+      assert.equal(suspendedRegistrations.newUsers, 1);
+      assert.ok(suspendedRegistrations.points.every((point) => point.value === 0));
 
       const suspendedList = await invokeProcedure<{
         users: Array<{ id: string; accountStatus: string }>;

@@ -12,6 +12,8 @@ export type UserKycStatus = "verified" | "pending" | "failed" | "unverified";
 export type UserRow = {
   id: string;
   applicationNumber: string | null;
+  selectedPlan: string | null;
+  planName: string;
   businessName: string;
   ownerName: string;
   phoneNumber: string | null;
@@ -52,6 +54,7 @@ function DotLabel({ config }: { config: { label: string; dot: string } }) {
 function buildBaseColumns(
   listSegment: "retailers" | "wholesalers",
 ): ColumnDef<UserRow>[] {
+  const isWholesaler = listSegment === "wholesalers";
   return [
     {
       accessorKey: "applicationNumber",
@@ -70,9 +73,11 @@ function buildBaseColumns(
           <p className="font-medium text-foreground">
             {row.original.businessName}
           </p>
-          <p className="text-xs text-muted-foreground">
-            {row.original.ownerName}
-          </p>
+          {!isWholesaler && (
+            <p className="text-xs text-muted-foreground">
+              {row.original.ownerName}
+            </p>
+          )}
         </div>
       ),
     },
@@ -85,40 +90,66 @@ function buildBaseColumns(
         </span>
       ),
     },
-    {
-      accessorKey: "kycStatus",
-      header: "KYC",
-      cell: ({ row }) => (
-        <DotLabel
-          config={KYC_STYLES[row.original.kycStatus] ?? KYC_STYLES.unverified}
-        />
-      ),
-    },
-    {
-      accessorKey: "accountStatus",
-      header: "Status",
-      cell: ({ row }) => (
-        <DotLabel config={ACCOUNT_STYLES[row.original.accountStatus]} />
-      ),
-    },
+    ...(isWholesaler
+      ? ([
+          {
+            accessorKey: "planName",
+            header: "Plan",
+            cell: ({ row }) => (
+              <span className="text-sm text-muted-foreground">
+                {row.original.planName}
+              </span>
+            ),
+          },
+        ] satisfies ColumnDef<UserRow>[])
+      : ([
+          {
+            accessorKey: "kycStatus",
+            header: "KYC",
+            cell: ({ row }) => (
+              <DotLabel
+                config={
+                  KYC_STYLES[row.original.kycStatus] ?? KYC_STYLES.unverified
+                }
+              />
+            ),
+          },
+          {
+            accessorKey: "accountStatus",
+            header: "Status",
+            cell: ({ row }) => (
+              <DotLabel config={ACCOUNT_STYLES[row.original.accountStatus]} />
+            ),
+          },
+        ] satisfies ColumnDef<UserRow>[])),
     {
       accessorKey: "businessNatureLabel",
-      header: "Business Nature",
+      header: isWholesaler ? "Business Type" : "Business Nature",
       cell: ({ row }) => (
-        <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+        <span
+          className={
+            isWholesaler
+              ? "text-sm text-muted-foreground"
+              : "text-xs font-medium uppercase tracking-wide text-muted-foreground"
+          }
+        >
           {row.original.businessNatureLabel}
         </span>
       ),
     },
-    {
-      accessorKey: "productTypeName",
-      header: "Product Type",
-      cell: ({ row }) => (
-        <span className="text-sm text-muted-foreground">
-          {row.original.productTypeName || "—"}
-        </span>
-      ),
-    },
+    ...(!isWholesaler
+      ? ([
+          {
+            accessorKey: "productTypeName",
+            header: "Product Type",
+            cell: ({ row }) => (
+              <span className="text-sm text-muted-foreground">
+                {row.original.productTypeName || "—"}
+              </span>
+            ),
+          },
+        ] satisfies ColumnDef<UserRow>[])
+      : []),
     {
       id: "actions",
       header: "Action",

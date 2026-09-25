@@ -1,5 +1,6 @@
 "use client";
 
+import { userSubscriptionPlanName } from "@bikalpo-project/api/routers/helpers/user-subscription-plan";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { Loader2 } from "lucide-react";
@@ -30,6 +31,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { ADMIN_BASE } from "@/lib/routes";
@@ -41,12 +43,6 @@ const BUSINESS_TYPE_LABELS: Record<string, string> = {
   retail: "Retail Shop",
   restaurant: "Restaurant",
   warehouse: "Warehouse",
-};
-
-const PLAN_LABELS: Record<string, string> = {
-  free_trial: "Free Trial (14 days)",
-  starter: "Starter — ৳999/mo",
-  growth: "Growth — ৳2,499/mo",
 };
 
 const APPROVAL_LIST_URL = `${ADMIN_BASE}/user-overview/approval`;
@@ -68,6 +64,9 @@ export function ApprovalDetailClient({
   const [adminNotes, setAdminNotes] = useState("");
   const [verifyKycOpen, setVerifyKycOpen] = useState(false);
   const [verifyKycNotes, setVerifyKycNotes] = useState("");
+  const planCatalog = useQuery(
+    orpc.adminRetailerSubscription.listPlans.queryOptions(),
+  );
 
   // Both queries are declared unconditionally to keep hook order stable; only
   // the one matching the route's type is enabled.
@@ -193,7 +192,12 @@ export function ApprovalDetailClient({
     isWarehouse ? record.warehouseAddress : record.shopAddress
   ) as string;
   const businessType = record.businessType as string | undefined;
-  const selectedPlan = record.selectedPlan as string | undefined;
+  const planName = planCatalog.data
+    ? userSubscriptionPlanName(planCatalog.data, {
+        selectedPlan: record.selectedPlan,
+        trialFallback: isWarehouse,
+      })
+    : undefined;
   const reviewedAt = record.reviewedAt as string | Date | null;
   const existingNotes = record.adminNotes as string | null;
 
@@ -337,26 +341,37 @@ export function ApprovalDetailClient({
           </div>
 
           <div className="space-y-5 self-start lg:sticky lg:top-6">
-            {selectedPlan && (
-              <div className="rounded-xl border border-gray-100 bg-white p-5">
-                <div className="mb-3 flex items-center gap-2">
-                  <span
-                    className="material-symbols-outlined text-lg text-[#003178]"
-                    style={{ fontVariationSettings: "'FILL' 1" }}
-                  >
-                    workspace_premium
-                  </span>
-                  <h3 className="text-sm font-bold text-gray-900">
-                    Selected Plan
-                  </h3>
-                </div>
-                <div className="rounded-lg bg-[#003178]/5 px-4 py-3 text-center">
-                  <p className="text-sm font-bold text-[#003178]">
-                    {PLAN_LABELS[selectedPlan] || selectedPlan}
-                  </p>
-                </div>
+            <div className="rounded-xl border border-gray-100 bg-white p-5">
+              <div className="mb-3 flex items-center gap-2">
+                <span
+                  className="material-symbols-outlined text-lg text-[#003178]"
+                  style={{ fontVariationSettings: "'FILL' 1" }}
+                >
+                  workspace_premium
+                </span>
+                <h3 className="text-sm font-bold text-gray-900">
+                  Selected Plan
+                </h3>
               </div>
-            )}
+              <div className="rounded-lg bg-[#003178]/5 px-4 py-3 text-center">
+                {planCatalog.isLoading ? (
+                  <Skeleton className="mx-auto h-5 w-24" />
+                ) : planCatalog.isError ? (
+                  <div role="alert" className="space-y-2 text-sm">
+                    <p>Could not load the subscription plan.</p>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => void planCatalog.refetch()}
+                    >
+                      Retry
+                    </Button>
+                  </div>
+                ) : (
+                  <p className="text-sm font-bold text-[#003178]">{planName}</p>
+                )}
+              </div>
+            </div>
 
             <div className="rounded-xl border border-gray-100 bg-white p-5">
               <div className="mb-4 flex items-center gap-2">

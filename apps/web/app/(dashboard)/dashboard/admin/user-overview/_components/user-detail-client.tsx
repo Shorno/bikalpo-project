@@ -199,7 +199,6 @@ export function UserDetailClient({ userId }: UserDetailClientProps) {
   const appRecord = application as Record<string, unknown> | null;
   const territory = appRecord?.area as string | undefined;
   const adminNotes = (appRecord?.adminNotes as string | null) ?? "";
-  const selectedPlan = appRecord?.selectedPlan as string | undefined;
   const applicationHref = applicationId
     ? `${ADMIN_BASE}/user-overview/approval/${isWarehouse ? "warehouse" : "seller"}/${applicationId}`
     : null;
@@ -396,28 +395,33 @@ export function UserDetailClient({ userId }: UserDetailClientProps) {
                 <h3 className="mb-3 text-sm font-bold text-gray-900">
                   User Plan
                 </h3>
-                <SubscriptionDetails current={data.subscription} />
+                {data.subscription ? (
+                  <SubscriptionDetails current={data.subscription} />
+                ) : (
+                  <p className="text-sm font-medium text-[#003178]">
+                    {data.planName}
+                  </p>
+                )}
               </div>
             )}
-            {selectedPlan &&
-              (isWarehouse || userData.businessType !== "retail") && (
-                <div className="rounded-xl border border-gray-100 bg-white p-5">
-                  <div className="mb-3 flex items-center gap-2">
-                    <span
-                      className="material-symbols-outlined text-lg text-[#003178]"
-                      style={{ fontVariationSettings: "'FILL' 1" }}
-                    >
-                      workspace_premium
-                    </span>
-                    <h3 className="text-sm font-bold text-gray-900">
-                      Selected Plan
-                    </h3>
-                  </div>
-                  <p className="text-sm font-medium text-[#003178]">
-                    {selectedPlan}
-                  </p>
+            {(isWarehouse || userData.businessType !== "retail") && (
+              <div className="rounded-xl border border-gray-100 bg-white p-5">
+                <div className="mb-3 flex items-center gap-2">
+                  <span
+                    className="material-symbols-outlined text-lg text-[#003178]"
+                    style={{ fontVariationSettings: "'FILL' 1" }}
+                  >
+                    workspace_premium
+                  </span>
+                  <h3 className="text-sm font-bold text-gray-900">
+                    Selected Plan
+                  </h3>
                 </div>
-              )}
+                <p className="text-sm font-medium text-[#003178]">
+                  {data.planName}
+                </p>
+              </div>
+            )}
 
             <div className="rounded-xl border border-gray-100 bg-white p-5">
               <div className="mb-3 flex items-center gap-2">
