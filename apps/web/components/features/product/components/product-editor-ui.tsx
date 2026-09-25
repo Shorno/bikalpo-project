@@ -1,20 +1,31 @@
 import { Package } from "lucide-react";
 import Image from "next/image";
 import type { ReactNode } from "react";
+import { cn } from "@/lib/utils";
 
 export function ProductEditorSection({
   title,
   description,
   action,
   children,
+  className,
+  variant = "plain",
 }: {
   title: string;
   description?: string;
   action?: ReactNode;
   children: ReactNode;
+  className?: string;
+  variant?: "plain" | "card";
 }) {
   return (
-    <section className="px-5 py-6 sm:px-6">
+    <section
+      className={cn(
+        "px-5 py-6 sm:px-6",
+        variant === "card" && "min-w-0 rounded-xl border bg-card",
+        className,
+      )}
+    >
       <div className="mb-4 flex items-start justify-between gap-4">
         <div className="space-y-1">
           <h2 className="text-[15px] font-semibold leading-none tracking-tight">

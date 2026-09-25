@@ -1130,7 +1130,7 @@ export default function ProductForm({
         : "Choose the core product this listing is based on.";
 
   return (
-    <div className="min-h-screen bg-muted/30">
+    <div className="@container/product-form min-h-screen bg-muted/30">
       {/* Command bar */}
       <div className="sticky top-0 z-20 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
         <div className="mx-auto flex max-w-6xl flex-col items-stretch gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:py-2.5">
@@ -1223,11 +1223,15 @@ export default function ProductForm({
         }}
       >
         <div className="mx-auto max-w-6xl px-4 py-6">
-          <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_300px] lg:items-start">
-            {/* Console panel */}
-            <div className="divide-y rounded-xl border bg-card">
-              {/* ── Identity ── */}
-              <FormSection title="Identity" description={identityDescription}>
+          <div className="grid grid-cols-1 gap-6 @4xl/product-form:grid-cols-[minmax(0,1fr)_360px] @4xl/product-form:items-start">
+            {/* Product details */}
+            <div className="min-w-0 space-y-6">
+              {/* ── Product Information ── */}
+              <FormSection
+                variant="card"
+                title="Product Information"
+                description={identityDescription}
+              >
                 <div className="space-y-4">
                   {isEdit ? (
                     <IdentitySummaryRow
@@ -1451,6 +1455,7 @@ export default function ProductForm({
               {(hasSelectedCoreIdentity || isEdit) &&
                 (isStructureLocked ? (
                   <FormSection
+                    variant="card"
                     title="Brand and variants"
                     description="The brand is fixed for this generated product. Prices are managed in Product Price."
                   >
@@ -1481,6 +1486,7 @@ export default function ProductForm({
                   </FormSection>
                 ) : (
                   <FormSection
+                    variant="card"
                     title="Brands and variants"
                     description={
                       isSingleBrandCreation
@@ -1617,6 +1623,7 @@ export default function ProductForm({
               {/* ── Description ── */}
               {(hasSelectedCoreIdentity || isEdit) && (
                 <FormSection
+                  variant="card"
                   title="Description"
                   description="How this product appears to customers."
                 >
@@ -1651,18 +1658,100 @@ export default function ProductForm({
                 </FormSection>
               )}
 
+              {/* ── Features ── */}
+              <FormSection
+                variant="card"
+                title="Features"
+                description="Grouped key-value specifications (e.g. Weight — 500g)."
+              >
+                <form.Field name="features">
+                  {(field) => (
+                    <ProductFeaturesInput
+                      value={field.state.value}
+                      onChange={field.handleChange}
+                    />
+                  )}
+                </form.Field>
+              </FormSection>
+
+              {/* ── Media ── */}
+              <FormSection
+                variant="card"
+                title="Media"
+                description="Images and video for this product."
+              >
+                <div className="space-y-6">
+                  <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+                    <form.Field name="image">
+                      {(field) => {
+                        const isInvalid =
+                          field.state.meta.isTouched &&
+                          !field.state.meta.isValid;
+                        return (
+                          <Field data-invalid={isInvalid}>
+                            <FieldLabel>Thumbnail / main image</FieldLabel>
+                            <ImageUploader
+                              value={field.state.value}
+                              onChange={field.handleChange}
+                              folder="products"
+                              maxSizeMB={5}
+                            />
+                            {isInvalid && (
+                              <FieldError errors={field.state.meta.errors} />
+                            )}
+                          </Field>
+                        );
+                      }}
+                    </form.Field>
+
+                    <form.Field name="additionalImages">
+                      {(field) => (
+                        <Field>
+                          <FieldLabel>Gallery</FieldLabel>
+                          <AdditionalImagesUploader
+                            value={field.state.value}
+                            onChange={field.handleChange}
+                            folder="products/additional"
+                            maxSizeMB={5}
+                          />
+                        </Field>
+                      )}
+                    </form.Field>
+                  </div>
+
+                  <form.Field name="videoUrl">
+                    {(field) => (
+                      <Field>
+                        <FieldLabel>Video URL</FieldLabel>
+                        <Input
+                          value={field.state.value}
+                          onChange={(e) => field.handleChange(e.target.value)}
+                          placeholder="https://youtube.com/watch?v=..."
+                        />
+                      </Field>
+                    )}
+                  </form.Field>
+                </div>
+              </FormSection>
+            </div>
+
+            {/* Inventory and publishing */}
+            <div className="min-w-0 space-y-6">
               {/* ── Inventory rules ── */}
               <FormSection
-                title="Inventory rules"
+                variant="card"
+                title="Inventory Rules"
+                className="p-5 sm:px-5"
                 description="Stock, return, order, and conversion behavior."
               >
-                <div className="grid grid-cols-1 gap-x-8 sm:grid-cols-2">
+                <div className="flex flex-col">
                   {activeRuleSettings.trackingAvailable && (
                     <form.Field name="trackingType">
                       {(field) => (
                         <RuleControlRow
                           description="Choose how this product is tracked in inventory."
                           label="Batch tracking"
+                          wideControl
                         >
                           <Select
                             value={field.state.value}
@@ -1673,7 +1762,10 @@ export default function ProductForm({
                               }
                             }}
                           >
-                            <SelectTrigger className="h-9 w-full">
+                            <SelectTrigger
+                              aria-label="Batch tracking"
+                              className="h-9 w-full"
+                            >
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
@@ -1773,7 +1865,7 @@ export default function ProductForm({
                           description="Apply a minimum order to generated variants."
                           label="Minimum order qty"
                         >
-                          <div className="flex w-full items-center justify-end gap-3">
+                          <div className="flex w-full min-w-0 items-center justify-end gap-2">
                             <Switch
                               aria-label="Minimum order qty"
                               checked={enabledField.state.value}
@@ -1783,7 +1875,7 @@ export default function ProductForm({
                               {(qtyField) => (
                                 <Input
                                   aria-label="Minimum qty"
-                                  className="h-9 flex-1 text-right"
+                                  className="h-9 min-w-0 flex-1 text-right tabular-nums"
                                   disabled={!enabledField.state.value}
                                   min="0"
                                   onChange={(event) =>
@@ -1824,8 +1916,9 @@ export default function ProductForm({
                         <RuleControlRow
                           description="Enable loose inventory for weight or volume based sales."
                           label="Inventory loose unit"
+                          wideControl
                         >
-                          <div className="flex w-full items-center justify-end gap-3">
+                          <div className="flex w-full min-w-0 items-center justify-end gap-2">
                             <Switch
                               aria-label="Inventory loose unit"
                               checked={enabledField.state.value}
@@ -1842,7 +1935,10 @@ export default function ProductForm({
                                     )
                                   }
                                 >
-                                  <SelectTrigger className="h-9 flex-1">
+                                  <SelectTrigger
+                                    aria-label="Inventory loose unit type"
+                                    className="h-9 min-w-0 flex-1"
+                                  >
                                     <SelectValue />
                                   </SelectTrigger>
                                   <SelectContent>
@@ -1872,7 +1968,7 @@ export default function ProductForm({
                             description={returnableRuleDescription}
                             label={returnableRuleLabel}
                           >
-                            <div className="flex w-full items-center justify-end gap-3">
+                            <div className="flex w-full min-w-0 items-center justify-end gap-2">
                               <Switch
                                 aria-label={returnableRuleLabel}
                                 checked={returnableField.state.value}
@@ -1882,7 +1978,7 @@ export default function ProductForm({
                                 {(depositField) => (
                                   <Input
                                     aria-label={depositLabel}
-                                    className="h-9 flex-1 text-right"
+                                    className="h-9 min-w-0 flex-1 text-right tabular-nums"
                                     disabled={!returnableField.state.value}
                                     min="0"
                                     onChange={(event) =>
@@ -1904,88 +2000,12 @@ export default function ProductForm({
                 </div>
               </FormSection>
 
-              {/* ── Features ── */}
               <FormSection
-                title="Features"
-                description="Grouped key-value specifications (e.g. Weight — 500g)."
+                variant="card"
+                title="Publishing"
+                className="p-5 sm:px-5"
               >
-                <form.Field name="features">
-                  {(field) => (
-                    <ProductFeaturesInput
-                      value={field.state.value}
-                      onChange={field.handleChange}
-                    />
-                  )}
-                </form.Field>
-              </FormSection>
-
-              {/* ── Media ── */}
-              <FormSection
-                title="Media"
-                description="Images and video for this product."
-              >
-                <div className="space-y-6">
-                  <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
-                    <form.Field name="image">
-                      {(field) => {
-                        const isInvalid =
-                          field.state.meta.isTouched &&
-                          !field.state.meta.isValid;
-                        return (
-                          <Field data-invalid={isInvalid}>
-                            <FieldLabel>Thumbnail / main image</FieldLabel>
-                            <ImageUploader
-                              value={field.state.value}
-                              onChange={field.handleChange}
-                              folder="products"
-                              maxSizeMB={5}
-                            />
-                            {isInvalid && (
-                              <FieldError errors={field.state.meta.errors} />
-                            )}
-                          </Field>
-                        );
-                      }}
-                    </form.Field>
-
-                    <form.Field name="additionalImages">
-                      {(field) => (
-                        <Field>
-                          <FieldLabel>Gallery</FieldLabel>
-                          <AdditionalImagesUploader
-                            value={field.state.value}
-                            onChange={field.handleChange}
-                            folder="products/additional"
-                            maxSizeMB={5}
-                          />
-                        </Field>
-                      )}
-                    </form.Field>
-                  </div>
-
-                  <form.Field name="videoUrl">
-                    {(field) => (
-                      <Field>
-                        <FieldLabel>Video URL</FieldLabel>
-                        <Input
-                          value={field.state.value}
-                          onChange={(e) => field.handleChange(e.target.value)}
-                          placeholder="https://youtube.com/watch?v=..."
-                        />
-                      </Field>
-                    )}
-                  </form.Field>
-                </div>
-              </FormSection>
-            </div>
-
-            {/* Sidebar */}
-            <div className="space-y-4 lg:sticky lg:top-[72px]">
-              <div className="rounded-xl border bg-card">
-                <div className="border-b px-4 py-3">
-                  <h3 className="text-sm font-semibold">Publish</h3>
-                </div>
-                <div className="space-y-4 p-4">
+                <div className="space-y-4">
                   <form.Field name="status">
                     {(field) => (
                       <div className="space-y-1.5">
@@ -2055,7 +2075,7 @@ export default function ProductForm({
                     )}
                   </form.Field>
                 </div>
-              </div>
+              </FormSection>
             </div>
           </div>
         </div>
@@ -2128,20 +2148,22 @@ function RuleControlRow({
   children,
   description,
   label,
+  wideControl = false,
 }: {
   children: ReactNode;
   description: string;
   label: string;
+  wideControl?: boolean;
 }) {
   return (
-    <div className="flex min-h-[52px] items-center justify-between gap-4 border-t py-3">
-      <div className="flex min-w-0 items-center gap-1.5">
+    <div className="flex min-h-13 items-center justify-between gap-3 border-t py-3">
+      <div className="flex min-w-0 flex-1 items-center gap-1.5">
         <FieldLabel className="text-sm font-normal">{label}</FieldLabel>
         <Tooltip>
           <TooltipTrigger asChild>
             <button
               aria-label={`${label} details`}
-              className="inline-flex h-5 w-5 items-center justify-center rounded text-muted-foreground/70 transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded text-muted-foreground/70 transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               type="button"
             >
               <Info className="h-3.5 w-3.5" />
@@ -2152,7 +2174,9 @@ function RuleControlRow({
           </TooltipContent>
         </Tooltip>
       </div>
-      <div className="flex min-w-0 flex-1 items-center justify-end gap-3">
+      <div
+        className={`flex shrink-0 items-center justify-end gap-2 ${wideControl ? "w-40" : "w-32"}`}
+      >
         {children}
       </div>
     </div>

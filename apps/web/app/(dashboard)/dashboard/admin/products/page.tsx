@@ -28,17 +28,17 @@ export default function ProductsPage() {
   );
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-5 max-md:min-w-0 max-md:space-y-4">
       <header className="overflow-hidden rounded-xl border bg-card shadow-sm">
-        <div className="flex items-center gap-3.5 p-5">
-          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary ring-1 ring-inset ring-primary/15">
+        <div className="flex items-center gap-3.5 p-5 max-md:gap-3 max-md:p-4">
+          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary ring-1 ring-inset ring-primary/15 max-md:size-9">
             <Layers3 className="size-5" />
           </span>
-          <div>
-            <h1 className="text-lg font-semibold tracking-tight">
+          <div className="max-md:min-w-0">
+            <h1 className="text-lg font-semibold tracking-tight max-md:text-base">
               Product Catalog
             </h1>
-            <p className="mt-0.5 text-sm text-muted-foreground">
+            <p className="mt-0.5 text-sm text-muted-foreground max-md:text-xs">
               Browse configured products by type, category, and sub category.
             </p>
           </div>
@@ -62,7 +62,7 @@ export default function ProductsPage() {
 
 function CatalogStat({ label, value }: { label: string; value: number }) {
   return (
-    <div className="px-4 py-3.5 text-center">
+    <div className="px-4 py-3.5 text-center max-md:px-2 max-md:py-2.5">
       <p className="text-lg font-semibold leading-none tabular-nums">
         {value.toLocaleString("en-BD")}
       </p>
