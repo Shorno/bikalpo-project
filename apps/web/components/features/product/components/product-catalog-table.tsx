@@ -14,7 +14,11 @@ import {
   useReactTable,
 } from "@tanstack/react-table";
 import {
+  ArrowDown,
+  ArrowUp,
   ArrowUpDown,
+  ChevronLeft,
+  ChevronRight,
   Clock3,
   Eye,
   Loader2,
@@ -24,7 +28,13 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { type ReactNode, useDeferredValue, useMemo, useState } from "react";
+import {
+  type ReactNode,
+  useDeferredValue,
+  useId,
+  useMemo,
+  useState,
+} from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -105,22 +115,35 @@ function uniqueOptions(items: Array<FilterOption | null | undefined>) {
 function SortableHeader({
   column,
   label,
-  align = "left",
+  compact = false,
 }: {
   column: Column<CatalogProduct, unknown>;
   label: string;
-  align?: "left" | "right";
+  compact?: boolean;
 }) {
+  const direction = column.getIsSorted();
+  const SortIcon = direction === "asc" ? ArrowUp : ArrowDown;
+
   return (
     <button
       type="button"
-      className={`inline-flex items-center gap-1.5 font-medium hover:text-foreground ${
-        align === "right" ? "ml-auto" : ""
-      }`}
+      aria-label={`Sort by ${label}`}
+      className={
+        compact
+          ? "flex min-h-11 w-full min-w-0 items-center gap-1 rounded-sm text-left font-medium hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+          : "inline-flex items-center gap-1.5 font-medium hover:text-foreground"
+      }
       onClick={column.getToggleSortingHandler()}
     >
-      {label}
-      <ArrowUpDown className="size-3.5 text-muted-foreground" />
+      <span className="min-w-0">{label}</span>
+      {compact && direction ? (
+        <SortIcon className="size-3 shrink-0" aria-hidden="true" />
+      ) : !compact ? (
+        <ArrowUpDown
+          className="size-3.5 text-muted-foreground"
+          aria-hidden="true"
+        />
+      ) : null}
     </button>
   );
 }
@@ -149,7 +172,6 @@ export default function ProductCatalogTable({
   const typeFilter = filterValue("type");
   const categoryFilter = filterValue("category");
   const subCategoryFilter = filterValue("subCategory");
-  const productFilter = filterValue("product");
 
   const typeOptions = useMemo(
     () => uniqueOptions(data.map((product) => product.category?.type)),
@@ -183,36 +205,22 @@ export default function ProductCatalogTable({
       ),
     [categoryFilter, data, typeFilter],
   );
-  const productOptions = useMemo(
-    () =>
-      uniqueOptions(
-        data
-          .filter(
-            (product) =>
-              (typeFilter === ALL ||
-                String(product.category?.type?.id ?? "") === typeFilter) &&
-              (categoryFilter === ALL ||
-                String(product.categoryId) === categoryFilter) &&
-              (subCategoryFilter === ALL ||
-                String(product.subCategoryId ?? "") === subCategoryFilter),
-          )
-          .map((product) => ({ id: product.id, name: product.name })),
-      ),
-    [categoryFilter, data, subCategoryFilter, typeFilter],
-  );
-
   const columns = useMemo<ColumnDef<CatalogProduct>[]>(
     () => [
       {
         id: "productId",
         accessorFn: productIdLabel,
-        header: ({ column }) => <SortableHeader column={column} label="ID" />,
+        header: ({ column }) => (
+          <SortableHeader column={column} label="ID" compact={isMobile} />
+        ),
         cell: ({ row }) => productIdLabel(row.original),
       },
       {
         id: "type",
         accessorFn: (product) => product.category?.type?.name ?? "Unassigned",
-        header: ({ column }) => <SortableHeader column={column} label="Type" />,
+        header: ({ column }) => (
+          <SortableHeader column={column} label="Type" compact={isMobile} />
+        ),
         filterFn: (row, _columnId, value) =>
           String(row.original.category?.type?.id ?? "") === String(value),
       },
@@ -220,7 +228,7 @@ export default function ProductCatalogTable({
         id: "category",
         accessorFn: (product) => product.category?.name ?? "Uncategorized",
         header: ({ column }) => (
-          <SortableHeader column={column} label="Category" />
+          <SortableHeader column={column} label="Category" compact={isMobile} />
         ),
         filterFn: (row, _columnId, value) =>
           String(row.original.categoryId) === String(value),
@@ -242,10 +250,23 @@ export default function ProductCatalogTable({
         id: "product",
         accessorFn: (product) => product.name,
         header: ({ column }) => (
-          <SortableHeader column={column} label="Product Name" />
+          <SortableHeader
+            column={column}
+            label="Product Name"
+            compact={isMobile}
+          />
         ),
-        filterFn: (row, _columnId, value) =>
-          String(row.original.id) === String(value),
+        cell: ({ row }) =>
+          isMobile ? (
+            <Link
+              href={`${ADMIN_BASE}/products/${row.original.id}`}
+              className="block min-h-7 rounded-sm font-medium text-primary underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+            >
+              {row.original.name}
+            </Link>
+          ) : (
+            row.original.name
+          ),
       },
       {
         id: "actions",
@@ -264,7 +285,7 @@ export default function ProductCatalogTable({
         ),
       },
     ],
-    [],
+    [isMobile],
   );
 
   const table = useReactTable({
@@ -273,6 +294,7 @@ export default function ProductCatalogTable({
     state: {
       sorting,
       columnFilters,
+      columnVisibility: { subCategory: !isMobile, actions: !isMobile },
       globalFilter: deferredSearch,
       pagination,
     },
@@ -325,14 +347,15 @@ export default function ProductCatalogTable({
   const firstRow =
     filteredCount === 0 ? 0 : (currentPage - 1) * pagination.pageSize + 1;
   const lastRow = Math.min(currentPage * pagination.pageSize, filteredCount);
+  const visibleColumnCount = table.getVisibleLeafColumns().length;
 
   return (
-    <>
+    <div className="@container/catalog min-w-0 space-y-4 md:space-y-5">
       <section
         aria-label="Product filters"
-        className="rounded-xl border bg-card p-4 shadow-sm"
+        className="rounded-xl border bg-card p-4 shadow-sm max-md:p-3"
       >
-        <div className="relative mb-4 w-full sm:w-2/3">
+        <div className="relative mb-4 w-full md:w-2/3">
           <Search
             className="absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
             aria-hidden="true"
@@ -349,41 +372,34 @@ export default function ProductCatalogTable({
             className="h-11 pl-10"
           />
         </div>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
           <FilterSelect
+            compact={isMobile}
             label="Type"
             value={typeFilter}
             options={typeOptions}
             onValueChange={(value) =>
-              updateFilter("type", value, [
-                "category",
-                "subCategory",
-                "product",
-              ])
+              updateFilter("type", value, ["category", "subCategory"])
             }
           />
           <FilterSelect
+            compact={isMobile}
             label="Category"
             value={categoryFilter}
             options={categoryOptions}
             onValueChange={(value) =>
-              updateFilter("category", value, ["subCategory", "product"])
+              updateFilter("category", value, ["subCategory"])
             }
           />
-          <FilterSelect
-            label="Sub Category"
-            value={subCategoryFilter}
-            options={subCategoryOptions}
-            onValueChange={(value) =>
-              updateFilter("subCategory", value, ["product"])
-            }
-          />
-          <FilterSelect
-            label="Product Name"
-            value={productFilter}
-            options={productOptions}
-            onValueChange={(value) => updateFilter("product", value)}
-          />
+          <div className="col-span-2 min-w-0 md:col-span-1">
+            <FilterSelect
+              compact={isMobile}
+              label="Sub Category"
+              value={subCategoryFilter}
+              options={subCategoryOptions}
+              onValueChange={(value) => updateFilter("subCategory", value)}
+            />
+          </div>
         </div>
         {hasFilters ? (
           <div className="mt-4 flex justify-end border-t pt-3">
@@ -397,13 +413,18 @@ export default function ProductCatalogTable({
 
       <div className="flex justify-center">
         <div className="flex flex-wrap items-center justify-center gap-2">
-          <Button asChild variant="outline" size="sm">
+          <Button
+            asChild
+            variant="outline"
+            size="sm"
+            className="max-md:min-h-11"
+          >
             <Link href={`${ADMIN_BASE}/setup-requests`}>
               <Clock3 className="size-4" />
               Requests
             </Link>
           </Button>
-          <Button asChild size="sm">
+          <Button asChild size="sm" className="max-md:min-h-11">
             <Link href={`${ADMIN_BASE}/products/new`}>
               <PackagePlus className="size-4" />
               Create Product
@@ -417,157 +438,176 @@ export default function ProductCatalogTable({
           aria-label="Products"
           className="overflow-hidden rounded-xl border bg-card shadow-sm"
         >
-          <div className="overflow-x-auto">
-            <Table className="min-w-[760px]">
-              <TableHeader>
-                {table.getHeaderGroups().map((headerGroup) => (
-                  <TableRow
-                    key={headerGroup.id}
-                    className="hover:bg-transparent"
-                  >
-                    {headerGroup.headers.map((header) => (
-                      <TableHead
-                        key={header.id}
-                        className={
-                          header.column.id === "productId"
+          <Table
+            className={
+              isMobile
+                ? "table-fixed text-[11px] leading-4 @xs/catalog:text-xs"
+                : "min-w-[760px]"
+            }
+          >
+            <caption className="sr-only">Product catalog</caption>
+            {isMobile ? (
+              <colgroup>
+                <col className="w-[21%] @xs/catalog:w-[26%]" />
+                <col className="w-[24%] @xs/catalog:w-[22%]" />
+                <col className="w-[29%] @xs/catalog:w-[26%]" />
+                <col className="w-[26%]" />
+              </colgroup>
+            ) : null}
+            <TableHeader>
+              {table.getHeaderGroups().map((headerGroup) => (
+                <TableRow key={headerGroup.id} className="hover:bg-transparent">
+                  {headerGroup.headers.map((header) => (
+                    <TableHead
+                      key={header.id}
+                      scope="col"
+                      aria-sort={
+                        header.column.getIsSorted() === "asc"
+                          ? "ascending"
+                          : header.column.getIsSorted() === "desc"
+                            ? "descending"
+                            : "none"
+                      }
+                      className={
+                        isMobile
+                          ? "whitespace-normal break-words px-1 @sm/catalog:px-2"
+                          : header.column.id === "productId"
                             ? "w-36"
                             : header.column.id === "actions"
-                              ? "hidden text-right md:table-cell"
+                              ? "text-right"
                               : undefined
-                        }
-                      >
-                        {header.isPlaceholder
-                          ? null
-                          : flexRender(
-                              header.column.columnDef.header,
-                              header.getContext(),
-                            )}
-                      </TableHead>
-                    ))}
-                  </TableRow>
-                ))}
-              </TableHeader>
-              <TableBody>
-                {isLoading ? (
-                  <StatusRow colSpan={columns.length}>
-                    <span className="inline-flex items-center gap-2 text-muted-foreground">
-                      <Loader2 className="size-4 animate-spin" />
-                      Loading catalog…
-                    </span>
-                  </StatusRow>
-                ) : isError ? (
-                  <StatusRow colSpan={columns.length}>
-                    <div className="space-y-3">
-                      <div>
-                        <p className="font-medium">Could not load products</p>
-                        <p className="text-sm text-muted-foreground">
-                          Please retry the catalog request.
-                        </p>
-                      </div>
-                      <Button variant="outline" size="sm" onClick={onRetry}>
-                        Try again
-                      </Button>
-                    </div>
-                  </StatusRow>
-                ) : data.length === 0 ? (
-                  <StatusRow colSpan={columns.length} tall>
-                    <div className="flex flex-col items-center">
-                      <PackagePlus className="size-8 text-muted-foreground" />
-                      <p className="mt-3 font-medium">No products yet</p>
-                      <p className="mt-1 max-w-md text-sm text-muted-foreground">
-                        Create a product with its brand and variant
-                        configuration to add it to the catalog.
+                      }
+                    >
+                      {header.isPlaceholder
+                        ? null
+                        : flexRender(
+                            header.column.columnDef.header,
+                            header.getContext(),
+                          )}
+                    </TableHead>
+                  ))}
+                </TableRow>
+              ))}
+            </TableHeader>
+            <TableBody>
+              {isLoading ? (
+                <StatusRow colSpan={visibleColumnCount}>
+                  <span className="inline-flex items-center gap-2 text-muted-foreground">
+                    <Loader2 className="size-4 animate-spin" />
+                    Loading catalog…
+                  </span>
+                </StatusRow>
+              ) : isError ? (
+                <StatusRow colSpan={visibleColumnCount}>
+                  <div className="space-y-3">
+                    <div>
+                      <p className="font-medium">Could not load products</p>
+                      <p className="text-sm text-muted-foreground">
+                        Please retry the catalog request.
                       </p>
-                      <Button asChild size="sm" className="mt-4">
-                        <Link href={`${ADMIN_BASE}/products/new`}>
-                          <PackagePlus className="size-4" />
-                          Create Product
-                        </Link>
-                      </Button>
                     </div>
-                  </StatusRow>
-                ) : table.getRowModel().rows.length === 0 ? (
-                  <StatusRow colSpan={columns.length}>
-                    <div className="space-y-3">
-                      <div>
-                        <p className="font-medium">No products found</p>
-                        <p className="text-sm text-muted-foreground">
-                          Try a different search or filter.
-                        </p>
-                      </div>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={clearFilters}
-                      >
-                        Clear filters
-                      </Button>
+                    <Button variant="outline" size="sm" onClick={onRetry}>
+                      Try again
+                    </Button>
+                  </div>
+                </StatusRow>
+              ) : data.length === 0 ? (
+                <StatusRow colSpan={visibleColumnCount} tall>
+                  <div className="flex flex-col items-center">
+                    <PackagePlus className="size-8 text-muted-foreground" />
+                    <p className="mt-3 font-medium">No products yet</p>
+                    <p className="mt-1 max-w-md text-sm text-muted-foreground">
+                      Create a product with its brand and variant configuration
+                      to add it to the catalog.
+                    </p>
+                    <Button asChild size="sm" className="mt-4">
+                      <Link href={`${ADMIN_BASE}/products/new`}>
+                        <PackagePlus className="size-4" />
+                        Create Product
+                      </Link>
+                    </Button>
+                  </div>
+                </StatusRow>
+              ) : table.getRowModel().rows.length === 0 ? (
+                <StatusRow colSpan={visibleColumnCount}>
+                  <div className="space-y-3">
+                    <div>
+                      <p className="font-medium">No products found</p>
+                      <p className="text-sm text-muted-foreground">
+                        Try a different search or filter.
+                      </p>
                     </div>
-                  </StatusRow>
-                ) : (
-                  table.getRowModel().rows.map((row) => {
-                    const productHref = `${ADMIN_BASE}/products/${row.original.id}`;
-                    const openProduct = () => {
-                      if (isMobile) router.push(productHref);
-                    };
-
-                    return (
-                      <TableRow
-                        key={row.id}
-                        role={isMobile ? "link" : undefined}
-                        tabIndex={isMobile ? 0 : undefined}
-                        aria-label={
-                          isMobile ? `View ${row.original.name}` : undefined
+                    <Button variant="outline" size="sm" onClick={clearFilters}>
+                      Clear filters
+                    </Button>
+                  </div>
+                </StatusRow>
+              ) : (
+                table.getRowModel().rows.map((row) => {
+                  const productHref = `${ADMIN_BASE}/products/${row.original.id}`;
+                  return (
+                    <TableRow
+                      key={row.id}
+                      onClick={(event) => {
+                        if (
+                          isMobile &&
+                          !(event.target as HTMLElement).closest("a, button")
+                        ) {
+                          router.push(productHref);
                         }
-                        onClick={openProduct}
-                        onKeyDown={(event) => {
-                          if (
-                            isMobile &&
-                            (event.key === "Enter" || event.key === " ")
-                          ) {
-                            event.preventDefault();
-                            router.push(productHref);
-                          }
-                        }}
-                        className="max-md:cursor-pointer max-md:focus-visible:bg-muted/60 max-md:focus-visible:outline-none"
-                      >
-                        {row.getVisibleCells().map((cell) => (
-                          <TableCell
-                            key={cell.id}
-                            className={
-                              cell.column.id === "productId"
+                      }}
+                      className="max-md:cursor-pointer"
+                    >
+                      {row.getVisibleCells().map((cell) => (
+                        <TableCell
+                          key={cell.id}
+                          className={
+                            isMobile
+                              ? `whitespace-normal break-words px-1 py-2 align-top [overflow-wrap:anywhere] @sm/catalog:px-2 ${
+                                  cell.column.id === "productId"
+                                    ? "font-mono text-[10px] font-medium tabular-nums @xs/catalog:text-[11px]"
+                                    : ""
+                                }`
+                              : cell.column.id === "productId"
                                 ? "font-mono text-sm font-medium tabular-nums"
                                 : cell.column.id === "product"
                                   ? "font-medium"
-                                  : cell.column.id === "actions"
-                                    ? "hidden md:table-cell"
-                                    : undefined
-                            }
-                          >
-                            {flexRender(
-                              cell.column.columnDef.cell,
-                              cell.getContext(),
-                            )}
-                          </TableCell>
-                        ))}
-                      </TableRow>
-                    );
-                  })
-                )}
-              </TableBody>
-            </Table>
-          </div>
+                                  : undefined
+                          }
+                        >
+                          {flexRender(
+                            cell.column.columnDef.cell,
+                            cell.getContext(),
+                          )}
+                        </TableCell>
+                      ))}
+                    </TableRow>
+                  );
+                })
+              )}
+            </TableBody>
+          </Table>
         </section>
 
         {!isLoading && !isError && data.length > 0 ? (
           <nav
             aria-label="Catalog pagination"
-            className="flex flex-col gap-3 text-sm sm:flex-row sm:items-center sm:justify-between"
+            className={
+              isMobile
+                ? "flex flex-wrap items-center justify-between gap-3 text-sm"
+                : "flex flex-col gap-3 text-sm sm:flex-row sm:items-center sm:justify-between"
+            }
           >
             <p className="font-mono text-xs tabular-nums text-muted-foreground">
               {firstRow}–{lastRow} of {filteredCount}
             </p>
-            <div className="flex items-center justify-between gap-2 sm:justify-end">
+            <div
+              className={
+                isMobile
+                  ? "flex flex-wrap items-center gap-2"
+                  : "flex items-center justify-between gap-2 sm:justify-end"
+              }
+            >
               <Select
                 value={String(pagination.pageSize)}
                 onValueChange={(value) =>
@@ -576,7 +616,11 @@ export default function ProductCatalogTable({
               >
                 <SelectTrigger
                   aria-label="Rows per page"
-                  className="h-11 w-28 shadow-none sm:h-9"
+                  className={
+                    isMobile
+                      ? "w-24 shadow-none data-[size=default]:h-11"
+                      : "h-11 w-28 shadow-none sm:h-9"
+                  }
                 >
                   <SelectValue />
                 </SelectTrigger>
@@ -589,56 +633,90 @@ export default function ProductCatalogTable({
                 </SelectContent>
               </Select>
               <Button
-                className="h-11 sm:h-9"
+                aria-label="Previous page"
+                title="Previous page"
+                className={isMobile ? "h-11 w-11 p-0" : "h-11 sm:h-9"}
                 disabled={!table.getCanPreviousPage()}
                 onClick={() => table.previousPage()}
                 variant="outline"
               >
-                Previous
+                {isMobile ? (
+                  <ChevronLeft className="size-4" aria-hidden="true" />
+                ) : (
+                  "Previous"
+                )}
               </Button>
-              <span className="min-w-16 text-center font-mono text-xs tabular-nums text-muted-foreground">
+              <span className="min-w-16 text-center font-mono text-xs tabular-nums text-muted-foreground max-md:min-w-10">
                 {currentPage} / {pageCount}
               </span>
               <Button
-                className="h-11 sm:h-9"
+                aria-label="Next page"
+                title="Next page"
+                className={isMobile ? "h-11 w-11 p-0" : "h-11 sm:h-9"}
                 disabled={!table.getCanNextPage()}
                 onClick={() => table.nextPage()}
                 variant="outline"
               >
-                Next
+                {isMobile ? (
+                  <ChevronRight className="size-4" aria-hidden="true" />
+                ) : (
+                  "Next"
+                )}
               </Button>
             </div>
           </nav>
         ) : null}
       </div>
-    </>
+    </div>
   );
 }
 
 function FilterSelect({
+  compact,
   label,
   value,
   options,
   onValueChange,
 }: {
+  compact: boolean;
   label: string;
   value: string;
   options: FilterOption[];
   onValueChange: (value: string) => void;
 }) {
+  const id = useId();
+
   return (
-    <div className="space-y-1.5">
-      <Label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+    <div className="space-y-1.5 max-md:min-w-0">
+      <Label
+        htmlFor={id}
+        className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground"
+      >
         {label}
       </Label>
       <Select value={value} onValueChange={onValueChange}>
-        <SelectTrigger className="w-full">
+        <SelectTrigger
+          id={id}
+          className={
+            compact
+              ? "w-full min-w-0 text-xs data-[size=default]:h-11 [&_[data-slot=select-value]]:block [&_[data-slot=select-value]]:min-w-0 [&_[data-slot=select-value]]:truncate"
+              : "w-full"
+          }
+        >
           <SelectValue placeholder={`All ${label}`} />
         </SelectTrigger>
-        <SelectContent>
+        <SelectContent
+          position={compact ? "popper" : "item-aligned"}
+          align={compact ? "start" : "center"}
+          className="max-md:max-w-[calc(100vw-2rem)]"
+        >
           <SelectItem value={ALL}>All</SelectItem>
           {options.map((option) => (
-            <SelectItem key={option.id} value={String(option.id)}>
+            <SelectItem
+              key={option.id}
+              value={String(option.id)}
+              className="max-md:min-h-9 max-md:whitespace-normal max-md:break-words"
+            >
               {option.name}
             </SelectItem>
           ))}
@@ -661,7 +739,7 @@ function StatusRow({
     <TableRow>
       <TableCell
         colSpan={colSpan}
-        className={`${tall ? "h-52" : "h-36"} text-center`}
+        className={`${tall ? "h-52" : "h-36"} text-center max-md:whitespace-normal max-md:break-words`}
       >
         {children}
       </TableCell>
