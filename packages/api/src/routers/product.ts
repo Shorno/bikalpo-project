@@ -27,15 +27,24 @@ import {
   gte,
   ilike,
   inArray,
-  isNull,
   lte,
   or,
   type SQL,
   sql,
 } from "drizzle-orm";
 import { z } from "zod";
-
+import {
+  consumerPriceListPagedSchema,
+  consumerPriceListParamsSchema,
+  importConsumerReferencePricesSchema,
+  updateConsumerReferencePriceSchema,
+} from "../consumer-price";
 import { adminProcedure, publicProcedure } from "../index";
+import {
+  fetchConsumerReferencePriceData,
+  fetchConsumerReferencePricePage,
+  saveConsumerReferencePrices,
+} from "../services/consumer-reference-prices";
 import { generateSku, nextSkuCode } from "./helpers/generate-sku";
 import {
   applyGeneratedVariantExchangeSettings,
@@ -140,443 +149,12 @@ const updateProductSchema = createProductSchema
     id: z.number(),
   });
 
-const consumerPriceListParamsSchema = z.object({
-  search: z.string().optional(),
-  typeId: z.number().int().optional(),
-  categoryId: z.number().int().optional(),
-  subCategoryId: z.number().int().optional(),
-  coreProductId: z.number().int().optional(),
-});
-
-const consumerPriceListPagedSchema = consumerPriceListParamsSchema.extend({
-  page: z.number().int().min(1).optional(),
-  limit: z.number().int().min(1).max(100).optional(),
-});
-
-const updateConsumerReferencePriceSchema = z.object({
-  variantPriceId: z.number().int(),
-  consumerPrice: z
-    .string()
-    .min(1)
-    .regex(/^\d+(\.\d{1,2})?$/),
-});
-
-type ConsumerPriceListInput = z.infer<typeof consumerPriceListParamsSchema>;
-
 function slugifyCoreProductName(name: string) {
   return name
     .toLowerCase()
     .trim()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/(^-|-$)/g, "");
-}
-
-async function fetchConsumerReferencePriceData(input: ConsumerPriceListInput) {
-  const conditions: SQL[] = [
-    eq(productVariantPrice.isActive, true),
-    eq(product.creatorSource, "admin"),
-  ];
-
-  if (input.search?.trim()) {
-    const s = `%${input.search.trim()}%`;
-    conditions.push(
-      or(
-        ilike(product.name, s),
-        ilike(product.sku, s),
-        ilike(variantOption.name, s),
-        ilike(brandTable.name, s),
-        ilike(coreProductIdentity.name, s),
-      )!,
-    );
-  }
-  if (input.typeId != null) {
-    conditions.push(eq(categoryTable.typeId, input.typeId));
-  }
-  if (input.categoryId != null) {
-    conditions.push(eq(product.categoryId, input.categoryId));
-  }
-  if (input.subCategoryId != null) {
-    conditions.push(eq(product.subCategoryId, input.subCategoryId));
-  }
-  if (input.coreProductId != null) {
-    conditions.push(eq(product.coreProductId, input.coreProductId));
-  }
-
-  const where = and(...conditions);
-
-  const rows = await db
-    .select({
-      variantPriceId: productVariantPrice.id,
-      consumerPrice: productVariantPrice.consumerPrice,
-      updatedAt: productVariantPrice.updatedAt,
-      sortOrder: productVariantPrice.sortOrder,
-      productId: product.id,
-      productName: product.name,
-      productSku: product.sku,
-      variantOptionId: variantOption.id,
-      variantName: variantOption.name,
-      variantUnit: variantOption.unit,
-      categoryId: categoryTable.id,
-      categoryName: categoryTable.name,
-      typeId: productType.id,
-      typeName: productType.name,
-      subCategoryId: subCategory.id,
-      subCategoryName: subCategory.name,
-      coreProductId: coreProductIdentity.id,
-      coreProductName: coreProductIdentity.name,
-      coreProductSku: coreProductIdentity.sku,
-      primaryBrandName: brandTable.name,
-      variantPriceBrandId: productVariantPrice.brandId,
-      variantPriceBrandName: sql<
-        string | null
-      >`(SELECT b2.name FROM brand b2 WHERE b2.id = ${productVariantPrice.brandId})`.as(
-        "variant_price_brand_name",
-      ),
-    })
-    .from(productVariantPrice)
-    .innerJoin(product, eq(productVariantPrice.productId, product.id))
-    .innerJoin(
-      variantOption,
-      eq(productVariantPrice.variantOptionId, variantOption.id),
-    )
-    .innerJoin(categoryTable, eq(product.categoryId, categoryTable.id))
-    .leftJoin(productType, eq(categoryTable.typeId, productType.id))
-    .leftJoin(subCategory, eq(product.subCategoryId, subCategory.id))
-    .leftJoin(
-      coreProductIdentity,
-      eq(product.coreProductId, coreProductIdentity.id),
-    )
-    .leftJoin(brandTable, eq(product.brandId, brandTable.id))
-    .where(where)
-    .orderBy(
-      asc(productType.name),
-      asc(categoryTable.name),
-      asc(coreProductIdentity.name),
-      asc(product.name),
-      asc(productVariantPrice.sortOrder),
-      asc(variantOption.name),
-    );
-
-  const productIds = [...new Set(rows.map((r) => r.productId))];
-  const brandLinks =
-    productIds.length === 0
-      ? []
-      : await db.query.productBrand.findMany({
-          where: inArray(productBrand.productId, productIds),
-          with: { brand: { columns: { name: true } } },
-        });
-
-  const brandsByProduct = new Map<number, string>();
-  for (const link of brandLinks) {
-    const name = link.brand?.name;
-    if (!name) continue;
-    const prev = brandsByProduct.get(link.productId);
-    brandsByProduct.set(link.productId, prev ? `${prev}, ${name}` : name);
-  }
-
-  const items = rows.map((r) => {
-    const brandDisplay =
-      r.variantPriceBrandName?.trim() ||
-      r.primaryBrandName?.trim() ||
-      brandsByProduct.get(r.productId) ||
-      "—";
-    const identityLabel = r.coreProductName ?? r.productName;
-    const skuLabel = r.coreProductSku ?? r.productSku ?? "—";
-    const coreLine = `${identityLabel} (${skuLabel}) • ${r.categoryName ?? "—"} → ${r.subCategoryName ?? "—"} → ${identityLabel}`;
-
-    return {
-      variantPriceId: r.variantPriceId,
-      consumerPrice: String(r.consumerPrice),
-      updatedAt: r.updatedAt,
-      productId: r.productId,
-      productName: r.productName,
-      productSku: r.productSku,
-      variantOptionId: r.variantOptionId,
-      variantName: r.variantName,
-      variantUnit: r.variantUnit,
-      brandDisplay,
-      typeId: r.typeId,
-      typeName: r.typeName ?? "Uncategorized",
-      categoryId: r.categoryId,
-      categoryName: r.categoryName ?? "—",
-      subCategoryName: r.subCategoryName ?? "—",
-      coreProductId: r.coreProductId,
-      coreProductName: r.coreProductName,
-      coreProductSku: r.coreProductSku,
-      coreLine,
-    };
-  });
-
-  const uniqueCoreOrProduct = new Set<string>();
-  for (const i of items) {
-    uniqueCoreOrProduct.add(
-      i.coreProductId != null ? `c:${i.coreProductId}` : `p:${i.productId}`,
-    );
-  }
-  const totalCoreProducts = uniqueCoreOrProduct.size;
-  const totalVariants = items.length;
-  let lastUpdated: Date | null = null;
-  for (const i of items) {
-    if (i.updatedAt && (!lastUpdated || i.updatedAt > lastUpdated)) {
-      lastUpdated = i.updatedAt;
-    }
-  }
-
-  return {
-    items,
-    stats: {
-      totalCoreProducts,
-      totalVariants,
-      lastUpdated: lastUpdated ? lastUpdated.toISOString() : null,
-    },
-  };
-}
-
-/**
- * Server-side paginated consumer reference prices.
- * Pages by "group" (core product, or standalone product when it has no core
- * identity) so a group's brand/variant rows are never split across pages.
- * Stats are aggregated over the full filtered set, independent of the page.
- */
-async function fetchConsumerReferencePricePage(
-  input: z.infer<typeof consumerPriceListPagedSchema>,
-) {
-  const conditions: SQL[] = [
-    eq(productVariantPrice.isActive, true),
-    eq(product.creatorSource, "admin"),
-  ];
-
-  if (input.search?.trim()) {
-    const s = `%${input.search.trim()}%`;
-    conditions.push(
-      or(
-        ilike(product.name, s),
-        ilike(product.sku, s),
-        ilike(variantOption.name, s),
-        ilike(brandTable.name, s),
-        ilike(coreProductIdentity.name, s),
-      )!,
-    );
-  }
-  if (input.typeId != null)
-    conditions.push(eq(categoryTable.typeId, input.typeId));
-  if (input.categoryId != null)
-    conditions.push(eq(product.categoryId, input.categoryId));
-  if (input.subCategoryId != null)
-    conditions.push(eq(product.subCategoryId, input.subCategoryId));
-  if (input.coreProductId != null)
-    conditions.push(eq(product.coreProductId, input.coreProductId));
-
-  const where = and(...conditions);
-
-  const page = input.page && input.page > 0 ? input.page : 1;
-  const limit =
-    input.limit && input.limit > 0 ? Math.min(input.limit, 100) : 15;
-  const offset = (page - 1) * limit;
-
-  const groupKeyExpr = sql<string>`coalesce('c:' || ${coreProductIdentity.id}::text, 'p:' || ${product.id}::text)`;
-
-  // ── Stats over the full filtered set (one aggregate query) ──
-  const [statsRow] = await db
-    .select({
-      totalGroups: sql<number>`count(distinct coalesce('c:' || ${coreProductIdentity.id}::text, 'p:' || ${product.id}::text))::int`,
-      totalVariants: sql<number>`count(*)::int`,
-      lastUpdated: sql<Date | null>`max(${productVariantPrice.updatedAt})`,
-    })
-    .from(productVariantPrice)
-    .innerJoin(product, eq(productVariantPrice.productId, product.id))
-    .innerJoin(
-      variantOption,
-      eq(productVariantPrice.variantOptionId, variantOption.id),
-    )
-    .innerJoin(categoryTable, eq(product.categoryId, categoryTable.id))
-    .leftJoin(productType, eq(categoryTable.typeId, productType.id))
-    .leftJoin(subCategory, eq(product.subCategoryId, subCategory.id))
-    .leftJoin(
-      coreProductIdentity,
-      eq(product.coreProductId, coreProductIdentity.id),
-    )
-    .leftJoin(brandTable, eq(product.brandId, brandTable.id))
-    .where(where);
-
-  const totalGroups = statsRow?.totalGroups ?? 0;
-  const totalPages = Math.max(1, Math.ceil(totalGroups / limit));
-
-  // ── Page of group keys (ordered the same way as the row query) ──
-  const pagedGroups = await db
-    .select({ gk: groupKeyExpr })
-    .from(productVariantPrice)
-    .innerJoin(product, eq(productVariantPrice.productId, product.id))
-    .innerJoin(
-      variantOption,
-      eq(productVariantPrice.variantOptionId, variantOption.id),
-    )
-    .innerJoin(categoryTable, eq(product.categoryId, categoryTable.id))
-    .leftJoin(productType, eq(categoryTable.typeId, productType.id))
-    .leftJoin(subCategory, eq(product.subCategoryId, subCategory.id))
-    .leftJoin(
-      coreProductIdentity,
-      eq(product.coreProductId, coreProductIdentity.id),
-    )
-    .leftJoin(brandTable, eq(product.brandId, brandTable.id))
-    .where(where)
-    .groupBy(groupKeyExpr)
-    .orderBy(
-      sql`min(${productType.name}) asc nulls last`,
-      sql`min(${categoryTable.name}) asc nulls last`,
-      sql`min(${coreProductIdentity.name}) asc nulls last`,
-      sql`min(${product.name}) asc nulls last`,
-    )
-    .limit(limit)
-    .offset(offset);
-
-  const coreIds: number[] = [];
-  const standaloneProductIds: number[] = [];
-  for (const g of pagedGroups) {
-    const key = g.gk;
-    if (!key) continue;
-    const sep = key.indexOf(":");
-    const kind = key.slice(0, sep);
-    const id = Number(key.slice(sep + 1));
-    if (!Number.isFinite(id)) continue;
-    if (kind === "c") coreIds.push(id);
-    else standaloneProductIds.push(id);
-  }
-
-  const emptyStats = {
-    totalCoreProducts: totalGroups,
-    totalVariants: statsRow?.totalVariants ?? 0,
-    lastUpdated: statsRow?.lastUpdated
-      ? new Date(statsRow.lastUpdated).toISOString()
-      : null,
-  };
-
-  if (coreIds.length === 0 && standaloneProductIds.length === 0) {
-    return {
-      items: [],
-      stats: emptyStats,
-      pagination: { page, limit, totalGroups, totalPages },
-    };
-  }
-
-  const groupFilter = or(
-    coreIds.length ? inArray(product.coreProductId, coreIds) : undefined,
-    standaloneProductIds.length
-      ? and(
-          isNull(product.coreProductId),
-          inArray(product.id, standaloneProductIds),
-        )
-      : undefined,
-  );
-
-  const rows = await db
-    .select({
-      variantPriceId: productVariantPrice.id,
-      consumerPrice: productVariantPrice.consumerPrice,
-      updatedAt: productVariantPrice.updatedAt,
-      sortOrder: productVariantPrice.sortOrder,
-      productId: product.id,
-      productName: product.name,
-      productSku: product.sku,
-      variantOptionId: variantOption.id,
-      variantName: variantOption.name,
-      variantUnit: variantOption.unit,
-      categoryId: categoryTable.id,
-      categoryName: categoryTable.name,
-      typeId: productType.id,
-      typeName: productType.name,
-      subCategoryId: subCategory.id,
-      subCategoryName: subCategory.name,
-      coreProductId: coreProductIdentity.id,
-      coreProductName: coreProductIdentity.name,
-      coreProductSku: coreProductIdentity.sku,
-      primaryBrandName: brandTable.name,
-      variantPriceBrandId: productVariantPrice.brandId,
-      variantPriceBrandName: sql<
-        string | null
-      >`(SELECT b2.name FROM brand b2 WHERE b2.id = ${productVariantPrice.brandId})`.as(
-        "variant_price_brand_name",
-      ),
-    })
-    .from(productVariantPrice)
-    .innerJoin(product, eq(productVariantPrice.productId, product.id))
-    .innerJoin(
-      variantOption,
-      eq(productVariantPrice.variantOptionId, variantOption.id),
-    )
-    .innerJoin(categoryTable, eq(product.categoryId, categoryTable.id))
-    .leftJoin(productType, eq(categoryTable.typeId, productType.id))
-    .leftJoin(subCategory, eq(product.subCategoryId, subCategory.id))
-    .leftJoin(
-      coreProductIdentity,
-      eq(product.coreProductId, coreProductIdentity.id),
-    )
-    .leftJoin(brandTable, eq(product.brandId, brandTable.id))
-    .where(and(where, groupFilter))
-    .orderBy(
-      asc(productType.name),
-      asc(categoryTable.name),
-      asc(coreProductIdentity.name),
-      asc(product.name),
-      asc(productVariantPrice.sortOrder),
-      asc(variantOption.name),
-    );
-
-  const productIds = [...new Set(rows.map((r) => r.productId))];
-  const brandLinks =
-    productIds.length === 0
-      ? []
-      : await db.query.productBrand.findMany({
-          where: inArray(productBrand.productId, productIds),
-          with: { brand: { columns: { name: true } } },
-        });
-
-  const brandsByProduct = new Map<number, string>();
-  for (const link of brandLinks) {
-    const name = link.brand?.name;
-    if (!name) continue;
-    const prev = brandsByProduct.get(link.productId);
-    brandsByProduct.set(link.productId, prev ? `${prev}, ${name}` : name);
-  }
-
-  const items = rows.map((r) => {
-    const brandDisplay =
-      r.variantPriceBrandName?.trim() ||
-      r.primaryBrandName?.trim() ||
-      brandsByProduct.get(r.productId) ||
-      "—";
-    const identityLabel = r.coreProductName ?? r.productName;
-    const skuLabel = r.coreProductSku ?? r.productSku ?? "—";
-    const coreLine = `${identityLabel} (${skuLabel}) • ${r.categoryName ?? "—"} → ${r.subCategoryName ?? "—"} → ${identityLabel}`;
-
-    return {
-      variantPriceId: r.variantPriceId,
-      consumerPrice: String(r.consumerPrice),
-      updatedAt: r.updatedAt,
-      productId: r.productId,
-      productName: r.productName,
-      productSku: r.productSku,
-      variantOptionId: r.variantOptionId,
-      variantName: r.variantName,
-      variantUnit: r.variantUnit,
-      brandDisplay,
-      typeId: r.typeId,
-      typeName: r.typeName ?? "Uncategorized",
-      categoryId: r.categoryId,
-      categoryName: r.categoryName ?? "—",
-      subCategoryName: r.subCategoryName ?? "—",
-      coreProductId: r.coreProductId,
-      coreProductName: r.coreProductName,
-      coreProductSku: r.coreProductSku,
-      coreLine,
-    };
-  });
-
-  return {
-    items,
-    stats: emptyStats,
-    pagination: { page, limit, totalGroups, totalPages },
-  };
 }
 
 export const productRouter = {
@@ -1740,41 +1318,31 @@ export const productRouter = {
         "Updates reference consumer price and syncs linked auto-generated product_variant rows.",
     })
     .input(updateConsumerReferencePriceSchema)
-    .handler(async ({ input }) => {
-      const [existing] = await db
-        .select({
-          id: productVariantPrice.id,
-          createdByWarehouseId: product.createdByWarehouseId,
-          creatorSource: product.creatorSource,
-        })
-        .from(productVariantPrice)
-        .innerJoin(product, eq(productVariantPrice.productId, product.id))
-        .where(eq(productVariantPrice.id, input.variantPriceId));
+    .handler(async ({ input, context }) =>
+      saveConsumerReferencePrices([input], context.session.user, "inline"),
+    ),
 
-      if (!existing) {
-        throw new ORPCError("NOT_FOUND", {
-          message: "Variant price row not found",
-        });
-      }
+  importConsumerReferencePrices: adminProcedure
+    .route({
+      method: "POST",
+      path: "/products/consumer-reference-prices/import",
+      tags: ["Product Management"],
+      summary: "Import validated Excel price rows atomically",
+    })
+    .input(importConsumerReferencePricesSchema)
+    .handler(async ({ input, context }) =>
+      saveConsumerReferencePrices(input.rows, context.session.user, "excel"),
+    ),
 
-      if (existing.creatorSource !== "admin") {
-        throw new ORPCError("FORBIDDEN", {
-          message: "Only admin-created product prices can be updated here",
-        });
-      }
-
-      await db
-        .update(productVariantPrice)
-        .set({ consumerPrice: input.consumerPrice, updatedAt: new Date() })
-        .where(eq(productVariantPrice.id, input.variantPriceId));
-
-      await db
-        .update(productVariant)
-        .set({ price: input.consumerPrice, updatedAt: new Date() })
-        .where(eq(productVariant.sourceVariantPriceId, input.variantPriceId));
-
-      return { success: true as const };
-    }),
+  exportConsumerReferencePrices: adminProcedure
+    .route({
+      method: "POST",
+      path: "/products/consumer-reference-prices/export",
+      tags: ["Product Management"],
+      summary: "Export all matching prices for an Excel workbook",
+    })
+    .input(consumerPriceListParamsSchema)
+    .handler(async ({ input }) => fetchConsumerReferencePriceData(input)),
 
   /**
    * Export consumer reference price list as CSV (same filters as list)
@@ -1798,10 +1366,13 @@ export const productRouter = {
         "Variant",
         "Unit",
         "ReferencePriceBDT",
+        "ExchangePriceBDT",
         "UpdatedAt",
+        "UpdatedBy",
         "VariantPriceId",
       ];
-      const escapeCsv = (v: string) => `"${v.replace(/"/g, '""')}"`;
+      const escapeCsv = (v: string) =>
+        `"${(/^[=+@\-\t\r]/.test(v) ? `'${v}` : v).replace(/"/g, '""')}"`;
       const lines = [
         header.join(","),
         ...items.map((i) =>
@@ -1814,7 +1385,9 @@ export const productRouter = {
             i.variantName,
             i.variantUnit,
             i.consumerPrice,
+            i.exchangePrice ?? "",
             i.updatedAt ? i.updatedAt.toISOString() : "",
+            i.updatedByName ?? "",
             String(i.variantPriceId),
           ]
             .map((c) => escapeCsv(String(c)))

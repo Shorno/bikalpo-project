@@ -64,7 +64,7 @@ export default function CoreProductDetailPage() {
     <div className="mx-auto w-full max-w-4xl space-y-5">
       <SetupDetailHeader
         backHref={`${ADMIN_BASE}/core-products`}
-        backLabel="Back to Core Identities"
+        backLabel="Back to Products"
         code={`ID ${identity.id}`}
         name="Core Product Details"
       />

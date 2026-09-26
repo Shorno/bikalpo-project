@@ -684,6 +684,13 @@ export default function AdminSetupRequestsPage() {
           emptyTitle="No Setup Requests"
           getRowId={(request) => String(request.id)}
           mobile={{
+            columns: [
+              { id: "requestType", label: "Type", width: "20%" },
+              { id: "item", label: "Item", width: "30%" },
+              { id: "requester", label: "Requested by", width: "29%" },
+              { id: "status", label: "Status", width: "21%" },
+            ],
+            primaryColumn: "item",
             onSelect: setSelectedRequest,
             title: itemName,
             description: (request) => requestTypeLabels[request.requestType],

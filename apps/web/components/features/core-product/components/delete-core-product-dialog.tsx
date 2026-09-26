@@ -42,7 +42,7 @@ export default function DeleteCoreProductDialog({
     <SetupDeleteDialog
       dependencyMessage={
         deletionBlocked
-          ? "This Core Identity already has configured products. Keep it so stock and order history remain linked, and disable it instead."
+          ? "This product already has configured products. Keep it so stock and order history remain linked, and disable it instead."
           : undefined
       }
       description={`Permanently delete ${coreProduct.name}. This action cannot be undone.`}
@@ -52,7 +52,7 @@ export default function DeleteCoreProductDialog({
       open={open}
       title={
         deletionBlocked
-          ? "Core Identity cannot be deleted"
+          ? "Product cannot be deleted"
           : `Delete ${coreProduct.name}?`
       }
     />

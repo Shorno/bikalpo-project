@@ -123,7 +123,7 @@ export default function NewCoreProductDialog() {
 
   return (
     <SetupFormDialog
-      description="Define a reusable Core Identity within the Product Setup hierarchy."
+      description="Define a reusable product within the Product Setup hierarchy."
       formId="new-core-product-form"
       hasUnsavedChanges={() => form.state.isDirty || selectedTypeId !== null}
       isSubmitting={mutation.isPending}
@@ -131,9 +131,9 @@ export default function NewCoreProductDialog() {
       onSubmit={() => form.handleSubmit()}
       open={open}
       size="large"
-      submitLabel="Create Core Identity"
-      title="Create Core Identity"
-      trigger={<Button>Create Core Identity</Button>}
+      submitLabel="Create Product"
+      title="Create Product"
+      trigger={<Button>Create Product</Button>}
     >
       <form
         id="new-core-product-form"

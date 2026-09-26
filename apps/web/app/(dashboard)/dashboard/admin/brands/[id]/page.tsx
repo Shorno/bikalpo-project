@@ -195,6 +195,12 @@ export default function BrandDetailPage() {
           emptyTitle="No Core Products found"
           getRowId={(row) => String(row.id)}
           mobile={{
+            columns: [
+              { id: "type", label: "Type", width: "18%" },
+              { id: "category", label: "Category", width: "25%" },
+              { id: "subCategory", label: "Sub Category", width: "25%" },
+              { id: "name", label: "Identity", width: "32%" },
+            ],
             href: (row) => `${ADMIN_BASE}/core-products/${row.id}`,
             title: (row) => row.name,
             description: (row) =>

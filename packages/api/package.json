@@ -21,14 +21,15 @@
     "@orpc/server": "catalog:",
     "@orpc/zod": "catalog:",
     "@types/pg": "catalog:",
+    "cloudinary": "^2.8.0",
     "dotenv": "catalog:",
     "drizzle-orm": "catalog:",
-    "zod": "catalog:",
-    "cloudinary": "^2.8.0",
-    "pdf-lib": "^1.17.1"
+    "pdf-lib": "^1.17.1",
+    "zod": "catalog:"
   },
   "devDependencies": {
     "@bikalpo-project/config": "workspace:*",
+    "@electric-sql/pglite": "^0.5.8",
     "hono": "catalog:",
     "typescript": "catalog:"
   }

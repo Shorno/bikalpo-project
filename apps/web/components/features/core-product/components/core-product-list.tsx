@@ -23,7 +23,7 @@ export default function CoreProductList() {
       <SetupPageHeader
         count={coreProducts.length}
         description="Browse reusable product identities and their setup."
-        title="Core Identities"
+        title="Products"
       />
       {isLoading ? (
         <TableSkeleton columns={6} />

@@ -582,6 +582,13 @@
       "when": 1789500400000,
       "tag": "0083_tolet_facility_inclusions_tour",
       "breakpoints": true
+    },
+    {
+      "idx": 84,
+      "version": "7",
+      "when": 1790380800000,
+      "tag": "0084_consumer_price_log",
+      "breakpoints": true
     }
   ]
 }

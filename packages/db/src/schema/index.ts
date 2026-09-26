@@ -55,6 +55,7 @@ export * from "./product";
 export * from "./product-identity-request";
 export * from "./product-pack-rules";
 export * from "./product-type";
+export * from "./consumer-price-log";
 export * from "./product-type-rule-setting";
 export * from "./product-variant";
 export * from "./purchase";

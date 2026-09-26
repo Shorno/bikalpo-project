@@ -22,7 +22,7 @@ export function SetupPageShell({
   return (
     <div
       className={cn(
-        "mx-auto w-full space-y-5",
+        "mx-auto w-full space-y-5 max-md:min-w-0 max-md:space-y-4 max-md:[&_table]:table-fixed max-md:[&_[data-slot=skeleton]]:max-w-full",
         width ? widthClasses[width] : "max-w-7xl",
         className,
       )}

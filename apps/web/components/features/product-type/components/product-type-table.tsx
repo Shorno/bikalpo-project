@@ -79,6 +79,11 @@ export default function ProductTypeTable({
         emptyTitle={hasFilters ? "No matching Types" : "No Types found"}
         getRowId={(row) => String(row.id)}
         mobile={{
+          columns: [
+            { id: "skuCode", label: "SKU", width: "20%" },
+            { id: "name", label: "Type", width: "52%" },
+            { id: "isActive", label: "Status", width: "28%" },
+          ],
           href: (row) => `/dashboard/admin/types/${row.id}`,
           title: (row) => row.name,
           description: (row) => row.skuCode || "—",
