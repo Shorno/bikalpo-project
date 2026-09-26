@@ -160,7 +160,7 @@ export default function CoreProductTable({
           void setStatus("all");
         }}
         onSearchChange={(value) => void setSearch(value)}
-        searchPlaceholder="Search Core Identity name or SKU"
+        searchPlaceholder="Search product name or SKU"
         searchValue={search}
       />
       <SetupActionRow>
@@ -173,10 +173,16 @@ export default function CoreProductTable({
         columns={columns}
         data={filteredData}
         emptyAction={data.length === 0 ? <NewCoreProductDialog /> : undefined}
-        emptyDescription="Create a Core Identity within a Sub Category to define reusable brand and variant structure."
-        emptyTitle="No Core Identities found"
+        emptyDescription="Create a product within a Sub Category to define reusable brand and variant structure."
+        emptyTitle="No products found"
         getRowId={(row) => String(row.id)}
         mobile={{
+          columns: [
+            { id: "composedSku", label: "SKU", width: "22%" },
+            { id: "name", label: "Product", width: "32%" },
+            { id: "category", label: "Category", width: "23%" },
+            { id: "isActive", label: "Status", width: "23%" },
+          ],
           href: (row) => `/dashboard/admin/core-products/${row.id}`,
           title: (row) => row.name,
           description: (row) => row.composedSku ?? row.sku,

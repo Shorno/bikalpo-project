@@ -122,7 +122,7 @@ function getAdminNavGroups(pendingApplications = 0): NavGroup[] {
             { title: "Types", url: `${ADMIN_BASE}/types` },
             { title: "Categories", url: `${ADMIN_BASE}/categories` },
             { title: "Sub Categories", url: `${ADMIN_BASE}/subcategories` },
-            { title: "Core Identities", url: `${ADMIN_BASE}/core-products` },
+            { title: "Products", url: `${ADMIN_BASE}/core-products` },
             { title: "Brands", url: `${ADMIN_BASE}/brands` },
             { title: "Variants", url: `${ADMIN_BASE}/variant-options` },
             { title: "Setup Requests", url: `${ADMIN_BASE}/setup-requests` },

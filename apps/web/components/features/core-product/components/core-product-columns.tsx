@@ -50,7 +50,7 @@ export function useCoreProductColumns() {
       },
       {
         accessorKey: "name",
-        header: "Core Identity name",
+        header: "Product name",
         cell: ({ row }) => (
           <Link
             className="font-medium hover:text-primary hover:underline"

@@ -184,6 +184,26 @@ export default function VariantOptionTable({
         emptyTitle="No variants found"
         getRowId={(row) => String(row.id)}
         mobile={{
+          columns: [
+            {
+              id: "skuCode",
+              label: "SKU",
+              width: "12%",
+            },
+            {
+              id: "name",
+              label: "Variant",
+              width: "29%",
+            },
+            { id: "unit", label: "Unit", width: "10%" },
+            { id: "size", label: "Size", width: "10%" },
+            {
+              id: "isActive",
+              label: "Status",
+              width: "21%",
+            },
+            { id: "actions", label: "Action", width: "18%" },
+          ],
           href: (row) => `/dashboard/admin/variant-options/${row.id}`,
           title: (row) => row.name,
           description: (row) =>

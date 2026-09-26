@@ -178,6 +178,16 @@ export default function TypeSellersPage() {
                     emptyTitle={`No ${label} sellers`}
                     getRowId={(row) => row.userId}
                     mobile={{
+                      columns: [
+                        { id: "rowNumber", label: "Rank", width: "14%" },
+                        { id: "displayName", label: "Seller", width: "42%" },
+                        {
+                          id: "deliveredOrderCount",
+                          label: "Orders",
+                          width: "22%",
+                        },
+                        { id: "averageRating", label: "Rating", width: "22%" },
+                      ],
                       href: (row) =>
                         `${ADMIN_BASE}/users/${encodeURIComponent(row.userId)}`,
                       title: (row) => row.displayName,

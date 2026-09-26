@@ -110,6 +110,12 @@ export default function CategoryTable({
         }
         getRowId={(row) => String(row.id)}
         mobile={{
+          columns: [
+            { id: "skuCode", label: "SKU", width: "16%" },
+            { id: "typeName", label: "Type", width: "24%" },
+            { id: "name", label: "Category", width: "36%" },
+            { id: "isActive", label: "Status", width: "24%" },
+          ],
           href: (row) => `/dashboard/admin/categories/${row.id}`,
           title: (row) => row.name,
           description: (row) => row.skuCode ?? "—",

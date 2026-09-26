@@ -153,6 +153,12 @@ export default function SubcategoryTable({
         }
         getRowId={(row) => String(row.id)}
         mobile={{
+          columns: [
+            { id: "skuCode", label: "SKU", width: "16%" },
+            { id: "name", label: "Sub Category", width: "34%" },
+            { id: "categoryName", label: "Category", width: "26%" },
+            { id: "isActive", label: "Status", width: "24%" },
+          ],
           href: (row) => `/dashboard/admin/subcategories/${row.id}`,
           title: (row) => row.name,
           description: (row) => row.skuCode ?? "—",

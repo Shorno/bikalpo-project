@@ -150,7 +150,7 @@ export default function EditCoreProductDialog({
       open={open}
       size="large"
       submitLabel="Save Changes"
-      title="Edit Core Identity"
+      title="Edit Product"
     >
       <form
         id="edit-core-product-form"

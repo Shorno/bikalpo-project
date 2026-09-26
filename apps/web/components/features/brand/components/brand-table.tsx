@@ -105,6 +105,26 @@ export default function BrandTable({ columns, data }: BrandTableProps) {
         emptyTitle="No brands found"
         getRowId={(row) => String(row.id)}
         mobile={{
+          columns: [
+            { id: "skuCode", label: "SKU", width: "14%" },
+            { id: "name", label: "Brand", width: "24%" },
+            { id: "categories", label: "Category", width: "25%" },
+            { id: "isActive", label: "Status", width: "22%" },
+            {
+              id: "usedIn",
+              label: "Used",
+              width: "15%",
+              cell: (row) => (
+                <span
+                  title={`${row.productCount} products`}
+                  className="font-mono tabular-nums"
+                >
+                  {row.productCount.toLocaleString()}
+                  <span className="sr-only"> products</span>
+                </span>
+              ),
+            },
+          ],
           href: (row) => `/dashboard/admin/brands/${row.id}`,
           title: (row) => row.name,
           description: (row) => row.skuCode ?? row.slug,
