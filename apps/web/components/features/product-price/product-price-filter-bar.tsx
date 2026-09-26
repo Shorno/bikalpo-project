@@ -14,7 +14,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { useDebounce } from "@/hooks/use-debounce";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { ADMIN_BASE } from "@/lib/routes";
 import { orpc } from "@/utils/orpc";
 
@@ -37,24 +37,15 @@ export function ProductPriceFilterBar({
   categories,
 }: ProductPriceFilterBarProps) {
   const router = useRouter();
+  const isMobile = useIsMobile();
   const searchParams = useSearchParams();
   const searchParamsRef = useRef(searchParams);
-  const lastPushedSearchRef = useRef("");
-  const isFirstSearchEffect = useRef(true);
-
+  const searchTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [search, setSearch] = useState(searchParams.get("search") ?? "");
-  const [typeId, setTypeId] = useState(searchParams.get("type") ?? "all");
-  const [categoryId, setCategoryId] = useState(
-    searchParams.get("category") ?? "all",
-  );
-  const [subCategoryId, setSubCategoryId] = useState(
-    searchParams.get("subcategory") ?? "all",
-  );
-  const [coreProductId, setCoreProductId] = useState(
-    searchParams.get("core") ?? "all",
-  );
-
-  const debouncedSearch = useDebounce(search, 300);
+  const typeId = searchParams.get("type") ?? "all";
+  const categoryId = searchParams.get("category") ?? "all";
+  const subCategoryId = searchParams.get("subcategory") ?? "all";
+  const coreProductId = searchParams.get("core") ?? "all";
 
   const catNum =
     categoryId && categoryId !== "all" ? Number(categoryId) : undefined;
@@ -77,41 +68,44 @@ export function ProductPriceFilterBar({
 
   useEffect(() => {
     searchParamsRef.current = searchParams;
+    if (searchTimeout.current) clearTimeout(searchTimeout.current);
+    setSearch(searchParams.get("search") ?? "");
   }, [searchParams]);
-
-  useEffect(() => {
-    const urlSearch = searchParams.get("search") ?? "";
-    if (urlSearch !== lastPushedSearchRef.current) {
-      setSearch(urlSearch);
-      lastPushedSearchRef.current = urlSearch;
-    }
-    setTypeId(searchParams.get("type") ?? "all");
-    setCategoryId(searchParams.get("category") ?? "all");
-    setSubCategoryId(searchParams.get("subcategory") ?? "all");
-    setCoreProductId(searchParams.get("core") ?? "all");
-  }, [searchParams]);
-
-  const pushUrl = useCallback(
-    (mutate: (p: URLSearchParams) => void) => {
-      const p = new URLSearchParams(searchParamsRef.current.toString());
-      p.delete("page"); // any filter/search change returns to the first page
-      mutate(p);
-      router.push(`${ROUTE}${p.toString() ? `?${p}` : ""}`);
+  useEffect(
+    () => () => {
+      if (searchTimeout.current) clearTimeout(searchTimeout.current);
     },
-    [router],
+    [],
   );
 
-  useEffect(() => {
-    if (isFirstSearchEffect.current) {
-      isFirstSearchEffect.current = false;
-      return;
-    }
-    pushUrl((p) => {
-      if (debouncedSearch.trim()) p.set("search", debouncedSearch.trim());
-      else p.delete("search");
-    });
-    lastPushedSearchRef.current = debouncedSearch.trim();
-  }, [debouncedSearch, pushUrl]);
+  const pushUrl = useCallback(
+    (mutate: (params: URLSearchParams) => void) => {
+      if (searchTimeout.current) clearTimeout(searchTimeout.current);
+      const params = new URLSearchParams(searchParamsRef.current.toString());
+      params.delete("page");
+      if (search.trim()) params.set("search", search.trim());
+      else params.delete("search");
+      mutate(params);
+      router.push(ROUTE + (params.size ? "?" + params.toString() : ""), {
+        scroll: false,
+      });
+    },
+    [router, search],
+  );
+
+  const changeSearch = (value: string) => {
+    setSearch(value);
+    if (searchTimeout.current) clearTimeout(searchTimeout.current);
+    searchTimeout.current = setTimeout(() => {
+      const params = new URLSearchParams(searchParamsRef.current.toString());
+      params.delete("page");
+      if (value.trim()) params.set("search", value.trim());
+      else params.delete("search");
+      router.replace(ROUTE + (params.size ? "?" + params.toString() : ""), {
+        scroll: false,
+      });
+    }, 300);
+  };
 
   const filteredCategories =
     typeId && typeId !== "all"
@@ -132,51 +126,47 @@ export function ProductPriceFilterBar({
     !!search.trim();
 
   const clearAll = () => {
+    if (searchTimeout.current) clearTimeout(searchTimeout.current);
     setSearch("");
-    setTypeId("all");
-    setCategoryId("all");
-    setSubCategoryId("all");
-    setCoreProductId("all");
     router.push(ROUTE);
   };
 
   return (
-    <section className="space-y-4 rounded-xl border bg-card p-4 shadow-sm">
+    <section className="space-y-4 rounded-xl border bg-card p-4 shadow-sm max-md:p-3 max-md:[&_input]:h-11 max-md:[&_[data-slot=select-trigger]]:w-full max-md:[&_[data-slot=select-trigger]]:min-w-0 max-md:[&_[data-slot=select-trigger]]:h-11 max-md:[&_[data-slot=select-trigger]]:text-xs max-md:[&_[data-slot=select-value]]:block max-md:[&_[data-slot=select-value]]:min-w-0 max-md:[&_[data-slot=select-value]]:truncate">
       {/* Search */}
       <div className="flex items-center gap-2">
-        <div className="relative flex-1">
+        <div className="relative min-w-0 flex-1">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             className="pl-9"
-            placeholder="Search product, SKU, brand, variant…"
+            placeholder="Search Product / Brand / SKU / Barcode"
+            aria-label="Search Product / Brand / SKU / Barcode"
+            maxLength={200}
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) => changeSearch(e.target.value)}
           />
         </div>
-        {hasActiveFilters && (
+        {
           <Button
             type="button"
             variant="ghost"
             size="sm"
             className="shrink-0 gap-1.5 text-muted-foreground"
             onClick={clearAll}
+            disabled={!hasActiveFilters}
           >
             <X className="h-4 w-4" />
-            Clear
+            Reset Filter
           </Button>
-        )}
+        }
       </div>
 
       {/* Cascading selects */}
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4 max-md:grid-cols-2">
         <FilterField label="Type">
           <Select
             value={typeId}
             onValueChange={(v) => {
-              setTypeId(v);
-              setCategoryId("all");
-              setSubCategoryId("all");
-              setCoreProductId("all");
               pushUrl((p) => {
                 if (v === "all") p.delete("type");
                 else p.set("type", v);
@@ -186,10 +176,13 @@ export function ProductPriceFilterBar({
               });
             }}
           >
-            <SelectTrigger>
+            <SelectTrigger aria-label="Type">
               <SelectValue placeholder="All types" />
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent
+              position={isMobile ? "popper" : "item-aligned"}
+              className="max-md:max-w-[calc(100vw-2rem)] max-md:[&_[data-slot=select-item]]:whitespace-normal"
+            >
               <SelectItem value="all">All types</SelectItem>
               {types.map((t) => (
                 <SelectItem key={t.id} value={String(t.id)}>
@@ -204,9 +197,6 @@ export function ProductPriceFilterBar({
           <Select
             value={categoryId}
             onValueChange={(v) => {
-              setCategoryId(v);
-              setSubCategoryId("all");
-              setCoreProductId("all");
               pushUrl((p) => {
                 if (v === "all") p.delete("category");
                 else p.set("category", v);
@@ -215,10 +205,13 @@ export function ProductPriceFilterBar({
               });
             }}
           >
-            <SelectTrigger>
+            <SelectTrigger aria-label="Category">
               <SelectValue placeholder="All categories" />
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent
+              position={isMobile ? "popper" : "item-aligned"}
+              className="max-md:max-w-[calc(100vw-2rem)] max-md:[&_[data-slot=select-item]]:whitespace-normal"
+            >
               <SelectItem value="all">All categories</SelectItem>
               {filteredCategories.map((c) => (
                 <SelectItem key={c.id} value={String(c.id)}>
@@ -229,13 +222,11 @@ export function ProductPriceFilterBar({
           </Select>
         </FilterField>
 
-        <FilterField label="Sub Category">
+        <FilterField label="Sub-Category">
           <Select
             value={subCategoryId}
             disabled={categoryId === "all"}
             onValueChange={(v) => {
-              setSubCategoryId(v);
-              setCoreProductId("all");
               pushUrl((p) => {
                 if (v === "all") p.delete("subcategory");
                 else p.set("subcategory", v);
@@ -243,14 +234,19 @@ export function ProductPriceFilterBar({
               });
             }}
           >
-            <SelectTrigger>
+            <SelectTrigger aria-label="Sub-Category">
               <SelectValue
                 placeholder={
-                  categoryId === "all" ? "Select category first" : "All sub categories"
+                  categoryId === "all"
+                    ? "Select category first"
+                    : "All sub categories"
                 }
               />
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent
+              position={isMobile ? "popper" : "item-aligned"}
+              className="max-md:max-w-[calc(100vw-2rem)] max-md:[&_[data-slot=select-item]]:whitespace-normal"
+            >
               <SelectItem value="all">All sub categories</SelectItem>
               {subcategories.map((sc) => (
                 <SelectItem key={sc.id} value={String(sc.id)}>
@@ -266,14 +262,13 @@ export function ProductPriceFilterBar({
             value={coreProductId}
             disabled={!catNum}
             onValueChange={(v) => {
-              setCoreProductId(v);
               pushUrl((p) => {
                 if (v === "all") p.delete("core");
                 else p.set("core", v);
               });
             }}
           >
-            <SelectTrigger>
+            <SelectTrigger aria-label="Core Identity">
               <SelectValue
                 placeholder={
                   !catNum
@@ -284,7 +279,10 @@ export function ProductPriceFilterBar({
                 }
               />
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent
+              position={isMobile ? "popper" : "item-aligned"}
+              className="max-md:max-w-[calc(100vw-2rem)] max-md:[&_[data-slot=select-item]]:whitespace-normal"
+            >
               <SelectItem value="all">All core products</SelectItem>
               {coreProducts.map((cp: { id: number; name: string }) => (
                 <SelectItem key={cp.id} value={String(cp.id)}>
@@ -307,7 +305,7 @@ function FilterField({
   children: React.ReactNode;
 }) {
   return (
-    <div className="space-y-1.5">
+    <div className="space-y-1.5 max-md:min-w-0">
       <Label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
         {label}
       </Label>

@@ -66,6 +66,7 @@
     "cmdk": "^1.1.1",
     "date-fns": "^4.1.0",
     "embla-carousel-react": "^8.6.0",
+    "exceljs": "^4.4.0",
     "html2canvas-pro": "^2.0.2",
     "leaflet": "^1.9.4",
     "lexical": "^0.39.0",
