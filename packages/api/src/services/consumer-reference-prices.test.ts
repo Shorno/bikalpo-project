@@ -82,6 +82,32 @@ test("price console groups, searches, synchronizes and logs atomically without t
     );
     await pg.exec(migration);
     await pg.exec(migration); // additive migration is safe to rerun
+    const codeMigration = await readFile(
+      new URL(
+        "../../../db/src/migrations/0085_price_user_display_codes.sql",
+        import.meta.url,
+      ),
+      "utf8",
+    );
+    await pg.exec(codeMigration);
+    await pg.exec(codeMigration);
+    const removeCodeMigration = await readFile(
+      new URL(
+        "../../../db/src/migrations/0086_remove_price_user_display_codes.sql",
+        import.meta.url,
+      ),
+      "utf8",
+    );
+    await pg.exec(removeCodeMigration);
+    await pg.exec(removeCodeMigration);
+    assert.deepEqual(
+      (
+        await pg.query(
+          "SELECT to_regclass('user_display_code') AS aliases, to_regclass('user_display_code_seq') AS sequence",
+        )
+      ).rows,
+      [{ aliases: null, sequence: null }],
+    );
     const { createConsumerPriceService } = await import(
       "./consumer-reference-prices"
     );
@@ -90,7 +116,7 @@ test("price console groups, searches, synchronizes and logs atomically without t
         typeof createConsumerPriceService
       >[0],
     );
-    const actor = { id: "admin-98450", name: "Admin 98450" };
+    const actor = { id: "auth-admin-A9b2Q", name: "Test Admin" };
 
     await t.test(
       "pagination keeps actual products separate even when they share a core identity",
@@ -180,6 +206,22 @@ test("price console groups, searches, synchronizes and logs atomically without t
             .length,
           0,
         );
+        const barcodeMatch = await service.fetchConsumerReferencePricePage({
+          search: "BARCODE-12",
+        });
+        assert.deepEqual(
+          barcodeMatch.items.map((row) => row.variantPriceId),
+          [1, 2],
+        );
+        assert.equal(barcodeMatch.stats.totalVariants, 2);
+        assert.deepEqual(
+          (
+            await service.fetchConsumerReferencePriceData({
+              search: "BARCODE-12",
+            })
+          ).items.map((row) => row.variantPriceId),
+          [1, 2],
+        );
         assert.equal(
           (
             await service.fetchConsumerReferencePricePage({
@@ -227,8 +269,8 @@ test("price console groups, searches, synchronizes and logs atomically without t
             await service.fetchConsumerReferencePricePage({
               search: "OMERA-12",
             })
-          ).items[0]?.updatedByName,
-          actor.name,
+          ).items[0]?.updatedById,
+          actor.id,
         );
       },
     );
@@ -309,6 +351,196 @@ test("price console groups, searches, synchronizes and logs atomically without t
           (await service.fetchConsumerReferencePriceData({})).items.length,
           6,
         );
+      },
+    );
+    await t.test(
+      "product-wide inline save is atomic, retains authenticated editor IDs and rejects another product's variants",
+      async () => {
+        const before = await service.fetchConsumerReferenceProductPrices(1);
+        const originalPrice = before[0]!.consumerPrice;
+        await assert.rejects(
+          service.saveConsumerReferencePrices(
+            [
+              {
+                variantPriceId: 1,
+                consumerPrice: "3500",
+                exchangePrice: "1600",
+              },
+              { variantPriceId: 4, consumerPrice: "99" },
+            ],
+            actor,
+            "inline",
+            1,
+          ),
+          /does not belong/,
+        );
+        assert.equal(
+          (await service.fetchConsumerReferenceProductPrices(1))[0]!
+            .consumerPrice,
+          originalPrice,
+        );
+        const result = await service.saveConsumerReferencePrices(
+          [
+            { variantPriceId: 1, consumerPrice: "3500", exchangePrice: "1600" },
+            { variantPriceId: 2, consumerPrice: "4500", exchangePrice: "2100" },
+          ],
+          actor,
+          "inline",
+          1,
+        );
+        assert.equal(result.updatedCount, 2);
+        const after = await service.fetchConsumerReferenceProductPrices(1);
+        assert.deepEqual(
+          after.map((row) => row.consumerPrice),
+          ["3500.00", "4500.00"],
+        );
+        assert.deepEqual(
+          after.map((row) => row.updatedById),
+          [actor.id, actor.id],
+        );
+        await service.saveConsumerReferencePrices(
+          [{ variantPriceId: 1, consumerPrice: "3501", exchangePrice: "1601" }],
+          actor,
+          "inline",
+          1,
+        );
+        assert.equal(
+          (await service.fetchConsumerReferenceProductPrices(1))[0]!
+            .updatedById,
+          actor.id,
+        );
+        // Two authenticated IDs may share a display suffix. Attribution must
+        // retain each full ID, even when the five-character labels are equal.
+        const secondActor = { id: "another-auth-admin-A9b2Q", name: "Second" };
+        await service.saveConsumerReferencePrices(
+          [{ variantPriceId: 3, consumerPrice: "3250", exchangePrice: "1490" }],
+          secondActor,
+          "inline",
+          2,
+        );
+        const secondProduct = (
+          await service.fetchConsumerReferenceProductPrices(2)
+        )[0]!;
+        assert.equal(secondProduct.updatedById, secondActor.id);
+        assert.notEqual(secondProduct.updatedById, after[0]!.updatedById);
+        assert.equal(
+          (
+            await service.fetchConsumerReferencePriceData({
+              search: "00000001",
+            })
+          ).items.length,
+          2,
+        );
+        assert.equal(
+          (
+            await pg.query(
+              "SELECT * FROM consumer_price_log WHERE variant_price_id IN (1,2) AND new_price IN (3500,4500) AND source = 'inline'",
+            )
+          ).rows.length,
+          2,
+        );
+      },
+    );
+
+    await t.test(
+      "last editor changes only on a saved price change and full IDs remain in history",
+      async () => {
+        const secondActor = { id: "another-auth-admin-A9b2Q", name: "Second" };
+        const rows = await service.fetchConsumerReferenceProductPrices(1);
+        const unchanged = await service.saveConsumerReferencePrices(
+          rows.map((row) => ({
+            variantPriceId: row.variantPriceId,
+            consumerPrice: row.consumerPrice,
+            exchangePrice: row.exchangePrice ?? undefined,
+          })),
+          secondActor,
+          "inline",
+          1,
+        );
+        assert.equal(unchanged.updatedCount, 0);
+        assert.deepEqual(
+          (await service.fetchConsumerReferenceProductPrices(1)).map(
+            (row) => row.updatedById,
+          ),
+          [actor.id, actor.id],
+        );
+        await service.saveConsumerReferencePrices(
+          [{ variantPriceId: 1, consumerPrice: "3502", exchangePrice: "1601" }],
+          secondActor,
+          "inline",
+          1,
+        );
+        assert.deepEqual(
+          (await service.fetchConsumerReferenceProductPrices(1)).map(
+            (row) => row.updatedById,
+          ),
+          [secondActor.id, actor.id],
+        );
+        const history = (
+          await pg.query<{ actor_id: string }>(
+            "SELECT DISTINCT actor_id FROM consumer_price_log WHERE variant_price_id = 1 ORDER BY actor_id",
+          )
+        ).rows;
+        assert.deepEqual(
+          history.map((row) => row.actor_id),
+          [actor.id, secondActor.id].sort(),
+        );
+      },
+    );
+
+    await t.test(
+      "inventory details match exact catalog variants and exclude unreceived or unrelated purchase costs",
+      async () => {
+        await pg.exec(`
+        ALTER TABLE product ADD COLUMN image text DEFAULT '', ADD COLUMN status text DEFAULT 'active';
+        ALTER TABLE product_variant ADD COLUMN unit_label text DEFAULT 'Cylinder';
+        CREATE TABLE "user" (id text PRIMARY KEY, name text, warehouse_name text, shop_name text);
+        INSERT INTO "user" VALUES ('warehouse-one','Warehouse One','Warehouse One',null);
+        INSERT INTO product (id,name,sku,category_id,brand_id,creator_source) VALUES (7,'Owner Omera','WH-7',1,1,'warehouse'),(8,'Unrelated','WH-8',1,2,'warehouse');
+        INSERT INTO product_variant (id,product_id,catalog_variant_id,price,is_active) VALUES (101,7,1,1600,true),(102,8,2,1700,true);
+        CREATE TABLE inventory (id integer PRIMARY KEY, owner_id text, owner_type text, variant_id integer, available_qty numeric, reserved_qty numeric, retail_price numeric, updated_at timestamp DEFAULT now());
+        INSERT INTO inventory VALUES (1,'warehouse-one','warehouse',101,12,2,1600,now()),(2,'warehouse-one','warehouse',102,999,0,1700,now());
+        CREATE TABLE purchase (id integer PRIMARY KEY, warehouse_id text, owner_type text, status text, entry_mode text, purchase_number text);
+        INSERT INTO purchase VALUES (1,'warehouse-one','warehouse','received','exchange','PO-1'),(2,'warehouse-one','warehouse','draft','new','PO-2'),(3,'warehouse-one','warehouse','cancelled','new','PO-3'),(4,'warehouse-one','warehouse','partial','new','PO-4'),(5,'warehouse-one','warehouse','received','new','PO-5');
+        CREATE TABLE purchase_item (id integer PRIMARY KEY,purchase_id integer,variant_id integer,quantity_unit text,unit_cost numeric,received_qty numeric,"updatedAt" timestamp DEFAULT now());
+        INSERT INTO purchase_item (id,purchase_id,variant_id,quantity_unit,unit_cost,received_qty) VALUES (1,1,101,'cylinder',1000,12),(2,2,101,'cylinder',1,12),(3,3,101,'cylinder',2,12),(4,4,101,'cylinder',3,0),(5,5,102,'cylinder',4,12);
+        CREATE TABLE stock_entry (id integer PRIMARY KEY,warehouse_id text,variant_id integer,cost_type text,purchase_price numeric,reference text,quantity numeric,"createdAt" timestamp DEFAULT now());
+        INSERT INTO stock_entry VALUES (1,'warehouse-one',101,'per_pack',900,'GRN-1',10,now());
+        CREATE TABLE "order" (id integer PRIMARY KEY,status text);
+        INSERT INTO "order" VALUES (1,'delivered'),(2,'cancelled'),(3,'delivered');
+        CREATE TABLE order_item (id integer PRIMARY KEY,order_id integer,variant_id integer,catalog_variant_id integer,total_price numeric);
+        INSERT INTO order_item VALUES (1,1,101,1,1600),(2,2,101,1,900),(3,3,102,2,5000);
+      `);
+        const { createConsumerPriceInventoryService } = await import(
+          "./consumer-price-inventory"
+        );
+        const details = createConsumerPriceInventoryService(
+          drizzle(pg, { schema }) as unknown as Parameters<
+            typeof createConsumerPriceInventoryService
+          >[0],
+        );
+        const result = await details(1);
+        assert.equal(result.history[0]!.actorId, "another-auth-admin-A9b2Q");
+        assert.equal(result.prices[0]!.operationalUnit, "cylinder");
+        assert.equal(result.stock.length, 1);
+        assert.deepEqual(result.stock[0]!.priceIds, [1]);
+        assert.equal(result.stock[0]!.ownerName, "Warehouse One");
+        assert.deepEqual(result.receipts.map((row) => row.reference).sort(), [
+          "GRN-1",
+          "PO-1",
+        ]);
+        assert.equal(
+          result.receipts.find((row) => row.reference === "PO-1")!.mode,
+          "exchange",
+        );
+        assert.equal(
+          result.receipts.find((row) => row.reference === "GRN-1")!.unit,
+          "pack",
+        );
+        assert.equal(result.performance.orders, 1);
+        assert.equal(result.performance.sales, "1600");
+        await assert.rejects(details(7), /Admin product not found/);
+        await assert.rejects(details(999), /Admin product not found/);
       },
     );
   } finally {

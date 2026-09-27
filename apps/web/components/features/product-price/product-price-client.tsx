@@ -1,6 +1,9 @@
 "use client";
 
-import { updateConsumerReferencePriceSchema } from "@bikalpo-project/api/consumer-price";
+import {
+  priceProductDisplayId,
+  updateProductReferencePricesSchema,
+} from "@bikalpo-project/api/consumer-price";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
 import {
@@ -16,7 +19,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { SetupPageShell } from "@/components/features/product-setup";
 import { Badge } from "@/components/ui/badge";
@@ -24,7 +27,7 @@ import { Button } from "@/components/ui/button";
 import { ADMIN_BASE } from "@/lib/routes";
 import { cn } from "@/lib/utils";
 import { orpc } from "@/utils/orpc";
-import { ProductPriceBulkActions } from "./product-price-bulk-actions";
+import styles from "./product-price.module.css";
 import {
   type CategoryOption,
   ProductPriceFilterBar,
@@ -32,13 +35,11 @@ import {
 import {
   type PriceDraft,
   type PriceGroup,
-  type PriceRow,
   ProductPriceTable,
 } from "./product-price-table";
 
 const PAGE_SIZE = 15;
 const ROUTE = `${ADMIN_BASE}/product-price`;
-
 function parseIntParam(value: string | null) {
   const number = Number(value);
   return Number.isSafeInteger(number) && number > 0 ? number : undefined;
@@ -59,6 +60,7 @@ export function ProductPriceClient() {
     [searchParams],
   );
   const page = parseIntParam(searchParams.get("page")) ?? 1;
+  const filterKey = JSON.stringify([filterInput, page]);
   const { data: typesData } = useQuery(
     orpc.adminProductType.getAll.queryOptions({ input: {} }),
   );
@@ -81,15 +83,15 @@ export function ProductPriceClient() {
     }),
   );
   const stats = data?.stats;
-  const pagination = data?.pagination;
   const groups = useMemo(() => {
     const result = new Map<number, PriceGroup>();
     for (const row of data?.items ?? []) {
       let group = result.get(row.productId);
       if (!group) {
         group = {
-          key: `p:${row.productId}`,
-          id: `PRD-${String(row.productId).padStart(6, "0")}`,
+          key: String(row.productId),
+          productId: row.productId,
+          id: priceProductDisplayId(row.productId),
           label: row.productName,
           rows: [],
         };
@@ -99,94 +101,186 @@ export function ProductPriceClient() {
     }
     return [...result.values()];
   }, [data?.items]);
-
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const openParam = searchParams.get("open") ?? "";
+  const [expanded, setExpanded] = useState<Set<string>>(
+    () => new Set(openParam.split(",").filter(Boolean)),
+  );
   const [draft, setDraft] = useState<PriceDraft | null>(null);
   const [editError, setEditError] = useState("");
-  const [importing, setImporting] = useState(false);
-  // biome-ignore lint/correctness/useExhaustiveDependencies: Navigation discards the editor for the previous result set.
+  const dirty = !!draft && JSON.stringify(draft.rows) !== draft.original;
+  const dirtyRef = useRef(dirty);
+  dirtyRef.current = dirty;
+  useEffect(() => {
+    setExpanded(new Set(openParam.split(",").filter(Boolean)));
+  }, [openParam]);
+  // Navigation through the controls is guarded before changing the result set.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Reset when the actual filter values or page change.
   useEffect(() => {
     setDraft(null);
     setEditError("");
-  }, [filterInput, page]);
+  }, [filterKey]);
   const refreshPrices = () =>
     queryClient.invalidateQueries({ queryKey: orpc.product.key() });
   const updateMutation = useMutation({
-    ...orpc.product.updateConsumerReferencePrice.mutationOptions(),
+    ...orpc.product.updateProductReferencePrices.mutationOptions(),
     onSuccess: async () => {
+      dirtyRef.current = false;
       setDraft(null);
       setEditError("");
-      toast.success("Reference price saved");
+      toast.success("Product prices saved");
       await refreshPrices();
     },
     onError: (error: Error) =>
-      setEditError(error.message || "The price could not be saved. Try again."),
+      setEditError(
+        error.message ||
+          "Prices could not be saved. Your changes are still here; try again.",
+      ),
   });
-  const busy = updateMutation.isPending || importing;
-  const startEdit = (row: PriceRow) => {
-    if (busy) return;
-    setDraft({
-      id: row.variantPriceId,
+  const busy = updateMutation.isPending;
+  const beforeNavigate = useCallback(() => {
+    if (busy) return false;
+    if (
+      dirtyRef.current &&
+      !window.confirm("Discard your unsaved price changes?")
+    )
+      return false;
+    dirtyRef.current = false;
+    setDraft(null);
+    setEditError("");
+    return true;
+  }, [busy]);
+  useEffect(() => {
+    const beforeUnload = (event: BeforeUnloadEvent) => {
+      if (dirtyRef.current || busy) {
+        event.preventDefault();
+        event.returnValue = "";
+      }
+    };
+    const linkClick = (event: MouseEvent) => {
+      if (
+        event.defaultPrevented ||
+        event.button !== 0 ||
+        event.metaKey ||
+        event.ctrlKey ||
+        event.shiftKey ||
+        event.altKey
+      )
+        return;
+      const link =
+        event.target instanceof Element
+          ? event.target.closest("a[href]")
+          : null;
+      if (
+        link instanceof HTMLAnchorElement &&
+        link.target !== "_blank" &&
+        link.href !== window.location.href &&
+        !link.hasAttribute("download") &&
+        !beforeNavigate()
+      ) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+    };
+    window.addEventListener("beforeunload", beforeUnload);
+    document.addEventListener("click", linkClick, true);
+    return () => {
+      window.removeEventListener("beforeunload", beforeUnload);
+      document.removeEventListener("click", linkClick, true);
+    };
+  }, [beforeNavigate, busy]);
+  const changeExpanded = (next: Set<string>) => {
+    setExpanded(next);
+    const params = new URLSearchParams(searchParams.toString());
+    if (next.size) params.set("open", [...next].join(","));
+    else params.delete("open");
+    router.replace(`${ROUTE}${params.size ? `?${params}` : ""}`, {
+      scroll: false,
+    });
+  };
+  const startEdit = (group: PriceGroup) => {
+    if (!beforeNavigate()) return;
+    const rows = group.rows.map((row) => ({
+      variantPriceId: row.variantPriceId,
       consumerPrice: row.consumerPrice,
       exchangePrice: row.exchangePrice ?? "",
+    }));
+    setDraft({
+      productId: group.productId,
+      rows,
+      original: JSON.stringify(rows),
     });
-    setEditError("");
+    changeExpanded(new Set([...expanded, group.key]));
   };
   const saveEdit = () => {
     if (!draft || busy) return;
-    const row = data?.items.find((item) => item.variantPriceId === draft.id);
-    if (!row) return;
-    if (row.exchangeEnabled && !draft.exchangePrice.trim()) {
-      setEditError("Enter an Exchange Price for this cylinder");
-      return;
+    for (const value of draft.rows) {
+      const row = data?.items.find(
+        (item) => item.variantPriceId === value.variantPriceId,
+      );
+      if (row?.exchangeEnabled && !value.exchangePrice.trim()) {
+        setEditError(`Enter an Exchange Price for ${row.variantName}.`);
+        return;
+      }
     }
-    const input = updateConsumerReferencePriceSchema.safeParse({
-      variantPriceId: draft.id,
-      consumerPrice: draft.consumerPrice.trim(),
-      exchangePrice:
-        row.isCylinderPricing && draft.exchangePrice.trim()
-          ? draft.exchangePrice.trim()
-          : undefined,
+    const input = updateProductReferencePricesSchema.safeParse({
+      productId: draft.productId,
+      rows: draft.rows.map((row) => ({
+        ...row,
+        exchangePrice: row.exchangePrice.trim() || undefined,
+      })),
     });
     if (!input.success) {
-      setEditError(input.error.issues[0]?.message ?? "Enter a valid price");
+      const issue = input.error.issues[0];
+      const index =
+        typeof issue?.path[1] === "number" ? issue.path[1] : undefined;
+      const row =
+        index == null
+          ? undefined
+          : data?.items.find(
+              (item) =>
+                item.variantPriceId === draft.rows[index]?.variantPriceId,
+            );
+      setEditError(
+        `${row ? `${row.variantName}: ` : ""}${issue?.message ?? "Enter valid prices"}`,
+      );
       return;
     }
     setEditError("");
     updateMutation.mutate(input.data);
   };
-  const toggle = (key: string) =>
-    setExpanded((current) => {
-      const next = new Set(current);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
   const allExpanded =
     groups.length > 0 && groups.every((group) => expanded.has(group.key));
   const navigationUrl = (typeId?: number) => {
     const params = new URLSearchParams(searchParams.toString());
-    for (const key of ["type", "category", "subcategory", "core", "page"])
+    for (const key of [
+      "type",
+      "category",
+      "subcategory",
+      "core",
+      "page",
+      "open",
+    ])
       params.delete(key);
     if (typeId != null) params.set("type", String(typeId));
     return `${ROUTE}${params.size ? `?${params}` : ""}`;
   };
   const goToPage = (next: number) => {
+    if (!beforeNavigate()) return;
     const params = new URLSearchParams(searchParams.toString());
+    params.delete("open");
     if (next <= 1) params.delete("page");
     else params.set("page", String(next));
     router.push(`${ROUTE}${params.size ? `?${params}` : ""}`, {
       scroll: false,
     });
   };
-
   return (
-    <SetupPageShell>
+    <SetupPageShell className={styles.console}>
       <header className="overflow-hidden rounded-xl border bg-card shadow-sm">
         <div className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between max-md:p-4">
           <div className="flex items-center gap-3.5">
             <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary ring-1 ring-inset ring-primary/15">
-              <Tags className="size-5" />
+              <Tags aria-hidden="true" className="size-5" />
             </span>
             <div>
               <div className="flex flex-wrap items-center gap-2">
@@ -221,8 +315,12 @@ export function ProductPriceClient() {
           />
         </div>
       </header>
-
-      <ProductPriceFilterBar types={types} categories={categories} />
+      <ProductPriceFilterBar
+        types={types}
+        categories={categories}
+        beforeNavigate={beforeNavigate}
+        disabled={busy}
+      />
       <section className="space-y-2" aria-label="Category navigation">
         <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
           Category Navigation
@@ -249,7 +347,6 @@ export function ProductPriceClient() {
           ))}
         </nav>
       </section>
-
       <section className="space-y-3" aria-labelledby="price-list-title">
         <div className="flex items-center justify-between gap-3">
           <h2 id="price-list-title" className="text-sm font-semibold">
@@ -257,18 +354,21 @@ export function ProductPriceClient() {
           </h2>
           <Button
             type="button"
-            size="sm"
             variant="outline"
-            disabled={!groups.length || isLoading || isError}
-            onClick={() =>
-              setExpanded(
-                allExpanded
-                  ? new Set()
-                  : new Set(groups.map((group) => group.key)),
-              )
-            }
+            size="sm"
+            disabled={!groups.length || isLoading || isError || busy}
+            title="Expand or collapse all products on this page"
+            onClick={() => {
+              if (beforeNavigate())
+                changeExpanded(
+                  allExpanded
+                    ? new Set()
+                    : new Set(groups.map((group) => group.key)),
+                );
+            }}
           >
             <ChevronDown
+              aria-hidden="true"
               className={cn("size-4", allExpanded && "rotate-180")}
             />
             {allExpanded ? "Collapse All" : "Expand All"}
@@ -283,7 +383,6 @@ export function ProductPriceClient() {
             <Button
               type="button"
               variant="outline"
-              size="sm"
               className="mt-3"
               onClick={() => void refetch()}
             >
@@ -293,13 +392,17 @@ export function ProductPriceClient() {
         ) : isLoading ? (
           <div
             role="status"
-            className="flex items-center justify-center gap-2 py-20 text-muted-foreground"
+            className="flex items-center justify-center gap-2 py-16 text-muted-foreground"
           >
-            <Loader2 className="size-5 animate-spin" /> Loading prices…
+            <Loader2 aria-hidden="true" className="size-5 animate-spin" />
+            Loading prices…
           </div>
         ) : !groups.length ? (
           <div className="flex flex-col items-center rounded-xl border border-dashed bg-card px-4 py-16 text-center shadow-sm">
-            <Package className="size-12 text-muted-foreground/30" />
+            <Package
+              aria-hidden="true"
+              className="size-12 text-muted-foreground/30"
+            />
             <p className="mt-3 text-sm font-semibold">No products found</p>
             <p className="mt-1 text-sm text-muted-foreground">
               Adjust your filters or create a product with variants to manage
@@ -313,10 +416,16 @@ export function ProductPriceClient() {
           <ProductPriceTable
             groups={groups}
             expanded={expanded}
-            onToggle={toggle}
             draft={draft}
             error={editError}
             saving={busy}
+            onToggle={(key) => {
+              if (!beforeNavigate()) return;
+              const next = new Set(expanded);
+              if (next.has(key)) next.delete(key);
+              else next.add(key);
+              changeExpanded(next);
+            }}
             onStartEdit={startEdit}
             onDraftChange={(next) => {
               setDraft(next);
@@ -325,51 +434,44 @@ export function ProductPriceClient() {
             onSave={saveEdit}
             onCancel={() => {
               if (!busy) {
+                dirtyRef.current = false;
                 setDraft(null);
                 setEditError("");
               }
             }}
           />
         )}
-        {!isError && pagination && pagination.totalPages > 1 && (
-          <div className="flex flex-col items-center justify-between gap-3 pt-2 text-sm sm:flex-row">
-            <p className="text-muted-foreground">
-              Page {pagination.page} of {pagination.totalPages} ·{" "}
-              {pagination.totalGroups.toLocaleString("en-BD")} products
-            </p>
-            <div className="flex gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                disabled={pagination.page <= 1}
-                onClick={() => goToPage(pagination.page - 1)}
-              >
-                <ChevronLeft className="size-4" /> Previous
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                disabled={pagination.page >= pagination.totalPages}
-                onClick={() => goToPage(pagination.page + 1)}
-              >
-                Next <ChevronRight className="size-4" />
-              </Button>
-            </div>
-          </div>
-        )}
       </section>
-      <ProductPriceBulkActions
-        filters={filterInput}
-        disabled={busy}
-        canExport={!!stats?.totalVariants && !isError}
-        onImportingChange={setImporting}
-        onImported={async () => {
-          setDraft(null);
-          await refreshPrices();
-        }}
-      />
+      {!isError && data?.pagination && data.pagination.totalPages > 1 && (
+        <div className="flex flex-col items-center justify-between gap-3 pt-2 text-sm text-muted-foreground sm:flex-row">
+          <p>
+            Page {data.pagination.page} of {data.pagination.totalPages} ·{" "}
+            {data.pagination.totalGroups.toLocaleString("en-BD")} products
+          </p>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={busy || data.pagination.page <= 1}
+              onClick={() => goToPage(data.pagination.page - 1)}
+            >
+              <ChevronLeft aria-hidden="true" className="size-4" />
+              Previous
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={
+                busy || data.pagination.page >= data.pagination.totalPages
+              }
+              onClick={() => goToPage(data.pagination.page + 1)}
+            >
+              Next
+              <ChevronRight aria-hidden="true" className="size-4" />
+            </Button>
+          </div>
+        </div>
+      )}
     </SetupPageShell>
   );
 }
@@ -387,7 +489,10 @@ function Insight({
 }) {
   return (
     <div className="flex items-center justify-center gap-3 px-4 py-3.5 max-md:min-w-0 max-md:flex-col max-md:gap-2 max-md:px-1">
-      <Icon className="h-4 w-4 shrink-0 text-muted-foreground max-md:hidden" />
+      <Icon
+        aria-hidden="true"
+        className="h-4 w-4 shrink-0 text-muted-foreground max-md:hidden"
+      />
       <div className="max-md:min-w-0 max-md:w-full max-md:text-center">
         <p className="text-lg font-semibold leading-none tabular-nums max-md:truncate max-md:text-sm">
           {text ?? (value != null ? value.toLocaleString("en-BD") : "—")}

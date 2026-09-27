@@ -1,0 +1,189 @@
+.console {
+  position: relative;
+  container-type: inline-size;
+  width: 100%;
+  min-width: 0;
+}
+.panel {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--card);
+  overflow: hidden;
+}
+.panelHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 20px;
+  border-bottom: 1px solid var(--border);
+}
+.mainTable {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+.mainTable > :where(thead) > :where(tr) > th {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.productRow:hover {
+  background: color-mix(in srgb, var(--muted) 50%, transparent);
+}
+.openRow {
+  background: color-mix(in srgb, var(--muted) 20%, transparent);
+}
+.idCell {
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+.productName {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+.priceControl {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0 6px;
+  min-width: 0;
+}
+.disclosure {
+  width: 28px;
+  min-height: 44px;
+}
+.lastUpdate {
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+  color: var(--muted-foreground);
+  white-space: normal;
+}
+.lastUpdate > span {
+  display: inline-block;
+}
+.editButton {
+  width: 36px;
+  height: 36px;
+  max-width: 100%;
+}
+.editingButton {
+  background: var(--muted);
+  color: var(--primary);
+}
+.console a:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+.mainTable > :where(tbody) > :where(tr) > .detailCell {
+  padding: 0;
+  white-space: normal;
+}
+.details {
+  padding: 16px;
+  border-top: 1px solid var(--border);
+  background: color-mix(in srgb, var(--muted) 10%, transparent);
+}
+.variantTable {
+  width: 100%;
+  table-layout: fixed;
+}
+.variantTable th,
+.variantTable td {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.variantTable th {
+  background: color-mix(in srgb, var(--muted) 20%, transparent);
+}
+.priceInput {
+  width: 100%;
+  min-width: 0;
+  height: 36px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.unit {
+  display: block;
+  margin-top: 4px;
+  font-size: 10px;
+  color: var(--muted-foreground);
+}
+.editFooter {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+.dataTable {
+  width: 100%;
+  min-width: 520px;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.dataTable th,
+.dataTable td {
+  padding: 9px;
+  border: 1px solid var(--border);
+  text-align: left;
+  font-variant-numeric: tabular-nums;
+}
+.dataTable th {
+  background: var(--muted);
+  font-weight: 600;
+}
+@container (max-width: 760px) {
+  .mainTable {
+    font-size: 10px;
+  }
+  .mainTable > :where(thead) > :where(tr) > th {
+    padding: 8px 4px;
+  }
+  .mainTable > :where(tbody) > :where(tr) > td {
+    padding: 4px;
+  }
+  .mainTable > :where(tbody) > :where(tr) > .idCell {
+    padding-inline: 1px;
+    font-size: 9px;
+  }
+  .mainTable > :where(thead) > :where(tr) > th:last-child {
+    padding-inline: 0;
+    font-size: 9px;
+  }
+  .mainTable > :where(tbody) > :where(tr) > .actionCell {
+    padding-inline: 0;
+  }
+  .mainTable > :where(tbody) > :where(tr) > .detailCell {
+    padding: 0;
+  }
+  .priceControl {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0;
+  }
+  .lastUpdate {
+    font-size: 10px;
+  }
+  .editButton {
+    width: 32px;
+    height: 44px;
+  }
+  .details {
+    padding: 12px 8px;
+  }
+  .variantTable {
+    font-size: 12px;
+  }
+  .variantTable th,
+  .variantTable td {
+    padding: 7px 5px;
+  }
+  .priceInput {
+    height: 44px;
+    font-size: 16px;
+  }
+  .panelHead {
+    padding: 16px;
+  }
+}

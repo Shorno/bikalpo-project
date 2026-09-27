@@ -306,10 +306,15 @@ export function SetupEntityTable<TData, TValue>({
                 const content = definition.cell
                   ? definition.cell(row.original)
                   : flexRender(cell.column.columnDef.cell, cell.getContext());
+                const singleLineContent = (
+                  <div className="truncate [&_a]:truncate [&_div]:inline [&_p]:inline [&_p+p]:before:mx-1 [&_p+p]:before:content-['·'] [&_[data-slot=badge]]:inline-block [&_[data-slot=badge]]:max-w-full [&_[data-slot=badge]]:truncate [&_[data-slot=badge]]:align-middle">
+                    {content}
+                  </div>
+                );
                 return (
                   <TableCell
                     key={cell.id}
-                    className={`whitespace-normal break-words px-1 py-2 align-top [overflow-wrap:anywhere] [&_span]:[font-size:inherit] [&_p]:[font-size:inherit] [&_a]:block [&_a]:min-h-7 [&_a]:text-primary [&_a]:focus-visible:outline-2 [&_a]:focus-visible:outline-ring [&_[data-slot=badge]]:max-w-full [&_[data-slot=badge]]:whitespace-normal [&_[data-slot=badge]]:px-1 [&_[data-slot=badge]]:text-[10px] ${definition.id === "skuCode" || definition.id === "composedSku" ? "text-[10px] @xs/setup-table:text-[11px]" : ""} ${definition.id === "actions" ? "px-0.5 [&_button]:size-11" : ""}`}
+                    className={`px-1 py-2 align-middle [&_span]:[font-size:inherit] [&_p]:[font-size:inherit] [&_a]:block [&_a]:min-h-7 [&_a]:text-primary [&_a]:focus-visible:outline-2 [&_a]:focus-visible:outline-ring [&_[data-slot=badge]]:px-1 [&_[data-slot=badge]]:text-[10px] ${definition.id === "skuCode" || definition.id === "composedSku" ? "text-[10px] @xs/setup-table:text-[11px]" : ""} ${definition.id === "actions" ? "px-0.5 [&_button]:size-11" : ""}`}
                   >
                     {definition.id === mobile.primaryColumn &&
                     mobile.onSelect ? (
@@ -319,10 +324,12 @@ export function SetupEntityTable<TData, TValue>({
                         className="block min-h-7 w-full rounded-sm text-left text-primary focus-visible:outline-2 focus-visible:outline-ring"
                         aria-label={`Review ${String(mobile.title(row.original))}`}
                       >
-                        {content}
+                        {singleLineContent}
                       </button>
-                    ) : (
+                    ) : definition.id === "actions" ? (
                       content
+                    ) : (
+                      singleLineContent
                     )}
                   </TableCell>
                 );
