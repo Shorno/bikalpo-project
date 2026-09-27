@@ -260,7 +260,8 @@ export default function ProductCatalogTable({
           isMobile ? (
             <Link
               href={`${ADMIN_BASE}/products/${row.original.id}`}
-              className="block min-h-7 rounded-sm font-medium text-primary underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+              className="block min-h-7 truncate rounded-sm font-medium text-primary underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+              title={row.original.name}
             >
               {row.original.name}
             </Link>
@@ -563,7 +564,7 @@ export default function ProductCatalogTable({
                           key={cell.id}
                           className={
                             isMobile
-                              ? `whitespace-normal break-words px-1 py-2 align-top [overflow-wrap:anywhere] @sm/catalog:px-2 ${
+                              ? `px-1 py-2 align-middle @sm/catalog:px-2 ${
                                   cell.column.id === "productId"
                                     ? "font-mono text-[10px] font-medium tabular-nums @xs/catalog:text-[11px]"
                                     : ""
@@ -575,9 +576,21 @@ export default function ProductCatalogTable({
                                   : undefined
                           }
                         >
-                          {flexRender(
-                            cell.column.columnDef.cell,
-                            cell.getContext(),
+                          {isMobile ? (
+                            <div
+                              className="truncate"
+                              title={String(cell.getValue() ?? "")}
+                            >
+                              {flexRender(
+                                cell.column.columnDef.cell,
+                                cell.getContext(),
+                              )}
+                            </div>
+                          ) : (
+                            flexRender(
+                              cell.column.columnDef.cell,
+                              cell.getContext(),
+                            )
                           )}
                         </TableCell>
                       ))}
