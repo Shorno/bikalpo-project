@@ -38,8 +38,10 @@ import {
   consumerPriceListParamsSchema,
   importConsumerReferencePricesSchema,
   updateConsumerReferencePriceSchema,
+  updateProductReferencePricesSchema,
 } from "../consumer-price";
 import { adminProcedure, publicProcedure } from "../index";
+import { getReferencePriceInventory } from "../services/consumer-price-inventory";
 import {
   fetchConsumerReferencePriceData,
   fetchConsumerReferencePricePage,
@@ -1305,6 +1307,16 @@ export const productRouter = {
     .input(consumerPriceListPagedSchema)
     .handler(async ({ input }) => fetchConsumerReferencePricePage(input)),
 
+  getReferencePriceInventory: adminProcedure
+    .route({
+      method: "GET",
+      path: "/products/{productId}/reference-price-inventory",
+      tags: ["Product Management"],
+      summary: "View reference variants, owner inventory and recorded purchase costs",
+    })
+    .input(z.object({ productId: z.number().int().positive() }))
+    .handler(async ({ input }) => getReferencePriceInventory(input.productId)),
+
   /**
    * Update a single consumer reference price (product_variant_price + linked product_variant)
    */
@@ -1332,6 +1344,23 @@ export const productRouter = {
     .input(importConsumerReferencePricesSchema)
     .handler(async ({ input, context }) =>
       saveConsumerReferencePrices(input.rows, context.session.user, "excel"),
+    ),
+
+  updateProductReferencePrices: adminProcedure
+    .route({
+      method: "PUT",
+      path: "/products/{productId}/reference-prices",
+      tags: ["Product Management"],
+      summary: "Save one product's variant prices atomically",
+    })
+    .input(updateProductReferencePricesSchema)
+    .handler(async ({ input, context }) =>
+      saveConsumerReferencePrices(
+        input.rows,
+        context.session.user,
+        "inline",
+        input.productId,
+      ),
     ),
 
   exportConsumerReferencePrices: adminProcedure

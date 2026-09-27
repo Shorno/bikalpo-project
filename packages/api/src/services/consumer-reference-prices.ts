@@ -12,6 +12,7 @@ import {
   subCategory,
   variantOption,
 } from "@bikalpo-project/db/schema";
+import { resolveVariantOption } from "@bikalpo-project/db/variant-definition";
 import { ORPCError } from "@orpc/server";
 import { and, asc, eq, ilike, inArray, or, type SQL, sql } from "drizzle-orm";
 import type { z } from "zod";
@@ -52,7 +53,7 @@ export function createConsumerPriceService(database: typeof db) {
         variantPriceId: productVariantPrice.id,
         consumerPrice: productVariantPrice.consumerPrice,
         updatedAt: productVariantPrice.updatedAt,
-        productId: product.id,
+        productId: sql<number>`${product.id}`.as("price_product_id"),
         productName: sql<string>`${product.name}`.as("product_name"),
         productSku: product.sku,
         variantOptionId: variantOption.id,
@@ -86,6 +87,11 @@ export function createConsumerPriceService(database: typeof db) {
       WHERE l.variant_price_id = ${productVariantPrice.id} ORDER BY l.created_at DESC, l.id DESC LIMIT 1)`.as(
           "updated_by_name",
         ),
+        updatedById: sql<
+          string | null
+        >`(SELECT l.actor_id FROM consumer_price_log l
+          WHERE l.variant_price_id = ${productVariantPrice.id}
+          ORDER BY l.created_at DESC, l.id DESC LIMIT 1)`.as("updated_by_id"),
       })
       .from(productVariantPrice)
       .innerJoin(product, eq(productVariantPrice.productId, product.id))
@@ -126,6 +132,7 @@ export function createConsumerPriceService(database: typeof db) {
           sql`EXISTS (SELECT 1 FROM product_variant pv LEFT JOIN catalog_variant cv ON cv.id = pv.catalog_variant_id
         WHERE ${activeLinkedVariant} AND (pv.sku ILIKE ${search} OR pv.preferred_local_sku ILIKE ${search} OR cv.global_sku ILIKE ${search}))`,
           sql`('PRD-' || lpad(${product.id}::text, 6, '0')) ILIKE ${search}`,
+          sql`lpad(${product.id}::text, greatest(8, length(${product.id}::text)), '0') ILIKE ${search}`,
           sql`('CORE-' || lpad(${coreProductIdentity.id}::text, 6, '0')) ILIKE ${search}`,
         )!,
       );
@@ -139,6 +146,24 @@ export function createConsumerPriceService(database: typeof db) {
     if (input.coreProductId != null)
       conditions.push(eq(product.coreProductId, input.coreProductId));
     return and(...conditions);
+  }
+
+  // Search selects products; a barcode match must not hide sibling variants
+  // from the product-wide editor or its matching Excel export.
+  function matchingProductConditions(
+    input: z.infer<typeof consumerPriceListParamsSchema>,
+  ) {
+    if (!input.search?.trim()) return priceConditions(input);
+    const matches = priceQuery()
+      .where(priceConditions(input))
+      .as("matching_product_prices");
+    return and(
+      priceConditions({}),
+      inArray(
+        product.id,
+        database.select({ productId: matches.productId }).from(matches),
+      ),
+    );
   }
 
   async function fetchPriceRows(where: SQL | undefined) {
@@ -195,6 +220,12 @@ export function createConsumerPriceService(database: typeof db) {
           size: variantSize,
           definition: variantDefinition,
         }),
+        operationalUnit: resolveVariantOption({
+          name: row.variantName,
+          unit: row.variantUnit,
+          size: variantSize,
+          definition: variantDefinition,
+        }).orderUnit,
         exchangePrice: row.exchangeEnabled
           ? priceFromMinorUnits(
               Math.max(
@@ -211,14 +242,18 @@ export function createConsumerPriceService(database: typeof db) {
   async function fetchConsumerReferencePriceData(
     input: z.infer<typeof consumerPriceListParamsSchema>,
   ) {
-    return { items: await fetchPriceRows(priceConditions(input)) };
+    return { items: await fetchPriceRows(matchingProductConditions(input)) };
   }
 
-  /** Page by actual product, so all of its matching variants stay together. */
+  async function fetchConsumerReferenceProductPrices(productId: number) {
+    return fetchPriceRows(and(priceConditions({}), eq(product.id, productId)));
+  }
+
+  /** Page by actual product, keeping all active variants together. */
   async function fetchConsumerReferencePricePage(
     input: z.infer<typeof consumerPriceListPagedSchema>,
   ) {
-    const where = priceConditions(input);
+    const where = matchingProductConditions(input);
     const filteredRows = priceQuery().where(where).as("filtered_prices");
     const [stats] = await database
       .select({
@@ -272,6 +307,7 @@ export function createConsumerPriceService(database: typeof db) {
     rows: ConsumerPriceUpdate[],
     actor: { id: string; name?: string | null },
     source: "inline" | "excel",
+    productId?: number,
   ) {
     const parsed = importConsumerReferencePricesSchema.parse({ rows });
     return database.transaction(async (tx) => {
@@ -310,6 +346,10 @@ export function createConsumerPriceService(database: typeof db) {
         if (existing.creatorSource !== "admin")
           throw new ORPCError("FORBIDDEN", {
             message: `Variant Price ID ${input.variantPriceId} is not an admin reference price`,
+          });
+        if (productId != null && existing.productId !== productId)
+          throw new ORPCError("BAD_REQUEST", {
+            message: `Variant Price ID ${input.variantPriceId} does not belong to this product`,
           });
         const generatedWhere = and(
           eq(productVariant.productId, existing.productId),
@@ -396,6 +436,7 @@ export function createConsumerPriceService(database: typeof db) {
 
   return {
     fetchConsumerReferencePriceData,
+    fetchConsumerReferenceProductPrices,
     fetchConsumerReferencePricePage,
     saveConsumerReferencePrices,
   };
@@ -403,6 +444,7 @@ export function createConsumerPriceService(database: typeof db) {
 
 export const {
   fetchConsumerReferencePriceData,
+  fetchConsumerReferenceProductPrices,
   fetchConsumerReferencePricePage,
   saveConsumerReferencePrices,
 } = createConsumerPriceService(db);

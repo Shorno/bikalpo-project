@@ -72,6 +72,16 @@ export type ConsumerPriceUpdate = z.infer<
   typeof updateConsumerReferencePriceSchema
 >;
 
+export const updateProductReferencePricesSchema =
+  importConsumerReferencePricesSchema.safeExtend({
+    productId: z.number().int().positive(),
+  });
+
+/** Display formatting only; database identities and workbook keys stay unchanged. */
+export function priceProductDisplayId(productId: number) {
+  return String(productId).padStart(8, "0");
+}
+
 export function priceInMinorUnits(value: string) {
   const [whole = "0", fraction = ""] = value.split(".");
   return Number(whole) * 100 + Number(fraction.padEnd(2, "0"));

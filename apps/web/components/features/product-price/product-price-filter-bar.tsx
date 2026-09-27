@@ -3,10 +3,15 @@
 import { useQuery } from "@tanstack/react-query";
 import { Search, X } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
   Select,
   SelectContent,
@@ -30,11 +35,15 @@ export type CategoryOption = {
 interface ProductPriceFilterBarProps {
   types: { id: number; name: string }[];
   categories: CategoryOption[];
+  beforeNavigate: () => boolean;
+  disabled?: boolean;
 }
 
 export function ProductPriceFilterBar({
   types,
   categories,
+  beforeNavigate,
+  disabled,
 }: ProductPriceFilterBarProps) {
   const router = useRouter();
   const isMobile = useIsMobile();
@@ -81,8 +90,10 @@ export function ProductPriceFilterBar({
   const pushUrl = useCallback(
     (mutate: (params: URLSearchParams) => void) => {
       if (searchTimeout.current) clearTimeout(searchTimeout.current);
+      if (!beforeNavigate()) return;
       const params = new URLSearchParams(searchParamsRef.current.toString());
       params.delete("page");
+      params.delete("open");
       if (search.trim()) params.set("search", search.trim());
       else params.delete("search");
       mutate(params);
@@ -90,15 +101,20 @@ export function ProductPriceFilterBar({
         scroll: false,
       });
     },
-    [router, search],
+    [router, search, beforeNavigate],
   );
 
   const changeSearch = (value: string) => {
     setSearch(value);
     if (searchTimeout.current) clearTimeout(searchTimeout.current);
     searchTimeout.current = setTimeout(() => {
+      if (!beforeNavigate()) {
+        setSearch(searchParamsRef.current.get("search") ?? "");
+        return;
+      }
       const params = new URLSearchParams(searchParamsRef.current.toString());
       params.delete("page");
+      params.delete("open");
       if (value.trim()) params.set("search", value.trim());
       else params.delete("search");
       router.replace(ROUTE + (params.size ? "?" + params.toString() : ""), {
@@ -127,12 +143,16 @@ export function ProductPriceFilterBar({
 
   const clearAll = () => {
     if (searchTimeout.current) clearTimeout(searchTimeout.current);
+    if (!beforeNavigate()) return;
     setSearch("");
     router.push(ROUTE);
   };
 
   return (
-    <section className="space-y-4 rounded-xl border bg-card p-4 shadow-sm max-md:p-3 max-md:[&_input]:h-11 max-md:[&_[data-slot=select-trigger]]:w-full max-md:[&_[data-slot=select-trigger]]:min-w-0 max-md:[&_[data-slot=select-trigger]]:h-11 max-md:[&_[data-slot=select-trigger]]:text-xs max-md:[&_[data-slot=select-value]]:block max-md:[&_[data-slot=select-value]]:min-w-0 max-md:[&_[data-slot=select-value]]:truncate">
+    <section
+      aria-label="Filter prices"
+      className="space-y-4 rounded-xl border bg-card p-4 shadow-sm max-md:p-3 max-md:[&_input]:h-11 [&_[data-slot=select-trigger]]:w-full [&_[data-slot=select-trigger]]:min-w-0 max-md:[&_[data-slot=select-trigger]]:h-11 max-md:[&_[data-slot=select-trigger]]:text-xs [&_[data-slot=select-value]]:block [&_[data-slot=select-value]]:truncate"
+    >
       {/* Search */}
       <div className="flex items-center gap-2">
         <div className="relative min-w-0 flex-1">
@@ -142,156 +162,162 @@ export function ProductPriceFilterBar({
             placeholder="Search Product / Brand / SKU / Barcode"
             aria-label="Search Product / Brand / SKU / Barcode"
             maxLength={200}
+            disabled={disabled}
             value={search}
             onChange={(e) => changeSearch(e.target.value)}
           />
         </div>
-        {
+      </div>
+
+      {/* Cascading selects */}
+      <div className="overflow-x-auto pb-1">
+        <fieldset
+          disabled={disabled}
+          className="grid min-w-[610px] grid-cols-[repeat(4,minmax(100px,1fr))_auto] items-end gap-2"
+        >
+          <FilterField label="Type">
+            <Select
+              value={typeId}
+              onValueChange={(v) => {
+                pushUrl((p) => {
+                  if (v === "all") p.delete("type");
+                  else p.set("type", v);
+                  p.delete("category");
+                  p.delete("subcategory");
+                  p.delete("core");
+                });
+              }}
+            >
+              <SelectTrigger aria-label="Type">
+                <SelectValue placeholder="All types" />
+              </SelectTrigger>
+              <SelectContent
+                position={isMobile ? "popper" : "item-aligned"}
+                className="max-md:max-w-[calc(100vw-2rem)] max-md:[&_[data-slot=select-item]]:whitespace-normal"
+              >
+                <SelectItem value="all">All types</SelectItem>
+                {types.map((t) => (
+                  <SelectItem key={t.id} value={String(t.id)}>
+                    {t.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </FilterField>
+
+          <FilterField label="Category">
+            <Select
+              value={categoryId}
+              onValueChange={(v) => {
+                pushUrl((p) => {
+                  if (v === "all") p.delete("category");
+                  else p.set("category", v);
+                  p.delete("subcategory");
+                  p.delete("core");
+                });
+              }}
+            >
+              <SelectTrigger aria-label="Category">
+                <SelectValue placeholder="All categories" />
+              </SelectTrigger>
+              <SelectContent
+                position={isMobile ? "popper" : "item-aligned"}
+                className="max-md:max-w-[calc(100vw-2rem)] max-md:[&_[data-slot=select-item]]:whitespace-normal"
+              >
+                <SelectItem value="all">All categories</SelectItem>
+                {filteredCategories.map((c) => (
+                  <SelectItem key={c.id} value={String(c.id)}>
+                    {c.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </FilterField>
+
+          <FilterField label="Sub-Category">
+            <Select
+              value={subCategoryId}
+              disabled={categoryId === "all"}
+              onValueChange={(v) => {
+                pushUrl((p) => {
+                  if (v === "all") p.delete("subcategory");
+                  else p.set("subcategory", v);
+                  p.delete("core");
+                });
+              }}
+            >
+              <SelectTrigger aria-label="Sub-Category">
+                <SelectValue
+                  placeholder={
+                    categoryId === "all"
+                      ? "Select category first"
+                      : "All sub categories"
+                  }
+                />
+              </SelectTrigger>
+              <SelectContent
+                position={isMobile ? "popper" : "item-aligned"}
+                className="max-md:max-w-[calc(100vw-2rem)] max-md:[&_[data-slot=select-item]]:whitespace-normal"
+              >
+                <SelectItem value="all">All sub categories</SelectItem>
+                {subcategories.map((sc) => (
+                  <SelectItem key={sc.id} value={String(sc.id)}>
+                    {sc.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </FilterField>
+
+          <FilterField label="Core Identity">
+            <Select
+              value={coreProductId}
+              disabled={!catNum}
+              onValueChange={(v) => {
+                pushUrl((p) => {
+                  if (v === "all") p.delete("core");
+                  else p.set("core", v);
+                });
+              }}
+            >
+              <SelectTrigger aria-label="Core Identity">
+                <SelectValue
+                  placeholder={
+                    !catNum
+                      ? "Select category first"
+                      : corePending
+                        ? "Loading…"
+                        : "All core products"
+                  }
+                />
+              </SelectTrigger>
+              <SelectContent
+                position={isMobile ? "popper" : "item-aligned"}
+                className="max-md:max-w-[calc(100vw-2rem)] max-md:[&_[data-slot=select-item]]:whitespace-normal"
+              >
+                <SelectItem value="all">All core products</SelectItem>
+                {coreProducts.map((cp: { id: number; name: string }) => (
+                  <SelectItem key={cp.id} value={String(cp.id)}>
+                    {cp.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </FilterField>
           <Button
             type="button"
             variant="ghost"
             size="sm"
-            className="shrink-0 gap-1.5 text-muted-foreground"
+            className="h-9 shrink-0 gap-1.5 text-muted-foreground max-md:h-11"
             onClick={clearAll}
-            disabled={!hasActiveFilters}
+            disabled={
+              disabled || (!hasActiveFilters && !searchParams.has("open"))
+            }
           >
-            <X className="h-4 w-4" />
+            <X aria-hidden="true" className="size-3.5" />
             Reset Filter
           </Button>
-        }
-      </div>
-
-      {/* Cascading selects */}
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4 max-md:grid-cols-2">
-        <FilterField label="Type">
-          <Select
-            value={typeId}
-            onValueChange={(v) => {
-              pushUrl((p) => {
-                if (v === "all") p.delete("type");
-                else p.set("type", v);
-                p.delete("category");
-                p.delete("subcategory");
-                p.delete("core");
-              });
-            }}
-          >
-            <SelectTrigger aria-label="Type">
-              <SelectValue placeholder="All types" />
-            </SelectTrigger>
-            <SelectContent
-              position={isMobile ? "popper" : "item-aligned"}
-              className="max-md:max-w-[calc(100vw-2rem)] max-md:[&_[data-slot=select-item]]:whitespace-normal"
-            >
-              <SelectItem value="all">All types</SelectItem>
-              {types.map((t) => (
-                <SelectItem key={t.id} value={String(t.id)}>
-                  {t.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </FilterField>
-
-        <FilterField label="Category">
-          <Select
-            value={categoryId}
-            onValueChange={(v) => {
-              pushUrl((p) => {
-                if (v === "all") p.delete("category");
-                else p.set("category", v);
-                p.delete("subcategory");
-                p.delete("core");
-              });
-            }}
-          >
-            <SelectTrigger aria-label="Category">
-              <SelectValue placeholder="All categories" />
-            </SelectTrigger>
-            <SelectContent
-              position={isMobile ? "popper" : "item-aligned"}
-              className="max-md:max-w-[calc(100vw-2rem)] max-md:[&_[data-slot=select-item]]:whitespace-normal"
-            >
-              <SelectItem value="all">All categories</SelectItem>
-              {filteredCategories.map((c) => (
-                <SelectItem key={c.id} value={String(c.id)}>
-                  {c.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </FilterField>
-
-        <FilterField label="Sub-Category">
-          <Select
-            value={subCategoryId}
-            disabled={categoryId === "all"}
-            onValueChange={(v) => {
-              pushUrl((p) => {
-                if (v === "all") p.delete("subcategory");
-                else p.set("subcategory", v);
-                p.delete("core");
-              });
-            }}
-          >
-            <SelectTrigger aria-label="Sub-Category">
-              <SelectValue
-                placeholder={
-                  categoryId === "all"
-                    ? "Select category first"
-                    : "All sub categories"
-                }
-              />
-            </SelectTrigger>
-            <SelectContent
-              position={isMobile ? "popper" : "item-aligned"}
-              className="max-md:max-w-[calc(100vw-2rem)] max-md:[&_[data-slot=select-item]]:whitespace-normal"
-            >
-              <SelectItem value="all">All sub categories</SelectItem>
-              {subcategories.map((sc) => (
-                <SelectItem key={sc.id} value={String(sc.id)}>
-                  {sc.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </FilterField>
-
-        <FilterField label="Core Identity">
-          <Select
-            value={coreProductId}
-            disabled={!catNum}
-            onValueChange={(v) => {
-              pushUrl((p) => {
-                if (v === "all") p.delete("core");
-                else p.set("core", v);
-              });
-            }}
-          >
-            <SelectTrigger aria-label="Core Identity">
-              <SelectValue
-                placeholder={
-                  !catNum
-                    ? "Select category first"
-                    : corePending
-                      ? "Loading…"
-                      : "All core products"
-                }
-              />
-            </SelectTrigger>
-            <SelectContent
-              position={isMobile ? "popper" : "item-aligned"}
-              className="max-md:max-w-[calc(100vw-2rem)] max-md:[&_[data-slot=select-item]]:whitespace-normal"
-            >
-              <SelectItem value="all">All core products</SelectItem>
-              {coreProducts.map((cp: { id: number; name: string }) => (
-                <SelectItem key={cp.id} value={String(cp.id)}>
-                  {cp.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </FilterField>
+        </fieldset>
       </div>
     </section>
   );
@@ -302,13 +328,20 @@ function FilterField({
   children,
 }: {
   label: string;
-  children: React.ReactNode;
+  children: ReactNode;
 }) {
   return (
-    <div className="space-y-1.5 max-md:min-w-0">
-      <Label className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+    <div
+      role="group"
+      aria-label={label}
+      className="relative min-w-0 space-y-1.5"
+    >
+      <span
+        aria-hidden="true"
+        className="block text-[11px] font-medium uppercase tracking-wide text-muted-foreground"
+      >
         {label}
-      </Label>
+      </span>
       {children}
     </div>
   );
