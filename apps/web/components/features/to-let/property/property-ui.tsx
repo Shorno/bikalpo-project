@@ -70,7 +70,23 @@ export function PropertyStatusBadge({ status }: { status: PropertyStatus }) {
   );
 }
 
-export function UnitStatusBadge({ status }: { status: UnitStatus }) {
+export function UnitStatusBadge({
+  status,
+  isLeaving = false,
+}: {
+  status: UnitStatus;
+  isLeaving?: boolean;
+}) {
+  if (isLeaving && status === "occupied") {
+    return (
+      <Badge
+        variant="outline"
+        className="border-amber-200 bg-amber-50 text-amber-800"
+      >
+        Leaving
+      </Badge>
+    );
+  }
   return (
     <Badge
       variant="outline"

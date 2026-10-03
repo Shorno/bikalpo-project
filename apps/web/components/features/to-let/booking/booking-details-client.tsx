@@ -27,9 +27,22 @@ import {
   ToLetDetailsSection,
   ToLetDetailsShell,
   ToLetFacilityItem,
+  ToLetFacilityList,
   ToLetInfoTile,
   ToLetRentItem,
+  toLetUnitFacilities,
 } from "@/components/features/to-let/to-let-detail-layout";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -145,6 +158,14 @@ function formatDate(value: string | null, includeTime = false) {
     dateStyle: "medium",
     ...(includeTime ? { timeStyle: "short" as const } : {}),
   }).format(date);
+}
+
+/** Mirrors the server: an open-ended rental ends on the last day of next month. */
+function leaveEndDate(endDate: string | null) {
+  if (endDate) return endDate;
+  const today = new Date();
+  const lastDayNextMonth = new Date(today.getFullYear(), today.getMonth() + 2, 0);
+  return `${lastDayNextMonth.getFullYear()}-${String(lastDayNextMonth.getMonth() + 1).padStart(2, "0")}-${String(lastDayNextMonth.getDate()).padStart(2, "0")}`;
 }
 
 function DetailsLoading() {
@@ -450,7 +471,37 @@ function BookingDetails({ booking }: { booking: ToLetBookingRequestView }) {
         statusDetail={status.detail}
         actions={
           <>
-            {contract?.status === "active" || contract?.status === "leaving" ? (
+            {contract?.status === "active" ? (
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button disabled={leave.isPending}>
+                    <DoorOpen className="size-4" />{" "}
+                    {leave.isPending ? "Scheduling…" : "Leave"}
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>
+                      Are you sure you want to leave this Unit?
+                    </AlertDialogTitle>
+                    <AlertDialogDescription>
+                      The owner will see that you are leaving. Your rental
+                      stays active until{" "}
+                      <span className="font-semibold text-foreground">
+                        {formatDate(leaveEndDate(contract.endDate))}
+                      </span>
+                      , and you cannot undo this request.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Stay</AlertDialogCancel>
+                    <AlertDialogAction onClick={openLeaveForm}>
+                      Yes, leave
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            ) : contract?.status === "leaving" ? (
               <Button
                 onClick={openLeaveForm}
                 disabled={leave.isPending}
@@ -458,11 +509,7 @@ function BookingDetails({ booking }: { booking: ToLetBookingRequestView }) {
                 aria-controls="alert-builder"
               >
                 <DoorOpen className="size-4" />{" "}
-                {leave.isPending
-                  ? "Scheduling…"
-                  : contract.status === "leaving"
-                    ? "Leaving · Create alert"
-                    : "Leave"}
+                Leaving · Create alert
               </Button>
             ) : (
               <Button
@@ -507,7 +554,7 @@ function BookingDetails({ booking }: { booking: ToLetBookingRequestView }) {
               </p>
               <p className="mt-1 leading-6">
                 Contract {formatDate(contract.startDate)} –{" "}
-                {formatDate(contract.endDate)} · rent due day{" "}
+                {contract.endDate ? formatDate(contract.endDate) : "Open-ended"} · rent due day{" "}
                 {contract.rentDueDay}
               </p>
             </div>
@@ -617,58 +664,14 @@ function BookingDetails({ booking }: { booking: ToLetBookingRequestView }) {
           description="Older booking snapshots may show Not recorded where the original request did not preserve a facility value."
           embedded
         >
-          <div className="grid gap-3 sm:grid-cols-2">
-            <ToLetFacilityItem
-              label="Water supply"
-              available={facilities?.hasWaterSupply}
-              included={snapshot.facilityInclusions?.water ?? null}
-            />
-            <ToLetFacilityItem
-              label="Gas connection"
-              available={facilities?.hasGasConnection}
-              included={snapshot.facilityInclusions?.gas ?? null}
-            />
-            <ToLetFacilityItem
-              label="Electricity"
-              available={facilities?.hasElectricity}
-              included={snapshot.facilityInclusions?.electricity ?? null}
-            />
-            <ToLetFacilityItem
-              label="Internet"
-              available={snapshot.hasInternet}
-              included={snapshot.facilityInclusions?.internet ?? null}
-            />
-            <ToLetFacilityItem
-              label="Lift"
-              available={facilities?.hasLift}
-              included={snapshot.facilityInclusions?.lift ?? null}
-            />
-            <ToLetFacilityItem
-              label="Parking"
-              available={facilities?.hasParking}
-              included={snapshot.facilityInclusions?.parking ?? null}
-            />
-            <ToLetFacilityItem
-              label="Generator"
-              available={facilities?.hasGenerator}
-              included={snapshot.facilityInclusions?.generator ?? null}
-            />
-            <ToLetFacilityItem
-              label="Security"
-              available={facilities?.hasSecurityGuard}
-              included={snapshot.facilityInclusions?.security ?? null}
-            />
-            <ToLetFacilityItem
-              label="CCTV"
-              available={facilities?.hasCctv}
-              included={snapshot.facilityInclusions?.cctv ?? null}
-            />
-            <ToLetFacilityItem
-              label="Furnished"
-              available={snapshot.unit.isFurnished}
-              included={snapshot.facilityInclusions?.furnished ?? null}
-            />
-          </div>
+          <ToLetFacilityList
+            facilities={toLetUnitFacilities({
+              property: facilities,
+              hasInternet: snapshot.hasInternet,
+              isFurnished: snapshot.unit.isFurnished,
+              inclusions: snapshot.facilityInclusions,
+            })}
+          />
           {snapshot.otherFacilities ? (
             <div className="mt-4 rounded-lg border border-border p-4 text-sm text-foreground">
               <span className="font-semibold text-foreground">

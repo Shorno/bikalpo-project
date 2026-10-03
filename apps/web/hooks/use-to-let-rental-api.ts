@@ -25,7 +25,7 @@ export interface ToLetRentalContractView {
   tenantId: string;
   status: "active" | "leaving" | "completed";
   startDate: string;
-  endDate: string;
+  endDate: string | null;
   rentDueDay: number;
   monthlyRent: number;
   advanceAmount: number;
@@ -33,6 +33,11 @@ export interface ToLetRentalContractView {
   serviceCharge: number;
   parkingCharge: number;
   utilityCharge: number;
+  contractType: string;
+  paymentType: string | null;
+  paymentAmount: number | null;
+  note: string | null;
+  agreementFileUrl: string | null;
   activatedAt: string;
   leaveRequestedAt: string | null;
   accessEndsAt: string | null;

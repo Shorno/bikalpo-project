@@ -2,6 +2,7 @@
 import { toLetUnitCapabilities } from "@bikalpo-project/api/lib/tolet-categories";
 
 import { isToLetPublicListingRenewalDue } from "@bikalpo-project/api/routers/helpers/tolet-marketplace-visibility";
+import { normalizeBangladeshPhoneNumber } from "@bikalpo-project/auth/phone-identity";
 import {
   ArrowLeft,
   ArrowRight,
@@ -40,7 +41,9 @@ import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Textarea } from "@/components/ui/textarea";
 import {
+  useCreateToLetUnit,
   useCreateToLetUnitListing,
+  useUpdateToLetPropertyContact,
   useMyToLetProperty,
   useMyToLetUnitListing,
   usePauseToLetUnitListing,
@@ -54,6 +57,8 @@ import {
   preferredTenantOptions,
   type ToLetListingFormValues,
 } from "@/schema/to-let-listing.schema";
+import type { UnitFormValues } from "@/schema/to-let-property.schema";
+import fieldStyles from "./property-form-fields.module.css";
 import { propertyFromResponse } from "./property-details-client";
 import {
   ListingStatusBadge,
@@ -62,6 +67,11 @@ import {
   PropertyPageHeader,
 } from "./property-ui";
 import { PropertyVideoField } from "./property-video-field";
+import {
+  PropertyPhoneVerification,
+  type PropertyPhoneProof,
+} from "./property-phone-verification";
+import { emptyUnit, parseUnitForm, UnitFieldSections } from "./unit-form";
 import {
   humanize,
   type ToLetPropertyView,
@@ -297,30 +307,114 @@ function formatFloor(value: number) {
   return `${value}${ordinalSuffix(value)} Floor`;
 }
 
+function ListingStepper({
+  currentStep,
+  onSelect,
+}: {
+  currentStep: number;
+  onSelect?: (step: number) => void;
+}) {
+  return (
+    <nav
+      aria-label="Listing creation progress"
+      className="rounded-lg border border-border bg-card px-3 py-4 sm:px-5"
+    >
+      <ol className="flex items-center">
+        {steps.map((step, index) => {
+          const active = currentStep === step.id;
+          const completed = currentStep > step.id;
+          return (
+            <li key={step.id} className="flex flex-1 items-center">
+              <button
+                type="button"
+                disabled={!onSelect}
+                onClick={() => onSelect?.(step.id)}
+                className="flex min-w-0 flex-col items-center gap-1 disabled:cursor-default"
+                aria-label={`Step ${step.id}: ${step.label}`}
+                aria-current={active ? "step" : undefined}
+              >
+                <span
+                  className={cn(
+                    "flex size-8 items-center justify-center rounded-full border text-xs font-semibold",
+                    active
+                      ? "border-primary text-primary ring-4 ring-primary/10"
+                      : completed
+                        ? "border-primary bg-primary text-primary-foreground"
+                        : "border-border text-muted-foreground",
+                  )}
+                >
+                  {completed ? <Check className="size-4" /> : step.id}
+                </span>
+                <span
+                  className={cn(
+                    "hidden text-xs sm:block",
+                    active ? "text-primary" : "text-muted-foreground",
+                  )}
+                >
+                  {step.label}
+                </span>
+              </button>
+              {index < steps.length - 1 ? (
+                <span
+                  className={cn(
+                    "mx-1 h-px flex-1 sm:mx-3",
+                    completed ? "bg-primary" : "bg-muted",
+                  )}
+                />
+              ) : null}
+            </li>
+          );
+        })}
+      </ol>
+    </nav>
+  );
+}
+
 function LoadedListingForm({
   property,
   unit,
   listing,
+  initialStep = 1,
+  initialOverrides,
 }: {
   property: ToLetPropertyView;
   unit: ToLetUnitView;
   listing: ToLetUnitListingView | null;
+  initialStep?: number;
+  initialOverrides?: Partial<ToLetListingFormValues>;
 }) {
   const router = useRouter();
   const createListing = useCreateToLetUnitListing();
   const updateListing = useUpdateToLetUnitListing();
   const publishListing = usePublishToLetUnitListing();
   const pauseListing = usePauseToLetUnitListing();
-  const [currentStep, setCurrentStep] = useState(1);
-  const [values, setValues] = useState(() =>
-    initialValues(property, unit, listing),
-  );
+  const [currentStep, setCurrentStep] = useState(initialStep);
+  const [values, setValues] = useState(() => ({
+    ...initialValues(property, unit, listing),
+    ...initialOverrides,
+  }));
   const capabilities = toLetUnitCapabilities(unit.unitType);
   const residentialUnit = capabilities.bedrooms;
   const showBathrooms = capabilities.bathrooms;
   const showBalconies = capabilities.balconies;
   const [errors, setErrors] = useState<FieldErrors>({});
   const [confirmed, setConfirmed] = useState(false);
+  const updateContact = useUpdateToLetPropertyContact();
+  const [savedContact, setSavedContact] = useState({
+    name: property.ownerName,
+    phone: property.mobileNumber,
+  });
+  const [contactName, setContactName] = useState(property.ownerName);
+  const [contactPhone, setContactPhone] = useState(property.mobileNumber);
+  const [phoneProof, setPhoneProof] = useState<PropertyPhoneProof | null>(null);
+  const normalizedContactPhone = normalizeBangladeshPhoneNumber(contactPhone);
+  const contactPhoneChanged =
+    normalizedContactPhone !==
+    (normalizeBangladeshPhoneNumber(savedContact.phone) ?? savedContact.phone);
+  const contactDirty =
+    contactName.trim() !== savedContact.name || contactPhoneChanged;
+  const contactPhoneVerified =
+    Boolean(normalizedContactPhone) && phoneProof?.phone === normalizedContactPhone;
   const facilities: ReadonlyArray<{
     key: keyof ToLetListingFormValues["facilityInclusions"];
     label: string;
@@ -352,6 +446,7 @@ function LoadedListingForm({
     : false;
 
   const isPending =
+    updateContact.isPending ||
     createListing.isPending ||
     updateListing.isPending ||
     publishListing.isPending ||
@@ -395,8 +490,45 @@ function LoadedListingForm({
     return false;
   };
 
-  const next = () => {
+  const saveContactIfChanged = async () => {
+    if (!contactDirty) return true;
+    const contactErrors: FieldErrors = {};
+    if (contactName.trim().length < 2) {
+      contactErrors.contactName = "Enter the contact person's name";
+    }
+    if (!normalizedContactPhone) {
+      contactErrors.contactPhone = "Enter a valid Bangladesh mobile number";
+    } else if (contactPhoneChanged && !contactPhoneVerified) {
+      contactErrors.contactPhone = "Verify the new contact number with OTP";
+    }
+    if (Object.keys(contactErrors).length > 0) {
+      setErrors((current) => ({ ...current, ...contactErrors }));
+      toast.error("Please review the contact details");
+      return false;
+    }
+    try {
+      const result = await updateContact.mutateAsync({
+        propertyCode: property.propertyCode,
+        ownerName: contactName.trim(),
+        mobileNumber: normalizedContactPhone ?? contactPhone,
+        phoneVerificationProof: contactPhoneChanged ? phoneProof?.proof : undefined,
+      });
+      setSavedContact({
+        name: result.contact.ownerName,
+        phone: result.contact.mobileNumber,
+      });
+      setContactName(result.contact.ownerName);
+      setContactPhone(result.contact.mobileNumber);
+      setPhoneProof(null);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  const next = async () => {
     if (!validateStep()) return;
+    if (currentStep === 3 && !(await saveContactIfChanged())) return;
     setCurrentStep((step) => Math.min(lastStep, step + 1));
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
@@ -446,7 +578,7 @@ function LoadedListingForm({
           listingCode,
         });
         router.push(
-          `/account/to-let/properties/${property.propertyCode}/units/${unit.unitCode}`,
+          `/account/to-let/properties/${property.propertyCode}?unit=${unit.unitCode}`,
         );
         return;
       }
@@ -539,60 +671,13 @@ function LoadedListingForm({
         </div>
       ) : null}
 
-      <nav
-        aria-label="Listing creation progress"
-        className="rounded-lg border border-border bg-card px-3 py-4 sm:px-5"
-      >
-        <ol className="flex items-center">
-          {steps.map((step, index) => {
-            const active = currentStep === step.id;
-            const completed = currentStep > step.id;
-            return (
-              <li key={step.id} className="flex flex-1 items-center">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setErrors({});
-                    setCurrentStep(step.id);
-                  }}
-                  className="flex min-w-0 flex-col items-center gap-1"
-                  aria-label={`Step ${step.id}: ${step.label}`}
-                  aria-current={active ? "step" : undefined}
-                >
-                  <span
-                    className={cn(
-                      "flex size-8 items-center justify-center rounded-full border text-xs font-semibold",
-                      active
-                        ? "border-emerald-600 text-emerald-700 ring-4 ring-emerald-50"
-                        : completed
-                          ? "border-primary bg-primary text-primary-foreground"
-                          : "border-border text-muted-foreground",
-                    )}
-                  >
-                    {completed ? <Check className="size-4" /> : step.id}
-                  </span>
-                  <span
-                    className={cn(
-                      "hidden text-xs sm:block",
-                      active ? "text-emerald-700" : "text-muted-foreground",
-                    )}
-                  >
-                    {step.label}
-                  </span>
-                </button>
-                {index < steps.length - 1 ? (
-                  <span
-                    className={cn(
-                      "mx-1 h-px flex-1 sm:mx-3",
-                      completed ? "bg-emerald-500" : "bg-muted",
-                    )}
-                  />
-                ) : null}
-              </li>
-            );
-          })}
-        </ol>
-      </nav>
+      <ListingStepper
+        currentStep={currentStep}
+        onSelect={(step) => {
+          setErrors({});
+          setCurrentStep(step);
+        }}
+      />
 
       {currentStep === 1 ? (
         <FormSection title="Step 1: Unit Details">
@@ -870,8 +955,55 @@ function LoadedListingForm({
               error={errors.utilityCharge}
               onChange={(value) => update("utilityCharge", value)}
             />
-            <ReadonlyField label="Contact Person" value={property.ownerName} />
-            <ReadonlyField label="Contact Number" value={property.mobileNumber} />
+            <div className="space-y-1.5">
+              <Label htmlFor="contact-person">Contact Person</Label>
+              <Input
+                id="contact-person"
+                value={contactName}
+                onChange={(event) => {
+                  setContactName(event.target.value);
+                  setErrors(({ contactName: _removed, ...rest }) => rest);
+                }}
+                autoComplete="name"
+                aria-invalid={Boolean(errors.contactName)}
+              />
+              <FieldError message={errors.contactName} />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="contact-number">Contact Number</Label>
+              <Input
+                id="contact-number"
+                type="tel"
+                inputMode="tel"
+                value={contactPhone}
+                onChange={(event) => {
+                  setContactPhone(event.target.value);
+                  setErrors(({ contactPhone: _removed, ...rest }) => rest);
+                }}
+                autoComplete="tel"
+                className="font-mono tabular-nums"
+                aria-invalid={Boolean(errors.contactPhone)}
+              />
+              <FieldError message={errors.contactPhone} />
+            </div>
+            {contactPhoneChanged && normalizedContactPhone ? (
+              <div className="sm:col-span-2">
+                <PropertyPhoneVerification
+                  phone={contactPhone}
+                  verified={contactPhoneVerified}
+                  onVerified={(proof) => {
+                    setPhoneProof(proof);
+                    setErrors(({ contactPhone: _removed, ...rest }) => rest);
+                  }}
+                />
+              </div>
+            ) : null}
+            <div className="sm:col-span-2">
+              <InfoNote>
+                Changing the contact updates it for every listing in this
+                property. A new number must be verified with OTP.
+              </InfoNote>
+            </div>
             <div className="space-y-1.5 sm:col-span-2">
               <Label htmlFor="available-from">Available From</Label>
               <Input
@@ -906,8 +1038,8 @@ function LoadedListingForm({
                 ],
                 ["Rent", formatMoney(values.monthlyRent)],
                 ["Advance", formatMoney(values.advanceAmount)],
-                ["Contact Person", property.ownerName],
-                ["Contact Number", property.mobileNumber],
+                ["Contact Person", savedContact.name],
+                ["Contact Number", savedContact.phone],
                 ["Available From", values.availableFrom],
               ].map(([label, value]) => (
                 <div
@@ -1037,7 +1169,7 @@ function LoadedListingForm({
           {currentStep < lastStep ? (
             <Button
               type="button"
-              onClick={next}
+              onClick={() => void next()}
               disabled={isPending}
               className="bg-primary text-primary-foreground hover:bg-primary/90"
             >
@@ -1140,6 +1272,9 @@ export function ListingForm({
   const unit = property?.units?.find(
     (candidate: ToLetUnitView) => candidate.unitCode === unitCode,
   );
+  if ((!property || !unit) && propertyQuery.isFetching) {
+    return <PropertyDetailsSkeleton />;
+  }
   if (!property || !unit) {
     return <PropertyErrorState message="This Unit could not be found." />;
   }
@@ -1163,4 +1298,160 @@ export function ListingForm({
       listing={listing}
     />
   );
+}
+
+function LoadedNewListingWizard({ property }: { property: ToLetPropertyView }) {
+  const createUnit = useCreateToLetUnit();
+  const [unitValues, setUnitValues] = useState<UnitFormValues>(emptyUnit);
+  const [unitErrors, setUnitErrors] = useState<Record<string, string>>({});
+  const [preferredTenant, setPreferredTenant] =
+    useState<ToLetListingFormValues["preferredTenant"]>("any");
+  const [videoUrl, setVideoUrl] = useState("");
+  const [createdUnit, setCreatedUnit] = useState<ToLetUnitView | null>(null);
+
+  if (createdUnit) {
+    return (
+      <LoadedListingForm
+        property={property}
+        unit={createdUnit}
+        listing={null}
+        initialStep={2}
+        initialOverrides={{ preferredTenant, videoUrl }}
+      />
+    );
+  }
+
+  const saveUnit = async () => {
+    const parsed = parseUnitForm(unitValues, true);
+    if (!parsed.ok) {
+      setUnitErrors(parsed.errors);
+      toast.error("Please review the highlighted unit fields");
+      return;
+    }
+    try {
+      const result = await createUnit.mutateAsync({
+        propertyCode: property.propertyCode,
+        data: {
+          ...parsed.data,
+          description: parsed.data.description || undefined,
+        },
+      });
+      const unit = result.unit as unknown as ToLetUnitView;
+      // Keep the URL resumable: a refresh reopens this unit's listing form.
+      window.history.replaceState(
+        null,
+        "",
+        `/account/to-let/properties/${property.propertyCode}/units/${unit.unitCode}/listing`,
+      );
+      setCreatedUnit(unit);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    } catch {
+      // The mutation hook displays the API error.
+    }
+  };
+
+  return (
+    <div className={`${fieldStyles.fields} space-y-5`}>
+      <PropertyPageHeader
+        title="Create To-Let Listing"
+        description={`${property.name} · ${property.propertyCode}`}
+        backHref={`/account/to-let/properties/${property.propertyCode}`}
+      />
+
+      <ListingStepper currentStep={1} />
+
+      <UnitFieldSections
+        property={property}
+        values={unitValues}
+        setValues={setUnitValues}
+        errors={unitErrors}
+        setErrors={setUnitErrors}
+        requirePhotos
+      />
+
+      <FormSection title="Preferred tenant & video">
+        <div className="grid gap-5">
+          <div className="space-y-2">
+            <Label>Preferred Tenant *</Label>
+            <RadioGroup
+              value={preferredTenant}
+              onValueChange={(value) =>
+                setPreferredTenant(
+                  value as ToLetListingFormValues["preferredTenant"],
+                )
+              }
+              className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4"
+              aria-describedby="new-preferred-tenant-help"
+            >
+              {preferredTenantOptions
+                .filter((option) => option.value !== "female")
+                .map((option) => (
+                  <label
+                    key={option.value}
+                    htmlFor={`new-preferred-${option.value}`}
+                    className="flex min-h-10 cursor-pointer items-center gap-2 rounded-md border border-border px-3 text-sm text-foreground"
+                  >
+                    <RadioGroupItem
+                      id={`new-preferred-${option.value}`}
+                      value={option.value}
+                    />
+                    {option.label}
+                  </label>
+                ))}
+            </RadioGroup>
+            <InfoNote id="new-preferred-tenant-help">
+              Select the type of tenant you prefer for this unit. Select
+              &ldquo;Any&rdquo; if there is no tenant-type restriction.
+            </InfoNote>
+          </div>
+          <div className="space-y-2">
+            <Label>Unit / Listing Video (Optional)</Label>
+            <PropertyVideoField
+              value={videoUrl}
+              onChange={setVideoUrl}
+              subjectLabel="Unit / listing video"
+            />
+          </div>
+        </div>
+      </FormSection>
+
+      <div className="sticky bottom-0 z-10 -mx-4 border-t border-border bg-card px-4 py-4 sm:static sm:mx-0 sm:rounded-lg sm:border sm:px-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <Button variant="outline" asChild>
+            <Link href={`/account/to-let/properties/${property.propertyCode}`}>
+              Cancel
+            </Link>
+          </Button>
+          <Button
+            type="button"
+            onClick={() => void saveUnit()}
+            disabled={createUnit.isPending}
+            className="bg-primary text-primary-foreground hover:bg-primary/90"
+          >
+            {createUnit.isPending ? <Loader2 className="animate-spin" /> : null}
+            Save &amp; Continue
+            {createUnit.isPending ? null : <ArrowRight />}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function NewListingWizard({ propertyCode }: { propertyCode: string }) {
+  const query = useMyToLetProperty(propertyCode);
+  if (query.isLoading) return <PropertyDetailsSkeleton />;
+  if (query.isError) {
+    return <PropertyErrorState onRetry={() => query.refetch()} />;
+  }
+  const property = propertyFromResponse(query.data);
+  if (!property) {
+    return <PropertyErrorState message="This property could not be found." />;
+  }
+  if (property.status === "blocked") {
+    return (
+      <PropertyErrorState message="This Property is blocked and cannot publish a listing." />
+    );
+  }
+  return <LoadedNewListingWizard property={property} />;
 }

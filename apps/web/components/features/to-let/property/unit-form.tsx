@@ -39,7 +39,7 @@ import {
 import type { ToLetPropertyView, ToLetUnitView } from "./types";
 import { UnitAddressFields } from "./unit-address-fields";
 
-const emptyUnit: UnitFormValues = {
+export const emptyUnit: UnitFormValues = {
   addressOverride: null,
   name: "",
   unitType: "",
@@ -56,7 +56,7 @@ const emptyUnit: UnitFormValues = {
   imageUrls: [],
 };
 
-function normalizeUnitValues(values: UnitFormValues): UnitFormValues {
+export function normalizeUnitValues(values: UnitFormValues): UnitFormValues {
   const capabilities = unitCapabilities(values.unitType);
   return {
     ...values,
@@ -91,6 +91,27 @@ function valuesFromUnit(unit?: ToLetUnitView): UnitFormValues {
     : emptyUnit;
 }
 
+export function parseUnitForm(
+  values: UnitFormValues,
+  requirePhotos: boolean,
+):
+  | { ok: true; data: ReturnType<typeof unitSchema.parse> }
+  | { ok: false; errors: Record<string, string> } {
+  const parsed = unitSchema.safeParse(normalizeUnitValues(values));
+  if (!parsed.success) {
+    const errors: Record<string, string> = {};
+    for (const issue of parsed.error.issues) {
+      const key = issue.path.join(".") || "form";
+      if (!errors[key]) errors[key] = issue.message;
+    }
+    return { ok: false, errors };
+  }
+  if (requirePhotos && parsed.data.imageUrls.length === 0) {
+    return { ok: false, errors: { imageUrls: "Add at least one unit photo" } };
+  }
+  return { ok: true, data: parsed.data };
+}
+
 function UnitError({ message }: { message?: string }) {
   return message ? (
     <p role="alert" className="text-xs text-red-600">
@@ -116,22 +137,22 @@ function UnitToggle({
   );
 }
 
-function LoadedUnitForm({
+export function UnitFieldSections({
   property,
-  unit,
+  values,
+  setValues,
+  errors,
+  setErrors,
+  requirePhotos,
 }: {
   property: ToLetPropertyView;
-  unit?: ToLetUnitView;
+  values: UnitFormValues;
+  setValues: React.Dispatch<React.SetStateAction<UnitFormValues>>;
+  errors: Record<string, string>;
+  setErrors: React.Dispatch<React.SetStateAction<Record<string, string>>>;
+  requirePhotos: boolean;
 }) {
-  const router = useRouter();
-  const createMutation = useCreateToLetUnit();
-  const updateMutation = useUpdateToLetUnit();
-  const [values, setValues] = useState(() => valuesFromUnit(unit));
-  const [errors, setErrors] = useState<Record<string, string>>({});
-  const isEditing = Boolean(unit);
-  const isPending = createMutation.isPending || updateMutation.isPending;
   const capabilities = unitCapabilities(values.unitType);
-
   const update = <K extends keyof UnitFormValues>(
     key: K,
     value: UnitFormValues[K],
@@ -147,85 +168,8 @@ function LoadedUnitForm({
     });
   };
 
-  const submit = async (event: React.FormEvent) => {
-    event.preventDefault();
-    const normalizedValues = normalizeUnitValues(values);
-    const parsed = unitSchema.safeParse(normalizedValues);
-    if (!parsed.success) {
-      const nextErrors: Record<string, string> = {};
-      for (const issue of parsed.error.issues) {
-        const key = issue.path.join(".") || "form";
-        if (!nextErrors[key]) nextErrors[key] = issue.message;
-      }
-      setErrors(nextErrors);
-      toast.error("Please review the highlighted fields");
-      return;
-    }
-    if (!unit && parsed.data.imageUrls.length === 0) {
-      setErrors((current) => ({
-        ...current,
-        imageUrls: "Add at least one unit photo",
-      }));
-      toast.error("Add at least one unit photo");
-      return;
-    }
-
-    const data = {
-      ...parsed.data,
-      description: parsed.data.description || undefined,
-    };
-
-    try {
-      if (unit) {
-        await updateMutation.mutateAsync({
-          propertyCode: property.propertyCode,
-          unitCode: unit.unitCode,
-          data,
-        });
-        router.push(
-          `/account/to-let/properties/${property.propertyCode}/units/${unit.unitCode}`,
-        );
-      } else {
-        const created = await createMutation.mutateAsync({
-          propertyCode: property.propertyCode,
-          data,
-        });
-        router.push(
-          `/account/to-let/properties/${property.propertyCode}/units/${created.unit.unitCode}/listing`,
-        );
-      }
-    } catch {
-      // Mutation hooks display API errors.
-    }
-  };
-
   return (
-    <form onSubmit={submit} className={`${fieldStyles.fields} space-y-5`}>
-      <PropertyPageHeader
-        title={isEditing ? "Edit Unit" : "Create Unit"}
-        description={`${property.name} · ${property.propertyCode}`}
-        backHref={
-          unit
-            ? `/account/to-let/properties/${property.propertyCode}/units/${unit.unitCode}`
-            : `/account/to-let/properties/${property.propertyCode}`
-        }
-      />
-
-      <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4">
-        <div className="flex items-start gap-3">
-          <Building2 className="mt-0.5 size-5 shrink-0 text-emerald-600" />
-          <div>
-            <p className="text-sm font-semibold text-emerald-900">
-              Physical unit only
-            </p>
-            <p className="mt-0.5 text-xs leading-5 text-emerald-700">
-              Rent, availability, contact and publishing belong to a future
-              listing. This unit can be reused for multiple listings over time.
-            </p>
-          </div>
-        </div>
-      </div>
-
+    <>
       <UnitAddressFields
         property={property}
         value={values.addressOverride}
@@ -397,12 +341,12 @@ function LoadedUnitForm({
 
       <section className="rounded-lg border border-border bg-card p-5 sm:p-6">
         <h2 className="font-semibold text-foreground">
-          Unit photos{!unit ? " *" : ""}
+          Unit photos{requirePhotos ? " *" : ""}
         </h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          {unit
-            ? "Add up to 8 reusable JPG, PNG or WebP photos."
-            : "Add 1 to 8 reusable JPG, PNG or WebP photos. At least one photo is required."}
+          {requirePhotos
+            ? "Add 1 to 8 reusable JPG, PNG or WebP photos. At least one photo is required."
+            : "Add up to 8 reusable JPG, PNG or WebP photos."}
         </p>
         <div className="mt-4">
           <AdditionalImagesUploader
@@ -415,6 +359,102 @@ function LoadedUnitForm({
           <UnitError message={errors.imageUrls} />
         </div>
       </section>
+    </>
+  );
+}
+
+function LoadedUnitForm({
+  property,
+  unit,
+}: {
+  property: ToLetPropertyView;
+  unit?: ToLetUnitView;
+}) {
+  const router = useRouter();
+  const createMutation = useCreateToLetUnit();
+  const updateMutation = useUpdateToLetUnit();
+  const [values, setValues] = useState(() => valuesFromUnit(unit));
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const isEditing = Boolean(unit);
+  const isPending = createMutation.isPending || updateMutation.isPending;
+
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    const parsed = parseUnitForm(values, !unit);
+    if (!parsed.ok) {
+      setErrors(parsed.errors);
+      toast.error(
+        parsed.errors.imageUrls && Object.keys(parsed.errors).length === 1
+          ? "Add at least one unit photo"
+          : "Please review the highlighted fields",
+      );
+      return;
+    }
+
+    const data = {
+      ...parsed.data,
+      description: parsed.data.description || undefined,
+    };
+
+    try {
+      if (unit) {
+        await updateMutation.mutateAsync({
+          propertyCode: property.propertyCode,
+          unitCode: unit.unitCode,
+          data,
+        });
+        router.push(
+          `/account/to-let/properties/${property.propertyCode}/units/${unit.unitCode}`,
+        );
+      } else {
+        const created = await createMutation.mutateAsync({
+          propertyCode: property.propertyCode,
+          data,
+        });
+        router.push(
+          `/account/to-let/properties/${property.propertyCode}/units/${created.unit.unitCode}/listing`,
+        );
+      }
+    } catch {
+      // Mutation hooks display API errors.
+    }
+  };
+
+  return (
+    <form onSubmit={submit} className={`${fieldStyles.fields} space-y-5`}>
+      <PropertyPageHeader
+        title={isEditing ? "Edit Unit" : "Create Unit"}
+        description={`${property.name} · ${property.propertyCode}`}
+        backHref={
+          unit
+            ? `/account/to-let/properties/${property.propertyCode}/units/${unit.unitCode}`
+            : `/account/to-let/properties/${property.propertyCode}`
+        }
+      />
+
+      <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4">
+        <div className="flex items-start gap-3">
+          <Building2 className="mt-0.5 size-5 shrink-0 text-emerald-600" />
+          <div>
+            <p className="text-sm font-semibold text-emerald-900">
+              Physical unit only
+            </p>
+            <p className="mt-0.5 text-xs leading-5 text-emerald-700">
+              Rent, availability, contact and publishing belong to a future
+              listing. This unit can be reused for multiple listings over time.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <UnitFieldSections
+        property={property}
+        values={values}
+        setValues={setValues}
+        errors={errors}
+        setErrors={setErrors}
+        requirePhotos={!unit}
+      />
 
       <div className="sticky bottom-0 z-10 -mx-4 border-t border-border bg-card px-4 py-4 sm:static sm:mx-0 sm:border-0 sm:bg-transparent sm:px-0 sm:py-0">
         <div className="flex justify-end gap-3">
@@ -474,6 +514,7 @@ export function UnitForm({
   const unit = unitCode
     ? property.units?.find((item) => item.unitCode === unitCode)
     : undefined;
+  if (unitCode && !unit && query.isFetching) return <PropertyDetailsSkeleton />;
   if (unitCode && !unit) {
     return <PropertyErrorState message="This unit could not be found." />;
   }

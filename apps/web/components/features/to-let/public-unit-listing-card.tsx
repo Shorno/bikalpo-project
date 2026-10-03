@@ -1,4 +1,4 @@
-import { ArrowRight, Bath, BedDouble, Eye, MapPin, Phone, Fence } from "lucide-react";
+import { Bath, BedDouble, Eye, MapPin, Phone, Fence } from "lucide-react";
 import Link from "next/link";
 import { toLetCategoryLabel as humanize, toLetUnitCapabilities } from "@bikalpo-project/api/lib/tolet-categories";
 import { ListingImageCarousel } from "./listing-image-carousel";
@@ -137,16 +137,16 @@ export function PublicUnitListingCard({
         <div
           data-slot="actions"
           className={`mt-auto grid gap-2 border-t border-border pt-3 ${
-            !isBooked && contactPhone ? "grid-cols-2" : "grid-cols-1"
+            !isBooked && contactPhone ? "grid-cols-[auto_minmax(0,1fr)]" : "grid-cols-1"
           }`}
         >
           {!isBooked && contactPhone ? (
             <a
               href={`tel:${contactPhone}`}
               aria-label={`Call about ${displayTitle}`}
-              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+              className="group/call inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-border bg-card px-4 py-2 text-sm font-semibold text-foreground transition-[color,border-color,background-color,transform] duration-200 ease-out hover:border-primary/40 hover:bg-primary/[0.04] hover:text-primary active:scale-[0.98] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring motion-reduce:transition-none"
             >
-              <Phone className="size-3.5" /> Call
+              <Phone className="size-3.5 transition-transform duration-200 ease-out group-hover/call:-rotate-12 motion-reduce:transition-none" aria-hidden="true" /> Call
             </a>
           ) : !isBooked ? (
             <span className="inline-flex min-h-11 items-center justify-center rounded-lg border border-border px-3 py-2 text-xs font-medium text-muted-foreground">
@@ -158,9 +158,10 @@ export function PublicUnitListingCard({
             <Link
               href={detailHref}
               aria-label={`View details for ${displayTitle}`}
-              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+              className="inline-flex min-h-10 items-center justify-center gap-2 rounded-lg bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary/90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
             >
-              View Details <ArrowRight className="size-3.5" />
+              <Eye className="size-4" aria-hidden="true" />
+              <span className="truncate whitespace-nowrap">View Details</span>
             </Link>
           ) : (
             <span className="inline-flex min-h-11 items-center justify-center rounded-lg bg-muted px-3 py-2 text-xs font-medium text-muted-foreground">

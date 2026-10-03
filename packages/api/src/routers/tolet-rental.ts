@@ -14,11 +14,11 @@ import {
 } from "@bikalpo-project/db/schema";
 import { env } from "@bikalpo-project/env/server";
 import { ORPCError } from "@orpc/server";
-import { and, asc, count, desc, eq, inArray, isNull, gte, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, inArray, isNull, gte, or, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { consumerProcedure, publicProcedure } from "../index";
-import { canAccessToLetRentalDetails, isToLetCalendarDate, toLetDhakaDateString } from "./helpers/tolet-rental-lifecycle";
+import { canAccessToLetRentalDetails, isToLetCalendarDate, toLetContractEnd, toLetDhakaDateString, toLetOpenEndedLeaveDate } from "./helpers/tolet-rental-lifecycle";
 import { toLetRentOtp, verifyToLetRentPayment } from "../services/tolet-rent-payment";
 import { ownerUnitRentalHistoryProcedure } from "./tolet-owner-rental-history";
 import { syncToLetAlertNotifications } from "../services/tolet-alert-notifications";
@@ -44,6 +44,40 @@ const unitCodeSchema = z
 	.trim()
 	.regex(/^UNT-\d{6,10}$/, "Invalid Unit ID");
 const dateSchema = z.string().refine(isToLetCalendarDate, "Enter a valid calendar date (YYYY-MM-DD)");
+const contractTypeSchema = z.enum(["monthly_rental"]);
+const agreementPaymentTypeSchema = z.enum([
+	"advance",
+	"security_deposit",
+	"advance_security_deposit",
+	"advance_security_deposit_rent",
+	"rent",
+]);
+const optionalNoteSchema = z.preprocess(
+	(value) => (typeof value === "string" && value.trim() === "" ? undefined : value),
+	z.string().trim().max(2000).optional(),
+);
+
+// Amounts come from the booking snapshot the tenant accepted, never from the client.
+function agreementPaymentAmount(
+	type: z.infer<typeof agreementPaymentTypeSchema>,
+	offer: { advanceAmount: number; securityDeposit: number; monthlyRent: number },
+) {
+	const advance = Number(offer.advanceAmount) || 0;
+	const deposit = Number(offer.securityDeposit) || 0;
+	const rent = Number(offer.monthlyRent) || 0;
+	switch (type) {
+		case "advance":
+			return advance;
+		case "security_deposit":
+			return deposit;
+		case "advance_security_deposit":
+			return advance + deposit;
+		case "advance_security_deposit_rent":
+			return advance + deposit + rent;
+		case "rent":
+			return rent;
+	}
+}
 
 function publicNumber(code: string) {
 	const value = Number(code.split("-").at(-1));
@@ -113,7 +147,7 @@ async function rentalDto(bookingCode: string, userId: string) {
 	const isOwner = row.contract.ownerUserId === userId;
 	const today = toLetDhakaDateString();
 	const canShowOtp = isOwner && ["active", "leaving"].includes(row.contract.status) &&
-		row.contract.startDate <= today && row.contract.endDate >= today;
+		row.contract.startDate <= today && toLetContractEnd(row.contract.endDate) >= today;
 	const comments = await db
 		.select()
 		.from(toletRentalComment)
@@ -133,6 +167,12 @@ async function rentalDto(bookingCode: string, userId: string) {
 		serviceCharge: Number(row.contract.serviceCharge),
 		parkingCharge: Number(row.contract.parkingCharge),
 		utilityCharge: Number(row.contract.utilityCharge),
+		contractType: row.contract.contractType,
+		paymentType: row.contract.paymentType,
+		paymentAmount:
+			row.contract.paymentAmount === null ? null : Number(row.contract.paymentAmount),
+		note: row.contract.note,
+		agreementFileUrl: row.contract.agreementFileUrl,
 		activatedAt: row.contract.activatedAt.toISOString(),
 		leaveRequestedAt: row.contract.leaveRequestedAt?.toISOString() ?? null,
 		accessEndsAt: row.contract.accessEndsAt?.toISOString() ?? null,
@@ -225,7 +265,7 @@ export const toLetRentalRouter = {
 			const rows = await db.select({ publicNumber: toletBookingRequest.publicNumber, title: toletUnit.name, propertyName: toletProperty.name })
 				.from(toletRentalContract).innerJoin(toletBookingRequest, eq(toletRentalContract.bookingRequestId, toletBookingRequest.id))
 				.innerJoin(toletUnit, eq(toletRentalContract.unitId, toletUnit.id)).innerJoin(toletProperty, eq(toletRentalContract.propertyId, toletProperty.id))
-				.where(and(eq(toletRentalContract.tenantUserId, context.session.user.id), inArray(toletRentalContract.status, ["active", "leaving"]), gte(toletRentalContract.endDate, toLetDhakaDateString())))
+				.where(and(eq(toletRentalContract.tenantUserId, context.session.user.id), inArray(toletRentalContract.status, ["active", "leaving"]), or(isNull(toletRentalContract.endDate), gte(toletRentalContract.endDate, toLetDhakaDateString()))))
 				.orderBy(desc(toletRentalContract.createdAt)).limit(100);
 			return { rentals: rows.map(row => ({ bookingCode: `BKG-${String(row.publicNumber).padStart(6, "0")}`, title: `${row.propertyName} · ${row.title}` })) };
 		}),
@@ -386,15 +426,19 @@ export const toLetRentalRouter = {
 					propertyCode: propertyCodeSchema,
 					unitCode: unitCodeSchema,
 					bookingCode: bookingCodeSchema,
+					contractType: contractTypeSchema.default("monthly_rental"),
 					startDate: dateSchema,
-					endDate: dateSchema,
+					endDate: dateSchema.optional(),
 					rentDueDay: z.literal(TO_LET_RENT_DUE_DAY),
+					paymentType: agreementPaymentTypeSchema,
+					note: optionalNoteSchema,
+					agreementFileUrl: z.url().max(2000).optional(),
 					contractSigned: z.literal(true),
 				})
 				.strict(),
 		)
 		.handler(async ({ context, input }) => {
-			if (input.endDate < input.startDate) {
+			if (input.endDate && input.endDate < input.startDate) {
 				throw new ORPCError("BAD_REQUEST", {
 					message: "Contract end date must be on or after the start date",
 				});
@@ -440,6 +484,7 @@ export const toLetRentalRouter = {
 				}
 
 				const offer = row.booking.offerSnapshot.listing;
+				const paymentAmount = agreementPaymentAmount(input.paymentType, offer);
 				const now = new Date();
 				const [created] = await tx
 					.insert(toletRentalContract)
@@ -450,8 +495,13 @@ export const toLetRentalRouter = {
 						ownerUserId: row.property.ownerUserId,
 						tenantUserId: row.booking.requesterUserId,
 						startDate: input.startDate,
-						endDate: input.endDate,
+						endDate: input.endDate ?? null,
 						rentDueDay: input.rentDueDay,
+						contractType: input.contractType,
+						paymentType: input.paymentType,
+						paymentAmount: String(paymentAmount),
+						note: input.note ?? null,
+						agreementFileUrl: input.agreementFileUrl ?? null,
 						monthlyRent: String(offer.monthlyRent),
 						advanceAmount: String(offer.advanceAmount),
 						securityDeposit: String(offer.securityDeposit),
@@ -577,13 +627,15 @@ export const toLetRentalRouter = {
 				});
 			}
 			const now = new Date();
-			const accessEndsAt = new Date(`${row.contract.endDate}T23:59:59+06:00`);
+			const endDate = row.contract.endDate ?? toLetOpenEndedLeaveDate();
+			const accessEndsAt = new Date(`${endDate}T23:59:59+06:00`);
 			await db.transaction(async (tx) => {
 				const changed = await tx
 					.update(toletRentalContract)
 					.set({
 						status: "leaving",
 						leaveRequestedAt: now,
+						endDate,
 						accessEndsAt,
 						updatedAt: now,
 					})

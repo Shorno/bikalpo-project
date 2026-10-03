@@ -18,14 +18,16 @@
   scroll-snap-align: start;
   scroll-snap-stop: always;
 }
-.page > a { min-width: 0; justify-content: center; text-align: center; padding: 12px 6px; }
+.page > a { min-width: 0; flex-direction: column; justify-content: center; gap: 4px; text-align: center; padding: 12px 6px; }
 .page > a > span:first-child { display: none; }
-.page > a span { white-space: normal; overflow: visible; }
+.page > a span { flex: none; white-space: normal; overflow: visible; }
+.page > a > svg:last-child { display: none; }
 @media (min-width: 768px) {
   .track { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; overflow: visible; }
   .page { display: contents; }
-  .page > a { justify-content: flex-start; text-align: left; padding: 12px 16px; }
+  .page > a { flex-direction: row; justify-content: flex-start; gap: 12px; text-align: left; padding: 12px 16px; }
   .page > a > span:first-child { display: flex; }
+  .page > a > span:nth-child(2) { flex: 1 1 0%; }
+  .page > a > svg:last-child { display: block; }
 }
 @media (min-width: 1024px) { .track { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
-@media (min-width: 1280px) { .track { grid-template-columns: repeat(6, minmax(0, 1fr)); } }

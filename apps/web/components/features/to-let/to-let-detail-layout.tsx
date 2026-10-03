@@ -1,4 +1,5 @@
-import { Check, Eye, MapPin, X } from "lucide-react";
+import type { ToLetFacilityInclusions } from "@bikalpo-project/api/lib/tolet-facilities";
+import { Check, Eye, Info, MapPin, X } from "lucide-react";
 import type { ElementType, ReactNode } from "react";
 import { PublicListingGallery } from "@/components/features/to-let/public-listing-gallery";
 
@@ -333,10 +334,12 @@ export function ToLetFacilityRow({
   label,
   available,
   included,
+  showInclusion = true,
 }: {
   label: string;
   available: boolean | undefined;
-  included: boolean | null | undefined;
+  included?: boolean | null;
+  showInclusion?: boolean;
 }) {
   return (
     <div className="space-y-2">
@@ -354,12 +357,105 @@ export function ToLetFacilityRow({
           <span className="sr-only">{available ? "Available: " : "Not available: "}</span>
           {label}
         </span>
-        <ToLetChoicePair
-          positiveLabel="Included"
-          negativeLabel="Excluded"
-          positive={included === true}
-          recorded={available === true && typeof included === "boolean"}
-        />
+        {showInclusion ? (
+          <ToLetChoicePair
+            positiveLabel="Included"
+            negativeLabel="Excluded"
+            positive={included === true}
+            recorded={available === true && typeof included === "boolean"}
+          />
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+export type ToLetFacilityEntry = {
+  key: string;
+  label: string;
+  available: boolean | undefined;
+  included?: boolean | null;
+};
+
+type PropertyFacilityFlags = {
+  hasWaterSupply?: boolean;
+  hasGasConnection?: boolean;
+  hasElectricity?: boolean;
+  hasLift?: boolean;
+  hasParking?: boolean;
+  hasGenerator?: boolean;
+  hasSecurityGuard?: boolean;
+  hasCctv?: boolean;
+};
+
+// The one ordered facility list every unit/listing page shows (client PDF order).
+export function toLetUnitFacilities({
+  property,
+  hasInternet,
+  isFurnished,
+  inclusions,
+}: {
+  property: PropertyFacilityFlags | null | undefined;
+  hasInternet: boolean | undefined;
+  isFurnished: boolean | undefined;
+  inclusions?: ToLetFacilityInclusions | null;
+}): ToLetFacilityEntry[] {
+  return [
+    { key: "water", label: "Water Supply", available: property?.hasWaterSupply, included: inclusions?.water },
+    { key: "gas", label: "Gas", available: property?.hasGasConnection, included: inclusions?.gas },
+    { key: "electricity", label: "Electricity", available: property?.hasElectricity, included: inclusions?.electricity },
+    { key: "internet", label: "Internet", available: hasInternet, included: inclusions?.internet },
+    { key: "lift", label: "Lift", available: property?.hasLift, included: inclusions?.lift },
+    { key: "parking", label: "Parking", available: property?.hasParking, included: inclusions?.parking },
+    { key: "generator", label: "Generator", available: property?.hasGenerator, included: inclusions?.generator },
+    { key: "furnished", label: "Furnished", available: isFurnished, included: inclusions?.furnished },
+  ];
+}
+
+export function toLetPropertyFacilities(
+  property: PropertyFacilityFlags,
+): ToLetFacilityEntry[] {
+  return [
+    { key: "water", label: "Water Supply", available: property.hasWaterSupply },
+    { key: "gas", label: "Gas", available: property.hasGasConnection },
+    { key: "electricity", label: "Electricity", available: property.hasElectricity },
+    { key: "lift", label: "Lift", available: property.hasLift },
+    { key: "parking", label: "Parking", available: property.hasParking },
+    { key: "generator", label: "Generator", available: property.hasGenerator },
+    { key: "security", label: "Security", available: property.hasSecurityGuard },
+    { key: "cctv", label: "CCTV", available: property.hasCctv },
+  ];
+}
+
+export function ToLetFacilityList({
+  facilities,
+  showInclusion = true,
+}: {
+  facilities: ToLetFacilityEntry[];
+  showInclusion?: boolean;
+}) {
+  return (
+    <div>
+      {showInclusion ? (
+        <p className="flex items-start gap-1.5 text-xs leading-5 text-muted-foreground">
+          <Info className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
+          <span>
+            &ldquo;Included&rdquo; means the facility/charge is included in the
+            monthly rent. &ldquo;Excluded&rdquo; means the facility/charge is
+            not included in the monthly rent and may be charged separately.
+          </span>
+        </p>
+      ) : null}
+      <div className="mt-5 max-w-xl space-y-5">
+        {facilities.map((facility) => (
+          <ToLetFacilityRow
+            key={facility.key}
+            label={facility.label}
+            available={facility.available}
+            included={facility.included}
+            showInclusion={showInclusion}
+          />
+        ))}
       </div>
     </div>
   );

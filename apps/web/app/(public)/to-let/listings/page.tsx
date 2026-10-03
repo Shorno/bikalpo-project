@@ -5,6 +5,7 @@ import { PublicUnitListingCard } from "@/components/features/to-let/public-unit-
 import { getPublicOrpcClient } from "@/lib/orpc/public-server";
 import { parseToLetSearchParams, toLetBrowseHref, type ToLetMarketplaceSearchParams } from "@/lib/to-let-marketplace";
 import { ToLetSearchButton } from "@/components/features/to-let/to-let-search-button";
+import { toLetChip, toLetChipRow, toLetPrimaryButton } from "@/components/features/to-let/to-let-button";
 import styles from "../to-let-mobile.module.css";
 
 export const metadata = { title: "All To-Let listings | Bikalpo" };
@@ -22,25 +23,25 @@ export default async function ListingsPage({ searchParams }: { searchParams: Pro
     <h1 className="mt-4 text-3xl font-semibold">All To-Let listings</h1>
     <Form action="/to-let/listings" className="my-6 flex flex-wrap gap-3">
       <label className="sr-only" htmlFor="listing-search">Search listings</label>
-      <input id="listing-search" name="q" defaultValue={q} maxLength={200} placeholder="Location or property name" className="min-h-11 min-w-0 flex-1 rounded-md border bg-background px-3" />
+      <input id="listing-search" name="q" defaultValue={q} maxLength={200} placeholder="Location or property name" className="min-h-11 min-w-0 flex-1 rounded-lg border border-input bg-background px-3 outline-none focus:border-primary focus:ring-2 focus:ring-primary/15" />
       {type && <input type="hidden" name="type" value={type} />}
-      <ToLetSearchButton className="inline-flex min-h-11 items-center gap-2 rounded-md bg-primary px-5 text-primary-foreground disabled:opacity-60" />
-      {(q || type) && <Link className="inline-flex min-h-11 items-center text-primary" href="/to-let/listings">Clear filters</Link>}
+      <ToLetSearchButton className={`${toLetPrimaryButton} min-h-11 px-5`} />
+      {(q || type) && <Link className="inline-flex min-h-11 items-center text-sm font-semibold text-primary underline-offset-4 hover:underline" href="/to-let/listings">Clear filters</Link>}
     </Form>
-    <nav aria-label="Listing categories" className="mb-5 flex gap-2 overflow-x-auto pb-2 md:flex-wrap">
+    <nav aria-label="Listing categories" className={`mb-5 flex gap-2 overflow-x-auto md:flex-wrap ${toLetChipRow}`}>
       {[undefined, ...toLetUnitTypes].map(category => (
         <Link
           key={category ?? "all"}
           href={toLetBrowseHref(q, category)}
           aria-current={type === category ? "page" : undefined}
-          className={`inline-flex min-h-11 shrink-0 items-center whitespace-nowrap rounded-md border px-3 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring ${type === category ? "border-primary bg-primary text-primary-foreground" : "border-border bg-card text-muted-foreground hover:bg-muted hover:text-foreground"}`}
+          className={toLetChip(type === category)}
         >
           {category ? toLetCategoryLabel(category) : "All listings"}
         </Link>
       ))}
     </nav>
     <p className="mb-5 text-sm text-muted-foreground">{result.total} matching listings{type ? ` · ${toLetCategoryLabel(type)}` : ""}</p>
-    {result.listings.length ? <div className={`${styles.listings} grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-3 xl:grid-cols-4`}>{result.listings.map(listing => <PublicUnitListingCard key={listing.listingCode} listing={listing} />)}</div> : <p className="rounded-lg border p-8">No listings on this page. Try another search or return to the first page.</p>}
+    {result.listings.length ? <div className="grid grid-cols-2 gap-x-2 gap-y-5 md:gap-4 lg:grid-cols-3 xl:grid-cols-4">{result.listings.map(listing => <PublicUnitListingCard key={listing.listingCode} listing={listing} compactMobile />)}</div> : <p className="rounded-lg border p-8">No listings on this page. Try another search or return to the first page.</p>}
     <nav aria-label="Listing pages" className="mt-8 flex items-center justify-between gap-4">
       {page > 1 ? <Link className="inline-flex min-h-11 items-center text-primary" href={href(page - 1)}>Previous</Link> : <span />}
       <span>Page {page} / {pages}</span>

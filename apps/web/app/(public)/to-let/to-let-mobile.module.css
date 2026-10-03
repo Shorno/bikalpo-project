@@ -22,22 +22,29 @@
   .heroBanner [data-slot="banner-controls"] { color: var(--primary); padding: 0 16px; flex-wrap: wrap; }
   .heroBanner form {
     margin: 0;
-    padding: 20px;
-    gap: 10px;
+    padding: 14px 14px 10px;
+    gap: 8px;
     grid-template-columns: minmax(0, 1fr) 104px;
     border-radius: 0;
   }
   .heroBanner form > label:first-child { grid-column: 1 / -1; }
-  .heroBanner form input, .heroBanner form select { border: 1px solid var(--border); background: var(--background); height: 48px; }
-  .heroBanner form button { height: 48px; padding-inline: 12px; }
+  .heroBanner form input, .heroBanner form select { border: 1px solid var(--border); background: var(--background); height: 36px; }
+  .heroBanner form button { height: 36px; padding-inline: 12px; font-size: 13px; }
+  /* Secondary hero actions read as quiet links on phones; the Search button is the one solid action. */
   .heroBanner form + div {
-    margin: 0 20px;
-    padding: 8px 0 16px;
+    margin: 0 16px;
+    padding: 2px 0 4px;
     border-top: 1px solid var(--border);
     justify-content: space-between;
     gap: 8px;
   }
-  .heroBanner form + div a { display: inline-flex; min-height: 44px; align-items: center; padding: 0; color: var(--primary); background: transparent; font-size: 12px; }
+  .heroBanner form + div a {
+    min-width: 0; min-height: 32px; padding: 0; gap: 6px;
+    background: transparent; border: 0; color: var(--primary);
+    font-size: 13px; white-space: nowrap;
+  }
+  .heroBanner form + div a:hover { background: transparent; text-decoration: underline; text-underline-offset: 4px; }
+  .heroBanner form + div a svg { flex-shrink: 0; width: 15px; height: 15px; }
   .categories {
     grid-template-columns: none;
     grid-auto-flow: column;
@@ -83,12 +90,6 @@
 
   .landing input, .landing select, .landing textarea { font-size: 16px; }
 
-  .listings > article > div:last-child > div:first-child {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 4px;
-  }
-
   .categories > a {
     flex-direction: column;
     justify-content: center;
@@ -105,29 +106,20 @@
     white-space: normal;
     overflow: visible;
   }
+}
 
-  .listings > article {
-    min-width: 0;
-  }
+/* Narrowest phones: drop the link icons so both labels stay on one line. */
+@media (max-width: 340px) {
+  .heroBanner form + div a svg { display: none; }
+}
 
-  .listings > article > div:last-child {
-    padding: 10px;
-  }
-
-  .listings :global(.aspect-video) {
-    aspect-ratio: 1 / 1;
-  }
-
-  .listings h3, .listings p, .listings span {
-    overflow-wrap: anywhere;
-  }
-
-  .listings :global(.mt-auto.grid) {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .listings :global(.mt-auto.grid) > a {
-    min-height: 44px;
-    padding-inline: 4px;
-  }
+/* Phones: every To-Let action (landing + listings) steps down to a 36px control. */
+@media (max-width: 767px) {
+  .landing :global(.min-h-11),
+  .landing :global(.min-h-10),
+  .landing :global(.h-11),
+  .landing :global(.h-10) { min-height: 36px; height: auto; }
+  .landing :is(a, button):global(.size-11) { width: 36px; height: 36px; }
+  .landing :is(a, button):global(.min-h-11),
+  .landing :is(a, button):global(.min-h-10) { padding-block: 6px; }
 }

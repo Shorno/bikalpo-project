@@ -1,14 +1,27 @@
 export const TO_LET_RENT_DUE_DAY = 1 as const;
 
+// Open-ended contracts (no end date) compare as running far into the future.
+export const TO_LET_OPEN_ENDED_DATE = "9999-12-31";
+
+export function toLetContractEnd(endDate: string | null) {
+	return endDate ?? TO_LET_OPEN_ENDED_DATE;
+}
+
+// Leaving an open-ended contract gives one month's notice: it ends on the last day of next month.
+export function toLetOpenEndedLeaveDate(today = toLetDhakaDateString()) {
+	const [year, month] = today.split("-").map(Number);
+	return new Date(Date.UTC(year ?? 0, (month ?? 1) + 1, 0)).toISOString().slice(0, 10);
+}
+
 export function canAccessToLetRentalDetails(
-	contract: { status: string; endDate: string; ownerUserId: string; tenantUserId: string },
+	contract: { status: string; endDate: string | null; ownerUserId: string; tenantUserId: string },
 	userId: string,
 	today = toLetDhakaDateString(),
 ) {
 	if (contract.ownerUserId === userId) return true;
 	return contract.tenantUserId === userId &&
 		(contract.status === "active" || contract.status === "leaving") &&
-		contract.endDate >= today;
+		toLetContractEnd(contract.endDate) >= today;
 }
 
 export function toLetDhakaDateString(date = new Date()) {
@@ -41,19 +54,19 @@ function dueDate(cycleMonth: string, dueDay: number) {
 }
 
 export function shouldCompleteToLetContract(
-	contract: { status: string; endDate: string },
+	contract: { status: string; endDate: string | null },
 	today = toLetDhakaDateString(),
 ) {
 	return (
 		(contract.status === "active" || contract.status === "leaving") &&
-		contract.endDate < today
+		toLetContractEnd(contract.endDate) < today
 	);
 }
 
 export function toLetRentCyclesThroughDate(
 	contract: {
 		startDate: string;
-		endDate: string;
+		endDate: string | null;
 		rentDueDay: number;
 		monthlyRent: string;
 	},
@@ -61,10 +74,9 @@ export function toLetRentCyclesThroughDate(
 ) {
 	// A contract signed in advance must not generate a payable first-month row
 	// before move-in, even when move-in is later in the current calendar month.
-	if (contract.startDate > today || contract.endDate < contract.startDate) return [];
-	const lastMonth = monthStart(
-		contract.endDate < today ? contract.endDate : today,
-	);
+	const endDate = toLetContractEnd(contract.endDate);
+	if (contract.startDate > today || endDate < contract.startDate) return [];
+	const lastMonth = monthStart(endDate < today ? endDate : today);
 	let cycle = monthStart(contract.startDate);
 	const rows: Array<{ cycleMonth: string; dueDate: string; amount: string }> =
 		[];
