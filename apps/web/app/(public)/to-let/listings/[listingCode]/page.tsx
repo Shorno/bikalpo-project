@@ -2,7 +2,6 @@ import {
   Building2,
   ChevronRight,
   ExternalLink,
-  Info,
   MapPin,
   Phone,
   ShieldCheck,
@@ -22,11 +21,12 @@ import {
   ToLetDetailHero,
   ToLetDetailsSection,
   ToLetDetailsShell,
-  ToLetFacilityRow,
+  ToLetFacilityList,
   ToLetInfoTile,
   ToLetOptionTile,
   ToLetRentItem,
   ToLetYesNoTile,
+  toLetUnitFacilities,
 } from "@/components/features/to-let/to-let-detail-layout";
 import {
   getPublicToLetUnitListingByCode,
@@ -155,17 +155,6 @@ export default async function PublicListingPage({
     ...(listing.preferredTenant === "female"
       ? [{ value: "female", label: "Female" }]
       : []),
-  ];
-  const inclusions = listing.facilityInclusions;
-  const facilities = [
-    { label: "Water Supply", available: listing.property.hasWaterSupply, included: inclusions?.water },
-    { label: "Gas", available: listing.property.hasGasConnection, included: inclusions?.gas },
-    { label: "Electricity", available: listing.property.hasElectricity, included: inclusions?.electricity },
-    { label: "Internet", available: listing.hasInternet, included: inclusions?.internet },
-    { label: "Lift", available: listing.property.hasLift, included: inclusions?.lift },
-    { label: "Parking", available: listing.property.hasParking, included: inclusions?.parking },
-    { label: "Generator", available: listing.property.hasGenerator, included: inclusions?.generator },
-    { label: "Furnished", available: listing.unit.isFurnished, included: inclusions?.furnished },
   ];
 
   return (
@@ -353,25 +342,14 @@ export default async function PublicListingPage({
               title="Facilities"
               embedded
             >
-              <p className="flex items-start gap-1.5 text-xs leading-5 text-muted-foreground">
-                <Info className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
-                <span>
-                  &ldquo;Included&rdquo; means the facility/charge is included
-                  in the monthly rent. &ldquo;Excluded&rdquo; means the
-                  facility/charge is not included in the monthly rent and may be
-                  charged separately.
-                </span>
-              </p>
-              <div className="mt-5 max-w-xl space-y-5">
-                {facilities.map((facility) => (
-                  <ToLetFacilityRow
-                    key={facility.label}
-                    label={facility.label}
-                    available={facility.available}
-                    included={facility.included}
-                  />
-                ))}
-              </div>
+              <ToLetFacilityList
+                facilities={toLetUnitFacilities({
+                  property: listing.property,
+                  hasInternet: listing.hasInternet,
+                  isFurnished: listing.unit.isFurnished,
+                  inclusions: listing.facilityInclusions,
+                })}
+              />
               <div className="mt-5">
                 <p className="text-sm font-medium text-foreground">
                   Other Facilities

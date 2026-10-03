@@ -1,4 +1,5 @@
-import { ArrowRight } from "lucide-react";
+import { LayoutGrid } from "lucide-react";
+import { toLetPrimaryButton } from "@/components/features/to-let/to-let-button";
 import Link from "next/link";
 import { toLetCategoryLabel } from "@bikalpo-project/api/lib/tolet-categories";
 import { toLetBrowseHref, type ToLetMarketRentalType } from "@/lib/to-let-marketplace";
@@ -15,9 +16,9 @@ export function LandingListingGrid({ initialListings, total, query, type }: {
     </div>
     <div className="mt-6 flex flex-col items-center gap-3">
       <p className="text-sm text-muted-foreground">Showing {listings.length} of {total} listings</p>
-      <Link href={toLetBrowseHref(query, type)} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg border border-border bg-card px-5 py-2 text-sm font-semibold text-primary transition-colors hover:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring">
+      <Link href={toLetBrowseHref(query, type)} className={`${toLetPrimaryButton} px-5`}>
+        <LayoutGrid className="size-4" aria-hidden="true" />
         {category ? `See all ${category} listings` : "See all listings"}
-        <ArrowRight className="size-4" aria-hidden="true" />
       </Link>
     </div>
   </>;

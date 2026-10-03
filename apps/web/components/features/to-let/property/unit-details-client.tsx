@@ -39,8 +39,9 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
+import ImageUploader from "@/components/ImageUploader";
 import { Input } from "@/components/ui/input";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Textarea } from "@/components/ui/textarea";
 import {
   bookingRequestsFromResponse,
@@ -63,7 +64,7 @@ import {
 } from "@/hooks/use-to-let-rental-api";
 import { IncludedExcludedButtons } from "./included-excluded-buttons";
 import { OwnerUnitPaymentHistory } from "./owner-unit-payment-history";
-import { ToLetFacilityItem } from "../to-let-detail-layout";
+import { ToLetFacilityList, toLetUnitFacilities } from "../to-let-detail-layout";
 import { propertyFromResponse } from "./property-details-client";
 import {
   ListingStatusBadge,
@@ -473,34 +474,21 @@ function FacilitiesPanel({
   unit: ToLetUnitView;
   offer: UnitOfferDisplay | null;
 }) {
-  const facilities = [
-    ["water", "Water Supply", property.hasWaterSupply],
-    ["gas", "Gas Connection", property.hasGasConnection],
-    ["electricity", "Electricity", property.hasElectricity],
-    ["internet", "Internet", offer?.hasInternet ?? false],
-    ["lift", "Lift", property.hasLift],
-    ["parking", "Parking", property.hasParking],
-    ["generator", "Generator", property.hasGenerator],
-    ["security", "Security", property.hasSecurityGuard],
-    ["cctv", "CCTV", property.hasCctv],
-    ["furnished", "Furnished", unit.isFurnished],
-  ] as const;
-
   return (
     <section className="rounded-lg border border-border bg-card p-5 sm:p-6">
       <SectionHeader
         title="Facilities"
         description="Property facilities are inherited by this Unit. Listing-specific items use the current rental offer."
       />
-      <div className="mt-5 grid gap-3 lg:grid-cols-2">
-        {facilities.map(([key, label, available]) => (
-          <ToLetFacilityItem
-            key={key}
-            label={label}
-            available={available}
-            included={offer?.facilityInclusions?.[key] ?? null}
-          />
-        ))}
+      <div className="mt-4">
+        <ToLetFacilityList
+          facilities={toLetUnitFacilities({
+            property,
+            hasInternet: offer?.hasInternet ?? false,
+            isFurnished: unit.isFurnished,
+            inclusions: offer?.facilityInclusions,
+          })}
+        />
       </div>
       <dl className="mt-5">
         <Field label="Other Facilities">
@@ -627,29 +615,89 @@ function BookingStatusBadge({ status }: { status: ToLetBookingStatus }) {
   );
 }
 
-function addOneYear(value: string) {
-  const date = new Date(`${value}T00:00:00`);
-  date.setFullYear(date.getFullYear() + 1);
-  return date.toISOString().slice(0, 10);
+const agreementPaymentTypes = [
+  { value: "advance", label: "Advance" },
+  { value: "security_deposit", label: "Security Deposit" },
+  { value: "advance_security_deposit", label: "Advance + Security Deposit" },
+  {
+    value: "advance_security_deposit_rent",
+    label: "Advance + Security Deposit + Rent",
+  },
+  { value: "rent", label: "Rent" },
+] as const;
+
+type AgreementPaymentType = (typeof agreementPaymentTypes)[number]["value"];
+
+const contractTypes = [{ value: "monthly_rental", label: "Monthly Rental" }] as const;
+
+function agreementPaymentAmount(
+  type: AgreementPaymentType,
+  offer: {
+    advanceAmount: number | null;
+    securityDeposit: number | null;
+    monthlyRent: number | null;
+  },
+) {
+  const advance = offer.advanceAmount ?? 0;
+  const deposit = offer.securityDeposit ?? 0;
+  const rent = offer.monthlyRent ?? 0;
+  if (type === "advance") return advance;
+  if (type === "security_deposit") return deposit;
+  if (type === "advance_security_deposit") return advance + deposit;
+  if (type === "advance_security_deposit_rent") return advance + deposit + rent;
+  return rent;
+}
+
+function AgreementGroup({
+  title,
+  hint,
+  children,
+}: {
+  title: string;
+  hint?: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className="border-t border-border pt-5 first:border-t-0 first:pt-0">
+      <h3 className="text-sm font-semibold tracking-tight text-foreground">
+        {title}
+        {hint ? (
+          <span className="ml-1.5 font-normal text-muted-foreground">({hint})</span>
+        ) : null}
+      </h3>
+      <div className="mt-4">{children}</div>
+    </div>
+  );
 }
 
 function OwnerContractPanel({
   booking,
   propertyCode,
   unitCode,
+  ownerName,
+  ownerPhone,
 }: {
   booking: ToLetBookingRequestView;
   propertyCode: string;
   unitCode: string;
+  ownerName: string;
+  ownerPhone: string;
 }) {
-  const startDefault =
-    booking.desiredMoveInDate ?? new Date().toISOString().slice(0, 10);
-  const [startDate, setStartDate] = useState(startDefault);
-  const [endDate, setEndDate] = useState(addOneYear(startDefault));
-  const [contractSigned, setContractSigned] = useState(false);
+  const snapshot = booking.offerSnapshot;
+  const [contractType, setContractType] = useState<string>("monthly_rental");
+  const [startDate, setStartDate] = useState(
+    booking.desiredMoveInDate ?? new Date().toISOString().slice(0, 10),
+  );
+  const [endDate, setEndDate] = useState("");
+  const [paymentType, setPaymentType] = useState<AgreementPaymentType>("advance");
+  const [note, setNote] = useState("");
+  const [agreementFileUrl, setAgreementFileUrl] = useState("");
+  const [uploading, setUploading] = useState(false);
   const query = useToLetRental(booking.bookingCode);
   const activate = useActivateToLetContract();
   const contract = rentalFromResponse(query.data);
+  const paymentAmount = agreementPaymentAmount(paymentType, snapshot);
+  const endBeforeStart = Boolean(endDate) && endDate < startDate;
 
   if (query.isLoading) {
     return (
@@ -659,145 +707,265 @@ function OwnerContractPanel({
     );
   }
 
+  if (contract) {
+    const savedPaymentType = agreementPaymentTypes.find(
+      (option) => option.value === contract.paymentType,
+    );
+    return (
+      <div className="mt-6 space-y-6">
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-border bg-muted/30 px-4 py-3">
+          <p className="font-mono text-sm font-semibold tabular-nums text-foreground">
+            {contract.contractCode}
+          </p>
+          <Badge
+            className={
+              contract.status === "leaving"
+                ? "bg-amber-600 text-white"
+                : "bg-emerald-700 text-white"
+            }
+          >
+            {humanize(contract.status)} · Unit {humanize(contract.unitStatus)}
+          </Badge>
+        </div>
+        <AgreementGroup title="Rental Agreement Terms">
+          <dl className="grid gap-4 sm:grid-cols-2">
+            <Field label="Name">{ownerName} (Owner)</Field>
+            <Field label="Phone" mono>
+              {ownerPhone}
+            </Field>
+          </dl>
+        </AgreementGroup>
+        <AgreementGroup title="Tenant Information">
+          <dl className="grid gap-4 sm:grid-cols-2">
+            <Field label="Tenant Name">
+              <span>
+                {booking.contactName}
+                <span className="block font-mono text-xs text-muted-foreground">
+                  {contract.tenantId}
+                </span>
+              </span>
+            </Field>
+            <Field label="Phone" mono>
+              {booking.contactPhone}
+            </Field>
+            <Field label="Contract Type">
+              {contractTypes.find((type) => type.value === contract.contractType)
+                ?.label ?? humanize(contract.contractType)}
+            </Field>
+            <div className="hidden sm:block" />
+            <Field label="Contract Start Date">
+              {formatBookingDate(contract.startDate)}
+            </Field>
+            <Field label="Contract End Date">
+              {contract.endDate ? formatBookingDate(contract.endDate) : "Open-ended"}
+            </Field>
+            <Field label="Payment Type">
+              {savedPaymentType?.label ?? "Not recorded"}
+            </Field>
+            <Field label="Payment Amount" mono>
+              {contract.paymentAmount === null
+                ? "Not recorded"
+                : formatMoney(contract.paymentAmount)}
+            </Field>
+            <Field label="Note" className="sm:col-span-2">
+              <span className="whitespace-pre-wrap">
+                {contract.note || "No note added."}
+              </span>
+            </Field>
+            <Field label="File" className="sm:col-span-2">
+              {contract.agreementFileUrl ? (
+                <a
+                  href={contract.agreementFileUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1.5 font-medium text-primary underline-offset-4 hover:underline"
+                >
+                  <FileImage className="size-4" aria-hidden="true" />
+                  View agreement
+                </a>
+              ) : (
+                "No file uploaded."
+              )}
+            </Field>
+          </dl>
+        </AgreementGroup>
+      </div>
+    );
+  }
+
+  const submit = () =>
+    activate.mutate({
+      propertyCode,
+      unitCode,
+      bookingCode: booking.bookingCode,
+      contractType: "monthly_rental",
+      startDate,
+      endDate: endDate || undefined,
+      rentDueDay: 1,
+      paymentType,
+      note: note.trim() || undefined,
+      agreementFileUrl: agreementFileUrl || undefined,
+      contractSigned: true,
+    });
+
   return (
-    <div className="mt-5 space-y-6">
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        {[
-          ["Tenant ID", contract?.tenantId ?? "Available after contract activation"],
-          ["Tenant Name", booking.contactName],
-          ["Phone", booking.contactPhone],
-          [
-            "Contract Start",
-            contract ? formatBookingDate(contract.startDate) : "Not signed yet",
-          ],
-        ].map(([label, value]) => (
-          <div
-            key={label}
-            className="rounded-lg border border-border bg-muted/30 p-4"
-          >
-            <p className="text-xs text-muted-foreground">{label}</p>
-            <p className="mt-1 break-words font-semibold text-foreground">
-              {value}
-            </p>
-          </div>
-        ))}
-      </div>
+    <div className="mt-6 space-y-6">
+      <AgreementGroup title="Rental Agreement Terms">
+        <dl className="grid gap-4 sm:grid-cols-2">
+          <Field label="Name">{ownerName} (Owner)</Field>
+          <Field label="Phone" mono>
+            {ownerPhone}
+          </Field>
+        </dl>
+      </AgreementGroup>
 
-      <div className="grid gap-3 sm:grid-cols-2">
-        <div className="rounded-lg border border-border bg-muted/30 p-4">
-          <p className="text-xs text-muted-foreground">Rental Agreement (Image)</p>
-          <div className="mt-3 flex min-h-24 items-center justify-center gap-2 rounded-md border border-dashed border-border bg-card text-sm text-muted-foreground">
-            <FileImage className="size-5 text-muted-foreground" />
-            Agreement image upload is not available yet
-          </div>
-        </div>
-        <div className="rounded-lg border border-border bg-muted/30 p-4">
-          <div className="flex flex-wrap items-start justify-between gap-2">
-            <div>
-              <p className="text-xs text-muted-foreground">Rental Contract</p>
-              <p className="mt-1 font-semibold text-foreground">
-                {contract?.contractCode ?? "Pending activation"}
-              </p>
-            </div>
-            {contract ? (
-              <Badge className="bg-emerald-700 text-white">
-                {humanize(contract.status)} · Unit{" "}
-                {humanize(contract.unitStatus)}
-              </Badge>
-            ) : (
-              <Badge
-                variant="outline"
-                className="border-amber-200 bg-amber-50 text-amber-700"
-              >
-                Contract pending
-              </Badge>
-            )}
-          </div>
-          <p className="mt-3 text-sm text-muted-foreground">
-            {contract
-              ? `${formatBookingDate(contract.startDate)} – ${formatBookingDate(contract.endDate)} · Monthly Rent OTP on the 1st day`
-              : "Accepting the Booking reserves the Unit. Activate the contract only after the agreement is signed."}
-          </p>
-        </div>
-      </div>
+      <AgreementGroup title="Tenant Information" hint="Auto">
+        <div className="grid gap-4 sm:grid-cols-2">
+          <dl className="contents">
+            <Field label="Tenant Name">{booking.contactName}</Field>
+            <Field label="Phone" mono>
+              {booking.contactPhone}
+            </Field>
+          </dl>
 
-      {!contract ? (
-        <div className="rounded-lg border border-primary/20 bg-primary/5 p-4">
-          <p className="text-sm font-semibold text-primary">
-            Sign and activate rental contract
-          </p>
-          <p className="mt-1 text-xs leading-5 text-primary">
-            The accepted Booking remains Booked until both parties sign.
-            Activation then links the tenant, makes the Unit Occupied and
-            creates the Monthly Rent OTP cycle on the 1st day of every month.
-          </p>
-          <div className="mt-3 grid gap-3 sm:grid-cols-2">
-            <label className="text-xs font-medium text-foreground">
-              Start date
-              <Input
-                type="date"
-                value={startDate}
-                onChange={(event) => setStartDate(event.target.value)}
-                className="mt-1 bg-card"
-              />
-            </label>
-            <label className="text-xs font-medium text-foreground">
-              End date
-              <Input
-                type="date"
-                min={startDate}
-                value={endDate}
-                onChange={(event) => setEndDate(event.target.value)}
-                className="mt-1 bg-card"
-              />
-            </label>
-          </div>
-          <label
-            htmlFor={`contract-signed-${booking.bookingCode}`}
-            className="mt-3 flex cursor-pointer items-start gap-2 rounded-md border border-primary/20 bg-card p-3 text-sm text-foreground"
-          >
-            <Checkbox
-              id={`contract-signed-${booking.bookingCode}`}
-              checked={contractSigned}
-              onCheckedChange={(checked) => setContractSigned(checked === true)}
-              className="mt-0.5"
+          <label className="space-y-1.5 text-sm font-medium text-foreground">
+            Contract Type
+            <select
+              value={contractType}
+              onChange={(event) => setContractType(event.target.value)}
+              className="flex h-10 w-full rounded-md border border-border bg-card px-3 text-sm font-normal"
+            >
+              {contractTypes.map((type) => (
+                <option key={type.value} value={type.value}>
+                  {type.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="hidden sm:block" />
+
+          <label className="space-y-1.5 text-sm font-medium text-foreground">
+            Contract Start Date *
+            <Input
+              type="date"
+              value={startDate}
+              onChange={(event) => setStartDate(event.target.value)}
+              required
             />
-            <span>
-              I confirm the rental contract has been signed by the owner and
-              tenant.
+          </label>
+          <label className="space-y-1.5 text-sm font-medium text-foreground">
+            Contract End Date
+            <Input
+              type="date"
+              min={startDate}
+              value={endDate}
+              onChange={(event) => setEndDate(event.target.value)}
+              aria-invalid={endBeforeStart}
+            />
+            <span
+              className={`block text-xs font-normal ${endBeforeStart ? "text-red-600" : "text-muted-foreground"}`}
+            >
+              {endBeforeStart
+                ? "End date must be on or after the start date."
+                : "Optional. Leave empty for an open-ended rental."}
             </span>
           </label>
-          <Button
-            className="mt-3 bg-primary/90 hover:bg-primary/90"
-            disabled={
-              activate.isPending ||
-              !startDate ||
-              !endDate ||
-              endDate < startDate ||
-              !contractSigned
-            }
-            onClick={() =>
-              activate.mutate({
-                propertyCode,
-                unitCode,
-                bookingCode: booking.bookingCode,
-                startDate,
-                endDate,
-                rentDueDay: 1,
-                contractSigned: true,
-              })
-            }
-          >
-            {activate.isPending ? (
-              <Loader2 className="animate-spin" />
-            ) : (
-              <CheckCircle2 />
-            )}
-            Sign &amp; Activate Contract
-          </Button>
-        </div>
-      ) : null}
 
+          <fieldset className="space-y-2">
+            <legend className="text-sm font-medium text-foreground">
+              Payment Type
+            </legend>
+            <RadioGroup
+              value={paymentType}
+              onValueChange={(value) => setPaymentType(value as AgreementPaymentType)}
+              className="gap-2"
+            >
+              {agreementPaymentTypes.map((option) => (
+                <label
+                  key={option.value}
+                  htmlFor={`payment-${booking.bookingCode}-${option.value}`}
+                  className="flex min-h-10 cursor-pointer items-center gap-2 rounded-md border border-border px-3 text-sm text-foreground has-[[data-state=checked]]:border-primary has-[[data-state=checked]]:bg-primary/5"
+                >
+                  <RadioGroupItem
+                    id={`payment-${booking.bookingCode}-${option.value}`}
+                    value={option.value}
+                  />
+                  {option.label}
+                </label>
+              ))}
+            </RadioGroup>
+          </fieldset>
+          <dl className="self-start">
+            <Field label="Payment Amount (Auto)" mono>
+              <span className="text-base font-semibold">
+                {formatMoney(paymentAmount)}
+              </span>
+            </Field>
+            <p className="mt-1.5 text-xs text-muted-foreground">
+              Calculated from the accepted booking&apos;s rent terms.
+            </p>
+          </dl>
+
+          <label className="space-y-1.5 text-sm font-medium text-foreground sm:col-span-2">
+            Note
+            <Textarea
+              value={note}
+              onChange={(event) => setNote(event.target.value)}
+              maxLength={2000}
+              rows={3}
+              placeholder="Any extra agreement terms or remarks"
+              className="font-normal"
+            />
+          </label>
+
+          <div className="space-y-1.5 sm:col-span-2">
+            <p className="text-sm font-medium text-foreground">File</p>
+            <ImageUploader
+              value={agreementFileUrl}
+              onChange={setAgreementFileUrl}
+              folder="to-let/agreements"
+              maxSizeMB={5}
+              deleteOnRemove={false}
+              onUploadStateChange={setUploading}
+            />
+            <p className="text-xs text-muted-foreground">
+              Upload a photo of the signed agreement (optional).
+            </p>
+          </div>
+        </div>
+      </AgreementGroup>
+
+      <div className="flex justify-end border-t border-border pt-5">
+        <AlertDialog>
+          <AlertDialogTrigger asChild>
+            <Button
+              className="bg-primary text-primary-foreground hover:bg-primary/90"
+              disabled={activate.isPending || uploading || !startDate || endBeforeStart}
+            >
+              {activate.isPending ? (
+                <Loader2 className="animate-spin" />
+              ) : (
+                <CheckCircle2 />
+              )}
+              Submit Agreement
+            </Button>
+          </AlertDialogTrigger>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Submit this rental agreement?</AlertDialogTitle>
+              <AlertDialogDescription>
+                Submitting confirms the agreement is signed by the owner and
+                tenant. The Unit becomes Occupied and monthly rent cycles start
+                on the 1st day of each month.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction onClick={submit}>Submit Agreement</AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+      </div>
     </div>
   );
 }
@@ -994,6 +1162,8 @@ function CurrentTenantSection({
   booking,
   propertyCode,
   unitCode,
+  ownerName,
+  ownerPhone,
   isLoading,
   isError,
   onRetry,
@@ -1001,6 +1171,8 @@ function CurrentTenantSection({
   booking: ToLetBookingRequestView | null;
   propertyCode: string;
   unitCode: string;
+  ownerName: string;
+  ownerPhone: string;
   isLoading: boolean;
   isError: boolean;
   onRetry: () => void;
@@ -1034,6 +1206,8 @@ function CurrentTenantSection({
           booking={booking}
           propertyCode={propertyCode}
           unitCode={unitCode}
+          ownerName={ownerName}
+          ownerPhone={ownerPhone}
         />
       ) : (
         <div className="mt-5 rounded-lg border border-dashed border-border px-5 py-9 text-center">
@@ -1220,6 +1394,10 @@ export function UnitDetailsClient({
 
   const property = loadedProperty;
   const unit = loadedUnit;
+  // Cached data can predate a unit created elsewhere; wait for the refetch before failing.
+  if ((!property || !unit) && query.isFetching) {
+    return <PropertyDetailsSkeleton />;
+  }
   if (!property || !unit) {
     return <PropertyErrorState message="This unit could not be found." />;
   }
@@ -1348,7 +1526,9 @@ export function UnitDetailsClient({
         title={`${unit.name} (${floorLabel})`}
         description={unit.unitCode}
         backHref={`/account/to-let/properties/${property.propertyCode}`}
-        action={<UnitStatusBadge status={unit.status} />}
+        action={
+          <UnitStatusBadge status={unit.status} isLeaving={unit.isLeaving} />
+        }
       />
 
       <section className="overflow-hidden rounded-lg border border-border bg-card">
@@ -1614,6 +1794,8 @@ export function UnitDetailsClient({
               booking={acceptedBooking}
               propertyCode={property.propertyCode}
               unitCode={unit.unitCode}
+              ownerName={property.ownerName}
+              ownerPhone={property.mobileNumber}
               isLoading={bookingRequestsQuery.isLoading}
               isError={bookingRequestsQuery.isError}
               onRetry={() => bookingRequestsQuery.refetch()}

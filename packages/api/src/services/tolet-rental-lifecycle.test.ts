@@ -6,9 +6,26 @@ import {
 	TO_LET_RENT_DUE_DAY,
 	toLetRentCyclesThroughDate,
 	toLetDhakaDateString,
+	toLetOpenEndedLeaveDate,
 } from "../routers/helpers/tolet-rental-lifecycle";
 
 describe("To-Let rental lifecycle", () => {
+	it("keeps an open-ended contract running and billing until the tenant leaves", () => {
+		const contract = { startDate: "2026-07-10", endDate: null, rentDueDay: 1, monthlyRent: "15000.00" };
+		expect(toLetRentCyclesThroughDate(contract, "2026-10-05").map(cycle => cycle.cycleMonth))
+			.toEqual(["2026-07-01", "2026-08-01", "2026-09-01", "2026-10-01"]);
+		expect(shouldCompleteToLetContract({ status: "active", endDate: null }, "2099-01-01")).toBe(false);
+		expect(canAccessToLetRentalDetails(
+			{ status: "active", endDate: null, ownerUserId: "owner", tenantUserId: "tenant" },
+			"tenant",
+			"2099-01-01",
+		)).toBe(true);
+	});
+	it("gives an open-ended leave one month's notice, ending on the last day of next month", () => {
+		expect(toLetOpenEndedLeaveDate("2026-10-03")).toBe("2026-11-30");
+		expect(toLetOpenEndedLeaveDate("2026-12-31")).toBe("2027-01-31");
+		expect(toLetOpenEndedLeaveDate("2027-01-15")).toBe("2027-02-28");
+	});
 	it("rejects impossible dates and accepts leap days only in leap years", () => {
 		expect(isToLetCalendarDate("2026-02-30")).toBe(false);
 		expect(isToLetCalendarDate("2026-02-29")).toBe(false);

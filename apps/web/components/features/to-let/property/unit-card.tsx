@@ -204,13 +204,22 @@ export function UnitCard({
               {statusText}
             </span>
           ) : (
-            <UnitStatusBadge status={unit.status} />
+            <UnitStatusBadge status={unit.status} isLeaving={unit.isLeaving} />
           )}
           {unit.status === "vacant" &&
           listing?.status &&
           listing.status !== "active" ? (
             <span className="text-xs font-medium text-muted-foreground">
               {humanize(listing.status)} Listing
+            </span>
+          ) : null}
+          {unit.isLeaving && unit.leavingOn ? (
+            <span className="text-xs font-medium text-muted-foreground">
+              Until{" "}
+              {new Date(`${unit.leavingOn}T00:00:00`).toLocaleDateString(
+                "en-US",
+                { month: "short", day: "numeric", year: "numeric" },
+              )}
             </span>
           ) : null}
         </div>

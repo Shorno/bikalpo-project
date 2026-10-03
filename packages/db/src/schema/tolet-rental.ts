@@ -58,8 +58,16 @@ export const toletRentalContract = pgTable(
 			.notNull()
 			.references(() => user.id, { onDelete: "restrict" }),
 		startDate: date("start_date").notNull(),
-		endDate: date("end_date").notNull(),
+		// Null means open-ended: the rental runs until the tenant's leave request sets an end.
+		endDate: date("end_date"),
 		rentDueDay: integer("rent_due_day").default(1).notNull(),
+		contractType: varchar("contract_type", { length: 30 })
+			.default("monthly_rental")
+			.notNull(),
+		paymentType: varchar("payment_type", { length: 40 }),
+		paymentAmount: numeric("payment_amount", { precision: 12, scale: 2 }),
+		note: text("note"),
+		agreementFileUrl: text("agreement_file_url"),
 		monthlyRent: numeric("monthly_rent", { precision: 12, scale: 2 }).notNull(),
 		advanceAmount: numeric("advance_amount", { precision: 12, scale: 2 })
 			.default("0")

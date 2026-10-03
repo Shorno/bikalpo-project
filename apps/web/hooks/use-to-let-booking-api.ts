@@ -30,7 +30,7 @@ export interface ToLetBookingRequestView {
     status: "active" | "leaving" | "completed";
     monthlyRent: number;
     startDate: string;
-    endDate: string;
+    endDate: string | null;
     accessEndsAt: string | null;
     completedAt: string | null;
   } | null;

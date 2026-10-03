@@ -89,6 +89,26 @@ export function useUpdateToLetProperty() {
   });
 }
 
+export function useUpdateToLetPropertyContact() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    ...orpc.toLetProperty.updateContact.mutationOptions(),
+    onSuccess: (_data, variables) => {
+      toast.success("Contact updated");
+      queryClient.invalidateQueries({
+        queryKey: orpc.toLetProperty.listMine.key(),
+      });
+      queryClient.invalidateQueries({
+        queryKey: orpc.toLetProperty.getMine.key({
+          input: { propertyCode: variables.propertyCode },
+        }),
+      });
+    },
+    onError: (error) => toast.error(error.message),
+  });
+}
+
 export function useArchiveToLetProperty() {
   const queryClient = useQueryClient();
 

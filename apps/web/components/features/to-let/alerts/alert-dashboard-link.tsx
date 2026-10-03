@@ -1,6 +1,7 @@
 "use client";
 
-import { ArrowRight } from "lucide-react";
+import { Bell } from "lucide-react";
+import { toLetPrimaryButton } from "@/components/features/to-let/to-let-button";
 import Link from "next/link";
 import { authClient } from "@/lib/auth-client";
 
@@ -11,6 +12,6 @@ export function AlertDashboardLink() {
     href={session?.user ? destination : `/login?redirect=${encodeURIComponent(destination)}`}
     aria-disabled={isPending || undefined}
     onClick={event => { if (isPending) event.preventDefault(); }}
-    className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-lg bg-primary px-5 py-3 text-sm font-semibold text-primary-foreground hover:bg-primary/90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
-  >My To-Let Alerts <ArrowRight className="size-4" aria-hidden="true" /></Link>;
+    className={`${toLetPrimaryButton} min-h-11 shrink-0 px-5`}
+  ><Bell className="size-4" aria-hidden="true" /> My To-Let Alerts</Link>;
 }

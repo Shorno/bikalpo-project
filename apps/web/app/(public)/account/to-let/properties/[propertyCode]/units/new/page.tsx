@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
-import { UnitForm } from "@/components/features/to-let/property/unit-form";
+import { NewListingWizard } from "@/components/features/to-let/property/listing-form";
 
 export const metadata: Metadata = {
-  title: "Create Property Unit",
+  title: "Create To-Let Listing",
 };
 
 export default async function CreatePropertyUnitPage({
@@ -11,5 +11,5 @@ export default async function CreatePropertyUnitPage({
   params: Promise<{ propertyCode: string }>;
 }) {
   const { propertyCode } = await params;
-  return <UnitForm propertyCode={propertyCode} />;
+  return <NewListingWizard propertyCode={propertyCode} />;
 }

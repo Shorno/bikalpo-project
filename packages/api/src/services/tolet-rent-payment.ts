@@ -2,7 +2,7 @@ import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import type { db } from "@bikalpo-project/db";
 import { toletRentalContract, toletRentPayment, verification } from "@bikalpo-project/db/schema";
 import { and, eq } from "drizzle-orm";
-import { isToLetCalendarDate, toLetDhakaDateString } from "../routers/helpers/tolet-rental-lifecycle";
+import { isToLetCalendarDate, toLetContractEnd, toLetDhakaDateString } from "../routers/helpers/tolet-rental-lifecycle";
 
 type PaymentTransaction = Pick<typeof db, "select" | "update" | "insert" | "delete">;
 
@@ -46,7 +46,7 @@ export async function verifyToLetRentPayment(
 		.limit(1).for("update");
 	if (!contract) return { status: "forbidden" } as const;
 	if (!isToLetCalendarDate(input.cycleMonth) || !input.cycleMonth.endsWith("-01") ||
-		!(["active", "leaving"].includes(contract.status)) || contract.startDate > today || contract.endDate < today) {
+		!(["active", "leaving"].includes(contract.status)) || contract.startDate > today || toLetContractEnd(contract.endDate) < today) {
 		return { status: "unavailable" } as const;
 	}
 	const [payment] = await tx.select().from(toletRentPayment)

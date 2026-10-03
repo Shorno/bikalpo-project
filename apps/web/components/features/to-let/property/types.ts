@@ -75,6 +75,9 @@ export interface ToLetUnitView {
   name: string;
   unitType: string;
   status: UnitStatus;
+  /** Tenant has requested to leave; the Unit stays occupied until leavingOn. */
+  isLeaving?: boolean;
+  leavingOn?: string | null;
   floorNumber: number;
   sizeSqFt: number;
   bedrooms: number;

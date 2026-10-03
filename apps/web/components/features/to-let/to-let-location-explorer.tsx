@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  Compass,
   ExternalLink,
   LocateFixed,
   MapPin,
@@ -13,6 +12,7 @@ import {
 import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { toLetMobileSecondary, toLetPrimaryButton } from "@/components/features/to-let/to-let-button";
 
 export interface ToLetLocationListing {
   listingCode: string;
@@ -137,13 +137,10 @@ export function ToLetLocationExplorer({
       className="scroll-mt-28 border-y border-border/70 bg-background py-12 sm:py-16"
     >
       <div className="site-container px-4 sm:px-6 lg:px-8">
-        <div className="mb-8 max-w-3xl sm:mb-10">
-          <p className="text-xs font-semibold tracking-[0.14em] text-primary uppercase">
-            Location intelligence
-          </p>
+        <div className="mb-7 max-w-3xl sm:mb-8">
           <h2
             id="location-intelligence-heading"
-            className="mt-2 text-2xl font-semibold leading-tight tracking-[-0.025em] sm:text-3xl"
+            className="text-2xl font-bold leading-tight tracking-tight text-balance text-foreground sm:text-3xl"
           >
             নির্ভুলভাবে আপনার পছন্দের To-Let ইউনিট খুঁজুন
           </h2>
@@ -154,7 +151,7 @@ export function ToLetLocationExplorer({
           </p>
         </div>
 
-        <div className="mb-5 rounded-xl border border-border bg-[oklch(0.972_0.008_250)] p-4 sm:p-5">
+        <div className="mb-5 rounded-xl border border-border bg-muted/40 p-4 sm:p-5">
           <form
             action="/to-let#location-intelligence"
             className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_10rem_auto]"
@@ -188,7 +185,7 @@ export function ToLetLocationExplorer({
             </label>
             <button
               type="submit"
-              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-primary px-5 text-sm font-semibold text-primary-foreground hover:bg-primary/90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+              className={`${toLetPrimaryButton} min-h-11 px-5`}
             >
               <LocateFixed className="size-4" /> Search area
             </button>
@@ -210,7 +207,7 @@ export function ToLetLocationExplorer({
                         current === place ? null : place,
                       )
                     }
-                    className={`inline-flex min-h-11 items-center rounded-lg border px-3 text-xs font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary ${
+                    className={`inline-flex min-h-10 items-center rounded-md border px-3 text-xs font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary ${
                       nearbyPlace === place
                         ? "border-primary bg-primary text-primary-foreground"
                         : "border-border bg-background text-muted-foreground hover:border-primary/40 hover:text-primary"
@@ -228,10 +225,10 @@ export function ToLetLocationExplorer({
                 setZoneMode((current) => !current);
                 if (zoneMode) setSelectedZones([]);
               }}
-              className={`inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-lg border px-4 text-sm font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary ${
+              className={`${toLetPrimaryButton} min-h-11 shrink-0 ${
                 zoneMode
-                  ? "border-primary bg-primary text-primary-foreground"
-                  : "border-border bg-background text-foreground hover:border-primary/40 hover:text-primary"
+                  ? "ring-2 ring-primary/30 ring-offset-2"
+                  : toLetMobileSecondary
               }`}
             >
               <MapPinned className="size-4" />
@@ -249,16 +246,13 @@ export function ToLetLocationExplorer({
 
         <div className="grid overflow-hidden rounded-xl border border-border bg-background lg:grid-cols-[0.72fr_1.28fr]">
           <div className="border-b border-border p-5 sm:p-6 lg:border-r lg:border-b-0">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <p className="text-xs font-semibold text-primary">
-                  Matching locations
-                </p>
-                <h3 className="mt-1 text-lg font-semibold">
-                  {visibleListings.length} location result(s)
-                </h3>
-              </div>
-              <Compass className="size-5 text-muted-foreground" />
+            <div className="flex items-center justify-between gap-4">
+              <h3 className="text-base font-semibold text-foreground">
+                Matching locations
+              </h3>
+              <span className="rounded-md bg-muted px-2 py-0.5 font-mono text-xs font-semibold tabular-nums text-foreground">
+                {visibleListings.length}
+              </span>
             </div>
 
             {unavailable ? (
@@ -280,9 +274,9 @@ export function ToLetLocationExplorer({
                   return (
                     <article
                       key={listing.listingCode}
-                      className={`overflow-hidden rounded-xl border bg-background transition-colors ${
+                      className={`overflow-hidden rounded-lg border bg-background transition-colors ${
                         selected
-                          ? "border-primary ring-2 ring-primary/15"
+                          ? "border-primary ring-1 ring-primary"
                           : "border-border hover:border-primary/40"
                       }`}
                     >
@@ -309,10 +303,10 @@ export function ToLetLocationExplorer({
                         </span>
                         <span className="min-w-0 p-3">
                           <span
-                            className={`text-[10px] font-semibold uppercase ${
+                            className={`inline-flex rounded px-1.5 py-0.5 text-[11px] font-semibold ${
                               listing.marketplaceStatus === "booked"
-                                ? "text-amber-700"
-                                : "text-emerald-700"
+                                ? "bg-amber-50 text-amber-800"
+                                : "bg-emerald-50 text-emerald-800"
                             }`}
                           >
                             {listing.marketplaceStatus === "booked"
@@ -354,8 +348,11 @@ export function ToLetLocationExplorer({
           <div className="order-first flex min-h-[420px] min-w-0 flex-col bg-muted/20 lg:order-last">
             <div className="flex flex-col gap-3 border-b border-border bg-background px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <p className="text-xs font-semibold tracking-wide text-primary uppercase">
-                  Smart rental map · Google Maps
+                <p className="text-sm font-semibold text-foreground">
+                  Smart rental map{" "}
+                  <span className="font-normal text-muted-foreground">
+                    · Google Maps
+                  </span>
                 </p>
                 <p className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
                   <MapPin className="size-3.5 shrink-0 text-primary" />
@@ -368,9 +365,9 @@ export function ToLetLocationExplorer({
                 href={googleMapsSearchUrl}
                 target="_blank"
                 rel="noreferrer"
-                className="inline-flex min-h-11 w-fit items-center gap-1.5 rounded-lg border border-border bg-background px-3 text-xs font-semibold text-foreground transition-colors hover:border-primary/40 hover:text-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                className={`${toLetPrimaryButton} ${toLetMobileSecondary} w-fit`}
               >
-                Open in Google Maps <ExternalLink className="size-3.5" />
+                <ExternalLink className="size-4" aria-hidden="true" /> Open in Google Maps
               </a>
             </div>
 
@@ -388,7 +385,7 @@ export function ToLetLocationExplorer({
               <div className="flex items-center gap-3 border-b border-border px-4 py-3 sm:border-r sm:border-b-0">
                 <LocateFixed className="size-4 text-primary" />
                 <div>
-                  <p className="text-[11px] text-muted-foreground">Radius</p>
+                  <p className="text-xs text-muted-foreground">Radius</p>
                   <p className="text-xs font-semibold">Within {radiusKm} km</p>
                 </div>
               </div>
@@ -400,7 +397,7 @@ export function ToLetLocationExplorer({
               >
                 <Route className="size-4 text-primary" />
                 <div>
-                  <p className="text-[11px] text-muted-foreground">
+                  <p className="text-xs text-muted-foreground">
                     Commute time
                   </p>
                   <p className="text-xs font-semibold">Check route</p>
@@ -409,10 +406,10 @@ export function ToLetLocationExplorer({
               <div className="flex items-center gap-3 px-4 py-3">
                 <Navigation className="size-4 text-primary" />
                 <div>
-                  <p className="text-[11px] text-muted-foreground">
+                  <p className="text-xs text-muted-foreground">
                     Available listings
                   </p>
-                  <p className="text-xs font-semibold tabular-nums">
+                  <p className="font-mono text-xs font-semibold tabular-nums">
                     {unavailable ? "Unavailable" : `${availableCount} unit(s)`}
                   </p>
                 </div>
@@ -421,7 +418,7 @@ export function ToLetLocationExplorer({
 
             {locationPins.length > 0 ? (
               <div className="flex flex-wrap items-center gap-2 border-t border-border bg-background px-5 py-3">
-                <span className="text-[11px] font-medium text-muted-foreground">
+                <span className="text-xs font-medium text-muted-foreground">
                   {zoneMode ? "Build search zone:" : "Filter by area:"}
                 </span>
                 {locationPins.map((area) =>
@@ -431,7 +428,7 @@ export function ToLetLocationExplorer({
                       type="button"
                       aria-pressed={selectedZones.includes(area)}
                       onClick={() => toggleZone(area)}
-                      className={`inline-flex min-h-11 items-center gap-1 rounded-full border px-3 text-xs font-semibold transition-colors ${
+                      className={`inline-flex min-h-10 items-center gap-1 rounded-md border px-3 text-xs font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary ${
                         selectedZones.includes(area)
                           ? "border-primary bg-primary text-primary-foreground"
                           : "border-border bg-background text-muted-foreground hover:border-primary/40 hover:text-primary"
@@ -443,7 +440,7 @@ export function ToLetLocationExplorer({
                     <Link
                       key={area}
                       href={areaFilterHref(area, selectedType)}
-                      className="inline-flex min-h-11 items-center gap-1 rounded-full border border-border bg-background px-3 text-xs font-semibold text-primary transition-colors hover:border-primary/40 hover:bg-primary/5"
+                      className="inline-flex min-h-10 items-center gap-1 rounded-md border border-border bg-background px-3 text-xs font-semibold text-foreground transition-colors hover:border-primary/40 hover:text-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
                     >
                       <MapPin className="size-3" /> {area}
                     </Link>

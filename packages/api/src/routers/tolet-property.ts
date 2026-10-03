@@ -512,6 +512,24 @@ export const toLetPropertyRouter = {
 					Number(row.bookingCount),
 				]),
 			);
+			const leavingContracts =
+				unitIds.length > 0
+					? await db
+							.select({
+								unitId: toletRentalContract.unitId,
+								endDate: toletRentalContract.endDate,
+							})
+							.from(toletRentalContract)
+							.where(
+								and(
+									inArray(toletRentalContract.unitId, unitIds),
+									eq(toletRentalContract.status, "leaving"),
+								),
+							)
+					: [];
+			const leavingOnByUnitId = new Map(
+				leavingContracts.map((row) => [row.unitId, row.endDate]),
+			);
 			return {
 				property: {
 					...propertyDto(property, activeUnits.length),
@@ -519,6 +537,8 @@ export const toLetPropertyRouter = {
 						const listing = listingByUnitId.get(unit.id);
 						return {
 							...unitDto(unit),
+							isLeaving: leavingOnByUnitId.has(unit.id),
+							leavingOn: leavingOnByUnitId.get(unit.id) ?? null,
 							currentListing: listing
 								? currentListingDto(
 										listing,
@@ -796,6 +816,87 @@ export const toLetPropertyRouter = {
 			return {
 				property: propertyDto(result.updated, result.unitCount),
 			};
+		}),
+
+	updateContact: consumerProcedure
+		.route({
+			method: "PATCH",
+			path: "/to-let/owner/properties/{propertyCode}/contact",
+			tags: ["To-Let Property Owner"],
+			summary: "Update the contact person and number of an owned property",
+		})
+		.input(
+			z
+				.object({
+					propertyCode: propertyCodeSchema,
+					ownerName: z.string().trim().min(2).max(150),
+					mobileNumber: mobileNumberSchema,
+					phoneVerificationProof: z
+						.string()
+						.regex(/^[a-f0-9]{64}$/, "Verify the new contact number")
+						.optional(),
+				})
+				.strict(),
+		)
+		.handler(async ({ context, input }) => {
+			const userId = context.session.user.id;
+			const identity = parsePropertyCode(input.propertyCode);
+
+			const contact = await db.transaction(async (tx) => {
+				const [existing] = await tx
+					.select()
+					.from(toletProperty)
+					.where(
+						and(
+							eq(toletProperty.publicNumber, identity.publicNumber),
+							eq(toletProperty.ownerUserId, userId),
+						),
+					)
+					.limit(1)
+					.for("update");
+
+				if (!existing || existing.createdAt.getFullYear() !== identity.year) {
+					throw new ORPCError("NOT_FOUND", { message: "Property not found" });
+				}
+				assertPropertyCodeMatches(existing, input.propertyCode);
+				assertPropertyIsWritable(existing);
+
+				// A new number must be proven; renaming the contact person alone needs no OTP.
+				let phoneVerifiedAt = existing.phoneVerifiedAt;
+				if (input.mobileNumber !== existing.mobileNumber) {
+					if (!input.phoneVerificationProof) {
+						throw new ORPCError("BAD_REQUEST", {
+							message: "Verify the new contact number",
+						});
+					}
+					phoneVerifiedAt = await consumePropertyPhoneProof(
+						tx,
+						userId,
+						input.mobileNumber,
+						input.phoneVerificationProof,
+					);
+				}
+
+				const [updated] = await tx
+					.update(toletProperty)
+					.set({
+						ownerName: input.ownerName,
+						mobileNumber: input.mobileNumber,
+						phoneVerifiedAt,
+						updatedAt: new Date(),
+					})
+					.where(eq(toletProperty.id, existing.id))
+					.returning({
+						ownerName: toletProperty.ownerName,
+						mobileNumber: toletProperty.mobileNumber,
+					});
+				if (!updated) {
+					throw new ORPCError("NOT_FOUND", { message: "Property not found" });
+				}
+				return updated;
+			});
+
+			return { contact };
 		}),
 
 	createUnit: consumerProcedure

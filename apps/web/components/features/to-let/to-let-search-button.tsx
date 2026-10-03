@@ -12,12 +12,12 @@ export function ToLetSearchButton({ className }: { className: string }) {
       className={className}
       aria-busy={pending}
     >
-      {pending ? "Searching…" : "Search"}
       {pending ? (
         <Loader2 className="size-4 animate-spin" aria-hidden="true" />
       ) : (
         <Search className="size-4" aria-hidden="true" />
       )}
+      {pending ? "Searching…" : "Search"}
     </button>
   );
 }

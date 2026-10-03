@@ -13,6 +13,7 @@ import {
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -29,6 +30,7 @@ import {
   useArchiveToLetProperty,
   useMyToLetProperty,
 } from "@/hooks/use-to-let-property-api";
+import { ToLetFacilityList, toLetPropertyFacilities } from "../to-let-detail-layout";
 import { PropertyQrCard } from "./property-qr-card";
 import {
   PropertyDetailsSkeleton,
@@ -59,16 +61,6 @@ function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
   );
 }
 
-const facilityLabels: Array<[keyof ToLetPropertyView, string]> = [
-  ["hasParking", "Parking"],
-  ["hasLift", "Lift"],
-  ["hasSecurityGuard", "Security guard"],
-  ["hasCctv", "CCTV"],
-  ["hasGenerator", "Generator"],
-  ["hasWaterSupply", "Water supply"],
-  ["hasGasConnection", "Gas connection"],
-  ["hasElectricity", "Electricity"],
-];
 
 export function PropertyDetailsClient({
   propertyCode,
@@ -80,6 +72,29 @@ export function PropertyDetailsClient({
   const router = useRouter();
   const query = useMyToLetProperty(propertyCode);
   const archiveProperty = useArchiveToLetProperty();
+  const [highlightedUnit, setHighlightedUnit] = useState<string | null>(null);
+  const loadedUnitCodes = (propertyFromResponse(query.data)?.units ?? [])
+    .map((unit: ToLetUnitView) => unit.unitCode)
+    .join(",");
+
+  // After publishing, the listing form links here with ?unit=<code>; bring that card into view.
+  useEffect(() => {
+    const unitCode = new URLSearchParams(window.location.search).get("unit");
+    if (!unitCode) return;
+    const target = document.getElementById(`unit-${unitCode}`);
+    if (!target) return;
+    window.history.replaceState(null, "", window.location.pathname);
+    const reduceMotion = window.matchMedia(
+      "(prefers-reduced-motion: reduce)",
+    ).matches;
+    target.scrollIntoView({
+      behavior: reduceMotion ? "auto" : "smooth",
+      block: "center",
+    });
+    setHighlightedUnit(unitCode);
+    const timer = window.setTimeout(() => setHighlightedUnit(null), 2600);
+    return () => window.clearTimeout(timer);
+  }, [loadedUnitCodes]);
 
   if (query.isLoading) return <PropertyDetailsSkeleton />;
   if (query.isError) {
@@ -391,13 +406,22 @@ export function PropertyDetailsClient({
         ) : (
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
             {units.map((unit) => (
-              <UnitCard
+              <div
                 key={unit.unitCode}
-                propertyCode={property.propertyCode}
-                qrToken={property.qrToken}
-                unit={unit}
-                location={`${property.area}, ${property.district}`}
-              />
+                id={`unit-${unit.unitCode}`}
+                className={`scroll-mt-24 rounded-xl transition-shadow duration-500 ${
+                  highlightedUnit === unit.unitCode
+                    ? "ring-2 ring-primary ring-offset-2 ring-offset-background"
+                    : ""
+                }`}
+              >
+                <UnitCard
+                  propertyCode={property.propertyCode}
+                  qrToken={property.qrToken}
+                  unit={unit}
+                  location={`${property.area}, ${property.district}`}
+                />
+              </div>
             ))}
           </div>
         )}
@@ -406,23 +430,14 @@ export function PropertyDetailsClient({
       <div className="grid gap-5 lg:grid-cols-[minmax(0,2fr)_minmax(260px,1fr)]">
         <section className="rounded-lg border border-border bg-card p-5">
           <h2 className="font-semibold text-foreground">Facilities</h2>
-          <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
-            {facilityLabels.map(([key, label]) => {
-              const available = Boolean(property[key]);
-              return (
-                <div
-                  key={key}
-                  className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-sm ${
-                    available
-                      ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                      : "border-border bg-muted/30 text-muted-foreground"
-                  }`}
-                >
-                  <Check className="size-3.5" /> {label}
-                </div>
-              );
-            })}
-          </div>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Shared by every Unit in this Property. Rent inclusion is set on each
+            Unit&apos;s listing.
+          </p>
+          <ToLetFacilityList
+            facilities={toLetPropertyFacilities(property)}
+            showInclusion={false}
+          />
           {property.description ? (
             <p className="mt-4 whitespace-pre-wrap text-sm leading-6 text-muted-foreground">
               {property.description}

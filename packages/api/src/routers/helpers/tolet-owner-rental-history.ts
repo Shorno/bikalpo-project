@@ -1,9 +1,9 @@
-import { toLetDhakaDateString } from "./tolet-rental-lifecycle";
+import { toLetContractEnd, toLetDhakaDateString } from "./tolet-rental-lifecycle";
 import { toLetRentOtp } from "../../services/tolet-rent-payment";
 
 export type OwnerHistoryContract = {
 	id: string; publicNumber: number; bookingNumber: number;
-	tenantUserId: string; tenantName: string; startDate: string; endDate: string;
+	tenantUserId: string; tenantName: string; startDate: string; endDate: string | null;
 	status: string; monthlyRent: string; rentDueDay: number;
 };
 export type OwnerHistoryPayment = {
@@ -44,7 +44,7 @@ export function buildOwnerRentalHistory(
 	const rows: OwnerRentalHistoryRow[] = [];
 	for (let month = from; month <= to; month = historyMonthOffset(month, 1)) {
 		const nextMonth = historyMonthOffset(month, 1);
-		const tenants = contracts.filter(contract => contract.startDate < nextMonth && contract.startDate <= today && contract.endDate >= month)
+		const tenants = contracts.filter(contract => contract.startDate < nextMonth && contract.startDate <= today && toLetContractEnd(contract.endDate) >= month)
 			.sort((left, right) => left.startDate.localeCompare(right.startDate) || left.publicNumber - right.publicNumber);
 		if (!tenants.length) {
 			rows.push({ key: `vacant:${month}`, cycleMonth: month, tenantId: null, tenantName: month === `${today.slice(0, 7)}-01` ? "No current tenant" : "Vacant", contractCode: null, bookingCode: null, amount: null, otp: null, status: "vacant", referenceName: null, verifiedAt: null, recorded: false });
@@ -54,7 +54,7 @@ export function buildOwnerRentalHistory(
 			const payment = recordedPayments.get(`${contract.id}:${month}`);
 			const status = payment?.status ?? "pending";
 			const dueDate = `${month.slice(0, 8)}${String(contract.rentDueDay).padStart(2, "0")}`;
-			const canShowOtp = status === "pending" && ["active", "leaving"].includes(contract.status) && contract.startDate <= today && contract.endDate >= today && dueDate <= today;
+			const canShowOtp = status === "pending" && ["active", "leaving"].includes(contract.status) && contract.startDate <= today && toLetContractEnd(contract.endDate) >= today && dueDate <= today;
 			rows.push({
 				key: `${contract.id}:${month}`, cycleMonth: month,
 				tenantId: contract.tenantUserId, tenantName: contract.tenantName,

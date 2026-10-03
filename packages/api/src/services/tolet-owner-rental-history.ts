@@ -1,7 +1,7 @@
 import type { db } from "@bikalpo-project/db";
 import { toletProperty, toletUnit, toletRentalContract, toletBookingRequest, toletRentPayment } from "@bikalpo-project/db/schema";
 import { ORPCError } from "@orpc/server";
-import { and, eq, gte, inArray, lt, lte, min } from "drizzle-orm";
+import { and, eq, gte, inArray, isNull, lt, lte, min, or } from "drizzle-orm";
 import { buildOwnerRentalHistory, historyMonthOffset, ownerRentalHistoryWindow } from "../routers/helpers/tolet-owner-rental-history";
 import { toLetDhakaDateString } from "../routers/helpers/tolet-rental-lifecycle";
 
@@ -34,7 +34,7 @@ export async function getOwnedUnitRentalHistory(
 		startDate: toletRentalContract.startDate, endDate: toletRentalContract.endDate,
 		status: toletRentalContract.status, monthlyRent: toletRentalContract.monthlyRent, rentDueDay: toletRentalContract.rentDueDay,
 	}).from(toletRentalContract).innerJoin(toletBookingRequest, eq(toletRentalContract.bookingRequestId, toletBookingRequest.id))
-		.where(and(scope, lt(toletRentalContract.startDate, nextMonth), gte(toletRentalContract.endDate, window.from), lte(toletRentalContract.startDate, today)));
+		.where(and(scope, lt(toletRentalContract.startDate, nextMonth), or(isNull(toletRentalContract.endDate), gte(toletRentalContract.endDate, window.from)), lte(toletRentalContract.startDate, today)));
 	const payments = contracts.length ? await store.select({
 		contractId: toletRentPayment.contractId, cycleMonth: toletRentPayment.cycleMonth,
 		amount: toletRentPayment.amount, status: toletRentPayment.status,

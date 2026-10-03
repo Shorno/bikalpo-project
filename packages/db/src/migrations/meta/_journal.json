@@ -603,6 +603,13 @@
       "when": 1790553600001,
       "tag": "0086_remove_price_user_display_codes",
       "breakpoints": true
+    },
+    {
+      "idx": 87,
+      "version": "7",
+      "when": 1790553600002,
+      "tag": "0087_tolet_rental_agreement_terms",
+      "breakpoints": true
     }
   ]
 }
