@@ -6,6 +6,9 @@ import {
 	TO_LET_RENT_DUE_DAY,
 	toLetRentCyclesThroughDate,
 	toLetDhakaDateString,
+	toLetEndOfNextMonth,
+	toLetLeaveDate,
+	toLetNextDate,
 	toLetOpenEndedLeaveDate,
 } from "../routers/helpers/tolet-rental-lifecycle";
 
@@ -22,9 +25,12 @@ describe("To-Let rental lifecycle", () => {
 		)).toBe(true);
 	});
 	it("gives an open-ended leave one month's notice, ending on the last day of next month", () => {
-		expect(toLetOpenEndedLeaveDate("2026-10-03")).toBe("2026-11-30");
-		expect(toLetOpenEndedLeaveDate("2026-12-31")).toBe("2027-01-31");
-		expect(toLetOpenEndedLeaveDate("2027-01-15")).toBe("2027-02-28");
+		expect(toLetOpenEndedLeaveDate("2026-10-03")).toBe("2026-10-31");
+		expect(toLetOpenEndedLeaveDate("2026-11-30")).toBe("2026-11-30");
+		expect(toLetOpenEndedLeaveDate("2027-02-15")).toBe("2027-02-28");
+		expect(toLetOpenEndedLeaveDate("2028-02-01")).toBe("2028-02-29");
+		expect(toLetNextDate("2026-10-31")).toBe("2026-11-01");
+		expect(toLetNextDate("2026-12-31")).toBe("2027-01-01");
 	});
 	it("rejects impossible dates and accepts leap days only in leap years", () => {
 		expect(isToLetCalendarDate("2026-02-30")).toBe(false);
@@ -45,13 +51,30 @@ describe("To-Let rental lifecycle", () => {
 		const cycles = toLetRentCyclesThroughDate({ startDate: "2026-07-10", endDate: "2026-08-24", rentDueDay: 15, monthlyRent: "15000.00" }, "2026-10-01");
 		expect(cycles.map(cycle => cycle.dueDate)).toEqual(["2026-07-15", "2026-08-15"]);
 	});
-	it("limits tenant details to the rental period while preserving owner history", () => {
-		const contract = { status: "leaving", endDate: "2026-09-10", tenantUserId: "tenant", ownerUserId: "owner" };
-		expect(canAccessToLetRentalDetails(contract, "tenant", "2026-09-10")).toBe(true);
-		expect(canAccessToLetRentalDetails(contract, "tenant", "2026-09-11")).toBe(false);
-		expect(canAccessToLetRentalDetails({ ...contract, status: "completed" }, "tenant", "2026-09-10")).toBe(false);
-		expect(canAccessToLetRentalDetails({ ...contract, status: "completed" }, "owner", "2026-09-11")).toBe(true);
-		expect(canAccessToLetRentalDetails(contract, "stranger", "2026-09-10")).toBe(false);
+	it("keeps tenant access for one month after moving out while preserving owner history", () => {
+		const contract = { status: "leaving", endDate: "2026-10-31", tenantUserId: "tenant", ownerUserId: "owner" };
+		expect(canAccessToLetRentalDetails(contract, "tenant", "2026-10-31")).toBe(true);
+		const movedOut = { ...contract, status: "completed" };
+		expect(canAccessToLetRentalDetails(movedOut, "tenant", "2026-11-01")).toBe(true);
+		expect(canAccessToLetRentalDetails(movedOut, "tenant", "2026-11-30")).toBe(true);
+		expect(canAccessToLetRentalDetails(movedOut, "tenant", "2026-12-01")).toBe(false);
+		expect(canAccessToLetRentalDetails(
+			{ ...movedOut, accessEndsAt: new Date("2026-11-30T23:59:59+06:00") }, "tenant", "2026-12-01",
+		)).toBe(false);
+		expect(canAccessToLetRentalDetails(movedOut, "owner", "2027-06-01")).toBe(true);
+		expect(canAccessToLetRentalDetails(contract, "stranger", "2026-10-31")).toBe(false);
+	});
+	it("ends a rental on the last day of the month Leave is pressed", () => {
+		const openEnded = { startDate: "2026-07-01", endDate: null };
+		expect(toLetLeaveDate(openEnded, "2026-10-01")).toBe("2026-10-31");
+		expect(toLetLeaveDate(openEnded, "2026-10-07")).toBe("2026-10-31");
+		expect(toLetLeaveDate(openEnded, "2026-10-30")).toBe("2026-10-31");
+		expect(toLetLeaveDate({ startDate: "2026-07-01", endDate: "2027-06-30" }, "2026-10-07")).toBe("2026-10-31");
+		expect(toLetLeaveDate({ startDate: "2026-07-01", endDate: "2026-10-15" }, "2026-10-07")).toBe("2026-10-15");
+		expect(toLetLeaveDate({ startDate: "2026-11-01", endDate: null }, "2026-10-07")).toBe("2026-11-01");
+		expect(toLetEndOfNextMonth("2026-10-31")).toBe("2026-11-30");
+		expect(toLetEndOfNextMonth("2026-12-31")).toBe("2027-01-31");
+		expect(toLetEndOfNextMonth("2027-01-31")).toBe("2027-02-28");
 	});
 	it("keeps a contract active through its final day", () => {
 		expect(

@@ -16,6 +16,7 @@ import { and, asc, count, desc, eq, inArray, max, ne } from "drizzle-orm";
 import { z } from "zod";
 
 import { consumerProcedure } from "../index";
+import { toLetReleaseEndedTenancies } from "./helpers/tolet-leaving";
 import { consumePropertyPhoneProof, requestPropertyPhoneCode, verifyPropertyPhoneCode } from "../lib/tolet-property-phone";
 
 const PROPERTY_TYPES = [
@@ -448,6 +449,8 @@ export const toLetPropertyRouter = {
 		})
 		.input(z.object({ propertyCode: propertyCodeSchema }).strict())
 		.handler(async ({ context, input }) => {
+			// Tenants whose last day has passed are out: show their units as vacant.
+			await toLetReleaseEndedTenancies({ ownerUserId: context.session.user.id });
 			const identity = parsePropertyCode(input.propertyCode);
 			const found = await db.query.toletProperty.findFirst({
 				where: and(
@@ -512,23 +515,24 @@ export const toLetPropertyRouter = {
 					Number(row.bookingCount),
 				]),
 			);
-			const leavingContracts =
+			const currentContracts =
 				unitIds.length > 0
 					? await db
 							.select({
 								unitId: toletRentalContract.unitId,
 								endDate: toletRentalContract.endDate,
+								status: toletRentalContract.status,
 							})
 							.from(toletRentalContract)
 							.where(
 								and(
 									inArray(toletRentalContract.unitId, unitIds),
-									eq(toletRentalContract.status, "leaving"),
+									inArray(toletRentalContract.status, ["active", "leaving"]),
 								),
 							)
 					: [];
-			const leavingOnByUnitId = new Map(
-				leavingContracts.map((row) => [row.unitId, row.endDate]),
+			const tenancyByUnitId = new Map(
+				currentContracts.map((row) => [row.unitId, row]),
 			);
 			return {
 				property: {
@@ -537,8 +541,13 @@ export const toLetPropertyRouter = {
 						const listing = listingByUnitId.get(unit.id);
 						return {
 							...unitDto(unit),
-							isLeaving: leavingOnByUnitId.has(unit.id),
-							leavingOn: leavingOnByUnitId.get(unit.id) ?? null,
+							isLeaving: tenancyByUnitId.get(unit.id)?.status === "leaving",
+							leavingOn:
+								tenancyByUnitId.get(unit.id)?.status === "leaving"
+									? (tenancyByUnitId.get(unit.id)?.endDate ?? null)
+									: null,
+							// The current tenant's known last day (leave date or fixed contract end).
+							tenantUntil: tenancyByUnitId.get(unit.id)?.endDate ?? null,
 							currentListing: listing
 								? currentListingDto(
 										listing,

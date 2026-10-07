@@ -7,21 +7,65 @@ export function toLetContractEnd(endDate: string | null) {
 	return endDate ?? TO_LET_OPEN_ENDED_DATE;
 }
 
-// Leaving an open-ended contract gives one month's notice: it ends on the last day of next month.
+// Pressing Leave on any day of a month ends the rental on that month's last
+// day; the tenant is out from the coming 1st.
 export function toLetOpenEndedLeaveDate(today = toLetDhakaDateString()) {
 	const [year, month] = today.split("-").map(Number);
+	return new Date(Date.UTC(year ?? 0, month ?? 1, 0)).toISOString().slice(0, 10);
+}
+
+/**
+ * The tenant's last day after pressing Leave: the end of the current month, or
+ * the contract's own end date if it comes sooner. Never before move-in.
+ */
+export function toLetLeaveDate(
+	contract: { startDate: string; endDate: string | null },
+	today = toLetDhakaDateString(),
+) {
+	const monthEnd = toLetOpenEndedLeaveDate(today);
+	const leaveDate =
+		contract.endDate && contract.endDate < monthEnd ? contract.endDate : monthEnd;
+	return leaveDate < contract.startDate ? contract.startDate : leaveDate;
+}
+
+/** Last day of the month after `date` (YYYY-MM-DD). */
+export function toLetEndOfNextMonth(date: string) {
+	const [year, month] = date.split("-").map(Number);
 	return new Date(Date.UTC(year ?? 0, (month ?? 1) + 1, 0)).toISOString().slice(0, 10);
 }
 
+/**
+ * After moving out, the tenant keeps access to the rental (details, dues and
+ * rent-payment OTP) through the end of the following month.
+ */
+export function toLetTenantAccessEndDate(contract: {
+	endDate: string | null;
+	accessEndsAt?: Date | null;
+}) {
+	if (contract.accessEndsAt) return toLetDhakaDateString(contract.accessEndsAt);
+	return contract.endDate ? toLetEndOfNextMonth(contract.endDate) : TO_LET_OPEN_ENDED_DATE;
+}
+
+export function toLetNextDate(date: string) {
+	const [year, month, day] = date.split("-").map(Number);
+	return new Date(Date.UTC(year ?? 0, (month ?? 1) - 1, (day ?? 1) + 1)).toISOString().slice(0, 10);
+}
+
 export function canAccessToLetRentalDetails(
-	contract: { status: string; endDate: string | null; ownerUserId: string; tenantUserId: string },
+	contract: {
+		status: string;
+		endDate: string | null;
+		accessEndsAt?: Date | null;
+		ownerUserId: string;
+		tenantUserId: string;
+	},
 	userId: string,
 	today = toLetDhakaDateString(),
 ) {
 	if (contract.ownerUserId === userId) return true;
 	return contract.tenantUserId === userId &&
-		(contract.status === "active" || contract.status === "leaving") &&
-		toLetContractEnd(contract.endDate) >= today;
+		["active", "leaving", "completed"].includes(contract.status) &&
+		toLetTenantAccessEndDate(contract) >= today;
 }
 
 export function toLetDhakaDateString(date = new Date()) {

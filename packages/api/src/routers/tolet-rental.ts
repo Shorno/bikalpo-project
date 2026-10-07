@@ -18,7 +18,7 @@ import { and, asc, count, desc, eq, inArray, isNull, gte, or, sql } from "drizzl
 import { z } from "zod";
 
 import { consumerProcedure, publicProcedure } from "../index";
-import { canAccessToLetRentalDetails, isToLetCalendarDate, toLetContractEnd, toLetDhakaDateString, toLetOpenEndedLeaveDate } from "./helpers/tolet-rental-lifecycle";
+import { canAccessToLetRentalDetails, isToLetCalendarDate, toLetDhakaDateString, toLetEndOfNextMonth, toLetLeaveDate, toLetTenantAccessEndDate } from "./helpers/tolet-rental-lifecycle";
 import { toLetRentOtp, verifyToLetRentPayment } from "../services/tolet-rent-payment";
 import { ownerUnitRentalHistoryProcedure } from "./tolet-owner-rental-history";
 import { syncToLetAlertNotifications } from "../services/tolet-alert-notifications";
@@ -146,8 +146,9 @@ async function rentalDto(bookingCode: string, userId: string) {
 		.orderBy(asc(toletRentPayment.cycleMonth));
 	const isOwner = row.contract.ownerUserId === userId;
 	const today = toLetDhakaDateString();
-	const canShowOtp = isOwner && ["active", "leaving"].includes(row.contract.status) &&
-		row.contract.startDate <= today && toLetContractEnd(row.contract.endDate) >= today;
+	// Dues stay payable after move-out, through the tenant's access window.
+	const canShowOtp = isOwner && ["active", "leaving", "completed"].includes(row.contract.status) &&
+		row.contract.startDate <= today && toLetTenantAccessEndDate(row.contract) >= today;
 	const comments = await db
 		.select()
 		.from(toletRentalComment)
@@ -627,8 +628,10 @@ export const toLetRentalRouter = {
 				});
 			}
 			const now = new Date();
-			const endDate = row.contract.endDate ?? toLetOpenEndedLeaveDate();
-			const accessEndsAt = new Date(`${endDate}T23:59:59+06:00`);
+			// Leave pressed on any day ends the rental on this month's last day;
+			// the tenant keeps access (dues, payment OTP) to the end of next month.
+			const endDate = toLetLeaveDate(row.contract);
+			const accessEndsAt = new Date(`${toLetEndOfNextMonth(endDate)}T23:59:59+06:00`);
 			await db.transaction(async (tx) => {
 				const changed = await tx
 					.update(toletRentalContract)

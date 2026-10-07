@@ -116,7 +116,7 @@ export function UnitCard({
   const isActiveVacant =
     listing?.status === "active" && unit.status === "vacant";
   const canManageListing =
-    unit.status === "vacant" &&
+    (unit.status === "vacant" || unit.status === "occupied") &&
     (!listing ||
       listing.status === "draft" ||
       listing.status === "paused" ||
@@ -199,7 +199,7 @@ export function UnitCard({
     <article className="overflow-hidden rounded-lg border border-border bg-card">
       <header className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-3">
         <div className="flex items-center gap-2">
-          {listing?.status === "active" ? (
+          {listing?.status === "active" && unit.status !== "occupied" ? (
             <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 ring-1 ring-inset ring-emerald-200">
               {statusText}
             </span>
@@ -212,6 +212,9 @@ export function UnitCard({
             <span className="text-xs font-medium text-muted-foreground">
               {humanize(listing.status)} Listing
             </span>
+          ) : null}
+          {unit.status === "occupied" && listing?.status === "active" ? (
+            <span className="text-xs font-medium text-emerald-700">Posted</span>
           ) : null}
           {unit.isLeaving && unit.leavingOn ? (
             <span className="text-xs font-medium text-muted-foreground">

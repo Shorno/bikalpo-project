@@ -121,6 +121,13 @@ function listingFromResponse(data: unknown): ToLetUnitListingView | null {
     : null;
 }
 
+/** The first day a leaving tenant's unit can be offered (YYYY-MM-DD, calendar arithmetic). */
+function dayAfter(date: string) {
+  const [year, month, day] = date.split("-").map(Number);
+  const next = new Date(Date.UTC(year ?? 0, (month ?? 1) - 1, (day ?? 1) + 1));
+  return next.toISOString().slice(0, 10);
+}
+
 function today() {
   const current = new Date();
   const local = new Date(
@@ -152,7 +159,9 @@ function initialValues(
     utilityCharge: listing?.utilityCharge ?? 0,
     utilityChargeVisible: listing?.utilityChargeVisible ?? true,
     utilityChargeIncluded: listing?.utilityChargeIncluded ?? false,
-    availableFrom: listing?.availableFrom ?? today(),
+    availableFrom:
+      listing?.availableFrom ??
+      (unit.tenantUntil ? dayAfter(unit.tenantUntil) : today()),
     preferredTenant: listing?.preferredTenant ?? "any",
     hasInternet: listing?.hasInternet ?? false,
     facilityInclusions: listing?.facilityInclusions ?? {},
@@ -1009,6 +1018,7 @@ function LoadedListingForm({
               <Input
                 id="available-from"
                 type="date"
+                min={unit.tenantUntil ? dayAfter(unit.tenantUntil) : undefined}
                 value={values.availableFrom}
                 onChange={(event) =>
                   update("availableFrom", event.target.value)
@@ -1016,6 +1026,13 @@ function LoadedListingForm({
                 aria-invalid={Boolean(errors.availableFrom)}
               />
               <FieldError message={errors.availableFrom} />
+              {unit.status === "occupied" ? (
+                <InfoNote>
+                  {unit.tenantUntil
+                    ? `The current tenant stays until ${unit.tenantUntil}. This listing can start from ${dayAfter(unit.tenantUntil)}, and new booking requests can be accepted from that date.`
+                    : "A tenant lives here and has not given notice yet. People can send booking requests, but you can accept one only after the unit is vacant."}
+                </InfoNote>
+              ) : null}
             </div>
           </div>
         </FormSection>
@@ -1283,9 +1300,9 @@ export function ListingForm({
       <PropertyErrorState message="This Property is blocked and cannot publish a listing." />
     );
   }
-  if (unit.status !== "vacant") {
+  if (unit.status !== "vacant" && unit.status !== "occupied") {
     return (
-      <PropertyErrorState message="Only a Vacant Unit can publish a To-Let listing." />
+      <PropertyErrorState message="Only a Vacant or Rented Unit can publish a To-Let listing." />
     );
   }
 

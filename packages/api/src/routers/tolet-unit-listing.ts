@@ -28,6 +28,8 @@ import {
 import { z } from "zod";
 
 import { consumerProcedure, publicProcedure } from "../index";
+import { toLetCurrentTenancy } from "./helpers/tolet-leaving";
+import { toLetNextDate } from "./helpers/tolet-rental-lifecycle";
 import {
   toLetListingCutoff,
   toLetListingVisibleUntil,
@@ -249,7 +251,7 @@ function publicMarketplaceListingScope(now = new Date()) {
   return or(
     and(
       eq(toletUnitListing.status, "active"),
-      eq(toletUnit.status, "vacant"),
+      listableUnitScope(),
       or(
         gt(toletUnitListing.publishedAt, cutoff),
         and(
@@ -413,6 +415,38 @@ async function findOwnedUnit(
   return owned;
 }
 
+/** When the current tenant's last day is known, the new listing must start after it. */
+async function assertAvailableAfterTenancy(unit: ToletUnit, availableFrom: string) {
+  const until = (await toLetCurrentTenancy(unit))?.until;
+  if (until && availableFrom <= until) {
+    throw new ORPCError("BAD_REQUEST", {
+      message: `The current tenant stays until ${until}. Set Available From to ${toLetNextDate(until)} or later.`,
+    });
+  }
+}
+
+/**
+ * A listing needs a vacant unit or a rented (occupied) one: the owner may
+ * advertise a rented unit at any time, even before the tenant gives notice.
+ * Accepting the next tenant still waits until the unit is vacant.
+ */
+async function assertUnitListable(
+  unit: ToletUnit,
+  availableFrom: string,
+  vacantOnlyMessage: string,
+) {
+  if (unit.status === "vacant") return;
+  if (unit.status !== "occupied") {
+    throw new ORPCError("CONFLICT", { message: vacantOnlyMessage });
+  }
+  await assertAvailableAfterTenancy(unit, availableFrom);
+}
+
+/** SQL twin of the listable-unit rule for marketplace queries. */
+function listableUnitScope() {
+  return inArray(toletUnit.status, ["vacant", "occupied"]);
+}
+
 async function findOwnedListing(
   userId: string,
   propertyCode: string,
@@ -485,7 +519,7 @@ function publicDetailScope(input: PublicDetailInput, now = new Date()) {
       ? and(
           eq(toletProperty.qrToken, input.qrToken),
           eq(toletUnitListing.status, "active"),
-          eq(toletUnit.status, "vacant"),
+          listableUnitScope(),
         )
       : and(
           eq(toletUnitListing.visibility, "public"),
@@ -638,11 +672,11 @@ export const toLetUnitListingRouter = {
           message: "Only an active property can create a listing",
         });
       }
-      if (owned.unit.status !== "vacant") {
-        throw new ORPCError("CONFLICT", {
-          message: "Only a vacant unit can create a listing",
-        });
-      }
+      await assertUnitListable(
+        owned.unit,
+        input.data.availableFrom,
+        "Only a vacant or rented unit can create a listing",
+      );
 
       try {
         const [created] = await db
@@ -685,6 +719,7 @@ export const toLetUnitListingRouter = {
         input.listingCode,
       );
       assertListingWritable(owned);
+      await assertAvailableAfterTenancy(owned.unit, input.data.availableFrom);
 
       const [updated] = await db
         .update(toletUnitListing)
@@ -740,11 +775,11 @@ export const toLetUnitListingRouter = {
             message: "Only an active property can publish a listing",
           });
         }
-        if (owned.unit.status !== "vacant") {
-          throw new ORPCError("CONFLICT", {
-            message: "Only a vacant unit can publish a listing",
-          });
-        }
+        await assertUnitListable(
+          owned.unit,
+          owned.listing.availableFrom,
+          "Only a vacant or rented unit can publish a listing",
+        );
         if (owned.listing.imageUrls.length === 0) {
           throw new ORPCError("BAD_REQUEST", {
             message: "Add at least one listing photo before publishing",
@@ -1258,7 +1293,7 @@ export const toLetUnitListingRouter = {
           and(
             eq(toletProperty.id, property.id),
             eq(toletUnitListing.status, "active"),
-            eq(toletUnit.status, "vacant"),
+            listableUnitScope(),
             eq(toletProperty.status, "active"),
           ),
         )

@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronLeft, ChevronRight, Image as ImageIcon } from "lucide-react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import {
@@ -196,30 +196,6 @@ export function ListingImageCarousel({
           ))}
         </div>
       ) : null}
-
-      {galleryHref ? (
-        <Link
-          href={galleryHref}
-          className={photoBadgeClassName}
-          aria-label={`Open ${alt} photo gallery`}
-        >
-          <ImageIcon className="size-3 md:size-3.5" aria-hidden="true" />
-          <span className="tabular-nums">{images.length}</span>
-        </Link>
-      ) : hasMultipleImages ? (
-        <button
-          type="button"
-          onClick={showNext}
-          className={photoBadgeClassName}
-          aria-label={`Show next photo. Photo ${activeIndex + 1} of ${images.length} is currently shown`}
-        >
-          <ImageIcon className="size-3 md:size-3.5" aria-hidden="true" />
-          <span className="tabular-nums">{images.length}</span>
-        </button>
-      ) : null}
     </div>
   );
 }
-
-const photoBadgeClassName =
-  "absolute bottom-2 right-2 z-10 inline-flex h-6 items-center gap-1 rounded-full bg-black/45 px-2 text-[11px] font-medium text-white ring-1 ring-white/20 backdrop-blur-md transition-colors after:absolute after:-inset-2 hover:bg-black/60 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white md:bottom-3 md:right-3 md:h-7 md:px-2.5 md:text-xs";

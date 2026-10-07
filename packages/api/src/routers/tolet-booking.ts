@@ -1,5 +1,6 @@
 import { effectiveUnitAddress } from "../lib/tolet-unit-address";
-import { shouldCompleteToLetContract } from "./helpers/tolet-rental-lifecycle";
+import { shouldCompleteToLetContract, toLetNextDate } from "./helpers/tolet-rental-lifecycle";
+import { toLetCurrentTenancy, toLetReleaseEndedTenancies } from "./helpers/tolet-leaving";
 import { db } from "@bikalpo-project/db";
 import {
   type ToletBookingOfferSnapshot,
@@ -14,7 +15,7 @@ import {
   toletUnitListing,
 } from "@bikalpo-project/db/schema";
 import { ORPCError } from "@orpc/server";
-import { and, desc, eq, ne } from "drizzle-orm";
+import { and, desc, eq, ne, or } from "drizzle-orm";
 import { z } from "zod";
 
 import { consumerProcedure } from "../index";
@@ -719,6 +720,56 @@ export const toLetBookingRouter = {
         return { bookings: [] };
       }
 
+      // A rented unit can already be advertised again: show the current
+      // tenant's accepted booking and every request on the new listing.
+      if (owned.unit.status === "occupied") {
+        const [currentListing] = await db
+          .select({ id: toletUnitListing.id })
+          .from(toletUnitListing)
+          .where(
+            and(
+              eq(toletUnitListing.unitId, owned.unit.id),
+              eq(toletUnitListing.status, "closed"),
+            ),
+          )
+          .orderBy(desc(toletUnitListing.createdAt))
+          .limit(1);
+        const [nextListing] = await db
+          .select({ id: toletUnitListing.id })
+          .from(toletUnitListing)
+          .where(
+            and(
+              eq(toletUnitListing.unitId, owned.unit.id),
+              eq(toletUnitListing.status, "active"),
+            ),
+          )
+          .orderBy(desc(toletUnitListing.createdAt))
+          .limit(1);
+        const scopes = [
+          currentListing
+            ? and(
+                eq(toletBookingRequest.listingId, currentListing.id),
+                eq(toletBookingRequest.status, "accepted"),
+              )
+            : undefined,
+          nextListing
+            ? eq(toletBookingRequest.listingId, nextListing.id)
+            : undefined,
+        ].filter((scope) => scope !== undefined);
+        if (scopes.length === 0) {
+          return { bookings: [] };
+        }
+        const bookings = await db
+          .select({ booking: toletBookingRequest })
+          .from(toletBookingRequest)
+          .where(or(...scopes))
+          .orderBy(desc(toletBookingRequest.createdAt))
+          .limit(100);
+        return {
+          bookings: bookings.map(({ booking }) => bookingDto(booking, true)),
+        };
+      }
+
       const [relevantListing] = await db
         .select({ id: toletUnitListing.id })
         .from(toletUnitListing)
@@ -766,6 +817,22 @@ export const toLetBookingRouter = {
       const unitPublicNumber = parseUnitCode(input.unitCode);
       const bookingPublicNumber = parseBookingCode(input.bookingCode);
 
+      // The current tenant is out from the 1st after their last day: release
+      // the unit first so the next tenant can be accepted on that day.
+      const [target] = await db
+        .select({ unitId: toletUnit.id })
+        .from(toletUnit)
+        .innerJoin(toletProperty, eq(toletUnit.propertyId, toletProperty.id))
+        .where(
+          and(
+            eq(toletUnit.publicNumber, unitPublicNumber),
+            eq(toletProperty.publicNumber, propertyIdentity.publicNumber),
+            eq(toletProperty.ownerUserId, context.session.user.id),
+          ),
+        )
+        .limit(1);
+      if (target) await toLetReleaseEndedTenancies({ unitId: target.unitId });
+
       try {
         const booking = await db.transaction(async (tx) => {
           const [owned] = await tx
@@ -808,8 +875,13 @@ export const toLetBookingRouter = {
             });
           }
           if (owned.unit.status !== "vacant") {
+            const tenancy = await toLetCurrentTenancy(owned.unit, tx);
             throw new ORPCError("CONFLICT", {
-              message: "Only a vacant unit can accept a booking request",
+              message: tenancy?.until
+                ? `The current tenant stays until ${tenancy.until}. You can accept this request from ${toLetNextDate(tenancy.until)}.`
+                : tenancy
+                  ? "The current tenant still lives here. You can accept this request once the unit is vacant."
+                  : "Only a vacant unit can accept a booking request",
             });
           }
           if (owned.listing.status !== "active") {
@@ -952,7 +1024,7 @@ export const toLetBookingRouter = {
             message: "Only an active property can reject booking requests",
           });
         }
-        if (owned.unit.status !== "vacant") {
+        if (owned.unit.status !== "vacant" && owned.unit.status !== "occupied") {
           throw new ORPCError("CONFLICT", {
             message: "Only a vacant unit can reject a booking request",
           });

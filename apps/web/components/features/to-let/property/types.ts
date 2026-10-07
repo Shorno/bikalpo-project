@@ -78,6 +78,8 @@ export interface ToLetUnitView {
   /** Tenant has requested to leave; the Unit stays occupied until leavingOn. */
   isLeaving?: boolean;
   leavingOn?: string | null;
+  /** The current tenant's known last day (leave date or fixed contract end). */
+  tenantUntil?: string | null;
   floorNumber: number;
   sizeSqFt: number;
   bedrooms: number;
