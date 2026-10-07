@@ -1,4 +1,4 @@
-import { toLetMarketplaceStatus } from "./tolet-marketplace-visibility";
+import { isToLetListableUnitStatus, toLetMarketplaceStatus } from "./tolet-marketplace-visibility";
 
 type ListingStatus = "draft" | "active" | "paused" | "closed";
 type UnitStatus = "vacant" | "booked" | "occupied" | "inactive";
@@ -21,7 +21,7 @@ export function canCreateToLetBookingRequest(
 ) {
 	if (
 		input.listingStatus !== "active" ||
-		input.unitStatus !== "vacant" ||
+		!isToLetListableUnitStatus(input.unitStatus) ||
 		input.propertyStatus !== "active"
 	) {
 		return false;

@@ -25,6 +25,22 @@ test("an active vacant listing is available", () => {
 	);
 });
 
+test("a listing posted ahead on a rented (occupied) unit is available", () => {
+	assert.equal(
+		toLetMarketplaceStatus(
+			{
+				listingStatus: "active",
+				unitStatus: "occupied",
+				publishedAt: new Date("2026-08-01T12:00:00.000Z"),
+				createdAt: new Date("2026-07-01T12:00:00.000Z"),
+				closedAt: null,
+			},
+			now,
+		),
+		"available",
+	);
+});
+
 test("an available listing disappears at its 30-day publication boundary", () => {
 	const publishedAt = new Date("2026-07-06T12:00:00.000Z");
 

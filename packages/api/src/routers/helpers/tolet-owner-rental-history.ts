@@ -1,10 +1,10 @@
-import { toLetContractEnd, toLetDhakaDateString } from "./tolet-rental-lifecycle";
+import { toLetContractEnd, toLetDhakaDateString, toLetTenantAccessEndDate } from "./tolet-rental-lifecycle";
 import { toLetRentOtp } from "../../services/tolet-rent-payment";
 
 export type OwnerHistoryContract = {
 	id: string; publicNumber: number; bookingNumber: number;
 	tenantUserId: string; tenantName: string; startDate: string; endDate: string | null;
-	status: string; monthlyRent: string; rentDueDay: number;
+	accessEndsAt?: Date | null; status: string; monthlyRent: string; rentDueDay: number;
 };
 export type OwnerHistoryPayment = {
 	contractId: string; cycleMonth: string; amount: string; status: "pending" | "paid";
@@ -54,7 +54,8 @@ export function buildOwnerRentalHistory(
 			const payment = recordedPayments.get(`${contract.id}:${month}`);
 			const status = payment?.status ?? "pending";
 			const dueDate = `${month.slice(0, 8)}${String(contract.rentDueDay).padStart(2, "0")}`;
-			const canShowOtp = status === "pending" && ["active", "leaving"].includes(contract.status) && contract.startDate <= today && toLetContractEnd(contract.endDate) >= today && dueDate <= today;
+			// Dues stay payable for one month after the tenant moves out.
+			const canShowOtp = status === "pending" && ["active", "leaving", "completed"].includes(contract.status) && contract.startDate <= today && toLetTenantAccessEndDate(contract) >= today && dueDate <= today;
 			rows.push({
 				key: `${contract.id}:${month}`, cycleMonth: month,
 				tenantId: contract.tenantUserId, tenantName: contract.tenantName,

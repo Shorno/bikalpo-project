@@ -90,9 +90,17 @@ test("parallel correct submissions cannot pay twice", async () => {
 
 test("unrelated accounts, completed/expired/future contracts and missing cycles cannot pay", async () => {
 	assert.equal((await harness({ noContract: true }).run(validOtp)).status, "forbidden");
-	for (const overrides of [{ status: "completed" }, { endDate: "2026-09-11" }, { startDate: "2026-09-20" }, { noPayment: true }, { dueDate: "2026-09-15" }]) {
+	// Completed beyond the one-month access window, a cycle after the contract ended,
+	// a future move-in, a missing cycle and a cycle not yet due.
+	for (const overrides of [{ status: "completed", endDate: "2026-07-31" }, { endDate: "2026-08-31" }, { startDate: "2026-09-20" }, { noPayment: true }, { dueDate: "2026-09-15" }]) {
 		assert.equal((await harness(overrides).run(validOtp)).status, "unavailable");
 	}
+});
+
+test("a tenant who moved out can still pay dues until the end of the following month", async () => {
+	const augustOtp = toLetRentOtp(input.contractId, "2026-08-01", secret);
+	const movedOut = harness({ status: "completed", endDate: "2026-08-31" });
+	assert.equal((await movedOut.run(augustOtp, now, { cycleMonth: "2026-08-01" })).status, "paid");
 });
 
 test("malformed, non-month-start and future cycles are rejected", async () => {
@@ -101,7 +109,8 @@ test("malformed, non-month-start and future cycles are rejected", async () => {
 	}
 });
 
-test("Leaving tenant can pay through final Dhaka date but not after it", async () => {
-	assert.equal((await harness({ status: "leaving", endDate: "2026-09-12" }).run(validOtp, new Date("2026-09-12T17:59:59Z"))).status, "paid");
-	assert.equal((await harness({ status: "leaving", endDate: "2026-09-12" }).run(validOtp, new Date("2026-09-12T18:00:00Z"))).status, "unavailable");
+test("a leaving tenant can pay dues through the end of the following month (Dhaka), not after it", async () => {
+	assert.equal((await harness({ status: "leaving", endDate: "2026-09-12" }).run(validOtp, new Date("2026-09-12T18:00:00Z"))).status, "paid");
+	assert.equal((await harness({ status: "completed", endDate: "2026-09-12" }).run(validOtp, new Date("2026-10-31T17:59:59Z"))).status, "paid");
+	assert.equal((await harness({ status: "completed", endDate: "2026-09-12" }).run(validOtp, new Date("2026-10-31T18:00:00Z"))).status, "unavailable");
 });

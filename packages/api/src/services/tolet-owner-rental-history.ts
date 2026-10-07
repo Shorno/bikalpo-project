@@ -32,7 +32,7 @@ export async function getOwnedUnitRentalHistory(
 		bookingNumber: toletBookingRequest.publicNumber,
 		tenantUserId: toletRentalContract.tenantUserId, tenantName: toletBookingRequest.contactName,
 		startDate: toletRentalContract.startDate, endDate: toletRentalContract.endDate,
-		status: toletRentalContract.status, monthlyRent: toletRentalContract.monthlyRent, rentDueDay: toletRentalContract.rentDueDay,
+		accessEndsAt: toletRentalContract.accessEndsAt, status: toletRentalContract.status, monthlyRent: toletRentalContract.monthlyRent, rentDueDay: toletRentalContract.rentDueDay,
 	}).from(toletRentalContract).innerJoin(toletBookingRequest, eq(toletRentalContract.bookingRequestId, toletBookingRequest.id))
 		.where(and(scope, lt(toletRentalContract.startDate, nextMonth), or(isNull(toletRentalContract.endDate), gte(toletRentalContract.endDate, window.from)), lte(toletRentalContract.startDate, today)));
 	const payments = contracts.length ? await store.select({

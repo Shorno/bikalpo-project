@@ -1351,7 +1351,8 @@ export function UnitDetailsClient({
   );
   const loadedListing = listingFromResponse(listingQuery.data);
   const showBookingRequests =
-    loadedListing?.status === "active" && loadedUnit?.status === "vacant";
+    loadedListing?.status === "active" &&
+    (loadedUnit?.status === "vacant" || loadedUnit?.status === "occupied");
   const sectionNavigation = showBookingRequests
     ? activeListingSectionNavigation
     : unitSectionNavigation;
@@ -1620,7 +1621,7 @@ export function UnitDetailsClient({
                   </Link>
                 </Button>
               ) : null}
-              {unit.status === "vacant" && !isBlocked ? (
+              {(unit.status === "vacant" || unit.status === "occupied") && !isBlocked ? (
                 <Button asChild className="bg-primary text-primary-foreground hover:bg-primary/90">
                   <Link href={listingHref}>
                     <Megaphone />
@@ -1783,7 +1784,7 @@ export function UnitDetailsClient({
               property={property}
               offer={displayOffer}
               listingHref={listingHref}
-              canEdit={!isBlocked && unit.status === "vacant"}
+              canEdit={!isBlocked && (unit.status === "vacant" || unit.status === "occupied")}
             />
           </div>
           <div

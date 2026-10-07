@@ -109,14 +109,14 @@ const rentalStatusPresentation: Record<
   }
 > = {
   active: {
-    label: "Occupied · Contract active",
+    label: "Booked · Contract active",
     detail:
       "Your rental contract is active. Rent details and monthly payment records are available below.",
     className: "border-emerald-200 bg-emerald-50 text-emerald-800",
     icon: CheckCircle2,
   },
   leaving: {
-    label: "Leaving",
+    label: "Booked · Leaving",
     detail:
       "Your leave request is scheduled and rental access continues until the contract access end date.",
     className: "border-primary/20 bg-primary/5 text-primary",
@@ -125,7 +125,7 @@ const rentalStatusPresentation: Record<
   completed: {
     label: "Completed · Rental history",
     detail:
-      "This rental has ended. Its contract and verified payment record remain in your rental history.",
+      "You have moved out. For one more month you can still view this rental and pay any remaining dues.",
     className: "border-border bg-muted text-foreground",
     icon: CheckCircle2,
   },
@@ -160,12 +160,31 @@ function formatDate(value: string | null, includeTime = false) {
   }).format(date);
 }
 
-/** Mirrors the server: an open-ended rental ends on the last day of next month. */
-function leaveEndDate(endDate: string | null) {
-  if (endDate) return endDate;
+function calendarDate(date: Date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+/**
+ * Mirrors the server: Leave pressed on any day ends the rental on this month's
+ * last day (or the contract's own earlier end date), never before move-in.
+ */
+function leaveEndDate(contract: { startDate: string; endDate: string | null }) {
   const today = new Date();
-  const lastDayNextMonth = new Date(today.getFullYear(), today.getMonth() + 2, 0);
-  return `${lastDayNextMonth.getFullYear()}-${String(lastDayNextMonth.getMonth() + 1).padStart(2, "0")}-${String(lastDayNextMonth.getDate()).padStart(2, "0")}`;
+  const monthEnd = calendarDate(new Date(today.getFullYear(), today.getMonth() + 1, 0));
+  const date =
+    contract.endDate && contract.endDate < monthEnd ? contract.endDate : monthEnd;
+  return date < contract.startDate ? contract.startDate : date;
+}
+
+/** After moving out the tenant keeps access to details and dues until the end of the next month. */
+function endOfNextMonth(date: string) {
+  const [year, month] = date.split("-").map(Number);
+  return calendarDate(new Date(year ?? 0, (month ?? 1) + 1, 0));
+}
+
+function tenantAccessEnd(contract: { endDate: string | null; accessEndsAt: string | null }) {
+  if (contract.accessEndsAt) return contract.accessEndsAt;
+  return contract.endDate ? endOfNextMonth(contract.endDate) : null;
 }
 
 function DetailsLoading() {
@@ -405,17 +424,22 @@ function BookingDetails({ booking }: { booking: ToLetBookingRequestView }) {
     }
   }
 
+  // A tenant who moved out keeps access for one more month; the server refuses
+  // after that, which surfaces here as an error.
+  if (booking.rentalSummary?.status === "completed" && rentalQuery.isPending) {
+    return <DetailsLoading />;
+  }
   if (
-    booking.rentalSummary?.status === "completed" ||
-    contract?.status === "completed" ||
-    (booking.rentalSummary && rentalQuery.isError)
+    (booking.rentalSummary && rentalQuery.isError) ||
+    (booking.rentalSummary?.status === "completed" && rentalQuery.isSuccess && !contract)
   ) {
     return (
       <div className="rounded-xl border bg-card p-6">
         <h1 className="text-xl font-semibold">Rental details unavailable</h1>
         <p className="mt-2 text-sm text-muted-foreground">
-          Details access ends with the rental period. Completed rentals remain
-          in Rental History. If your rental is still current, please try again.
+          Access to a rental ends one month after you move out. Completed
+          rentals remain in Rental History. If your rental is still current,
+          please try again.
         </p>
         <Button asChild variant="outline" className="mt-4">
           <Link href="/account/to-let">Back to My Bookings</Link>
@@ -486,11 +510,16 @@ function BookingDetails({ booking }: { booking: ToLetBookingRequestView }) {
                     </AlertDialogTitle>
                     <AlertDialogDescription>
                       The owner will see that you are leaving. Your rental
-                      stays active until{" "}
+                      ends on{" "}
                       <span className="font-semibold text-foreground">
-                        {formatDate(leaveEndDate(contract.endDate))}
+                        {formatDate(leaveEndDate(contract))}
+                      </span>{" "}
+                      and you move out from the next day. You can still view
+                      this rental and pay any dues until{" "}
+                      <span className="font-semibold text-foreground">
+                        {formatDate(endOfNextMonth(leaveEndDate(contract)))}
                       </span>
-                      , and you cannot undo this request.
+                      . You cannot undo this request.
                     </AlertDialogDescription>
                   </AlertDialogHeader>
                   <AlertDialogFooter>
@@ -564,8 +593,16 @@ function BookingDetails({ booking }: { booking: ToLetBookingRequestView }) {
           </div>
           {contract.status === "leaving" ? (
             <p className="mt-3 rounded-lg bg-white/70 p-3">
-              Leave is scheduled. Rental access remains available until{" "}
-              {formatDate(contract.accessEndsAt)}.
+              Leave is scheduled: your rental ends on{" "}
+              {formatDate(contract.endDate)} and you move out from the next
+              day. You can view this rental and pay any dues until{" "}
+              {formatDate(tenantAccessEnd(contract))}.
+            </p>
+          ) : contract.status === "completed" ? (
+            <p className="mt-3 rounded-lg bg-white/70 p-3">
+              You moved out after {formatDate(contract.endDate)}. You can view
+              this rental and pay any dues until{" "}
+              {formatDate(tenantAccessEnd(contract))}.
             </p>
           ) : null}
         </div>

@@ -18,18 +18,13 @@
   .compact li:last-child { margin-right: 0; }
   .compact li::before { content: "·"; margin-right: 1px; }
   .compact[data-residential] [data-slot="location"] p { -webkit-line-clamp: 1; line-clamp: 1; }
-  .compact [data-slot="location"] { margin-top: 6px; margin-bottom: 8px; font-size: 11px; line-height: 17px; }
+  .compact [data-slot="location"] { margin-top: 6px; margin-bottom: 0; font-size: 11px; line-height: 17px; }
   .compact [data-slot="location"] svg { display: none; }
-  .compact [data-slot="actions"] { display: flex; border: 0; padding-top: 0; justify-content: flex-end; }
-  .compact [data-slot="actions"] a[href^="tel:"],
-  .compact [data-slot="actions"] > span { display: none; }
-  .compact [data-slot="actions"] a {
-    width: 100%; min-height: 34px; padding: 6px 8px; font-size: 11px; gap: 4px;
-    background: color-mix(in oklch, var(--primary) 9%, transparent);
-    color: var(--primary);
-  }
-  .compact [data-slot="actions"] a:hover { background: color-mix(in oklch, var(--primary) 15%, transparent); }
-  .compact [data-slot="actions"] svg { width: 12px; height: 12px; }
+  /* Phones: no action buttons; the whole card body opens the listing (stretched title link).
+     The photo keeps its own link so swiping through images still works. */
+  .compact [data-slot="actions"] { display: none; }
+  .compact [data-slot="card-body"] { position: relative; }
+  .compact [data-slot="summary"] a::after { content: ""; position: absolute; inset: 0; }
 }
 
 @media (max-width: 370px) {

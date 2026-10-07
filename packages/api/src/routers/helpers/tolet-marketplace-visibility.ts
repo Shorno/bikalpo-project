@@ -10,6 +10,15 @@ type ListingVisibility = "public" | "qr_only";
 
 export type ToLetMarketplaceStatus = "available" | "booked";
 
+/**
+ * Units that may carry an active listing. A rented (occupied) unit may be
+ * advertised ahead for the next tenant; booking acceptance still waits until
+ * the unit is vacant.
+ */
+export function isToLetListableUnitStatus(status: UnitStatus) {
+	return status === "vacant" || status === "occupied";
+}
+
 export function toLetListingVisibleUntil(startedAt: Date) {
 	return new Date(startedAt.getTime() + TO_LET_LISTING_VISIBILITY_MILLISECONDS);
 }
@@ -51,7 +60,7 @@ export function isToLetPublicListingRenewalDue(
 	if (
 		input.visibility !== "public" ||
 		input.listingStatus !== "active" ||
-		input.unitStatus !== "vacant"
+		!isToLetListableUnitStatus(input.unitStatus)
 	) {
 		return false;
 	}
@@ -83,7 +92,7 @@ export function toLetMarketplaceStatus(
 	const publishedAt = input.publishedAt ?? input.createdAt;
 	if (
 		input.listingStatus === "active" &&
-		input.unitStatus === "vacant" &&
+		isToLetListableUnitStatus(input.unitStatus) &&
 		toLetListingVisibleUntil(publishedAt).getTime() > now.getTime()
 	) {
 		return "available";

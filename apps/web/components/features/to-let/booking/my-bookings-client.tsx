@@ -141,8 +141,8 @@ function RentalStatusBadge({
   status: "active" | "leaving" | "completed";
 }) {
   const labels = {
-    active: "Occupied",
-    leaving: "Leaving",
+    active: "Booked",
+    leaving: "Booked · Leaving",
     completed: "Completed",
   } as const;
   return (

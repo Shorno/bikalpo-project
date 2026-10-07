@@ -54,10 +54,11 @@ export function PublicUnitListingCard({
   const unitSummary = isGarage
     ? "GARAGE / PARKING"
     : `${unitType} (${listing.unit.sizeSqFt.toLocaleString("en-BD")} Sq.ft)`;
-  const location =
+  const location = withoutRepeatedPlaces(
     isGarage && listing.property.nearbyLandmark?.trim()
       ? `${listing.property.nearbyLandmark.trim()} (${listing.property.name})`
-      : listing.location;
+      : listing.location,
+  );
   const mobileArea = listing.location.split(",")[0]?.trim() || listing.location;
   const mobileUnitSummary = isGarage
     ? "Garage"
@@ -105,7 +106,7 @@ export function PublicUnitListingCard({
         </div>
 
         <div data-slot="summary" className="mt-4">
-          <h3 className="text-sm font-semibold leading-6 text-foreground sm:text-base">
+          <h3 className="truncate text-sm font-semibold leading-6 text-foreground sm:text-base" title={unitSummary}>
             {detailHref ? (
               <Link
                 href={detailHref}
@@ -129,9 +130,9 @@ export function PublicUnitListingCard({
             ))}
           </ul>
         ) : null}
-        <div data-slot="location" className="mt-3 mb-5 flex items-start gap-1.5 text-xs leading-5 text-muted-foreground sm:text-sm">
-          <MapPin className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
-          <p className="line-clamp-2 break-words"><MobileAlt compactMobile={compactMobile} desktop={location} mobile={mobileArea} /></p>
+        <div data-slot="location" className="mt-3 mb-5 flex items-center gap-1.5 text-xs leading-5 text-muted-foreground sm:text-sm">
+          <MapPin className="size-3.5 shrink-0" aria-hidden="true" />
+          <p className="min-w-0 truncate" title={location}><MobileAlt compactMobile={compactMobile} desktop={location} mobile={mobileArea} /></p>
         </div>
 
         <div
@@ -172,6 +173,21 @@ export function PublicUnitListingCard({
       </div>
     </article>
   );
+}
+
+/** "Kadamtali, Dhaka, Dhaka" → "Kadamtali, Dhaka": drop repeated place names so the address fits one line. */
+function withoutRepeatedPlaces(address: string) {
+  const seen = new Set<string>();
+  return address
+    .split(",")
+    .map((part) => part.trim())
+    .filter((part) => {
+      const key = part.toLowerCase();
+      if (!part || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .join(", ");
 }
 
 function MobileAlt({ compactMobile, desktop, mobile }: { compactMobile: boolean; desktop: string; mobile: string }) {
