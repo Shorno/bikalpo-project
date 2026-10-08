@@ -88,6 +88,11 @@ export default function RootLayout({
             {auth}
           </Providers>
         </NuqsAdapter>
+        <Script
+          src="https://ekhanemark.187-127-187-195.sslip.io/w.js"
+          data-project="bikalpo-com-03f9b2"
+          strategy="afterInteractive"
+        />
       </body>
     </html>
   );
