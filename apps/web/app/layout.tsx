@@ -90,7 +90,7 @@ export default function RootLayout({
         </NuqsAdapter>
         <Script
           src="https://ekhanemark.187-127-187-195.sslip.io/w.js"
-          data-project="bikalpo-com-03f9b2"
+          data-project="bikalpo-26c491"
           strategy="afterInteractive"
         />
       </body>
