@@ -15,7 +15,7 @@ import { ORPCError } from "@orpc/server";
 import { and, desc, eq, ilike, isNotNull, type SQL, sql } from "drizzle-orm";
 import { z } from "zod";
 import { adminProcedure } from "../index";
-import { nextSkuCode } from "./helpers/generate-sku";
+import { composePartialSku, nextSkuCode } from "./helpers/generate-sku";
 
 // === Input Schemas ===
 
@@ -142,11 +142,12 @@ export const adminCoreProductRouter = {
 
       // Compose full hierarchical SKU for each core product
       const coreProducts = results.map((cp) => {
-        const typeCode = cp.category?.type?.skuCode || "??";
-        const catCode = cp.category?.skuCode || "???";
-        const subCatCode = cp.subCategory?.skuCode || "???";
-        const coreCode = cp.sku || "???";
-        const composedSku = `${typeCode}-${catCode}-${subCatCode}-${coreCode}`;
+        const composedSku = composePartialSku("coreProduct", {
+          typeSkuCode: cp.category?.type?.skuCode,
+          categorySkuCode: cp.category?.skuCode,
+          subCategorySkuCode: cp.subCategory?.skuCode,
+          coreProductSkuCode: cp.sku,
+        });
         const configuredBrandIds = [
           ...(configuredBrandsByCore.get(cp.id) ?? new Set<number>()),
         ];

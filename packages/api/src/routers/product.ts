@@ -47,7 +47,7 @@ import {
   fetchConsumerReferencePricePage,
   saveConsumerReferencePrices,
 } from "../services/consumer-reference-prices";
-import { generateSku, nextSkuCode } from "./helpers/generate-sku";
+import { composeCatalogProductId, nextSkuCode } from "./helpers/generate-sku";
 import {
   applyGeneratedVariantExchangeSettings,
   attachExchangeSettingsToVariantPrices,
@@ -443,8 +443,11 @@ export const productRouter = {
         const core = await tx.query.coreProductIdentity.findFirst({
           where: eq(coreProductIdentity.id, coreProductId),
           with: {
-            category: { columns: { id: true, slug: true, typeId: true } },
-            subCategory: { columns: { id: true, slug: true } },
+            category: {
+              columns: { id: true, slug: true, typeId: true, skuCode: true },
+              with: { type: { columns: { skuCode: true } } },
+            },
+            subCategory: { columns: { id: true, slug: true, skuCode: true } },
           },
         });
         if (!core) {
@@ -583,14 +586,9 @@ export const productRouter = {
             },
           });
 
-        const [countResult] = await tx
-          .select({ count: sql<number>`count(*)::int` })
-          .from(product)
-          .where(eq(product.categoryId, core.categoryId));
-        const baseSerial = countResult?.count ?? 0;
         const createdProducts: Array<typeof product.$inferSelect> = [];
 
-        for (const [brandIndex, brandId] of brandIds.entries()) {
+        for (const brandId of brandIds) {
           const brandRow = brandMap.get(brandId)!;
           const name = `${brandRow.name} ${templateDetails.name}`.trim();
           if (name.length > 150) {
@@ -617,11 +615,12 @@ export const productRouter = {
             slug = `${baseSlug}-${suffix++}`;
           }
 
-          const sku = generateSku({
-            subCategorySlug: core.subCategory?.slug || "xx",
-            categorySlug: core.category?.slug || "xx",
-            serialNumber: baseSerial + brandIndex + 1,
-            userId: context.session.user.id,
+          const sku = composeCatalogProductId({
+            typeSkuCode: core.category?.type?.skuCode,
+            categorySkuCode: core.category?.skuCode,
+            subCategorySkuCode: core.subCategory?.skuCode,
+            coreProductSkuCode: core.sku,
+            brandSkuCode: brandRow.skuCode,
           });
           const [newProduct] = await tx
             .insert(product)

@@ -20,8 +20,8 @@ export const category = pgTable("category", {
         onDelete: "set null",
     }),
 
-    /** Auto-generated 3-digit SKU code within its type (e.g. "001", "002"). Immutable after creation. */
-    skuCode: varchar("sku_code", { length: 3 }),
+    /** Auto-generated 2-digit SKU code within its type (e.g. "01", "02"). Immutable after creation. */
+    skuCode: varchar("sku_code", { length: 2 }),
 
     isActive: boolean("is_active").default(true).notNull(),
     displayOrder: integer("display_order").default(0).notNull(),
@@ -37,8 +37,8 @@ export const subCategory = pgTable("sub_category", {
         .references(() => category.id, { onDelete: "cascade" }),
     image: varchar("image", { length: 255 }),
 
-    /** Auto-generated 3-digit SKU code within its category (e.g. "001", "002"). Immutable after creation. */
-    skuCode: varchar("sku_code", { length: 3 }),
+    /** Auto-generated 2-digit SKU code within its category (e.g. "01", "02"). Immutable after creation. */
+    skuCode: varchar("sku_code", { length: 2 }),
 
     isActive: boolean("is_active").default(true).notNull(),
     displayOrder: integer("display_order").default(0).notNull(),

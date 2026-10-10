@@ -12,15 +12,14 @@ import {
   productBrand,
   productImage,
   productVariant,
-  subCategory,
   variantOption,
 } from "@bikalpo-project/db/schema";
 import { ORPCError } from "@orpc/server";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 
 import { adminProcedure } from "../index";
-import { generateSku } from "./helpers/generate-sku";
+import { composeCatalogProductId } from "./helpers/generate-sku";
 import {
   resolveConcreteVariantForConfig,
   syncBrandVariantPrices,
@@ -332,7 +331,11 @@ export const adminProductConfigRouter = {
       const core = await db.query.coreProductIdentity.findFirst({
         where: eq(coreProductIdentity.id, coreProductId),
         with: {
-          category: { columns: { id: true, slug: true, typeId: true } },
+          category: {
+            columns: { id: true, slug: true, typeId: true, skuCode: true },
+            with: { type: { columns: { skuCode: true } } },
+          },
+          subCategory: { columns: { skuCode: true } },
         },
       });
       if (!core) {
@@ -407,15 +410,6 @@ export const adminProductConfigRouter = {
         throw new ORPCError("BAD_REQUEST", {
           message: `Variant option "${invalidVariant.name}" is not available for this core product`,
         });
-      }
-
-      let subCategorySlug = "xx";
-      if (core.subCategoryId) {
-        const sub = await db.query.subCategory.findFirst({
-          where: eq(subCategory.id, core.subCategoryId),
-          columns: { slug: true },
-        });
-        subCategorySlug = sub?.slug || "xx";
       }
 
       const result = await db.transaction(async (tx) => {
@@ -535,15 +529,12 @@ export const adminProductConfigRouter = {
             slug = `${baseSlug}-${suffix++}`;
           }
 
-          const [countResult] = await tx
-            .select({ count: sql<number>`count(*)::int` })
-            .from(product)
-            .where(eq(product.categoryId, core.categoryId));
-          const sku = generateSku({
-            subCategorySlug,
-            categorySlug: core.category?.slug || "xx",
-            serialNumber: (countResult?.count ?? 0) + 1,
-            userId: context.session.user.id,
+          const sku = composeCatalogProductId({
+            typeSkuCode: core.category?.type?.skuCode,
+            categorySkuCode: core.category?.skuCode,
+            subCategorySkuCode: core.subCategory?.skuCode,
+            coreProductSkuCode: core.sku,
+            brandSkuCode: brandRow.skuCode,
           });
 
           const [newProduct] = await tx

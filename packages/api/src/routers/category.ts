@@ -212,14 +212,14 @@ export const categoryRouter = {
         assertCategoryNameIsUnique(input.name),
         assertProductTypeIsActive(input.typeId),
       ]);
-      // Auto-generate next 3-digit skuCode scoped to typeId
+      // Auto-generate next 2-digit skuCode scoped to typeId
       const filterCondition = input.typeId
         ? sql`${category.typeId} = ${input.typeId}`
         : sql`${category.typeId} IS NULL`;
       const skuCode = await nextSkuCode(
         category,
         category.skuCode,
-        3,
+        2,
         filterCondition,
       );
 

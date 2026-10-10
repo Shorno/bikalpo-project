@@ -16,13 +16,13 @@ async function migrate() {
 
     // 2. category
     try {
-        await db.execute(sql`ALTER TABLE category ADD COLUMN IF NOT EXISTS sku_code VARCHAR(3)`);
+        await db.execute(sql`ALTER TABLE category ADD COLUMN IF NOT EXISTS sku_code VARCHAR(2)`);
         console.log("✅ category.sku_code added");
     } catch (e: any) { console.log("⏭️  category.sku_code:", e.message); }
 
     // 3. sub_category
     try {
-        await db.execute(sql`ALTER TABLE sub_category ADD COLUMN IF NOT EXISTS sku_code VARCHAR(3)`);
+        await db.execute(sql`ALTER TABLE sub_category ADD COLUMN IF NOT EXISTS sku_code VARCHAR(2)`);
         console.log("✅ sub_category.sku_code added");
     } catch (e: any) { console.log("⏭️  sub_category.sku_code:", e.message); }
 
@@ -51,10 +51,10 @@ async function migrate() {
     console.log(`📦 Product Types: ${types.rowCount ?? 0} updated`);
     for (const r of types.rows as any[]) { console.log(`   ${r.name} → ${r.sku_code}`); }
 
-    // Backfill categories (3-digit, scoped to type_id)
+    // Backfill categories (2-digit, scoped to type_id)
     const cats = await db.execute(sql`
         UPDATE category SET sku_code = sub.code FROM (
-            SELECT id, LPAD(ROW_NUMBER() OVER (PARTITION BY type_id ORDER BY "createdAt", id)::text, 3, '0') AS code
+            SELECT id, LPAD(ROW_NUMBER() OVER (PARTITION BY type_id ORDER BY "createdAt", id)::text, 2, '0') AS code
             FROM category WHERE sku_code IS NULL
         ) sub WHERE category.id = sub.id
         RETURNING category.id, category.name, category.sku_code
@@ -62,10 +62,10 @@ async function migrate() {
     console.log(`📂 Categories: ${cats.rowCount ?? 0} updated`);
     for (const r of cats.rows as any[]) { console.log(`   ${r.name} → ${r.sku_code}`); }
 
-    // Backfill sub_categories (3-digit, scoped to category_id)
+    // Backfill sub_categories (2-digit, scoped to category_id)
     const subs = await db.execute(sql`
         UPDATE sub_category SET sku_code = sub.code FROM (
-            SELECT id, LPAD(ROW_NUMBER() OVER (PARTITION BY category_id ORDER BY "createdAt", id)::text, 3, '0') AS code
+            SELECT id, LPAD(ROW_NUMBER() OVER (PARTITION BY category_id ORDER BY "createdAt", id)::text, 2, '0') AS code
             FROM sub_category WHERE sku_code IS NULL
         ) sub WHERE sub_category.id = sub.id
         RETURNING sub_category.id, sub_category.name, sub_category.sku_code

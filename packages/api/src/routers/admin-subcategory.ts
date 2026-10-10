@@ -246,12 +246,12 @@ export const adminSubcategoryRouter = {
         assertCategoryIsActive(input.categoryId),
         assertSubcategoryNameIsUnique(input.name, input.categoryId),
       ]);
-      // Auto-generate next 3-digit skuCode scoped to categoryId
+      // Auto-generate next 2-digit skuCode scoped to categoryId
       const filterCondition = sql`${subCategory.categoryId} = ${input.categoryId}`;
       const skuCode = await nextSkuCode(
         subCategory,
         subCategory.skuCode,
-        3,
+        2,
         filterCondition,
       );
 

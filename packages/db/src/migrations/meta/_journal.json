@@ -610,6 +610,13 @@
       "when": 1790553600002,
       "tag": "0087_tolet_rental_agreement_terms",
       "breakpoints": true
+    },
+    {
+      "idx": 88,
+      "version": "7",
+      "when": 1790553600003,
+      "tag": "0088_two_digit_category_codes_catalog_product_id",
+      "breakpoints": true
     }
   ]
 }

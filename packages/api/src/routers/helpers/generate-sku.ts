@@ -1,24 +1,36 @@
 /**
  * Hierarchical SKU Generator
  *
- * Generates SKU codes in the format: TT-CCC-SSS-PPP-BB-VV (15 digits)
+ * Catalog Product ID format: TT-CC-SS-PPP-BB (11 digits)
+ * Variant SKU appends the variant option code: TT-CC-SS-PPP-BB-VV (13 digits)
  *
- *   01 - 001 - 001 - 001 - 01 - 04
- *   │     │     │     │     │    └── Variant Option code  (2 digits)
- *   │     │     │     │     └────── Brand code            (2 digits)
- *   │     │     │     └──────────── Core Product code     (3 digits)
- *   │     │     └────────────────── SubCategory code      (3 digits)
- *   │     └──────────────────────── Category code         (3 digits)
- *   └────────────────────────────── Product Type code     (2 digits)
+ *   01 - 01 - 01 - 001 - 01 - 04
+ *   │    │    │    │     │    └── Variant Option code  (2 digits)
+ *   │    │    │    │     └─────── Brand code            (2 digits)
+ *   │    │    │    └───────────── Core Product code     (3 digits)
+ *   │    │    └────────────────── SubCategory code      (2 digits, "00" when none)
+ *   │    └─────────────────────── Category code         (2 digits)
+ *   └──────────────────────────── Product Type code     (2 digits)
  *
  * Example:
- *   Grocery(01) → Rice(001) → Miniket(001) → Miniket Rice(001) → ACI(01) → 5KG Pack(04)
- *   Full SKU: 01-001-001-001-01-04  (flat: 010010010010104)
+ *   Grocery(01) → Rice(01) → Miniket(01) → Miniket Rice(001) → ACI(01) → 5KG Pack(04)
+ *   Catalog Product ID: 01-01-01-001-01
+ *   Variant SKU:        01-01-01-001-01-04  (flat: 0101010010104)
  */
 
 import { db } from "@bikalpo-project/db";
 import { sql } from "drizzle-orm";
 import type { PgColumn, PgTable } from "drizzle-orm/pg-core";
+
+/** Digit width of each hierarchical SKU segment. */
+export const SKU_SEGMENT_DIGITS = {
+    type: 2,
+    category: 2,
+    subCategory: 2,
+    coreProduct: 3,
+    brand: 2,
+    variant: 2,
+} as const;
 
 // ============================================================
 // Auto-assign next available skuCode
@@ -63,146 +75,151 @@ export async function nextSkuCode(
 // Compose / Parse / Format full SKU
 // ============================================================
 
-export interface ComposeSkuInput {
+export interface CatalogProductIdInput {
     /** Product Type skuCode (2 digits) */
-    typeSkuCode: string;
-    /** Category skuCode (3 digits) */
-    categorySkuCode: string;
-    /** SubCategory skuCode (3 digits) */
-    subCategorySkuCode: string;
+    typeSkuCode?: string | null;
+    /** Category skuCode (2 digits) */
+    categorySkuCode?: string | null;
+    /** SubCategory skuCode (2 digits); "00" when the product has no subcategory */
+    subCategorySkuCode?: string | null;
     /** Core Product Identity sku (3 digits) */
-    coreProductSkuCode: string;
+    coreProductSkuCode?: string | null;
     /** Brand skuCode (2 digits) */
-    brandSkuCode: string;
+    brandSkuCode?: string | null;
+}
+
+export interface ComposeSkuInput extends CatalogProductIdInput {
     /** Variant Option skuCode (2 digits) */
-    variantSkuCode: string;
+    variantSkuCode?: string | null;
+}
+
+function segment(code: string | null | undefined, digits: number): string {
+    return (code?.trim() || "").padStart(digits, "0");
+}
+
+function productSegments(input: CatalogProductIdInput): string[] {
+    return [
+        segment(input.typeSkuCode, SKU_SEGMENT_DIGITS.type),
+        segment(input.categorySkuCode, SKU_SEGMENT_DIGITS.category),
+        segment(input.subCategorySkuCode, SKU_SEGMENT_DIGITS.subCategory),
+        segment(input.coreProductSkuCode, SKU_SEGMENT_DIGITS.coreProduct),
+        segment(input.brandSkuCode, SKU_SEGMENT_DIGITS.brand),
+    ];
 }
 
 /**
- * Compose a full 15-digit flat SKU from component codes.
+ * Compose the dashed Catalog Product ID (type-category-subcategory-core-brand).
+ * Missing segments are zero-filled, so a product without a subcategory gets "00".
  *
  * @example
- * composeSku({
+ * composeCatalogProductId({
  *   typeSkuCode: "01",
- *   categorySkuCode: "001",
- *   subCategorySkuCode: "001",
+ *   categorySkuCode: "01",
+ *   subCategorySkuCode: "01",
  *   coreProductSkuCode: "001",
  *   brandSkuCode: "01",
- *   variantSkuCode: "04",
  * })
- * // → "010010010010104"
+ * // → "01-01-01-001-01"
+ */
+export function composeCatalogProductId(input: CatalogProductIdInput): string {
+    return productSegments(input).join("-");
+}
+
+/**
+ * Compose a full 13-digit flat variant SKU from component codes.
+ *
+ * @example
+ * composeSku({ ...catalogProductCodes, variantSkuCode: "04" })
+ * // → "0101010010104"
  */
 export function composeSku(input: ComposeSkuInput): string {
     return [
-        input.typeSkuCode.padStart(2, "0"),
-        input.categorySkuCode.padStart(3, "0"),
-        input.subCategorySkuCode.padStart(3, "0"),
-        input.coreProductSkuCode.padStart(3, "0"),
-        input.brandSkuCode.padStart(2, "0"),
-        input.variantSkuCode.padStart(2, "0"),
+        ...productSegments(input),
+        segment(input.variantSkuCode, SKU_SEGMENT_DIGITS.variant),
     ].join("");
 }
 
+const SEGMENT_ORDER = [
+    ["typeSkuCode", SKU_SEGMENT_DIGITS.type],
+    ["categorySkuCode", SKU_SEGMENT_DIGITS.category],
+    ["subCategorySkuCode", SKU_SEGMENT_DIGITS.subCategory],
+    ["coreProductSkuCode", SKU_SEGMENT_DIGITS.coreProduct],
+    ["brandSkuCode", SKU_SEGMENT_DIGITS.brand],
+    ["variantSkuCode", SKU_SEGMENT_DIGITS.variant],
+] as const;
+
+const FULL_SKU_LENGTH = SEGMENT_ORDER.reduce((sum, [, digits]) => sum + digits, 0);
+
+function splitFlatSku(flat: string): string[] {
+    const parts: string[] = [];
+    let offset = 0;
+    for (const [, digits] of SEGMENT_ORDER) {
+        parts.push(flat.slice(offset, offset + digits));
+        offset += digits;
+    }
+    return parts;
+}
+
 /**
- * Format a flat 15-digit SKU into dashed display format.
+ * Format a flat 13-digit SKU into dashed display format.
  *
  * @example
- * formatSkuDisplay("010010010010104")
- * // → "01-001-001-001-01-04"
+ * formatSkuDisplay("0101010010104")
+ * // → "01-01-01-001-01-04"
  */
 export function formatSkuDisplay(sku: string): string {
-    if (sku.length !== 15) return sku; // fallback for non-standard
-    return [
-        sku.slice(0, 2),   // Type
-        sku.slice(2, 5),   // Category
-        sku.slice(5, 8),   // SubCategory
-        sku.slice(8, 11),  // Core Product
-        sku.slice(11, 13), // Brand
-        sku.slice(13, 15), // Variant
-    ].join("-");
+    if (sku.length !== FULL_SKU_LENGTH) return sku; // fallback for non-standard
+    return splitFlatSku(sku).join("-");
 }
 
 /**
- * Parse a flat 15-digit SKU back into component codes.
+ * Parse a 13-digit SKU (flat or dashed) back into component codes.
  *
  * @example
- * parseSku("010010010010104")
- * // → { typeSkuCode: "01", categorySkuCode: "001", ... }
+ * parseSku("0101010010104")
+ * // → { typeSkuCode: "01", categorySkuCode: "01", ... }
  */
-export function parseSku(sku: string): ComposeSkuInput {
+export function parseSku(sku: string): Required<ComposeSkuInput> {
     const flat = sku.replace(/-/g, "");
-    if (flat.length !== 15) {
-        throw new Error(`Invalid SKU length: expected 15 digits, got ${flat.length}`);
+    if (flat.length !== FULL_SKU_LENGTH) {
+        throw new Error(
+            `Invalid SKU length: expected ${FULL_SKU_LENGTH} digits, got ${flat.length}`,
+        );
     }
-    return {
-        typeSkuCode: flat.slice(0, 2),
-        categorySkuCode: flat.slice(2, 5),
-        subCategorySkuCode: flat.slice(5, 8),
-        coreProductSkuCode: flat.slice(8, 11),
-        brandSkuCode: flat.slice(11, 13),
-        variantSkuCode: flat.slice(13, 15),
-    };
+    const parts = splitFlatSku(flat);
+    return Object.fromEntries(
+        SEGMENT_ORDER.map(([key], index) => [key, parts[index]]),
+    ) as Required<ComposeSkuInput>;
 }
 
 /**
- * Compose a partial SKU for a given level (useful for display in lists).
+ * Compose a partial SKU up to a given level (useful for display in lists).
+ * Missing segments are zero-filled so every segment keeps its position.
  *
  * @example
  * composePartialSku("type", { typeSkuCode: "01" })
  * // → "01"
  *
- * composePartialSku("category", { typeSkuCode: "01", categorySkuCode: "001" })
- * // → "01-001"
+ * composePartialSku("category", { typeSkuCode: "01", categorySkuCode: "01" })
+ * // → "01-01"
  */
 export function composePartialSku(
     level: "type" | "category" | "subCategory" | "coreProduct" | "brand" | "variant",
-    codes: Partial<ComposeSkuInput>,
+    codes: ComposeSkuInput,
 ): string {
+    const levelKey = {
+        type: "typeSkuCode",
+        category: "categorySkuCode",
+        subCategory: "subCategorySkuCode",
+        coreProduct: "coreProductSkuCode",
+        brand: "brandSkuCode",
+        variant: "variantSkuCode",
+    }[level];
+
     const parts: string[] = [];
-
-    if (codes.typeSkuCode) parts.push(codes.typeSkuCode.padStart(2, "0"));
-    if (level === "type") return parts.join("-");
-
-    if (codes.categorySkuCode) parts.push(codes.categorySkuCode.padStart(3, "0"));
-    if (level === "category") return parts.join("-");
-
-    if (codes.subCategorySkuCode) parts.push(codes.subCategorySkuCode.padStart(3, "0"));
-    if (level === "subCategory") return parts.join("-");
-
-    if (codes.coreProductSkuCode) parts.push(codes.coreProductSkuCode.padStart(3, "0"));
-    if (level === "coreProduct") return parts.join("-");
-
-    if (codes.brandSkuCode) parts.push(codes.brandSkuCode.padStart(2, "0"));
-    if (level === "brand") return parts.join("-");
-
-    if (codes.variantSkuCode) parts.push(codes.variantSkuCode.padStart(2, "0"));
-    return parts.join("-");
-}
-
-// ============================================================
-// Legacy SKU generator (backward compatible)
-// Used by product.ts and admin-product-variant.ts
-// ============================================================
-
-interface GenerateSkuInput {
-    subCategorySlug: string;
-    categorySlug: string;
-    serialNumber: number;
-    sizeId?: number;
-    userId?: string;
-}
-
-/**
- * Legacy SKU generator for product-level and variant-level SKUs.
- * Produces a slug-based SKU like "SUG-WSG-0001" or "SUG-WSG-0001-50".
- */
-export function generateSku(input: GenerateSkuInput): string {
-    const catCode = input.categorySlug.slice(0, 3).toUpperCase();
-    const subCatCode = input.subCategorySlug.slice(0, 3).toUpperCase();
-    const serial = String(input.serialNumber).padStart(4, "0");
-    const base = `${catCode}-${subCatCode}-${serial}`;
-    if (input.sizeId && input.sizeId > 0) {
-        return `${base}-${input.sizeId}`;
+    for (const [key, digits] of SEGMENT_ORDER) {
+        parts.push(segment(codes[key], digits));
+        if (key === levelKey) break;
     }
-    return base;
+    return parts.join("-");
 }

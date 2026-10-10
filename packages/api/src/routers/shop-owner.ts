@@ -137,6 +137,7 @@ import {
   prepareB2bMovementForApproval,
   releaseB2bOrderReservations,
 } from "./helpers/b2b-inventory-movement";
+import { composePartialSku } from "./helpers/generate-sku";
 import {
   deriveKycStatus,
   getLatestKycRecord,
@@ -10315,11 +10316,12 @@ const publicCatalogEndpoints = {
 
       // 4. Compose hierarchical SKU and retailer configuration state
       const items = coreProducts.map((cp) => {
-        const typeCode = cp.category?.type?.skuCode || "??";
-        const catCode = cp.category?.skuCode || "???";
-        const subCatCode = cp.subCategory?.skuCode || "???";
-        const coreCode = cp.sku || "???";
-        const composedSku = `${typeCode}-${catCode}-${subCatCode}-${coreCode}`;
+        const composedSku = composePartialSku("coreProduct", {
+          typeSkuCode: cp.category?.type?.skuCode,
+          categorySkuCode: cp.category?.skuCode,
+          subCategorySkuCode: cp.subCategory?.skuCode,
+          coreProductSkuCode: cp.sku,
+        });
 
         return {
           id: cp.id,
