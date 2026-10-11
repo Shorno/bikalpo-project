@@ -45,6 +45,16 @@ export const coreProductIdentity = pgTable("core_product_identity", {
   /** Auto-generated SKU code (e.g. "001", "002") — unique within subcategory scope */
   sku: varchar("sku", { length: 20 }).notNull(),
 
+  /**
+   * Permanent catalog code: Type-Category-SubCategory-Core (e.g. "02-02-01-018").
+   * Assigned once at creation and never regenerated, so printed or exported
+   * references keep pointing at the same core product.
+   */
+  catalogCode: varchar("catalog_code", { length: 32 }).notNull().unique(),
+
+  /** Short code used in sellable SKUs (e.g. "LPG"). Locked once a SKU uses it. */
+  shortCode: varchar("short_code", { length: 8 }).unique(),
+
   /** Global product name (e.g. "Miniket Rice") — must be unique */
   name: varchar("name", { length: 150 }).notNull().unique(),
 

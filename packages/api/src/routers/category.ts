@@ -212,21 +212,21 @@ export const categoryRouter = {
         assertCategoryNameIsUnique(input.name),
         assertProductTypeIsActive(input.typeId),
       ]);
-      // Auto-generate next 3-digit skuCode scoped to typeId
-      const filterCondition = input.typeId
-        ? sql`${category.typeId} = ${input.typeId}`
-        : sql`${category.typeId} IS NULL`;
-      const skuCode = await nextSkuCode(
-        category,
-        category.skuCode,
-        3,
-        filterCondition,
-      );
-
-      const [newCategory] = await db
-        .insert(category)
-        .values({ ...input, skuCode })
-        .returning();
+      // Auto-generate next 2-digit skuCode scoped to typeId
+      const newCategory = await db.transaction(async (tx) => {
+        const skuCode = await nextSkuCode(
+          category,
+          category.skuCode,
+          2,
+          sql`${category.typeId} = ${input.typeId}`,
+          tx,
+        );
+        const [row] = await tx
+          .insert(category)
+          .values({ ...input, skuCode })
+          .returning();
+        return row;
+      });
       return {
         data: newCategory,
         message: "Category created successfully",
@@ -267,11 +267,43 @@ export const categoryRouter = {
         }
         await assertProductTypeIsActive(data.typeId);
       }
+      const typeChanged =
+        data.typeId !== undefined &&
+        data.typeId !== null &&
+        data.typeId !== existing.typeId;
 
-      await db
-        .update(category)
-        .set({ ...data, updatedAt: new Date() })
-        .where(eq(category.id, id));
+      await db.transaction(async (tx) => {
+        let skuCode: string | undefined;
+        if (typeChanged) {
+          // The category code is part of every catalog ID beneath it.
+          const coreInCategory = await tx.query.coreProductIdentity.findFirst({
+            where: eq(coreProductIdentity.categoryId, id),
+            columns: { id: true },
+          });
+          if (coreInCategory) {
+            throw new ORPCError("CONFLICT", {
+              message:
+                "This category already has core products with catalog IDs, so it cannot move to another Type.",
+            });
+          }
+          skuCode = await nextSkuCode(
+            category,
+            category.skuCode,
+            2,
+            sql`${category.typeId} = ${data.typeId}`,
+            tx,
+          );
+        }
+
+        await tx
+          .update(category)
+          .set({
+            ...data,
+            ...(skuCode ? { skuCode } : {}),
+            updatedAt: new Date(),
+          })
+          .where(eq(category.id, id));
+      });
 
       return { message: "Category updated successfully" };
     }),

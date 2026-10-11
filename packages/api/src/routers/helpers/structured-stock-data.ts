@@ -70,6 +70,7 @@ export async function loadStructuredBrandStockRows(
       sql`${coreProductIdentity.name} ILIKE ${term}`,
       sql`${productVariant.sku} ILIKE ${term}`,
       sql`${catalogVariant.globalSku} ILIKE ${term}`,
+      sql`${catalogVariant.sku} ILIKE ${term}`,
     );
     if (searchCondition) conditions.push(searchCondition);
   }
@@ -83,7 +84,8 @@ export async function loadStructuredBrandStockRows(
       productReorderLevel: product.reorderLevel,
       coreProductId: product.coreProductId,
       coreProductName: coreProductIdentity.name,
-      coreProductSku: coreProductIdentity.sku,
+      coreProductSku: coreProductIdentity.catalogCode,
+      productCatalogCode: product.catalogCode,
       coreProductImage: coreProductIdentity.image,
       categoryId: category.id,
       categoryName: category.name,
@@ -95,6 +97,7 @@ export async function loadStructuredBrandStockRows(
       preferredLocalSku: productVariant.preferredLocalSku,
       catalogVariantId: productVariant.catalogVariantId,
       globalSku: catalogVariant.globalSku,
+      catalogSku: catalogVariant.sku,
       variantIsActive: productVariant.isActive,
       variantReorderLevel: productVariant.reorderLevel,
       sourceVariantOptionId: productVariant.sourceVariantOptionId,
@@ -182,6 +185,7 @@ export async function loadStructuredBrandStockRows(
     coreProductName: row.coreProductName,
     coreProductSku: row.coreProductSku,
     coreProductImage: row.coreProductImage,
+    productCatalogCode: row.productCatalogCode,
     productName: row.productName,
     productImage: row.productImage,
     productIsActive: row.productStatus === "active",
@@ -197,6 +201,7 @@ export async function loadStructuredBrandStockRows(
     sku: row.variantSku,
     catalogVariantId: row.catalogVariantId,
     globalSku: row.globalSku,
+    catalogSku: row.catalogSku,
     localSku: row.preferredLocalSku ?? row.variantSku,
     variantIsActive: row.variantIsActive,
     sourceVariantOptionId: row.sourceVariantOptionId,

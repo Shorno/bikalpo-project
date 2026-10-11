@@ -712,9 +712,9 @@ function ProductIdentity({ item }: { item: ProductItem }) {
         <p className="truncate text-xs text-muted-foreground">
           {item.brand.name} · {item.category.name}
         </p>
-        {item.coreProduct?.sku && (
+        {(item.catalogCode || item.coreProduct?.sku) && (
           <p className="mt-0.5 truncate font-mono text-[11px] tabular-nums text-muted-foreground">
-            {item.coreProduct.sku}
+            {item.catalogCode || item.coreProduct?.sku}
           </p>
         )}
       </div>
@@ -828,7 +828,7 @@ function VariantTableRow({ variant }: { variant: ProductVariant }) {
           )}
         <div className="mt-1 space-y-0.5 font-mono text-[11px] tabular-nums">
           <p className="text-foreground">
-            {variant.globalSku ?? "Global SKU pending"}
+            {variant.catalogSku ?? variant.globalSku ?? "SKU pending"}
           </p>
           <p className="text-muted-foreground">
             Local: {variant.localSku ?? variant.sku ?? "Not assigned"}
@@ -926,7 +926,7 @@ function VariantMobileRow({ variant }: { variant: ProductVariant }) {
           </p>
           <div className="mt-1 font-mono text-[11px] tabular-nums">
             <p className="text-foreground">
-              {variant.globalSku ?? "Global SKU pending"}
+              {variant.catalogSku ?? variant.globalSku ?? "SKU pending"}
             </p>
             <p className="text-muted-foreground">
               Local: {variant.localSku ?? variant.sku ?? "Not assigned"}

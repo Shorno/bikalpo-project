@@ -69,6 +69,7 @@ type StructuredStockVariant = {
   sku: string | null;
   catalogVariantId: number | null;
   globalSku: string | null;
+  catalogSku?: string | null;
   localSku: string | null;
   canonicalLabel: string | null;
   displayAlias: string | null;
@@ -624,7 +625,7 @@ export default function StockOverviewDashboard() {
                           </p>
                           <div className="mt-1 space-y-0.5 font-mono text-[11px] tabular-nums">
                             <p className="text-zinc-700">
-                              {variant.globalSku ?? "Global SKU pending"}
+                              {variant.catalogSku ?? variant.globalSku ?? "SKU pending"}
                             </p>
                             <p className="text-zinc-400">
                               Local:{" "}

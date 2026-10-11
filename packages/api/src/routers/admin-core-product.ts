@@ -15,12 +15,18 @@ import { ORPCError } from "@orpc/server";
 import { and, desc, eq, ilike, isNotNull, type SQL, sql } from "drizzle-orm";
 import { z } from "zod";
 import { adminProcedure } from "../index";
-import { nextSkuCode } from "./helpers/generate-sku";
+import {
+  assignCoreProductCode,
+  isCoreCatalogCodeInUse,
+} from "./helpers/core-catalog-code";
+import { setCoreProductShortCode } from "./helpers/sellable-sku";
 
 // === Input Schemas ===
 
 const createCoreProductSchema = z.object({
   sku: z.string().optional(),
+  /** SKU short code; generated from the name when empty. */
+  shortCode: z.string().trim().max(6).optional(),
   name: z.string().min(1),
   slug: z.string().min(1),
   description: z.string().optional(),
@@ -140,19 +146,12 @@ export const adminCoreProductRouter = {
       }
       const activeBrandIds = activeBrands.map((row) => row.id);
 
-      // Compose full hierarchical SKU for each core product
       const coreProducts = results.map((cp) => {
-        const typeCode = cp.category?.type?.skuCode || "??";
-        const catCode = cp.category?.skuCode || "???";
-        const subCatCode = cp.subCategory?.skuCode || "???";
-        const coreCode = cp.sku || "???";
-        const composedSku = `${typeCode}-${catCode}-${subCatCode}-${coreCode}`;
         const configuredBrandIds = [
           ...(configuredBrandsByCore.get(cp.id) ?? new Set<number>()),
         ];
         return {
           ...cp,
-          composedSku,
           // "Configured" = at least one admin product exists (any status),
           // which is the true source of truth for the listing action.
           hasConfiguration: configuredBrandIds.length > 0,
@@ -375,51 +374,30 @@ export const adminCoreProductRouter = {
         });
       }
 
-      // Auto-generate 3-digit SKU scoped to subCategoryId (or categoryId if no subCat)
-      let sku = identityData.sku;
-      if (!sku) {
-        const filterCondition = identityData.subCategoryId
-          ? sql`${coreProductIdentity.subCategoryId} = ${identityData.subCategoryId}`
-          : sql`${coreProductIdentity.categoryId} = ${identityData.categoryId} AND ${coreProductIdentity.subCategoryId} IS NULL`;
-        sku = await nextSkuCode(
-          coreProductIdentity,
-          coreProductIdentity.sku,
-          3,
-          filterCondition,
-        );
-      }
-
-      // Check uniqueness for SKU within the same scope
-      const scopeCondition = identityData.subCategoryId
-        ? and(
-            eq(coreProductIdentity.sku, sku),
-            eq(coreProductIdentity.subCategoryId, identityData.subCategoryId),
-          )
-        : and(
-            eq(coreProductIdentity.sku, sku),
-            eq(coreProductIdentity.categoryId, identityData.categoryId),
-          );
-      const existingSku = await db.query.coreProductIdentity.findFirst({
-        where: scopeCondition,
-        columns: { id: true },
-      });
-      if (existingSku) {
-        throw new ORPCError("CONFLICT", {
-          message: `A core product with SKU "${sku}" already exists in this category`,
+      // Allocate the core code and permanent catalog code in the same
+      // transaction as the insert so concurrent creates cannot collide.
+      const { shortCode, ...coreData } = identityData;
+      const created = await db.transaction(async (tx) => {
+        const database = tx as unknown as typeof db;
+        const { sku, catalogCode } = await assignCoreProductCode(database, {
+          categoryId: coreData.categoryId,
+          subCategoryId: coreData.subCategoryId,
+          requestedSku: coreData.sku,
         });
-      }
-
-      // Create identity
-      const [created] = await db
-        .insert(coreProductIdentity)
-        .values({
-          ...identityData,
-          sku,
-          subCategoryId: identityData.subCategoryId || null,
-          createdById: context.session.user.id,
-          creatorSource: "admin",
-        })
-        .returning();
+        const [row] = await database
+          .insert(coreProductIdentity)
+          .values({
+            ...coreData,
+            sku,
+            catalogCode,
+            subCategoryId: coreData.subCategoryId || null,
+            createdById: context.session.user.id,
+            creatorSource: "admin",
+          })
+          .returning();
+        await setCoreProductShortCode(database, row!.id, shortCode);
+        return row;
+      });
 
       if (!created) {
         throw new ORPCError("INTERNAL_SERVER_ERROR", {
@@ -448,7 +426,7 @@ export const adminCoreProductRouter = {
       // Check existence
       const existing = await db.query.coreProductIdentity.findFirst({
         where: eq(coreProductIdentity.id, id),
-        columns: { id: true },
+        columns: { id: true, sku: true, categoryId: true, subCategoryId: true },
       });
       if (!existing) {
         throw new ORPCError("NOT_FOUND", {
@@ -470,15 +448,47 @@ export const adminCoreProductRouter = {
         });
       }
 
-      // Update identity
-      await db
-        .update(coreProductIdentity)
-        .set({
-          ...updateData,
-          ...(brandCreationMode ? { brandCreationMode } : {}),
-          subCategoryId: updateData.subCategoryId || null,
-        })
-        .where(eq(coreProductIdentity.id, id));
+      const { sku: requestedSku, shortCode, ...identityData } = updateData;
+      const subCategoryId = identityData.subCategoryId || null;
+      const requestedCode = requestedSku?.trim()
+        ? requestedSku.trim().padStart(3, "0")
+        : existing.sku;
+      const codeChanged =
+        identityData.categoryId !== existing.categoryId ||
+        subCategoryId !== existing.subCategoryId ||
+        requestedCode !== existing.sku;
+
+      await db.transaction(async (tx) => {
+        const database = tx as unknown as typeof db;
+        let code: { sku: string; catalogCode: string } | undefined;
+        if (codeChanged) {
+          // The catalog code encodes the classification. Once products or
+          // catalog variants carry it, it is permanent.
+          if (await isCoreCatalogCodeInUse(database, id)) {
+            throw new ORPCError("CONFLICT", {
+              message:
+                "This core product already has products, so its catalog ID, category, and code are locked",
+            });
+          }
+          code = await assignCoreProductCode(database, {
+            categoryId: identityData.categoryId,
+            subCategoryId,
+            requestedSku: requestedCode !== existing.sku ? requestedCode : null,
+            excludeCoreProductId: id,
+          });
+        }
+
+        await database
+          .update(coreProductIdentity)
+          .set({
+            ...identityData,
+            ...(brandCreationMode ? { brandCreationMode } : {}),
+            ...(code ?? {}),
+            subCategoryId,
+          })
+          .where(eq(coreProductIdentity.id, id));
+        await setCoreProductShortCode(database, id, shortCode);
+      });
 
       return { message: "Core product updated successfully" };
     }),

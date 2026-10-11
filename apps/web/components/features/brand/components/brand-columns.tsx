@@ -22,8 +22,13 @@ export function useBrandColumns(): ColumnDef<BrandSetupRow, unknown>[] {
       id: "skuCode",
       header: "SKU",
       cell: ({ row }) => (
-        <span className="font-mono text-xs tabular-nums">
-          {row.original.skuCode || "—"}
+        <span className="flex flex-col font-mono text-xs tabular-nums">
+          <span>{row.original.skuCode || "—"}</span>
+          {row.original.shortCode && (
+            <span className="text-muted-foreground">
+              {row.original.shortCode}
+            </span>
+          )}
         </span>
       ),
     },

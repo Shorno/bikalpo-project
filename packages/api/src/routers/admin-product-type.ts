@@ -610,23 +610,31 @@ export const adminProductTypeRouter = {
       }
 
       // Auto-generate next available 2-digit skuCode
-      const skuCode = await nextSkuCode(productType, productType.skuCode, 2);
-
-      const [created] = await db
-        .insert(productType)
-        .values({
-          name: input.name,
-          slug: input.slug,
-          description: input.description || null,
-          image: input.image || null,
-          inventoryBehaviour: input.inventoryBehaviour,
-          family:
-            input.family ?? buildProductTypeFulfillmentProfile(input).family,
-          displayOrder: input.displayOrder,
-          isActive: input.isActive,
-          skuCode,
-        })
-        .returning();
+      const created = await db.transaction(async (tx) => {
+        const skuCode = await nextSkuCode(
+          productType,
+          productType.skuCode,
+          2,
+          undefined,
+          tx,
+        );
+        const [row] = await tx
+          .insert(productType)
+          .values({
+            name: input.name,
+            slug: input.slug,
+            description: input.description || null,
+            image: input.image || null,
+            inventoryBehaviour: input.inventoryBehaviour,
+            family:
+              input.family ?? buildProductTypeFulfillmentProfile(input).family,
+            displayOrder: input.displayOrder,
+            isActive: input.isActive,
+            skuCode,
+          })
+          .returning();
+        return row;
+      });
 
       const [createdRuleSettings] = await db
         .insert(productTypeRuleSetting)

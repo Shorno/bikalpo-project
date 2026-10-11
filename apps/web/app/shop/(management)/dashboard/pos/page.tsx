@@ -633,7 +633,10 @@ export default function RetailerPosPage() {
                         BDT {formatMoney(variant.unitPrice)}
                       </div>
                       <div className="max-w-28 truncate font-mono text-[10px] text-[#89918c]">
-                        {variant.globalSku || variant.localSku || "No SKU"}
+                        {variant.catalogSku ||
+                          variant.globalSku ||
+                          variant.localSku ||
+                          "No SKU"}
                       </div>
                     </div>
                     <span className="grid h-8 w-8 place-items-center rounded-full bg-[#10241d] text-white transition group-hover:bg-emerald-700">

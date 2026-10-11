@@ -231,7 +231,7 @@ export async function loadStructuredStockSnapshot(
                 },
                 with: {
                     catalogVariant: {
-                        columns: { globalSku: true },
+                        columns: { globalSku: true, sku: true },
                     },
                     brand: { columns: { id: true, name: true } },
                     sourceVariantOption: true,
@@ -329,6 +329,7 @@ export async function loadStructuredStockSnapshot(
                     sku: variant.sku,
                     catalogVariantId: variant.catalogVariantId,
                     globalSku: variant.catalogVariant?.globalSku ?? null,
+                    catalogSku: variant.catalogVariant?.sku ?? null,
                     localSku: variant.preferredLocalSku ?? variant.sku,
                     variantIsActive: variant.isActive,
                     sourceVariantOptionId: variant.sourceVariantOptionId,
@@ -403,6 +404,7 @@ export const stockOverviewRouter = {
                 return [
                     variant.productName,
                     variant.brandName,
+                    variant.catalogSku,
                     variant.globalSku,
                     variant.localSku,
                     variant.sku,
@@ -458,7 +460,7 @@ export const stockOverviewRouter = {
             const coreRows = coreIds.length
                 ? await db.query.coreProductIdentity.findMany({
                       where: inArray(coreProductIdentity.id, coreIds),
-                      columns: { id: true, name: true, sku: true, image: true },
+                      columns: { id: true, name: true, catalogCode: true, image: true },
                   })
                 : [];
             const coreById = new Map(coreRows.map((row) => [row.id, row]));
@@ -471,7 +473,7 @@ export const stockOverviewRouter = {
 
                 const core = first.coreProductId ? coreById.get(first.coreProductId) : null;
                 const name = core?.name ?? first.productName;
-                const sku = core?.sku ?? first.localSku ?? first.globalSku ?? first.sku ?? `PRD-${first.productId}`;
+                const sku = core?.catalogCode ?? first.localSku ?? first.globalSku ?? first.sku ?? `PRD-${first.productId}`;
                 const searchable = [
                     name,
                     sku,
@@ -479,6 +481,7 @@ export const stockOverviewRouter = {
                         variant.productName,
                         variant.brandName,
                         variant.localSku,
+                        variant.catalogSku,
                         variant.globalSku,
                         variant.sku,
                         variant.canonicalLabel,
@@ -625,7 +628,7 @@ export const stockOverviewRouter = {
                     productBrandId: product.brandId,
                     coreProductId: product.coreProductId,
                     coreProductName: coreProductIdentity.name,
-                    coreProductSku: coreProductIdentity.sku,
+                    coreProductSku: coreProductIdentity.catalogCode,
                     coreProductImage: coreProductIdentity.image,
                     categoryId: category.id,
                     categoryName: category.name,
@@ -1196,7 +1199,7 @@ export const stockOverviewRouter = {
                     productImage: product.image,
                     coreProductId: product.coreProductId,
                     coreProductName: coreProductIdentity.name,
-                    coreProductSku: coreProductIdentity.sku,
+                    coreProductSku: coreProductIdentity.catalogCode,
                     coreProductImage: coreProductIdentity.image,
                     typeName: productType.name,
                     categoryName: category.name,

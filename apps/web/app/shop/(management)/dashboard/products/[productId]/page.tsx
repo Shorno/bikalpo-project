@@ -225,9 +225,9 @@ export default function ShopProductDetailPage() {
               {product.productTypeName && (
                 <span>{product.productTypeName}</span>
               )}
-              {product.coreProduct?.sku && (
+              {(product.catalogCode || product.coreProduct?.sku) && (
                 <span className="font-mono tabular-nums">
-                  {product.coreProduct.sku}
+                  {product.catalogCode || product.coreProduct?.sku}
                 </span>
               )}
             </div>

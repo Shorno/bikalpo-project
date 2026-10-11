@@ -16,6 +16,9 @@ export const brand = pgTable("brand", {
   /** Auto-generated 2-digit SKU code (e.g. "01", "02"). Immutable after creation. */
   skuCode: varchar("sku_code", { length: 2 }).unique(),
 
+  /** Short letter code used in sellable SKUs (e.g. "OMR"). Locked once a SKU uses it. */
+  shortCode: varchar("short_code", { length: 8 }).unique(),
+
   /** Disabled brands remain visible on existing products but cannot be newly associated. */
   isActive: boolean("is_active").default(true).notNull(),
   displayOrder: integer("display_order").default(0).notNull(),

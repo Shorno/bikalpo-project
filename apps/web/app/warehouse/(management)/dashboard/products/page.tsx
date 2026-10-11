@@ -69,6 +69,8 @@ type WarehouseProductRow = {
   variantSku: string | null;
   productId: number;
   productSku: string | null;
+  productCatalogCode: string | null;
+  catalogSku: string | null;
   productName: string;
   productStatus: string;
   creatorSource: "admin" | "warehouse" | "shop" | "unknown";
@@ -407,6 +409,11 @@ export default function WarehouseProductsPage() {
         return (
           <Link href={getDetailHref(item)} className="block min-w-[220px]">
             <div className="font-medium">{item.productName}</div>
+            {item.productCatalogCode && (
+              <div className="font-mono text-[11px] tabular-nums text-muted-foreground">
+                {item.productCatalogCode}
+              </div>
+            )}
             {item.brandName !== "—" && (
               <Badge variant="outline" className="mt-1 text-[10px]">
                 {item.brandName}
@@ -436,9 +443,16 @@ export default function WarehouseProductsPage() {
       accessorFn: (row) => getVariantText(row),
       header: ({ column }) => <SortableHeader column={column} title="Variant" />,
       cell: ({ row }) => (
-        <Badge variant="outline" className="min-w-[120px] text-xs font-medium">
-          {getVariantText(row.original)}
-        </Badge>
+        <div className="min-w-[120px]">
+          <Badge variant="outline" className="text-xs font-medium">
+            {getVariantText(row.original)}
+          </Badge>
+          {row.original.catalogSku && (
+            <div className="mt-1 font-mono text-[11px] tabular-nums text-muted-foreground">
+              {row.original.catalogSku}
+            </div>
+          )}
+        </div>
       ),
     },
     {

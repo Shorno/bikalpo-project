@@ -169,7 +169,8 @@ export default function PricingPage() {
           brand?.name?.toLowerCase().includes(s) ||
           item.variant?.sku?.toLowerCase().includes(s) ||
           item.variant?.preferredLocalSku?.toLowerCase().includes(s) ||
-          item.variant?.catalogVariant?.globalSku?.toLowerCase().includes(s)
+          item.variant?.catalogVariant?.globalSku?.toLowerCase().includes(s) ||
+          item.variant?.catalogVariant?.sku?.toLowerCase().includes(s)
         );
       });
     }
@@ -482,8 +483,9 @@ export default function PricingPage() {
                                       "Variant setup required"}
                                   </p>
                                   <p className="truncate font-mono text-[10px] tabular-nums text-gray-600">
-                                    {variant?.catalogVariant?.globalSku ||
-                                      "Global SKU pending"}
+                                    {variant?.catalogVariant?.sku ||
+                                      variant?.catalogVariant?.globalSku ||
+                                      "SKU pending"}
                                   </p>
                                   <p className="truncate font-mono text-[10px] tabular-nums text-gray-400">
                                     Local:{" "}

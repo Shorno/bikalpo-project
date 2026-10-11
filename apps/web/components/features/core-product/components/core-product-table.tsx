@@ -81,7 +81,7 @@ export default function CoreProductTable({
         !query ||
         item.name.toLowerCase().includes(query) ||
         item.sku.toLowerCase().includes(query) ||
-        item.composedSku?.toLowerCase().includes(query);
+        item.catalogCode?.toLowerCase().includes(query);
       const matchesType =
         type === "all" || item.category.typeId === Number(type);
       const matchesCategory =
@@ -178,14 +178,14 @@ export default function CoreProductTable({
         getRowId={(row) => String(row.id)}
         mobile={{
           columns: [
-            { id: "composedSku", label: "SKU", width: "22%" },
+            { id: "catalogCode", label: "Catalog ID", width: "22%" },
             { id: "name", label: "Product", width: "32%" },
             { id: "category", label: "Category", width: "23%" },
             { id: "isActive", label: "Status", width: "23%" },
           ],
           href: (row) => `/dashboard/admin/core-products/${row.id}`,
           title: (row) => row.name,
-          description: (row) => row.composedSku ?? row.sku,
+          description: (row) => row.catalogCode ?? row.sku,
           meta: (row) => [
             [row.category.type?.name, row.category.name, row.subCategory?.name]
               .filter(Boolean)

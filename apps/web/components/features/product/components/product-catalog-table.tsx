@@ -64,6 +64,7 @@ export type CatalogProduct = {
   id: number;
   name: string;
   sku?: string | null;
+  catalogCode?: string | null;
   categoryId: number;
   subCategoryId?: number | null;
   category?: {
@@ -98,7 +99,7 @@ function normalize(value: string | null | undefined) {
 }
 
 function productIdLabel(product: CatalogProduct) {
-  return product.sku?.trim() || `#${product.id}`;
+  return product.catalogCode || product.sku?.trim() || `#${product.id}`;
 }
 
 function uniqueOptions(items: Array<FilterOption | null | undefined>) {
@@ -211,7 +212,11 @@ export default function ProductCatalogTable({
         id: "productId",
         accessorFn: productIdLabel,
         header: ({ column }) => (
-          <SortableHeader column={column} label="ID" compact={isMobile} />
+          <SortableHeader
+            column={column}
+            label="Catalog ID"
+            compact={isMobile}
+          />
         ),
         cell: ({ row }) => productIdLabel(row.original),
       },

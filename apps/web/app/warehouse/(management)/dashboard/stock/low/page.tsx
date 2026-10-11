@@ -602,7 +602,7 @@ export default function WarehouseLowStockPage() {
                     <TableRow className="bg-slate-50 hover:bg-slate-50">
                       <TableHead className="w-12" />
                       <TableHead className="min-w-[150px] text-[11px] font-black uppercase tracking-wider text-slate-500">
-                        SKU
+                        Catalog ID
                       </TableHead>
                       <TableHead className="min-w-[230px] text-[11px] font-black uppercase tracking-wider text-slate-500">
                         Product name

@@ -45,6 +45,13 @@ export const catalogVariant = pgTable(
     /** Issuance-time readable reference; populated in the alias rollout. */
     classificationCode: varchar("classification_code", { length: 20 }),
 
+    /**
+     * Human-readable SKU shared by every Admin, warehouse, and retailer
+     * variant of this item: BRAND-PRODUCT-VARIANT (e.g. "OMR-LPG-12KG").
+     * Issued once when the catalog variant is created and never changed.
+     */
+    sku: varchar("sku", { length: 32 }),
+
     /** Canonical target for carton-to-pack or bulk-to-loose conversion. */
     conversionTargetCatalogVariantId: integer(
       "conversion_target_catalog_variant_id",
@@ -65,6 +72,7 @@ export const catalogVariant = pgTable(
   },
   (table) => [
     uniqueIndex("catalog_variant_global_sku_unique").on(table.globalSku),
+    uniqueIndex("catalog_variant_sku_unique").on(table.sku),
     uniqueIndex("catalog_variant_branded_identity_unique")
       .on(table.coreProductId, table.brandId, table.variantOptionId)
       .where(sql`${table.brandId} IS NOT NULL`),

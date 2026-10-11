@@ -12,15 +12,14 @@ import {
   productBrand,
   productImage,
   productVariant,
-  subCategory,
   variantOption,
 } from "@bikalpo-project/db/schema";
 import { ORPCError } from "@orpc/server";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 
 import { adminProcedure } from "../index";
-import { generateSku } from "./helpers/generate-sku";
+import { catalogProductCode } from "./helpers/generate-sku";
 import {
   resolveConcreteVariantForConfig,
   syncBrandVariantPrices,
@@ -409,15 +408,6 @@ export const adminProductConfigRouter = {
         });
       }
 
-      let subCategorySlug = "xx";
-      if (core.subCategoryId) {
-        const sub = await db.query.subCategory.findFirst({
-          where: eq(subCategory.id, core.subCategoryId),
-          columns: { slug: true },
-        });
-        subCategorySlug = sub?.slug || "xx";
-      }
-
       const result = await db.transaction(async (tx) => {
         const currentTemplate =
           await tx.query.adminProductGenerationTemplate.findFirst({
@@ -535,23 +525,18 @@ export const adminProductConfigRouter = {
             slug = `${baseSlug}-${suffix++}`;
           }
 
-          const [countResult] = await tx
-            .select({ count: sql<number>`count(*)::int` })
-            .from(product)
-            .where(eq(product.categoryId, core.categoryId));
-          const sku = generateSku({
-            subCategorySlug,
-            categorySlug: core.category?.slug || "xx",
-            serialNumber: (countResult?.count ?? 0) + 1,
-            userId: context.session.user.id,
-          });
+          const catalogCode = catalogProductCode(
+            core.catalogCode,
+            brandRow.skuCode,
+          );
 
           const [newProduct] = await tx
             .insert(product)
             .values({
               name,
               slug,
-              sku,
+              sku: catalogCode,
+              catalogCode,
               description: details.description ?? null,
               shortDescription: details.shortDescription ?? null,
               videoUrl: details.videoUrl ?? null,
