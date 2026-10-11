@@ -19,6 +19,11 @@ export const createBrandSchema = z.object({
     .string()
     .max(255, "Logo URL must be at most 255 characters.")
     .optional(),
+  shortCode: z
+    .string()
+    .trim()
+    .regex(/^([A-Za-z0-9]{2,6})?$/, "SKU code must be 2 to 6 letters or numbers.")
+    .optional(),
   isActive: z.boolean().default(true).optional(),
   displayOrder: z
     .number()

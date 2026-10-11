@@ -28,6 +28,8 @@ export type StructuredStockSourceRow = {
   sku: string | null;
   catalogVariantId?: number | null;
   globalSku?: string | null;
+  /** Shared human-readable SKU (BRAND-PRODUCT-VARIANT). */
+  catalogSku?: string | null;
   localSku?: string | null;
   variantIsActive: boolean;
   sourceVariantOptionId: number | null;
@@ -66,6 +68,8 @@ export type StructuredStockVariant = {
   sku: string | null;
   catalogVariantId: number | null;
   globalSku: string | null;
+  /** Shared human-readable SKU (BRAND-PRODUCT-VARIANT). */
+  catalogSku: string | null;
   localSku: string | null;
   canonicalLabel: string | null;
   displayAlias: string | null;
@@ -99,6 +103,8 @@ export type StructuredStockDetailTarget =
 export type StructuredStockDetailSourceRow = StructuredStockSourceRow & {
   coreProductName: string | null;
   coreProductSku: string | null;
+  /** Shared Catalog Product ID (core catalog code + brand code). */
+  productCatalogCode?: string | null;
   coreProductImage: string | null;
   productImage: string | null;
 };
@@ -510,6 +516,7 @@ export function buildStructuredStockOverview(
       sku: row.sku,
       catalogVariantId: row.catalogVariantId ?? null,
       globalSku: row.globalSku ?? null,
+      catalogSku: row.catalogSku ?? null,
       localSku: row.localSku ?? row.sku,
       canonicalLabel,
       displayAlias,

@@ -38,6 +38,7 @@ type VariantPrice = {
   consumerPrice?: string | number | null;
   isActive?: boolean | null;
   variantOption?: VariantOption | null;
+  catalogSku?: string | null;
 };
 
 type ProductBrandLink = {
@@ -50,6 +51,7 @@ type DetailProduct = {
   name: string;
   slug: string;
   sku?: string | null;
+  catalogCode?: string | null;
   price: string | number;
   size?: string | null;
   image: string;
@@ -154,7 +156,8 @@ export function WebViewDetailClient({
     product.brand?.name ??
     "Unbranded";
 
-  const sku = product.sku?.trim() || `PRD-${product.id}`;
+  const sku =
+    product.catalogCode || product.sku?.trim() || `PRD-${product.id}`;
   const priceValue = selectedVariant?.consumerPrice ?? product.price;
   const priceLabel = formatBDT(priceValue) ?? "Price not set";
   const priceUnit =
@@ -330,6 +333,7 @@ export function WebViewDetailClient({
           {/* Key facts */}
           <dl className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm">
             <Fact label="Product ID" value={sku} />
+            <Fact label="SKU" value={selectedVariant?.catalogSku ?? "—"} />
             <Fact label="Brand" value={brandName} />
             <Fact
               label="Category"

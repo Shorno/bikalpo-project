@@ -23,6 +23,7 @@ import { z } from "zod";
 import { shopPermissionProcedure } from "../index";
 import { recalculateOffersForShopProduct } from "../services/open-order-matching";
 import { shopTenantId } from "../shop-portal-scope";
+import { catalogProductCode } from "./helpers/generate-sku";
 import {
   isConcreteVariantOption,
   linkProductVariantsToCatalog,
@@ -684,6 +685,10 @@ export const shopProductConfigEndpoints = {
                 size: "—",
                 price: "0",
                 sku: `SHOP-${shopId.slice(0, 6)}-${core.id}-${brandRow.id}`,
+                catalogCode: catalogProductCode(
+                  core.catalogCode,
+                  brandRow.skuCode,
+                ),
                 image: input.details.image,
                 features: input.details.features,
                 trackingType: input.details.trackingType,

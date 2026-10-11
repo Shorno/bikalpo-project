@@ -4,6 +4,7 @@ import {
     integer,
     pgTable,
     serial,
+    uniqueIndex,
     varchar,
 } from "drizzle-orm/pg-core";
 import { timestamps } from "./columns.helpers";
@@ -26,7 +27,9 @@ export const category = pgTable("category", {
     isActive: boolean("is_active").default(true).notNull(),
     displayOrder: integer("display_order").default(0).notNull(),
     ...timestamps,
-});
+}, (table) => [
+    uniqueIndex("category_type_sku_code_unique").on(table.typeId, table.skuCode),
+]);
 
 export const subCategory = pgTable("sub_category", {
     id: serial("id").primaryKey(),
@@ -43,7 +46,9 @@ export const subCategory = pgTable("sub_category", {
     isActive: boolean("is_active").default(true).notNull(),
     displayOrder: integer("display_order").default(0).notNull(),
     ...timestamps,
-});
+}, (table) => [
+    uniqueIndex("sub_category_category_sku_code_unique").on(table.categoryId, table.skuCode),
+]);
 
 export const categoryRelations = relations(category, ({ one, many }) => ({
     type: one(productType, {

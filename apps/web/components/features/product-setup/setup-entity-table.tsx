@@ -314,7 +314,7 @@ export function SetupEntityTable<TData, TValue>({
                 return (
                   <TableCell
                     key={cell.id}
-                    className={`px-1 py-2 align-middle [&_span]:[font-size:inherit] [&_p]:[font-size:inherit] [&_a]:block [&_a]:min-h-7 [&_a]:text-primary [&_a]:focus-visible:outline-2 [&_a]:focus-visible:outline-ring [&_[data-slot=badge]]:px-1 [&_[data-slot=badge]]:text-[10px] ${definition.id === "skuCode" || definition.id === "composedSku" ? "text-[10px] @xs/setup-table:text-[11px]" : ""} ${definition.id === "actions" ? "px-0.5 [&_button]:size-11" : ""}`}
+                    className={`px-1 py-2 align-middle [&_span]:[font-size:inherit] [&_p]:[font-size:inherit] [&_a]:block [&_a]:min-h-7 [&_a]:text-primary [&_a]:focus-visible:outline-2 [&_a]:focus-visible:outline-ring [&_[data-slot=badge]]:px-1 [&_[data-slot=badge]]:text-[10px] ${definition.id === "skuCode" || definition.id === "catalogCode" ? "text-[10px] @xs/setup-table:text-[11px]" : ""} ${definition.id === "actions" ? "px-0.5 [&_button]:size-11" : ""}`}
                   >
                     {definition.id === mobile.primaryColumn &&
                     mobile.onSelect ? (

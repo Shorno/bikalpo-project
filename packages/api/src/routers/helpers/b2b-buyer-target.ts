@@ -7,6 +7,8 @@ import {
   productVariantPrice,
 } from "@bikalpo-project/db/schema";
 import { and, eq, sql } from "drizzle-orm";
+import { loadCatalogProductCode } from "./core-catalog-code";
+import { ensureCatalogVariantSku } from "./sellable-sku";
 import { resolveConcreteVariantForConfig } from "./sync-generated-variants";
 
 type OwnerType = "shop" | "warehouse";
@@ -100,6 +102,9 @@ export async function ensureCatalogVariantForVariant(
         `Variant ${variantId} references a missing catalog variant`,
       );
     }
+    if (!existing.sku) {
+      existing.sku = await ensureCatalogVariantSku(tx, existing.id);
+    }
     return { source, catalog: existing };
   }
 
@@ -131,6 +136,9 @@ export async function ensureCatalogVariantForVariant(
       .returning();
   }
   if (!canonical) throw new Error("Could not create catalog variant identity");
+  if (!canonical.sku) {
+    canonical.sku = await ensureCatalogVariantSku(tx, canonical.id);
+  }
 
   await tx
     .update(productVariant)
@@ -251,6 +259,11 @@ export async function ensureShopBuyerTargetVariant(
         price: "0",
         reorderLevel: adminTemplate.reorderLevel,
         sku: `SHOP-${input.shopId.slice(0, 6)}-${seed.product.coreProductId}-${targetBrandId ?? 0}`,
+        catalogCode: await loadCatalogProductCode(
+          tx,
+          seed.product.coreProductId,
+          targetBrandId,
+        ),
         supplier: null,
         image: adminTemplate.image,
         shortDescription: adminTemplate.shortDescription,
@@ -475,6 +488,11 @@ export async function ensureWarehouseBuyerTargetVariant(
         price: template.price,
         reorderLevel: template.reorderLevel,
         sku: `WH-${input.warehouseId.slice(0, 6)}-${seed.product.coreProductId}-${brandId ?? 0}`,
+        catalogCode: await loadCatalogProductCode(
+          tx,
+          seed.product.coreProductId,
+          brandId,
+        ),
         supplier: template.supplier,
         image: template.image,
         shortDescription: template.shortDescription,

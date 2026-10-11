@@ -10,6 +10,7 @@ export interface WarehouseStorefrontDetailVariant {
   inventoryId: number;
   sku: string | null;
   globalSku: string | null;
+  catalogSku: string | null;
   unitLabel: string;
   quantitySelectorLabel: string | null;
   price: number;

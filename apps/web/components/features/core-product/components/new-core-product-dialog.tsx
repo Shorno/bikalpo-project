@@ -72,6 +72,7 @@ export default function NewCoreProductDialog() {
   const form = useForm({
     defaultValues: {
       sku: "",
+      shortCode: "",
       name: "",
       slug: "",
       description: "",
@@ -91,6 +92,7 @@ export default function NewCoreProductDialog() {
 
       mutation.mutate({
         sku: value.sku.trim() || undefined,
+        shortCode: value.shortCode.trim() || undefined,
         name: value.name,
         slug: value.slug,
         description: value.description || undefined,
@@ -172,11 +174,11 @@ export default function NewCoreProductDialog() {
         </form.Field>
 
         {/* Name, Slug */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <form.Field name="sku">
             {(field) => (
               <Field>
-                <FieldLabel htmlFor={field.name}>SKU</FieldLabel>
+                <FieldLabel htmlFor={field.name}>Core code</FieldLabel>
                 <Input
                   id={field.name}
                   value={field.state.value}
@@ -188,6 +190,27 @@ export default function NewCoreProductDialog() {
                 <FieldDescription>
                   Leave empty to auto-generate
                 </FieldDescription>
+              </Field>
+            )}
+          </form.Field>
+
+          <form.Field name="shortCode">
+            {(field) => (
+              <Field>
+                <FieldLabel htmlFor={field.name}>SKU code</FieldLabel>
+                <Input
+                  id={field.name}
+                  value={field.state.value}
+                  onBlur={field.handleBlur}
+                  onChange={(e) =>
+                    field.handleChange(e.target.value.toUpperCase())
+                  }
+                  placeholder="Auto"
+                  maxLength={6}
+                  autoComplete="off"
+                  className="font-mono uppercase"
+                />
+                <FieldDescription>Product part of SKUs, e.g. OMR-LPG-12KG. Empty generates it.</FieldDescription>
               </Field>
             )}
           </form.Field>

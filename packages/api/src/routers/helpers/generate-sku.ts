@@ -19,7 +19,7 @@
  */
 
 import { db } from "@bikalpo-project/db";
-import { sql } from "drizzle-orm";
+import { getTableName, sql } from "drizzle-orm";
 import type { PgColumn, PgTable } from "drizzle-orm/pg-core";
 
 /** Digit width of each hierarchical SKU segment. */
@@ -37,7 +37,23 @@ export const SKU_SEGMENT_DIGITS = {
 // ============================================================
 
 /**
+ * Serialize code allocation for a table until the surrounding transaction ends,
+ * so two concurrent creates cannot read the same MAX and issue the same code.
+ * Outside a transaction the lock is released immediately; the unique indexes
+ * on the code columns remain the final guard.
+ */
+export async function lockSkuAllocation(
+    table: PgTable,
+    database: Pick<typeof db, "execute"> = db,
+): Promise<void> {
+    await database.execute(
+        sql`SELECT pg_advisory_xact_lock(hashtext(${`sku-allocation:${getTableName(table)}`}))`,
+    );
+}
+
+/**
  * Get the next available N-digit skuCode for a table.
+ * Call inside a transaction that also inserts the row so the allocation lock holds.
  *
  * @param table - The Drizzle table to query
  * @param skuColumn - The skuCode column
@@ -52,6 +68,8 @@ export async function nextSkuCode(
     filterConditions?: ReturnType<typeof sql>,
     database: Pick<typeof db, "execute"> = db,
 ): Promise<string> {
+    await lockSkuAllocation(table, database);
+
     // Find the maximum existing skuCode within the scope
     const query = filterConditions
         ? sql`SELECT COALESCE(MAX(CAST(${skuColumn} AS INTEGER)), 0) AS max_code FROM ${table} WHERE ${filterConditions}`
@@ -222,4 +240,20 @@ export function composePartialSku(
         if (key === levelKey) break;
     }
     return parts.join("-");
+}
+
+/**
+ * Shared Catalog Product ID for a core product + brand pair:
+ * the core product's permanent catalog code followed by the brand code.
+ * Returns null when either part is missing (legacy rows without codes).
+ *
+ * @example
+ * catalogProductCode("02-02-01-018", "5") // → "02-02-01-018-05"
+ */
+export function catalogProductCode(
+    coreCatalogCode: string | null | undefined,
+    brandSkuCode: string | null | undefined,
+): string | null {
+    if (!coreCatalogCode || !brandSkuCode?.trim()) return null;
+    return `${coreCatalogCode}-${segment(brandSkuCode, SKU_SEGMENT_DIGITS.brand)}`;
 }

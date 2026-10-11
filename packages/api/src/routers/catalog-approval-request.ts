@@ -17,14 +17,18 @@ import {
   desc,
   eq,
   gte,
-  isNull,
   or,
   type SQL,
   sql,
 } from "drizzle-orm";
 import { z } from "zod";
 import { adminProcedure, catalogRequesterProcedure } from "../index";
+import { assignCoreProductCode } from "./helpers/core-catalog-code";
 import { nextSkuCode } from "./helpers/generate-sku";
+import {
+  ensureBrandShortCode,
+  ensureCoreProductShortCode,
+} from "./helpers/sellable-sku";
 import {
   createStructuredVariantOption,
   prepareStructuredVariantOption,
@@ -209,6 +213,7 @@ async function createBrandFromPayload(
     })
     .returning();
 
+  created!.shortCode = await ensureBrandShortCode(database, created!.id);
   return created!;
 }
 
@@ -231,44 +236,17 @@ async function createCoreProductFromPayload(
     });
   }
 
-  let sku = input.sku || undefined;
-  if (!sku) {
-    const filterCondition = input.subCategoryId
-      ? sql`${coreProductIdentity.subCategoryId} = ${input.subCategoryId}`
-      : sql`${coreProductIdentity.categoryId} = ${input.categoryId} AND ${coreProductIdentity.subCategoryId} IS NULL`;
-    sku = await nextSkuCode(
-      coreProductIdentity,
-      coreProductIdentity.sku,
-      3,
-      filterCondition,
-      database,
-    );
-  }
-
-  const scopeCondition = input.subCategoryId
-    ? and(
-        eq(coreProductIdentity.sku, sku),
-        eq(coreProductIdentity.subCategoryId, input.subCategoryId),
-      )
-    : and(
-        eq(coreProductIdentity.sku, sku),
-        eq(coreProductIdentity.categoryId, input.categoryId),
-        isNull(coreProductIdentity.subCategoryId),
-      );
-  const existingSku = await database.query.coreProductIdentity.findFirst({
-    where: scopeCondition,
-    columns: { id: true },
+  const { sku, catalogCode } = await assignCoreProductCode(database, {
+    categoryId: input.categoryId,
+    subCategoryId: input.subCategoryId,
+    requestedSku: input.sku,
   });
-  if (existingSku) {
-    throw new ORPCError("CONFLICT", {
-      message: `A core product with SKU "${sku}" already exists in this scope`,
-    });
-  }
 
   const [created] = await database
     .insert(coreProductIdentity)
     .values({
       sku,
+      catalogCode,
       name: input.name,
       slug: input.slug,
       description: input.description || null,
@@ -278,6 +256,7 @@ async function createCoreProductFromPayload(
     })
     .returning();
 
+  created!.shortCode = await ensureCoreProductShortCode(database, created!.id);
   return created!;
 }
 

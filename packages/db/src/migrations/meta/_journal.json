@@ -617,6 +617,20 @@
       "when": 1790553600003,
       "tag": "0088_two_digit_category_codes_catalog_product_id",
       "breakpoints": true
+    },
+    {
+      "idx": 89,
+      "version": "7",
+      "when": 1790553600004,
+      "tag": "0089_persistent_catalog_codes",
+      "breakpoints": true
+    },
+    {
+      "idx": 90,
+      "version": "7",
+      "when": 1790553600005,
+      "tag": "0090_sellable_sku",
+      "breakpoints": true
     }
   ]
 }

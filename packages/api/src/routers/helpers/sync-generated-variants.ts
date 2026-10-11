@@ -12,6 +12,7 @@ import {
 } from "@bikalpo-project/db/variant-definition";
 import { ORPCError } from "@orpc/server";
 import { and, eq, inArray, sql } from "drizzle-orm";
+import { ensureCatalogVariantSku } from "./sellable-sku";
 
 type DbTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
 export type DbClient = typeof db | DbTransaction;
@@ -144,7 +145,10 @@ export async function linkProductVariantsToCatalog(
   for (const variant of productRow.variants) {
     if (!variant.sourceVariantOptionId) continue;
     const brandId = variant.brandId ?? productRow.brandId ?? null;
-    if (variant.catalogVariantId) continue;
+    if (variant.catalogVariantId) {
+      await ensureCatalogVariantSku(client, variant.catalogVariantId);
+      continue;
+    }
 
     await client
       .insert(catalogVariant)
@@ -174,6 +178,7 @@ export async function linkProductVariantsToCatalog(
       .update(productVariant)
       .set({ catalogVariantId: canonical.id })
       .where(eq(productVariant.id, variant.id));
+    await ensureCatalogVariantSku(client, canonical.id);
   }
 }
 

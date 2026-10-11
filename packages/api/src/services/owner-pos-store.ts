@@ -22,6 +22,8 @@ export type PosCatalogRow = {
   sku: string | null;
   localSku: string | null;
   globalSku: string | null;
+  /** Shared human-readable SKU (BRAND-PRODUCT-VARIANT). */
+  catalogSku: string | null;
   productName: string;
   coreProductName: string;
   typeId: number;
@@ -203,7 +205,7 @@ export async function getOwnerPosCatalog(
           isActive: true,
         },
         with: {
-          catalogVariant: { columns: { id: true, globalSku: true } },
+          catalogVariant: { columns: { id: true, globalSku: true, sku: true } },
           sourceVariantOption: true,
           brand: { columns: { id: true, name: true } },
           product: {
@@ -263,6 +265,7 @@ export async function getOwnerPosCatalog(
       sku: variant.preferredLocalSku ?? variant.sku,
       localSku: variant.preferredLocalSku ?? variant.sku,
       globalSku: variant.catalogVariant?.globalSku ?? null,
+      catalogSku: variant.catalogVariant?.sku ?? null,
       productName: product.name,
       coreProductName: product.coreProduct?.name ?? product.name,
       typeId: type.id,

@@ -207,6 +207,7 @@ export const retailerPosRouter = {
               row.pack,
               row.sku,
               row.localSku,
+              row.catalogSku,
               row.globalSku,
             ].some((value) => value?.toLocaleLowerCase().includes(search)),
           )

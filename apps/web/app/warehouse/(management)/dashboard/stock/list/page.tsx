@@ -201,7 +201,7 @@ export default function StockListPage() {
       {
         id: "sku",
         accessorKey: "coreProductSku",
-        header: "SKU",
+        header: "Catalog ID",
         cell: ({ row }) => {
           const sku = row.original.coreProductSku;
           return sku ? (

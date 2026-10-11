@@ -19,7 +19,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 
 import { adminProcedure } from "../index";
-import { composeCatalogProductId } from "./helpers/generate-sku";
+import { catalogProductCode } from "./helpers/generate-sku";
 import {
   resolveConcreteVariantForConfig,
   syncBrandVariantPrices,
@@ -331,11 +331,7 @@ export const adminProductConfigRouter = {
       const core = await db.query.coreProductIdentity.findFirst({
         where: eq(coreProductIdentity.id, coreProductId),
         with: {
-          category: {
-            columns: { id: true, slug: true, typeId: true, skuCode: true },
-            with: { type: { columns: { skuCode: true } } },
-          },
-          subCategory: { columns: { skuCode: true } },
+          category: { columns: { id: true, slug: true, typeId: true } },
         },
       });
       if (!core) {
@@ -529,20 +525,18 @@ export const adminProductConfigRouter = {
             slug = `${baseSlug}-${suffix++}`;
           }
 
-          const sku = composeCatalogProductId({
-            typeSkuCode: core.category?.type?.skuCode,
-            categorySkuCode: core.category?.skuCode,
-            subCategorySkuCode: core.subCategory?.skuCode,
-            coreProductSkuCode: core.sku,
-            brandSkuCode: brandRow.skuCode,
-          });
+          const catalogCode = catalogProductCode(
+            core.catalogCode,
+            brandRow.skuCode,
+          );
 
           const [newProduct] = await tx
             .insert(product)
             .values({
               name,
               slug,
-              sku,
+              sku: catalogCode,
+              catalogCode,
               description: details.description ?? null,
               shortDescription: details.shortDescription ?? null,
               videoUrl: details.videoUrl ?? null,

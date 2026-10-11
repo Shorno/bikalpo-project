@@ -94,6 +94,7 @@ export default function EditCoreProductDialog({
   const form = useForm({
     defaultValues: {
       sku: coreProduct.sku,
+      shortCode: coreProduct.shortCode ?? "",
       name: coreProduct.name,
       slug: coreProduct.slug,
       description: coreProduct.description || "",
@@ -114,6 +115,7 @@ export default function EditCoreProductDialog({
       mutation.mutate({
         id: coreProduct.id,
         sku: value.sku,
+        shortCode: value.shortCode.trim() || undefined,
         name: value.name,
         slug: value.slug,
         description: value.description || undefined,
@@ -182,11 +184,11 @@ export default function EditCoreProductDialog({
         </form.Field>
 
         {/* SKU, Name, Slug */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <form.Field name="sku">
             {(field) => (
               <Field>
-                <FieldLabel htmlFor={field.name}>SKU *</FieldLabel>
+                <FieldLabel htmlFor={field.name}>Core code *</FieldLabel>
                 <Input
                   id={field.name}
                   value={field.state.value}
@@ -195,6 +197,27 @@ export default function EditCoreProductDialog({
                   placeholder="001"
                 />
                 <FieldDescription>Unique identifier</FieldDescription>
+              </Field>
+            )}
+          </form.Field>
+
+          <form.Field name="shortCode">
+            {(field) => (
+              <Field>
+                <FieldLabel htmlFor={field.name}>SKU code</FieldLabel>
+                <Input
+                  id={field.name}
+                  value={field.state.value}
+                  onBlur={field.handleBlur}
+                  onChange={(e) =>
+                    field.handleChange(e.target.value.toUpperCase())
+                  }
+                  placeholder="Auto"
+                  maxLength={6}
+                  autoComplete="off"
+                  className="font-mono uppercase"
+                />
+                <FieldDescription>Product part of SKUs. Locked once a SKU uses it.</FieldDescription>
               </Field>
             )}
           </form.Field>

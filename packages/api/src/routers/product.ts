@@ -4,6 +4,7 @@ import {
   type AdminProductGenerationTemplateDetails,
   adminProductGenerationTemplate,
   brand as brandTable,
+  catalogVariant,
   category as categoryTable,
   coreProductIdentity,
   estimateItem,
@@ -47,7 +48,9 @@ import {
   fetchConsumerReferencePricePage,
   saveConsumerReferencePrices,
 } from "../services/consumer-reference-prices";
-import { composeCatalogProductId, nextSkuCode } from "./helpers/generate-sku";
+import { assignCoreProductCode } from "./helpers/core-catalog-code";
+import { catalogProductCode } from "./helpers/generate-sku";
+import { ensureCoreProductShortCode } from "./helpers/sellable-sku";
 import {
   applyGeneratedVariantExchangeSettings,
   attachExchangeSettingsToVariantPrices,
@@ -263,7 +266,33 @@ export const productRouter = {
         throw new ORPCError("NOT_FOUND", { message: "Product not found" });
       }
 
-      return { product: attachExchangeSettingsToVariantPrices(foundProduct) };
+      // Each brand + variant row maps to one shared catalog variant and its SKU.
+      const catalogVariants = foundProduct.coreProductId
+        ? await db.query.catalogVariant.findMany({
+            where: eq(catalogVariant.coreProductId, foundProduct.coreProductId),
+            columns: { brandId: true, variantOptionId: true, sku: true },
+          })
+        : [];
+      const skuByIdentity = new Map(
+        catalogVariants.map((row) => [
+          `${row.brandId ?? "none"}:${row.variantOptionId}`,
+          row.sku,
+        ]),
+      );
+      const detail = attachExchangeSettingsToVariantPrices(foundProduct);
+
+      return {
+        product: {
+          ...detail,
+          variantPrices: detail.variantPrices.map((price) => ({
+            ...price,
+            catalogSku:
+              skuByIdentity.get(
+                `${price.brandId ?? foundProduct.brandId ?? "none"}:${price.variantOptionId}`,
+              ) ?? null,
+          })),
+        },
+      };
     }),
 
   /**
@@ -400,20 +429,16 @@ export const productRouter = {
             });
           }
 
-          const coreSkuScope = productData.subCategoryId
-            ? sql`${coreProductIdentity.subCategoryId} = ${productData.subCategoryId}`
-            : sql`${coreProductIdentity.categoryId} = ${productData.categoryId} AND ${coreProductIdentity.subCategoryId} IS NULL`;
-          const coreSku = await nextSkuCode(
-            coreProductIdentity,
-            coreProductIdentity.sku,
-            3,
-            coreSkuScope,
-            tx,
-          );
+          const { sku: coreSku, catalogCode: coreCatalogCode } =
+            await assignCoreProductCode(tx as unknown as typeof db, {
+              categoryId: productData.categoryId,
+              subCategoryId: productData.subCategoryId,
+            });
           const [createdCore] = await tx
             .insert(coreProductIdentity)
             .values({
               sku: coreSku,
+              catalogCode: coreCatalogCode,
               name: newCoreProductName,
               slug: coreSlug,
               description: productData.description ?? null,
@@ -432,6 +457,10 @@ export const productRouter = {
             });
           }
           coreProductId = createdCore.id;
+          await ensureCoreProductShortCode(
+            tx as unknown as typeof db,
+            createdCore.id,
+          );
         }
 
         if (!coreProductId) {
@@ -443,11 +472,8 @@ export const productRouter = {
         const core = await tx.query.coreProductIdentity.findFirst({
           where: eq(coreProductIdentity.id, coreProductId),
           with: {
-            category: {
-              columns: { id: true, slug: true, typeId: true, skuCode: true },
-              with: { type: { columns: { skuCode: true } } },
-            },
-            subCategory: { columns: { id: true, slug: true, skuCode: true } },
+            category: { columns: { id: true, slug: true, typeId: true } },
+            subCategory: { columns: { id: true, slug: true } },
           },
         });
         if (!core) {
@@ -615,19 +641,17 @@ export const productRouter = {
             slug = `${baseSlug}-${suffix++}`;
           }
 
-          const sku = composeCatalogProductId({
-            typeSkuCode: core.category?.type?.skuCode,
-            categorySkuCode: core.category?.skuCode,
-            subCategorySkuCode: core.subCategory?.skuCode,
-            coreProductSkuCode: core.sku,
-            brandSkuCode: brandRow.skuCode,
-          });
+          const catalogCode = catalogProductCode(
+            core.catalogCode,
+            brandRow.skuCode,
+          );
           const [newProduct] = await tx
             .insert(product)
             .values({
               name,
               slug,
-              sku,
+              sku: catalogCode,
+              catalogCode,
               description: templateDetails.description ?? null,
               shortDescription: templateDetails.shortDescription ?? null,
               videoUrl: templateDetails.videoUrl ?? null,

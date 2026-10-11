@@ -14,6 +14,7 @@ import { z } from "zod";
 
 import { adminProcedure, publicProcedure } from "../index";
 import { nextSkuCode } from "./helpers/generate-sku";
+import { setBrandShortCode } from "./helpers/sellable-sku";
 
 // Validation schemas
 const createBrandSchema = z.object({
@@ -27,6 +28,8 @@ const createBrandSchema = z.object({
   logo: z.string().max(255).optional(),
   isActive: z.boolean().default(true),
   displayOrder: z.number().int().min(0).default(0),
+  /** SKU short code; generated from the name when empty. */
+  shortCode: z.string().trim().max(6).optional(),
 });
 
 const updateBrandSchema = createBrandSchema.extend({
@@ -343,13 +346,23 @@ export const brandRouter = {
     })
     .input(createBrandSchema)
     .handler(async ({ input }) => {
+      const { shortCode, ...brandData } = input;
       // Auto-generate next available 2-digit skuCode
-      const skuCode = await nextSkuCode(brand, brand.skuCode, 2);
-
-      const [newBrand] = await db
-        .insert(brand)
-        .values({ ...input, skuCode })
-        .returning();
+      const newBrand = await db.transaction(async (tx) => {
+        const skuCode = await nextSkuCode(
+          brand,
+          brand.skuCode,
+          2,
+          undefined,
+          tx,
+        );
+        const [row] = await tx
+          .insert(brand)
+          .values({ ...brandData, skuCode })
+          .returning();
+        row!.shortCode = await setBrandShortCode(tx, row!.id, shortCode);
+        return row;
+      });
       return {
         data: newBrand,
         message: "Brand created successfully",
@@ -370,7 +383,7 @@ export const brandRouter = {
     })
     .input(updateBrandSchema)
     .handler(async ({ input }) => {
-      const { id, ...data } = input;
+      const { id, shortCode, ...data } = input;
 
       const existing = await db.query.brand.findFirst({
         where: (b, { eq }) => eq(b.id, id),
@@ -380,10 +393,13 @@ export const brandRouter = {
         throw new ORPCError("NOT_FOUND", { message: "Brand not found" });
       }
 
-      await db
-        .update(brand)
-        .set({ ...data, updatedAt: new Date() })
-        .where(eq(brand.id, id));
+      await db.transaction(async (tx) => {
+        await tx
+          .update(brand)
+          .set({ ...data, updatedAt: new Date() })
+          .where(eq(brand.id, id));
+        await setBrandShortCode(tx, id, shortCode);
+      });
 
       return { message: "Brand updated successfully" };
     }),

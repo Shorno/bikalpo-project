@@ -12,7 +12,8 @@ import { ADMIN_BASE } from "@/lib/routes";
 export interface CoreProductWithRelations {
   id: number;
   sku: string;
-  composedSku?: string;
+  catalogCode: string;
+  shortCode: string | null;
   name: string;
   slug: string;
   description: string | null;
@@ -40,11 +41,16 @@ export function useCoreProductColumns() {
   return useMemo<ColumnDef<CoreProductWithRelations, unknown>[]>(
     () => [
       {
-        id: "composedSku",
-        header: "SKU",
+        id: "catalogCode",
+        header: "Catalog ID",
         cell: ({ row }) => (
-          <span className="font-mono text-xs tabular-nums">
-            {row.original.composedSku || row.original.sku}
+          <span className="flex flex-col font-mono text-xs tabular-nums">
+            <span>{row.original.catalogCode || row.original.sku}</span>
+            {row.original.shortCode && (
+              <span className="text-muted-foreground">
+                {row.original.shortCode}
+              </span>
+            )}
           </span>
         ),
       },

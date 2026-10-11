@@ -84,6 +84,12 @@ export const product = pgTable(
 
     reorderLevel: integer("reorder_level").default(0).notNull(),
     sku: varchar("sku", { length: 100 }),
+    /**
+     * Shared Catalog Product ID: core catalog code + brand code
+     * (e.g. "02-02-01-018-05"). Admin, warehouse, and shop products of the
+     * same core product and brand carry the same value. Set once at creation.
+     */
+    catalogCode: varchar("catalog_code", { length: 32 }),
     supplier: text("supplier"),
     lastRestockedAt: timestamp("last_restocked_at"),
 
@@ -210,6 +216,7 @@ export const product = pgTable(
       .where(
         sql`${table.creatorSource} = 'shop' AND ${table.createdById} IS NOT NULL AND ${table.coreProductId} IS NOT NULL AND ${table.brandId} IS NOT NULL`,
       ),
+    index("product_catalog_code_idx").on(table.catalogCode),
     index("product_creator_scope_idx").on(
       table.creatorSource,
       table.createdById,

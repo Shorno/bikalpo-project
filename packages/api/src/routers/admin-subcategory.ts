@@ -247,19 +247,20 @@ export const adminSubcategoryRouter = {
         assertSubcategoryNameIsUnique(input.name, input.categoryId),
       ]);
       // Auto-generate next 2-digit skuCode scoped to categoryId
-      const filterCondition = sql`${subCategory.categoryId} = ${input.categoryId}`;
-      const skuCode = await nextSkuCode(
-        subCategory,
-        subCategory.skuCode,
-        2,
-        filterCondition,
-      );
-
-      const [result] = await db
-        .insert(subCategory)
-        .values({ ...input, skuCode })
-        .returning();
-      return result;
+      return db.transaction(async (tx) => {
+        const skuCode = await nextSkuCode(
+          subCategory,
+          subCategory.skuCode,
+          2,
+          sql`${subCategory.categoryId} = ${input.categoryId}`,
+          tx,
+        );
+        const [result] = await tx
+          .insert(subCategory)
+          .values({ ...input, skuCode })
+          .returning();
+        return result;
+      });
     }),
 
   update: adminProcedure
@@ -293,10 +294,39 @@ export const adminSubcategoryRouter = {
 
       const { id, ...data } = input;
 
-      await db
-        .update(subCategory)
-        .set({ ...data, updatedAt: new Date() })
-        .where(eq(subCategory.id, id));
+      await db.transaction(async (tx) => {
+        let skuCode: string | undefined;
+        if (data.categoryId !== existing.categoryId) {
+          // The subcategory code is part of every catalog ID beneath it.
+          const coreInSubcategory =
+            await tx.query.coreProductIdentity.findFirst({
+              where: eq(coreProductIdentity.subCategoryId, id),
+              columns: { id: true },
+            });
+          if (coreInSubcategory) {
+            throw new ORPCError("CONFLICT", {
+              message:
+                "This sub category already has core products with catalog IDs, so it cannot move to another Category.",
+            });
+          }
+          skuCode = await nextSkuCode(
+            subCategory,
+            subCategory.skuCode,
+            2,
+            sql`${subCategory.categoryId} = ${data.categoryId}`,
+            tx,
+          );
+        }
+
+        await tx
+          .update(subCategory)
+          .set({
+            ...data,
+            ...(skuCode ? { skuCode } : {}),
+            updatedAt: new Date(),
+          })
+          .where(eq(subCategory.id, id));
+      });
 
       return { message: "Subcategory updated successfully" };
     }),

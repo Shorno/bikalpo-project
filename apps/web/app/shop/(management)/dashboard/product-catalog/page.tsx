@@ -346,10 +346,11 @@ export default function ProductCatalogPage() {
       ) : (
         <div className="space-y-4">
           <div className="overflow-hidden rounded-xl border bg-card shadow-sm">
-            <Table className="min-w-[760px]">
+            <Table className="min-w-[860px]">
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-[50px]">#</TableHead>
+                  <TableHead>Catalog ID</TableHead>
                   <TableHead>Type</TableHead>
                   <TableHead>Category</TableHead>
                   <TableHead>Sub Category</TableHead>
@@ -360,7 +361,7 @@ export default function ProductCatalogPage() {
               <TableBody>
                 {items.length === 0 ? (
                   <TableRow>
-                    <TableCell className="h-52 text-center" colSpan={6}>
+                    <TableCell className="h-52 text-center" colSpan={7}>
                       <div className="flex flex-col items-center">
                         <PackageSearch
                           aria-hidden="true"
@@ -390,6 +391,11 @@ export default function ProductCatalogPage() {
                         <TableCell>
                           <span className="font-mono text-sm font-medium tabular-nums text-muted-foreground">
                             {rowNumber}
+                          </span>
+                        </TableCell>
+                        <TableCell>
+                          <span className="font-mono text-xs tabular-nums text-muted-foreground">
+                            {item.catalogCode}
                           </span>
                         </TableCell>
                         <TableCell>

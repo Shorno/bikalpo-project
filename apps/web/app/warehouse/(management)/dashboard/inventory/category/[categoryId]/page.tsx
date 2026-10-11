@@ -213,7 +213,7 @@ export default function InventoryCategoryDetailPage() {
         <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
           <div className="grid grid-cols-[1.5fr_0.8fr_1.2fr_0.6fr] border-b bg-slate-50 px-4 py-3 text-xs font-bold uppercase tracking-normal text-slate-500">
             <span>Core Product</span>
-            <span>SKU</span>
+            <span>Catalog ID</span>
             <span>Stock</span>
             <span>Status</span>
           </div>

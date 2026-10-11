@@ -72,6 +72,7 @@ type CoreProduct = {
   id: number;
   name: string;
   slug: string;
+  catalogCode: string;
   image: string;
   products: CatalogProduct[];
   adminBrandCount: number;
@@ -277,6 +278,15 @@ export default function WarehouseCatalogPage() {
           </span>
         ),
         size: 50,
+      },
+      {
+        id: "catalogCode",
+        header: "Catalog ID",
+        cell: ({ row }) => (
+          <span className="font-mono text-xs tabular-nums text-muted-foreground">
+            {row.original.coreProduct.catalogCode}
+          </span>
+        ),
       },
       {
         accessorKey: "typeName",

@@ -71,6 +71,7 @@ export default function EditBrandDialog({
       id: brand.id,
       name: brand.name,
       slug: brand.slug,
+      shortCode: brand.shortCode ?? "",
       logo: brand.logo ?? "",
       isActive: brand.isActive,
       displayOrder: brand.displayOrder,
@@ -90,6 +91,7 @@ export default function EditBrandDialog({
       id: brand.id,
       name: brand.name,
       slug: brand.slug,
+      shortCode: brand.shortCode ?? "",
       logo: brand.logo ?? "",
       isActive: brand.isActive,
       displayOrder: brand.displayOrder,
@@ -100,6 +102,7 @@ export default function EditBrandDialog({
     brand.isActive,
     brand.logo,
     brand.name,
+    brand.shortCode,
     brand.slug,
     dialogOpen,
     form,
@@ -179,6 +182,36 @@ export default function EditBrandDialog({
                 />
                 <FieldDescription>
                   URL-friendly version of the name.
+                </FieldDescription>
+                {isInvalid && <FieldError errors={field.state.meta.errors} />}
+              </Field>
+            );
+          }}
+        </form.Field>
+
+        <form.Field name="shortCode">
+          {(field) => {
+            const isInvalid =
+              field.state.meta.isTouched && !field.state.meta.isValid;
+            return (
+              <Field data-invalid={isInvalid}>
+                <FieldLabel htmlFor={field.name}>SKU code</FieldLabel>
+                <Input
+                  id={field.name}
+                  name={field.name}
+                  value={field.state.value ?? ""}
+                  onBlur={field.handleBlur}
+                  onChange={(e) =>
+                    field.handleChange(e.target.value.toUpperCase())
+                  }
+                  aria-invalid={isInvalid}
+                  placeholder="Auto"
+                  maxLength={6}
+                  autoComplete="off"
+                  className="font-mono uppercase"
+                />
+                <FieldDescription>
+                  Starts product SKUs. Locked once a product SKU uses it.
                 </FieldDescription>
                 {isInvalid && <FieldError errors={field.state.meta.errors} />}
               </Field>

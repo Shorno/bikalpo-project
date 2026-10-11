@@ -106,6 +106,7 @@ import {
   rollUpDeliveryAreaLabel,
 } from "./helpers/delivery-team-assignment";
 import { creditWarehouseExchangeOrder } from "./helpers/empty-pack-stock";
+import { catalogProductCode } from "./helpers/generate-sku";
 import {
   buildInvoiceProgress,
   configureExistingInvoiceFulfillment,
@@ -329,7 +330,7 @@ const storefrontQueries = {
           variant: {
             with: {
               catalogVariant: {
-                columns: { id: true, globalSku: true },
+                columns: { id: true, globalSku: true, sku: true },
               },
               brand: {
                 columns: { id: true, name: true, slug: true, logo: true },
@@ -380,6 +381,9 @@ const storefrontQueries = {
             !prod.name.toLowerCase().includes(normalizedSearch) &&
             !itemBrand?.name?.toLowerCase().includes(normalizedSearch) &&
             !inv.variant?.sku?.toLowerCase().includes(normalizedSearch) &&
+            !inv.variant?.catalogVariant?.sku
+              ?.toLowerCase()
+              .includes(normalizedSearch) &&
             !inv.variant?.catalogVariant?.globalSku
               ?.toLowerCase()
               .includes(normalizedSearch)
@@ -439,6 +443,7 @@ const storefrontQueries = {
               inventoryId: inv.id,
               catalogVariantId: inv.variant?.catalogVariantId ?? null,
               globalSku: inv.variant?.catalogVariant?.globalSku ?? null,
+              catalogSku: inv.variant?.catalogVariant?.sku ?? null,
               localSku:
                 inv.variant?.preferredLocalSku ?? inv.variant?.sku ?? null,
               availableQty: inv.availableQty,
@@ -552,7 +557,7 @@ const storefrontQueries = {
                 columns: { id: true, name: true, slug: true, logo: true },
               },
               catalogVariant: {
-                columns: { id: true, globalSku: true },
+                columns: { id: true, globalSku: true, sku: true },
               },
             },
           },
@@ -617,6 +622,7 @@ const storefrontQueries = {
             inventoryId: inventoryRow.id,
             sku: variant.sku,
             globalSku: variant.catalogVariant?.globalSku ?? null,
+            catalogSku: variant.catalogVariant?.sku ?? null,
             unitLabel: variant.unitLabel,
             quantitySelectorLabel: variant.quantitySelectorLabel,
             price: retailPrice,
@@ -7121,7 +7127,7 @@ const catalogBrowse = {
       }
       if (input.search?.trim()) {
         coreConditions.push(
-          sql`${coreProductIdentity.name} ILIKE ${`%${input.search.trim()}%`}`,
+          sql`(${coreProductIdentity.name} ILIKE ${`%${input.search.trim()}%`} OR ${coreProductIdentity.catalogCode} ILIKE ${`%${input.search.trim()}%`})`,
         );
       }
 
@@ -7264,6 +7270,7 @@ const catalogBrowse = {
           id: cp.id,
           name: cp.name,
           slug: cp.slug,
+          catalogCode: cp.catalogCode,
           image: cp.image,
           brandCreationMode: WAREHOUSE_BRAND_CREATION_MODE,
           products: cpProducts.map((p: any) => ({
@@ -8479,6 +8486,7 @@ const warehouseProductCreation = {
                 size: "—",
                 price: "0",
                 sku: `WH-${warehouseId.slice(0, 6)}-${core.id}-${brand.id}`,
+                catalogCode: catalogProductCode(core.catalogCode, brand.skuCode),
                 image: input.details.image,
                 features: input.details.features,
                 trackingType: input.details.trackingType,
@@ -9793,6 +9801,7 @@ const storageAreaQueries = {
 // ────────────────────────────────────────────────────────────────
 
 import {
+  catalogVariant,
   category as catTable,
   productType as productTypeTable,
   subCategory as subCategoryTable,
@@ -9851,6 +9860,8 @@ const pricingQueries = {
           or(
             ilike(productTable.name, term),
             ilike(productTable.sku, term),
+            ilike(productTable.catalogCode, term),
+            ilike(catalogVariant.sku, term),
             ilike(coreProductIdentity.name, term),
             ilike(brandTable.name, term),
             ilike(productVariant.unitLabel, term),
@@ -9898,6 +9909,10 @@ const pricingQueries = {
           .leftJoin(
             variantOption,
             eq(productVariant.sourceVariantOptionId, variantOption.id),
+          )
+          .leftJoin(
+            catalogVariant,
+            eq(productVariant.catalogVariantId, catalogVariant.id),
           );
 
       const orderBy =
@@ -9921,6 +9936,8 @@ const pricingQueries = {
           variantSku: productVariant.sku,
           productId: productTable.id,
           productSku: productTable.sku,
+          productCatalogCode: productTable.catalogCode,
+          catalogSku: catalogVariant.sku,
           productName: productTable.name,
           productStatus: productTable.status,
           creatorSource: productTable.creatorSource,

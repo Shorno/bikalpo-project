@@ -137,7 +137,6 @@ import {
   prepareB2bMovementForApproval,
   releaseB2bOrderReservations,
 } from "./helpers/b2b-inventory-movement";
-import { composePartialSku } from "./helpers/generate-sku";
 import {
   deriveKycStatus,
   getLatestKycRecord,
@@ -633,7 +632,7 @@ const managementQueries = {
           variant: {
             with: {
               catalogVariant: {
-                columns: { id: true, globalSku: true },
+                columns: { id: true, globalSku: true, sku: true },
               },
               product: {
                 with: {
@@ -1783,7 +1782,7 @@ const managementQueries = {
           variant: {
             with: {
               catalogVariant: {
-                columns: { id: true, globalSku: true },
+                columns: { id: true, globalSku: true, sku: true },
               },
               product: {
                 with: {
@@ -1821,7 +1820,8 @@ const managementQueries = {
             inv.variant?.product?.name?.toLowerCase().includes(s) ||
             inv.variant?.sku?.toLowerCase().includes(s) ||
             inv.variant?.preferredLocalSku?.toLowerCase().includes(s) ||
-            inv.variant?.catalogVariant?.globalSku?.toLowerCase().includes(s),
+            inv.variant?.catalogVariant?.globalSku?.toLowerCase().includes(s) ||
+            inv.variant?.catalogVariant?.sku?.toLowerCase().includes(s),
         );
       }
 
@@ -10211,8 +10211,12 @@ const publicCatalogEndpoints = {
       }
 
       if (input.search?.trim()) {
+        const term = `%${input.search.trim()}%`;
         conditions.push(
-          ilike(coreProductIdentity.name, `%${input.search.trim()}%`),
+          or(
+            ilike(coreProductIdentity.name, term),
+            ilike(coreProductIdentity.catalogCode, term),
+          )!,
         );
       }
 
@@ -10314,20 +10318,14 @@ const publicCatalogEndpoints = {
         shopBrandsByCore.set(row.coreProductId, brands);
       }
 
-      // 4. Compose hierarchical SKU and retailer configuration state
+      // 4. Retailer configuration state with the core product's permanent catalog code
       const items = coreProducts.map((cp) => {
-        const composedSku = composePartialSku("coreProduct", {
-          typeSkuCode: cp.category?.type?.skuCode,
-          categorySkuCode: cp.category?.skuCode,
-          subCategorySkuCode: cp.subCategory?.skuCode,
-          coreProductSkuCode: cp.sku,
-        });
-
         return {
           id: cp.id,
           name: cp.name,
           slug: cp.slug,
-          sku: composedSku,
+          sku: cp.catalogCode,
+          catalogCode: cp.catalogCode,
           image: cp.image,
           description: cp.description,
           brandCreationMode: RETAILER_BRAND_CREATION_MODE,
@@ -10714,6 +10712,7 @@ function buildRetailerProductGroups(rows: StructuredBrandStockSourceRow[]) {
         {
           productId,
           name: first.productName,
+          catalogCode: first.productCatalogCode ?? null,
           image: first.productImage || first.coreProductImage,
           category: {
             id: first.categoryId,
@@ -10954,6 +10953,7 @@ const shopProductEndpoints = {
           id: prod.id,
           name: prod.name,
           slug: prod.slug,
+          catalogCode: prod.catalogCode,
           image: prod.image,
           description: prod.description,
           status: prod.status,

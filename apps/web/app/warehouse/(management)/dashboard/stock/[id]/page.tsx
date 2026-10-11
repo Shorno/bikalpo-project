@@ -529,7 +529,7 @@ function StructuredStockDetailView({
               {detail.identity.name}
               {detail.identity.coreSku && (
                 <span className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1 font-mono text-[11px] font-semibold text-slate-600">
-                  Core SKU {detail.identity.coreSku}
+                  Catalog ID {detail.identity.coreSku}
                 </span>
               )}
             </h1>
@@ -1162,7 +1162,7 @@ export default function StockDetailPage() {
               {item.coreProductName}
               {item.coreProductSku && (
                 <span className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1 font-mono text-[11px] font-semibold text-slate-600">
-                  Core SKU {item.coreProductSku}
+                  Catalog ID {item.coreProductSku}
                 </span>
               )}
             </h1>
