@@ -185,6 +185,7 @@ export async function loadStructuredBrandStockRows(
     coreProductName: row.coreProductName,
     coreProductSku: row.coreProductSku,
     coreProductImage: row.coreProductImage,
+    productCatalogCode: row.productCatalogCode,
     productName: row.productName,
     productImage: row.productImage,
     productIsActive: row.productStatus === "active",
