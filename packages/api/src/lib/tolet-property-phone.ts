@@ -71,8 +71,8 @@ async function saveState(
 }
 
 function assertDeliveryConfigured() {
-    // No SMS gateway is integrated yet. Like the login page, we run in "dummy OTP"
-    // mode: the code is returned to the client and auto-filled.
+    // No SMS gateway is integrated yet, so the code is shown to the owner as a
+    // captcha picture instead of being sent ("dummy OTP" mode, as on login).
     // Set DUMMY_OTP_ENABLED=false once real SMS delivery is wired in.
     if (!env.DUMMY_OTP_ENABLED && env.NODE_ENV !== "development")
         throw new ORPCError("SERVICE_UNAVAILABLE", {
@@ -101,13 +101,13 @@ export async function requestPropertyPhoneCode(
             now,
         });
         await saveState(tx, userId, state);
-        // Reaches here only in dummy-OTP / local-dev mode (see assertDeliveryConfigured),
-        // so returning the code for auto-fill is intentional.
+        // Reaches here only in dummy-OTP / local-dev mode (see assertDeliveryConfigured).
+        // The code is the captcha answer: the router returns only a distorted
+        // picture of it, never the digits.
         return {
             phone: normalizedPhone,
             expiresAt: new Date(state.otpExpiresAt).toISOString(),
-            developmentCode: code,
-            delivery: "development" as const,
+            code,
         };
     });
 }

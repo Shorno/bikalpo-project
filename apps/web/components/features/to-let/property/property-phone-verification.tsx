@@ -1,7 +1,7 @@
 "use client";
 
 import { normalizeBangladeshPhoneNumber } from "@bikalpo-project/auth/phone-identity";
-import { CheckCircle2, Loader2, ShieldCheck } from "lucide-react";
+import { CheckCircle2, Loader2, RefreshCw, ShieldCheck } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -30,6 +30,7 @@ export function PropertyPhoneVerification(props: {
     );
 }
 
+/** No SMS is sent: the owner proves they are a person by typing the number in a captcha picture. */
 function PhoneChallenge({
     normalizedPhone,
     verified,
@@ -41,54 +42,21 @@ function PhoneChallenge({
     onVerified: (proof: PropertyPhoneProof) => void;
 }) {
     const [code, setCode] = useState("");
-    const [requested, setRequested] = useState(false);
-    const [developmentCode, setDevelopmentCode] = useState<string | null>(null);
-    const [autoFilling, setAutoFilling] = useState(false);
-    const fillTimers = useRef<number[]>([]);
+    const [captchaSvg, setCaptchaSvg] = useState<string | null>(null);
     const [busy, setBusy] = useState<"send" | "verify" | null>(null);
     const [error, setError] = useState("");
-    const [retryAt, setRetryAt] = useState(0);
-    const [now, setNow] = useState(Date.now());
     const mounted = useRef(true);
     const inFlight = useRef(false);
     const inputRef = useRef<HTMLInputElement>(null);
 
-    const clearFillTimers = () => {
-        fillTimers.current.forEach((t) => window.clearTimeout(t));
-        fillTimers.current = [];
-    };
     useEffect(() => {
         mounted.current = true;
         return () => {
             mounted.current = false;
-            clearFillTimers();
         };
     }, []);
 
-    // Dummy OTP: type the code into the input digit by digit, same feel as the login page.
-    const autoFillCode = (value: string) => {
-        clearFillTimers();
-        setAutoFilling(true);
-        value.split("").forEach((_, index) => {
-            fillTimers.current.push(
-                window.setTimeout(
-                    () => {
-                        if (!mounted.current) return;
-                        setCode(value.slice(0, index + 1));
-                        if (index === value.length - 1) setAutoFilling(false);
-                    },
-                    150 * (index + 1) + 600,
-                ),
-            );
-        });
-    };
-    useEffect(() => {
-        if (!retryAt) return;
-        const timer = window.setInterval(() => setNow(Date.now()), 1_000);
-        return () => window.clearInterval(timer);
-    }, [retryAt]);
-
-    const sendCode = async () => {
+    const loadCaptcha = async () => {
         if (!normalizedPhone || inFlight.current) return;
         inFlight.current = true;
         setBusy("send");
@@ -98,23 +66,15 @@ function PhoneChallenge({
                 phone: normalizedPhone,
             });
             if (!mounted.current) return;
-            setRequested(true);
+            setCaptchaSvg(result.captchaSvg);
             setCode("");
-            const devCode =
-                result.delivery === "development"
-                    ? result.developmentCode
-                    : null;
-            setDevelopmentCode(devCode);
-            if (devCode) autoFillCode(devCode);
-            setRetryAt(Date.now() + 60_000);
-            setNow(Date.now());
             window.requestAnimationFrame(() => inputRef.current?.focus());
         } catch (cause) {
             if (mounted.current)
                 setError(
                     cause instanceof Error
                         ? cause.message
-                        : "Could not request a code. Please try again.",
+                        : "Could not load the captcha. Please try again.",
                 );
         } finally {
             inFlight.current = false;
@@ -141,7 +101,7 @@ function PhoneChallenge({
                 setError(
                     cause instanceof Error
                         ? cause.message
-                        : "Verification failed. Request a new code and try again.",
+                        : "Verification failed. Load a new picture and try again.",
                 );
         } finally {
             inFlight.current = false;
@@ -169,7 +129,6 @@ function PhoneChallenge({
             </div>
         );
 
-    const remaining = Math.max(0, Math.ceil((retryAt - now) / 1_000));
     return (
         <div className="rounded-lg border border-border bg-muted/30 p-4">
             <div className="flex items-start gap-3">
@@ -183,80 +142,95 @@ function PhoneChallenge({
                     </p>
                     <p className="mt-0.5 text-sm text-muted-foreground">
                         {normalizedPhone
-                            ? `Verify ${normalizedPhone} without changing your account login number.`
+                            ? `Confirm ${normalizedPhone} by typing the number shown in the picture. No SMS is sent.`
                             : "Enter a valid Bangladesh mobile number in Basic Information."}
                     </p>
                 </div>
             </div>
-            {requested ? (
-                <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center">
-                    <Input
-                        ref={inputRef}
-                        id="property-phone-otp"
-                        type="text"
-                        inputMode="numeric"
-                        maxLength={6}
-                        autoComplete="one-time-code"
-                        value={code}
-                        onChange={(event) => {
-                            clearFillTimers();
-                            setAutoFilling(false);
-                            setCode(
-                                event.target.value
-                                    .replace(/\D/g, "")
-                                    .slice(0, 6),
-                            );
-                        }}
-                        onKeyDown={(event) => {
-                            if (event.key === "Enter") {
-                                event.preventDefault();
-                                void verifyCode();
-                            }
-                        }}
-                        placeholder="Enter 6-digit code"
-                        aria-label="Property contact verification code"
-                        aria-invalid={Boolean(error)}
-                        aria-describedby={
-                            error
-                                ? "property-phone-error"
-                                : "property-phone-help"
-                        }
-                        disabled={busy !== null}
-                        className={`h-11 min-w-0 bg-card font-mono text-base ${autoFilling ? "animate-pulse" : ""}`}
-                    />
-                    <Button
-                        type="button"
-                        onClick={() => void verifyCode()}
-                        disabled={
-                            code.length !== 6 || busy !== null || autoFilling
-                        }
-                        className="h-11 shrink-0 bg-primary text-primary-foreground hover:bg-primary/90"
-                    >
-                        {busy === "verify" ? (
-                            <Loader2
+            {captchaSvg ? (
+                <>
+                    <div className="mt-4 flex items-center gap-2">
+                        {/* biome-ignore lint/performance/noImgElement: inline SVG data URL, not an optimizable asset */}
+                        <img
+                            src={`data:image/svg+xml;charset=utf-8,${encodeURIComponent(captchaSvg)}`}
+                            alt="Captcha: a six-digit number"
+                            width={220}
+                            height={70}
+                            className="h-[70px] w-[220px] select-none rounded-md border border-border bg-white"
+                            draggable={false}
+                        />
+                        <Button
+                            type="button"
+                            variant="outline"
+                            size="icon"
+                            onClick={() => void loadCaptcha()}
+                            disabled={busy !== null}
+                            aria-label="Show a new picture"
+                            title="Show a new picture"
+                            className="size-11 shrink-0"
+                        >
+                            <RefreshCw
                                 aria-hidden="true"
-                                className="size-4 animate-spin"
+                                className={`size-4 ${busy === "send" ? "animate-spin" : ""}`}
                             />
-                        ) : null}{" "}
-                        Verify OTP
-                    </Button>
-                </div>
-            ) : null}
-            {requested ? (
-                <p
-                    id="property-phone-help"
-                    className="mt-2 text-sm text-muted-foreground"
-                >
-                    Codes expire after 5 minutes. Only the latest code works.
-                </p>
-            ) : null}
-            {developmentCode ? (
-                <p role="status" className="mt-3 text-sm text-amber-900">
-                    Demo mode — no SMS sent. Code auto-filled:{" "}
-                    <span className="font-mono font-semibold">
-                        {developmentCode}
-                    </span>
-                </p>
+                        </Button>
+                    </div>
+                    <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center">
+                        <Input
+                            ref={inputRef}
+                            id="property-phone-captcha"
+                            type="text"
+                            inputMode="numeric"
+                            maxLength={6}
+                            autoComplete="off"
+                            value={code}
+                            onChange={(event) =>
+                                setCode(
+                                    event.target.value
+                                        .replace(/\D/g, "")
+                                        .slice(0, 6),
+                                )
+                            }
+                            onKeyDown={(event) => {
+                                if (event.key === "Enter") {
+                                    event.preventDefault();
+                                    void verifyCode();
+                                }
+                            }}
+                            placeholder="Type the 6 digits"
+                            aria-label="Number shown in the captcha picture"
+                            aria-invalid={Boolean(error)}
+                            aria-describedby={
+                                error
+                                    ? "property-phone-error"
+                                    : "property-phone-help"
+                            }
+                            disabled={busy !== null}
+                            className="h-11 min-w-0 bg-card font-mono text-base sm:max-w-56"
+                        />
+                        <Button
+                            type="button"
+                            onClick={() => void verifyCode()}
+                            disabled={code.length !== 6 || busy !== null}
+                            className="h-11 shrink-0 bg-primary text-primary-foreground hover:bg-primary/90"
+                        >
+                            {busy === "verify" ? (
+                                <Loader2
+                                    aria-hidden="true"
+                                    className="size-4 animate-spin"
+                                />
+                            ) : null}{" "}
+                            Verify
+                        </Button>
+                    </div>
+                    <p
+                        id="property-phone-help"
+                        className="mt-2 text-sm text-muted-foreground"
+                    >
+                        Can&rsquo;t read it? Tap the refresh button for a new
+                        picture. Each picture works for 5 minutes.
+                    </p>
+                </>
             ) : null}
             {error ? (
                 <p
@@ -267,25 +241,23 @@ function PhoneChallenge({
                     {error}
                 </p>
             ) : null}
-            <Button
-                type="button"
-                variant="outline"
-                onClick={() => void sendCode()}
-                disabled={!normalizedPhone || busy !== null || remaining > 0}
-                className="mt-4 h-11"
-            >
-                {busy === "send" ? (
-                    <Loader2
-                        aria-hidden="true"
-                        className="size-4 animate-spin"
-                    />
-                ) : null}
-                {remaining > 0
-                    ? `Resend in ${remaining}s`
-                    : requested
-                      ? "Resend code"
-                      : "Request verification code"}
-            </Button>
+            {captchaSvg ? null : (
+                <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => void loadCaptcha()}
+                    disabled={!normalizedPhone || busy !== null}
+                    className="mt-4 h-11"
+                >
+                    {busy === "send" ? (
+                        <Loader2
+                            aria-hidden="true"
+                            className="size-4 animate-spin"
+                        />
+                    ) : null}
+                    Verify this number
+                </Button>
+            )}
         </div>
     );
 }

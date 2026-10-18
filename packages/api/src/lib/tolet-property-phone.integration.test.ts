@@ -14,12 +14,12 @@ test("property OTP attempts persist, proof is one-use and rollback-safe", { skip
     const database = drizzle(connection) as unknown as NonNullable<Parameters<typeof requestPropertyPhoneCode>[2]>;
     const sent = await requestPropertyPhoneCode("owner-test", "01712345678", database);
     assert.equal(sent.phone, "+8801712345678");
-    await assert.rejects(requestPropertyPhoneCode("owner-test", "01812345678", database), /Wait 60 seconds/);
-    await assert.rejects(verifyPropertyPhoneCode("another-owner", sent.phone, sent.developmentCode, database));
-    const wrongCode = sent.developmentCode === "000000" ? "999999" : "000000";
+    await assert.rejects(requestPropertyPhoneCode("owner-test", "01812345678", database), /Wait a few seconds/);
+    await assert.rejects(verifyPropertyPhoneCode("another-owner", sent.phone, sent.code, database));
+    const wrongCode = sent.code === "000000" ? "999999" : "000000";
     await assert.rejects(verifyPropertyPhoneCode("owner-test", sent.phone, wrongCode, database), /Incorrect/);
     assert.equal(JSON.parse((await connection.query("SELECT value FROM verification")).rows[0].value).attempts, 1);
-    const proof = await verifyPropertyPhoneCode("owner-test", "8801712345678", sent.developmentCode, database);
+    const proof = await verifyPropertyPhoneCode("owner-test", "8801712345678", sent.code, database);
     await assert.rejects(database.transaction(async tx => {
       await consumePropertyPhoneProof(tx, "owner-test", sent.phone, proof.proof);
       throw new Error("Simulated property write failed");
@@ -28,7 +28,7 @@ test("property OTP attempts persist, proof is one-use and rollback-safe", { skip
     const verifiedAt = await database.transaction(tx => consumePropertyPhoneProof(tx, "owner-test", sent.phone, proof.proof));
     assert.ok(verifiedAt instanceof Date);
     await assert.rejects(database.transaction(tx => consumePropertyPhoneProof(tx, "owner-test", sent.phone, proof.proof)), /Verify this property/);
-    await assert.rejects(verifyPropertyPhoneCode("owner-test", sent.phone, sent.developmentCode, database), /expired or was already used/);
+    await assert.rejects(verifyPropertyPhoneCode("owner-test", sent.phone, sent.code, database), /expired or was already used/);
   } finally {
     connection.release();
     await pool.end();

@@ -649,8 +649,25 @@ export const toLetUnitListingRouter = {
         )
         .orderBy(desc(toletUnitListing.createdAt))
         .limit(1);
+      if (listing) return { listing: ownerListingDto(listing), previousListing: null };
 
-      return { listing: listing ? ownerListingDto(listing) : null };
+      // Relisting: hand back the last closed listing so the form can prefill it.
+      const [previous] = await db
+        .select()
+        .from(toletUnitListing)
+        .where(
+          and(
+            eq(toletUnitListing.unitId, owned.unit.id),
+            eq(toletUnitListing.status, "closed"),
+          ),
+        )
+        .orderBy(desc(toletUnitListing.createdAt))
+        .limit(1);
+
+      return {
+        listing: null,
+        previousListing: previous ? ownerListingDto(previous) : null,
+      };
     }),
 
   create: consumerProcedure

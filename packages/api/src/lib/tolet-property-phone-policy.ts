@@ -3,8 +3,9 @@ import { createHmac, randomBytes, randomInt, timingSafeEqual } from "node:crypto
 export const PROPERTY_PHONE_OTP_TTL_MS = 5 * 60_000;
 export const PROPERTY_PHONE_PROOF_TTL_MS = 15 * 60_000;
 export const PROPERTY_PHONE_SEND_WINDOW_MS = 60 * 60_000;
-export const PROPERTY_PHONE_RESEND_MS = 60_000;
-export const PROPERTY_PHONE_MAX_SENDS = 5;
+// A captcha refresh is cheap (no SMS), so the cooldown only stops hammering.
+export const PROPERTY_PHONE_RESEND_MS = 3_000;
+export const PROPERTY_PHONE_MAX_SENDS = 30;
 export const PROPERTY_PHONE_MAX_ATTEMPTS = 5;
 
 export type PropertyPhoneState = {
@@ -33,7 +34,7 @@ function equalHash(left: string, right: string) {
 
 export function propertyPhoneSendError(previous: PropertyPhoneState | null, now: number) {
   if (!previous) return null;
-  if (now - previous.sentAt < PROPERTY_PHONE_RESEND_MS) return "Wait 60 seconds before requesting another code.";
+  if (now - previous.sentAt < PROPERTY_PHONE_RESEND_MS) return "Wait a few seconds before requesting another code.";
   if (now - previous.windowStartedAt < PROPERTY_PHONE_SEND_WINDOW_MS && previous.sendCount >= PROPERTY_PHONE_MAX_SENDS) {
     return "Too many verification codes requested. Try again in one hour.";
   }
