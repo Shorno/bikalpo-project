@@ -113,9 +113,12 @@ const stepSchemas = [
 
 type FieldErrors = Record<string, string>;
 
-function listingFromResponse(data: unknown): ToLetUnitListingView | null {
-  if (!data || typeof data !== "object" || !("listing" in data)) return null;
-  const listing = (data as { listing?: unknown }).listing;
+function listingFromResponse(
+  data: unknown,
+  key: "listing" | "previousListing" = "listing",
+): ToLetUnitListingView | null {
+  if (!data || typeof data !== "object" || !(key in data)) return null;
+  const listing = (data as Record<string, unknown>)[key];
   return listing && typeof listing === "object"
     ? (listing as ToLetUnitListingView)
     : null;
@@ -139,8 +142,11 @@ function today() {
 function initialValues(
   property: ToLetPropertyView,
   unit: ToLetUnitView,
-  listing: ToLetUnitListingView | null,
+  current: ToLetUnitListingView | null,
+  previous: ToLetUnitListingView | null = null,
 ): ToLetListingFormValues {
+  // A relisted unit starts from its last closed listing; only the date is new.
+  const listing = current ?? previous;
   return {
     title: listing?.title ?? `${property.name} - ${unit.name}`,
     description: listing?.description ?? unit.description ?? "",
@@ -160,7 +166,7 @@ function initialValues(
     utilityChargeVisible: listing?.utilityChargeVisible ?? true,
     utilityChargeIncluded: listing?.utilityChargeIncluded ?? false,
     availableFrom:
-      listing?.availableFrom ??
+      current?.availableFrom ??
       (unit.tenantUntil ? dayAfter(unit.tenantUntil) : today()),
     preferredTenant: listing?.preferredTenant ?? "any",
     hasInternet: listing?.hasInternet ?? false,
@@ -383,12 +389,14 @@ function LoadedListingForm({
   property,
   unit,
   listing,
+  previousListing = null,
   initialStep = 1,
   initialOverrides,
 }: {
   property: ToLetPropertyView;
   unit: ToLetUnitView;
   listing: ToLetUnitListingView | null;
+  previousListing?: ToLetUnitListingView | null;
   initialStep?: number;
   initialOverrides?: Partial<ToLetListingFormValues>;
 }) {
@@ -399,7 +407,7 @@ function LoadedListingForm({
   const pauseListing = usePauseToLetUnitListing();
   const [currentStep, setCurrentStep] = useState(initialStep);
   const [values, setValues] = useState(() => ({
-    ...initialValues(property, unit, listing),
+    ...initialValues(property, unit, listing, previousListing),
     ...initialOverrides,
   }));
   const capabilities = toLetUnitCapabilities(unit.unitType);
@@ -424,6 +432,11 @@ function LoadedListingForm({
     contactName.trim() !== savedContact.name || contactPhoneChanged;
   const contactPhoneVerified =
     Boolean(normalizedContactPhone) && phoneProof?.phone === normalizedContactPhone;
+  // Step 3 always asks for the captcha. Remember the number it was solved for:
+  // saving a changed contact consumes the proof, but the check still stands.
+  const [captchaPhone, setCaptchaPhone] = useState<string | null>(null);
+  const captchaPassed =
+    Boolean(normalizedContactPhone) && captchaPhone === normalizedContactPhone;
   const facilities: ReadonlyArray<{
     key: keyof ToLetListingFormValues["facilityInclusions"];
     label: string;
@@ -500,6 +513,16 @@ function LoadedListingForm({
   };
 
   const saveContactIfChanged = async () => {
+    if (!captchaPassed) {
+      setErrors((current) => ({
+        ...current,
+        contactPhone: normalizedContactPhone
+          ? "Verify the contact number with the captcha first"
+          : "Enter a valid Bangladesh mobile number",
+      }));
+      toast.error("Please complete the captcha");
+      return false;
+    }
     if (!contactDirty) return true;
     const contactErrors: FieldErrors = {};
     if (contactName.trim().length < 2) {
@@ -508,7 +531,7 @@ function LoadedListingForm({
     if (!normalizedContactPhone) {
       contactErrors.contactPhone = "Enter a valid Bangladesh mobile number";
     } else if (contactPhoneChanged && !contactPhoneVerified) {
-      contactErrors.contactPhone = "Verify the new contact number with OTP";
+      contactErrors.contactPhone = "Verify the new contact number first";
     }
     if (Object.keys(contactErrors).length > 0) {
       setErrors((current) => ({ ...current, ...contactErrors }));
@@ -995,13 +1018,14 @@ function LoadedListingForm({
               />
               <FieldError message={errors.contactPhone} />
             </div>
-            {contactPhoneChanged && normalizedContactPhone ? (
+            {normalizedContactPhone ? (
               <div className="sm:col-span-2">
                 <PropertyPhoneVerification
                   phone={contactPhone}
-                  verified={contactPhoneVerified}
+                  verified={captchaPassed}
                   onVerified={(proof) => {
                     setPhoneProof(proof);
+                    setCaptchaPhone(proof.phone);
                     setErrors(({ contactPhone: _removed, ...rest }) => rest);
                   }}
                 />
@@ -1009,8 +1033,8 @@ function LoadedListingForm({
             ) : null}
             <div className="sm:col-span-2">
               <InfoNote>
-                Changing the contact updates it for every listing in this
-                property. A new number must be verified with OTP.
+                Complete the captcha to continue. Changing the contact updates
+                it for every listing in this property.
               </InfoNote>
             </div>
             <div className="space-y-1.5 sm:col-span-2">
@@ -1313,6 +1337,7 @@ export function ListingForm({
       property={property}
       unit={unit}
       listing={listing}
+      previousListing={listingFromResponse(listingQuery.data, "previousListing")}
     />
   );
 }

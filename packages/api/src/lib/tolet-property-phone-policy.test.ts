@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  createPropertyPhoneChallenge, propertyPhoneSendError, PROPERTY_PHONE_MAX_ATTEMPTS,
+  createPropertyPhoneChallenge, propertyPhoneSendError, PROPERTY_PHONE_MAX_ATTEMPTS, PROPERTY_PHONE_MAX_SENDS,
   PROPERTY_PHONE_OTP_TTL_MS, PROPERTY_PHONE_PROOF_TTL_MS, PROPERTY_PHONE_RESEND_MS,
   PROPERTY_PHONE_SEND_WINDOW_MS, validPropertyPhoneProof, verifyPropertyPhoneChallenge,
   type PropertyPhoneState,
@@ -84,14 +84,14 @@ test("resend clears old proof even when another phone is requested", () => {
 });
 test("resend cooldown and hourly cap apply across phone changes", () => {
   const { state } = challenge();
-  assert.notEqual(propertyPhoneSendError(state, owner.now + 59_999), null);
-  assert.equal(propertyPhoneSendError(state, owner.now + 60_000), null);
-  assert.notEqual(propertyPhoneSendError({ ...state, sendCount: 5 }, owner.now + 60_000), null);
-  assert.equal(propertyPhoneSendError({ ...state, sendCount: 5 }, owner.now + PROPERTY_PHONE_SEND_WINDOW_MS), null);
+  assert.notEqual(propertyPhoneSendError(state, owner.now + PROPERTY_PHONE_RESEND_MS - 1), null);
+  assert.equal(propertyPhoneSendError(state, owner.now + PROPERTY_PHONE_RESEND_MS), null);
+  assert.notEqual(propertyPhoneSendError({ ...state, sendCount: PROPERTY_PHONE_MAX_SENDS }, owner.now + PROPERTY_PHONE_RESEND_MS), null);
+  assert.equal(propertyPhoneSendError({ ...state, sendCount: PROPERTY_PHONE_MAX_SENDS }, owner.now + PROPERTY_PHONE_SEND_WINDOW_MS), null);
 });
 test("new hourly window resets quota; missing challenges never verify", () => {
   const { state } = challenge();
-  assert.equal(createPropertyPhoneChallenge({ ...owner, previous: { ...state, sendCount: 5 }, now: owner.now + PROPERTY_PHONE_SEND_WINDOW_MS }).state.sendCount, 1);
+  assert.equal(createPropertyPhoneChallenge({ ...owner, previous: { ...state, sendCount: PROPERTY_PHONE_MAX_SENDS }, now: owner.now + PROPERTY_PHONE_SEND_WINDOW_MS }).state.sendCount, 1);
   assert.notEqual(verifyPropertyPhoneChallenge({ ...owner, state: null, code: "123456" }).error, null);
   assert.equal(validPropertyPhoneProof({ ...owner, state: null, proof: "a".repeat(64) }), false);
 });

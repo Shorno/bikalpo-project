@@ -17,6 +17,7 @@ import { z } from "zod";
 
 import { consumerProcedure } from "../index";
 import { toLetReleaseEndedTenancies } from "./helpers/tolet-leaving";
+import { renderPropertyCaptchaSvg } from "../lib/tolet-property-captcha";
 import { consumePropertyPhoneProof, requestPropertyPhoneCode, verifyPropertyPhoneCode } from "../lib/tolet-property-phone";
 
 const PROPERTY_TYPES = [
@@ -402,9 +403,12 @@ async function findOwnedUnit(
 
 export const toLetPropertyRouter = {
 	requestPhoneCode: consumerProcedure
-		.route({ method: "POST", path: "/to-let/owner/property-phone/request", tags: ["To-Let Property Owner"], summary: "Request property contact verification" })
+		.route({ method: "POST", path: "/to-let/owner/property-phone/request", tags: ["To-Let Property Owner"], summary: "Request a captcha to verify the property contact" })
 		.input(z.object({ phone: z.string().trim().max(30) }).strict())
-		.handler(({ context, input }) => requestPropertyPhoneCode(context.session.user.id, input.phone)),
+		.handler(async ({ context, input }) => {
+			const { code, ...challenge } = await requestPropertyPhoneCode(context.session.user.id, input.phone);
+			return { ...challenge, captchaSvg: renderPropertyCaptchaSvg(code) };
+		}),
 	verifyPhoneCode: consumerProcedure
 		.route({ method: "POST", path: "/to-let/owner/property-phone/verify", tags: ["To-Let Property Owner"], summary: "Verify property contact without changing the signed-in account" })
 		.input(z.object({ phone: z.string().trim().max(30), code: z.string().regex(/^\d{6}$/) }).strict())

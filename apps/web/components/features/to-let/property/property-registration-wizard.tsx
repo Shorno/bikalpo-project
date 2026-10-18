@@ -1006,7 +1006,7 @@ export function PropertyRegistrationWizard() {
                 <div className="grid gap-2 sm:grid-cols-2">
                   {[
                     ["Property Photo Submitted", Boolean(values.frontImageUrl)],
-                    ["OTP Verified", values.phoneVerified],
+                    ["Contact Verified", values.phoneVerified],
                   ].map(([label, done]) => (
                     <div
                       key={String(label)}

@@ -18,8 +18,9 @@ export function PropertyQrCard(props: {
   const [downloading, setDownloading] = useState(false);
   const [error, setError] = useState("");
   useEffect(() => {
-    const configured = process.env.NEXT_PUBLIC_APP_SUBDOMAIN_URL;
-    setOrigin((configured || window.location.origin).replace(/\/$/, ""));
+    // Printed posters outlive config: encode the public site the owner is on,
+    // not NEXT_PUBLIC_APP_SUBDOMAIN_URL, which once pointed at a dead host.
+    setOrigin(window.location.origin);
   }, []);
   const qrPath = `/to-let/qr/${encodeURIComponent(qrToken)}`;
   const qrUrl = origin ? `${origin}${qrPath}` : "";
