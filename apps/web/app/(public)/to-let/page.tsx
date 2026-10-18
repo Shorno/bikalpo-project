@@ -581,25 +581,19 @@ function OwnerCallToAction() {
   return (
     <section id="register-property" className="bg-muted/30 py-12 sm:py-16">
       <div className="site-container px-4 sm:px-6 lg:px-8">
-        <div className="grid gap-6 rounded-xl border border-border bg-card p-5 sm:gap-8 sm:p-8 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center lg:p-10">
-          <div className="max-w-3xl">
-            <h2 className="text-2xl leading-snug font-bold tracking-tight text-balance text-foreground sm:text-3xl">
-              একটি Property নিবন্ধন করুন, হাজারো ভাড়াটিয়ার কাছে পৌঁছান—এক প্ল্যাটফর্মে
-            </h2>
-            <p className="mt-4 text-sm leading-7 text-muted-foreground">
-              Bikalpo-তে Property Account তৈরি করে আপনার ফ্ল্যাট, বাসা, অফিস, দোকান,
-              গ্যারেজ, গুদাম বা যেকোনো ভাড়ার ইউনিটের জন্য Verified Listing প্রকাশ করুন।
-            </p>
-            <p className="mt-3 text-sm leading-7 text-muted-foreground">
-              Permanent Property ID, QR Code, Smart Booking, Social Media Share
-              এবং Tenant Management—সবকিছু এক জায়গায়।
-            </p>
+        <div className="rounded-xl border border-border bg-card p-5 text-center sm:p-8 lg:p-10">
+          <h2 className="text-2xl leading-snug font-bold tracking-tight text-balance text-foreground sm:text-3xl lg:text-[clamp(1.375rem,2.1vw,1.875rem)] lg:whitespace-nowrap">
+            একটি Property নিবন্ধন করুন, হাজারো ভাড়াটিয়ার কাছে পৌঁছান—এক প্ল্যাটফর্মে
+          </h2>
+          <div className="mx-auto mt-4 max-w-4xl space-y-1 text-sm leading-7 text-pretty text-muted-foreground xl:max-w-none xl:whitespace-nowrap">
+            <p>Bikalpo-তে Property Account তৈরি করে আপনার ফ্ল্যাট, বাসা, অফিস, দোকান, গ্যারেজ, গুদাম বা যেকোনো ভাড়ার ইউনিটের জন্য Verified Listing প্রকাশ করুন।</p>
+            <p>Permanent Property ID, QR Code, Smart Booking, Social Media Share এবং Tenant Management—সবকিছু এক জায়গায়।</p>
           </div>
-          <div className="grid min-w-0 gap-3 sm:min-w-64">
-            <ToLetAccountLink href="/account/to-let/properties/new" className={`${toLetPrimaryButton} min-h-11`}>
-              <Building2 className="size-4" aria-hidden="true" /> Property Account তৈরি করুন
+          <div className="mx-auto mt-6 grid max-w-2xl gap-3 sm:grid-cols-2 sm:gap-4">
+            <ToLetAccountLink href="/account/to-let/properties/new" className={`${toLetPrimaryButton} sm:min-h-12`}>
+              <Building2 className="size-4" aria-hidden="true" /> Property নিবন্ধন করুন
             </ToLetAccountLink>
-            <ToLetAccountLink href="/account/to-let/properties" className={`${toLetPrimaryButton} ${toLetMobileSecondary} min-h-11`}>
+            <ToLetAccountLink href="/account/to-let/properties" className={`${toLetPrimaryButton} ${toLetMobileSecondary} sm:min-h-12`}>
               <Plus className="size-4" aria-hidden="true" /> নতুন To-Let পোস্ট করুন
             </ToLetAccountLink>
           </div>
