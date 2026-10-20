@@ -846,11 +846,12 @@ function LoadedListingForm({
                   <p className="text-sm font-medium text-foreground">
                     {facility.label}
                   </p>
-                  <div className="flex min-h-12 flex-wrap items-center justify-between gap-x-4 gap-y-2 rounded-md border border-border px-4 py-2">
+                  {/* One row on every width: the name shrinks (ellipsis), the two choices never wrap. */}
+                  <div className="flex min-h-12 items-center justify-between gap-3 rounded-md border border-border px-3 py-2 sm:gap-4 sm:px-4">
                     <label
                       htmlFor={id}
                       className={cn(
-                        "flex items-center gap-2 text-sm text-foreground",
+                        "flex min-w-0 items-center gap-2 text-sm text-foreground",
                         facility.onChange ? "cursor-pointer" : "cursor-default",
                       )}
                     >
@@ -863,7 +864,7 @@ function LoadedListingForm({
                           facility.onChange?.(checked === true)
                         }
                       />
-                      {facility.label}
+                      <span className="truncate">{facility.label}</span>
                     </label>
                     <RadioGroup
                       aria-label={`${facility.label} rent inclusion`}
@@ -883,13 +884,13 @@ function LoadedListingForm({
                           [facility.key]: value === "included",
                         })
                       }
-                      className="flex w-auto gap-4"
+                      className="flex w-auto shrink-0 gap-3 sm:gap-4"
                     >
                       {(["included", "excluded"] as const).map((option) => (
                         <label
                           key={option}
                           htmlFor={`${id}-${option}`}
-                          className="flex cursor-pointer items-center gap-1.5 text-sm text-foreground"
+                          className="flex cursor-pointer items-center gap-1.5 text-[13px] whitespace-nowrap text-foreground sm:text-sm"
                         >
                           <RadioGroupItem id={`${id}-${option}`} value={option} />
                           {option === "included" ? "Included" : "Excluded"}

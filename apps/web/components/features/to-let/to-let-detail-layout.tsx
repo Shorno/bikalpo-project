@@ -344,8 +344,9 @@ export function ToLetFacilityRow({
   return (
     <div className="space-y-2">
       <p className="text-sm font-medium text-foreground">{label}</p>
-      <div className="flex min-h-12 flex-wrap items-center justify-between gap-x-4 gap-y-2 rounded-md border border-border bg-muted/30 px-4 py-2">
-        <span className="inline-flex items-center gap-2 text-sm text-foreground">
+      {/* One row on every width: the name ellipsizes, the choices never wrap. */}
+      <div className="flex min-h-12 items-center justify-between gap-2 rounded-md border border-border bg-muted/30 px-3 py-2 sm:gap-4 sm:px-4">
+        <span className="inline-flex min-w-0 items-center gap-2 text-sm text-foreground">
           <span
             aria-hidden="true"
             className={`flex size-4 items-center justify-center rounded-sm border ${
@@ -355,7 +356,7 @@ export function ToLetFacilityRow({
             <Check className="size-3" />
           </span>
           <span className="sr-only">{available ? "Available: " : "Not available: "}</span>
-          {label}
+          <span className="truncate">{label}</span>
         </span>
         {showInclusion ? (
           <ToLetChoicePair
@@ -478,9 +479,9 @@ export function ToLetFacilityItem({
       : "Not recorded";
 
   return (
-    <div className="flex min-h-16 flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-muted/30 p-3">
+    <div className="flex min-h-16 items-center justify-between gap-3 rounded-lg border border-border bg-muted/30 p-3">
       <div className="min-w-0">
-        <p className="text-sm font-semibold text-foreground">{label}</p>
+        <p className="truncate text-sm font-semibold text-foreground">{label}</p>
         <p
           className={`mt-0.5 text-xs ${available ? "text-primary" : recorded ? "text-muted-foreground" : "text-amber-700"}`}
         >
@@ -521,8 +522,8 @@ export function ToLetRentItem({
   return (
     <div className="min-w-0">
       <p className="text-sm font-medium text-foreground">{label}</p>
-      <div className="mt-1 flex min-h-12 flex-wrap items-center justify-between gap-3 rounded-md border border-border bg-muted/30 px-3 py-2">
-        <div className="flex items-start justify-between gap-3">
+      <div className="mt-1 flex min-h-12 items-center justify-between gap-3 rounded-md border border-border bg-muted/30 px-3 py-2">
+        <div className="flex min-w-0 items-start justify-between gap-3">
           <div className="min-w-0">
             <p className="break-words font-mono text-sm font-semibold text-foreground tabular-nums">
               {value}
@@ -587,7 +588,7 @@ function ToLetChoicePair({
   recorded?: boolean;
 }) {
   return (
-    <span className="inline-flex shrink-0 items-center gap-3 text-xs text-muted-foreground">
+    <span className="inline-flex shrink-0 items-center gap-2.5 text-xs whitespace-nowrap text-muted-foreground sm:gap-3">
       <span className="inline-flex items-center gap-1.5">
         <span
           aria-hidden="true"

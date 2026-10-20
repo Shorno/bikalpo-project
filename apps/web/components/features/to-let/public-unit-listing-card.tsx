@@ -6,6 +6,8 @@ import styles from "./compact-listing-card.module.css";
 
 export interface PublicUnitListing {
   listingCode: string;
+  /** UNT-…; older callers may not send it, so the card falls back to the listing code. */
+  unitCode?: string;
   marketplaceStatus: "available" | "booked";
   marketplaceVisibleUntil: string | Date | null;
   title: string;
@@ -59,7 +61,6 @@ export function PublicUnitListingCard({
       ? `${listing.property.nearbyLandmark.trim()} (${listing.property.name})`
       : listing.location,
   );
-  const mobileArea = listing.location.split(",")[0]?.trim() || listing.location;
   const mobileUnitSummary = isGarage
     ? "Garage"
     : `${listing.unit.unitType === "warehouse" ? "Godown" : unitType} (${listing.unit.sizeSqFt.toLocaleString("en-BD")} S.F)`;
@@ -101,7 +102,7 @@ export function PublicUnitListingCard({
             {listing.viewCount.toLocaleString("en-BD")} views
           </span>
           <span className="break-all text-xs tabular-nums text-muted-foreground">
-            <MobileAlt compactMobile={compactMobile} desktop={`ID: ${listing.listingCode}`} mobile={listing.listingCode} />
+            <MobileAlt compactMobile={compactMobile} desktop={`ID: ${listing.unitCode ?? listing.listingCode}`} mobile={listing.unitCode ?? listing.listingCode} />
           </span>
         </div>
 
@@ -132,7 +133,7 @@ export function PublicUnitListingCard({
         ) : null}
         <div data-slot="location" className="mt-3 mb-5 flex items-center gap-1.5 text-xs leading-5 text-muted-foreground sm:text-sm">
           <MapPin className="size-3.5 shrink-0" aria-hidden="true" />
-          <p className="min-w-0 truncate" title={location}><MobileAlt compactMobile={compactMobile} desktop={location} mobile={mobileArea} /></p>
+          <p className="min-w-0 truncate" title={location}>{location}</p>
         </div>
 
         <div

@@ -123,3 +123,8 @@
   .landing :is(a, button):global(.min-h-11),
   .landing :is(a, button):global(.min-h-10) { padding-block: 6px; }
 }
+
+/* The alert card's title sits beside its icon, so it stays smaller than section headings. */
+@media (max-width: 639px) {
+  .landing h2[data-slot="alert-title"] { font-size: 16px; line-height: 1.4; }
+}
