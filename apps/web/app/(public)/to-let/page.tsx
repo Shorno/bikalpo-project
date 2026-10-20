@@ -1,16 +1,10 @@
 import {
-  ArrowRight,
   Bell,
-  BadgeCheck,
   Briefcase,
   Building2,
-  CalendarCheck2,
   Car,
-  ChevronRight,
-  Eye,
   Home,
   KeyRound,
-  LayoutGrid,
   Plus,
   type LucideIcon,
   Search,
@@ -21,17 +15,16 @@ import {
 } from "lucide-react";
 import type { Metadata } from "next";
 import Form from "next/form";
-import { ToLetHeroBanner } from "@/components/features/to-let/to-let-hero-banner";
-import type { ToLetBannerSlide } from "@bikalpo-project/api/lib/tolet-banner";
 import Link from "next/link";
 import { LandingListingGrid } from "@/components/features/to-let/landing-listing-grid";
 import { AlertDashboardLink } from "@/components/features/to-let/alerts/alert-dashboard-link";
-import { RentalTypeCarousel } from "@/components/features/to-let/rental-type-carousel";
 import { ToLetAccountLink } from "@/components/features/to-let/to-let-account-link";
+import { ToLetCategoryScroller } from "@/components/features/to-let/to-let-category-scroller";
 import { ToLetCommunityReviews } from "@/components/features/to-let/to-let-community-reviews";
 import { ToLetLocationExplorer } from "@/components/features/to-let/to-let-location-explorer";
+import { ToLetMarketHero } from "@/components/features/to-let/to-let-market-hero";
 import { ToLetSearchButton } from "@/components/features/to-let/to-let-search-button";
-import { toLetChip, toLetChipRow, toLetInverseButton, toLetMobileSecondary, toLetPrimaryButton } from "@/components/features/to-let/to-let-button";
+import { toLetChip, toLetMobileSecondary, toLetPrimaryButton } from "@/components/features/to-let/to-let-button";
 import { listPublicToLetUnitListings } from "@/lib/public-data";
 import { getPublicOrpcClient } from "@/lib/orpc/public-server";
 import {
@@ -127,7 +120,7 @@ export default async function ToLetPage({ searchParams }: ToLetPageProps) {
   let unitListings: UnitListing[] = [];
   const [catalogResult, results, platformResult, bannerResult] = await Promise.allSettled([
     listPublicToLetUnitListings(60),
-    getPublicOrpcClient(60).toLetUnitListing.listPublicPage({ page: 1, limit: selectedType ? 4 : 8, q: query, type: selectedType }),
+    getPublicOrpcClient(60).toLetUnitListing.listPublicPage({ page: 1, limit: 12, q: query, type: selectedType }),
     getPublicOrpcClient(60).landing.getPlatformStats(),
     getPublicOrpcClient(60).toLetBanner.getPublic(),
   ]);
@@ -158,95 +151,88 @@ export default async function ToLetPage({ searchParams }: ToLetPageProps) {
     .slice(0, 4);
   const locationPins = areaNames.slice(0, 6);
 
+  // The location select offers known areas; keep a typed query selectable too.
+  const areaOptions =
+    query && !areaNames.some((area) => area.toLowerCase() === query.toLowerCase())
+      ? [query, ...areaNames]
+      : areaNames;
+  const searchField =
+    "h-11 w-full min-w-0 rounded-lg border border-border bg-background px-3 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring";
+
   return (
-    <div className={`${styles.landing} min-h-screen bg-muted/30 text-foreground`}>
-      <ToLetCatalogHero
-        query={query}
-        selectedType={selectedType}
-        listings={queryMatchedListings}
-        slides={bannerResult.status === "fulfilled" ? bannerResult.value.slides : []}
-      />
+    <div className={`${styles.landing} min-h-screen bg-muted/30 pb-4 text-foreground`}>
+      <ToLetMarketHero slides={bannerResult.status === "fulfilled" ? bannerResult.value.slides : []}>
+        <Form
+          key={`${query}:${selectedType ?? "all"}`}
+          action="/to-let#listings"
+          className="grid grid-cols-2 gap-2 rounded-xl border border-border bg-card p-2 shadow-lg sm:grid-cols-[minmax(0,1fr)_minmax(0,1.35fr)_auto] sm:p-2.5"
+        >
+          <label>
+            <span className="sr-only">Rental type</span>
+            <select name="type" defaultValue={selectedType ?? ""} className={searchField}>
+              <option value="">Select Type</option>
+              {rentalTypes.map((type) => (
+                <option key={type.value} value={type.value}>
+                  {type.label.replace(" To-Let", "")}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            <span className="sr-only">Area</span>
+            <select name="q" defaultValue={query} className={searchField}>
+              <option value="">Select Area</option>
+              {areaOptions.map((area) => (
+                <option key={area} value={area}>
+                  {area}
+                </option>
+              ))}
+            </select>
+          </label>
+          <ToLetSearchButton className={`${toLetPrimaryButton} col-span-2 h-11 px-4 sm:col-span-1 sm:px-5`} />
+        </Form>
+      </ToLetMarketHero>
 
       <section
         id="listings"
         aria-labelledby="recent-listings-heading"
-        className="scroll-mt-28 border-y border-border bg-card pb-12 pt-8 sm:pb-16 sm:pt-10"
+        className="scroll-mt-28 pt-8 pb-10 sm:pt-10 sm:pb-14"
       >
         <div className="site-container px-4 sm:px-6 lg:px-8">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-            <div>
-              <h2
-                id="recent-listings-heading"
-                className="text-2xl font-bold tracking-tight text-balance text-foreground sm:text-3xl"
-              >
-                সাম্প্রতিক ও ভেরিফাইড To-Let লিস্টিং
-              </h2>
-              {!listingsUnavailable ? (
-                <p className="mt-1.5 text-sm text-muted-foreground" role="status">
-                  <span className="font-mono font-semibold tabular-nums text-foreground">
-                    {resultCount.toLocaleString("en-BD")}
-                  </span>{" "}
-                  {resultCount === 1 ? "listing" : "listings"}
-                  {selectedType ? ` · ${rentalTypes.find(type => type.value === selectedType)?.label}` : ""}
-                  {query ? ` for “${query}”` : ""}
-                </p>
-              ) : null}
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <Link
-                href={toLetBrowseHref(query, selectedType)}
-                className={`${toLetPrimaryButton} max-sm:hidden`}
-              >
-                <LayoutGrid className="size-4" aria-hidden="true" /> See all listings
-              </Link>
-            </div>
+          <h2 id="recent-listings-heading" className="sr-only">
+            To-Let listings
+          </h2>
+          <div className="flex justify-end">
+            <AlertDashboardLink />
           </div>
-
-          <div className="relative mt-6 md:hidden">
-            <nav aria-label="Listing categories" className={`flex gap-2 overflow-x-auto pr-7 [&>*]:shrink-0 [&>*]:whitespace-nowrap ${toLetChipRow}`}>
+          <div className="mt-4">
+            <ToLetCategoryScroller label="Listing categories">
               <FilterChip href={toLetMarketHref(query)} active={!selectedType} label="All" />
-              {rentalTypes.map(type => (
-                <FilterChip key={type.value} href={toLetMarketHref(query, type.value)} active={selectedType === type.value} label={type.label.replace(" To-Let", "")} />
-              ))}
-            </nav>
-            <span aria-hidden="true" className="pointer-events-none absolute right-0 top-0 flex h-full w-7 items-center justify-end bg-card"><ArrowRight className="size-4 text-muted-foreground" /></span>
-          </div>
-          <div className="mt-6 hidden flex-wrap items-start gap-2 md:flex">
-            <FilterChip
-              href={toLetMarketHref(query)}
-              active={!selectedType}
-              label="All listings"
-            />
-            {rentalTypes.filter(type => ["family_flat", "bachelor_room", "sublet"].includes(type.value)).map((type) => (
-              <FilterChip
-                key={type.value}
-                href={toLetMarketHref(query, type.value)}
-                active={selectedType === type.value}
-                label={type.label.replace(" To-Let", "")}
-              />
-            ))}
-            {[
-              { label: "Commercial", values: ["shop", "office", "warehouse", "garage", "factory"] },
-              { label: "More", values: ["family_sublet", "bachelor_sublet", "other"] },
-            ].map(group => (
-              <details key={group.label} className="relative">
-                <summary className={`cursor-pointer list-none ${toLetChip(Boolean(selectedType && group.values.includes(selectedType)))}`}>
-                  {selectedType && group.values.includes(selectedType) ? rentalTypes.find(item => item.value === selectedType)?.label : group.label}
-                  <ChevronRight className="size-3.5 rotate-90" aria-hidden="true" />
-                </summary>
-                <div className="absolute left-0 top-full z-20 mt-2 min-w-44 rounded-lg border border-border bg-popover p-1 text-popover-foreground shadow-md">
-                  {rentalTypes.filter(type => group.values.includes(type.value)).map(type => (
-                    <Link key={type.value} href={toLetMarketHref(query, type.value)} aria-current={selectedType === type.value ? "page" : undefined} className="flex min-h-11 items-center rounded-md px-3 text-sm hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring">{type.label}</Link>
-                  ))}
-                </div>
-              </details>
-            ))}
+              {categoryOrder.map((value) => {
+                const type = rentalTypes.find((item) => item.value === value);
+                return type ? (
+                  <FilterChip
+                    key={type.value}
+                    href={toLetMarketHref(query, type.value)}
+                    active={selectedType === type.value}
+                    label={type.label.replace(" To-Let", "")}
+                  />
+                ) : null;
+              })}
+            </ToLetCategoryScroller>
           </div>
 
           {(query || selectedType) && !listingsUnavailable ? (
-            <div className="mt-3 flex items-center gap-2 text-sm text-muted-foreground">
+            <div className="mt-3 flex flex-wrap items-center gap-x-2 text-sm text-muted-foreground" role="status">
               <Search className="size-4" aria-hidden="true" />
-              <span>Filtered results</span>
+              <span>
+                <span className="font-semibold tabular-nums text-foreground">
+                  {resultCount.toLocaleString("en-BD")}
+                </span>{" "}
+                {resultCount === 1 ? "listing" : "listings"}
+                {selectedType ? ` · ${rentalTypes.find((type) => type.value === selectedType)?.label}` : ""}
+                {query ? ` in “${query}”` : ""}
+              </span>
               <Link
                 href="/to-let#listings"
                 className="inline-flex min-h-11 items-center font-semibold text-primary underline-offset-4 hover:underline"
@@ -256,7 +242,7 @@ export default async function ToLetPage({ searchParams }: ToLetPageProps) {
             </div>
           ) : null}
 
-          <div className="mt-6">
+          <div className="mt-5">
             {listingsUnavailable ? (
               <ListingMessage
                 title="Listings are temporarily unavailable"
@@ -278,6 +264,25 @@ export default async function ToLetPage({ searchParams }: ToLetPageProps) {
         </div>
       </section>
 
+      <section aria-labelledby="to-let-alert-heading" className="pb-6 sm:pb-8">
+        <div className="site-container px-4 sm:px-6 lg:px-8">
+          <div className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-3 rounded-2xl border border-primary/15 bg-linear-to-br from-primary/[0.07] via-card to-card p-4 sm:p-6 md:grid-cols-[auto_minmax(0,1fr)_auto] md:gap-x-4 md:gap-y-1.5">
+            <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm md:row-span-2 md:size-11 md:self-start">
+              <Bell className="size-5" aria-hidden="true" />
+            </span>
+            <h2 id="to-let-alert-heading" data-slot="alert-title" className="min-w-0 text-base leading-snug font-bold text-balance text-foreground md:text-lg">
+              পছন্দের বাসার খবর পেতে To-Let Alert
+            </h2>
+            <p className="col-span-2 max-w-2xl text-[13px] leading-6 text-muted-foreground md:col-span-1 md:col-start-2 md:text-sm">
+              Dashboard-এ এলাকা, ইউনিটের ধরন ও প্রয়োজন অনুযায়ী alert তৈরি করুন। আপনার শর্তের সঙ্গে মিলে নতুন listing এলে alert dashboard-এ notification দেখতে পারবেন। সেখান থেকেই alert যোগ, pause বা delete করা যাবে।
+            </p>
+            <div className="col-span-2 mt-1 md:col-span-1 md:col-start-3 md:row-span-2 md:row-start-1 md:mt-0 md:self-center [&>a]:w-full md:[&>a]:w-auto">
+              <AlertDashboardLink />
+            </div>
+          </div>
+        </div>
+      </section>
+
       <ToLetLocationExplorer
         listings={mapListings}
         locationPins={locationPins}
@@ -285,26 +290,11 @@ export default async function ToLetPage({ searchParams }: ToLetPageProps) {
         unavailable={catalogResult.status === "rejected"}
       />
 
+      <TenantJourney />
+
       <PlatformSnapshot
         stats={platformResult.status === "fulfilled" ? platformResult.value : null}
       />
-
-      <RentalTypeDirectory listings={queryMatchedListings} query={query} />
-
-      <section aria-labelledby="to-let-alert-heading" className="border-b border-border bg-card py-6 sm:py-8">
-        <div className="site-container flex flex-col gap-5 px-4 sm:px-6 md:flex-row md:items-center md:justify-between lg:px-8">
-          <div className="flex items-start gap-3">
-            <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/5 text-primary"><Bell className="size-5" aria-hidden="true" /></span>
-            <div className="max-w-2xl">
-              <h2 id="to-let-alert-heading" className="text-lg font-semibold text-foreground">পছন্দের বাসার খবর পেতে To-Let Alert</h2>
-              <p className="mt-2 text-sm leading-6 text-muted-foreground">Dashboard-এ এলাকা, ইউনিটের ধরন ও প্রয়োজন অনুযায়ী alert তৈরি করুন। আপনার শর্তের সঙ্গে মিলে নতুন listing এলে alert dashboard-এ notification দেখতে পারবেন। সেখান থেকেই alert যোগ, pause বা delete করা যাবে।</p>
-            </div>
-          </div>
-          <AlertDashboardLink />
-        </div>
-      </section>
-
-      <TenantJourney />
 
       <ToLetCommunityReviews />
 
@@ -313,164 +303,20 @@ export default async function ToLetPage({ searchParams }: ToLetPageProps) {
   );
 }
 
-function ToLetCatalogHero({
-  query,
-  selectedType,
-  listings,
-  slides,
-}: {
-  query: string;
-  selectedType?: ToLetMarketRentalType;
-  listings: UnitListing[];
-  slides: ToLetBannerSlide[];
-}) {
-  const visibleTypes = rentalTypes.slice(0, 6);
-
-  return (
-    <section className={`${styles.hero} bg-card`}>
-      <div className="site-container px-4 py-5 sm:px-6 sm:py-7 lg:px-8">
-        <div className="grid gap-4 lg:grid-cols-[15.5rem_minmax(0,1fr)]">
-          <aside className="hidden min-h-[460px] overflow-hidden rounded-xl border border-border bg-card lg:block">
-            <div className="flex h-14 items-center gap-2 border-b border-border px-4 text-sm font-semibold text-foreground">
-              <Building2 className="size-4 text-primary" />
-              Browse rental types
-            </div>
-            <nav aria-label="Browse To-Let by rental type">
-              {visibleTypes.map(({ value, label, icon: Icon }) => {
-                const count = listings.filter(
-                  (listing) => listing.unit.unitType === value,
-                ).length;
-                return (
-                  <Link
-                    key={value}
-                    href={toLetMarketHref(query, value)}
-                    className="flex min-h-14 items-center gap-3 border-b border-border px-4 text-sm text-foreground transition-colors hover:bg-muted/30 hover:text-primary focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring"
-                  >
-                    <span className="flex size-8 items-center justify-center rounded-md bg-muted text-muted-foreground">
-                      <Icon className="size-4" aria-hidden="true" />
-                    </span>
-                    <span className="min-w-0 flex-1 truncate font-medium">
-                      {label}
-                    </span>
-                    <span className="font-mono text-xs tabular-nums text-muted-foreground">
-                      {count}
-                    </span>
-                    <ChevronRight className="size-3.5 text-muted-foreground" />
-                  </Link>
-                );
-              })}
-            </nav>
-          </aside>
-
-          <ToLetHeroBanner slides={slides} className={`${styles.heroBanner} relative min-h-[420px] overflow-hidden rounded-xl bg-zinc-800 sm:min-h-[460px]`}>
-
-              <Form
-                key={`${query}:${selectedType ?? "all"}`}
-                action="/to-let#listings"
-                className="mt-7 grid max-w-2xl gap-2 rounded-lg bg-card p-2 sm:grid-cols-[minmax(0,1fr)_11rem_auto]"
-              >
-                <label className="relative block">
-                  <span className="sr-only">Search To-Let listings</span>
-                  <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-                  <input
-                    name="q"
-                    defaultValue={query}
-                    placeholder="Area, property or listing ID"
-                    className="h-11 w-full rounded-md border-0 bg-muted pl-10 pr-3 text-sm text-foreground outline-none ring-ring placeholder:text-muted-foreground focus:ring-4"
-                  />
-                </label>
-                <label>
-                  <span className="sr-only">Rental type</span>
-                  <select
-                    name="type"
-                    defaultValue={selectedType ?? ""}
-                    className="h-11 w-full rounded-md border-0 bg-muted px-3 text-sm text-foreground outline-none ring-ring focus:ring-4"
-                  >
-                    <option value="">All types</option>
-                    {rentalTypes.map((type) => (
-                      <option key={type.value} value={type.value}>
-                        {type.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <ToLetSearchButton className={`${toLetPrimaryButton} h-11 px-5`} />
-              </Form>
-
-              <div className="mt-5 flex flex-wrap items-center gap-4 text-sm">
-                <Link
-                  href="#listings"
-                  className={`${toLetPrimaryButton} focus-visible:outline-white`}
-                >
-                  <LayoutGrid className="size-4" aria-hidden="true" /> Browse listings
-                </Link>
-                <ToLetAccountLink
-                  href="/account/to-let/properties/new"
-                  className={toLetInverseButton}
-                >
-                  <Plus className="size-4" aria-hidden="true" /> List your property
-                </ToLetAccountLink>
-              </div>
-          </ToLetHeroBanner>
-        </div>
-
-      </div>
-    </section>
-  );
-}
-
-function RentalTypeDirectory({
-  listings,
-  query,
-}: {
-  listings: UnitListing[];
-  query: string;
-}) {
-  return (
-    <section aria-labelledby="rental-types-heading" className="border-b border-border bg-card py-10 sm:py-14">
-      <div className="site-container px-4 sm:px-6 lg:px-8">
-        <h2 id="rental-types-heading" className="text-xl font-bold tracking-tight text-balance text-foreground sm:text-2xl">
-          যে ধরনের ইউনিট খুঁজছেন, সেখান থেকেই শুরু করুন
-        </h2>
-
-        <RentalTypeCarousel>
-          {rentalTypes.map(({ value, label, banglaLabel, icon: Icon }) => {
-            const count = listings.filter(
-              (listing) => listing.unit.unitType === value,
-            ).length;
-            return (
-              <Link
-                key={value}
-                href={toLetMarketHref(query, value)}
-                aria-label={`${label}, ${count} ${count === 1 ? "listing" : "listings"}`}
-                className="group flex min-h-20 items-center gap-3 rounded-lg border border-border bg-card px-4 py-3 transition-colors hover:border-primary/40 hover:bg-primary/[0.03] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
-              >
-                <span className="flex size-10 shrink-0 items-center justify-center rounded-md bg-muted text-foreground transition-colors group-hover:bg-primary/10 group-hover:text-primary">
-                  <Icon className="size-5" aria-hidden="true" />
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm font-semibold text-foreground">
-                    {label}
-                  </span>
-                  <span className="mt-0.5 block truncate text-xs text-muted-foreground">
-                    {banglaLabel}
-                  </span>
-                </span>
-                <span
-                  className={`font-mono text-sm font-semibold tabular-nums ${count > 0 ? "text-foreground" : "text-muted-foreground/60"}`}
-                  aria-hidden="true"
-                >
-                  {count.toLocaleString("en-BD")}
-                </span>
-                <ChevronRight className="size-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5 group-hover:text-primary" aria-hidden="true" />
-              </Link>
-            );
-          })}
-        </RentalTypeCarousel>
-      </div>
-    </section>
-  );
-}
+/** Chip order on the landing page, matching how tenants search. */
+const categoryOrder: ReadonlyArray<ToLetMarketRentalType> = [
+  "family_flat",
+  "bachelor_room",
+  "family_sublet",
+  "bachelor_sublet",
+  "sublet",
+  "shop",
+  "office",
+  "warehouse",
+  "garage",
+  "factory",
+  "other",
+];
 
 function PlatformSnapshot({
   stats,
@@ -485,93 +331,52 @@ function PlatformSnapshot({
   ];
 
   return (
-    <section
-      aria-label="Bikalpo platform statistics"
-      className="border-b border-border bg-muted/30"
-    >
-      <div className="site-container px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
-        <dl className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-border bg-border lg:grid-cols-4">
+    <section aria-label="Bikalpo platform statistics" className="pb-6 sm:pb-8">
+      <div className="site-container px-4 sm:px-6 lg:px-8">
+        <dl className="grid grid-cols-2 gap-3 lg:grid-cols-4">
           {items.map(({ label, value }) => (
             <div
               key={label}
-              className="flex flex-col-reverse gap-1 bg-card px-4 py-4 sm:px-6 sm:py-5"
+              className="flex flex-col-reverse items-center gap-1 rounded-2xl border border-border bg-card px-3 py-5 text-center sm:py-6"
             >
-              <dt className="text-xs font-medium text-muted-foreground sm:text-sm">
-                {label}
-              </dt>
-              <dd className="font-mono text-2xl font-bold tabular-nums tracking-tight text-foreground sm:text-3xl">
+              <dt className="text-xs text-muted-foreground sm:text-sm">{label}</dt>
+              <dd className="text-2xl font-bold tabular-nums tracking-tight text-foreground sm:text-3xl">
                 {value === undefined ? "—" : value.toLocaleString("en-BD")}
               </dd>
             </div>
           ))}
         </dl>
+        {!stats && (
+          <p className="mt-3 text-xs text-muted-foreground" role="status">
+            Platform statistics are temporarily unavailable.
+          </p>
+        )}
       </div>
-      {!stats && (
-        <p className="site-container px-4 pb-5 text-xs text-muted-foreground sm:px-6 lg:px-8" role="status">
-          Platform statistics are temporarily unavailable.
-        </p>
-      )}
     </section>
   );
 }
 
 function TenantJourney() {
-  const steps: ReadonlyArray<{
-    title: string;
-    icon: LucideIcon;
-  }> = [
-    {
-      title: "Find listings",
-      icon: Search,
-    },
-    {
-      title: "View details",
-      icon: Eye,
-    },
-    {
-      title: "Request a booking",
-      icon: CalendarCheck2,
-    },
-    {
-      title: "Join as a tenant",
-      icon: BadgeCheck,
-    },
-  ];
+  const steps = ["Find Listings", "View Details", "Request a Booking", "Join as a Tenant"];
 
   return (
-    <section id="to-let-journey" className="border-b border-border bg-muted/30 py-12 sm:py-16">
+    <section id="to-let-journey" className="py-6 sm:py-8">
       <div className="site-container px-4 sm:px-6 lg:px-8">
-        <h2 className="text-2xl font-bold tracking-tight text-balance text-foreground sm:text-3xl">
-          Your To-Let Journey
-        </h2>
-        <p className="mt-2 max-w-[70ch] text-sm leading-6 text-muted-foreground">
-          From listing search to digital booking and tenant connection
-        </p>
-
-        <ol className="mt-7 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          {steps.map(({ title, icon: Icon }, index) => (
-            <li
-              key={title}
-              className="relative flex items-center gap-3 rounded-lg border border-border bg-card p-4 sm:p-5"
-            >
-              <span className="flex size-10 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
-                <Icon className="size-5" aria-hidden="true" />
-              </span>
-              <span className="min-w-0 flex-1">
-                <span className="block font-mono text-xs font-semibold tabular-nums text-muted-foreground">
-                  Step {index + 1}
+        <div className="rounded-2xl border border-border bg-card p-5 sm:p-6">
+          <h2 className="text-xl font-extrabold tracking-tight text-foreground uppercase sm:text-2xl">
+            Tenant Journey
+          </h2>
+          <ol className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
+            {steps.map((title, index) => (
+              <li key={title} className="rounded-xl border border-border bg-background p-4">
+                <span className="text-sm font-semibold tabular-nums text-muted-foreground">
+                  {String(index + 1).padStart(2, "0")}
                 </span>
-                <h3 className="mt-0.5 font-semibold text-foreground">{title}</h3>
-              </span>
-              {index < steps.length - 1 ? (
-                <ArrowRight
-                  className="hidden size-4 shrink-0 text-muted-foreground lg:block"
-                  aria-hidden="true"
-                />
-              ) : null}
-            </li>
-          ))}
-        </ol>
+                <h3 className="mt-2 text-sm font-semibold text-foreground sm:text-base">{title}</h3>
+              </li>
+            ))}
+          </ol>
+        </div>
       </div>
     </section>
   );
@@ -579,7 +384,7 @@ function TenantJourney() {
 
 function OwnerCallToAction() {
   return (
-    <section id="register-property" className="bg-muted/30 py-12 sm:py-16">
+    <section id="register-property" className="pt-2 pb-8 sm:pb-10">
       <div className="site-container px-4 sm:px-6 lg:px-8">
         <div className="rounded-xl border border-border bg-card p-5 text-center sm:p-8 lg:p-10">
           <h2 className="text-2xl leading-snug font-bold tracking-tight text-balance text-foreground sm:text-3xl lg:text-[clamp(1.375rem,2.1vw,1.875rem)] lg:whitespace-nowrap">

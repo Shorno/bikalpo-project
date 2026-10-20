@@ -134,20 +134,18 @@ export function ToLetLocationExplorer({
     <section
       id="location-intelligence"
       aria-labelledby="location-intelligence-heading"
-      className="scroll-mt-28 border-y border-border/70 bg-background py-12 sm:py-16"
+      className="scroll-mt-28 py-6 sm:py-8"
     >
       <div className="site-container px-4 sm:px-6 lg:px-8">
         <div className="mb-7 max-w-3xl sm:mb-8">
           <h2
             id="location-intelligence-heading"
-            className="text-2xl font-bold leading-tight tracking-tight text-balance text-foreground sm:text-3xl"
+            className="text-xl font-extrabold tracking-tight text-foreground uppercase sm:text-2xl"
           >
-            নির্ভুলভাবে আপনার পছন্দের To-Let ইউনিট খুঁজুন
+            Location Intelligence
           </h2>
-          <p className="mt-2 max-w-[70ch] text-sm leading-6 text-muted-foreground">
-            ম্যাপে খুঁজুন, নিজের Search Area নির্ধারণ করুন, Radius Search, Nearby
-            School, Hospital, Mosque, Market, Bus Stop, Metro, Smart Distance,
-            Commute Time ও Live Availability দেখে সিদ্ধান্ত নিন।
+          <p className="mt-1.5 text-sm leading-6 text-muted-foreground">
+            নির্ভুলভাবে আপনার পছন্দের To-Let ইউনিট খুঁজুন
           </p>
         </div>
 

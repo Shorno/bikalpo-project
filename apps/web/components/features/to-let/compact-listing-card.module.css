@@ -3,22 +3,23 @@
   .compact [data-slot="booking-status"] { display: none; }
   .compact [data-slot="card-body"] { padding: 10px 8px; }
   .compact [data-slot="metadata"] { gap: 4px; }
-  .compact [data-slot="metadata"] span { font-size: 10px; line-height: 16px; }
+  .compact [data-slot="metadata"] span { font-size: 11px; line-height: 16px; }
   .compact [data-slot="metadata"] svg { display: none; }
   .compact [data-slot="summary"] { margin-top: 10px; }
-  .compact h3 { margin-top: 0; font-size: 12px; line-height: 18px; }
-  .compact ul { margin-top: 6px; gap: 2px 6px; font-size: 10px; line-height: 16px; }
+  .compact h3 { margin-top: 0; font-size: 13px; line-height: 19px; }
+  .compact ul { margin-top: 6px; gap: 2px 6px; font-size: 11.5px; line-height: 17px; color: var(--foreground); opacity: 0.8; }
   .compact li { gap: 0; }
   .compact li svg { display: none; }
   .compact [data-slot="metadata"] { flex-wrap: nowrap; }
   .compact:not([data-residential]) ul { display: none; }
-  .compact h3 { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 11.5px; letter-spacing: -0.2px; }
+  .compact h3 { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 13px; font-weight: 700; letter-spacing: -0.2px; }
   .compact ul { display: block; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; letter-spacing: -0.1px; }
   .compact li { display: inline; margin-right: 3px; }
   .compact li:last-child { margin-right: 0; }
   .compact li::before { content: "·"; margin-right: 1px; }
-  .compact[data-residential] [data-slot="location"] p { -webkit-line-clamp: 1; line-clamp: 1; }
-  .compact [data-slot="location"] { margin-top: 6px; margin-bottom: 0; font-size: 11px; line-height: 17px; }
+  /* Full address on one line; it ellipsizes instead of wrapping. */
+  .compact [data-slot="location"] { margin-top: 6px; margin-bottom: 0; font-size: 12px; line-height: 18px; font-weight: 500; color: var(--foreground); }
+  .compact [data-slot="location"] p { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .compact [data-slot="location"] svg { display: none; }
   /* Phones: no action buttons; the whole card body opens the listing (stretched title link).
      The photo keeps its own link so swiping through images still works. */
@@ -29,6 +30,6 @@
 
 @media (max-width: 370px) {
   .compact [data-slot="card-body"] { padding: 10px 6px; }
-  .compact h3 { font-size: 11px; }
+  .compact h3 { font-size: 12px; }
   .compact ul { letter-spacing: -0.2px; }
 }

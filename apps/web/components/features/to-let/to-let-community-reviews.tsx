@@ -231,7 +231,7 @@ export function ToLetCommunityReviews({ all = false, page = 1 }: { all?: boolean
   }
 
   return (
-    <section id="community-reviews" aria-labelledby="community-reviews-heading" className="border-y border-border bg-muted/30 py-10 sm:py-16">
+    <section id="community-reviews" aria-labelledby="community-reviews-heading" className="py-6 sm:py-8">
       <div className="site-container px-4 sm:px-6 lg:px-8">
         <div className="mb-6 flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
           <div>
