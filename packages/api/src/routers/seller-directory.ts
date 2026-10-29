@@ -20,6 +20,10 @@ type Seller = {
   role: "shop_owner" | "warehouse";
   nature: string | null;
   address: string;
+  area: string | null;
+  category: string | null;
+  logo: string | null;
+  images: string[];
   district: string;
   division: string;
 };

@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { orpc } from "@/utils/orpc";
+import { SellerCard } from "./seller-card";
 
 const demoLocations = [
   { district: "Dhaka", division: "Dhaka", count: "320+" },
@@ -132,7 +133,7 @@ export function SellerDirectory() {
     `/sellers?${new URLSearchParams({ district, division, page: String(nextPage) })}`;
   const locationLabel = data?.sellers[0]?.district || district;
   return (
-    <section className="mx-auto max-w-5xl px-4 py-12 sm:px-6 sm:py-16">
+    <section className="mx-auto max-w-[1400px] px-2.5 py-12 min-[801px]:px-[18px] sm:py-16">
       <Link
         href="/"
         className="inline-flex min-h-11 items-center text-sm text-primary hover:underline"
@@ -172,46 +173,12 @@ export function SellerDirectory() {
             {data?.sellers[0]?.division || division}
           </p>
           {data?.sellers.length ? (
-            <ul className="mt-4 divide-y divide-border border-y border-border">
-              {data.sellers.map((seller) => {
-                const href = seller.slug
-                  ? `${seller.role === "warehouse" ? "/w" : "/stores"}/${encodeURIComponent(seller.slug)}`
-                  : null;
-                return (
-                  <li
-                    key={seller.id}
-                    className="flex flex-col gap-3 py-6 sm:flex-row sm:items-center sm:justify-between"
-                  >
-                    <div>
-                      <h2 className="text-lg font-semibold">
-                        {seller.name || "Registered business"}
-                      </h2>
-                      <p className="mt-1 text-sm capitalize text-muted-foreground">
-                        {seller.nature?.replaceAll("_", " ") ||
-                          (seller.role === "warehouse"
-                            ? "Warehouse"
-                            : "Seller")}
-                      </p>
-                      <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                        {seller.address}
-                      </p>
-                    </div>
-                    {href ? (
-                      <Link
-                        href={href}
-                        className="inline-flex min-h-11 shrink-0 items-center text-sm font-medium text-primary underline-offset-4 hover:underline"
-                      >
-                        View{" "}
-                        {seller.role === "warehouse" ? "warehouse" : "store"}
-                      </Link>
-                    ) : (
-                      <span className="text-sm text-muted-foreground">
-                        Storefront coming soon
-                      </span>
-                    )}
-                  </li>
-                );
-              })}
+            <ul className="mt-4 grid grid-cols-2 gap-[9px] min-[801px]:grid-cols-5 min-[801px]:gap-3">
+              {data.sellers.map((seller) => (
+                <li key={seller.id} className="min-w-0">
+                  <SellerCard seller={seller} />
+                </li>
+              ))}
             </ul>
           ) : (
             <p className="mt-5">

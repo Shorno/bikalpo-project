@@ -53,6 +53,11 @@ test(
         await tx.execute(
           sql`update seller_application set latitude = 'not-a-coordinate' where id = 'bad'`,
         );
+        await tx.execute(sql`alter table "user" add column shop_logo text`);
+        for (const table of ["seller_application", "warehouse_application"]) {
+          await tx.execute(sql`alter table ${sql.identifier(table)}
+            add column area text, add column business_category text, add column document_urls json`);
+        }
         const locations = await tx.execute(sellerLocationsQuery());
         assert.equal(locations.rows.length, 1);
         assert.equal(locations.rows[0]?.count, 6);

@@ -1,0 +1,231 @@
+.card {
+  position: relative;
+  align-self: start;
+  min-width: 0;
+  border: 1px solid #dce6f0;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 8px 28px rgb(7 27 53 / 8%);
+  transition:
+    transform 180ms ease,
+    box-shadow 180ms ease;
+}
+
+.card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 30px rgb(7 27 53 / 12%);
+}
+
+.image {
+  position: relative;
+  height: 185px;
+  overflow: hidden;
+  background: #f8fafc;
+}
+
+.imageLink,
+.emptyImage {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  align-items: center;
+  justify-content: center;
+}
+
+.emptyImage {
+  color: #667085;
+}
+
+.add,
+.quantity {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  color: #d91515;
+  background: #fff;
+  box-shadow: 0 5px 18px rgb(7 27 53 / 18%);
+}
+
+.add {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+}
+
+.add svg {
+  width: 25px;
+  height: 25px;
+  stroke-width: 1.5;
+}
+.add:hover,
+.quantityButton:hover {
+  background: #fff;
+  color: #d91515;
+}
+
+.quantity {
+  display: flex;
+  align-items: center;
+  width: 76px;
+  height: 27px;
+  border-radius: 18px;
+}
+
+.quantityButton {
+  width: 25px;
+  height: 27px;
+  flex-shrink: 0;
+  padding: 0;
+  border-radius: 18px;
+  color: inherit;
+}
+
+.quantityButton svg {
+  width: 14px;
+  height: 14px;
+}
+.quantity span {
+  min-width: 26px;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 800;
+}
+.body {
+  padding: 11px 12px 13px;
+}
+.nameLink {
+  display: block;
+}
+.name {
+  min-height: 35px;
+  color: #101828;
+  font-size: 14px;
+  font-weight: 800;
+  line-height: 1.25;
+}
+
+.nameText {
+  display: -webkit-box;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.priceLine {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  flex-wrap: wrap;
+  margin-top: 7px;
+  line-height: 1.1;
+}
+.price {
+  color: #df1717;
+  font-size: 19px;
+  font-weight: 900;
+}
+.unit {
+  color: #344054;
+  font-size: 12px;
+  font-weight: 500;
+}
+.selects {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 7px;
+  margin-top: 10px;
+}
+.select[data-slot="select-trigger"] {
+  width: 100%;
+  min-width: 0;
+  height: 29px;
+  padding: 0 7px;
+  border: 1px solid #e1e5ea;
+  border-radius: 8px;
+  background: #fff;
+  color: #344054;
+  font-size: 10.5px;
+  font-weight: 400;
+  box-shadow: 0 2px 7px rgb(7 27 53 / 6%);
+}
+.select [data-slot="select-value"] {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.select svg {
+  width: 12px;
+  height: 12px;
+  color: #344054;
+}
+.imageLink:focus-visible,
+.nameLink:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: -2px;
+}
+
+@media (max-width: 800px) {
+  .image {
+    height: 145px;
+  }
+  .body {
+    padding: 8px 8px 9px;
+  }
+  .name {
+    min-height: 30px;
+    font-size: 10.5px;
+  }
+  .price {
+    font-size: 15px;
+  }
+  .unit {
+    font-size: 8.5px;
+  }
+  .selects {
+    gap: 8px;
+    margin-top: 8px;
+  }
+  .select[data-slot="select-trigger"] {
+    height: 26px;
+    padding: 0 6px;
+    border-radius: 7px;
+    font-size: 8.5px;
+  }
+  .select svg {
+    width: 10px;
+    height: 10px;
+  }
+  .add {
+    width: 32px;
+    height: 32px;
+    right: 8px;
+    bottom: 8px;
+  }
+  .add svg {
+    width: 22px;
+    height: 22px;
+  }
+  .quantity {
+    width: 70px;
+    height: 25px;
+    right: 8px;
+    bottom: 8px;
+  }
+  .quantityButton {
+    width: 23px;
+    height: 25px;
+  }
+  .quantity span {
+    min-width: 24px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card {
+    transition: none;
+  }
+  .card:hover {
+    transform: none;
+  }
+}

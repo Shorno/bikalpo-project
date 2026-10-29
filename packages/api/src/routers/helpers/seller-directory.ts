@@ -12,6 +12,13 @@ with registrations as (
   select ${user.id} as id, ${user.shopName} as name, ${user.shopSlug} as slug,
     'shop_owner' as role, ${sellerApplication.businessNature} as nature,
     ${sellerApplication.shopAddress} as address,
+    ${sellerApplication.area} as area, ${sellerApplication.businessCategory} as category,
+    ${user.shopLogo} as logo,
+    array_remove(array[
+      nullif(${sellerApplication.documentUrls}->>'storeFront', ''),
+      nullif(${sellerApplication.documentUrls}->>'shopPhoto', ''),
+      nullif(${sellerApplication.documentUrls}->>'warehouse', '')
+    ], null) as images,
     ${sellerApplication.district} as district, ${sellerApplication.division} as division,
     ${sellerApplication.latitude} as latitude, ${sellerApplication.longitude} as longitude,
     row_number() over (partition by ${user.id} order by ${sellerApplication.updatedAt} desc, ${sellerApplication.id} desc) as rank
@@ -21,6 +28,12 @@ with registrations as (
   union all
   select ${user.id}, ${user.warehouseName}, ${user.warehouseSlug},
     'warehouse', ${warehouseApplication.businessNature}, ${warehouseApplication.warehouseAddress},
+    ${warehouseApplication.area}, ${warehouseApplication.businessCategory}, null::text,
+    array_remove(array[
+      nullif(${warehouseApplication.documentUrls}->>'storeFront', ''),
+      nullif(${warehouseApplication.documentUrls}->>'warehouse', ''),
+      nullif(${warehouseApplication.documentUrls}->>'shopPhoto', '')
+    ], null),
     ${warehouseApplication.district}, ${warehouseApplication.division},
     ${warehouseApplication.latitude}, ${warehouseApplication.longitude},
     row_number() over (partition by ${user.id} order by ${warehouseApplication.updatedAt} desc, ${warehouseApplication.id} desc)
@@ -28,14 +41,14 @@ with registrations as (
   where ${user.role} = 'warehouse' and ${user.banned} is not true
     and ${warehouseApplication.status} = 'approved'
 ), normalized as (
-  select id, name, slug, role, nature, address,
+  select id, name, slug, role, nature, address, area, category, logo, images,
     regexp_replace(trim(district), '\\s+', ' ', 'g') as district,
     regexp_replace(trim(division), '\\s+', ' ', 'g') as division,
     case when latitude ~ '^[0-9]{1,2}(\\.[0-9]+)?$' then latitude::numeric end as latitude,
     case when longitude ~ '^[0-9]{1,3}(\\.[0-9]+)?$' then longitude::numeric end as longitude
   from registrations where rank = 1
 ), canonical as (
-  select id, name, slug, role, nature, address, latitude, longitude,
+  select id, name, slug, role, nature, address, area, category, logo, images, latitude, longitude,
     ${canonicalBusinessLocation(sql`district`)} as district,
     ${canonicalBusinessLocation(sql`division`)} as division from normalized
 ), located_sellers as (
@@ -60,7 +73,7 @@ export function sellersByLocationQuery(
   limit = 24,
 ) {
   return sql`${registeredSellers}, filtered as (
-    select id, name, slug, role, nature, address, district, division
+    select id, name, slug, role, nature, address, area, category, logo, images, district, division
     from located_sellers
     where district_key = lower(regexp_replace(trim(${district}), '\\s+', ' ', 'g'))
       and division_key = lower(regexp_replace(trim(${division}), '\\s+', ' ', 'g'))

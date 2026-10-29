@@ -1,0 +1,140 @@
+.card {
+  min-width: 0;
+  height: 100%;
+  border: 1px solid #dce6f0;
+  border-radius: 10px;
+  background: #fff;
+  color: #071b35;
+  line-height: normal;
+  box-shadow: 0 8px 28px rgb(7 27 53 / 8%);
+  transition:
+    transform 180ms ease,
+    box-shadow 180ms ease;
+}
+.card:has(.link):hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 30px rgb(7 27 53 / 12%);
+}
+.link {
+  display: block;
+  height: 100%;
+}
+.link:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: -2px;
+  border-radius: inherit;
+}
+.images {
+  position: relative;
+  height: 185px;
+  overflow: hidden;
+  background: #f4f7fa;
+}
+.photo {
+  object-fit: cover;
+  opacity: 0;
+  transition: opacity 550ms ease;
+}
+.photo[data-active="true"] {
+  opacity: 1;
+}
+.emptyImage {
+  display: flex;
+  height: 100%;
+  align-items: center;
+  justify-content: center;
+  color: #667085;
+}
+.dots {
+  position: absolute;
+  right: 0;
+  bottom: 8px;
+  left: 0;
+  display: flex;
+  justify-content: center;
+  gap: 4px;
+}
+.dots span {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: rgb(255 255 255 / 65%);
+}
+.dots span[data-active="true"] {
+  width: 14px;
+  border-radius: 4px;
+  background: #ffd200;
+}
+.body {
+  padding: 9px;
+}
+.nameRow {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+}
+.name {
+  min-width: 0;
+  font-size: inherit;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+.logo {
+  position: relative;
+  display: flex;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-radius: 7px;
+  background: #edf4fc;
+  color: #063b78;
+  font-size: 8px;
+  font-weight: 900;
+}
+.location,
+.category {
+  margin-top: 4px;
+  font-size: 9.5px;
+  color: #667085;
+  overflow-wrap: anywhere;
+}
+.category {
+  font-weight: 800;
+  color: #063b78;
+}
+
+@media (max-width: 800px) {
+  .images {
+    height: 145px;
+  }
+  .body {
+    padding: 7px;
+  }
+  .nameRow {
+    font-size: 10px;
+  }
+  .location,
+  .category {
+    font-size: 8px;
+  }
+  .logo {
+    width: 24px;
+    height: 24px;
+    flex-basis: 24px;
+    font-size: 7px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card,
+  .photo {
+    transition: none;
+  }
+  .card:has(.link):hover {
+    transform: none;
+  }
+}
