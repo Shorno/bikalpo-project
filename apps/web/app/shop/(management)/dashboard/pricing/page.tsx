@@ -9,6 +9,7 @@ import {
   Package,
   Pencil,
   Plus,
+  RotateCcw,
   Search,
   Upload,
   X,
@@ -126,6 +127,15 @@ export default function PricingPage() {
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [brandFilter, setBrandFilter] = useState("all");
+  const hasActiveFilters = Boolean(
+    search || categoryFilter !== "all" || brandFilter !== "all",
+  );
+
+  const clearFilters = () => {
+    setSearch("");
+    setCategoryFilter("all");
+    setBrandFilter("all");
+  };
 
   const items: any[] = data?.items ?? [];
 
@@ -316,14 +326,29 @@ export default function PricingPage() {
           🔍 Search & Filter
         </p>
         <div className="flex flex-col sm:flex-row gap-3">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
-            <Input
-              placeholder="Product / Brand..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="pl-9 h-9 text-sm"
-            />
+          <div className="flex min-w-0 flex-1 items-center gap-2">
+            <div className="relative min-w-0 flex-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+              <Input
+                aria-label="Search products or brands"
+                placeholder="Product / Brand..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="pl-9 h-9 text-sm"
+              />
+            </div>
+            {hasActiveFilters && (
+              <Button
+                className="shrink-0 max-md:min-h-11"
+                onClick={clearFilters}
+                size="sm"
+                type="button"
+                variant="ghost"
+              >
+                <RotateCcw aria-hidden="true" className="size-4" />
+                Clear filters
+              </Button>
+            )}
           </div>
           <Select value={categoryFilter} onValueChange={setCategoryFilter}>
             <SelectTrigger className="w-[160px] h-9 text-xs">

@@ -14,7 +14,6 @@ import type { VariantOptionRow } from "./variant-option-columns";
 interface VariantOptionTableProps {
   columns: ColumnDef<VariantOptionRow, unknown>[];
   data: VariantOptionRow[];
-  types?: { id: number; name: string }[];
   categories?: { id: number; name: string; typeId: number | null }[];
   emptyAction?: ReactNode;
   actions?: ReactNode;
@@ -23,7 +22,6 @@ interface VariantOptionTableProps {
 export default function VariantOptionTable({
   columns,
   data,
-  types = [],
   categories = [],
   emptyAction,
   actions,
@@ -31,10 +29,6 @@ export default function VariantOptionTable({
   const [search, setSearch] = useQueryState(
     "q",
     parseAsString.withDefault("").withOptions({ clearOnDefault: true }),
-  );
-  const [type, setType] = useQueryState(
-    "type",
-    parseAsString.withDefault("all").withOptions({ clearOnDefault: true }),
   );
   const [category, setCategory] = useQueryState(
     "category",
@@ -52,13 +46,6 @@ export default function VariantOptionTable({
     "status",
     parseAsString.withDefault("all").withOptions({ clearOnDefault: true }),
   );
-  const filteredCategories = useMemo(
-    () =>
-      type === "all"
-        ? categories
-        : categories.filter((item) => item.typeId === Number(type)),
-    [categories, type],
-  );
   const units = useMemo(
     () => [...new Set(data.map((item) => item.unit))].sort(),
     [data],
@@ -71,7 +58,6 @@ export default function VariantOptionTable({
         item.name.toLowerCase().includes(query) ||
         item.displayAlias?.toLowerCase().includes(query) ||
         item.skuCode?.toLowerCase().includes(query);
-      const matchesType = type === "all" || item.typeId === Number(type);
       const matchesCategory =
         category === "all" || item.categoryId === Number(category);
       const matchesUnit = unit === "all" || item.unit === unit;
@@ -82,35 +68,18 @@ export default function VariantOptionTable({
         (status === "active" ? item.isActive : !item.isActive);
       return (
         matchesSearch &&
-        matchesType &&
         matchesCategory &&
         matchesUnit &&
         matchesStructure &&
         matchesStatus
       );
     });
-  }, [category, data, search, status, structure, type, unit]);
+  }, [category, data, search, status, structure, unit]);
 
   return (
     <div className="space-y-4">
       <SetupToolbar
         filterDefinitions={[
-          {
-            key: "type",
-            label: "Type",
-            value: type,
-            onChange: (value) => {
-              void setType(value);
-              void setCategory("all");
-            },
-            options: withAllOption(
-              "types",
-              types.map((item) => ({
-                value: String(item.id),
-                label: item.name,
-              })),
-            ),
-          },
           {
             key: "category",
             label: "Category",
@@ -118,7 +87,7 @@ export default function VariantOptionTable({
             onChange: (value) => void setCategory(value),
             options: withAllOption(
               "categories",
-              filteredCategories.map((item) => ({
+              categories.map((item) => ({
                 value: String(item.id),
                 label: item.name,
               })),
@@ -157,7 +126,6 @@ export default function VariantOptionTable({
         ]}
         hasActiveFilters={Boolean(
           search ||
-            type !== "all" ||
             category !== "all" ||
             unit !== "all" ||
             structure !== "all" ||
@@ -165,7 +133,6 @@ export default function VariantOptionTable({
         )}
         onClear={() => {
           void setSearch("");
-          void setType("all");
           void setCategory("all");
           void setUnit("all");
           void setStructure("all");

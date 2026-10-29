@@ -330,22 +330,35 @@ export default function ShopProductsPage() {
       </section>
 
       <section aria-label="Product filters" className="space-y-3">
-        <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-[minmax(260px,1fr)_190px_190px_190px_auto]">
-          <div className="relative">
-            <Search
-              className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
-              aria-hidden="true"
-            />
-            <Input
-              aria-label="Search products"
-              placeholder="Search product, brand, variant, or SKU"
-              value={search}
-              onChange={(event) => {
-                setSearch(event.target.value);
-                setPage(1);
-              }}
-              className="pl-9"
-            />
+        <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-[minmax(260px,1fr)_190px_190px_190px]">
+          <div className="flex min-w-0 items-center gap-2">
+            <div className="relative min-w-0 flex-1">
+              <Search
+                className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+                aria-hidden="true"
+              />
+              <Input
+                aria-label="Search products"
+                placeholder="Search product, brand, variant, or SKU"
+                value={search}
+                onChange={(event) => {
+                  setSearch(event.target.value);
+                  setPage(1);
+                }}
+                className="pl-9"
+              />
+            </div>
+            {filtersActive && (
+              <Button
+                variant="ghost"
+                type="button"
+                onClick={clearFilters}
+                className="shrink-0 max-md:min-h-11"
+              >
+                <RotateCcw className="size-4" aria-hidden="true" />
+                Clear
+              </Button>
+            )}
           </div>
           <Select
             value={categoryId?.toString() ?? "all"}
@@ -406,16 +419,6 @@ export default function ShopProductsPage() {
               <SelectItem value="setup_required">Setup required</SelectItem>
             </SelectContent>
           </Select>
-          {filtersActive && (
-            <Button
-              variant="ghost"
-              onClick={clearFilters}
-              className="justify-start xl:justify-center"
-            >
-              <RotateCcw className="size-4" aria-hidden="true" />
-              Clear
-            </Button>
-          )}
         </div>
         {kpis && kpis.configurationIssueCount > 0 && (
           <p className="flex items-center gap-2 text-xs text-muted-foreground">

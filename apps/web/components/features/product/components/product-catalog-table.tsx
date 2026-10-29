@@ -361,22 +361,36 @@ export default function ProductCatalogTable({
         aria-label="Product filters"
         className="rounded-xl border bg-card p-4 shadow-sm max-md:p-3"
       >
-        <div className="relative mb-4 w-full md:w-2/3">
-          <Search
-            className="absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
-            aria-hidden="true"
-          />
-          <Input
-            id="product-catalog-search"
-            aria-label="Search products"
-            value={search}
-            onChange={(event) => {
-              setSearch(event.target.value);
-              table.setPageIndex(0);
-            }}
-            placeholder="Search products..."
-            className="h-11 pl-10"
-          />
+        <div className="mb-4 flex items-center gap-2">
+          <div className="relative min-w-0 flex-1 md:w-2/3 md:flex-none">
+            <Search
+              className="absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+              aria-hidden="true"
+            />
+            <Input
+              id="product-catalog-search"
+              aria-label="Search products"
+              value={search}
+              onChange={(event) => {
+                setSearch(event.target.value);
+                table.setPageIndex(0);
+              }}
+              placeholder="Search products..."
+              className="h-11 pl-10"
+            />
+          </div>
+          {hasFilters && (
+            <Button
+              className="shrink-0 max-md:min-h-11"
+              variant="ghost"
+              size="sm"
+              type="button"
+              onClick={clearFilters}
+            >
+              <X aria-hidden="true" className="size-4" />
+              Clear filters
+            </Button>
+          )}
         </div>
         <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
           <FilterSelect
@@ -407,14 +421,6 @@ export default function ProductCatalogTable({
             />
           </div>
         </div>
-        {hasFilters ? (
-          <div className="mt-4 flex justify-end border-t pt-3">
-            <Button variant="ghost" size="sm" onClick={clearFilters}>
-              <X className="size-4" />
-              Clear filters
-            </Button>
-          </div>
-        ) : null}
       </section>
 
       <div className="flex justify-center">

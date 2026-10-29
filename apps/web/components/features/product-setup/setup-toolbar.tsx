@@ -1,7 +1,6 @@
 "use client";
 
 import { RotateCcw, Search } from "lucide-react";
-import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -21,12 +20,23 @@ export type SetupFilterDefinition = {
   options: Array<{ value: string; label: string; disabled?: boolean }>;
 };
 
+type SetupFilterDefinitions =
+  | readonly []
+  | readonly [SetupFilterDefinition]
+  | readonly [SetupFilterDefinition, SetupFilterDefinition]
+  | readonly [SetupFilterDefinition, SetupFilterDefinition, SetupFilterDefinition]
+  | readonly [
+      SetupFilterDefinition,
+      SetupFilterDefinition,
+      SetupFilterDefinition,
+      SetupFilterDefinition,
+    ];
+
 type SetupToolbarProps = {
   searchValue: string;
   onSearchChange: (value: string) => void;
   searchPlaceholder?: string;
-  filters?: ReactNode;
-  filterDefinitions?: SetupFilterDefinition[];
+  filterDefinitions?: SetupFilterDefinitions;
   onClear?: () => void;
   hasActiveFilters?: boolean;
 };
@@ -35,12 +45,11 @@ export function SetupToolbar({
   searchValue,
   onSearchChange,
   searchPlaceholder = "Search by name or code",
-  filters,
   filterDefinitions = [],
   onClear,
   hasActiveFilters = false,
 }: SetupToolbarProps) {
-  const hasFilters = filterDefinitions.length > 0 || Boolean(filters);
+  const hasFilters = filterDefinitions.length > 0;
   const isMobile = useIsMobile();
 
   return (
@@ -48,22 +57,36 @@ export function SetupToolbar({
       aria-label="Setup filters"
       className="rounded-xl border bg-card p-4 shadow-sm max-md:p-3"
     >
-      <div className="relative mb-4 w-full md:w-2/3">
-        <Search
-          aria-hidden="true"
-          className="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
-        />
-        <Input
-          aria-label={searchPlaceholder}
-          className="h-11 pl-10"
-          onChange={(event) => onSearchChange(event.target.value)}
-          placeholder={searchPlaceholder}
-          value={searchValue}
-        />
+      <div className="mb-4 flex items-center gap-2">
+        <div className="relative min-w-0 flex-1 md:w-2/3 md:flex-none">
+          <Search
+            aria-hidden="true"
+            className="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+          />
+          <Input
+            aria-label={searchPlaceholder}
+            className="h-11 pl-10"
+            onChange={(event) => onSearchChange(event.target.value)}
+            placeholder={searchPlaceholder}
+            value={searchValue}
+          />
+        </div>
+        {onClear && hasActiveFilters && (
+          <Button
+            className="shrink-0 max-md:min-h-11"
+            onClick={onClear}
+            size="sm"
+            type="button"
+            variant="ghost"
+          >
+            <RotateCcw aria-hidden="true" className="size-4" />
+            Clear filters
+          </Button>
+        )}
       </div>
       {hasFilters && (
         <div
-          className={`grid gap-3 sm:grid-cols-2 lg:grid-cols-4 max-md:grid-cols-2 ${filterDefinitions.length > 1 && filterDefinitions.length % 2 === 1 && !filters ? "max-md:[&>div:last-child]:col-span-2" : ""}`}
+          className={`grid gap-3 sm:grid-cols-2 lg:grid-cols-4 max-md:grid-cols-2 ${filterDefinitions.length > 1 && filterDefinitions.length % 2 === 1 ? "max-md:[&>div:last-child]:col-span-2" : ""}`}
         >
           {filterDefinitions.map((filter) => (
             <div className="space-y-1.5 max-md:min-w-0" key={filter.key}>
@@ -96,15 +119,6 @@ export function SetupToolbar({
               </Select>
             </div>
           ))}
-          {filters}
-        </div>
-      )}
-      {onClear && hasActiveFilters && (
-        <div className="mt-4 flex justify-end border-t pt-3">
-          <Button onClick={onClear} size="sm" type="button" variant="ghost">
-            <RotateCcw aria-hidden="true" className="size-4" />
-            Clear filters
-          </Button>
         </div>
       )}
     </section>

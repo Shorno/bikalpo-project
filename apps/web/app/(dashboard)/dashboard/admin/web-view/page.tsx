@@ -498,14 +498,28 @@ export default function AdminWebViewPage() {
 
       <section className="space-y-3 rounded-xl border bg-card p-4 shadow-sm">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder="Search product, brand, SKU, variant..."
-              className="pl-9"
-            />
+          <div className="flex min-w-0 flex-1 items-center gap-2">
+            <div className="relative min-w-0 flex-1">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                placeholder="Search product, brand, SKU, variant..."
+                className="pl-9"
+              />
+            </div>
+            {hasActiveFilters ? (
+              <Button
+                className="shrink-0 max-md:min-h-11"
+                variant="ghost"
+                size="sm"
+                type="button"
+                onClick={clearFilters}
+              >
+                <X aria-hidden="true" className="h-4 w-4" />
+                Clear Filters
+              </Button>
+            ) : null}
           </div>
 
           <Tabs
@@ -562,14 +576,6 @@ export default function AdminWebViewPage() {
           />
         </div>
 
-        {hasActiveFilters ? (
-          <div className="flex items-center justify-end border-t pt-3">
-            <Button variant="ghost" size="sm" onClick={clearFilters}>
-              <X className="h-4 w-4" />
-              Clear Filters
-            </Button>
-          </div>
-        ) : null}
       </section>
 
       {productsQuery.isLoading ? (

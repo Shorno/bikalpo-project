@@ -8,6 +8,7 @@ import {
   Layers3,
   PackageSearch,
   Plus,
+  RotateCcw,
   Search,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
@@ -136,6 +137,21 @@ export default function ProductCatalogPage() {
   ]);
 
   const resetPage = () => setPage(1);
+  const hasActiveFilters = Boolean(
+    search ||
+      selectedTypeId ||
+      selectedCategoryId ||
+      selectedSubCategoryId ||
+      selectedCoreProductId,
+  );
+  const clearFilters = () => {
+    setSearch("");
+    setSelectedTypeId(undefined);
+    setSelectedCategoryId(undefined);
+    setSelectedSubCategoryId(undefined);
+    setSelectedCoreProductId(undefined);
+    resetPage();
+  };
 
   return (
     <div className="space-y-5">
@@ -164,21 +180,35 @@ export default function ProductCatalogPage() {
         aria-label="Product filters"
         className="rounded-xl border bg-card p-4 shadow-sm"
       >
-        <div className="relative mb-4 w-full sm:w-2/3">
-          <Search
-            aria-hidden="true"
-            className="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
-          />
-          <Input
-            aria-label="Search products"
-            className="h-11 pl-10"
-            onChange={(event) => {
-              setSearch(event.target.value);
-              resetPage();
-            }}
-            placeholder="Search products..."
-            value={search}
-          />
+        <div className="mb-4 flex items-center gap-2">
+          <div className="relative min-w-0 flex-1 sm:w-2/3 sm:flex-none">
+            <Search
+              aria-hidden="true"
+              className="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+            />
+            <Input
+              aria-label="Search products"
+              className="h-11 pl-10"
+              onChange={(event) => {
+                setSearch(event.target.value);
+                resetPage();
+              }}
+              placeholder="Search products..."
+              value={search}
+            />
+          </div>
+          {hasActiveFilters && (
+            <Button
+              className="shrink-0 max-md:min-h-11"
+              onClick={clearFilters}
+              size="sm"
+              type="button"
+              variant="ghost"
+            >
+              <RotateCcw aria-hidden="true" className="size-4" />
+              Clear filters
+            </Button>
+          )}
         </div>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <div className="space-y-1">

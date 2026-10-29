@@ -25,25 +25,12 @@ export default function VariantOptionsPage() {
     orpc.adminVariantOption.getAll.queryOptions({ input: {} }),
   );
 
-  // Fetch types for filter dropdown
-  const typesQuery = useQuery(
-    orpc.adminProductType.getAll.queryOptions({ input: {} }),
-  );
-
-  // Fetch categories for cascade filter
+  // Fetch categories for the category filter.
   const categoriesQuery = useQuery(orpc.category.getAll.queryOptions());
   const variantOptions = variantsQuery.data;
-  const typesData = typesQuery.data;
   const categoriesData = categoriesQuery.data;
 
   const columns = useVariantOptionColumns();
-
-  const types = (typesData?.types ?? []).map((t) => ({
-    id: t.id,
-    name: t.name,
-    slug: t.slug,
-    inventoryBehaviour: t.inventoryBehaviour,
-  }));
 
   const categories = (categoriesData ?? []).map((c) => ({
     id: c.id,
@@ -51,11 +38,7 @@ export default function VariantOptionsPage() {
     typeId: c.typeId,
   }));
 
-  if (
-    variantsQuery.isLoading ||
-    typesQuery.isLoading ||
-    categoriesQuery.isLoading
-  ) {
+  if (variantsQuery.isLoading || categoriesQuery.isLoading) {
     return (
       <SetupPageShell className="space-y-6" width="expanded">
         <div className="flex items-center justify-between">
@@ -67,13 +50,12 @@ export default function VariantOptionsPage() {
     );
   }
 
-  if (variantsQuery.isError || typesQuery.isError || categoriesQuery.isError) {
+  if (variantsQuery.isError || categoriesQuery.isError) {
     return (
       <SetupPageShell width="expanded">
         <SetupErrorState
           onRetry={() => {
             void variantsQuery.refetch();
-            void typesQuery.refetch();
             void categoriesQuery.refetch();
           }}
         />
@@ -106,7 +88,6 @@ export default function VariantOptionsPage() {
         emptyAction={
           <Button onClick={() => setShowCreate(true)}>Create Variant</Button>
         }
-        types={types}
         categories={categories}
       />
     </SetupPageShell>
