@@ -7,5 +7,6 @@ export * from "./setup-page-header";
 export * from "./setup-page-shell";
 export * from "./setup-row-actions";
 export * from "./setup-status-badge";
+export * from "./setup-table-footer";
 export * from "./setup-toggle-action";
 export * from "./setup-toolbar";

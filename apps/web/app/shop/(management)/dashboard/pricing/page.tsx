@@ -17,8 +17,9 @@ import {
 import Image from "next/image";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
+import { SetupTableFooter } from "@/components/features/product-setup/setup-table-footer";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -120,8 +121,14 @@ function getStockStatus(qty: number) {
 export default function PricingPage() {
   const searchParams = useSearchParams();
   const targetInventoryId = Number(searchParams.get("inventoryId"));
-  const { data, isLoading, isError } = useMyRetailProducts({ limit: 200 });
+  const [catalogLimit, setCatalogLimit] = useState(200);
+  const { data, isLoading, isError } = useMyRetailProducts({
+    limit: catalogLimit,
+  });
   const updatePrice = useUpdateRetailPrice();
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const openedInventoryId = useRef<number | null>(null);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editValue, setEditValue] = useState("");
   const [search, setSearch] = useState("");
@@ -135,22 +142,30 @@ export default function PricingPage() {
     setSearch("");
     setCategoryFilter("all");
     setBrandFilter("all");
+    setPage(1);
   };
 
   const items: any[] = data?.items ?? [];
 
   useEffect(() => {
-    if (!Number.isFinite(targetInventoryId) || editingId != null) return;
-    const target = items.find((item: any) => item.id === targetInventoryId);
-    if (target) {
-      setEditingId(target.id);
-      setEditValue(target.retailPrice?.toString() ?? "");
+    // Local filters and page counts need the complete pricing catalog.
+    const total = data?.pagination.totalCount ?? 0;
+    if (total > catalogLimit) {
+      setCatalogLimit(total);
     }
-  }, [editingId, items, targetInventoryId]);
+  }, [catalogLimit, data?.pagination.totalCount]);
 
   // ─── Derive categories, brands, grouped data ──────────────────
 
-  const { categories, brands, grouped, lastUpdated } = useMemo(() => {
+  const {
+    categories,
+    brands,
+    grouped,
+    lastUpdated,
+    totalRows,
+    currentPage,
+    targetIndex,
+  } = useMemo(() => {
     const catSet = new Map<string, string>();
     const brandSet = new Map<string, string>();
     let latestDate: Date | null = null;
@@ -168,7 +183,7 @@ export default function PricingPage() {
     }
 
     // Apply filters
-    let filtered = [...items];
+    let filtered = items.filter((item) => Boolean(item.variant?.product));
     if (search.trim()) {
       const s = search.toLowerCase();
       filtered = filtered.filter((item: any) => {
@@ -200,6 +215,18 @@ export default function PricingPage() {
     // Keep the same taxonomy order before and after a price mutation refetch.
     // Price and updatedAt are intentionally not sorting fields.
     filtered.sort(comparePricingRows);
+    const totalRows = filtered.length;
+    const currentPage = Math.max(
+      1,
+      Math.min(page, Math.ceil(totalRows / pageSize)),
+    );
+    const targetIndex = filtered.findIndex(
+      (item) => item.id === targetInventoryId,
+    );
+    const visibleRows = filtered.slice(
+      (currentPage - 1) * pageSize,
+      currentPage * pageSize,
+    );
 
     // Group: category → product → variants
     const grouped = new Map<
@@ -217,7 +244,7 @@ export default function PricingPage() {
       }
     >();
 
-    for (const item of filtered) {
+    for (const item of visibleRows) {
       const prod = item.variant?.product;
       if (!prod) continue;
       const cat = prod.category;
@@ -252,9 +279,35 @@ export default function PricingPage() {
         .map(([id, name]) => ({ id, name }))
         .sort((a, b) => a.name.localeCompare(b.name)),
       grouped,
+      totalRows,
+      currentPage,
+      targetIndex,
       lastUpdated: latestDate ? formatRelativeDate(latestDate) : "—",
     };
-  }, [items, search, categoryFilter, brandFilter]);
+  }, [
+    items,
+    search,
+    categoryFilter,
+    brandFilter,
+    page,
+    pageSize,
+    targetInventoryId,
+  ]);
+
+  useEffect(() => {
+    if (
+      !Number.isFinite(targetInventoryId) ||
+      targetIndex < 0 ||
+      openedInventoryId.current === targetInventoryId
+    )
+      return;
+    const target = items.find((item) => item.id === targetInventoryId);
+    if (!target) return;
+    openedInventoryId.current = targetInventoryId;
+    setPage(Math.floor(targetIndex / pageSize) + 1);
+    setEditingId(target.id);
+    setEditValue(target.retailPrice?.toString() ?? "");
+  }, [items, pageSize, targetIndex, targetInventoryId]);
 
   // ─── Inline edit handlers ───────────────────────────────────────
 
@@ -333,7 +386,10 @@ export default function PricingPage() {
                 aria-label="Search products or brands"
                 placeholder="Product / Brand..."
                 value={search}
-                onChange={(e) => setSearch(e.target.value)}
+                onChange={(e) => {
+                  setSearch(e.target.value);
+                  setPage(1);
+                }}
                 className="pl-9 h-9 text-sm"
               />
             </div>
@@ -350,7 +406,13 @@ export default function PricingPage() {
               </Button>
             )}
           </div>
-          <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+          <Select
+            value={categoryFilter}
+            onValueChange={(value) => {
+              setCategoryFilter(value);
+              setPage(1);
+            }}
+          >
             <SelectTrigger className="w-[160px] h-9 text-xs">
               <SelectValue placeholder="Category" />
             </SelectTrigger>
@@ -363,7 +425,13 @@ export default function PricingPage() {
               ))}
             </SelectContent>
           </Select>
-          <Select value={brandFilter} onValueChange={setBrandFilter}>
+          <Select
+            value={brandFilter}
+            onValueChange={(value) => {
+              setBrandFilter(value);
+              setPage(1);
+            }}
+          >
             <SelectTrigger className="w-[140px] h-9 text-xs">
               <SelectValue placeholder="Brand" />
             </SelectTrigger>
@@ -617,6 +685,21 @@ export default function PricingPage() {
             </div>
           ))}
         </div>
+      )}
+
+      {!isLoading && !isError && (
+        <SetupTableFooter
+          ariaLabel="Price pagination"
+          page={currentPage}
+          pageSize={pageSize}
+          total={totalRows}
+          disabled={updatePrice.isPending}
+          onPageChange={setPage}
+          onPageSizeChange={(nextPageSize) => {
+            setPageSize(nextPageSize);
+            setPage(1);
+          }}
+        />
       )}
 
       {/* ════════════════════════════════════════════════════════

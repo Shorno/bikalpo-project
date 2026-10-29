@@ -2,7 +2,6 @@
 
 import {
   AlertTriangle,
-  ArrowLeft,
   ArrowRight,
   Box,
   Boxes,
@@ -21,6 +20,7 @@ import {
 import Image from "next/image";
 import Link from "next/link";
 import { type ElementType, Fragment, useState } from "react";
+import { SetupTableFooter } from "@/components/features/product-setup/setup-table-footer";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -220,6 +220,7 @@ export default function ShopProductsPage() {
   const [brandId, setBrandId] = useState<number>();
   const [stockStatus, setStockStatus] = useState<"all" | ProductStatus>("all");
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
   const [expandedProductId, setExpandedProductId] = useState<number | null>(
     null,
   );
@@ -231,7 +232,7 @@ export default function ShopProductsPage() {
     brandId,
     stockStatus,
     page,
-    limit: 20,
+    limit: pageSize,
   });
 
   const items = data?.items ?? [];
@@ -656,37 +657,18 @@ export default function ShopProductsPage() {
         </>
       )}
 
-      {pagination && pagination.totalPages > 1 && (
-        <nav
-          aria-label="Product pagination"
-          className="flex flex-col gap-3 border-t pt-4 sm:flex-row sm:items-center sm:justify-between"
-        >
-          <p className="text-sm text-muted-foreground">
-            Showing {Math.min((page - 1) * 20 + 1, pagination.totalCount)} to{" "}
-            {Math.min(page * 20, pagination.totalCount)} of{" "}
-            {pagination.totalCount}
-          </p>
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setPage((value) => Math.max(1, value - 1))}
-              disabled={page <= 1}
-            >
-              <ArrowLeft className="size-4" aria-hidden="true" />
-              Previous
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setPage((value) => value + 1)}
-              disabled={page >= pagination.totalPages}
-            >
-              Next
-              <ArrowRight className="size-4" aria-hidden="true" />
-            </Button>
-          </div>
-        </nav>
+      {!isLoading && !isError && pagination && (
+        <SetupTableFooter
+          ariaLabel="Product pagination"
+          page={pagination.page}
+          pageSize={pageSize}
+          total={pagination.totalCount}
+          onPageChange={setPage}
+          onPageSizeChange={(nextPageSize) => {
+            setPageSize(nextPageSize);
+            setPage(1);
+          }}
+        />
       )}
     </main>
   );

@@ -14,6 +14,7 @@ import {
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { RequestProductModal } from "@/components/catalog/request-product-modal";
+import { SetupTableFooter } from "@/components/features/product-setup/setup-table-footer";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -99,9 +100,6 @@ export default function ProductCatalogPage() {
   const allCoreProducts = filterData?.coreProducts ?? [];
   const totalCount = pagination?.totalCount ?? 0;
   const currentPage = pagination?.page ?? page;
-  const totalPages = Math.max(1, pagination?.totalPages ?? 1);
-  const firstRow = totalCount === 0 ? 0 : (currentPage - 1) * rowsPerPage + 1;
-  const lastRow = Math.min(currentPage * rowsPerPage, totalCount);
 
   const categories = selectedTypeId
     ? allCategories.filter((category) => category.typeId === selectedTypeId)
@@ -490,58 +488,21 @@ export default function ProductCatalogPage() {
               </TableBody>
             </Table>
           </div>
-
-          <nav
-            aria-label="Catalog pagination"
-            className="flex flex-col gap-3 text-sm sm:flex-row sm:items-center sm:justify-between"
-          >
-            <p className="font-mono text-xs tabular-nums text-muted-foreground">
-              {firstRow}–{lastRow} of {totalCount}
-            </p>
-            <div className="flex items-center justify-between gap-2 sm:justify-end">
-              <Select
-                onValueChange={(value) => {
-                  setRowsPerPage(Number(value));
-                  setPage(1);
-                }}
-                value={String(rowsPerPage)}
-              >
-                <SelectTrigger
-                  aria-label="Rows per page"
-                  className="h-11 w-28 shadow-none sm:h-9"
-                >
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent align="end">
-                  {[10, 20, 50].map((option) => (
-                    <SelectItem key={option} value={String(option)}>
-                      {option} rows
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Button
-                className="h-11 sm:h-9"
-                disabled={currentPage <= 1}
-                onClick={() => setPage(currentPage - 1)}
-                variant="outline"
-              >
-                Previous
-              </Button>
-              <span className="min-w-16 text-center font-mono text-xs tabular-nums text-muted-foreground">
-                {currentPage} / {totalPages}
-              </span>
-              <Button
-                className="h-11 sm:h-9"
-                disabled={currentPage >= totalPages}
-                onClick={() => setPage(currentPage + 1)}
-                variant="outline"
-              >
-                Next
-              </Button>
-            </div>
-          </nav>
         </div>
+      )}
+
+      {!loadingCatalog && !catalogError && (
+        <SetupTableFooter
+          ariaLabel="Catalog pagination"
+          page={currentPage}
+          pageSize={rowsPerPage}
+          total={totalCount}
+          onPageChange={setPage}
+          onPageSizeChange={(pageSize) => {
+            setRowsPerPage(pageSize);
+            setPage(1);
+          }}
+        />
       )}
 
       <div className="rounded-lg border bg-muted/50 p-5">
