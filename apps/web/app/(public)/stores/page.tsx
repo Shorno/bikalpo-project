@@ -9,14 +9,12 @@ import {
   Locate,
   MapPin,
   Search,
-  ShoppingBag,
   Store,
   X,
 } from "lucide-react";
-import Image from "next/image";
-import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { SellerCard } from "@/components/features/landing/seller-card";
 import { CustomerPreviewBanner } from "@/components/storefront/customer-preview-banner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -300,7 +298,7 @@ export default function StoresPage() {
       {/* ── Content ── */}
       <div className="site-container px-4 py-8">
         {isLoading ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+          <div className="grid grid-cols-2 gap-[9px] min-[801px]:grid-cols-5 min-[801px]:gap-3">
             {Array.from({ length: 8 }).map((_, i) => (
               <ShopCardSkeleton key={i} />
             ))}
@@ -365,79 +363,33 @@ export default function StoresPage() {
               </p>
             )}
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
-              {shops.map((shop: any) => (
-                <Link
+            <div className="grid grid-cols-2 gap-[9px] min-[801px]:grid-cols-5 min-[801px]:gap-3">
+              {shops.map((shop) => (
+                <SellerCard
                   key={shop.id}
-                  href={withCustomerStorefrontPreview(
-                    `/stores/${shop.shopSlug}`,
-                    previewMode,
-                  )}
-                  className="group"
-                >
-                  <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden transition-all duration-200 hover:shadow-md hover:border-emerald-200/60">
-                    {/* Card Header */}
-                    <div className="relative bg-gradient-to-br from-emerald-50 via-teal-50 to-cyan-50 p-6">
-                      <div className="flex items-center gap-4">
-                        {shop.image ? (
-                          <div className="relative">
-                            <Image
-                              src={shop.image}
-                              alt={shop.shopName || shop.name}
-                              width={56}
-                              height={56}
-                              className="w-14 h-14 rounded-xl object-cover border-2 border-white shadow-sm"
-                            />
-                            <div className="absolute -bottom-1 -right-1 w-5 h-5 bg-emerald-500 rounded-full border-2 border-white flex items-center justify-center">
-                              <svg
-                                className="w-3 h-3 text-white"
-                                fill="none"
-                                viewBox="0 0 24 24"
-                                stroke="currentColor"
-                                strokeWidth={3}
-                              >
-                                <path
-                                  strokeLinecap="round"
-                                  strokeLinejoin="round"
-                                  d="M5 13l4 4L19 7"
-                                />
-                              </svg>
-                            </div>
-                          </div>
-                        ) : (
-                          <div className="w-14 h-14 bg-white rounded-xl flex items-center justify-center shadow-sm border border-emerald-100">
-                            <Store className="w-6 h-6 text-emerald-500" />
-                          </div>
-                        )}
-                        <div className="min-w-0">
-                          <h3 className="font-bold text-gray-900 truncate group-hover:text-emerald-700 transition-colors">
-                            {shop.shopName || shop.name}
-                          </h3>
-                          <Badge
-                            variant="secondary"
-                            className="text-[11px] mt-1.5 bg-white/70 text-gray-600 font-normal"
-                          >
-                            <ShoppingBag className="w-3 h-3 mr-1" />
-                            {shop.businessType || "Retail"}
-                          </Badge>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Card Footer */}
-                    <div className="px-5 py-3.5 flex items-center justify-between">
-                      {shop.shopAddress ? (
-                        <div className="flex items-center gap-1.5 text-[13px] text-gray-400 min-w-0">
-                          <MapPin className="w-3.5 h-3.5 shrink-0" />
-                          <span className="truncate">{shop.shopAddress}</span>
-                        </div>
-                      ) : (
-                        <span />
-                      )}
-                      <ChevronRight className="w-4 h-4 text-gray-300 group-hover:text-emerald-500 transition-colors shrink-0 ml-2" />
-                    </div>
-                  </div>
-                </Link>
+                  seller={{
+                    id: shop.id,
+                    name: shop.shopName || shop.name,
+                    slug: shop.shopSlug,
+                    role: "shop_owner",
+                    address: shop.shopAddress || "",
+                    area: shop.cardProfile?.area,
+                    district: shop.cardProfile?.district || "",
+                    division: shop.cardProfile?.division || "",
+                    nature: shop.cardProfile?.nature || shop.businessType,
+                    category: shop.cardProfile?.category,
+                    logo: shop.shopLogo,
+                    images: shop.cardProfile?.images,
+                  }}
+                  href={
+                    shop.shopSlug
+                      ? withCustomerStorefrontPreview(
+                          `/stores/${encodeURIComponent(shop.shopSlug)}`,
+                          previewMode,
+                        )
+                      : undefined
+                  }
+                />
               ))}
             </div>
 
@@ -511,16 +463,15 @@ export default function StoresPage() {
 
 function ShopCardSkeleton() {
   return (
-    <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
-      <div className="bg-gray-50 p-6 flex items-center gap-4">
-        <Skeleton className="w-14 h-14 rounded-xl" />
-        <div className="space-y-2">
-          <Skeleton className="h-5 w-32" />
-          <Skeleton className="h-4 w-16" />
+    <div className="min-w-0 overflow-hidden rounded-[10px] border border-[#dce6f0] bg-white">
+      <Skeleton className="h-[145px] rounded-none min-[801px]:h-[185px]" />
+      <div className="space-y-1 p-[7px] min-[801px]:p-[9px]">
+        <div className="flex items-center gap-[7px]">
+          <Skeleton className="size-6 shrink-0 rounded-[7px] min-[801px]:size-7" />
+          <Skeleton className="h-3 w-2/3" />
         </div>
-      </div>
-      <div className="px-5 py-3.5">
-        <Skeleton className="h-4 w-40" />
+        <Skeleton className="h-2.5 w-3/4" />
+        <Skeleton className="h-2.5 w-1/3" />
       </div>
     </div>
   );

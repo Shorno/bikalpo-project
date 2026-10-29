@@ -157,6 +157,10 @@ import {
   filterAndSortRetailerStorefrontProducts,
   retailerStorefrontSortValues,
 } from "./helpers/retailer-storefront-catalog";
+import {
+  type ShopCardProfile,
+  shopCardProfilesQuery,
+} from "./helpers/shop-card-profile";
 
 // ────────────────────────────────────────────────────────────────
 // Shared Zod Schemas
@@ -3985,6 +3989,7 @@ const queries = {
             shopAddress: user.shopAddress,
             businessType: user.businessType,
             image: user.image,
+            shopLogo: user.shopLogo,
           })
           .from(user)
           .where(where)
@@ -3995,9 +4000,22 @@ const queries = {
       ]);
 
       const totalCount = countResult[0]?.count || 0;
+      const profiles = shops.length
+        ? (
+            await db.execute<ShopCardProfile>(
+              shopCardProfilesQuery(shops.map((shop) => shop.id)),
+            )
+          ).rows
+        : [];
+      const profilesByShop = new Map(
+        profiles.map((profile) => [profile.userId, profile]),
+      );
 
       return {
-        shops,
+        shops: shops.map((shop) => ({
+          ...shop,
+          cardProfile: profilesByShop.get(shop.id) ?? null,
+        })),
         pagination: {
           page,
           limit,

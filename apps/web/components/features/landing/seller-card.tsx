@@ -22,7 +22,13 @@ export interface DirectorySeller {
   images?: string[];
 }
 
-export function SellerCard({ seller }: { seller: DirectorySeller }) {
+export function SellerCard({
+  seller,
+  href: hrefOverride,
+}: {
+  seller: DirectorySeller;
+  href?: string;
+}) {
   const [activeImage, setActiveImage] = useState(0);
   const [paused, setPaused] = useState(false);
   const [failedImages, setFailedImages] = useState<string[]>([]);
@@ -47,9 +53,11 @@ export function SellerCard({ seller }: { seller: DirectorySeller }) {
     seller.category ||
     seller.nature?.replaceAll("_", " ") ||
     (seller.role === "warehouse" ? "Warehouse" : "Seller");
-  const href = seller.slug
-    ? `${seller.role === "warehouse" ? "/w" : "/stores"}/${encodeURIComponent(seller.slug)}`
-    : null;
+  const href =
+    hrefOverride ??
+    (seller.slug
+      ? `${seller.role === "warehouse" ? "/w" : "/stores"}/${encodeURIComponent(seller.slug)}`
+      : null);
 
   useEffect(() => {
     if (images.length < 2 || paused) return;
