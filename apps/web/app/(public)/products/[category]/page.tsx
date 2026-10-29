@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
+import { CatalogProductsGridSkeleton } from "@/components/features/products/catalog-product-grid";
 import { ProductsFilter } from "@/components/features/products/products-filter";
 import { ProductsGrid } from "@/components/features/products/products-grid";
 import { CustomerPreviewBanner } from "@/components/storefront/customer-preview-banner";
@@ -112,7 +113,7 @@ export default async function CategoryProductsPage({
 
           {/* Products Grid */}
           <main className="flex-1">
-            <Suspense fallback={<ProductsGridSkeleton />}>
+            <Suspense fallback={<CatalogProductsGridSkeleton />}>
               <ProductsGrid
                 searchParams={{
                   ...catalogFilters,
@@ -134,28 +135,6 @@ function FilterSkeleton() {
       <Skeleton className="h-8 w-full" />
       <Skeleton className="h-32 w-full" />
       <Skeleton className="h-32 w-full" />
-    </div>
-  );
-}
-
-function ProductsGridSkeleton() {
-  return (
-    <div className="space-y-6">
-      <Skeleton className="h-10 w-full" />
-      <div className="grid grid-cols-1 gap-4 min-[560px]:grid-cols-2 xl:grid-cols-3">
-        {Array.from({ length: 9 }).map((_, i) => (
-          <div key={i} className="overflow-hidden rounded-lg border bg-white">
-            <Skeleton className="aspect-[4/3] w-full rounded-none" />
-            <div className="space-y-3 p-4">
-              <Skeleton className="h-3 w-24" />
-              <Skeleton className="h-10 w-full" />
-              <Skeleton className="h-7 w-28" />
-              <Skeleton className="h-4 w-32" />
-              <Skeleton className="h-9 w-full" />
-            </div>
-          </div>
-        ))}
-      </div>
     </div>
   );
 }

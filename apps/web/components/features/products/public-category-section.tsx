@@ -1,6 +1,7 @@
 import type { ProductWithRelations } from "@bikalpo-project/db/schema";
 import { ArrowRight } from "lucide-react";
 import Link from "next/link";
+import { CatalogProductGrid } from "@/components/features/products/catalog-product-grid";
 import { ConsumerProductCard } from "@/components/features/products/consumer-product-card";
 import { Button } from "@/components/ui/button";
 
@@ -35,11 +36,11 @@ export function PublicCategorySection({
       </div>
 
       {/* Products Grid */}
-      <div className="grid grid-cols-1 gap-4 min-[560px]:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+      <CatalogProductGrid>
         {category.products.map((product) => (
           <ConsumerProductCard key={product.id} product={product as any} />
         ))}
-      </div>
+      </CatalogProductGrid>
     </section>
   );
 }

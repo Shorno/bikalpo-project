@@ -6,6 +6,10 @@
 
 import { ChevronRight } from "lucide-react";
 import Link from "next/link";
+import {
+  CatalogProductCardSkeleton,
+  CatalogProductGrid,
+} from "@/components/features/products/catalog-product-grid";
 import { ConsumerProductCard } from "@/components/features/products/consumer-product-card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useCategoriesWithProducts } from "@/hooks/use-customer-api";
@@ -62,11 +66,11 @@ export function OrpcCategoryListing({
           </div>
 
           {cat.products && cat.products.length > 0 ? (
-            <div className="grid grid-cols-1 gap-4 min-[560px]:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            <CatalogProductGrid>
               {cat.products.map((product) => (
                 <ConsumerProductCard key={product.id} product={product} />
               ))}
-            </div>
+            </CatalogProductGrid>
           ) : (
             <div className="text-center py-8 text-gray-400 text-sm border rounded-lg bg-gray-50">
               No products in this category yet.
@@ -87,18 +91,11 @@ function CategoryListingSkeleton() {
             <Skeleton className="h-6 w-40" />
             <Skeleton className="h-4 w-16" />
           </div>
-          <div className="grid grid-cols-1 gap-4 min-[560px]:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          <CatalogProductGrid>
             {[1, 2, 3, 4, 5].map((j) => (
-              <div key={j} className="border rounded-lg overflow-hidden">
-                <Skeleton className="aspect-square w-full" />
-                <div className="p-2.5 space-y-1.5">
-                  <Skeleton className="h-4 w-3/4" />
-                  <Skeleton className="h-3 w-1/2" />
-                  <Skeleton className="h-4 w-16" />
-                </div>
-              </div>
+              <CatalogProductCardSkeleton key={j} />
             ))}
-          </div>
+          </CatalogProductGrid>
         </section>
       ))}
     </div>

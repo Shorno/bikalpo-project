@@ -1,4 +1,5 @@
 import { getReferenceProductsWithQuery } from "@/lib/public-data";
+import { CatalogProductGrid } from "./catalog-product-grid";
 import { ConsumerProductCard } from "./consumer-product-card";
 
 interface RelatedProductsProps {
@@ -35,7 +36,7 @@ export async function RelatedProducts({
         <h2 className="text-2xl font-bold text-gray-900 mb-6">
           Related Products
         </h2>
-        <div className="grid grid-cols-1 gap-4 min-[560px]:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+        <CatalogProductGrid withSidebar>
           {relatedProducts.map((prod) => (
             <ConsumerProductCard
               key={prod.id}
@@ -43,7 +44,7 @@ export async function RelatedProducts({
               previewMode={previewMode}
             />
           ))}
-        </div>
+        </CatalogProductGrid>
       </div>
     </section>
   );

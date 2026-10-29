@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
+import { CatalogProductsGridSkeleton } from "@/components/features/products/catalog-product-grid";
 import { ProductSearch } from "@/components/features/products/product-search";
 import { PublicProductsFilter } from "@/components/features/products/public-products-filter";
 import { PublicProductsGrid } from "@/components/features/products/public-products-grid";
@@ -69,7 +70,7 @@ export default async function ProductsPage({
           </aside>
 
           <main className="min-w-0 flex-1">
-            <Suspense fallback={<ProductsGridSkeleton />}>
+            <Suspense fallback={<CatalogProductsGridSkeleton />}>
               <PublicProductsGrid
                 searchParams={catalogParams}
                 previewMode={previewMode}
@@ -95,31 +96,6 @@ function FilterSkeleton() {
       <div className="space-y-2">
         <Skeleton className="h-4 w-full" />
         <Skeleton className="h-4 w-2/3" />
-      </div>
-    </div>
-  );
-}
-
-function ProductsGridSkeleton() {
-  return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <Skeleton className="h-5 w-32" />
-        <Skeleton className="h-9 w-36" />
-      </div>
-      <div className="grid grid-cols-1 gap-4 min-[560px]:grid-cols-2 xl:grid-cols-3">
-        {Array.from({ length: 9 }).map((_, i) => (
-          <div key={i} className="overflow-hidden rounded-lg border bg-white">
-            <Skeleton className="aspect-[4/3] w-full" />
-            <div className="space-y-3 p-4">
-              <Skeleton className="h-3 w-24" />
-              <Skeleton className="h-10 w-full" />
-              <Skeleton className="h-7 w-28" />
-              <Skeleton className="h-4 w-32" />
-              <Skeleton className="h-9 w-full" />
-            </div>
-          </div>
-        ))}
       </div>
     </div>
   );
