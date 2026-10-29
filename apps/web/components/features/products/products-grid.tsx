@@ -1,3 +1,4 @@
+import { CatalogProductGrid } from "@/components/features/products/catalog-product-grid";
 import { ConsumerProductCard } from "@/components/features/products/consumer-product-card";
 import { ProductPagination } from "@/components/features/products/product-pagination";
 import { ProductsSort } from "@/components/features/products/products-sort";
@@ -62,15 +63,15 @@ export async function ProductsGrid({
           <p className="text-neutral-400 text-sm">Try adjusting your filters</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 gap-4 min-[560px]:grid-cols-2 xl:grid-cols-3">
+        <CatalogProductGrid withSidebar>
           {products.map((product) => (
             <ConsumerProductCard
               key={product.id}
-              product={product as any}
+              product={product}
               previewMode={previewMode}
             />
           ))}
-        </div>
+        </CatalogProductGrid>
       )}
 
       {/* Pagination */}

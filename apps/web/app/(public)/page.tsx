@@ -9,6 +9,7 @@ import {
 import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
+import { CatalogProductGrid } from "@/components/features/products/catalog-product-grid";
 import { ConsumerProductCard } from "@/components/features/products/consumer-product-card";
 import { Button } from "@/components/ui/button";
 import {
@@ -66,15 +67,11 @@ export default async function HomePage() {
             />
 
             {products.length > 0 ? (
-              <div className="grid grid-cols-2 gap-[9px] min-[801px]:grid-cols-5 min-[801px]:gap-3.5">
+              <CatalogProductGrid>
                 {products.map((product) => (
-                  <ConsumerProductCard
-                    key={product.id}
-                    product={product}
-                    appearance="catalog"
-                  />
+                  <ConsumerProductCard key={product.id} product={product} />
                 ))}
-              </div>
+              </CatalogProductGrid>
             ) : (
               <div className="flex min-h-64 flex-col items-center justify-center rounded-xl border border-dashed border-border bg-muted/25 px-6 text-center">
                 <Package className="mb-4 size-9 text-muted-foreground/70" />

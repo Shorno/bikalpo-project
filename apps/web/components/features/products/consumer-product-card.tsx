@@ -53,7 +53,7 @@ function asPrice(value: string | number): number {
 export function ConsumerProductCard({
   product,
   previewMode = false,
-  appearance = "standard",
+  appearance = "catalog",
 }: ConsumerProductCardProps) {
   const {
     addItem,
