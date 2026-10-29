@@ -167,13 +167,26 @@ export function ProductPriceFilterBar({
             onChange={(e) => changeSearch(e.target.value)}
           />
         </div>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="h-9 shrink-0 gap-1.5 text-muted-foreground max-md:h-11"
+          onClick={clearAll}
+          disabled={
+            disabled || (!hasActiveFilters && !searchParams.has("open"))
+          }
+        >
+          <X aria-hidden="true" className="size-3.5" />
+          Reset Filter
+        </Button>
       </div>
 
       {/* Cascading selects */}
       <div className="overflow-x-auto pb-1">
         <fieldset
           disabled={disabled}
-          className="grid min-w-[610px] grid-cols-[repeat(4,minmax(100px,1fr))_auto] items-end gap-2"
+          className="grid min-w-[610px] grid-cols-4 items-end gap-2"
         >
           <FilterField label="Type">
             <Select
@@ -304,19 +317,6 @@ export function ProductPriceFilterBar({
               </SelectContent>
             </Select>
           </FilterField>
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="h-9 shrink-0 gap-1.5 text-muted-foreground max-md:h-11"
-            onClick={clearAll}
-            disabled={
-              disabled || (!hasActiveFilters && !searchParams.has("open"))
-            }
-          >
-            <X aria-hidden="true" className="size-3.5" />
-            Reset Filter
-          </Button>
         </fieldset>
       </div>
     </section>

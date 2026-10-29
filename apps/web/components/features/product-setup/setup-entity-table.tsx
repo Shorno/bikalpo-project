@@ -9,25 +9,11 @@ import {
   type SortingState,
   useReactTable,
 } from "@tanstack/react-table";
-import {
-  ArrowDown,
-  ArrowUp,
-  ChevronLeft,
-  ChevronRight,
-  ChevronsUpDown,
-} from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronsUpDown } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { parseAsInteger, useQueryState } from "nuqs";
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useState } from "react";
-import { Button } from "@/components/ui/button";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -36,6 +22,10 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  SETUP_PAGE_SIZE_OPTIONS,
+  SetupTableFooter,
+} from "./setup-table-footer";
 
 type MobileRowDefinition<TData> = {
   href?: (row: TData) => string;
@@ -61,7 +51,7 @@ type SetupEntityTableProps<TData, TValue> = {
   emptyAction?: ReactNode;
   getRowId?: (row: TData) => string;
   mobile: MobileRowDefinition<TData>;
-  pageSizeOptions?: number[];
+  pageSizeOptions?: readonly number[];
   pagination?: {
     page: number;
     pageSize: number;
@@ -79,7 +69,7 @@ export function SetupEntityTable<TData, TValue>({
   emptyAction,
   getRowId,
   mobile,
-  pageSizeOptions = [10, 20, 50],
+  pageSizeOptions = SETUP_PAGE_SIZE_OPTIONS,
   pagination,
 }: SetupEntityTableProps<TData, TValue>) {
   const router = useRouter();
@@ -156,63 +146,17 @@ export function SetupEntityTable<TData, TValue>({
   });
 
   const footer = (
-    <div className="flex flex-col gap-3 text-sm sm:flex-row sm:items-center sm:justify-between max-md:flex-row max-md:flex-wrap max-md:items-center max-md:justify-between">
-      <p className="font-mono text-xs tabular-nums text-muted-foreground">
-        {totalItems === 0 ? 0 : (effectivePage - 1) * effectivePageSize + 1}–
-        {Math.min(effectivePage * effectivePageSize, totalItems)} of{" "}
-        {totalItems}
-      </p>
-      <div className="flex items-center justify-between gap-2 sm:justify-end max-md:flex-wrap">
-        <Select
-          onValueChange={(value) => {
-            changePageSize(Number(value));
-            changePage(1);
-          }}
-          value={String(effectivePageSize)}
-        >
-          <SelectTrigger
-            aria-label="Rows per page"
-            className="h-11 w-28 shadow-none sm:h-9 max-md:w-24 max-md:data-[size=default]:h-11"
-          >
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent align="end">
-            {pageSizeOptions.map((option) => (
-              <SelectItem key={option} value={String(option)}>
-                {option} rows
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Button
-          aria-label="Previous page"
-          className="h-11 md:h-9 max-md:w-11 max-md:p-0"
-          disabled={effectivePage <= 1}
-          onClick={() => changePage(effectivePage - 1)}
-          variant="outline"
-        >
-          <span className="md:hidden">
-            <ChevronLeft aria-hidden="true" className="size-4" />
-          </span>
-          <span className="max-md:hidden">Previous</span>
-        </Button>
-        <span className="min-w-16 text-center font-mono text-xs tabular-nums text-muted-foreground max-md:min-w-10">
-          {effectivePage} / {pageCount}
-        </span>
-        <Button
-          aria-label="Next page"
-          className="h-11 md:h-9 max-md:w-11 max-md:p-0"
-          disabled={effectivePage >= pageCount}
-          onClick={() => changePage(effectivePage + 1)}
-          variant="outline"
-        >
-          <span className="max-md:hidden">Next</span>
-          <span className="md:hidden">
-            <ChevronRight aria-hidden="true" className="size-4" />
-          </span>
-        </Button>
-      </div>
-    </div>
+    <SetupTableFooter
+      page={effectivePage}
+      pageSize={effectivePageSize}
+      total={totalItems}
+      pageSizeOptions={pageSizeOptions}
+      onPageChange={changePage}
+      onPageSizeChange={(pageSize) => {
+        changePageSize(pageSize);
+        changePage(1);
+      }}
+    />
   );
 
   const mobileColumns =

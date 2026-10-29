@@ -41,6 +41,7 @@ interface ConsumerProductCardProps {
     }> | null;
   };
   previewMode?: boolean;
+  appearance?: "standard" | "catalog";
 }
 
 function asPrice(value: string | number): number {
@@ -52,6 +53,7 @@ function asPrice(value: string | number): number {
 export function ConsumerProductCard({
   product,
   previewMode = false,
+  appearance = "standard",
 }: ConsumerProductCardProps) {
   const {
     addItem,
@@ -102,6 +104,7 @@ export function ConsumerProductCard({
   return (
     <StorefrontProductCard
       mode="reference"
+      appearance={appearance}
       detailHref={productHref}
       previewMode={previewMode}
       cartReady={isCartHydrated}
@@ -114,6 +117,7 @@ export function ConsumerProductCard({
         id: product.id,
         name: product.name,
         slug: product.slug,
+        brand: product.brand?.name ? { name: product.brand.name } : null,
         image: product.image,
         images: product.images ?? [],
         category: product.category?.slug

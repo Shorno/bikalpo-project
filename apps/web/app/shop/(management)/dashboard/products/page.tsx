@@ -2,7 +2,6 @@
 
 import {
   AlertTriangle,
-  ArrowLeft,
   ArrowRight,
   Box,
   Boxes,
@@ -21,6 +20,7 @@ import {
 import Image from "next/image";
 import Link from "next/link";
 import { type ElementType, Fragment, useState } from "react";
+import { SetupTableFooter } from "@/components/features/product-setup/setup-table-footer";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -220,6 +220,7 @@ export default function ShopProductsPage() {
   const [brandId, setBrandId] = useState<number>();
   const [stockStatus, setStockStatus] = useState<"all" | ProductStatus>("all");
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
   const [expandedProductId, setExpandedProductId] = useState<number | null>(
     null,
   );
@@ -231,7 +232,7 @@ export default function ShopProductsPage() {
     brandId,
     stockStatus,
     page,
-    limit: 20,
+    limit: pageSize,
   });
 
   const items = data?.items ?? [];
@@ -330,22 +331,35 @@ export default function ShopProductsPage() {
       </section>
 
       <section aria-label="Product filters" className="space-y-3">
-        <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-[minmax(260px,1fr)_190px_190px_190px_auto]">
-          <div className="relative">
-            <Search
-              className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
-              aria-hidden="true"
-            />
-            <Input
-              aria-label="Search products"
-              placeholder="Search product, brand, variant, or SKU"
-              value={search}
-              onChange={(event) => {
-                setSearch(event.target.value);
-                setPage(1);
-              }}
-              className="pl-9"
-            />
+        <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-[minmax(260px,1fr)_190px_190px_190px]">
+          <div className="flex min-w-0 items-center gap-2">
+            <div className="relative min-w-0 flex-1">
+              <Search
+                className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+                aria-hidden="true"
+              />
+              <Input
+                aria-label="Search products"
+                placeholder="Search product, brand, variant, or SKU"
+                value={search}
+                onChange={(event) => {
+                  setSearch(event.target.value);
+                  setPage(1);
+                }}
+                className="pl-9"
+              />
+            </div>
+            {filtersActive && (
+              <Button
+                variant="ghost"
+                type="button"
+                onClick={clearFilters}
+                className="shrink-0 max-md:min-h-11"
+              >
+                <RotateCcw className="size-4" aria-hidden="true" />
+                Clear
+              </Button>
+            )}
           </div>
           <Select
             value={categoryId?.toString() ?? "all"}
@@ -406,16 +420,6 @@ export default function ShopProductsPage() {
               <SelectItem value="setup_required">Setup required</SelectItem>
             </SelectContent>
           </Select>
-          {filtersActive && (
-            <Button
-              variant="ghost"
-              onClick={clearFilters}
-              className="justify-start xl:justify-center"
-            >
-              <RotateCcw className="size-4" aria-hidden="true" />
-              Clear
-            </Button>
-          )}
         </div>
         {kpis && kpis.configurationIssueCount > 0 && (
           <p className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -653,37 +657,18 @@ export default function ShopProductsPage() {
         </>
       )}
 
-      {pagination && pagination.totalPages > 1 && (
-        <nav
-          aria-label="Product pagination"
-          className="flex flex-col gap-3 border-t pt-4 sm:flex-row sm:items-center sm:justify-between"
-        >
-          <p className="text-sm text-muted-foreground">
-            Showing {Math.min((page - 1) * 20 + 1, pagination.totalCount)} to{" "}
-            {Math.min(page * 20, pagination.totalCount)} of{" "}
-            {pagination.totalCount}
-          </p>
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setPage((value) => Math.max(1, value - 1))}
-              disabled={page <= 1}
-            >
-              <ArrowLeft className="size-4" aria-hidden="true" />
-              Previous
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setPage((value) => value + 1)}
-              disabled={page >= pagination.totalPages}
-            >
-              Next
-              <ArrowRight className="size-4" aria-hidden="true" />
-            </Button>
-          </div>
-        </nav>
+      {!isLoading && !isError && pagination && (
+        <SetupTableFooter
+          ariaLabel="Product pagination"
+          page={pagination.page}
+          pageSize={pageSize}
+          total={pagination.totalCount}
+          onPageChange={setPage}
+          onPageSizeChange={(nextPageSize) => {
+            setPageSize(nextPageSize);
+            setPage(1);
+          }}
+        />
       )}
     </main>
   );

@@ -4,6 +4,7 @@ import { Eye, Minus, Package, Plus, ShoppingCart, Star } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { useState } from "react";
+import { CatalogProductCard } from "@/components/features/products/catalog-product-card";
 import {
   type CylinderSaleMode,
   CylinderTypeRadios,
@@ -27,6 +28,7 @@ export interface StorefrontProduct {
   images: Array<{ imageUrl: string }>;
   category: { name: string; slug: string } | null;
   subCategory: { name: string; slug: string } | null;
+  brand?: { name: string } | null;
   lowestRetailPrice?: number;
   lowestDisplayPrice?: number;
   variantCount: number;
@@ -72,6 +74,7 @@ interface ProductCardProps {
   onUpdateQuantity?: (cartItemId: number, quantity: number) => Promise<void>;
   mode?: "storefront" | "reference";
   detailHref?: string;
+  appearance?: "standard" | "catalog";
 }
 
 export function StorefrontProductCard({
@@ -88,6 +91,7 @@ export function StorefrontProductCard({
   onUpdateQuantity,
   mode = "storefront",
   detailHref: detailHrefOverride,
+  appearance = "standard",
 }: ProductCardProps) {
   const [selectedVariantId, setSelectedVariantId] = useState(
     product.variants[0]?.variantId,
@@ -185,6 +189,49 @@ export function StorefrontProductCard({
         : "new",
     );
   };
+
+  if (appearance === "catalog") {
+    return (
+      <CatalogProductCard
+        product={product}
+        detailHref={detailHref}
+        image={image}
+        selectedVariant={selectedVariant}
+        selectedPrice={selectedPrice}
+        cylinderSaleMode={effectiveCylinderSaleMode}
+        canExchange={listingCanExchange}
+        cartItem={cartItem}
+        isAdding={isSelectionAdding}
+        addDisabled={
+          previewMode ||
+          isSelectionAdding ||
+          !cartReady ||
+          !selectedVariant ||
+          (mode === "storefront" && selectedAvailableQty <= 0) ||
+          !onQuickAdd
+        }
+        quantityDisabled={previewMode || isUpdating || !onUpdateQuantity}
+        increaseDisabled={
+          mode === "storefront" &&
+          Boolean(cartItem && cartItem.quantity >= selectedAvailableQty)
+        }
+        onVariantChange={handleSizeChange}
+        onSaleModeChange={setCylinderSaleMode}
+        onAdd={() => {
+          if (!selectedVariant || !onQuickAdd) return;
+          onQuickAdd(product, {
+            variantId: selectedVariant.variantId,
+            cylinderSaleMode: effectiveCylinderSaleMode,
+          });
+        }}
+        onQuantityChange={(quantity) => {
+          if (cartItem && onUpdateQuantity) {
+            void onUpdateQuantity(cartItem.id, quantity);
+          }
+        }}
+      />
+    );
+  }
 
   return (
     <article className="group flex min-w-0 flex-col overflow-hidden rounded-lg border bg-white transition-colors hover:border-slate-400 focus-within:border-primary">

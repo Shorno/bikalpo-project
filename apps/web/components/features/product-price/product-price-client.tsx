@@ -10,8 +10,6 @@ import {
   Boxes,
   CalendarClock,
   ChevronDown,
-  ChevronLeft,
-  ChevronRight,
   Layers3,
   Loader2,
   Package,
@@ -22,6 +20,10 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { SetupPageShell } from "@/components/features/product-setup";
+import {
+  SETUP_PAGE_SIZE_OPTIONS,
+  SetupTableFooter,
+} from "@/components/features/product-setup/setup-table-footer";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ADMIN_BASE } from "@/lib/routes";
@@ -38,7 +40,6 @@ import {
   ProductPriceTable,
 } from "./product-price-table";
 
-const PAGE_SIZE = 15;
 const ROUTE = `${ADMIN_BASE}/product-price`;
 function parseIntParam(value: string | null) {
   const number = Number(value);
@@ -60,7 +61,10 @@ export function ProductPriceClient() {
     [searchParams],
   );
   const page = parseIntParam(searchParams.get("page")) ?? 1;
-  const filterKey = JSON.stringify([filterInput, page]);
+  const requestedPageSize = parseIntParam(searchParams.get("size"));
+  const pageSize =
+    SETUP_PAGE_SIZE_OPTIONS.find((size) => size === requestedPageSize) ?? 10;
+  const filterKey = JSON.stringify([filterInput, page, pageSize]);
   const { data: typesData } = useQuery(
     orpc.adminProductType.getAll.queryOptions({ input: {} }),
   );
@@ -79,7 +83,7 @@ export function ProductPriceClient() {
   }));
   const { data, isLoading, isError, error, refetch } = useQuery(
     orpc.product.listConsumerReferencePrices.queryOptions({
-      input: { ...filterInput, page, limit: PAGE_SIZE },
+      input: { ...filterInput, page, limit: pageSize },
     }),
   );
   const stats = data?.stats;
@@ -264,6 +268,17 @@ export function ProductPriceClient() {
     if (typeId != null) params.set("type", String(typeId));
     return `${ROUTE}${params.size ? `?${params}` : ""}`;
   };
+  const changePageSize = (size: number) => {
+    if (!beforeNavigate()) return;
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete("open");
+    params.delete("page");
+    if (size === 10) params.delete("size");
+    else params.set("size", String(size));
+    router.push(`${ROUTE}${params.size ? `?${params}` : ""}`, {
+      scroll: false,
+    });
+  };
   const goToPage = (next: number) => {
     if (!beforeNavigate()) return;
     const params = new URLSearchParams(searchParams.toString());
@@ -442,35 +457,16 @@ export function ProductPriceClient() {
           />
         )}
       </section>
-      {!isError && data?.pagination && data.pagination.totalPages > 1 && (
-        <div className="flex flex-col items-center justify-between gap-3 pt-2 text-sm text-muted-foreground sm:flex-row">
-          <p>
-            Page {data.pagination.page} of {data.pagination.totalPages} ·{" "}
-            {data.pagination.totalGroups.toLocaleString("en-BD")} products
-          </p>
-          <div className="flex gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={busy || data.pagination.page <= 1}
-              onClick={() => goToPage(data.pagination.page - 1)}
-            >
-              <ChevronLeft aria-hidden="true" className="size-4" />
-              Previous
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={
-                busy || data.pagination.page >= data.pagination.totalPages
-              }
-              onClick={() => goToPage(data.pagination.page + 1)}
-            >
-              Next
-              <ChevronRight aria-hidden="true" className="size-4" />
-            </Button>
-          </div>
-        </div>
+      {!isLoading && !isError && data?.pagination && (
+        <SetupTableFooter
+          ariaLabel="Price pagination"
+          page={data.pagination.page}
+          pageSize={pageSize}
+          total={data.pagination.totalGroups}
+          disabled={busy}
+          onPageChange={goToPage}
+          onPageSizeChange={changePageSize}
+        />
       )}
     </SetupPageShell>
   );

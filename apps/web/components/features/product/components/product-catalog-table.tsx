@@ -17,8 +17,6 @@ import {
   ArrowDown,
   ArrowUp,
   ArrowUpDown,
-  ChevronLeft,
-  ChevronRight,
   Clock3,
   Eye,
   Loader2,
@@ -35,6 +33,7 @@ import {
   useMemo,
   useState,
 } from "react";
+import { SetupTableFooter } from "@/components/features/product-setup/setup-table-footer";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -58,7 +57,6 @@ import { ADMIN_BASE } from "@/lib/routes";
 
 const ALL = "all";
 const PAGE_SIZE = 10;
-const PAGE_SIZE_OPTIONS = [10, 20, 50];
 
 export type CatalogProduct = {
   id: number;
@@ -348,11 +346,7 @@ export default function ProductCatalogTable({
 
   const hasFilters = search.trim().length > 0 || columnFilters.length > 0;
   const filteredCount = table.getFilteredRowModel().rows.length;
-  const pageCount = Math.max(1, table.getPageCount());
   const currentPage = table.getState().pagination.pageIndex + 1;
-  const firstRow =
-    filteredCount === 0 ? 0 : (currentPage - 1) * pagination.pageSize + 1;
-  const lastRow = Math.min(currentPage * pagination.pageSize, filteredCount);
   const visibleColumnCount = table.getVisibleLeafColumns().length;
 
   return (
@@ -361,22 +355,36 @@ export default function ProductCatalogTable({
         aria-label="Product filters"
         className="rounded-xl border bg-card p-4 shadow-sm max-md:p-3"
       >
-        <div className="relative mb-4 w-full md:w-2/3">
-          <Search
-            className="absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
-            aria-hidden="true"
-          />
-          <Input
-            id="product-catalog-search"
-            aria-label="Search products"
-            value={search}
-            onChange={(event) => {
-              setSearch(event.target.value);
-              table.setPageIndex(0);
-            }}
-            placeholder="Search products..."
-            className="h-11 pl-10"
-          />
+        <div className="mb-4 flex items-center gap-2">
+          <div className="relative min-w-0 flex-1 md:w-2/3 md:flex-none">
+            <Search
+              className="absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
+              aria-hidden="true"
+            />
+            <Input
+              id="product-catalog-search"
+              aria-label="Search products"
+              value={search}
+              onChange={(event) => {
+                setSearch(event.target.value);
+                table.setPageIndex(0);
+              }}
+              placeholder="Search products..."
+              className="h-11 pl-10"
+            />
+          </div>
+          {hasFilters && (
+            <Button
+              className="shrink-0 max-md:min-h-11"
+              variant="ghost"
+              size="sm"
+              type="button"
+              onClick={clearFilters}
+            >
+              <X aria-hidden="true" className="size-4" />
+              Clear filters
+            </Button>
+          )}
         </div>
         <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
           <FilterSelect
@@ -407,14 +415,6 @@ export default function ProductCatalogTable({
             />
           </div>
         </div>
-        {hasFilters ? (
-          <div className="mt-4 flex justify-end border-t pt-3">
-            <Button variant="ghost" size="sm" onClick={clearFilters}>
-              <X className="size-4" />
-              Clear filters
-            </Button>
-          </div>
-        ) : null}
       </section>
 
       <div className="flex justify-center">
@@ -607,82 +607,17 @@ export default function ProductCatalogTable({
           </Table>
         </section>
 
-        {!isLoading && !isError && data.length > 0 ? (
-          <nav
-            aria-label="Catalog pagination"
-            className={
-              isMobile
-                ? "flex flex-wrap items-center justify-between gap-3 text-sm"
-                : "flex flex-col gap-3 text-sm sm:flex-row sm:items-center sm:justify-between"
+        {!isLoading && !isError ? (
+          <SetupTableFooter
+            ariaLabel="Catalog pagination"
+            page={currentPage}
+            pageSize={pagination.pageSize}
+            total={filteredCount}
+            onPageChange={(page) => table.setPageIndex(page - 1)}
+            onPageSizeChange={(pageSize) =>
+              setPagination({ pageIndex: 0, pageSize })
             }
-          >
-            <p className="font-mono text-xs tabular-nums text-muted-foreground">
-              {firstRow}–{lastRow} of {filteredCount}
-            </p>
-            <div
-              className={
-                isMobile
-                  ? "flex flex-wrap items-center gap-2"
-                  : "flex items-center justify-between gap-2 sm:justify-end"
-              }
-            >
-              <Select
-                value={String(pagination.pageSize)}
-                onValueChange={(value) =>
-                  setPagination({ pageIndex: 0, pageSize: Number(value) })
-                }
-              >
-                <SelectTrigger
-                  aria-label="Rows per page"
-                  className={
-                    isMobile
-                      ? "w-24 shadow-none data-[size=default]:h-11"
-                      : "h-11 w-28 shadow-none sm:h-9"
-                  }
-                >
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent align="end">
-                  {PAGE_SIZE_OPTIONS.map((option) => (
-                    <SelectItem key={option} value={String(option)}>
-                      {option} rows
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Button
-                aria-label="Previous page"
-                title="Previous page"
-                className={isMobile ? "h-11 w-11 p-0" : "h-11 sm:h-9"}
-                disabled={!table.getCanPreviousPage()}
-                onClick={() => table.previousPage()}
-                variant="outline"
-              >
-                {isMobile ? (
-                  <ChevronLeft className="size-4" aria-hidden="true" />
-                ) : (
-                  "Previous"
-                )}
-              </Button>
-              <span className="min-w-16 text-center font-mono text-xs tabular-nums text-muted-foreground max-md:min-w-10">
-                {currentPage} / {pageCount}
-              </span>
-              <Button
-                aria-label="Next page"
-                title="Next page"
-                className={isMobile ? "h-11 w-11 p-0" : "h-11 sm:h-9"}
-                disabled={!table.getCanNextPage()}
-                onClick={() => table.nextPage()}
-                variant="outline"
-              >
-                {isMobile ? (
-                  <ChevronRight className="size-4" aria-hidden="true" />
-                ) : (
-                  "Next"
-                )}
-              </Button>
-            </div>
-          </nav>
+          />
         ) : null}
       </div>
     </div>
