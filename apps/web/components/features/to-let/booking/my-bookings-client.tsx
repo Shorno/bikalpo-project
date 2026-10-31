@@ -1,5 +1,6 @@
 "use client";
 
+import { isFacilityOffered } from "@bikalpo-project/api/lib/tolet-facilities";
 import { HiddenAmount } from "@/components/features/to-let/hidden-amount";
 import {
   Ban,
@@ -238,11 +239,11 @@ function BookingCard({
     icon: Ruler,
   });
   const facilityLabels = [
-    snapshot.property.facilities?.hasWaterSupply && "Water supply",
-    snapshot.property.facilities?.hasGasConnection && "Gas connection",
+    isFacilityOffered(snapshot.facilityInclusions, "water", snapshot.property.facilities?.hasWaterSupply) && "Water supply",
+    isFacilityOffered(snapshot.facilityInclusions, "gas", snapshot.property.facilities?.hasGasConnection) && "Gas connection",
     snapshot.property.facilities?.hasSecurityGuard && "Security",
-    snapshot.property.facilities?.hasParking && "Parking",
-    snapshot.property.facilities?.hasLift && "Lift",
+    isFacilityOffered(snapshot.facilityInclusions, "parking", snapshot.property.facilities?.hasParking) && "Parking",
+    isFacilityOffered(snapshot.facilityInclusions, "lift", snapshot.property.facilities?.hasLift) && "Lift",
     snapshot.hasInternet && "Internet",
   ].filter((value): value is string => Boolean(value));
 

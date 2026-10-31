@@ -1,5 +1,6 @@
 "use client";
 import { toLetUnitCapabilities } from "@bikalpo-project/api/lib/tolet-categories";
+import { isFacilityOffered, type ToLetFacilityKey } from "@bikalpo-project/api/lib/tolet-facilities";
 
 import { isToLetPublicListingRenewalDue } from "@bikalpo-project/api/routers/helpers/tolet-marketplace-visibility";
 import { normalizeBangladeshPhoneNumber } from "@bikalpo-project/auth/phone-identity";
@@ -437,25 +438,41 @@ function LoadedListingForm({
   const [captchaPhone, setCaptchaPhone] = useState<string | null>(null);
   const captchaPassed =
     Boolean(normalizedContactPhone) && captchaPhone === normalizedContactPhone;
+  // A facility the building has can be switched off for this unit. One the
+  // building lacks stays off here; it is changed on the property itself.
+  const unitFacility = (key: ToLetFacilityKey, label: string, buildingHasIt: boolean) => ({
+    key,
+    label,
+    available: isFacilityOffered(values.facilityInclusions, key, buildingHasIt),
+    onChange: buildingHasIt
+      ? (available: boolean) => {
+          const others = (values.facilityInclusions.notAvailable ?? []).filter((item) => item !== key);
+          update("facilityInclusions", {
+            ...values.facilityInclusions,
+            notAvailable: available ? others : [...others, key],
+          });
+        }
+      : undefined,
+  });
   const facilities: ReadonlyArray<{
-    key: keyof ToLetListingFormValues["facilityInclusions"];
+    key: ToLetFacilityKey;
     label: string;
     available: boolean;
     onChange?: (available: boolean) => void;
   }> = [
-    { key: "water", label: "Water Supply", available: property.hasWaterSupply },
-    { key: "gas", label: "Gas", available: property.hasGasConnection },
-    { key: "electricity", label: "Electricity", available: property.hasElectricity },
+    unitFacility("water", "Water Supply", property.hasWaterSupply),
+    unitFacility("gas", "Gas", property.hasGasConnection),
+    unitFacility("electricity", "Electricity", property.hasElectricity),
     {
       key: "internet",
       label: "Internet",
       available: values.hasInternet,
       onChange: (available) => update("hasInternet", available),
     },
-    { key: "lift", label: "Lift", available: property.hasLift },
-    { key: "parking", label: "Parking", available: property.hasParking },
-    { key: "generator", label: "Generator", available: property.hasGenerator },
-    { key: "furnished", label: "Furnished", available: unit.isFurnished },
+    unitFacility("lift", "Lift", property.hasLift),
+    unitFacility("parking", "Parking", property.hasParking),
+    unitFacility("generator", "Generator", property.hasGenerator),
+    unitFacility("furnished", "Furnished", unit.isFurnished),
   ];
   const isPublicListingRenewalDue = listing
     ? isToLetPublicListingRenewalDue({
@@ -713,6 +730,15 @@ function LoadedListingForm({
 
       {currentStep === 1 ? (
         <FormSection title="Step 1: Unit Details">
+          {/* Unit facts are read-only here; this is the one way to correct them. */}
+          <div className="mb-4 flex justify-end">
+            <Link
+              href={`/account/to-let/properties/${property.propertyCode}/units/${unit.unitCode}/edit`}
+              className="text-sm font-semibold text-primary underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+            >
+              Edit Unit Details
+            </Link>
+          </div>
           <div className="grid gap-4 sm:grid-cols-2">
             <ReadonlyField label="Property ID *" value={property.propertyCode} />
             <ReadonlyField label="Property Name" value={property.name} />

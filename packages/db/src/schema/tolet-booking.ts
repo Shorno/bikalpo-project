@@ -52,7 +52,7 @@ export type ToletBookingOfferSnapshot = {
 		availableFrom: string;
 		preferredTenant: "family" | "bachelor" | "office" | "female" | "any";
 		hasInternet: boolean;
-		facilityInclusions?: Partial<Record<"water" | "gas" | "electricity" | "internet" | "lift" | "parking" | "generator" | "security" | "cctv" | "furnished", boolean>> | null;
+		facilityInclusions?: Partial<Record<"water" | "gas" | "electricity" | "internet" | "lift" | "parking" | "generator" | "security" | "cctv" | "furnished", boolean>> & { notAvailable?: Array<"water" | "gas" | "electricity" | "internet" | "lift" | "parking" | "generator" | "security" | "cctv" | "furnished"> } | null;
 		tourUrl?: string | null;
 		otherFacilities: string | null;
 	};
