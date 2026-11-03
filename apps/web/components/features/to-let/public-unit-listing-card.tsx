@@ -133,8 +133,8 @@ export function PublicUnitListingCard({
             ))}
           </ul>
         ) : null}
-        <div data-slot="location" className="mt-3 mb-5 flex items-center gap-1.5 text-xs leading-5 text-muted-foreground sm:text-sm">
-          <MapPin className="size-3.5 shrink-0" aria-hidden="true" />
+        <div data-slot="location" className="mt-3 mb-5 flex items-center gap-1.5 text-xs font-medium leading-5 text-foreground sm:text-sm">
+          <MapPin className="size-4 shrink-0 text-primary" aria-hidden="true" />
           <p className="min-w-0 truncate" title={location}>{location}</p>
         </div>
 
