@@ -194,7 +194,7 @@ export function CatalogListTable({
         <TableHeader>
           <TableRow className="hover:bg-transparent">
             {[
-              "System ID",
+              "Product ID",
               "Type",
               "Category",
               ...(isMobile ? [] : ["Sub Category"]),
@@ -206,7 +206,7 @@ export function CatalogListTable({
                 className={
                   isMobile
                     ? "whitespace-normal break-words px-1 @sm/catalog:px-2"
-                    : label === "System ID"
+                    : label === "Product ID"
                       ? "w-36"
                       : undefined
                 }

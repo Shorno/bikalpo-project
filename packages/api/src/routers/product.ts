@@ -48,6 +48,7 @@ import {
   fetchConsumerReferencePricePage,
   saveConsumerReferencePrices,
 } from "../services/consumer-reference-prices";
+import { getAdminProductInsights } from "./helpers/admin-product-insights";
 import { assignCoreProductCode } from "./helpers/core-catalog-code";
 import { catalogProductCode } from "./helpers/generate-sku";
 import { ensureCoreProductShortCode } from "./helpers/sellable-sku";
@@ -239,7 +240,8 @@ export const productRouter = {
           eq(product.creatorSource, "admin"),
         ),
         with: {
-          category: true,
+          // The type's family tells the page whether this is an LPG product.
+          category: { with: { type: true } },
           subCategory: true,
           brand: true,
           images: true,
@@ -296,6 +298,17 @@ export const productRouter = {
           })),
         },
       };
+    }),
+
+  /** Admin-only Product History on the catalog product page. */
+  getAdminProductInsights: adminProcedure
+    .input(productIdSchema)
+    .handler(async ({ input }) => {
+      const insights = await getAdminProductInsights(input.id);
+      if (!insights) {
+        throw new ORPCError("NOT_FOUND", { message: "Product not found" });
+      }
+      return insights;
     }),
 
   /**

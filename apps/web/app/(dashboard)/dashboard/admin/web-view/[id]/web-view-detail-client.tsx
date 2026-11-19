@@ -1,5 +1,6 @@
 "use client";
 
+import { useQuery } from "@tanstack/react-query";
 import { formatDistanceToNow } from "date-fns";
 import {
   ArrowLeft,
@@ -7,37 +8,46 @@ import {
   ExternalLink,
   ImageIcon,
   MessageSquare,
+  Minus,
   Pencil,
-  Truck,
-  Wallet,
+  Plus,
+  Printer,
+  ShieldCheck,
 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { type ReactNode, useMemo, useState } from "react";
+import { toast } from "sonner";
 import { StarRating } from "@/components/features/reviews/star-rating";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  type DetailVariantPrice,
+  hasExchangeOption,
+  inventoryUnitLabel,
+  lpgPriceRows,
+  sortVariantsBySize,
+  variantOptionLabel,
+} from "@/lib/catalog-product-detail";
 import { cn } from "@/lib/utils";
+import { orpc } from "@/utils/orpc";
 import { resolveBrandScope, scopeVariantPrices } from "../_lib/brand-scope";
 
 type FeatureItem = { key: string; value: string };
 type FeatureGroup = { title: string; items: FeatureItem[] };
 
-type VariantOption = {
-  id: number;
-  name: string;
-  unit?: string | null;
-  size?: string | null;
-  variantType?: string | null;
-};
-
-type VariantPrice = {
-  id: number;
+type VariantPrice = DetailVariantPrice & {
   brandId?: number | null;
-  consumerPrice?: string | number | null;
   isActive?: boolean | null;
-  variantOption?: VariantOption | null;
   catalogSku?: string | null;
 };
 
@@ -52,20 +62,34 @@ type DetailProduct = {
   slug: string;
   sku?: string | null;
   catalogCode?: string | null;
-  price: string | number;
-  size?: string | null;
   image: string;
   images?: { imageUrl: string }[];
   shortDescription?: string | null;
   description?: string | null;
   features?: FeatureGroup[] | null;
-  inStock?: boolean;
   isFeatured?: boolean;
-  category?: { name: string; slug: string } | null;
+  status?: string | null;
+  category?: {
+    name: string;
+    slug: string;
+    type?: { family?: string | null } | null;
+  } | null;
   subCategory?: { name: string } | null;
   brand?: { id?: number | null; name: string } | null;
   productBrands?: ProductBrandLink[];
   variantPrices?: VariantPrice[];
+  // Inventory & Product Rules, as set when the product was created.
+  minimumOrderEnabled?: boolean | null;
+  minimumOrderQty?: string | number | null;
+  returnPolicyEnabled?: boolean | null;
+  trackingType?: string | null;
+  expiryEnabled?: boolean | null;
+  damageControlEnabled?: boolean | null;
+  conversionEnabled?: boolean | null;
+  inventoryLooseUnitEnabled?: boolean | null;
+  inventoryLooseUnit?: string | null;
+  isReturnablePack?: boolean | null;
+  defaultPackDepositAmount?: string | number | null;
 };
 
 type ReviewUser = { name?: string | null };
@@ -90,11 +114,27 @@ function formatBDT(value: string | number | null | undefined) {
   return `৳${amount.toLocaleString("en-BD", { maximumFractionDigits: 2 })}`;
 }
 
-function variantLabel(option?: VariantOption | null) {
-  if (!option) return "Variant";
-  return option.name?.trim() || option.size?.trim() || "Variant";
+function formatQty(value: string | number | null | undefined) {
+  const amount = Number(value ?? 0);
+  return Number.isFinite(amount)
+    ? amount.toLocaleString("en-BD", { maximumFractionDigits: 2 })
+    : "—";
 }
 
+function formatDate(value: string | Date | null | undefined) {
+  if (!value) return null;
+  return new Date(value).toLocaleDateString("en-GB", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+}
+
+/**
+ * The admin catalog product page, per the client review: the summary beside
+ * the images, then Product Information · Description · Reviews tabs. Prices
+ * are masked in the summary; the real ones are in the admin-only Pricing table.
+ */
 export function WebViewDetailClient({
   product,
   brandId = null,
@@ -127,21 +167,17 @@ export function WebViewDetailClient({
   // brand-scoped listing card rather than showing every brand's variants.
   const activeVariants = useMemo(
     () =>
-      scopeVariantPrices(
-        product.variantPrices ?? [],
-        effectiveBrandId,
-        hasSingleBrand,
+      sortVariantsBySize(
+        scopeVariantPrices(
+          product.variantPrices ?? [],
+          effectiveBrandId,
+          hasSingleBrand,
+        ),
       ),
     [product.variantPrices, effectiveBrandId, hasSingleBrand],
   );
 
-  const [selectedVariantId, setSelectedVariantId] = useState<number | null>(
-    activeVariants[0]?.id ?? null,
-  );
   const [activeImage, setActiveImage] = useState(0);
-
-  const selectedVariant =
-    activeVariants.find((variant) => variant.id === selectedVariantId) ?? null;
 
   const images = useMemo(() => {
     const all = [
@@ -156,12 +192,23 @@ export function WebViewDetailClient({
     product.brand?.name ??
     "Unbranded";
 
-  const sku =
-    product.catalogCode || product.sku?.trim() || `PRD-${product.id}`;
-  const priceValue = selectedVariant?.consumerPrice ?? product.price;
-  const priceLabel = formatBDT(priceValue) ?? "Price not set";
-  const priceUnit =
-    selectedVariant?.variantOption?.unit?.trim() || product.size || null;
+  const productId = product.catalogCode || `PRD-${product.id}`;
+  const isLpg = product.category?.type?.family === "lpg";
+  const exchange = hasExchangeOption(activeVariants);
+  const cylinderTypes = exchange ? ["Exchange", "New"] : ["New"];
+  const sizeLabels = activeVariants.map((variant) =>
+    variantOptionLabel(variant.variantOption),
+  );
+  const inventoryUnit = inventoryUnitLabel(activeVariants);
+  const minimumOrder = product.minimumOrderEnabled
+    ? `${formatQty(product.minimumOrderQty)} ${inventoryUnit ?? "unit"}`
+    : "Not required";
+  const variantSkus = activeVariants
+    .map((variant) => variant.catalogSku)
+    .filter((sku): sku is string => Boolean(sku));
+  // Each size has its own sellable SKU (e.g. OMR-LPG-12KG); the product-level
+  // sku field only repeats the Product ID.
+  const sku = variantSkus.join(", ") || product.sku?.trim() || "—";
 
   const features = (product.features ?? []).filter(
     (group) => group?.items?.length,
@@ -174,26 +221,30 @@ export function WebViewDetailClient({
   const storefrontHref = product.category?.slug
     ? `/products/${product.category.slug}/${product.slug}`
     : null;
+  const editHref = `/dashboard/admin/products/${product.id}/edit`;
 
   return (
     <div className="mx-auto w-full max-w-6xl space-y-5">
       {/* Breadcrumb */}
-      <nav className="flex flex-wrap items-center gap-1.5 text-sm text-muted-foreground">
+      <nav
+        aria-label="Breadcrumb"
+        className="flex flex-wrap items-center gap-1.5 text-sm text-muted-foreground"
+      >
         <Link href={listingUrl} className="hover:text-foreground">
           {listingLabel}
         </Link>
-        <ChevronRight className="h-3.5 w-3.5" />
+        <ChevronRight aria-hidden="true" className="h-3.5 w-3.5" />
         <span>{categoryName}</span>
         {product.subCategory?.name ? (
           <>
-            <ChevronRight className="h-3.5 w-3.5" />
+            <ChevronRight aria-hidden="true" className="h-3.5 w-3.5" />
             <span>{product.subCategory.name}</span>
           </>
         ) : null}
-        <ChevronRight className="h-3.5 w-3.5" />
+        <ChevronRight aria-hidden="true" className="h-3.5 w-3.5" />
         <span>{brandName}</span>
-        <ChevronRight className="h-3.5 w-3.5" />
-        <span className="font-medium text-foreground">{sku}</span>
+        <ChevronRight aria-hidden="true" className="h-3.5 w-3.5" />
+        <span className="font-medium text-foreground">{productId}</span>
       </nav>
 
       {/* Header */}
@@ -209,25 +260,17 @@ export function WebViewDetailClient({
             <h1 className="truncate text-lg font-semibold tracking-tight">
               {product.name}
             </h1>
-            <p className="text-xs text-muted-foreground">{sku}</p>
+            <p className="text-xs text-muted-foreground">{productId}</p>
           </div>
         </div>
-        <div className="flex shrink-0 items-center gap-2">
+        {storefrontHref ? (
           <Button asChild variant="outline" size="sm">
-            <Link href={`/dashboard/admin/products/${product.id}/edit`}>
-              <Pencil className="h-4 w-4" />
-              Edit Product
-            </Link>
+            <a href={storefrontHref} target="_blank" rel="noreferrer">
+              <ExternalLink className="h-4 w-4" />
+              View on Storefront
+            </a>
           </Button>
-          {storefrontHref ? (
-            <Button asChild size="sm">
-              <a href={storefrontHref} target="_blank" rel="noreferrer">
-                <ExternalLink className="h-4 w-4" />
-                View on Storefront
-              </a>
-            </Button>
-          ) : null}
-        </div>
+        ) : null}
       </div>
 
       {/* Main */}
@@ -262,6 +305,8 @@ export function WebViewDetailClient({
                 <button
                   key={src}
                   type="button"
+                  aria-label={`Show image ${index + 1}`}
+                  aria-pressed={index === activeImage}
                   onClick={() => setActiveImage(index)}
                   className={cn(
                     "relative h-16 w-16 shrink-0 overflow-hidden rounded-md border bg-muted/40 transition-colors",
@@ -272,7 +317,7 @@ export function WebViewDetailClient({
                 >
                   <Image
                     src={src}
-                    alt={`${product.name} ${index + 1}`}
+                    alt=""
                     fill
                     sizes="64px"
                     className="object-contain p-1"
@@ -284,17 +329,29 @@ export function WebViewDetailClient({
           ) : null}
         </div>
 
-        {/* Info */}
+        {/* Summary */}
         <div className="flex flex-col">
-          <p className="text-[11px] font-semibold uppercase tracking-wider text-primary">
-            {brandName}
-          </p>
-          <h2 className="mt-1 text-xl font-semibold leading-snug">
-            {product.name}
-          </h2>
+          <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-sm">
+            <dt className="text-muted-foreground">Product ID</dt>
+            <dd className="font-semibold tabular-nums">{productId}</dd>
+            <dt className="text-muted-foreground">Product Name</dt>
+            <dd className="font-semibold">{product.name}</dd>
+            <dt className="text-muted-foreground">Brand</dt>
+            <dd className="font-semibold">{brandName}</dd>
+          </dl>
 
-          {/* Rating */}
-          <div className="mt-2 flex items-center gap-2">
+          {/* Price stays masked here; admins see real prices under Pricing. */}
+          <p className="mt-5 flex items-baseline gap-2">
+            <span className="text-sm text-muted-foreground">Price</span>
+            <span
+              className="text-2xl font-bold"
+              aria-label="Price hidden"
+            >
+              ৳*****
+            </span>
+          </p>
+
+          <div className="mt-1.5 flex flex-wrap items-center gap-2">
             {stats.totalReviews > 0 ? (
               <>
                 <StarRating
@@ -305,8 +362,8 @@ export function WebViewDetailClient({
                   {stats.averageRating.toFixed(1)}
                 </span>
                 <span className="text-sm text-muted-foreground">
-                  ({stats.totalReviews}{" "}
-                  {stats.totalReviews === 1 ? "review" : "reviews"})
+                  ({stats.totalReviews.toLocaleString("en-BD")}{" "}
+                  {stats.totalReviews === 1 ? "Review" : "Reviews"})
                 </span>
               </>
             ) : (
@@ -316,91 +373,72 @@ export function WebViewDetailClient({
             )}
           </div>
 
-          {/* Price */}
-          <div className="mt-4 flex items-baseline gap-2">
-            <span className="text-3xl font-bold tracking-tight">
-              {priceLabel}
-            </span>
-            {priceUnit ? (
-              <span className="text-sm text-muted-foreground">
-                / {priceUnit}
-              </span>
-            ) : null}
-          </div>
-
           <div className="my-5 border-t" />
 
-          {/* Key facts */}
-          <dl className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm">
-            <Fact label="Product ID" value={sku} />
-            <Fact label="SKU" value={selectedVariant?.catalogSku ?? "—"} />
-            <Fact label="Brand" value={brandName} />
-            <Fact
-              label="Category"
-              value={
-                product.subCategory?.name
-                  ? `${categoryName} / ${product.subCategory.name}`
-                  : categoryName
-              }
-            />
-            <Fact
-              label="Availability"
-              value={product.inStock === false ? "Out of Stock" : "In Stock"}
-              tone={product.inStock === false ? "muted" : "positive"}
-            />
-          </dl>
-
-          {/* Variants */}
           {activeVariants.length > 0 ? (
-            <div className="mt-5">
-              <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                Variants
-              </p>
-              <div className="flex flex-wrap gap-2">
-                {activeVariants.map((variant) => {
-                  const selected = variant.id === selectedVariantId;
-                  return (
-                    <button
-                      key={variant.id}
-                      type="button"
-                      onClick={() => setSelectedVariantId(variant.id)}
-                      className={cn(
-                        "flex flex-col items-start rounded-lg border px-3 py-1.5 text-left transition-colors",
-                        selected
-                          ? "border-primary bg-primary/5 ring-1 ring-primary"
-                          : "hover:border-foreground/20",
-                      )}
-                    >
-                      <span className="text-sm font-medium">
-                        {variantLabel(variant.variantOption)}
-                      </span>
-                      <span className="text-xs text-muted-foreground">
-                        {formatBDT(variant.consumerPrice) ?? "No price"}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
+            <OptionGroup
+              label={isLpg ? "Cylinder Size" : "Variants"}
+              options={sizeLabels}
+            />
+          ) : null}
+          {isLpg ? (
+            <OptionGroup
+              label="Cylinder Type"
+              options={cylinderTypes}
+              className="mt-4"
+            />
           ) : null}
 
-          {/* Delivery info */}
-          <div className="mt-5 flex flex-wrap gap-x-5 gap-y-2 text-sm text-muted-foreground">
-            <span className="flex items-center gap-1.5">
-              <Truck className="h-4 w-4" />
-              Home Delivery Available
-            </span>
-            <span className="flex items-center gap-1.5">
-              <Wallet className="h-4 w-4" />
-              Cash on Delivery
-            </span>
+          <div className="mt-4">
+            <p className="mb-2 text-sm font-medium">Quantity</p>
+            {/* Display only for now; ordering happens from the seller panels. */}
+            <div className="inline-flex items-center rounded-lg border">
+              <Button
+                variant="ghost"
+                size="icon"
+                disabled
+                aria-label="Decrease quantity"
+              >
+                <Minus className="size-4" />
+              </Button>
+              <span className="w-10 text-center text-sm font-medium tabular-nums">
+                1
+              </span>
+              <Button
+                variant="ghost"
+                size="icon"
+                disabled
+                aria-label="Increase quantity"
+              >
+                <Plus className="size-4" />
+              </Button>
+            </div>
+          </div>
+
+          <div className="mt-6 flex flex-wrap gap-2">
+            <Button asChild>
+              <Link href={editHref}>
+                <Pencil className="size-4" />
+                Edit Product
+              </Link>
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => toast.info("Label printing is coming soon.")}
+            >
+              <Printer className="size-4" />
+              Print Label
+            </Button>
           </div>
         </div>
       </div>
 
       {/* Tabs */}
-      <Tabs defaultValue="description">
-        <TabsList className="h-11 w-full max-w-md p-1">
+      <Tabs defaultValue="information">
+        <TabsList className="h-11 w-full max-w-lg p-1">
+          <TabsTrigger value="information" className="text-sm">
+            Product Information
+          </TabsTrigger>
           <TabsTrigger value="description" className="text-sm">
             Description
           </TabsTrigger>
@@ -413,6 +451,132 @@ export function WebViewDetailClient({
             ) : null}
           </TabsTrigger>
         </TabsList>
+
+        {/* Product Information */}
+        <TabsContent value="information" className="mt-4 space-y-5">
+          <Section title="Product Information">
+            {/* Reads down each column: identity on the left, ordering and brand on the right. */}
+            <dl className="grid gap-x-8 gap-y-3 text-sm sm:grid-flow-col sm:grid-cols-2 sm:grid-rows-5">
+              <InfoRow label="Product ID" value={productId} />
+              <InfoRow label="Category" value={categoryName} />
+              <InfoRow
+                label="Sub Category"
+                value={product.subCategory?.name ?? "None"}
+              />
+              <InfoRow label="Product Name" value={product.name} />
+              <InfoRow
+                label="Variant"
+                value={
+                  isLpg
+                    ? exchange
+                      ? "Size / Type"
+                      : "Size"
+                    : sizeLabels.join(", ") || "None"
+                }
+              />
+              <InfoRow label="Inventory Unit" value={inventoryUnit ?? "—"} />
+              <InfoRow label="Minimum Order" value={minimumOrder} />
+              <InfoRow label="Brand" value={brandName} />
+              <InfoRow
+                label="SKU"
+                value={
+                  variantSkus.length > 0 ? (
+                    <span className="flex flex-wrap gap-x-2 gap-y-0.5">
+                      {variantSkus.map((code) => (
+                        <span key={code} className="whitespace-nowrap">
+                          {code}
+                        </span>
+                      ))}
+                    </span>
+                  ) : (
+                    sku
+                  )
+                }
+              />
+              <InfoRow
+                label="Status"
+                value={product.status === "inactive" ? "Inactive" : "Active"}
+              />
+            </dl>
+          </Section>
+
+          <Section title="Inventory & Product Rules">
+            {/* 1px gaps over a border-coloured background draw the cell lines. */}
+            <div className="grid gap-px overflow-hidden rounded-lg border bg-border sm:grid-cols-2">
+              <RuleCell label="Variant">
+                <div className="mt-1.5 space-y-1.5 text-sm">
+                  {isLpg ? (
+                    <ValueList label="Type" values={cylinderTypes} />
+                  ) : null}
+                  <ValueList
+                    label={isLpg ? "Size" : "Options"}
+                    values={sizeLabels}
+                  />
+                </div>
+              </RuleCell>
+              <RuleCell label="Conversion">
+                <RuleState enabled={Boolean(product.conversionEnabled)} />
+              </RuleCell>
+              <RuleCell label="Inventory Unit">
+                <p className="mt-1.5 text-sm font-medium">
+                  {inventoryUnit ?? "—"}
+                </p>
+              </RuleCell>
+              <RuleCell label="Inventory Loose Unit">
+                <RuleState
+                  enabled={Boolean(product.inventoryLooseUnitEnabled)}
+                />
+                {product.inventoryLooseUnitEnabled ? (
+                  <RuleDetail
+                    label="Unit"
+                    value={(product.inventoryLooseUnit ?? "").toUpperCase()}
+                  />
+                ) : null}
+              </RuleCell>
+              <RuleCell label="Return Policy">
+                <RuleState enabled={Boolean(product.returnPolicyEnabled)} />
+              </RuleCell>
+              <RuleCell label="Empty Pack Return">
+                <RuleState enabled={Boolean(product.isReturnablePack)} />
+                {product.isReturnablePack ? (
+                  <RuleDetail
+                    label="Empty Pack Price"
+                    value={
+                      formatBDT(product.defaultPackDepositAmount) ?? "Not set"
+                    }
+                  />
+                ) : null}
+              </RuleCell>
+              <RuleCell label="Batch Tracking">
+                <RuleState enabled={product.trackingType === "batch"} />
+              </RuleCell>
+              <RuleCell label="Damage Tracking">
+                <RuleState enabled={Boolean(product.damageControlEnabled)} />
+              </RuleCell>
+              <RuleCell label="Expiry Tracking">
+                <RuleState enabled={Boolean(product.expiryEnabled)} />
+              </RuleCell>
+              <RuleCell label="Minimum Order Qty">
+                <RuleState enabled={Boolean(product.minimumOrderEnabled)} />
+                {product.minimumOrderEnabled ? (
+                  <RuleDetail label="Minimum Order" value={minimumOrder} />
+                ) : null}
+              </RuleCell>
+              <RuleCell label="Delivery Cost">
+                <p className="mt-1.5 text-sm text-muted-foreground">
+                  Not set for this product
+                </p>
+              </RuleCell>
+              <div aria-hidden="true" className="bg-card max-sm:hidden" />
+            </div>
+          </Section>
+
+          <AdminOnlyBlock
+            productId={product.id}
+            stats={stats}
+            pricing={isLpg ? lpgPriceRows(activeVariants) : null}
+          />
+        </TabsContent>
 
         {/* Description */}
         <TabsContent value="description" className="mt-4">
@@ -499,30 +663,257 @@ export function WebViewDetailClient({
   );
 }
 
-function Fact({
+/** Display-only option circles, like the storefront's choices. */
+function OptionGroup({
   label,
-  value,
-  tone = "default",
+  options,
+  className,
 }: {
   label: string;
-  value: string;
-  tone?: "default" | "positive" | "muted";
+  options: string[];
+  className?: string;
 }) {
   return (
-    <div>
-      <dt className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-        {label}
-      </dt>
-      <dd
-        className={cn(
-          "mt-0.5 font-medium",
-          tone === "positive" && "text-emerald-600",
-          tone === "muted" && "text-muted-foreground",
-        )}
-      >
-        {value}
-      </dd>
+    <div className={className}>
+      <p className="mb-2 text-sm font-medium">{label}</p>
+      <ul className="flex flex-wrap gap-2">
+        {options.map((option) => (
+          <li
+            key={option}
+            className="inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm"
+          >
+            <span
+              aria-hidden="true"
+              className="size-3.5 rounded-full border-2 border-muted-foreground/40"
+            />
+            {option}
+          </li>
+        ))}
+      </ul>
     </div>
+  );
+}
+
+function Section({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section className="rounded-xl border bg-card p-5 shadow-sm lg:p-6">
+      <h2 className="mb-4 text-base font-semibold">{title}</h2>
+      {children}
+    </section>
+  );
+}
+
+function InfoRow({ label, value }: { label: string; value: ReactNode }) {
+  return (
+    <div className="grid grid-cols-[9rem_1fr] gap-3 border-b border-dashed pb-2.5">
+      <dt className="text-muted-foreground">{label}</dt>
+      <dd className="min-w-0 break-words font-medium">{value}</dd>
+    </div>
+  );
+}
+
+function RuleCell({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="bg-card p-4">
+      <p className="text-sm font-semibold">{label}</p>
+      {children}
+    </div>
+  );
+}
+
+/** Read-only Enable / Disable, shown the way the product form sets it. */
+function RuleState({ enabled }: { enabled: boolean }) {
+  return (
+    <p className="mt-1.5 flex gap-4 text-sm">
+      <span className="sr-only">{enabled ? "Enabled" : "Disabled"}</span>
+      {[true, false].map((option) => {
+        const selected = option === enabled;
+        return (
+          <span
+            key={String(option)}
+            aria-hidden="true"
+            className={cn(
+              "inline-flex items-center gap-1.5",
+              selected ? "font-medium text-foreground" : "text-muted-foreground",
+            )}
+          >
+            <span
+              className={cn(
+                "size-3.5 rounded-full border-2",
+                selected
+                  ? "border-[4.5px] border-primary"
+                  : "border-muted-foreground/40",
+              )}
+            />
+            {option ? "Enable" : "Disable"}
+          </span>
+        );
+      })}
+    </p>
+  );
+}
+
+function RuleDetail({ label, value }: { label: string; value: string }) {
+  return (
+    <p className="mt-2 text-sm text-muted-foreground">
+      {label}: <span className="font-medium text-foreground">{value}</span>
+    </p>
+  );
+}
+
+function ValueList({ label, values }: { label: string; values: string[] }) {
+  return (
+    <p className="flex flex-wrap items-center gap-1.5">
+      <span className="w-12 text-muted-foreground">{label}</span>
+      {values.length > 0 ? (
+        values.map((value) => (
+          <span
+            key={value}
+            className="rounded-md border bg-muted/40 px-2 py-0.5 text-xs font-medium"
+          >
+            {value}
+          </span>
+        ))
+      ) : (
+        <span className="text-muted-foreground">None</span>
+      )}
+    </p>
+  );
+}
+
+/** Product History and Pricing: shown on the admin panel only. */
+function AdminOnlyBlock({
+  productId,
+  stats,
+  pricing,
+}: {
+  productId: number;
+  stats: ReviewStats;
+  pricing: ReturnType<typeof lpgPriceRows> | null;
+}) {
+  const { data: insights, isLoading } = useQuery(
+    orpc.product.getAdminProductInsights.queryOptions({
+      input: { id: productId },
+    }),
+  );
+  const pending = isLoading ? "Loading…" : "—";
+  const created = formatDate(insights?.createdAt);
+
+  return (
+    <section
+      aria-labelledby="admin-only-heading"
+      className="space-y-5 rounded-xl border border-amber-200 bg-amber-50/50 p-5 lg:p-6 dark:border-amber-900/60 dark:bg-amber-950/15"
+    >
+      <div className="flex items-center gap-2">
+        <ShieldCheck
+          aria-hidden="true"
+          className="size-4 text-amber-700 dark:text-amber-400"
+        />
+        <h2 id="admin-only-heading" className="text-base font-semibold">
+          Admin only
+        </h2>
+        <span className="text-xs text-muted-foreground">
+          Not shown to wholesalers or retailers
+        </span>
+      </div>
+
+      <div>
+        <h3 className="mb-3 text-sm font-semibold">Product History</h3>
+        <dl className="grid gap-x-8 gap-y-3 text-sm sm:grid-cols-2">
+          <InfoRow
+            label="Created"
+            value={
+              created
+                ? `${created}${insights?.createdByName ? ` by ${insights.createdByName}` : ""}`
+                : pending
+            }
+          />
+          <InfoRow
+            label="Price Changed"
+            value={
+              insights
+                ? (formatDate(insights.lastPriceChangeAt) ?? "Not changed yet")
+                : pending
+            }
+          />
+          <div className="grid grid-cols-[9rem_1fr] gap-3 border-b border-dashed pb-2.5">
+            <dt className="text-muted-foreground">Average Rating</dt>
+            <dd className="flex items-center gap-2 font-medium">
+              {stats.totalReviews > 0 ? (
+                <>
+                  <StarRating
+                    rating={Math.round(stats.averageRating)}
+                    size="sm"
+                  />
+                  {stats.averageRating.toFixed(1)}
+                </>
+              ) : (
+                "No reviews yet"
+              )}
+            </dd>
+          </div>
+          <InfoRow
+            label="Total Orders"
+            value={
+              insights
+                ? `${insights.orderCount.toLocaleString("en-BD")} ${insights.orderCount === 1 ? "Order" : "Orders"}`
+                : pending
+            }
+          />
+        </dl>
+      </div>
+
+      {pricing ? (
+        <div>
+          <h3 className="mb-3 text-sm font-semibold">Pricing</h3>
+          <div className="overflow-hidden rounded-lg border bg-card">
+            <Table>
+              <TableHeader>
+                <TableRow className="hover:bg-transparent">
+                  <TableHead scope="col">Capacity</TableHead>
+                  <TableHead scope="col" className="text-right">
+                    Exchange Price
+                  </TableHead>
+                  <TableHead scope="col" className="text-right">
+                    New Cylinder Price
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {pricing.length === 0 ? (
+                  <TableRow>
+                    <TableCell
+                      colSpan={3}
+                      className="h-20 text-center text-muted-foreground"
+                    >
+                      No cylinder sizes configured for this brand.
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  pricing.map((row) => (
+                    <TableRow key={row.id}>
+                      <TableCell className="font-medium">
+                        {row.capacity}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {row.exchangePrice === null
+                          ? "—"
+                          : formatBDT(row.exchangePrice)}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {row.newPrice === null
+                          ? "Not set"
+                          : formatBDT(row.newPrice)}
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </div>
+        </div>
+      ) : null}
+    </section>
   );
 }
 

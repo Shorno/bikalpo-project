@@ -425,7 +425,7 @@ export default function AdminWebViewPage() {
                 aria-label="Search products"
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
-                placeholder="Search product, brand, System ID..."
+                placeholder="Search product, brand, Product ID..."
                 className="h-11 pl-10"
               />
             </div>

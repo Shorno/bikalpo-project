@@ -98,7 +98,7 @@ function normalize(value: string | null | undefined) {
   return (value ?? "").trim().toLowerCase();
 }
 
-/** The 8-digit System ID (Type, Category, Sub Category, product serial). */
+/** The 8-digit Product ID (Type, Category, Sub Category, product serial). */
 function productIdLabel(product: CatalogProduct) {
   return (
     product.coreProduct?.catalogCode ||
@@ -220,7 +220,7 @@ export default function ProductCatalogTable({
         header: ({ column }) => (
           <SortableHeader
             column={column}
-            label="System ID"
+            label="Product ID"
             compact={isMobile}
           />
         ),
