@@ -1,4 +1,4 @@
-import type { ToLetFacilityInclusions } from "@bikalpo-project/api/lib/tolet-facilities";
+import { isFacilityOffered, type ToLetFacilityInclusions } from "@bikalpo-project/api/lib/tolet-facilities";
 import { Check, Eye, Info, MapPin, X } from "lucide-react";
 import type { ElementType, ReactNode } from "react";
 import { PublicListingGallery } from "@/components/features/to-let/public-listing-gallery";
@@ -402,14 +402,14 @@ export function toLetUnitFacilities({
   inclusions?: ToLetFacilityInclusions | null;
 }): ToLetFacilityEntry[] {
   return [
-    { key: "water", label: "Water Supply", available: property?.hasWaterSupply, included: inclusions?.water },
-    { key: "gas", label: "Gas", available: property?.hasGasConnection, included: inclusions?.gas },
-    { key: "electricity", label: "Electricity", available: property?.hasElectricity, included: inclusions?.electricity },
+    { key: "water", label: "Water Supply", available: isFacilityOffered(inclusions, "water", property?.hasWaterSupply), included: inclusions?.water },
+    { key: "gas", label: "Gas", available: isFacilityOffered(inclusions, "gas", property?.hasGasConnection), included: inclusions?.gas },
+    { key: "electricity", label: "Electricity", available: isFacilityOffered(inclusions, "electricity", property?.hasElectricity), included: inclusions?.electricity },
     { key: "internet", label: "Internet", available: hasInternet, included: inclusions?.internet },
-    { key: "lift", label: "Lift", available: property?.hasLift, included: inclusions?.lift },
-    { key: "parking", label: "Parking", available: property?.hasParking, included: inclusions?.parking },
-    { key: "generator", label: "Generator", available: property?.hasGenerator, included: inclusions?.generator },
-    { key: "furnished", label: "Furnished", available: isFurnished, included: inclusions?.furnished },
+    { key: "lift", label: "Lift", available: isFacilityOffered(inclusions, "lift", property?.hasLift), included: inclusions?.lift },
+    { key: "parking", label: "Parking", available: isFacilityOffered(inclusions, "parking", property?.hasParking), included: inclusions?.parking },
+    { key: "generator", label: "Generator", available: isFacilityOffered(inclusions, "generator", property?.hasGenerator), included: inclusions?.generator },
+    { key: "furnished", label: "Furnished", available: isFacilityOffered(inclusions, "furnished", isFurnished), included: inclusions?.furnished },
   ];
 }
 

@@ -96,12 +96,14 @@ export function PublicUnitListingCard({
       </div>
 
       <div data-slot="card-body" className="flex flex-1 flex-col p-4 sm:p-5">
-        <div data-slot="metadata" className="flex flex-wrap items-center justify-between gap-2">
-          <span className="inline-flex items-center gap-1 text-xs tabular-nums text-muted-foreground">
-            <Eye className="size-3.5" aria-hidden="true" />
-            {listing.viewCount.toLocaleString("en-BD")} views
+        <div data-slot="metadata" className="flex items-center justify-between gap-2">
+          <span className="min-w-0 truncate text-xs tabular-nums text-muted-foreground">
+            {listing.monthlyRent === null
+              ? "––––"
+              : `৳${listing.monthlyRent.toLocaleString("en-BD")}`}{" "}
+            / Month
           </span>
-          <span className="break-all text-xs tabular-nums text-muted-foreground">
+          <span className="shrink-0 whitespace-nowrap text-xs tabular-nums text-muted-foreground">
             <MobileAlt compactMobile={compactMobile} desktop={`ID: ${listing.unitCode ?? listing.listingCode}`} mobile={listing.unitCode ?? listing.listingCode} />
           </span>
         </div>
@@ -131,8 +133,8 @@ export function PublicUnitListingCard({
             ))}
           </ul>
         ) : null}
-        <div data-slot="location" className="mt-3 mb-5 flex items-center gap-1.5 text-xs leading-5 text-muted-foreground sm:text-sm">
-          <MapPin className="size-3.5 shrink-0" aria-hidden="true" />
+        <div data-slot="location" className="mt-3 mb-5 flex items-center gap-1.5 text-xs font-medium leading-5 text-foreground sm:text-sm">
+          <MapPin className="size-4 shrink-0 text-primary" aria-hidden="true" />
           <p className="min-w-0 truncate" title={location}>{location}</p>
         </div>
 

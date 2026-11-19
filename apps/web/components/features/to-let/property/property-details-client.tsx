@@ -369,7 +369,7 @@ export function PropertyDetailsClient({
       <section id="property-units" className="scroll-mt-24 space-y-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h2 className="text-lg font-semibold text-foreground">My To-Let</h2>
+            <h2 className="text-lg font-extrabold tracking-tight text-foreground uppercase sm:text-xl">My Units / To-Let</h2>
             <p className="text-sm text-muted-foreground">
               Manage every Unit and its current To-Let Listing.
             </p>
@@ -383,7 +383,7 @@ export function PropertyDetailsClient({
               Unit Capacity Reached
             </Button>
           ) : (
-            <Button variant="outline" asChild>
+            <Button asChild>
               <Link
                 href={`/account/to-let/properties/${property.propertyCode}/units/new`}
               >
@@ -404,12 +404,12 @@ export function PropertyDetailsClient({
             </p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <div className="grid grid-cols-2 gap-2.5 sm:gap-4 lg:grid-cols-3 2xl:grid-cols-4">
             {units.map((unit) => (
               <div
                 key={unit.unitCode}
                 id={`unit-${unit.unitCode}`}
-                className={`scroll-mt-24 rounded-xl transition-shadow duration-500 ${
+                className={`min-w-0 scroll-mt-24 rounded-xl transition-shadow duration-500 ${
                   highlightedUnit === unit.unitCode
                     ? "ring-2 ring-primary ring-offset-2 ring-offset-background"
                     : ""

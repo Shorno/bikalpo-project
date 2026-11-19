@@ -1629,19 +1629,6 @@ export function UnitDetailsClient({
                   </Link>
                 </Button>
               ) : null}
-              {isBlocked ? (
-                <Button variant="outline" disabled>
-                  <Edit2 /> Edit
-                </Button>
-              ) : (
-                <Button variant="outline" asChild>
-                  <Link
-                    href={`/account/to-let/properties/${property.propertyCode}/units/${unit.unitCode}/edit`}
-                  >
-                    <Edit2 /> Edit
-                  </Link>
-                </Button>
-              )}
               <Button variant="outline" onClick={shareUnit}>
                 <Share2 /> Share
               </Button>

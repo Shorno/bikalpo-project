@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { toLetCategoryLabel, toLetUnitCapabilities, toLetUnitTypes } from "./tolet-categories";
-import { facilityInclusion, normalizeFacilityInclusions, toLetFacilityInclusionsSchema } from "./tolet-facilities";
+import { facilityInclusion, isFacilityOffered, normalizeFacilityInclusions, toLetFacilityInclusionsSchema } from "./tolet-facilities";
 
 describe("client document categories", () => {
   test("new categories work without discarding legacy values", () => {
@@ -20,4 +20,11 @@ describe("facility availability and inclusion are independent", () => {
   test("preserves excluded available facilities", () => expect(facilityInclusion({ water: false }, "water")).toBe(false));
   test("unknown facility keys are rejected", () => expect(toLetFacilityInclusionsSchema.safeParse({ arbitrary: true }).success).toBe(false));
   test("unavailable cannot be included", () => expect(normalizeFacilityInclusions({ water: true, gas: false }, { water: false, gas: true })).toEqual({ water: false, gas: false }));
+  test("a facility switched off for the unit stays off", () => {
+    const inclusions = toLetFacilityInclusionsSchema.parse({ gas: true, notAvailable: ["gas"] });
+    expect(normalizeFacilityInclusions(inclusions, { gas: true })).toEqual({ gas: false, notAvailable: ["gas"] });
+    expect(isFacilityOffered(inclusions, "gas", true)).toBe(false);
+    expect(isFacilityOffered(inclusions, "water", true)).toBe(true);
+    expect(isFacilityOffered(inclusions, "water", false)).toBe(false);
+  });
 });

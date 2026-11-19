@@ -256,7 +256,7 @@ export const toletUnitListing = pgTable(
 			.default("any")
 			.notNull(),
 		hasInternet: boolean("has_internet").default(false).notNull(),
-		facilityInclusions: jsonb("facility_inclusions").$type<Partial<Record<"water" | "gas" | "electricity" | "internet" | "lift" | "parking" | "generator" | "security" | "cctv" | "furnished", boolean>>>(),
+		facilityInclusions: jsonb("facility_inclusions").$type<Partial<Record<"water" | "gas" | "electricity" | "internet" | "lift" | "parking" | "generator" | "security" | "cctv" | "furnished", boolean>> & { notAvailable?: Array<"water" | "gas" | "electricity" | "internet" | "lift" | "parking" | "generator" | "security" | "cctv" | "furnished"> }>(),
 		otherFacilities: text("other_facilities"),
 		imageUrls: text("image_urls").array().default([]).notNull(),
 		videoUrl: text("video_url"),
