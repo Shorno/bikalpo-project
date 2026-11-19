@@ -21,8 +21,6 @@ import {
   Eye,
   Loader2,
   PackagePlus,
-  Search,
-  X,
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -35,7 +33,6 @@ import {
 } from "react";
 import { SetupTableFooter } from "@/components/features/product-setup/setup-table-footer";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -54,6 +51,7 @@ import {
 } from "@/components/ui/table";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { ADMIN_BASE } from "@/lib/routes";
+import { CatalogActionBar, CatalogFilterPanel } from "./catalog-layout";
 
 const ALL = "all";
 const PAGE_SIZE = 10;
@@ -85,7 +83,7 @@ export type CatalogProduct = {
 };
 
 type FilterOption = {
-  id: number;
+  id: number | string;
   name: string;
 };
 
@@ -111,7 +109,7 @@ function productIdLabel(product: CatalogProduct) {
 }
 
 function uniqueOptions(items: Array<FilterOption | null | undefined>) {
-  const options = new Map<number, string>();
+  const options = new Map<number | string, string>();
   for (const item of items) {
     if (item) options.set(item.id, item.name);
   }
@@ -362,43 +360,18 @@ export default function ProductCatalogTable({
 
   return (
     <div className="@container/catalog min-w-0 space-y-4 md:space-y-5">
-      <section
-        aria-label="Product filters"
-        className="rounded-xl border bg-card p-4 shadow-sm max-md:p-3"
+      <CatalogFilterPanel
+        search={search}
+        onSearchChange={(value) => {
+          setSearch(value);
+          table.setPageIndex(0);
+        }}
+        hasFilters={hasFilters}
+        onClear={clearFilters}
       >
-        <div className="mb-4 flex items-center gap-2">
-          <div className="relative min-w-0 flex-1 md:w-2/3 md:flex-none">
-            <Search
-              className="absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
-              aria-hidden="true"
-            />
-            <Input
-              id="product-catalog-search"
-              aria-label="Search products"
-              value={search}
-              onChange={(event) => {
-                setSearch(event.target.value);
-                table.setPageIndex(0);
-              }}
-              placeholder="Search products..."
-              className="h-11 pl-10"
-            />
-          </div>
-          {hasFilters && (
-            <Button
-              className="shrink-0 max-md:min-h-11"
-              variant="ghost"
-              size="sm"
-              type="button"
-              onClick={clearFilters}
-            >
-              <X aria-hidden="true" className="size-4" />
-              Clear filters
-            </Button>
-          )}
-        </div>
-        <div className="grid grid-cols-3 gap-3 max-md:gap-2">
+        {[
           <FilterSelect
+            key="type"
             compact={isMobile}
             label="Type"
             value={typeFilter}
@@ -406,8 +379,9 @@ export default function ProductCatalogTable({
             onValueChange={(value) =>
               updateFilter("type", value, ["category", "subCategory"])
             }
-          />
+          />,
           <FilterSelect
+            key="category"
             compact={isMobile}
             label="Category"
             value={categoryFilter}
@@ -415,38 +389,32 @@ export default function ProductCatalogTable({
             onValueChange={(value) =>
               updateFilter("category", value, ["subCategory"])
             }
-          />
+          />,
           <FilterSelect
+            key="subCategory"
             compact={isMobile}
             label="Sub Category"
             value={subCategoryFilter}
             options={subCategoryOptions}
             onValueChange={(value) => updateFilter("subCategory", value)}
-          />
-        </div>
-      </section>
+          />,
+        ]}
+      </CatalogFilterPanel>
 
-      <div className="flex justify-center">
-        <div className="flex flex-wrap items-center justify-center gap-2">
-          <Button
-            asChild
-            variant="outline"
-            size="sm"
-            className="max-md:min-h-11"
-          >
-            <Link href={`${ADMIN_BASE}/setup-requests`}>
-              <Clock3 className="size-4" />
-              Requests
-            </Link>
-          </Button>
-          <Button asChild size="sm" className="max-md:min-h-11">
-            <Link href={`${ADMIN_BASE}/products/new`}>
-              <PackagePlus className="size-4" />
-              Create Product
-            </Link>
-          </Button>
-        </div>
-      </div>
+      <CatalogActionBar>
+        <Button asChild variant="outline" size="sm" className="max-md:min-h-11">
+          <Link href={`${ADMIN_BASE}/setup-requests`}>
+            <Clock3 className="size-4" />
+            Requests
+          </Link>
+        </Button>
+        <Button asChild size="sm" className="max-md:min-h-11">
+          <Link href={`${ADMIN_BASE}/products/new`}>
+            <PackagePlus className="size-4" />
+            Create Product
+          </Link>
+        </Button>
+      </CatalogActionBar>
 
       <div className="space-y-4">
         <section
