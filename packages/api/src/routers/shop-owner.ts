@@ -137,6 +137,7 @@ import {
   getOwnerProductList,
   ownerProductListInput,
 } from "./helpers/owner-product-list";
+import { getOwnerProductKpis } from "./helpers/owner-product-kpis";
 import { convertB2bOrderToRetailInventory } from "./helpers/b2b-conversion";
 import {
   prepareB2bMovementForApproval,
@@ -10818,6 +10819,14 @@ const shopProductEndpoints = {
         input,
       ),
     ),
+
+  /** Products page KPI cards: product counts and stock value. */
+  getProductKpis: permission("shop_products", "view").handler(({ context }) =>
+    getOwnerProductKpis({
+      ownerType: "shop",
+      ownerId: shopTenantId(context.session.user),
+    }),
+  ),
 
   /**
    * Get the retailer's brand products with unit-safe structured stock.

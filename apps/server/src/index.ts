@@ -1,5 +1,6 @@
 // Server reload: fixed catalog input validation for Zod v4 nullish
 import { createContext } from "@bikalpo-project/api/context";
+import { snapshotAllOwnerInventories } from "@bikalpo-project/api/routers/helpers/owner-product-kpis";
 import { appRouter } from "@bikalpo-project/api/routers/index";
 import { processDueOpenOrders } from "@bikalpo-project/api/services/open-order-matching";
 import { processToLetRentalLifecycle } from "@bikalpo-project/api/services/tolet-rental-lifecycle";
@@ -190,6 +191,22 @@ if (env.NODE_ENV === "production") {
   void reconcileToLetRentals();
   const toLetRentalTimer = setInterval(reconcileToLetRentals, 60 * 60 * 1_000);
   toLetRentalTimer.unref?.();
+
+  // Keeps a month-end stock value for every owner's Products page
+  // "vs last month" KPI, including owners who did not open the page.
+  const snapshotInventories = async () => {
+    try {
+      await snapshotAllOwnerInventories();
+    } catch (error) {
+      console.error("[Inventory Snapshot]", error);
+    }
+  };
+  void snapshotInventories();
+  const inventorySnapshotTimer = setInterval(
+    snapshotInventories,
+    6 * 60 * 60 * 1_000,
+  );
+  inventorySnapshotTimer.unref?.();
 }
 
 export default {

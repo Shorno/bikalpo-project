@@ -29,6 +29,7 @@ function row(
     productName: "Bashundhara LPG Gas Cylinder",
     productCode: "0202010108",
     productStatus: "active",
+    productCreatedAt: new Date("2026-01-15T00:00:00Z"),
     coreProductName: "LPG Gas Cylinder",
     typeId: 4,
     typeName: "Gas",

@@ -638,6 +638,13 @@
       "when": 1790553600006,
       "tag": "0091_eight_digit_core_catalog_id",
       "breakpoints": true
+    },
+    {
+      "idx": 92,
+      "version": "7",
+      "when": 1790553600007,
+      "tag": "0092_owner_inventory_snapshot",
+      "breakpoints": true
     }
   ]
 }

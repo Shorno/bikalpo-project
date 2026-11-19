@@ -1,5 +1,6 @@
 "use client";
 
+import type { OwnerProductKpis } from "@bikalpo-project/api/routers/helpers/owner-product-kpis";
 import type {
   OwnerProductFilterOption,
   OwnerProductListInput,
@@ -22,6 +23,7 @@ import { type ReactNode, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { CatalogFilterPanel } from "@/components/features/product/components/catalog-layout";
 import { FilterSelect } from "@/components/features/product/components/product-catalog-table";
+import { OwnerProductKpiCards } from "@/components/features/product/owner-product-kpis";
 import { SetupTableFooter } from "@/components/features/product-setup/setup-table-footer";
 import { Button } from "@/components/ui/button";
 import {
@@ -83,12 +85,14 @@ function variantText(item: OwnerProductListItem) {
 export function OwnerProductList({
   queryKey,
   fetchList,
+  fetchKpis,
   detailHref,
   addProductHref,
 }: {
   /** Distinguishes the wholesaler and retailer caches. */
   queryKey: readonly unknown[];
   fetchList: (input: ListQuery) => Promise<OwnerProductListResponse>;
+  fetchKpis: () => Promise<OwnerProductKpis>;
   detailHref: (productId: number) => string;
   addProductHref: string;
 }) {
@@ -201,6 +205,11 @@ export function OwnerProductList({
           </Button>
         </div>
       </header>
+
+      <OwnerProductKpiCards
+        queryKey={[...queryKey, "kpis"]}
+        fetchKpis={fetchKpis}
+      />
 
       <CatalogFilterPanel
         search={search}

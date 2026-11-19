@@ -1,5 +1,6 @@
 "use client";
 
+import type { OwnerProductKpis } from "@bikalpo-project/api/routers/helpers/owner-product-kpis";
 import {
   OwnerProductList,
   type OwnerProductListResponse,
@@ -16,6 +17,11 @@ export default function WarehouseProductsPage() {
         (orpc.warehouse as any).getProductList.call(
           input,
         ) as Promise<OwnerProductListResponse>
+      }
+      fetchKpis={() =>
+        (
+          orpc.warehouse as any
+        ).getProductKpis.call() as Promise<OwnerProductKpis>
       }
       detailHref={(productId) => `${WH}/stock/product-${productId}`}
       addProductHref={`${WH}/catalog`}

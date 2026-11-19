@@ -45,6 +45,7 @@ export type OwnerProductVariantRow = {
   productName: string;
   productCode: string | null;
   productStatus: string;
+  productCreatedAt: Date;
   coreProductName: string | null;
   typeId: number | null;
   typeName: string | null;
@@ -289,6 +290,7 @@ export async function loadOwnerProductRows(
       productName: product.name,
       productCode: product.catalogCode,
       productStatus: product.status,
+      productCreatedAt: product.createdAt,
       coreProductName: coreProductIdentity.name,
       typeId: productType.id,
       typeName: productType.name,

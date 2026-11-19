@@ -87,6 +87,7 @@ import {
   getOwnerProductList,
   ownerProductListInput,
 } from "./helpers/owner-product-list";
+import { getOwnerProductKpis } from "./helpers/owner-product-kpis";
 import { ensureWarehouseBuyerTargetVariant } from "./helpers/b2b-buyer-target";
 import {
   convertB2bOrderToRetailInventory,
@@ -9812,7 +9813,6 @@ import {
 } from "@bikalpo-project/db/schema";
 
 const pricingQueries = {
-  /** Paginated configured-variant rows for the warehouse Products screen. */
   /** Products page: one row per brand product, shared shape with the retailer panel. */
   getProductList: warehouseProcedure
     .input(ownerProductListInput)
@@ -9823,6 +9823,15 @@ const pricingQueries = {
       ),
     ),
 
+  /** Products page KPI cards: product counts and stock value. */
+  getProductKpis: warehouseProcedure.handler(({ context }) =>
+    getOwnerProductKpis({
+      ownerType: "warehouse",
+      ownerId: context.session.user.id,
+    }),
+  ),
+
+  /** Paginated configured-variant rows for the warehouse Products screen. */
   getWarehouseProductList: warehouseProcedure
     .input(
       z.object({

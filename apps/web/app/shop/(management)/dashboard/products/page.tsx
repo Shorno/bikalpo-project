@@ -15,6 +15,7 @@ export default function ShopProductsPage() {
           input,
         ) as Promise<OwnerProductListResponse>
       }
+      fetchKpis={() => orpc.shopOwner.getProductKpis.call()}
       detailHref={(productId) => `/dashboard/products/${productId}`}
       addProductHref="/dashboard/product-catalog"
     />
