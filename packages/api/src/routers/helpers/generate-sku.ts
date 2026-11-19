@@ -1,21 +1,26 @@
 /**
  * Hierarchical SKU Generator
  *
- * Catalog Product ID format: TT-CC-SS-PPP-BB (11 digits)
- * Variant SKU appends the variant option code: TT-CC-SS-PPP-BB-VV (13 digits)
+ * All codes are flat digit strings with no separators, so they stay compact
+ * on narrow screens.
  *
- *   01 - 01 - 01 - 001 - 01 - 04
- *   │    │    │    │     │    └── Variant Option code  (2 digits)
- *   │    │    │    │     └─────── Brand code            (2 digits)
- *   │    │    │    └───────────── Core Product code     (3 digits)
- *   │    │    └────────────────── SubCategory code      (2 digits, "00" when none)
- *   │    └─────────────────────── Category code         (2 digits)
- *   └──────────────────────────── Product Type code     (2 digits)
+ * Core Product ID (System ID): TTCCSSPP      (8 digits)
+ * Catalog Product ID:          TTCCSSPPBB    (10 digits, + brand)
+ * Variant code:                TTCCSSPPBBVV  (12 digits, + variant option)
+ *
+ *   01  01  01  01  01  04
+ *   │   │   │   │   │   └── Variant Option code  (2 digits)
+ *   │   │   │   │   └────── Brand code            (2 digits)
+ *   │   │   │   └────────── Core Product serial   (2 digits)
+ *   │   │   └────────────── SubCategory code      (2 digits, "00" when none)
+ *   │   └────────────────── Category code         (2 digits)
+ *   └────────────────────── Product Type code     (2 digits)
  *
  * Example:
- *   Grocery(01) → Rice(01) → Miniket(01) → Miniket Rice(001) → ACI(01) → 5KG Pack(04)
- *   Catalog Product ID: 01-01-01-001-01
- *   Variant SKU:        01-01-01-001-01-04  (flat: 0101010010104)
+ *   Grocery(01) → Rice(01) → Miniket(01) → Miniket Rice(01) → ACI(01) → 5KG Pack(04)
+ *   Core Product ID:    01010101
+ *   Catalog Product ID: 0101010101
+ *   Variant code:       010101010104
  */
 
 import { db } from "@bikalpo-project/db";
@@ -27,7 +32,7 @@ export const SKU_SEGMENT_DIGITS = {
     type: 2,
     category: 2,
     subCategory: 2,
-    coreProduct: 3,
+    coreProduct: 2,
     brand: 2,
     variant: 2,
 } as const;
@@ -100,7 +105,7 @@ export interface CatalogProductIdInput {
     categorySkuCode?: string | null;
     /** SubCategory skuCode (2 digits); "00" when the product has no subcategory */
     subCategorySkuCode?: string | null;
-    /** Core Product Identity sku (3 digits) */
+    /** Core Product Identity serial (2 digits) */
     coreProductSkuCode?: string | null;
     /** Brand skuCode (2 digits) */
     brandSkuCode?: string | null;
@@ -126,7 +131,7 @@ function productSegments(input: CatalogProductIdInput): string[] {
 }
 
 /**
- * Compose the dashed Catalog Product ID (type-category-subcategory-core-brand).
+ * Compose the flat Catalog Product ID (type, category, subcategory, core, brand).
  * Missing segments are zero-filled, so a product without a subcategory gets "00".
  *
  * @example
@@ -134,21 +139,21 @@ function productSegments(input: CatalogProductIdInput): string[] {
  *   typeSkuCode: "01",
  *   categorySkuCode: "01",
  *   subCategorySkuCode: "01",
- *   coreProductSkuCode: "001",
+ *   coreProductSkuCode: "01",
  *   brandSkuCode: "01",
  * })
- * // → "01-01-01-001-01"
+ * // → "0101010101"
  */
 export function composeCatalogProductId(input: CatalogProductIdInput): string {
-    return productSegments(input).join("-");
+    return productSegments(input).join("");
 }
 
 /**
- * Compose a full 13-digit flat variant SKU from component codes.
+ * Compose a full 12-digit flat variant code from component codes.
  *
  * @example
  * composeSku({ ...catalogProductCodes, variantSkuCode: "04" })
- * // → "0101010010104"
+ * // → "010101010104"
  */
 export function composeSku(input: ComposeSkuInput): string {
     return [
@@ -179,11 +184,12 @@ function splitFlatSku(flat: string): string[] {
 }
 
 /**
- * Format a flat 13-digit SKU into dashed display format.
+ * Format a flat 12-digit variant code into dashed form (debugging/exports
+ * only; the UI shows codes flat).
  *
  * @example
- * formatSkuDisplay("0101010010104")
- * // → "01-01-01-001-01-04"
+ * formatSkuDisplay("010101010104")
+ * // → "01-01-01-01-01-04"
  */
 export function formatSkuDisplay(sku: string): string {
     if (sku.length !== FULL_SKU_LENGTH) return sku; // fallback for non-standard
@@ -191,10 +197,10 @@ export function formatSkuDisplay(sku: string): string {
 }
 
 /**
- * Parse a 13-digit SKU (flat or dashed) back into component codes.
+ * Parse a 12-digit variant code (flat or dashed) back into component codes.
  *
  * @example
- * parseSku("0101010010104")
+ * parseSku("010101010104")
  * // → { typeSkuCode: "01", categorySkuCode: "01", ... }
  */
 export function parseSku(sku: string): Required<ComposeSkuInput> {
@@ -211,7 +217,7 @@ export function parseSku(sku: string): Required<ComposeSkuInput> {
 }
 
 /**
- * Compose a partial SKU up to a given level (useful for display in lists).
+ * Compose a flat partial code up to a given level (useful for display in lists).
  * Missing segments are zero-filled so every segment keeps its position.
  *
  * @example
@@ -219,7 +225,7 @@ export function parseSku(sku: string): Required<ComposeSkuInput> {
  * // → "01"
  *
  * composePartialSku("category", { typeSkuCode: "01", categorySkuCode: "01" })
- * // → "01-01"
+ * // → "0101"
  */
 export function composePartialSku(
     level: "type" | "category" | "subCategory" | "coreProduct" | "brand" | "variant",
@@ -239,21 +245,21 @@ export function composePartialSku(
         parts.push(segment(codes[key], digits));
         if (key === levelKey) break;
     }
-    return parts.join("-");
+    return parts.join("");
 }
 
 /**
  * Shared Catalog Product ID for a core product + brand pair:
- * the core product's permanent catalog code followed by the brand code.
+ * the core product's catalog code followed by the brand code.
  * Returns null when either part is missing (legacy rows without codes).
  *
  * @example
- * catalogProductCode("02-02-01-018", "5") // → "02-02-01-018-05"
+ * catalogProductCode("02020118", "5") // → "0202011805"
  */
 export function catalogProductCode(
     coreCatalogCode: string | null | undefined,
     brandSkuCode: string | null | undefined,
 ): string | null {
     if (!coreCatalogCode || !brandSkuCode?.trim()) return null;
-    return `${coreCatalogCode}-${segment(brandSkuCode, SKU_SEGMENT_DIGITS.brand)}`;
+    return `${coreCatalogCode}${segment(brandSkuCode, SKU_SEGMENT_DIGITS.brand)}`;
 }

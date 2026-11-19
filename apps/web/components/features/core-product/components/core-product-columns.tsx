@@ -42,9 +42,9 @@ export function useCoreProductColumns() {
     () => [
       {
         id: "catalogCode",
-        header: "Catalog ID",
+        header: "System ID",
         cell: ({ row }) => (
-          <span className="flex flex-col font-mono text-xs tabular-nums">
+          <span className="flex flex-col font-medium">
             <span>{row.original.catalogCode || row.original.sku}</span>
             {row.original.shortCode && (
               <span className="text-muted-foreground">

@@ -11,6 +11,7 @@ import { and, asc, countDistinct, eq, isNotNull, ne, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { adminProcedure, publicProcedure } from "../index";
+import { refreshCoreCatalogCodes } from "./helpers/core-catalog-code";
 import { nextSkuCode } from "./helpers/generate-sku";
 
 // Validation schemas
@@ -275,17 +276,8 @@ export const categoryRouter = {
       await db.transaction(async (tx) => {
         let skuCode: string | undefined;
         if (typeChanged) {
-          // The category code is part of every catalog ID beneath it.
-          const coreInCategory = await tx.query.coreProductIdentity.findFirst({
-            where: eq(coreProductIdentity.categoryId, id),
-            columns: { id: true },
-          });
-          if (coreInCategory) {
-            throw new ORPCError("CONFLICT", {
-              message:
-                "This category already has core products with catalog IDs, so it cannot move to another Type.",
-            });
-          }
+          // The category gets a code under its new Type; the catalog IDs
+          // beneath it are re-issued after the move below.
           skuCode = await nextSkuCode(
             category,
             category.skuCode,
@@ -303,6 +295,11 @@ export const categoryRouter = {
             updatedAt: new Date(),
           })
           .where(eq(category.id, id));
+        if (typeChanged) {
+          await refreshCoreCatalogCodes(tx as unknown as typeof db, {
+            categoryId: id,
+          });
+        }
       });
 
       return { message: "Category updated successfully" };

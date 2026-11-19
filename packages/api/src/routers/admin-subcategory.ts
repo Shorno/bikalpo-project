@@ -9,6 +9,7 @@ import { ORPCError } from "@orpc/server";
 import { and, asc, countDistinct, eq, isNotNull, ne, sql } from "drizzle-orm";
 import { z } from "zod";
 import { adminProcedure } from "../index";
+import { refreshCoreCatalogCodes } from "./helpers/core-catalog-code";
 import { nextSkuCode } from "./helpers/generate-sku";
 
 const createSubcategoryInput = z.object({
@@ -297,18 +298,8 @@ export const adminSubcategoryRouter = {
       await db.transaction(async (tx) => {
         let skuCode: string | undefined;
         if (data.categoryId !== existing.categoryId) {
-          // The subcategory code is part of every catalog ID beneath it.
-          const coreInSubcategory =
-            await tx.query.coreProductIdentity.findFirst({
-              where: eq(coreProductIdentity.subCategoryId, id),
-              columns: { id: true },
-            });
-          if (coreInSubcategory) {
-            throw new ORPCError("CONFLICT", {
-              message:
-                "This sub category already has core products with catalog IDs, so it cannot move to another Category.",
-            });
-          }
+          // The sub category gets a code under its new Category; its core
+          // products move with it and their catalog IDs are re-issued below.
           skuCode = await nextSkuCode(
             subCategory,
             subCategory.skuCode,
@@ -326,6 +317,15 @@ export const adminSubcategoryRouter = {
             updatedAt: new Date(),
           })
           .where(eq(subCategory.id, id));
+        if (skuCode) {
+          await tx
+            .update(coreProductIdentity)
+            .set({ categoryId: data.categoryId })
+            .where(eq(coreProductIdentity.subCategoryId, id));
+          await refreshCoreCatalogCodes(tx as unknown as typeof db, {
+            subCategoryId: id,
+          });
+        }
       });
 
       return { message: "Subcategory updated successfully" };

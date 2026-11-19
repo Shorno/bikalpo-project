@@ -55,7 +55,7 @@ export function SetupTableFooter({
         >
           <SelectTrigger
             aria-label="Rows per page"
-            className="h-11 w-28 shadow-none sm:h-9 max-md:w-24 max-md:data-[size=default]:h-11"
+            className="h-9 w-28 shadow-none max-md:hidden"
           >
             <SelectValue />
           </SelectTrigger>

@@ -184,7 +184,9 @@ export default function NewCoreProductDialog() {
                   value={field.state.value}
                   onBlur={field.handleBlur}
                   onChange={(e) => field.handleChange(e.target.value)}
-                  placeholder="e.g. 003 (leave empty to auto-generate)"
+                  placeholder="e.g. 03 (leave empty to auto-generate)"
+                  maxLength={2}
+                  inputMode="numeric"
                   autoComplete="off"
                 />
                 <FieldDescription>

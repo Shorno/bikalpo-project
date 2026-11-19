@@ -42,13 +42,13 @@ export const brandCreationModeEnum = pgEnum(
 export const coreProductIdentity = pgTable("core_product_identity", {
   id: serial("id").primaryKey(),
 
-  /** Auto-generated SKU code (e.g. "001", "002") — unique within subcategory scope */
+  /** Auto-generated 2-digit serial (e.g. "01", "02") — unique within subcategory scope */
   sku: varchar("sku", { length: 20 }).notNull(),
 
   /**
-   * Permanent catalog code: Type-Category-SubCategory-Core (e.g. "02-02-01-018").
-   * Assigned once at creation and never regenerated, so printed or exported
-   * references keep pointing at the same core product.
+   * Core Product ID (System ID): 8 flat digits, Type(2) Category(2)
+   * SubCategory(2) Core serial(2), e.g. "02020118". Re-issued when the core
+   * product (or its Category / Sub Category) is reclassified.
    */
   catalogCode: varchar("catalog_code", { length: 32 }).notNull().unique(),
 

@@ -86,8 +86,9 @@ export const product = pgTable(
     sku: varchar("sku", { length: 100 }),
     /**
      * Shared Catalog Product ID: core catalog code + brand code
-     * (e.g. "02-02-01-018-05"). Admin, warehouse, and shop products of the
-     * same core product and brand carry the same value. Set once at creation.
+     * (e.g. "0202011805"). Admin, warehouse, and shop products of the
+     * same core product and brand carry the same value. Follows the core
+     * product when it is reclassified.
      */
     catalogCode: varchar("catalog_code", { length: 32 }),
     supplier: text("supplier"),
