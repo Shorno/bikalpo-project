@@ -71,12 +71,17 @@ export function CatalogFilterPanel({
   onSearchChange,
   hasFilters,
   onClear,
+  searchPlaceholder = "Search products...",
+  gridClassName = "grid-cols-3",
   children,
 }: {
   search: string;
   onSearchChange: (value: string) => void;
   hasFilters: boolean;
   onClear: () => void;
+  searchPlaceholder?: string;
+  /** Column classes for the filter grid; three columns by default. */
+  gridClassName?: string;
   /** The Type, Category, and Sub Category FilterSelects. */
   children: ReactNode;
 }) {
@@ -95,7 +100,7 @@ export function CatalogFilterPanel({
             aria-label="Search products"
             value={search}
             onChange={(event) => onSearchChange(event.target.value)}
-            placeholder="Search products..."
+            placeholder={searchPlaceholder}
             className="h-11 pl-10"
           />
         </div>
@@ -112,7 +117,9 @@ export function CatalogFilterPanel({
           </Button>
         )}
       </div>
-      <div className="grid grid-cols-3 gap-3 max-md:gap-2">{children}</div>
+      <div className={cn("grid gap-3 max-md:gap-2", gridClassName)}>
+        {children}
+      </div>
     </section>
   );
 }

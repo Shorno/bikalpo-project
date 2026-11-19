@@ -83,6 +83,10 @@ import {
   wholesaleCheckoutSubmissionSchema,
 } from "../services/wholesale-checkout";
 import { localDateStamp } from "../utils/date";
+import {
+  getOwnerProductList,
+  ownerProductListInput,
+} from "./helpers/owner-product-list";
 import { ensureWarehouseBuyerTargetVariant } from "./helpers/b2b-buyer-target";
 import {
   convertB2bOrderToRetailInventory,
@@ -9809,6 +9813,16 @@ import {
 
 const pricingQueries = {
   /** Paginated configured-variant rows for the warehouse Products screen. */
+  /** Products page: one row per brand product, shared shape with the retailer panel. */
+  getProductList: warehouseProcedure
+    .input(ownerProductListInput)
+    .handler(({ context, input }) =>
+      getOwnerProductList(
+        { ownerType: "warehouse", ownerId: context.session.user.id },
+        input,
+      ),
+    ),
+
   getWarehouseProductList: warehouseProcedure
     .input(
       z.object({

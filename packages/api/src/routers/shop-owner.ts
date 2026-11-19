@@ -133,6 +133,10 @@ import {
 import { shopTenantId } from "../shop-portal-scope";
 import { resolveActiveProductType } from "./helpers/application-fields";
 import { ensureShopBuyerTargetVariant } from "./helpers/b2b-buyer-target";
+import {
+  getOwnerProductList,
+  ownerProductListInput,
+} from "./helpers/owner-product-list";
 import { convertB2bOrderToRetailInventory } from "./helpers/b2b-conversion";
 import {
   prepareB2bMovementForApproval,
@@ -10804,6 +10808,16 @@ const shopProductEndpoints = {
       return { count: rows.length, violations: rows };
     },
   ),
+
+  /** Products page: one row per brand product, shared shape with the wholesaler panel. */
+  getProductList: permission("shop_products", "view")
+    .input(ownerProductListInput)
+    .handler(({ input, context }) =>
+      getOwnerProductList(
+        { ownerType: "shop", ownerId: shopTenantId(context.session.user) },
+        input,
+      ),
+    ),
 
   /**
    * Get the retailer's brand products with unit-safe structured stock.
