@@ -180,6 +180,9 @@ export const productRouter = {
         where: eq(product.creatorSource, "admin"),
         orderBy: [desc(product.createdAt)],
         with: {
+          coreProduct: {
+            columns: { id: true, catalogCode: true },
+          },
           category: {
             with: { type: true },
           },

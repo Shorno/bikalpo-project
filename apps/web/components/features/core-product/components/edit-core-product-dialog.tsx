@@ -194,7 +194,9 @@ export default function EditCoreProductDialog({
                   value={field.state.value}
                   onBlur={field.handleBlur}
                   onChange={(e) => field.handleChange(e.target.value)}
-                  placeholder="001"
+                  placeholder="01"
+                  maxLength={2}
+                  inputMode="numeric"
                 />
                 <FieldDescription>Unique identifier</FieldDescription>
               </Field>

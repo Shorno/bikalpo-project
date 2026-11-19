@@ -17,8 +17,9 @@ import { z } from "zod";
 import { adminProcedure } from "../index";
 import {
   assignCoreProductCode,
-  isCoreCatalogCodeInUse,
+  syncProductsToCoreProduct,
 } from "./helpers/core-catalog-code";
+import { SKU_SEGMENT_DIGITS } from "./helpers/generate-sku";
 import { setCoreProductShortCode } from "./helpers/sellable-sku";
 
 // === Input Schemas ===
@@ -451,7 +452,7 @@ export const adminCoreProductRouter = {
       const { sku: requestedSku, shortCode, ...identityData } = updateData;
       const subCategoryId = identityData.subCategoryId || null;
       const requestedCode = requestedSku?.trim()
-        ? requestedSku.trim().padStart(3, "0")
+        ? requestedSku.trim().padStart(SKU_SEGMENT_DIGITS.coreProduct, "0")
         : existing.sku;
       const codeChanged =
         identityData.categoryId !== existing.categoryId ||
@@ -462,14 +463,8 @@ export const adminCoreProductRouter = {
         const database = tx as unknown as typeof db;
         let code: { sku: string; catalogCode: string } | undefined;
         if (codeChanged) {
-          // The catalog code encodes the classification. Once products or
-          // catalog variants carry it, it is permanent.
-          if (await isCoreCatalogCodeInUse(database, id)) {
-            throw new ORPCError("CONFLICT", {
-              message:
-                "This core product already has products, so its catalog ID, category, and code are locked",
-            });
-          }
+          // The catalog ID encodes the classification, so a reclassified core
+          // product gets a new ID and its products follow it below.
           code = await assignCoreProductCode(database, {
             categoryId: identityData.categoryId,
             subCategoryId,
@@ -487,6 +482,14 @@ export const adminCoreProductRouter = {
             subCategoryId,
           })
           .where(eq(coreProductIdentity.id, id));
+        if (code) {
+          await syncProductsToCoreProduct(database, {
+            id,
+            catalogCode: code.catalogCode,
+            categoryId: identityData.categoryId,
+            subCategoryId,
+          });
+        }
         await setCoreProductShortCode(database, id, shortCode);
       });
 

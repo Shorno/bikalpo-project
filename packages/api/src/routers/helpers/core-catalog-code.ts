@@ -1,7 +1,6 @@
 import { db } from "@bikalpo-project/db";
 import {
   brand,
-  catalogVariant,
   category,
   coreProductIdentity,
   product,
@@ -24,8 +23,8 @@ const CORE_CODE_PATTERN = new RegExp(
 );
 
 /**
- * Allocate a core product's code within its category/subcategory and build its
- * permanent catalog code (Type-Category-SubCategory-Core). Call inside the
+ * Allocate a core product's serial within its category/subcategory and build
+ * its 8-digit catalog code (Type, Category, SubCategory, Core). Call inside the
  * transaction that inserts or updates the core product.
  */
 export async function assignCoreProductCode(
@@ -103,7 +102,7 @@ export async function assignCoreProductCode(
     sku = await nextSkuCode(
       coreProductIdentity,
       coreProductIdentity.sku,
-      3,
+      SKU_SEGMENT_DIGITS.coreProduct,
       sql`${scope}`,
       database,
     );
@@ -121,25 +120,84 @@ export async function assignCoreProductCode(
 }
 
 /**
- * True once a core product's catalog code has been handed out to products or
- * catalog variants. From then on the code, and the classification it encodes,
- * must not change.
+ * Copy a core product's current classification and catalog code onto every
+ * admin, warehouse, and shop product built from it, so the shared Catalog
+ * Product ID (core code + brand code) follows a reclassification.
  */
-export async function isCoreCatalogCodeInUse(
+export async function syncProductsToCoreProduct(
   database: Database,
-  coreProductId: number,
-): Promise<boolean> {
-  const [usedByProduct, usedByVariant] = await Promise.all([
-    database.query.product.findFirst({
-      where: eq(product.coreProductId, coreProductId),
-      columns: { id: true },
-    }),
-    database.query.catalogVariant.findFirst({
-      where: eq(catalogVariant.coreProductId, coreProductId),
-      columns: { id: true },
-    }),
-  ]);
-  return Boolean(usedByProduct || usedByVariant);
+  core: {
+    id: number;
+    catalogCode: string;
+    categoryId: number;
+    subCategoryId: number | null;
+  },
+): Promise<void> {
+  const brandCode = sql`(SELECT LPAD(${brand.skuCode}, ${SKU_SEGMENT_DIGITS.brand}, '0') FROM ${brand} WHERE ${brand.id} = ${product.brandId} AND ${brand.skuCode} IS NOT NULL)`;
+  const catalogCode = sql`${core.catalogCode} || ${brandCode}`;
+  await database
+    .update(product)
+    .set({
+      categoryId: core.categoryId,
+      subCategoryId: core.subCategoryId,
+      catalogCode: sql`${catalogCode}`,
+      // Admin products use the Catalog Product ID as their SKU.
+      sku: sql`CASE WHEN ${product.creatorSource} = 'admin' THEN COALESCE(${catalogCode}, ${product.sku}) ELSE ${product.sku} END`,
+    })
+    .where(eq(product.coreProductId, core.id));
+}
+
+/**
+ * Rebuild the catalog codes of core products after a Type, Category, or
+ * Sub Category code above them changed (for example a category moved to
+ * another Type), then carry the new codes onto their products.
+ */
+export async function refreshCoreCatalogCodes(
+  database: Database,
+  scope: { categoryId: number } | { subCategoryId: number },
+): Promise<void> {
+  const cores = await database.query.coreProductIdentity.findMany({
+    where:
+      "categoryId" in scope
+        ? eq(coreProductIdentity.categoryId, scope.categoryId)
+        : eq(coreProductIdentity.subCategoryId, scope.subCategoryId),
+    columns: {
+      id: true,
+      sku: true,
+      catalogCode: true,
+      categoryId: true,
+      subCategoryId: true,
+    },
+    with: {
+      category: {
+        columns: { skuCode: true },
+        with: { type: { columns: { skuCode: true } } },
+      },
+      subCategory: { columns: { skuCode: true } },
+    },
+  });
+
+  for (const core of cores) {
+    if (!core.category?.type?.skuCode || !core.category.skuCode) {
+      throw new ORPCError("BAD_REQUEST", {
+        message:
+          "The new Type or Category has no code yet, so its products' catalog IDs cannot be issued",
+      });
+    }
+    const catalogCode = composePartialSku("coreProduct", {
+      typeSkuCode: core.category.type.skuCode,
+      categorySkuCode: core.category.skuCode,
+      subCategorySkuCode: core.subCategory?.skuCode,
+      coreProductSkuCode: core.sku,
+    });
+    if (catalogCode !== core.catalogCode) {
+      await database
+        .update(coreProductIdentity)
+        .set({ catalogCode })
+        .where(eq(coreProductIdentity.id, core.id));
+    }
+    await syncProductsToCoreProduct(database, { ...core, catalogCode });
+  }
 }
 
 /**

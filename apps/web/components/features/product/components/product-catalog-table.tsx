@@ -63,6 +63,10 @@ export type CatalogProduct = {
   name: string;
   sku?: string | null;
   catalogCode?: string | null;
+  coreProduct?: {
+    id: number;
+    catalogCode: string;
+  } | null;
   categoryId: number;
   subCategoryId?: number | null;
   category?: {
@@ -96,8 +100,14 @@ function normalize(value: string | null | undefined) {
   return (value ?? "").trim().toLowerCase();
 }
 
+/** The 8-digit System ID (Type, Category, Sub Category, product serial). */
 function productIdLabel(product: CatalogProduct) {
-  return product.catalogCode || product.sku?.trim() || `#${product.id}`;
+  return (
+    product.coreProduct?.catalogCode ||
+    product.catalogCode ||
+    product.sku?.trim() ||
+    `#${product.id}`
+  );
 }
 
 function uniqueOptions(items: Array<FilterOption | null | undefined>) {
@@ -212,7 +222,7 @@ export default function ProductCatalogTable({
         header: ({ column }) => (
           <SortableHeader
             column={column}
-            label="Catalog ID"
+            label="System ID"
             compact={isMobile}
           />
         ),
@@ -308,6 +318,7 @@ export default function ProductCatalogTable({
     globalFilterFn: (row, _columnId, value) =>
       [
         productIdLabel(row.original),
+        row.original.catalogCode,
         row.original.name,
         row.original.category?.type?.name,
         row.original.category?.name,
@@ -386,7 +397,7 @@ export default function ProductCatalogTable({
             </Button>
           )}
         </div>
-        <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
+        <div className="grid grid-cols-3 gap-3 max-md:gap-2">
           <FilterSelect
             compact={isMobile}
             label="Type"
@@ -405,15 +416,13 @@ export default function ProductCatalogTable({
               updateFilter("category", value, ["subCategory"])
             }
           />
-          <div className="col-span-2 min-w-0 md:col-span-1">
-            <FilterSelect
-              compact={isMobile}
-              label="Sub Category"
-              value={subCategoryFilter}
-              options={subCategoryOptions}
-              onValueChange={(value) => updateFilter("subCategory", value)}
-            />
-          </div>
+          <FilterSelect
+            compact={isMobile}
+            label="Sub Category"
+            value={subCategoryFilter}
+            options={subCategoryOptions}
+            onValueChange={(value) => updateFilter("subCategory", value)}
+          />
         </div>
       </section>
 
@@ -571,11 +580,11 @@ export default function ProductCatalogTable({
                             isMobile
                               ? `px-1 py-2 align-middle @sm/catalog:px-2 ${
                                   cell.column.id === "productId"
-                                    ? "font-mono text-[10px] font-medium tabular-nums @xs/catalog:text-[11px]"
+                                    ? "font-medium"
                                     : ""
                                 }`
                               : cell.column.id === "productId"
-                                ? "font-mono text-sm font-medium tabular-nums"
+                                ? "font-medium"
                                 : cell.column.id === "product"
                                   ? "font-medium"
                                   : undefined
@@ -640,10 +649,10 @@ function FilterSelect({
   const id = useId();
 
   return (
-    <div className="space-y-1.5 max-md:min-w-0">
+    <div className="min-w-0 space-y-1.5">
       <Label
         htmlFor={id}
-        className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground"
+        className="block truncate text-[11px] font-medium uppercase tracking-wide text-muted-foreground max-md:text-[10px] max-md:tracking-normal"
       >
         {label}
       </Label>
