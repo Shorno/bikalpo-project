@@ -2,51 +2,20 @@
 
 import { resolveBrandCreationAction } from "@bikalpo-project/db/brand-creation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Clock3, Plus } from "lucide-react";
+import Link from "next/link";
+import { useEffect, useMemo, useState } from "react";
 import {
-  type ColumnDef,
-  flexRender,
-  getCoreRowModel,
-  getFilteredRowModel,
-  getPaginationRowModel,
-  getSortedRowModel,
-  type SortingState,
-  useReactTable,
-} from "@tanstack/react-table";
-import {
-  AlertCircle,
-  ChevronLeft,
-  ChevronRight,
-  ChevronsLeft,
-  ChevronsRight,
-  Clock,
-  Eye,
-  Filter,
-  Layers,
-  PackageSearch,
-  Plus,
-  Search,
-} from "lucide-react";
-import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
-import { Badge } from "@/components/ui/badge";
+  CatalogActionBar,
+  CatalogFilterPanel,
+  type CatalogListRow,
+  CatalogListTable,
+  CatalogPageHeader,
+} from "@/components/features/product/components/catalog-layout";
+import { FilterSelect } from "@/components/features/product/components/product-catalog-table";
+import { SetupTableFooter } from "@/components/features/product-setup/setup-table-footer";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { orpc } from "@/utils/orpc";
 
 // ─── Types ─────────────────────────────────────────────────────
@@ -103,37 +72,25 @@ type CatalogType = {
   categories: CatalogCategory[];
 };
 
-// Flattened row for table display
+/** One table row per core product, flattened from the type hierarchy. */
 type FlatRow = {
   id: string;
-  rowNum: number;
   typeName: string;
-  typeId: number;
   categoryName: string;
-  categoryId: number;
-  subCategoryName: string;
-  subCategoryId: number | null;
-  coreIdentityName: string;
+  subCategoryName: string | null;
   coreProduct: CoreProduct;
 };
 
-// ─── Type color config ─────────────────────────────────────────
+const ALL = "all";
+const PAGE_SIZE = 20;
 
-const typeVariantMap: Record<
-  string,
-  "default" | "secondary" | "outline" | "destructive"
-> = {
-  Grocery: "default",
-  Electronics: "secondary",
-  LPG: "outline",
-  Fashion: "secondary",
-  Footwear: "outline",
-};
+const toId = (value: string) => (value === ALL ? undefined : Number(value));
+const toValue = (id: number | undefined) => (id == null ? ALL : String(id));
 
 // ─── Main Page Component ───────────────────────────────────────
 
 export default function WarehouseCatalogPage() {
-  const router = useRouter();
+  const isMobile = useIsMobile();
   const queryClient = useQueryClient();
 
   // Filters
@@ -144,23 +101,16 @@ export default function WarehouseCatalogPage() {
   const [selectedSubCategoryId, setSelectedSubCategoryId] = useState<
     number | undefined
   >();
-  const [selectedCoreIdentity, setSelectedCoreIdentity] = useState<
-    string | undefined
-  >();
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
-
-  // Table state
-  const [sorting, setSorting] = useState<SortingState>([]);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(PAGE_SIZE);
 
   // Search debounce
-  const handleSearch = (val: string) => {
-    setSearch(val);
-    clearTimeout((window as any).__catalogSearchTimer);
-    (window as any).__catalogSearchTimer = setTimeout(() => {
-      setDebouncedSearch(val);
-    }, 400);
-  };
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedSearch(search), 400);
+    return () => window.clearTimeout(timer);
+  }, [search]);
 
   // ─── Queries ─────────────────────────────────────────────────
 
@@ -194,578 +144,203 @@ export default function WarehouseCatalogPage() {
 
   const types: CatalogType[] = catalogData?.types ?? [];
 
-  // Build dropdown data
-  const allTypes = types.map((t) => ({ id: t.id, name: t.name }));
+  const allTypes = types.map((type) => ({ id: type.id, name: type.name }));
 
   const allCategories = selectedTypeId
-    ? (types.find((t) => t.id === selectedTypeId)?.categories ?? [])
-    : types.flatMap((t) => t.categories);
+    ? (types.find((type) => type.id === selectedTypeId)?.categories ?? [])
+    : types.flatMap((type) => type.categories);
 
   const allSubCategories = selectedCategoryId
-    ? (allCategories.find((c) => c.id === selectedCategoryId)?.subCategories ??
-      [])
-    : [];
+    ? (allCategories.find((category) => category.id === selectedCategoryId)
+        ?.subCategories ?? [])
+    : allCategories.flatMap((category) => category.subCategories);
 
-  // Flatten hierarchy into table rows
   const flatRows: FlatRow[] = useMemo(() => {
     const rows: FlatRow[] = [];
-    let rowNum = 0;
-
     for (const type of types) {
-      for (const cat of type.categories) {
-        for (const sc of cat.subCategories) {
-          for (const cp of sc.coreProducts) {
-            rowNum++;
+      for (const category of type.categories) {
+        for (const subCategory of category.subCategories) {
+          for (const coreProduct of subCategory.coreProducts) {
             rows.push({
-              id: `${type.id}-${cat.id}-${sc.id}-${cp.id}`,
-              rowNum,
+              id: `${type.id}-${category.id}-${subCategory.id}-${coreProduct.id}`,
               typeName: type.name,
-              typeId: type.id,
-              categoryName: cat.name,
-              categoryId: cat.id,
-              subCategoryName: sc.name,
-              subCategoryId: sc.id,
-              coreIdentityName: cp.name,
-              coreProduct: cp,
+              categoryName: category.name,
+              subCategoryName: subCategory.name,
+              coreProduct,
             });
           }
         }
-        if (cat.directCoreProducts?.length > 0) {
-          for (const cp of cat.directCoreProducts) {
-            rowNum++;
-            rows.push({
-              id: `${type.id}-${cat.id}-direct-${cp.id}`,
-              rowNum,
-              typeName: type.name,
-              typeId: type.id,
-              categoryName: cat.name,
-              categoryId: cat.id,
-              subCategoryName: "—",
-              subCategoryId: null,
-              coreIdentityName: cp.name,
-              coreProduct: cp,
-            });
-          }
+        for (const coreProduct of category.directCoreProducts ?? []) {
+          rows.push({
+            id: `${type.id}-${category.id}-direct-${coreProduct.id}`,
+            typeName: type.name,
+            categoryName: category.name,
+            subCategoryName: null,
+            coreProduct,
+          });
         }
       }
     }
-
     return rows;
   }, [types]);
 
-  // Apply core identity filter
-  const filteredRows = useMemo(() => {
-    if (!selectedCoreIdentity) return flatRows;
-    return flatRows.filter((r) => r.coreIdentityName === selectedCoreIdentity);
-  }, [flatRows, selectedCoreIdentity]);
 
-  // All unique core identity names for dropdown
-  const coreIdentityOptions = useMemo(() => {
-    const names = [...new Set(flatRows.map((r) => r.coreIdentityName))];
-    return names.sort();
-  }, [flatRows]);
+  // Back to the first page whenever the result set changes.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: reset on filter changes only
+  useEffect(() => {
+    setPage(1);
+  }, [
+    selectedTypeId,
+    selectedCategoryId,
+    selectedSubCategoryId,
+    debouncedSearch,
+  ]);
 
-  // ─── Column Definitions ──────────────────────────────────────
-
-  const columns: ColumnDef<FlatRow>[] = useMemo(
-    () => [
-      {
-        accessorKey: "rowNum",
-        header: "#",
-        cell: ({ row }) => (
-          <span className="text-sm text-muted-foreground font-medium">
-            {row.original.rowNum}
-          </span>
-        ),
-        size: 50,
-      },
-      {
-        id: "catalogCode",
-        header: "Catalog ID",
-        cell: ({ row }) => (
-          <span className="font-mono text-xs tabular-nums text-muted-foreground">
-            {row.original.coreProduct.catalogCode}
-          </span>
-        ),
-      },
-      {
-        accessorKey: "typeName",
-        header: "Type",
-        cell: ({ row }) => (
-          <Badge
-            variant={typeVariantMap[row.original.typeName] || "outline"}
-            className="text-xs"
-          >
-            {row.original.typeName}
-          </Badge>
-        ),
-      },
-      {
-        accessorKey: "categoryName",
-        header: "Category",
-        cell: ({ row }) => (
-          <span className="text-sm font-medium text-foreground">
-            {row.original.categoryName}
-          </span>
-        ),
-      },
-      {
-        accessorKey: "subCategoryName",
-        header: "Sub Category",
-        cell: ({ row }) => (
-          <span className="text-sm text-muted-foreground">
-            {row.original.subCategoryName}
-          </span>
-        ),
-      },
-      {
-        accessorKey: "coreIdentityName",
-        header: "Core Identity",
-        cell: ({ row }) => {
-          const cp = row.original.coreProduct;
-
-          return (
-            <span className="text-sm font-semibold text-foreground">
-              {cp.name}
-            </span>
-          );
+  const pageCount = Math.max(1, Math.ceil(flatRows.length / pageSize));
+  const currentPage = Math.min(page, pageCount);
+  const rows: CatalogListRow[] = flatRows
+    .slice((currentPage - 1) * pageSize, currentPage * pageSize)
+    .map((row) => {
+      const coreProduct = row.coreProduct;
+      const action = resolveBrandCreationAction({
+        mode: coreProduct.brandCreationMode,
+        configuredBrandCount: coreProduct.warehouseBrandCount,
+        addableBrandCount: coreProduct.warehouseAddableBrandCount,
+      });
+      return {
+        key: row.id,
+        systemId: coreProduct.catalogCode,
+        type: row.typeName,
+        category: row.categoryName,
+        subCategory: row.subCategoryName,
+        name: coreProduct.name,
+        href: `/warehouse/dashboard/catalog/${coreProduct.id}`,
+        add: {
+          label: action.label,
+          disabled: action.disabled,
+          href: `/warehouse/dashboard/catalog/add/${coreProduct.id}`,
         },
-      },
-      {
-        id: "actions",
-        header: () => <div className="text-right">Action</div>,
-        cell: ({ row }) => {
-          const cpId = row.original.coreProduct.id;
-          const action = resolveBrandCreationAction({
-            mode: row.original.coreProduct.brandCreationMode,
-            configuredBrandCount: row.original.coreProduct.warehouseBrandCount,
-            addableBrandCount:
-              row.original.coreProduct.warehouseAddableBrandCount,
-          });
-          return (
-            <div className="flex justify-end gap-1.5">
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-7 text-xs gap-1"
-                onClick={() =>
-                  router.push(`/warehouse/dashboard/catalog/${cpId}`)
-                }
-              >
-                <Eye size={12} />
-                View
-              </Button>
-              <Button
-                size="sm"
-                className="h-7 text-xs gap-1"
-                disabled={action.disabled}
-                onClick={() =>
-                  router.push(`/warehouse/dashboard/catalog/add/${cpId}`)
-                }
-              >
-                <Plus size={12} />
-                {action.disabled ? action.label : "Add"}
-              </Button>
-            </div>
-          );
-        },
-      },
-    ],
-    [router],
+      };
+    });
+
+  const hasActiveFilters = Boolean(
+    search ||
+      selectedTypeId ||
+      selectedCategoryId ||
+      selectedSubCategoryId,
   );
-
-  // ─── Table Instance ──────────────────────────────────────────
-
-  const table = useReactTable({
-    data: filteredRows,
-    columns,
-    state: { sorting },
-    onSortingChange: setSorting,
-    getRowId: (row) => row.id,
-    getCoreRowModel: getCoreRowModel(),
-    getSortedRowModel: getSortedRowModel(),
-    getFilteredRowModel: getFilteredRowModel(),
-    getPaginationRowModel: getPaginationRowModel(),
-    initialState: {
-      pagination: { pageSize: 20 },
-    },
-  });
+  const clearFilters = () => {
+    setSearch("");
+    setSelectedTypeId(undefined);
+    setSelectedCategoryId(undefined);
+    setSelectedSubCategoryId(undefined);
+  };
 
   // ─── Page Layout ─────────────────────────────────────────────
 
   return (
-    <div className="space-y-6">
-      {/* ── Header ── */}
-      <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground flex items-center gap-3">
-            <div className="p-2 bg-emerald-100 rounded-xl">
-              <Layers className="text-emerald-600" size={22} />
-            </div>
-            Product Catalog
-          </h1>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="relative">
-            <Search
-              size={16}
-              className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
-            />
-            <Input
-              placeholder="Search products..."
-              value={search}
-              onChange={(e) => handleSearch(e.target.value)}
-              className="pl-10 w-64"
-            />
-          </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => router.push("/warehouse/dashboard/catalog/requests")}
-            className="gap-1.5"
-          >
-            <Clock size={14} />
-            <span className="hidden md:inline">Requests</span>
-          </Button>
-          <Button
-            size="sm"
-            onClick={() => router.push("/warehouse/dashboard/catalog/requests")}
-            className="gap-1.5"
-          >
-            <Plus size={14} />
-            <span className="hidden md:inline">Request Product</span>
-          </Button>
-        </div>
-      </div>
+    <div className="space-y-5 max-md:min-w-0 max-md:space-y-4">
+      <CatalogPageHeader
+        description="Browse available products and add them to your inventory."
+        stats={[
+          { label: "Products", value: flatRows.length },
+          { label: "Types", value: types.length },
+          {
+            label: "Categories",
+            value: types.flatMap((type) => type.categories).length,
+          },
+        ]}
+      />
 
-      {/* ── Filter Bar ── */}
-      <div className="bg-card border rounded-lg p-4">
-        <div className="flex items-center gap-2 mb-3">
-          <Filter size={14} className="text-muted-foreground" />
-          <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-            Filter By
-          </span>
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-          {/* Type */}
-          <div className="space-y-1">
-            <Label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
-              Type
-            </Label>
-            <Select
-              value={selectedTypeId?.toString() ?? "all"}
-              onValueChange={(val) => {
-                setSelectedTypeId(val === "all" ? undefined : Number(val));
+      <div className="min-w-0 space-y-4 md:space-y-5">
+        <CatalogFilterPanel
+          search={search}
+          onSearchChange={setSearch}
+          hasFilters={hasActiveFilters}
+          onClear={clearFilters}
+        >
+          {[
+            <FilterSelect
+              key="type"
+              compact={isMobile}
+              label="Type"
+              value={toValue(selectedTypeId)}
+              options={allTypes}
+              onValueChange={(value) => {
+                setSelectedTypeId(toId(value));
                 setSelectedCategoryId(undefined);
                 setSelectedSubCategoryId(undefined);
-                setSelectedCoreIdentity(undefined);
               }}
-            >
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="All Types" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Types</SelectItem>
-                {allTypes.map((t) => (
-                  <SelectItem key={t.id} value={t.id.toString()}>
-                    {t.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          {/* Category */}
-          <div className="space-y-1">
-            <Label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
-              Category
-            </Label>
-            <Select
-              value={selectedCategoryId?.toString() ?? "all"}
-              onValueChange={(val) => {
-                setSelectedCategoryId(val === "all" ? undefined : Number(val));
+            />,
+            <FilterSelect
+              key="category"
+              compact={isMobile}
+              label="Category"
+              value={toValue(selectedCategoryId)}
+              options={allCategories}
+              onValueChange={(value) => {
+                setSelectedCategoryId(toId(value));
                 setSelectedSubCategoryId(undefined);
-                setSelectedCoreIdentity(undefined);
               }}
-            >
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="All Categories" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Categories</SelectItem>
-                {allCategories.map((c) => (
-                  <SelectItem key={c.id} value={c.id.toString()}>
-                    {c.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+            />,
+            <FilterSelect
+              key="subCategory"
+              compact={isMobile}
+              label="Sub Category"
+              value={toValue(selectedSubCategoryId)}
+              options={allSubCategories}
+              onValueChange={(value) => setSelectedSubCategoryId(toId(value))}
+            />,
+          ]}
+        </CatalogFilterPanel>
 
-          {/* Sub Category */}
-          <div className="space-y-1">
-            <Label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
-              Sub Category
-            </Label>
-            <Select
-              value={selectedSubCategoryId?.toString() ?? "all"}
-              onValueChange={(val) => {
-                setSelectedSubCategoryId(
-                  val === "all" ? undefined : Number(val),
-                );
-                setSelectedCoreIdentity(undefined);
-              }}
-              disabled={!selectedCategoryId}
-            >
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="All Sub Categories" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Sub Categories</SelectItem>
-                {allSubCategories.map((sc) => (
-                  <SelectItem key={sc.id} value={sc.id.toString()}>
-                    {sc.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+        <CatalogActionBar>
+          <Button asChild variant="outline" size="sm" className="max-md:min-h-11">
+            <Link href="/warehouse/dashboard/catalog/requests">
+              <Clock3 className="size-4" />
+              Requests
+            </Link>
+          </Button>
+          <Button asChild size="sm" className="max-md:min-h-11">
+            <Link href="/warehouse/dashboard/catalog/requests">
+              <Plus className="size-4" />
+              Request Product
+            </Link>
+          </Button>
+        </CatalogActionBar>
 
-          {/* Core Identity */}
-          <div className="space-y-1">
-            <Label className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
-              Core Identity
-            </Label>
-            <Select
-              value={selectedCoreIdentity ?? "all"}
-              onValueChange={(val) =>
-                setSelectedCoreIdentity(val === "all" ? undefined : val)
-              }
-            >
-              <SelectTrigger className="w-full">
-                <SelectValue placeholder="All Core Identities" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Core Identities</SelectItem>
-                {coreIdentityOptions.map((name) => (
-                  <SelectItem key={name} value={name}>
-                    {name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
-      </div>
-
-      {/* ── Table ── */}
-      {loadingCatalog ? (
-        <div className="flex flex-col items-center justify-center py-20 border rounded-lg">
-          <div className="w-8 h-8 border-3 border-emerald-200 border-t-emerald-600 rounded-full animate-spin mb-4" />
-          <p className="text-sm text-muted-foreground">Loading catalog...</p>
-        </div>
-      ) : catalogError ? (
-        <div className="flex flex-col items-center justify-center py-20 border border-dashed border-red-200 rounded-lg bg-red-50/50">
-          <AlertCircle className="text-red-400 mb-4" size={40} />
-          <p className="text-red-600 font-semibold">Failed to load catalog</p>
-          <p className="text-sm text-red-400 mt-1">
-            {(catalogErrorMsg as any)?.message ||
-              "Could not connect to the server."}
-          </p>
-          <Button
-            variant="destructive"
-            size="sm"
-            className="mt-4"
-            onClick={() =>
+        <div className="space-y-4">
+          <CatalogListTable
+            rows={rows}
+            isLoading={loadingCatalog}
+            isError={catalogError}
+            errorMessage={(catalogErrorMsg as any)?.message}
+            onRetry={() =>
               queryClient.invalidateQueries({
                 queryKey: ["warehouse", "getFullCatalog"],
               })
             }
-          >
-            Retry
-          </Button>
-        </div>
-      ) : filteredRows.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-20 border border-dashed rounded-lg">
-          <PackageSearch className="text-muted-foreground/30 mb-4" size={48} />
-          <p className="text-muted-foreground font-semibold">
-            No products found
-          </p>
-          <p className="text-sm text-muted-foreground/60 mt-1">
-            {search
-              ? "No products match your search. Try different keywords."
-              : "No products in the catalog yet."}
-          </p>
-        </div>
-      ) : (
-        <div className="space-y-4">
-          {/* Result count */}
-          <div className="flex items-center justify-between">
-            <p className="text-sm text-muted-foreground">
-              Showing{" "}
-              <span className="font-medium text-foreground">
-                {filteredRows.length}
-              </span>{" "}
-              products
-            </p>
-          </div>
+            emptyDescription={
+              search
+                ? "No products match your search. Try different keywords."
+                : "No products in the catalog yet."
+            }
+          />
 
-          {/* Table */}
-          <div className="rounded-lg border overflow-hidden">
-            <Table>
-              <TableHeader className="bg-muted/50">
-                {table.getHeaderGroups().map((headerGroup) => (
-                  <TableRow key={headerGroup.id}>
-                    {headerGroup.headers.map((header) => (
-                      <TableHead key={header.id}>
-                        {header.isPlaceholder
-                          ? null
-                          : flexRender(
-                              header.column.columnDef.header,
-                              header.getContext(),
-                            )}
-                      </TableHead>
-                    ))}
-                  </TableRow>
-                ))}
-              </TableHeader>
-              <TableBody>
-                {table.getRowModel().rows?.length ? (
-                  table.getRowModel().rows.map((row) => (
-                    <TableRow key={row.id}>
-                      {row.getVisibleCells().map((cell) => (
-                        <TableCell key={cell.id}>
-                          {flexRender(
-                            cell.column.columnDef.cell,
-                            cell.getContext(),
-                          )}
-                        </TableCell>
-                      ))}
-                    </TableRow>
-                  ))
-                ) : (
-                  <TableRow>
-                    <TableCell
-                      colSpan={columns.length}
-                      className="h-24 text-center"
-                    >
-                      No results.
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </div>
-
-          {/* Pagination */}
-          <div className="flex items-center justify-between">
-            <p className="text-sm text-muted-foreground">
-              Page {table.getState().pagination.pageIndex + 1} of{" "}
-              {table.getPageCount()}
-            </p>
-            <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="icon"
-                className="h-8 w-8"
-                onClick={() => table.setPageIndex(0)}
-                disabled={!table.getCanPreviousPage()}
-              >
-                <ChevronsLeft size={14} />
-              </Button>
-              <Button
-                variant="outline"
-                size="icon"
-                className="h-8 w-8"
-                onClick={() => table.previousPage()}
-                disabled={!table.getCanPreviousPage()}
-              >
-                <ChevronLeft size={14} />
-              </Button>
-              <Button
-                variant="outline"
-                size="icon"
-                className="h-8 w-8"
-                onClick={() => table.nextPage()}
-                disabled={!table.getCanNextPage()}
-              >
-                <ChevronRight size={14} />
-              </Button>
-              <Button
-                variant="outline"
-                size="icon"
-                className="h-8 w-8"
-                onClick={() => table.setPageIndex(table.getPageCount() - 1)}
-                disabled={!table.getCanNextPage()}
-              >
-                <ChevronsRight size={14} />
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── Can't Find Product CTA ── */}
-      <div className="bg-amber-50 border border-amber-200 rounded-lg p-5 flex items-center gap-4">
-        <div className="p-2.5 bg-amber-100 rounded-xl shrink-0">
-          <AlertCircle className="text-amber-600" size={20} />
-        </div>
-        <div className="flex-1">
-          <p className="text-sm font-semibold text-amber-900">
-            Can&apos;t find your product?
-          </p>
-          <p className="text-xs text-amber-700 mt-0.5">
-            If your product is not listed, request a new product identity.
-          </p>
-        </div>
-        <Button
-          size="sm"
-          className="bg-amber-500 hover:bg-amber-600 text-white shrink-0"
-          onClick={() => router.push("/warehouse/dashboard/catalog/requests")}
-        >
-          + Request
-        </Button>
-      </div>
-
-      {/* ── Footer Info ── */}
-      <div className="bg-muted/50 border rounded-lg p-5">
-        <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-wider mb-3">
-          About This Catalog
-        </h3>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs text-muted-foreground">
-          <div className="space-y-1.5">
-            <p className="font-semibold text-foreground">📌 Important</p>
-            <ul className="space-y-1 list-disc list-inside text-[11px]">
-              <li>Core Identity is system-controlled</li>
-              <li>New products must be requested</li>
-              <li>Duplicate identity not allowed</li>
-              <li>SKU is auto-generated &amp; immutable</li>
-            </ul>
-          </div>
-          <div className="space-y-1.5">
-            <p className="font-semibold text-foreground">✔ What you can do</p>
-            <ul className="space-y-1 list-disc list-inside text-[11px]">
-              <li>Browse all available products</li>
-              <li>Add products to your inventory</li>
-              <li>Request new product identities</li>
-              <li>Track your requests</li>
-            </ul>
-          </div>
-          <div className="space-y-1.5">
-            <p className="font-semibold text-foreground">
-              📚 Product Structure
-            </p>
-            <p className="text-[11px] leading-relaxed">
-              All products follow the hierarchy:
-              <br />
-              <span className="font-medium text-foreground">
-                Type → Category → SubCategory → Core Identity → Variant
-              </span>
-              <br />
-              Each warehouse can browse the full catalog and add variants to
-              their inventory.
-            </p>
-          </div>
+          {!loadingCatalog && !catalogError ? (
+            <SetupTableFooter
+              ariaLabel="Catalog pagination"
+              page={currentPage}
+              pageSize={pageSize}
+              total={flatRows.length}
+              onPageChange={setPage}
+              onPageSizeChange={(nextPageSize) => {
+                setPageSize(nextPageSize);
+                setPage(1);
+              }}
+              pageSizeOptions={[10, 20, 50]}
+            />
+          ) : null}
         </div>
       </div>
     </div>
