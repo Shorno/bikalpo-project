@@ -5,33 +5,115 @@ import {
   CreditCard,
   ExternalLink,
   Eye,
+  Heart,
   Loader2,
   MapPin,
-  MessageCircle,
   Package,
   Phone,
   Search,
-  ShoppingCart,
+  ShoppingBag,
+  SlidersHorizontal,
   Star,
   Store,
   Truck,
-  Users,
 } from "lucide-react";
-import { useState } from "react";
-import { Badge } from "@/components/ui/badge";
+import { type ReactNode, useMemo, useState } from "react";
+import { CatalogProductGrid } from "@/components/features/products/catalog-product-grid";
+import { HorizontalScrollRow } from "@/components/storefront/horizontal-scroll-row";
+import {
+  type StorefrontProduct,
+  StorefrontProductCard,
+} from "@/components/storefront/storefront-product-card";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Separator } from "@/components/ui/separator";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   useMyStorePreview,
   useMyStoreStats,
 } from "@/hooks/use-store-preview-api";
-import { getShopStorefrontUrl } from "@/lib/customer-storefront-preview";
+import {
+  getPublicAppBaseUrl,
+  getShopStorefrontUrl,
+} from "@/lib/customer-storefront-preview";
+import { getRetailerProductHref } from "@/lib/retailer-storefront-url";
+import { cn } from "@/lib/utils";
 
 // ─── Types ───────────────────────────────────────────────────────
 
 type StockFilter = "all" | "in_stock" | "low" | "out_of_stock";
+type PreviewData = NonNullable<ReturnType<typeof useMyStorePreview>["data"]>;
+type PreviewProduct = PreviewData["products"][number];
+
+interface StoreCard {
+  key: string;
+  product: PreviewProduct;
+  storefront: StorefrontProduct;
+}
+
+// One card per product + brand, the same split the public catalog uses.
+function buildStoreCards(products: PreviewProduct[]): StoreCard[] {
+  const cards: StoreCard[] = [];
+
+  for (const product of products) {
+    const byBrand = new Map<number | null, PreviewProduct["variants"]>();
+    for (const variant of product.variants) {
+      const key = variant.brandId ?? null;
+      byBrand.set(key, [...(byBrand.get(key) ?? []), variant]);
+    }
+
+    for (const [brandId, variants] of byBrand) {
+      const prices = variants
+        .map((variant) => Number(variant.retailPrice))
+        .filter((price) => price > 0);
+      cards.push({
+        key: `${product.productId}-${brandId ?? 0}`,
+        product,
+        storefront: {
+          id: product.productId,
+          name: product.name,
+          slug: product.slug ?? String(product.productId),
+          image: product.image ?? "",
+          images: [],
+          category: product.category
+            ? { name: product.category.name, slug: product.category.slug }
+            : null,
+          subCategory: null,
+          brand: variants[0]?.brandName ? { name: variants[0].brandName } : null,
+          lowestRetailPrice: prices.length > 0 ? Math.min(...prices) : 0,
+          variantCount: variants.length,
+          totalAvailableQty: variants.reduce(
+            (sum, variant) => sum + Number(variant.availableQty || 0),
+            0,
+          ),
+          variants: variants.map((variant) => ({
+            variantId: variant.variantId,
+            sku: variant.sku ?? null,
+            unitLabel: variant.unitLabel?.trim() || "Variant",
+            quantitySelectorLabel: null,
+            retailPrice: String(variant.retailPrice ?? 0),
+            availableQty: String(variant.availableQty ?? 0),
+          })),
+        },
+      });
+    }
+  }
+
+  return cards;
+}
+
+const stockFilters: Array<{ value: StockFilter; label: string }> = [
+  { value: "all", label: "All" },
+  { value: "in_stock", label: "In Stock" },
+  { value: "low", label: "Low Stock" },
+  { value: "out_of_stock", label: "Out" },
+];
 
 // ─── Main Page ───────────────────────────────────────────────────
 
@@ -42,12 +124,11 @@ export default function MyStorePage() {
   const [selectedCategory, setSelectedCategory] = useState<number | null>(null);
   const [stockFilter, setStockFilter] = useState<StockFilter>("all");
   const [search, setSearch] = useState("");
-  const [selectedBrands, setSelectedBrands] = useState<
-    Record<number, number | null>
-  >({});
-  const [selectedVariants, setSelectedVariants] = useState<
-    Record<number, number | null>
-  >({});
+
+  const cards = useMemo(
+    () => buildStoreCards(data?.products ?? []),
+    [data?.products],
+  );
 
   if (isLoading) {
     return (
@@ -75,31 +156,52 @@ export default function MyStorePage() {
     );
   }
 
-  const { store, categories, products } = data;
+  const { store, categories } = data;
   const customerPreviewUrl = store.slug
     ? getShopStorefrontUrl(store.slug, { previewMode: true })
     : null;
+  const publicBaseUrl = getPublicAppBaseUrl(
+    typeof window === "undefined" ? undefined : window.location.origin,
+  );
 
-  // Filter products
-  let filteredProducts = products;
-  if (selectedCategory) {
-    filteredProducts = filteredProducts.filter(
-      (p: any) => p.category?.id === selectedCategory,
-    );
-  }
-  if (stockFilter !== "all") {
-    filteredProducts = filteredProducts.filter(
-      (p: any) => p.stockStatus === stockFilter,
-    );
-  }
-  if (search.trim()) {
-    const s = search.toLowerCase();
-    filteredProducts = filteredProducts.filter(
-      (p: any) =>
-        p.name.toLowerCase().includes(s) ||
-        p.brands.some((b: any) => b.name.toLowerCase().includes(s)),
-    );
-  }
+  // Filter cards
+  const searchTerm = search.trim().toLowerCase();
+  const filteredCards = cards.filter(({ product, storefront }) => {
+    if (selectedCategory && product.category?.id !== selectedCategory) {
+      return false;
+    }
+    if (stockFilter !== "all" && product.stockStatus !== stockFilter) {
+      return false;
+    }
+    if (searchTerm) {
+      return (
+        product.name.toLowerCase().includes(searchTerm) ||
+        (storefront.brand?.name.toLowerCase().includes(searchTerm) ?? false)
+      );
+    }
+    return true;
+  });
+
+  const metrics = [
+    {
+      icon: Star,
+      label: "Rating",
+      value: stats?.avgRating ? `${stats.avgRating.toFixed(1)} ★` : "—",
+    },
+    {
+      icon: ShoppingBag,
+      label: "Orders",
+      value: (stats?.totalOrders ?? 0).toLocaleString("en-BD"),
+    },
+    {
+      icon: Heart,
+      label: "Followers",
+      value: (stats?.followerCount ?? 0).toLocaleString("en-BD"),
+    },
+  ];
+
+  const headerButtonClass =
+    "h-9 border-0 bg-white/20 text-white hover:bg-white/30 max-sm:px-2 max-sm:text-xs";
 
   return (
     <div className="space-y-6">
@@ -143,25 +245,28 @@ export default function MyStorePage() {
       </div>
 
       {/* ── Store Header ── */}
-      <Card className="overflow-hidden">
-        <div className="bg-gradient-to-r from-emerald-600 to-teal-600 p-6 text-white">
+      <Card className="overflow-hidden py-0">
+        <div className="bg-gradient-to-r from-emerald-600 to-teal-600 p-6 text-white max-sm:p-4">
           <div className="flex items-start gap-4">
-            <div className="w-16 h-16 rounded-xl bg-white/20 flex items-center justify-center shrink-0">
+            <div className="w-16 h-16 rounded-xl bg-white/20 flex items-center justify-center shrink-0 max-sm:size-12">
               {store.image ? (
                 <img
                   src={store.image}
                   alt={store.name}
-                  className="w-14 h-14 rounded-lg object-cover"
+                  className="w-14 h-14 rounded-lg object-cover max-sm:size-10"
                 />
               ) : (
-                <Store className="h-8 w-8 text-white" />
+                <Store className="h-8 w-8 text-white max-sm:size-6" />
               )}
             </div>
             <div className="flex-1 min-w-0">
-              <h1 className="text-xl font-bold">{store.name || "My Store"}</h1>
+              <h1 className="text-xl font-bold max-sm:text-lg">
+                {store.name || "My Store"}
+              </h1>
               {store.address && (
-                <p className="text-emerald-100 text-sm flex items-center gap-1 mt-0.5">
-                  <MapPin className="h-3.5 w-3.5" /> {store.address}
+                <p className="text-emerald-100 text-sm flex items-start gap-1 mt-0.5">
+                  <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                  {store.address}
                 </p>
               )}
               {store.phoneNumber && (
@@ -172,106 +277,92 @@ export default function MyStorePage() {
             </div>
           </div>
 
-          {/* Stats row */}
-          <div className="grid grid-cols-4 gap-3 mt-5">
-            {[
-              {
-                icon: Star,
-                label: "Rating",
-                value: stats?.avgRating ? `${stats.avgRating} ★` : "—",
-              },
-              {
-                icon: ShoppingCart,
-                label: "Orders",
-                value: stats?.totalOrders?.toLocaleString() ?? "0",
-              },
-              {
-                icon: Users,
-                label: "Customers",
-                value: stats?.totalCustomers?.toLocaleString() ?? "0",
-              },
-              {
-                icon: Package,
-                label: "Products",
-                value: data.totalProducts.toString(),
-              },
-            ].map(({ icon: Icon, label, value }) => (
+          {/* Stats row: rating, orders, followers */}
+          <div className="grid grid-cols-3 gap-3 mt-5 max-sm:mt-4 max-sm:gap-2">
+            {metrics.map(({ icon: Icon, label, value }) => (
               <div
                 key={label}
                 className="bg-white/15 rounded-lg p-2.5 text-center"
               >
                 <Icon className="h-4 w-4 mx-auto mb-1 text-emerald-100" />
-                <p className="text-sm font-bold">{value}</p>
+                <p className="text-sm font-bold tabular-nums">{value}</p>
                 <p className="text-[10px] text-emerald-200">{label}</p>
               </div>
             ))}
           </div>
 
-          {/* Action buttons */}
-          <div className="flex gap-2 mt-4 flex-wrap">
+          {/* Action buttons: Follow, Contact Store, Report Issue */}
+          <div className="mt-4 flex flex-wrap gap-2 max-sm:grid max-sm:grid-cols-3">
             <Button
               size="sm"
               variant="secondary"
-              className="bg-white/20 hover:bg-white/30 text-white border-0"
+              className={headerButtonClass}
               disabled
             >
-              <MessageCircle className="h-3.5 w-3.5 mr-1.5" /> Chat
+              <Heart className="h-3.5 w-3.5" /> Follow
             </Button>
-            {store.phoneNumber && (
+            {store.phoneNumber ? (
               <Button
                 size="sm"
                 variant="secondary"
-                className="bg-white/20 hover:bg-white/30 text-white border-0"
+                className={headerButtonClass}
                 asChild
               >
                 <a href={`tel:${store.phoneNumber}`}>
-                  <Phone className="h-3.5 w-3.5 mr-1.5" /> Call
+                  <Phone className="h-3.5 w-3.5" /> Contact Store
                 </a>
               </Button>
+            ) : (
+              <Button
+                size="sm"
+                variant="secondary"
+                className={headerButtonClass}
+                disabled
+              >
+                <Phone className="h-3.5 w-3.5" /> Contact Store
+              </Button>
             )}
+            <Button
+              size="sm"
+              variant="secondary"
+              className={headerButtonClass}
+              disabled
+            >
+              <AlertCircle className="h-3.5 w-3.5" /> Report Issue
+            </Button>
           </div>
         </div>
       </Card>
 
       {/* ── Category Navigation ── */}
       {categories.length > 0 && (
-        <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1">
-          <button
-            type="button"
+        <HorizontalScrollRow label="Product categories">
+          <CategoryChip
+            active={!selectedCategory}
             onClick={() => setSelectedCategory(null)}
-            className={`px-3.5 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-colors ${
-              !selectedCategory
-                ? "bg-emerald-600 text-white"
-                : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-            }`}
           >
             All
-          </button>
-          {categories.map((cat: any) => (
-            <button
+          </CategoryChip>
+          {categories.map((cat) => (
+            <CategoryChip
               key={cat.id}
-              type="button"
+              active={selectedCategory === cat.id}
               onClick={() =>
                 setSelectedCategory(cat.id === selectedCategory ? null : cat.id)
               }
-              className={`px-3.5 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-colors ${
-                selectedCategory === cat.id
-                  ? "bg-emerald-600 text-white"
-                  : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-              }`}
             >
               {cat.name}
               <span className="ml-1.5 text-xs opacity-70">
                 {cat.productCount}
               </span>
-            </button>
+            </CategoryChip>
           ))}
-        </div>
+        </HorizontalScrollRow>
       )}
 
-      {/* ── Search + Quick Filter Bar ── */}
-      <div className="flex flex-col sm:flex-row gap-3">
-        <div className="relative flex-1">
+      {/* ── Search + Quick Filter Bar (one row; stock filter is a dropdown on mobile) ── */}
+      <div className="flex gap-3 max-sm:gap-2">
+        <div className="relative min-w-0 flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
             placeholder="Search products..."
@@ -280,32 +371,53 @@ export default function MyStorePage() {
             className="pl-9"
           />
         </div>
-        <div className="flex gap-1.5">
-          {(["all", "in_stock", "low", "out_of_stock"] as const).map((f) => (
+        <Select
+          value={stockFilter}
+          onValueChange={(value) => setStockFilter(value as StockFilter)}
+        >
+          <SelectTrigger
+            aria-label="Filter by stock"
+            className="relative w-9 shrink-0 justify-center px-0 shadow-none sm:hidden [&>svg:last-child]:hidden [&_[data-slot=select-value]]:hidden"
+          >
+            <SlidersHorizontal className="size-4 text-muted-foreground" />
+            {stockFilter !== "all" && (
+              <span
+                className="absolute top-1 right-1 size-2 rounded-full bg-emerald-600"
+                aria-hidden="true"
+              />
+            )}
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent align="end">
+            {stockFilters.map((filter) => (
+              <SelectItem key={filter.value} value={filter.value}>
+                {filter.value === "out_of_stock" ? "Out of Stock" : filter.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <div className="flex gap-1.5 max-sm:hidden">
+          {stockFilters.map((filter) => (
             <button
-              key={f}
+              key={filter.value}
               type="button"
-              onClick={() => setStockFilter(f)}
-              className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
-                stockFilter === f
+              onClick={() => setStockFilter(filter.value)}
+              aria-pressed={stockFilter === filter.value}
+              className={cn(
+                "px-3 py-1.5 rounded-md text-xs font-medium transition-colors",
+                stockFilter === filter.value
                   ? "bg-emerald-100 text-emerald-700 border border-emerald-300"
-                  : "bg-gray-50 text-gray-500 border border-transparent hover:bg-gray-100"
-              }`}
+                  : "bg-gray-50 text-gray-500 border border-transparent hover:bg-gray-100",
+              )}
             >
-              {f === "all"
-                ? "All"
-                : f === "in_stock"
-                  ? "In Stock"
-                  : f === "low"
-                    ? "Low Stock"
-                    : "Out"}
+              {filter.label}
             </button>
           ))}
         </div>
       </div>
 
       {/* ── Product Grid ── */}
-      {filteredProducts.length === 0 ? (
+      {filteredCards.length === 0 ? (
         <Card>
           <CardContent className="py-12 text-center">
             <Package className="h-10 w-10 text-muted-foreground/30 mx-auto mb-3" />
@@ -320,28 +432,26 @@ export default function MyStorePage() {
           </CardContent>
         </Card>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {filteredProducts.map((prod: any) => (
-            <ProductCard
-              key={prod.productId}
-              product={prod}
-              selectedBrand={selectedBrands[prod.productId] ?? null}
-              selectedVariant={selectedVariants[prod.productId] ?? null}
-              onSelectBrand={(brandId) =>
-                setSelectedBrands((prev) => ({
-                  ...prev,
-                  [prod.productId]: brandId,
-                }))
-              }
-              onSelectVariant={(variantId) =>
-                setSelectedVariants((prev) => ({
-                  ...prev,
-                  [prod.productId]: variantId,
-                }))
+        <CatalogProductGrid withSidebar>
+          {filteredCards.map((card) => (
+            <StorefrontProductCard
+              key={card.key}
+              mode="reference"
+              appearance="catalog"
+              previewMode
+              product={card.storefront}
+              detailHref={
+                store.slug
+                  ? `${publicBaseUrl}${getRetailerProductHref({
+                      shopSlug: store.slug,
+                      productSlug: card.storefront.slug,
+                      previewMode: true,
+                    })}`
+                  : "#"
               }
             />
           ))}
-        </div>
+        </CatalogProductGrid>
       )}
 
       {/* ── Trust & Service Info ── */}
@@ -373,246 +483,32 @@ export default function MyStorePage() {
           </CardContent>
         </Card>
       </div>
-
-      {/* ── Store Footer ── */}
-      <Card>
-        <CardContent className="py-4">
-          <div className="flex items-center gap-3 mb-3">
-            <Store className="h-5 w-5 text-muted-foreground" />
-            <div>
-              <p className="text-sm font-semibold">
-                {store.name || "My Store"}
-              </p>
-              {store.address && (
-                <p className="text-xs text-muted-foreground">{store.address}</p>
-              )}
-            </div>
-          </div>
-          <Separator className="my-3" />
-          <div className="flex flex-wrap gap-2">
-            {store.phoneNumber && (
-              <Button size="sm" variant="outline" asChild>
-                <a href={`tel:${store.phoneNumber}`}>
-                  <Phone className="h-3.5 w-3.5 mr-1.5" /> Call Now
-                </a>
-              </Button>
-            )}
-            <Button size="sm" variant="outline" disabled>
-              <MessageCircle className="h-3.5 w-3.5 mr-1.5" /> Chat Store
-            </Button>
-            <Button size="sm" variant="outline" disabled>
-              <AlertCircle className="h-3.5 w-3.5 mr-1.5" /> Report Issue
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
     </div>
   );
 }
 
-// ─── Product Card Component ──────────────────────────────────────
-
-function ProductCard({
-  product,
-  selectedBrand,
-  selectedVariant,
-  onSelectBrand,
-  onSelectVariant,
+function CategoryChip({
+  active,
+  onClick,
+  children,
 }: {
-  product: any;
-  selectedBrand: number | null;
-  selectedVariant: number | null;
-  onSelectBrand: (brandId: number | null) => void;
-  onSelectVariant: (variantId: number | null) => void;
+  active: boolean;
+  onClick: () => void;
+  children: ReactNode;
 }) {
-  // Filter variants by selected brand
-  const visibleVariants = selectedBrand
-    ? product.variants.filter((v: any) => v.brandId === selectedBrand)
-    : product.variants;
-
-  // Get the active variant (selected or first visible)
-  const activeVariant = selectedVariant
-    ? visibleVariants.find((v: any) => v.variantId === selectedVariant)
-    : visibleVariants[0];
-
-  const displayPrice = activeVariant?.retailPrice
-    ? `৳ ${Number(activeVariant.retailPrice).toLocaleString()}`
-    : product.lowestPrice
-      ? `৳ ${product.lowestPrice.toLocaleString()}`
-      : "Price TBD";
-
-  const displayUnit = activeVariant?.unitLabel || "";
-
-  // Check if any variant in this product requires pack return
-  const hasPackReturn =
-    product.isReturnablePack ||
-    product.variants.some((v: any) => v.isPackReturnRequired);
-
-  const packReturnVariants = product.variants.filter(
-    (v: any) => v.isPackReturnRequired,
-  );
-
   return (
-    <Card className="overflow-hidden hover:shadow-md transition-shadow">
-      <CardContent className="p-0">
-        {/* Image + Name */}
-        <div className="flex gap-3 p-4 pb-0">
-          <div className="w-20 h-20 rounded-lg bg-gray-50 border overflow-hidden shrink-0">
-            {product.image ? (
-              <img
-                src={product.image}
-                alt={product.name}
-                className="w-full h-full object-cover"
-              />
-            ) : (
-              <div className="w-full h-full flex items-center justify-center">
-                <Package className="h-8 w-8 text-gray-200" />
-              </div>
-            )}
-          </div>
-          <div className="flex-1 min-w-0">
-            <h3 className="font-semibold text-sm truncate">{product.name}</h3>
-            {product.shortDescription && (
-              <p className="text-xs text-muted-foreground line-clamp-1 mt-0.5">
-                {product.shortDescription}
-              </p>
-            )}
-            {/* Price */}
-            <div className="mt-2">
-              <span className="text-lg font-bold text-emerald-700">
-                {displayPrice}
-              </span>
-              {displayUnit && (
-                <span className="text-xs text-muted-foreground ml-1">
-                  / {displayUnit}
-                </span>
-              )}
-            </div>
-            {/* Stock badge */}
-            <Badge
-              variant={
-                product.stockStatus === "in_stock"
-                  ? "default"
-                  : product.stockStatus === "low"
-                    ? "secondary"
-                    : "destructive"
-              }
-              className={`text-[10px] mt-1 ${
-                product.stockStatus === "in_stock"
-                  ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-100"
-                  : product.stockStatus === "low"
-                    ? "bg-amber-100 text-amber-700 hover:bg-amber-100"
-                    : ""
-              }`}
-            >
-              {product.stockStatus === "in_stock"
-                ? "In Stock"
-                : product.stockStatus === "low"
-                  ? "Limited Stock"
-                  : "Out of Stock"}
-            </Badge>
-          </div>
-        </div>
-
-        <div className="px-4 py-3 space-y-3">
-          <Separator />
-
-          {/* Brand selector chips */}
-          {product.brands.length > 0 && (
-            <div>
-              <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide mb-1.5">
-                Brand
-              </p>
-              <div className="flex flex-wrap gap-1.5">
-                {product.brands.map((b: any) => (
-                  <button
-                    key={b.id}
-                    type="button"
-                    onClick={() =>
-                      onSelectBrand(selectedBrand === b.id ? null : b.id)
-                    }
-                    className={`px-2.5 py-1 rounded-md text-xs font-medium border transition-colors ${
-                      selectedBrand === b.id
-                        ? "bg-emerald-50 border-emerald-500 text-emerald-700"
-                        : "border-gray-200 text-gray-600 hover:border-gray-300 hover:bg-gray-50"
-                    }`}
-                  >
-                    {b.name}
-                    {selectedBrand === b.id && " ✓"}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Variant / Pack selector pills */}
-          {visibleVariants.length > 0 && (
-            <div>
-              <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide mb-1.5">
-                Pack
-              </p>
-              <div className="flex flex-wrap gap-1.5">
-                {visibleVariants.map((v: any) => (
-                  <button
-                    key={v.variantId}
-                    type="button"
-                    onClick={() =>
-                      onSelectVariant(
-                        selectedVariant === v.variantId ? null : v.variantId,
-                      )
-                    }
-                    className={`px-2.5 py-1 rounded-md text-xs font-medium border transition-colors ${
-                      selectedVariant === v.variantId ||
-                      (!selectedVariant && v === visibleVariants[0])
-                        ? "bg-blue-50 border-blue-500 text-blue-700"
-                        : "border-gray-200 text-gray-600 hover:border-gray-300 hover:bg-gray-50"
-                    }`}
-                  >
-                    {v.unitLabel}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Empty Pack Return */}
-          {hasPackReturn && packReturnVariants.length > 0 && (
-            <div className="bg-amber-50/50 border border-amber-200/50 rounded-md p-2.5">
-              <p className="text-[10px] font-medium text-amber-700 uppercase tracking-wide mb-1">
-                ♻ Empty Pack Return
-              </p>
-              <div className="flex flex-wrap gap-1.5">
-                {packReturnVariants.map((v: any) => (
-                  <span key={v.variantId} className="text-xs text-amber-700">
-                    {v.brandName || v.unitLabel}
-                    {v.packDepositAmount && (
-                      <span className="ml-1 font-medium">
-                        ৳{v.packDepositAmount}
-                      </span>
-                    )}
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
-
-          <Separator />
-
-          {/* Action buttons (disabled in preview) */}
-          <div className="flex gap-2">
-            <Button
-              size="sm"
-              className="flex-1 bg-emerald-600 hover:bg-emerald-700"
-              disabled
-            >
-              <ShoppingCart className="h-3.5 w-3.5 mr-1.5" /> Add to Cart
-            </Button>
-            <Button size="sm" variant="outline" className="flex-1" disabled>
-              ⚡ Buy Now
-            </Button>
-          </div>
-        </div>
-      </CardContent>
-    </Card>
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={cn(
+        "shrink-0 px-3.5 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition-colors",
+        active
+          ? "bg-emerald-600 text-white"
+          : "bg-gray-100 text-gray-600 hover:bg-gray-200",
+      )}
+    >
+      {children}
+    </button>
   );
 }

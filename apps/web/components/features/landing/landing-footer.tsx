@@ -7,6 +7,7 @@ import {
 import { ArrowUpRight, Clock3, Globe2, Mail, Phone } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
+import { platformSocialLinks } from "@/lib/platform-social-links";
 import styles from "./landing-footer.module.css";
 import { SellerLocationLinks } from "./seller-directory";
 
@@ -70,24 +71,40 @@ export function LandingFooter() {
               Follow us
             </h2>
             <div className="mt-2 flex gap-2">
-              {[
-                { label: "Facebook", Icon: IconBrandFacebook },
-                { label: "Instagram", Icon: IconBrandInstagram },
-              ].map(({ label, Icon }) => (
-                <span
-                  key={label}
-                  role="img"
-                  aria-label={`${label} — link coming soon`}
-                  title={`${label} — link coming soon`}
-                  className="inline-flex size-11 items-center justify-center rounded-md border border-[var(--footer-line)] bg-white/40 text-[var(--footer-brand)]"
-                >
-                  <Icon className="size-5" aria-hidden="true" />
-                </span>
-              ))}
+              {platformSocialLinks.map(({ label, url }) => {
+                const Icon =
+                  label === "Facebook" ? IconBrandFacebook : IconBrandInstagram;
+                const iconClass =
+                  "inline-flex size-11 items-center justify-center rounded-md border border-[var(--footer-line)] bg-white/40 text-[var(--footer-brand)]";
+                return url ? (
+                  <a
+                    key={label}
+                    href={url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    aria-label={`Bikalpo on ${label} (opens in a new tab)`}
+                    className={`${iconClass} hover:bg-white`}
+                  >
+                    <Icon className="size-5" aria-hidden="true" />
+                  </a>
+                ) : (
+                  <span
+                    key={label}
+                    role="img"
+                    aria-label={`${label} — link coming soon`}
+                    title={`${label} — link coming soon`}
+                    className={iconClass}
+                  >
+                    <Icon className="size-5" aria-hidden="true" />
+                  </span>
+                );
+              })}
             </div>
-            <p className="mt-2 text-xs text-[var(--footer-muted)]">
-              Social links coming soon
-            </p>
+            {platformSocialLinks.some(({ url }) => !url) && (
+              <p className="mt-2 text-xs text-[var(--footer-muted)]">
+                Social links coming soon
+              </p>
+            )}
           </div>
 
           <div>

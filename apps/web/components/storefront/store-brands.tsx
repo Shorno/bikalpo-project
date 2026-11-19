@@ -4,7 +4,17 @@ import { useQuery } from "@tanstack/react-query";
 import { Building2 } from "lucide-react";
 import Image from "next/image";
 import { useEffect, useState } from "react";
+import {
+  Carousel,
+  type CarouselApi,
+  CarouselContent,
+  CarouselItem,
+  CarouselNext,
+  CarouselPrevious,
+} from "@/components/ui/carousel";
 import { orpc } from "@/utils/orpc";
+
+const AUTO_SLIDE_MS = 2800;
 
 function BrandLogo({ src }: { src: string | null }) {
   const [failed, setFailed] = useState(false);
@@ -32,12 +42,31 @@ function BrandLogo({ src }: { src: string | null }) {
   );
 }
 
+/** Advances the carousel on a timer; pauses on hover/focus and for reduced motion. */
+function useAutoSlide(api: CarouselApi | undefined, paused: boolean) {
+  useEffect(() => {
+    if (!api || paused) return;
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const timer = window.setInterval(() => {
+      // Nothing to slide when every brand already fits on screen;
+      // otherwise step forward and rewind to the start at the end.
+      if (api.canScrollNext()) api.scrollNext();
+      else if (api.canScrollPrev()) api.scrollTo(0);
+    }, AUTO_SLIDE_MS);
+    return () => window.clearInterval(timer);
+  }, [api, paused]);
+}
+
 export function StoreBrands({ slug }: { slug: string }) {
   // Header, footer and this section share one cached, unfiltered inventory result.
   const { data } = useQuery(
     orpc.customer.getShopNavigation.queryOptions({ input: { slug } }),
   );
   const brands = data?.availableBrands;
+  const [api, setApi] = useState<CarouselApi>();
+  const [hovered, setHovered] = useState(false);
+  const [focused, setFocused] = useState(false);
+  useAutoSlide(api, hovered || focused);
 
   useEffect(() => {
     if (!brands?.length || window.location.hash !== "#available-brands") return;
@@ -69,24 +98,36 @@ export function StoreBrands({ slug }: { slug: string }) {
             Brands available from this store.
           </p>
         </div>
-        <ul
-          className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6"
+        <Carousel
+          setApi={setApi}
+          opts={{ align: "start", containScroll: "trimSnaps" }}
+          className="sm:px-10"
           aria-label="Brands available in this store"
+          onMouseEnter={() => setHovered(true)}
+          onMouseLeave={() => setHovered(false)}
+          onFocusCapture={() => setFocused(true)}
+          onBlurCapture={() => setFocused(false)}
         >
-          {brands.map((brand) => (
-            <li
-              key={brand.id}
-              className="flex min-h-28 min-w-0 flex-col items-center justify-center gap-3 rounded-xl border border-border bg-background px-4 py-5 text-center"
-            >
-              <div className="h-10 w-24">
-                <BrandLogo key={brand.logo} src={brand.logo} />
-              </div>
-              <span className="max-w-full break-words text-xs font-medium text-foreground">
-                {brand.name}
-              </span>
-            </li>
-          ))}
-        </ul>
+          <CarouselContent className="-ml-3">
+            {brands.map((brand) => (
+              <CarouselItem
+                key={brand.id}
+                className="basis-1/2 pl-3 min-[480px]:basis-1/3 md:basis-1/4 lg:basis-1/6"
+              >
+                <div className="flex h-full min-h-28 min-w-0 flex-col items-center justify-center gap-3 rounded-xl border border-border bg-background px-4 py-5 text-center">
+                  <div className="h-10 w-24">
+                    <BrandLogo key={brand.logo} src={brand.logo} />
+                  </div>
+                  <span className="max-w-full break-words text-xs font-medium text-foreground">
+                    {brand.name}
+                  </span>
+                </div>
+              </CarouselItem>
+            ))}
+          </CarouselContent>
+          <CarouselPrevious className="left-0 hidden sm:flex" />
+          <CarouselNext className="right-0 hidden sm:flex" />
+        </Carousel>
       </div>
     </section>
   );

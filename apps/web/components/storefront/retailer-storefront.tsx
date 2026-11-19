@@ -5,6 +5,7 @@ import {
   ChevronRight,
   Clock3,
   Filter,
+  Flag,
   Heart,
   MapPin,
   Megaphone,
@@ -13,7 +14,6 @@ import {
   RotateCcw,
   ShoppingBag,
   Star,
-  Users,
   X,
 } from "lucide-react";
 import { useState } from "react";
@@ -30,6 +30,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatStoreTime } from "@/lib/store-hours";
 import { cn } from "@/lib/utils";
+import { StoreReportDialog } from "./store-report-dialog";
 
 export type {
   StorefrontAddSelection,
@@ -46,6 +47,7 @@ export interface StorefrontFacet {
 
 interface StoreHeaderProps {
   shop: {
+    id: string;
     name: string;
     shopName: string | null;
     shopAddress: string | null;
@@ -53,12 +55,10 @@ interface StoreHeaderProps {
     shopClosingTime: string | null;
     phoneNumber: string | null;
   };
-  productCount: number;
   stats: {
     averageRating: number;
     totalReviews: number;
     totalOrders: number;
-    totalCustomers: number;
   };
   followerCount: number;
   isFollowing: boolean;
@@ -68,7 +68,6 @@ interface StoreHeaderProps {
 
 export function StoreHeader({
   shop,
-  productCount,
   stats,
   followerCount,
   isFollowing,
@@ -76,110 +75,112 @@ export function StoreHeader({
   onToggleFollow,
 }: StoreHeaderProps) {
   const displayName = shop.shopName || shop.name;
+  // Rating, orders and followers only — the store's public scorecard.
   const metrics = [
-    stats.totalReviews > 0
-      ? {
-          icon: Star,
-          value: stats.averageRating.toFixed(1),
-          label: `${stats.totalReviews.toLocaleString("en-BD")} reviews`,
-        }
-      : null,
-    stats.totalOrders > 0
-      ? {
-          icon: ShoppingBag,
-          value: stats.totalOrders.toLocaleString("en-BD"),
-          label: stats.totalOrders === 1 ? "order" : "orders",
-        }
-      : null,
-    stats.totalCustomers > 0
-      ? {
-          icon: Users,
-          value: stats.totalCustomers.toLocaleString("en-BD"),
-          label: stats.totalCustomers === 1 ? "customer" : "customers",
-        }
-      : null,
+    {
+      icon: Star,
+      value: stats.totalReviews > 0 ? stats.averageRating.toFixed(1) : "—",
+      label:
+        stats.totalReviews > 0
+          ? `${stats.totalReviews.toLocaleString("en-BD")} ${stats.totalReviews === 1 ? "review" : "reviews"}`
+          : "No reviews",
+    },
+    {
+      icon: ShoppingBag,
+      value: stats.totalOrders.toLocaleString("en-BD"),
+      label: stats.totalOrders === 1 ? "order" : "orders",
+    },
     {
       icon: Heart,
       value: followerCount.toLocaleString("en-BD"),
       label: followerCount === 1 ? "follower" : "followers",
     },
-    {
-      icon: Package,
-      value: productCount.toLocaleString("en-BD"),
-      label: productCount === 1 ? "product" : "products",
-    },
-  ].filter(Boolean) as Array<{
-    icon: typeof Star;
-    value: string;
-    label: string;
-  }>;
+  ];
+  const actionClass = "h-10 max-lg:flex-1 max-lg:px-2 max-sm:text-xs";
 
   return (
     <header id="store-information" className="scroll-mt-20 border-b bg-white">
-      <div className="site-container px-3 py-6 sm:px-6 md:py-8 lg:px-8">
-        <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
-          <div className="min-w-0">
-            <h1 className="truncate text-2xl font-bold tracking-tight text-slate-950 md:text-3xl">
-              {displayName}
-            </h1>
-            {shop.shopAddress && (
-              <p className="mt-2 flex max-w-3xl items-start gap-1.5 text-sm leading-5 text-slate-600">
-                <MapPin
-                  className="mt-0.5 size-4 shrink-0 text-slate-400"
-                  aria-hidden="true"
-                />
-                <span>{shop.shopAddress}</span>
-              </p>
-            )}
-            {shop.shopOpeningTime && shop.shopClosingTime && (
-              <p className="mt-2 flex items-center gap-1.5 text-sm text-slate-600">
-                <Clock3
-                  className="size-4 shrink-0 text-slate-400"
-                  aria-hidden="true"
-                />
-                <span>
-                  Open {formatStoreTime(shop.shopOpeningTime)}–
-                  {formatStoreTime(shop.shopClosingTime)}
-                </span>
-              </p>
-            )}
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              type="button"
-              variant={isFollowing ? "outline" : "default"}
-              className={cn("h-10", isFollowing && "bg-white")}
-              aria-pressed={isFollowing}
-              disabled={isFollowPending}
-              onClick={onToggleFollow}
-            >
-              <Heart
-                className={cn("size-4", isFollowing && "fill-current")}
+      {/* Desktop: details | actions, metrics beneath. Mobile: details, metrics, then actions. */}
+      <div className="site-container grid gap-y-4 px-3 py-6 sm:px-6 md:py-8 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end lg:gap-x-6 lg:gap-y-6 lg:px-8">
+        <div className="min-w-0 lg:col-start-1 lg:row-start-1">
+          <h1 className="truncate text-2xl font-bold tracking-tight text-slate-950 md:text-3xl">
+            {displayName}
+          </h1>
+          {shop.shopAddress && (
+            <p className="mt-2 flex max-w-3xl items-start gap-1.5 text-sm leading-5 text-slate-600">
+              <MapPin
+                className="mt-0.5 size-4 shrink-0 text-slate-400"
                 aria-hidden="true"
               />
-              {isFollowPending
-                ? "Updating…"
-                : isFollowing
-                  ? "Following"
-                  : "Follow"}
-            </Button>
-            {shop.phoneNumber && (
-              <Button asChild variant="outline" className="h-10 bg-white">
-                <a href={`tel:${shop.phoneNumber}`}>
-                  <Phone className="size-4" aria-hidden="true" />
-                  Contact store
-                </a>
-              </Button>
-            )}
-          </div>
+              <span>{shop.shopAddress}</span>
+            </p>
+          )}
+          {shop.shopOpeningTime && shop.shopClosingTime && (
+            <p className="mt-2 flex items-center gap-1.5 text-sm text-slate-600">
+              <Clock3
+                className="size-4 shrink-0 text-slate-400"
+                aria-hidden="true"
+              />
+              <span>
+                Open {formatStoreTime(shop.shopOpeningTime)}–
+                {formatStoreTime(shop.shopClosingTime)}
+              </span>
+            </p>
+          )}
         </div>
 
-        <div className="mt-6 grid grid-cols-2 border-y sm:flex sm:flex-wrap">
+        <div className="order-3 flex items-center gap-2 lg:order-none lg:col-start-2 lg:row-start-1 lg:flex-wrap lg:justify-end">
+          <Button
+            type="button"
+            variant={isFollowing ? "outline" : "default"}
+            className={cn(actionClass, isFollowing && "bg-white")}
+            aria-pressed={isFollowing}
+            disabled={isFollowPending}
+            onClick={onToggleFollow}
+          >
+            <Heart
+              className={cn("size-4", isFollowing && "fill-current")}
+              aria-hidden="true"
+            />
+            {isFollowPending
+              ? "Updating…"
+              : isFollowing
+                ? "Following"
+                : "Follow"}
+          </Button>
+          {shop.phoneNumber && (
+            <Button
+              asChild
+              variant="outline"
+              className={cn(actionClass, "bg-white")}
+            >
+              <a href={`tel:${shop.phoneNumber}`}>
+                <Phone className="size-4" aria-hidden="true" />
+                Contact store
+              </a>
+            </Button>
+          )}
+          <StoreReportDialog
+            shopId={shop.id}
+            name={displayName}
+            trigger={
+              <Button
+                type="button"
+                variant="outline"
+                className={cn(actionClass, "bg-white")}
+              >
+                <Flag className="size-4" aria-hidden="true" />
+                Report issue
+              </Button>
+            }
+          />
+        </div>
+
+        <div className="order-2 grid grid-cols-3 border-y lg:order-none lg:col-span-2 lg:row-start-2 lg:flex lg:flex-wrap">
           {metrics.map(({ icon: Icon, value, label }) => (
             <div
               key={label}
-              className="flex min-h-16 items-center gap-3 border-r px-3 first:pl-0 last:border-r-0 sm:min-w-40 sm:px-5"
+              className="flex min-h-16 min-w-0 items-center gap-3 border-r px-3 first:pl-0 last:border-r-0 max-sm:gap-2 max-sm:px-2 lg:min-w-40 lg:px-5"
             >
               <Icon
                 className="size-4 shrink-0 text-primary"

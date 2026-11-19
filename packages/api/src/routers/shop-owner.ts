@@ -64,6 +64,7 @@ import {
   sellerAreaMapping,
   session,
   shopCategoryAssignment,
+  shopFollower,
   shopWarehouseConnection,
   stockAdjustment,
   stockAdjustmentItem,
@@ -11388,11 +11389,17 @@ const shopProductEndpoints = {
         }
       }
 
+      const [followerStats] = await db
+        .select({ followerCount: count() })
+        .from(shopFollower)
+        .where(eq(shopFollower.shopId, userId));
+
       return {
         totalOrders: Number(orderStats?.totalOrders) || 0,
         totalCustomers: Number(orderStats?.totalCustomers) || 0,
         avgRating: Math.round(avgRating * 10) / 10,
         reviewCount,
+        followerCount: Number(followerStats?.followerCount) || 0,
       };
     },
   ),
