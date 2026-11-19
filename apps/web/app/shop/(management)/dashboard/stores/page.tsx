@@ -17,9 +17,10 @@ import {
   Store,
   Truck,
 } from "lucide-react";
-import { type ReactNode, useMemo, useState } from "react";
+import { type ReactNode, Suspense, useMemo, useState } from "react";
 import { CatalogProductGrid } from "@/components/features/products/catalog-product-grid";
 import { HorizontalScrollRow } from "@/components/storefront/horizontal-scroll-row";
+import { ShopFooter } from "@/components/storefront/layout/shop-footer";
 import {
   type StorefrontProduct,
   StorefrontProductCard,
@@ -483,6 +484,19 @@ export default function MyStorePage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* ── Store footer: the same one customers see on the public store ── */}
+      {store.slug ? (
+        <div className="overflow-hidden rounded-xl">
+          <Suspense fallback={null}>
+            <ShopFooter
+              slug={store.slug}
+              publicBaseUrl={publicBaseUrl}
+              previewMode
+            />
+          </Suspense>
+        </div>
+      ) : null}
     </div>
   );
 }
