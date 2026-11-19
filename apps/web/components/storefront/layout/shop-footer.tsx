@@ -5,19 +5,17 @@ import {
   IconBrandApple,
   IconBrandFacebook,
   IconBrandInstagram,
-  IconBrandTiktok,
-  IconBrandX,
 } from "@tabler/icons-react";
 import { useQuery } from "@tanstack/react-query";
-import { Clock3, Globe2, Mail, Phone } from "lucide-react";
+import { Globe2, Mail, Phone } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import {
   isCustomerStorefrontPreview,
   withCustomerStorefrontPreview,
 } from "@/lib/customer-storefront-preview";
-import { publicSocialUrl, storeFooterAnchor } from "@/lib/shop-footer-links";
-import { formatStoreTime } from "@/lib/store-hours";
+import { platformSocialLinks } from "@/lib/platform-social-links";
+import { storeFooterAnchor } from "@/lib/shop-footer-links";
 import { storePolicyHref, storePolicyLinks } from "@/lib/store-policy-links";
 import { orpc } from "@/utils/orpc";
 import { StoreReportDialog } from "../store-report-dialog";
@@ -29,6 +27,11 @@ const platformLinks = [
   { label: "Help Center", href: "/help-center" },
   { label: "Contact Us", href: "/contact" },
 ];
+
+const socialIcons = {
+  Facebook: IconBrandFacebook,
+  Instagram: IconBrandInstagram,
+} as const;
 
 export function ShopFooter({ slug }: { slug: string }) {
   const searchParams = useSearchParams();
@@ -42,31 +45,14 @@ export function ShopFooter({ slug }: { slug: string }) {
     `/stores/${encodeURIComponent(slug)}`,
     previewMode,
   );
-  const socialLinks = [
-    {
-      label: "Facebook",
-      url: publicSocialUrl(shop?.facebookUrl),
-      Icon: IconBrandFacebook,
-    },
-    {
-      label: "Instagram",
-      url: publicSocialUrl(shop?.instagramUrl),
-      Icon: IconBrandInstagram,
-    },
-    {
-      label: "TikTok",
-      url: publicSocialUrl(shop?.tiktokUrl),
-      Icon: IconBrandTiktok,
-    },
-    { label: "X", url: publicSocialUrl(shop?.twitterUrl), Icon: IconBrandX },
-  ].filter((social) => social.url);
 
   return (
     <footer className={styles.footer}>
       <div className={styles.content}>
+        {/* Desktop: three columns. Mobile: the six sections pair up two per row. */}
         <div className={styles.columns}>
           <div>
-            <nav aria-labelledby="shop-footer-about">
+            <nav aria-labelledby="shop-footer-about" className={styles.about}>
               <h2 id="shop-footer-about">About store</h2>
               <ul className={styles.links}>
                 <li>
@@ -106,30 +92,43 @@ export function ShopFooter({ slug }: { slug: string }) {
                 )}
               </ul>
             </nav>
-            {socialLinks.length > 0 && (
-              <section
-                className={styles.secondary}
-                aria-labelledby="shop-footer-social"
-              >
-                <h2 id="shop-footer-social">Follow us</h2>
-                <div className={styles.socials}>
-                  {socialLinks.map(({ label, url, Icon }) => (
+            <section
+              className={`${styles.secondary} ${styles.social}`}
+              aria-labelledby="shop-footer-social"
+            >
+              <h2 id="shop-footer-social">Follow us</h2>
+              <div className={styles.socials}>
+                {platformSocialLinks.map(({ label, url }) => {
+                  const Icon = socialIcons[label];
+                  return url ? (
                     <a
                       key={label}
-                      href={url!}
+                      href={url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      aria-label={`${name || "Store"} on ${label} (opens in a new tab)`}
+                      aria-label={`Bikalpo on ${label} (opens in a new tab)`}
                     >
                       <Icon size={21} aria-hidden="true" />
                     </a>
-                  ))}
-                </div>
-              </section>
-            )}
+                  ) : (
+                    <span
+                      key={label}
+                      role="img"
+                      aria-label={`${label} — link coming soon`}
+                      title={`${label} — link coming soon`}
+                    >
+                      <Icon size={21} aria-hidden="true" />
+                    </span>
+                  );
+                })}
+              </div>
+            </section>
           </div>
           <div>
-            <nav aria-labelledby="shop-footer-support">
+            <nav
+              aria-labelledby="shop-footer-support"
+              className={styles.support}
+            >
               <h2 id="shop-footer-support">Customer support</h2>
               <ul className={styles.links}>
                 {shop && name && (
@@ -138,6 +137,7 @@ export function ShopFooter({ slug }: { slug: string }) {
                       key={shop.id}
                       shopId={shop.id}
                       name={name}
+                      openFromUrl={false}
                     />
                   </li>
                 )}
@@ -188,7 +188,7 @@ export function ShopFooter({ slug }: { slug: string }) {
               </ul>
             </nav>
             <section
-              className={styles.secondary}
+              className={`${styles.secondary} ${styles.getApp}`}
               aria-labelledby="shop-footer-app"
             >
               <h2 id="shop-footer-app">Get the Bikalpo app</h2>
@@ -209,7 +209,10 @@ export function ShopFooter({ slug }: { slug: string }) {
             </section>
           </div>
           <div>
-            <nav aria-labelledby="shop-footer-policies">
+            <nav
+              aria-labelledby="shop-footer-policies"
+              className={styles.policies}
+            >
               <h2 id="shop-footer-policies">Policies</h2>
               <ul className={styles.links}>
                 {storePolicyLinks.map((policy) => (
@@ -228,11 +231,12 @@ export function ShopFooter({ slug }: { slug: string }) {
               </ul>
             </nav>
             <section
-              className={styles.secondary}
+              className={`${styles.secondary} ${styles.contactUs}`}
               aria-labelledby="shop-footer-contact"
               aria-busy={isPending}
             >
-              <h2 id="shop-footer-contact">Contact store</h2>
+              {/* The only store-specific details in the footer: phone, email, store link. */}
+              <h2 id="shop-footer-contact">Contact us</h2>
               {isPending ? (
                 <p className={styles.pending}>Loading store details…</p>
               ) : shop ? (
@@ -253,15 +257,6 @@ export function ShopFooter({ slug }: { slug: string }) {
                     <Globe2 size={16} aria-hidden="true" />
                     <span>{name} store page</span>
                   </Link>
-                  {shop.shopOpeningTime && shop.shopClosingTime && (
-                    <p>
-                      <Clock3 size={16} aria-hidden="true" />
-                      <span>
-                        {formatStoreTime(shop.shopOpeningTime)} –{" "}
-                        {formatStoreTime(shop.shopClosingTime)}
-                      </span>
-                    </p>
-                  )}
                 </address>
               ) : (
                 <>
@@ -279,10 +274,6 @@ export function ShopFooter({ slug }: { slug: string }) {
                       <Globe2 size={16} aria-hidden="true" />
                       <span>Retailer store page</span>
                     </Link>
-                    <p>
-                      <Clock3 size={16} aria-hidden="true" />
-                      <span>9:00 AM – 8:00 PM</span>
-                    </p>
                   </address>
                 </>
               )}
@@ -305,11 +296,11 @@ export function ShopFooter({ slug }: { slug: string }) {
       <div className={styles.bottom}>
         <div className={styles.copyright}>
           <p>
-            © {new Date().getFullYear()}
-            {name ? ` ${name}` : ""}
+            Powered by <Link href="/">Bikalpo</Link>
           </p>
           <p>
-            Powered by <Link href="/">Bikalpo</Link>
+            © {new Date().getFullYear()}
+            {name ? ` ${name}` : ""}
           </p>
         </div>
       </div>

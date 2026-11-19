@@ -4,7 +4,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { CheckCircle2, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -22,13 +22,21 @@ import { client, orpc } from "@/utils/orpc";
 export function StoreReportDialog({
   shopId,
   name,
+  trigger,
+  openFromUrl = true,
 }: {
   shopId: string;
   name: string;
+  /** Custom trigger element; defaults to a plain text link-style button. */
+  trigger?: ReactNode;
+  /** Reopen after login (?report=issue). Only one instance per page should. */
+  openFromUrl?: boolean;
 }) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const [open, setOpen] = useState(searchParams.get("report") === "issue");
+  const [open, setOpen] = useState(
+    openFromUrl && searchParams.get("report") === "issue",
+  );
   const [subject, setSubject] = useState("");
   const [message, setMessage] = useState("");
   const [validation, setValidation] = useState("");
@@ -73,12 +81,14 @@ export function StoreReportDialog({
   return (
     <Dialog open={open} onOpenChange={changeOpen}>
       <DialogTrigger asChild>
-        <button
-          type="button"
-          className="inline-flex min-h-11 items-center text-left hover:underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-4"
-        >
-          Report issue
-        </button>
+        {trigger ?? (
+          <button
+            type="button"
+            className="inline-flex min-h-11 items-center text-left hover:underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-4"
+          >
+            Report issue
+          </button>
+        )}
       </DialogTrigger>
       <DialogContent
         className="max-h-[85dvh] overflow-y-auto p-6 sm:max-w-lg"

@@ -1,23 +1,24 @@
 "use client";
 
 import { keepPreviousData, useMutation, useQuery } from "@tanstack/react-query";
-import { AlertCircle } from "lucide-react";
+import { AlertCircle, SlidersHorizontal } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { use, useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { useLoginRequired } from "@/components/features/auth/login-required-modal";
+import { CatalogProductGrid } from "@/components/features/products/catalog-product-grid";
 import { ProductPagination } from "@/components/features/products/product-pagination";
 import { CustomerPreviewBanner } from "@/components/storefront/customer-preview-banner";
 import {
   type StorefrontAddSelection,
   StorefrontEmptyState,
-  StorefrontOfferBanner,
   type StorefrontProduct,
   StorefrontProductCard,
   StorefrontSkeleton,
   StoreHeader,
 } from "@/components/storefront/retailer-storefront";
+import { HorizontalScrollRow } from "@/components/storefront/horizontal-scroll-row";
 import { StoreBrands } from "@/components/storefront/store-brands";
 import { Button } from "@/components/ui/button";
 import {
@@ -287,14 +288,12 @@ export default function ShopStorePage({
       {previewMode && <CustomerPreviewBanner />}
       <StoreHeader
         shop={shop}
-        productCount={catalogProductCount}
         stats={data.storeStats}
         followerCount={followState.followerCount}
         isFollowing={followState.isFollowing}
         isFollowPending={followMutation.isPending}
         onToggleFollow={() => void handleToggleFollow()}
       />
-      <StorefrontOfferBanner offers={data.activeOffers} />
 
       <main className="site-container px-3 py-6 sm:px-6 md:py-8 lg:px-8">
         <section aria-labelledby="store-catalog-heading" aria-busy={isFetching}>
@@ -310,10 +309,9 @@ export default function ShopStorePage({
                 {catalogProductCount.toLocaleString("en-BD")} products
               </p>
             </div>
-            <div
-              className="mt-3 flex gap-2 overflow-x-auto pb-1"
-              role="list"
-              aria-label="Product categories"
+            <HorizontalScrollRow
+              label="Product categories"
+              className="mt-3"
             >
               <button
                 type="button"
@@ -342,7 +340,7 @@ export default function ShopStorePage({
                   {facet.name}
                 </button>
               ))}
-            </div>
+            </HorizontalScrollRow>
 
             {selectedCategory && selectedCategory.subcategories.length > 0 && (
               <div className="mt-3 flex gap-2 overflow-x-auto border-t pt-3">
@@ -389,9 +387,10 @@ export default function ShopStorePage({
             )}
           </div>
 
-          <div className="mb-6 flex flex-col gap-3 rounded-lg border bg-slate-50 p-3 sm:flex-row sm:items-center sm:justify-between">
+          {/* One row on every screen: quick filters scroll, sort shrinks to an icon on mobile. */}
+          <div className="mb-6 flex items-center justify-between gap-2 rounded-lg border bg-slate-50 p-3 max-sm:p-2 sm:gap-3">
             <div
-              className="flex gap-2 overflow-x-auto"
+              className="flex min-w-0 gap-2 overflow-x-auto max-sm:gap-1.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
               role="group"
               aria-label="Quick filters"
             >
@@ -412,7 +411,7 @@ export default function ShopStorePage({
                     })
                   }
                   aria-pressed={sort === filter.value}
-                  className={`h-9 shrink-0 rounded-md border px-3 text-xs font-medium transition-colors ${
+                  className={`h-9 shrink-0 rounded-md border px-3 text-xs font-medium transition-colors max-sm:px-2.5 ${
                     sort === filter.value
                       ? "border-primary bg-primary text-primary-foreground"
                       : "border-slate-200 bg-white text-slate-700 hover:border-slate-400"
@@ -422,8 +421,11 @@ export default function ShopStorePage({
                 </button>
               ))}
             </div>
-            <div className="flex items-center justify-between gap-3 sm:justify-end">
-              <p className="text-xs text-slate-500" aria-live="polite">
+            <div className="flex shrink-0 items-center gap-3">
+              <p
+                className="text-xs text-slate-500 max-sm:sr-only"
+                aria-live="polite"
+              >
                 {isFetching
                   ? "Updating…"
                   : `${pagination.totalCount.toLocaleString("en-BD")} results`}
@@ -440,8 +442,12 @@ export default function ShopStorePage({
               >
                 <SelectTrigger
                   aria-label="Sort products"
-                  className="h-9 w-[146px] border-slate-200 bg-white px-3 text-xs text-slate-700 shadow-none"
+                  className="h-9 w-[146px] border-slate-200 bg-white px-3 text-xs text-slate-700 shadow-none max-sm:w-9 max-sm:justify-center max-sm:px-0 max-sm:[&>svg:last-child]:hidden max-sm:[&_[data-slot=select-value]]:hidden"
                 >
+                  <SlidersHorizontal
+                    className="size-4 text-slate-500 sm:hidden"
+                    aria-hidden="true"
+                  />
                   <SelectValue placeholder="Recommended" />
                 </SelectTrigger>
                 <SelectContent position="popper" align="end">
@@ -471,10 +477,11 @@ export default function ShopStorePage({
               />
             ) : (
               <>
-                <div className="grid grid-cols-1 gap-4 min-[560px]:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                <CatalogProductGrid>
                   {products.map((product) => (
                     <StorefrontProductCard
                       key={product.id}
+                      appearance="catalog"
                       product={product}
                       shopSlug={shop.shopSlug || slug}
                       shopId={data.shop.id}
@@ -486,7 +493,7 @@ export default function ShopStorePage({
                       onUpdateQuantity={handleQuantityUpdate}
                     />
                   ))}
-                </div>
+                </CatalogProductGrid>
                 <ProductPagination pagination={pagination} />
               </>
             )}
