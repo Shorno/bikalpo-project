@@ -633,7 +633,8 @@ export default function ProductCatalogTable({
   );
 }
 
-function FilterSelect({
+/** Labelled filter dropdown shared by the admin catalog and Web View. */
+export function FilterSelect({
   compact,
   label,
   value,
