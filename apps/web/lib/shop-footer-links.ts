@@ -11,6 +11,21 @@ export function storeFooterAnchor(
   );
 }
 
+/**
+ * The store's public address as people would type it, e.g.
+ * "bikalpo.com/stores/rahim-store" — no protocol or "www.". Without a known
+ * base it falls back to the path alone.
+ */
+export function storeDisplayUrl(slug: string, publicBaseUrl?: string) {
+  const path = `/stores/${slug}`;
+  if (!publicBaseUrl) return path;
+  const host = publicBaseUrl
+    .replace(/^https?:\/\//, "")
+    .replace(/^www\./, "")
+    .replace(/\/+$/, "");
+  return `${host}${path}`;
+}
+
 export function publicSocialUrl(value: string | null | undefined) {
   if (!value?.trim()) return null;
   try {

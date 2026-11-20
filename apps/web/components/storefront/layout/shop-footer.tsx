@@ -10,12 +10,14 @@ import { useQuery } from "@tanstack/react-query";
 import { Globe2, Mail, Phone } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
+import { useEffect, useState } from "react";
 import {
+  getPublicAppBaseUrl,
   isCustomerStorefrontPreview,
   withCustomerStorefrontPreview,
 } from "@/lib/customer-storefront-preview";
 import { platformSocialLinks } from "@/lib/platform-social-links";
-import { storeFooterAnchor } from "@/lib/shop-footer-links";
+import { storeDisplayUrl, storeFooterAnchor } from "@/lib/shop-footer-links";
 import { storePolicyHref, storePolicyLinks } from "@/lib/store-policy-links";
 import { orpc } from "@/utils/orpc";
 import { StoreReportDialog } from "../store-report-dialog";
@@ -33,18 +35,45 @@ const socialIcons = {
   Instagram: IconBrandInstagram,
 } as const;
 
-export function ShopFooter({ slug }: { slug: string }) {
+/**
+ * The store footer. On the public store it links within the site. The
+ * retailer's My Store dashboard runs on the shop portal host, so it passes
+ * `publicBaseUrl` to point every link at the public site, and forces
+ * `previewMode` to match the dashboard's product links.
+ */
+export function ShopFooter({
+  slug,
+  publicBaseUrl,
+  previewMode: forcePreviewMode,
+}: {
+  slug: string;
+  publicBaseUrl?: string;
+  previewMode?: boolean;
+}) {
   const searchParams = useSearchParams();
-  const previewMode = isCustomerStorefrontPreview(searchParams.get("preview"));
+  const previewMode =
+    forcePreviewMode ?? isCustomerStorefrontPreview(searchParams.get("preview"));
   const { data, isPending } = useQuery(
     orpc.customer.getShopNavigation.queryOptions({ input: { slug } }),
   );
   const shop = data?.shop;
   const name = shop?.shopName || shop?.name;
-  const storePath = withCustomerStorefrontPreview(
-    `/stores/${encodeURIComponent(slug)}`,
-    previewMode,
+  const href = (path: string) =>
+    publicBaseUrl ? `${publicBaseUrl}${path}` : path;
+  const storePath = href(
+    withCustomerStorefrontPreview(
+      `/stores/${encodeURIComponent(slug)}`,
+      previewMode,
+    ),
   );
+
+  // The public site's origin is only known in the browser (unless passed in),
+  // so the readable store URL shows the path alone until mount.
+  const [origin, setOrigin] = useState<string>();
+  useEffect(() => setOrigin(window.location.origin), []);
+  const displayBase =
+    publicBaseUrl ?? (origin ? getPublicAppBaseUrl(origin) : undefined);
+  const storeUrlText = storeDisplayUrl(slug, displayBase);
 
   return (
     <footer className={styles.footer}>
@@ -57,10 +86,8 @@ export function ShopFooter({ slug }: { slug: string }) {
               <ul className={styles.links}>
                 <li>
                   <a
-                    href={storeFooterAnchor(
-                      slug,
-                      "store-information",
-                      previewMode,
+                    href={href(
+                      storeFooterAnchor(slug, "store-information", previewMode),
                     )}
                   >
                     About Store
@@ -68,10 +95,8 @@ export function ShopFooter({ slug }: { slug: string }) {
                 </li>
                 <li>
                   <a
-                    href={storeFooterAnchor(
-                      slug,
-                      "store-products",
-                      previewMode,
+                    href={href(
+                      storeFooterAnchor(slug, "store-products", previewMode),
                     )}
                   >
                     Our Products
@@ -80,10 +105,8 @@ export function ShopFooter({ slug }: { slug: string }) {
                 {!!data?.availableBrands?.length && (
                   <li>
                     <a
-                      href={storeFooterAnchor(
-                        slug,
-                        "available-brands",
-                        previewMode,
+                      href={href(
+                        storeFooterAnchor(slug, "available-brands", previewMode),
                       )}
                     >
                       Available Brands
@@ -142,13 +165,15 @@ export function ShopFooter({ slug }: { slug: string }) {
                   </li>
                 )}
                 <li>
-                  <Link href="/account/support">Support tickets</Link>
+                  <Link href={href("/account/support")}>Support tickets</Link>
                 </li>
                 <li>
                   <Link
-                    href={withCustomerStorefrontPreview(
-                      `/stores/${encodeURIComponent(slug)}/track`,
-                      previewMode,
+                    href={href(
+                      withCustomerStorefrontPreview(
+                        `/stores/${encodeURIComponent(slug)}/track`,
+                        previewMode,
+                      ),
                     )}
                     scroll={false}
                     onNavigate={() => {
@@ -167,9 +192,11 @@ export function ShopFooter({ slug }: { slug: string }) {
                 </li>
                 <li>
                   <Link
-                    href={withCustomerStorefrontPreview(
-                      `/stores/${encodeURIComponent(slug)}/requests?request=new`,
-                      previewMode,
+                    href={href(
+                      withCustomerStorefrontPreview(
+                        `/stores/${encodeURIComponent(slug)}/requests?request=new`,
+                        previewMode,
+                      ),
                     )}
                   >
                     Request an item
@@ -177,9 +204,11 @@ export function ShopFooter({ slug }: { slug: string }) {
                 </li>
                 <li>
                   <Link
-                    href={withCustomerStorefrontPreview(
-                      `/stores/${encodeURIComponent(slug)}/requests`,
-                      previewMode,
+                    href={href(
+                      withCustomerStorefrontPreview(
+                        `/stores/${encodeURIComponent(slug)}/requests`,
+                        previewMode,
+                      ),
                     )}
                   >
                     My item requests
@@ -217,16 +246,18 @@ export function ShopFooter({ slug }: { slug: string }) {
               <ul className={styles.links}>
                 {storePolicyLinks.map((policy) => (
                   <li key={policy.id}>
-                    <Link href={storePolicyHref(slug, policy.id, previewMode)}>
+                    <Link
+                      href={href(storePolicyHref(slug, policy.id, previewMode))}
+                    >
                       {policy.label}
                     </Link>
                   </li>
                 ))}
                 <li>
-                  <Link href="/terms">Terms &amp; Conditions</Link>
+                  <Link href={href("/terms")}>Terms &amp; Conditions</Link>
                 </li>
                 <li>
-                  <Link href="/privacy">Privacy Policy</Link>
+                  <Link href={href("/privacy")}>Privacy Policy</Link>
                 </li>
               </ul>
             </nav>
@@ -255,7 +286,7 @@ export function ShopFooter({ slug }: { slug: string }) {
                   )}
                   <Link href={storePath}>
                     <Globe2 size={16} aria-hidden="true" />
-                    <span>{name} store page</span>
+                    <span>{storeUrlText}</span>
                   </Link>
                 </address>
               ) : (
@@ -272,7 +303,7 @@ export function ShopFooter({ slug }: { slug: string }) {
                     </p>
                     <Link href={storePath}>
                       <Globe2 size={16} aria-hidden="true" />
-                      <span>Retailer store page</span>
+                      <span>{storeUrlText}</span>
                     </Link>
                   </address>
                 </>
@@ -284,9 +315,9 @@ export function ShopFooter({ slug }: { slug: string }) {
           <p>Verified Multi-Vendor Digital Commerce Platform</p>
           <nav aria-label="Bikalpo platform">
             <ul>
-              {platformLinks.map(({ label, href }) => (
-                <li key={href}>
-                  <Link href={href}>{label}</Link>
+              {platformLinks.map(({ label, href: path }) => (
+                <li key={path}>
+                  <Link href={href(path)}>{label}</Link>
                 </li>
               ))}
             </ul>
@@ -296,7 +327,7 @@ export function ShopFooter({ slug }: { slug: string }) {
       <div className={styles.bottom}>
         <div className={styles.copyright}>
           <p>
-            Powered by <Link href="/">Bikalpo</Link>
+            Powered by <Link href={href("/")}>Bikalpo</Link>
           </p>
           <p>
             © {new Date().getFullYear()}
