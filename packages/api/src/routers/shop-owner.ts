@@ -137,6 +137,10 @@ import {
   getOwnerProductList,
   ownerProductListInput,
 } from "./helpers/owner-product-list";
+import {
+  catalogProductViewInput,
+  getSellerCatalogProductView,
+} from "./helpers/catalog-product-detail";
 import { getOwnerProductKpis } from "./helpers/owner-product-kpis";
 import { convertB2bOrderToRetailInventory } from "./helpers/b2b-conversion";
 import {
@@ -10819,6 +10823,20 @@ const shopProductEndpoints = {
         input,
       ),
     ),
+
+  /** Catalog product page: an admin brand product without prices, and the seller's own copy. */
+  getCatalogProductView: permission("shop_product_catalog", "view")
+    .input(catalogProductViewInput)
+    .handler(async ({ context, input }) => {
+      const view = await getSellerCatalogProductView(
+        { ownerType: "shop", ownerId: shopTenantId(context.session.user) },
+        input,
+      );
+      if (!view) {
+        throw new ORPCError("NOT_FOUND", { message: "Product not found" });
+      }
+      return view;
+    }),
 
   /** Products page KPI cards: product counts and stock value. */
   getProductKpis: permission("shop_products", "view").handler(({ context }) =>

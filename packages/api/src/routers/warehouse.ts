@@ -87,6 +87,10 @@ import {
   getOwnerProductList,
   ownerProductListInput,
 } from "./helpers/owner-product-list";
+import {
+  catalogProductViewInput,
+  getSellerCatalogProductView,
+} from "./helpers/catalog-product-detail";
 import { getOwnerProductKpis } from "./helpers/owner-product-kpis";
 import { ensureWarehouseBuyerTargetVariant } from "./helpers/b2b-buyer-target";
 import {
@@ -9822,6 +9826,20 @@ const pricingQueries = {
         input,
       ),
     ),
+
+  /** Catalog product page: an admin brand product without prices, and the seller's own copy. */
+  getCatalogProductView: warehouseProcedure
+    .input(catalogProductViewInput)
+    .handler(async ({ context, input }) => {
+      const view = await getSellerCatalogProductView(
+        { ownerType: "warehouse", ownerId: context.session.user.id },
+        input,
+      );
+      if (!view) {
+        throw new ORPCError("NOT_FOUND", { message: "Product not found" });
+      }
+      return view;
+    }),
 
   /** Products page KPI cards: product counts and stock value. */
   getProductKpis: warehouseProcedure.handler(({ context }) =>

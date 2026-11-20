@@ -9,6 +9,7 @@ import {
   ImageIcon,
   MessageSquare,
   Minus,
+  PackagePlus,
   Pencil,
   Plus,
   Printer,
@@ -18,6 +19,10 @@ import Image from "next/image";
 import Link from "next/link";
 import { type ReactNode, useMemo, useState } from "react";
 import { toast } from "sonner";
+import {
+  resolveBrandScope,
+  scopeVariantPrices,
+} from "@/app/(dashboard)/dashboard/admin/web-view/_lib/brand-scope";
 import { StarRating } from "@/components/features/reviews/star-rating";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -40,7 +45,6 @@ import {
 } from "@/lib/catalog-product-detail";
 import { cn } from "@/lib/utils";
 import { orpc } from "@/utils/orpc";
-import { resolveBrandScope, scopeVariantPrices } from "../_lib/brand-scope";
 
 type FeatureItem = { key: string; value: string };
 type FeatureGroup = { title: string; items: FeatureItem[] };
@@ -130,18 +134,29 @@ function formatDate(value: string | Date | null | undefined) {
   });
 }
 
+export type CatalogProductAction = {
+  label: string;
+  href: string;
+  kind: "add" | "edit";
+};
+
 /**
- * The admin catalog product page, per the client review: the summary beside
- * the images, then Product Information · Description · Reviews tabs. Prices
- * are masked in the summary; the real ones are in the admin-only Pricing table.
+ * The catalog product page shared by admin and the seller panels, per the
+ * client review: the summary beside the images, then Product Information ·
+ * Description · Reviews tabs. Prices are masked in the summary for everyone;
+ * admin sees the real ones in the admin-only block, and sellers never receive
+ * them from the server.
  */
-export function WebViewDetailClient({
+export function CatalogProductDetail({
   product,
   brandId = null,
   reviews,
   stats,
   listingUrl = LISTING_URL,
   listingLabel = "Web View",
+  viewer = "admin",
+  primaryAction,
+  brandPicker,
 }: {
   product: DetailProduct;
   brandId?: number | null;
@@ -149,6 +164,11 @@ export function WebViewDetailClient({
   stats: ReviewStats;
   listingUrl?: string;
   listingLabel?: string;
+  viewer?: "admin" | "seller";
+  /** Admin: Edit Product (default). Sellers: Add Product, or Edit for their own copy. */
+  primaryAction?: CatalogProductAction;
+  /** Seller panels: switches between the brands offered for this product. */
+  brandPicker?: ReactNode;
 }) {
   const { brands, hasSingleBrand, defaultBrandId } = useMemo(
     () => resolveBrandScope(product),
@@ -221,7 +241,11 @@ export function WebViewDetailClient({
   const storefrontHref = product.category?.slug
     ? `/products/${product.category.slug}/${product.slug}`
     : null;
-  const editHref = `/dashboard/admin/products/${product.id}/edit`;
+  const action: CatalogProductAction = primaryAction ?? {
+    label: "Edit Product",
+    href: `/dashboard/admin/products/${product.id}/edit`,
+    kind: "edit",
+  };
 
   return (
     <div className="mx-auto w-full max-w-6xl space-y-5">
@@ -272,6 +296,8 @@ export function WebViewDetailClient({
           </Button>
         ) : null}
       </div>
+
+      {brandPicker}
 
       {/* Main */}
       <div className="grid gap-6 rounded-xl border bg-card p-5 shadow-sm lg:grid-cols-2 lg:gap-8 lg:p-6">
@@ -343,10 +369,8 @@ export function WebViewDetailClient({
           {/* Price stays masked here; admins see real prices under Pricing. */}
           <p className="mt-5 flex items-baseline gap-2">
             <span className="text-sm text-muted-foreground">Price</span>
-            <span
-              className="text-2xl font-bold"
-              aria-label="Price hidden"
-            >
+            <span className="sr-only">Hidden</span>
+            <span aria-hidden="true" className="text-2xl font-bold">
               ৳*****
             </span>
           </p>
@@ -417,9 +441,13 @@ export function WebViewDetailClient({
 
           <div className="mt-6 flex flex-wrap gap-2">
             <Button asChild>
-              <Link href={editHref}>
-                <Pencil className="size-4" />
-                Edit Product
+              <Link href={action.href}>
+                {action.kind === "add" ? (
+                  <PackagePlus className="size-4" />
+                ) : (
+                  <Pencil className="size-4" />
+                )}
+                {action.label}
               </Link>
             </Button>
             <Button
@@ -571,11 +599,13 @@ export function WebViewDetailClient({
             </div>
           </Section>
 
-          <AdminOnlyBlock
-            productId={product.id}
-            stats={stats}
-            pricing={isLpg ? lpgPriceRows(activeVariants) : null}
-          />
+          {viewer === "admin" ? (
+            <AdminOnlyBlock
+              productId={product.id}
+              stats={stats}
+              pricing={isLpg ? lpgPriceRows(activeVariants) : null}
+            />
+          ) : null}
         </TabsContent>
 
         {/* Description */}
@@ -605,7 +635,6 @@ export function WebViewDetailClient({
                     <h3 className="text-sm font-semibold">Description</h3>
                     <div
                       className="prose prose-sm mt-1.5 max-w-none text-muted-foreground"
-                      // biome-ignore lint/security/noDangerouslySetInnerHtml: product description is admin-authored rich text
                       dangerouslySetInnerHTML={{ __html: product.description }}
                     />
                   </div>
@@ -734,7 +763,9 @@ function RuleState({ enabled }: { enabled: boolean }) {
             aria-hidden="true"
             className={cn(
               "inline-flex items-center gap-1.5",
-              selected ? "font-medium text-foreground" : "text-muted-foreground",
+              selected
+                ? "font-medium text-foreground"
+                : "text-muted-foreground",
             )}
           >
             <span

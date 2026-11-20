@@ -264,7 +264,8 @@ export type ProductListOwner =
   | { ownerType: "warehouse"; ownerId: string }
   | { ownerType: "shop"; ownerId: string };
 
-function ownerProductCondition(owner: ProductListOwner): SQL {
+/** The owner's own products (warehouse or shop), active and inactive. */
+export function ownerProductCondition(owner: ProductListOwner): SQL {
   if (owner.ownerType === "warehouse") {
     return and(
       eq(product.creatorSource, "warehouse"),

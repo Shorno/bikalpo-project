@@ -4,7 +4,6 @@ import {
   type AdminProductGenerationTemplateDetails,
   adminProductGenerationTemplate,
   brand as brandTable,
-  catalogVariant,
   category as categoryTable,
   coreProductIdentity,
   estimateItem,
@@ -49,6 +48,7 @@ import {
   saveConsumerReferencePrices,
 } from "../services/consumer-reference-prices";
 import { getAdminProductInsights } from "./helpers/admin-product-insights";
+import { loadAdminCatalogProductDetail } from "./helpers/catalog-product-detail";
 import { assignCoreProductCode } from "./helpers/core-catalog-code";
 import { catalogProductCode } from "./helpers/generate-sku";
 import { ensureCoreProductShortCode } from "./helpers/sellable-sku";
@@ -234,70 +234,11 @@ export const productRouter = {
     })
     .input(productIdSchema)
     .handler(async ({ input }) => {
-      const foundProduct = await db.query.product.findFirst({
-        where: and(
-          eq(product.id, input.id),
-          eq(product.creatorSource, "admin"),
-        ),
-        with: {
-          // The type's family tells the page whether this is an LPG product.
-          category: { with: { type: true } },
-          subCategory: true,
-          brand: true,
-          images: true,
-          productBrands: {
-            with: { brand: true },
-          },
-          variantPrices: {
-            with: {
-              variantOption: true,
-            },
-          },
-          variants: {
-            columns: {
-              id: true,
-              unitLabel: true,
-              variantType: true,
-              brandId: true,
-              exchangeCreditAmount: true,
-              exchangeEnabled: true,
-              sourceVariantOptionId: true,
-            },
-          },
-        },
-      });
-
-      if (!foundProduct) {
+      const detail = await loadAdminCatalogProductDetail(input.id);
+      if (!detail) {
         throw new ORPCError("NOT_FOUND", { message: "Product not found" });
       }
-
-      // Each brand + variant row maps to one shared catalog variant and its SKU.
-      const catalogVariants = foundProduct.coreProductId
-        ? await db.query.catalogVariant.findMany({
-            where: eq(catalogVariant.coreProductId, foundProduct.coreProductId),
-            columns: { brandId: true, variantOptionId: true, sku: true },
-          })
-        : [];
-      const skuByIdentity = new Map(
-        catalogVariants.map((row) => [
-          `${row.brandId ?? "none"}:${row.variantOptionId}`,
-          row.sku,
-        ]),
-      );
-      const detail = attachExchangeSettingsToVariantPrices(foundProduct);
-
-      return {
-        product: {
-          ...detail,
-          variantPrices: detail.variantPrices.map((price) => ({
-            ...price,
-            catalogSku:
-              skuByIdentity.get(
-                `${price.brandId ?? foundProduct.brandId ?? "none"}:${price.variantOptionId}`,
-              ) ?? null,
-          })),
-        },
-      };
+      return { product: detail };
     }),
 
   /** Admin-only Product History on the catalog product page. */
