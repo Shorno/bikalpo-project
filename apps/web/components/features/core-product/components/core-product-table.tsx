@@ -178,7 +178,7 @@ export default function CoreProductTable({
         getRowId={(row) => String(row.id)}
         mobile={{
           columns: [
-            { id: "catalogCode", label: "System ID", width: "22%" },
+            { id: "catalogCode", label: "Product ID", width: "22%" },
             { id: "name", label: "Product", width: "32%" },
             { id: "category", label: "Category", width: "23%" },
             { id: "isActive", label: "Status", width: "23%" },

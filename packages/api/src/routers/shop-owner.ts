@@ -133,6 +133,15 @@ import {
 import { shopTenantId } from "../shop-portal-scope";
 import { resolveActiveProductType } from "./helpers/application-fields";
 import { ensureShopBuyerTargetVariant } from "./helpers/b2b-buyer-target";
+import {
+  getOwnerProductList,
+  ownerProductListInput,
+} from "./helpers/owner-product-list";
+import {
+  catalogProductViewInput,
+  getSellerCatalogProductView,
+} from "./helpers/catalog-product-detail";
+import { getOwnerProductKpis } from "./helpers/owner-product-kpis";
 import { convertB2bOrderToRetailInventory } from "./helpers/b2b-conversion";
 import {
   prepareB2bMovementForApproval,
@@ -10803,6 +10812,38 @@ const shopProductEndpoints = {
 
       return { count: rows.length, violations: rows };
     },
+  ),
+
+  /** Products page: one row per brand product, shared shape with the wholesaler panel. */
+  getProductList: permission("shop_products", "view")
+    .input(ownerProductListInput)
+    .handler(({ input, context }) =>
+      getOwnerProductList(
+        { ownerType: "shop", ownerId: shopTenantId(context.session.user) },
+        input,
+      ),
+    ),
+
+  /** Catalog product page: an admin brand product without prices, and the seller's own copy. */
+  getCatalogProductView: permission("shop_product_catalog", "view")
+    .input(catalogProductViewInput)
+    .handler(async ({ context, input }) => {
+      const view = await getSellerCatalogProductView(
+        { ownerType: "shop", ownerId: shopTenantId(context.session.user) },
+        input,
+      );
+      if (!view) {
+        throw new ORPCError("NOT_FOUND", { message: "Product not found" });
+      }
+      return view;
+    }),
+
+  /** Products page KPI cards: product counts and stock value. */
+  getProductKpis: permission("shop_products", "view").handler(({ context }) =>
+    getOwnerProductKpis({
+      ownerType: "shop",
+      ownerId: shopTenantId(context.session.user),
+    }),
   ),
 
   /**

@@ -52,6 +52,10 @@ type DashboardKpiCardProps = {
   trend?: DashboardKpiTrend;
   footer?: DashboardKpiFooter;
   chartData?: DashboardKpiChartPoint[];
+  /** Small caption above the sparkline, e.g. "Trend". */
+  chartLabel?: string;
+  /** Keep the sparkline on phones too (hidden below md by default). */
+  chartOnMobile?: boolean;
   className?: string;
 };
 
@@ -158,6 +162,8 @@ export function DashboardKpiCard({
   trend,
   footer,
   chartData,
+  chartLabel,
+  chartOnMobile = false,
   className,
 }: DashboardKpiCardProps) {
   const styles = toneStyles[tone];
@@ -232,10 +238,7 @@ export function DashboardKpiCard({
           <p className="mt-auto max-w-[58%] pt-2 text-xs font-semibold text-muted-foreground">
             {footer.label}:{" "}
             <span
-              className={cn(
-                "font-bold",
-                active ? styles.value : styles.accent,
-              )}
+              className={cn("font-bold", active ? styles.value : styles.accent)}
             >
               {footer.value}
             </span>
@@ -244,7 +247,17 @@ export function DashboardKpiCard({
       </div>
 
       {hasChart ? (
-        <div className="pointer-events-none absolute bottom-4 right-4 hidden w-[43%] min-w-24 max-w-32 md:block">
+        <div
+          className={cn(
+            "pointer-events-none absolute bottom-4 right-4 w-[43%] min-w-24 max-w-32",
+            !chartOnMobile && "hidden md:block",
+          )}
+        >
+          {chartLabel ? (
+            <p className="text-right text-[11px] font-semibold text-muted-foreground">
+              {chartLabel}
+            </p>
+          ) : null}
           <DashboardKpiSparkline data={chartData} tone={tone} />
         </div>
       ) : null}

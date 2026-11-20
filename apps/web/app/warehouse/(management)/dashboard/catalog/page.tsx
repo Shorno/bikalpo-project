@@ -214,7 +214,7 @@ export default function WarehouseCatalogPage() {
         category: row.categoryName,
         subCategory: row.subCategoryName,
         name: coreProduct.name,
-        href: `/warehouse/dashboard/catalog/${coreProduct.id}`,
+        href: `/warehouse/dashboard/catalog/view/${coreProduct.id}`,
         add: {
           label: action.label,
           disabled: action.disabled,

@@ -71,12 +71,17 @@ export function CatalogFilterPanel({
   onSearchChange,
   hasFilters,
   onClear,
+  searchPlaceholder = "Search products...",
+  gridClassName = "grid-cols-3",
   children,
 }: {
   search: string;
   onSearchChange: (value: string) => void;
   hasFilters: boolean;
   onClear: () => void;
+  searchPlaceholder?: string;
+  /** Column classes for the filter grid; three columns by default. */
+  gridClassName?: string;
   /** The Type, Category, and Sub Category FilterSelects. */
   children: ReactNode;
 }) {
@@ -95,7 +100,7 @@ export function CatalogFilterPanel({
             aria-label="Search products"
             value={search}
             onChange={(event) => onSearchChange(event.target.value)}
-            placeholder="Search products..."
+            placeholder={searchPlaceholder}
             className="h-11 pl-10"
           />
         </div>
@@ -112,7 +117,9 @@ export function CatalogFilterPanel({
           </Button>
         )}
       </div>
-      <div className="grid grid-cols-3 gap-3 max-md:gap-2">{children}</div>
+      <div className={cn("grid gap-3 max-md:gap-2", gridClassName)}>
+        {children}
+      </div>
     </section>
   );
 }
@@ -159,8 +166,9 @@ export function CatalogListTable({
 }) {
   const router = useRouter();
   const isMobile = useIsMobile();
-  const hasAdd = rows.some((row) => row.add);
-  const columnCount = isMobile ? (hasAdd ? 5 : 4) : 6;
+  // Mobile has no Add column: the row tap and the name link open the product,
+  // as in the admin catalog, so the name gets the room instead.
+  const columnCount = isMobile ? 4 : 6;
 
   return (
     <section
@@ -177,17 +185,16 @@ export function CatalogListTable({
         <caption className="sr-only">Product catalog</caption>
         {isMobile ? (
           <colgroup>
-            <col className={hasAdd ? "w-[21%]" : "w-[21%] @xs/catalog:w-[26%]"} />
-            <col className={hasAdd ? "w-[19%]" : "w-[24%] @xs/catalog:w-[22%]"} />
-            <col className={hasAdd ? "w-[24%]" : "w-[29%] @xs/catalog:w-[26%]"} />
-            <col className={hasAdd ? "w-[24%]" : "w-[26%]"} />
-            {hasAdd ? <col className="w-[12%]" /> : null}
+            <col className="w-[21%] @xs/catalog:w-[26%]" />
+            <col className="w-[24%] @xs/catalog:w-[22%]" />
+            <col className="w-[29%] @xs/catalog:w-[26%]" />
+            <col className="w-[26%]" />
           </colgroup>
         ) : null}
         <TableHeader>
           <TableRow className="hover:bg-transparent">
             {[
-              "System ID",
+              "Product ID",
               "Type",
               "Category",
               ...(isMobile ? [] : ["Sub Category"]),
@@ -199,7 +206,7 @@ export function CatalogListTable({
                 className={
                   isMobile
                     ? "whitespace-normal break-words px-1 @sm/catalog:px-2"
-                    : label === "System ID"
+                    : label === "Product ID"
                       ? "w-36"
                       : undefined
                 }
@@ -207,13 +214,7 @@ export function CatalogListTable({
                 {label}
               </TableHead>
             ))}
-            {isMobile ? (
-              hasAdd ? (
-                <TableHead scope="col" className="px-1">
-                  <span className="sr-only">Add</span>
-                </TableHead>
-              ) : null
-            ) : (
+            {isMobile ? null : (
               <TableHead scope="col" className="text-right">
                 Action
               </TableHead>
@@ -281,11 +282,6 @@ export function CatalogListTable({
                         {row.name}
                       </Link>
                     </MobileCell>
-                    {hasAdd ? (
-                      <TableCell className="px-1 py-2 text-right align-middle">
-                        {row.add ? <AddButton add={row.add} compact /> : null}
-                      </TableCell>
-                    ) : null}
                   </>
                 ) : (
                   <>
@@ -320,31 +316,24 @@ export function CatalogListTable({
   );
 }
 
-function AddButton({
-  add,
-  compact = false,
-}: {
-  add: NonNullable<CatalogListRow["add"]>;
-  compact?: boolean;
-}) {
+function AddButton({ add }: { add: NonNullable<CatalogListRow["add"]> }) {
   const label = add.disabled ? add.label : "Add";
   const content = (
     <>
       <Plus aria-hidden="true" className="size-4" />
-      {compact ? <span className="sr-only">{label}</span> : label}
+      {label}
     </>
   );
-  const className = compact ? "size-9 p-0" : undefined;
 
   if (add.disabled) {
     return (
-      <Button size="sm" disabled className={className} title={label}>
+      <Button size="sm" disabled title={label}>
         {content}
       </Button>
     );
   }
   return (
-    <Button size="sm" asChild className={className} title={label}>
+    <Button size="sm" asChild title={label}>
       <Link href={add.href}>{content}</Link>
     </Button>
   );

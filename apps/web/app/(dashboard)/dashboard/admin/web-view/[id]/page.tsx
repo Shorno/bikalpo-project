@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
+import { CatalogProductDetail } from "@/components/features/product/catalog-product-detail";
 import { client } from "@/utils/orpc";
-import { WebViewDetailClient } from "./web-view-detail-client";
 
 export default async function AdminWebViewDetailPage({
   params,
@@ -45,7 +45,7 @@ export default async function AdminWebViewDetailPage({
     }));
 
   return (
-    <WebViewDetailClient
+    <CatalogProductDetail
       product={product}
       brandId={brandId}
       reviews={reviewData.reviews}

@@ -42,7 +42,7 @@ export function useCoreProductColumns() {
     () => [
       {
         id: "catalogCode",
-        header: "System ID",
+        header: "Product ID",
         cell: ({ row }) => (
           <span className="flex flex-col font-medium">
             <span>{row.original.catalogCode || row.original.sku}</span>

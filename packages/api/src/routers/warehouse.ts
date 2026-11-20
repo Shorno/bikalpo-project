@@ -83,6 +83,15 @@ import {
   wholesaleCheckoutSubmissionSchema,
 } from "../services/wholesale-checkout";
 import { localDateStamp } from "../utils/date";
+import {
+  getOwnerProductList,
+  ownerProductListInput,
+} from "./helpers/owner-product-list";
+import {
+  catalogProductViewInput,
+  getSellerCatalogProductView,
+} from "./helpers/catalog-product-detail";
+import { getOwnerProductKpis } from "./helpers/owner-product-kpis";
 import { ensureWarehouseBuyerTargetVariant } from "./helpers/b2b-buyer-target";
 import {
   convertB2bOrderToRetailInventory,
@@ -9808,6 +9817,38 @@ import {
 } from "@bikalpo-project/db/schema";
 
 const pricingQueries = {
+  /** Products page: one row per brand product, shared shape with the retailer panel. */
+  getProductList: warehouseProcedure
+    .input(ownerProductListInput)
+    .handler(({ context, input }) =>
+      getOwnerProductList(
+        { ownerType: "warehouse", ownerId: context.session.user.id },
+        input,
+      ),
+    ),
+
+  /** Catalog product page: an admin brand product without prices, and the seller's own copy. */
+  getCatalogProductView: warehouseProcedure
+    .input(catalogProductViewInput)
+    .handler(async ({ context, input }) => {
+      const view = await getSellerCatalogProductView(
+        { ownerType: "warehouse", ownerId: context.session.user.id },
+        input,
+      );
+      if (!view) {
+        throw new ORPCError("NOT_FOUND", { message: "Product not found" });
+      }
+      return view;
+    }),
+
+  /** Products page KPI cards: product counts and stock value. */
+  getProductKpis: warehouseProcedure.handler(({ context }) =>
+    getOwnerProductKpis({
+      ownerType: "warehouse",
+      ownerId: context.session.user.id,
+    }),
+  ),
+
   /** Paginated configured-variant rows for the warehouse Products screen. */
   getWarehouseProductList: warehouseProcedure
     .input(

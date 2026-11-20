@@ -93,3 +93,4 @@ export * from "./warehouse-storage-area";
 export * from "./warehouse-variant-alias";
 export * from "./warehouse-warehouse-connection";
 export * from "./tolet-banner";
+export * from "./owner-inventory-snapshot";

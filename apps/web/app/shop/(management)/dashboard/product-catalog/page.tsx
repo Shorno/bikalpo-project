@@ -96,7 +96,7 @@ export default function ProductCatalogPage() {
       category: item.category?.name ?? "—",
       subCategory: item.subCategory?.name ?? null,
       name: item.name,
-      href: `/dashboard/product-catalog/${item.id}`,
+      href: `/dashboard/product-catalog/view/${item.id}`,
       add: {
         label: action.label,
         disabled: action.disabled,
