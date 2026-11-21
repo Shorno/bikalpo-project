@@ -13,7 +13,6 @@ import {
   Pencil,
   Plus,
   Printer,
-  ShieldCheck,
 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
@@ -483,8 +482,7 @@ export function CatalogProductDetail({
         {/* Product Information */}
         <TabsContent value="information" className="mt-4 space-y-5">
           <Section title="Product Information">
-            {/* Reads down each column: identity on the left, ordering and brand on the right. */}
-            <dl className="grid gap-x-8 gap-y-3 text-sm sm:grid-flow-col sm:grid-cols-2 sm:grid-rows-5">
+            <dl className="max-w-2xl text-sm">
               <InfoRow label="Product ID" value={productId} />
               <InfoRow label="Category" value={categoryName} />
               <InfoRow
@@ -504,7 +502,7 @@ export function CatalogProductDetail({
               />
               <InfoRow label="Inventory Unit" value={inventoryUnit ?? "—"} />
               <InfoRow label="Minimum Order" value={minimumOrder} />
-              <InfoRow label="Brand" value={brandName} />
+              <InfoRow label="Brand" value={brandName} className="mt-3" />
               <InfoRow
                 label="SKU"
                 value={
@@ -529,8 +527,8 @@ export function CatalogProductDetail({
           </Section>
 
           <Section title="Inventory & Product Rules">
-            {/* 1px gaps over a border-coloured background draw the cell lines. */}
-            <div className="grid gap-px overflow-hidden rounded-lg border bg-border sm:grid-cols-2">
+            {/* Two columns of rules split by row lines; the last row has none. */}
+            <div className="grid sm:grid-cols-2 sm:gap-x-10 [&>*:last-child]:border-b-0 [&>*:nth-last-child(2)]:border-b-0">
               <RuleCell label="Variant">
                 <div className="mt-1.5 space-y-1.5 text-sm">
                   {isLpg ? (
@@ -595,12 +593,12 @@ export function CatalogProductDetail({
                   Not set for this product
                 </p>
               </RuleCell>
-              <div aria-hidden="true" className="bg-card max-sm:hidden" />
+              <div aria-hidden="true" className="border-b max-sm:hidden" />
             </div>
           </Section>
 
           {viewer === "admin" ? (
-            <AdminOnlyBlock
+            <AdminSections
               productId={product.id}
               stats={stats}
               pricing={isLpg ? lpgPriceRows(activeVariants) : null}
@@ -732,9 +730,23 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
   );
 }
 
-function InfoRow({ label, value }: { label: string; value: ReactNode }) {
+/** One "Label : Value" line in a condensed single-column list. */
+function InfoRow({
+  label,
+  value,
+  className,
+}: {
+  label: string;
+  value: ReactNode;
+  className?: string;
+}) {
   return (
-    <div className="grid grid-cols-[9rem_1fr] gap-3 border-b border-dashed pb-2.5">
+    <div
+      className={cn(
+        "grid grid-cols-[8.5rem_1fr] gap-x-3 py-1 sm:grid-cols-[10rem_1fr]",
+        className,
+      )}
+    >
       <dt className="text-muted-foreground">{label}</dt>
       <dd className="min-w-0 break-words font-medium">{value}</dd>
     </div>
@@ -743,7 +755,7 @@ function InfoRow({ label, value }: { label: string; value: ReactNode }) {
 
 function RuleCell({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div className="bg-card p-4">
+    <div className="border-b py-3.5">
       <p className="text-sm font-semibold">{label}</p>
       {children}
     </div>
@@ -812,8 +824,8 @@ function ValueList({ label, values }: { label: string; values: string[] }) {
   );
 }
 
-/** Product History and Pricing: shown on the admin panel only. */
-function AdminOnlyBlock({
+/** Product History and Pricing: rendered for the admin panel only. */
+function AdminSections({
   productId,
   stats,
   pricing,
@@ -831,26 +843,9 @@ function AdminOnlyBlock({
   const created = formatDate(insights?.createdAt);
 
   return (
-    <section
-      aria-labelledby="admin-only-heading"
-      className="space-y-5 rounded-xl border border-amber-200 bg-amber-50/50 p-5 lg:p-6 dark:border-amber-900/60 dark:bg-amber-950/15"
-    >
-      <div className="flex items-center gap-2">
-        <ShieldCheck
-          aria-hidden="true"
-          className="size-4 text-amber-700 dark:text-amber-400"
-        />
-        <h2 id="admin-only-heading" className="text-base font-semibold">
-          Admin only
-        </h2>
-        <span className="text-xs text-muted-foreground">
-          Not shown to wholesalers or retailers
-        </span>
-      </div>
-
-      <div>
-        <h3 className="mb-3 text-sm font-semibold">Product History</h3>
-        <dl className="grid gap-x-8 gap-y-3 text-sm sm:grid-cols-2">
+    <>
+      <Section title="Product History">
+        <dl className="max-w-2xl text-sm">
           <InfoRow
             label="Created"
             value={
@@ -867,22 +862,22 @@ function AdminOnlyBlock({
                 : pending
             }
           />
-          <div className="grid grid-cols-[9rem_1fr] gap-3 border-b border-dashed pb-2.5">
-            <dt className="text-muted-foreground">Average Rating</dt>
-            <dd className="flex items-center gap-2 font-medium">
-              {stats.totalReviews > 0 ? (
-                <>
+          <InfoRow
+            label="Average Rating"
+            value={
+              stats.totalReviews > 0 ? (
+                <span className="flex items-center gap-2">
                   <StarRating
                     rating={Math.round(stats.averageRating)}
                     size="sm"
                   />
                   {stats.averageRating.toFixed(1)}
-                </>
+                </span>
               ) : (
                 "No reviews yet"
-              )}
-            </dd>
-          </div>
+              )
+            }
+          />
           <InfoRow
             label="Total Orders"
             value={
@@ -892,59 +887,61 @@ function AdminOnlyBlock({
             }
           />
         </dl>
-      </div>
+      </Section>
 
       {pricing ? (
-        <div>
-          <h3 className="mb-3 text-sm font-semibold">Pricing</h3>
-          <div className="overflow-hidden rounded-lg border bg-card">
-            <Table>
-              <TableHeader>
-                <TableRow className="hover:bg-transparent">
-                  <TableHead scope="col">Capacity</TableHead>
-                  <TableHead scope="col" className="text-right">
-                    Exchange Price
-                  </TableHead>
-                  <TableHead scope="col" className="text-right">
-                    New Cylinder Price
-                  </TableHead>
+        <Section title="Pricing">
+          <Table>
+            <TableHeader>
+              <TableRow className="hover:bg-transparent">
+                <TableHead scope="col" className="pl-0">
+                  Capacity
+                </TableHead>
+                <TableHead scope="col" className="whitespace-normal text-right">
+                  Exchange Price
+                </TableHead>
+                <TableHead
+                  scope="col"
+                  className="whitespace-normal pr-0 text-right"
+                >
+                  New Cylinder Price
+                </TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {pricing.length === 0 ? (
+                <TableRow>
+                  <TableCell
+                    colSpan={3}
+                    className="h-20 text-center text-muted-foreground"
+                  >
+                    No cylinder sizes configured for this brand.
+                  </TableCell>
                 </TableRow>
-              </TableHeader>
-              <TableBody>
-                {pricing.length === 0 ? (
-                  <TableRow>
-                    <TableCell
-                      colSpan={3}
-                      className="h-20 text-center text-muted-foreground"
-                    >
-                      No cylinder sizes configured for this brand.
+              ) : (
+                pricing.map((row) => (
+                  <TableRow key={row.id}>
+                    <TableCell className="pl-0 font-medium">
+                      {row.capacity}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {row.exchangePrice === null
+                        ? "—"
+                        : formatBDT(row.exchangePrice)}
+                    </TableCell>
+                    <TableCell className="pr-0 text-right tabular-nums">
+                      {row.newPrice === null
+                        ? "Not set"
+                        : formatBDT(row.newPrice)}
                     </TableCell>
                   </TableRow>
-                ) : (
-                  pricing.map((row) => (
-                    <TableRow key={row.id}>
-                      <TableCell className="font-medium">
-                        {row.capacity}
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {row.exchangePrice === null
-                          ? "—"
-                          : formatBDT(row.exchangePrice)}
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {row.newPrice === null
-                          ? "Not set"
-                          : formatBDT(row.newPrice)}
-                      </TableCell>
-                    </TableRow>
-                  ))
-                )}
-              </TableBody>
-            </Table>
-          </div>
-        </div>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </Section>
       ) : null}
-    </section>
+    </>
   );
 }
 
