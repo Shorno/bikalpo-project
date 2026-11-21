@@ -236,6 +236,8 @@ export function CatalogProductDetail({
     : product.minimumOrderEnabled
       ? `${formatQty(product.minimumOrderQty)} ${inventoryUnit ?? "unit"}`
       : "Not required";
+  // A catalog item without a brand has no rules yet; they are set on adding it.
+  const ruleValue = (enabled: boolean) => (brandless ? null : enabled);
   const variantSkus = activeVariants
     .map((variant) => variant.catalogSku)
     .filter((sku): sku is string => Boolean(sku));
@@ -568,78 +570,100 @@ export function CatalogProductDetail({
             </dl>
           </Section>
 
-          {brandless ? null : (
-            <Section title="Inventory & Product Rules">
-              {/* Two columns of rules split by row lines; the last row has none. */}
-              <div className="grid sm:grid-cols-2 sm:gap-x-10 [&>*:last-child]:border-b-0 [&>*:nth-last-child(2)]:border-b-0">
-                <RuleCell label="Variant">
-                  <div className="mt-1.5 space-y-1.5 text-sm">
-                    {isLpg ? (
-                      <ValueList label="Type" values={cylinderTypes} />
-                    ) : null}
-                    <ValueList
-                      label={isLpg ? "Size" : "Options"}
-                      values={sizeLabels}
-                    />
-                  </div>
-                </RuleCell>
-                <RuleCell label="Conversion">
-                  <RuleState enabled={Boolean(product.conversionEnabled)} />
-                </RuleCell>
-                <RuleCell label="Inventory Unit">
-                  <p className="mt-1.5 text-sm font-medium">
-                    {inventoryUnit ?? "—"}
-                  </p>
-                </RuleCell>
-                <RuleCell label="Inventory Loose Unit">
-                  <RuleState
-                    enabled={Boolean(product.inventoryLooseUnitEnabled)}
+          <Section title="Inventory & Product Rules">
+            {/* Two columns of rules split by row lines; the last row has none. */}
+            <div className="grid sm:grid-cols-2 sm:gap-x-10 [&>*:last-child]:border-b-0 [&>*:nth-last-child(2)]:border-b-0">
+              <RuleCell label="Variant">
+                <div className="mt-1.5 space-y-1.5 text-sm">
+                  {brandless ? (
+                    <p className="text-muted-foreground">
+                      Chosen when you add it
+                    </p>
+                  ) : (
+                    <>
+                      {isLpg ? (
+                        <ValueList label="Type" values={cylinderTypes} />
+                      ) : null}
+                      <ValueList
+                        label={isLpg ? "Size" : "Options"}
+                        values={sizeLabels}
+                      />
+                    </>
+                  )}
+                </div>
+              </RuleCell>
+              <RuleCell label="Conversion">
+                <RuleState
+                  enabled={ruleValue(Boolean(product.conversionEnabled))}
+                />
+              </RuleCell>
+              <RuleCell label="Inventory Unit">
+                <p className="mt-1.5 text-sm font-medium">
+                  {inventoryUnit ?? "—"}
+                </p>
+              </RuleCell>
+              <RuleCell label="Inventory Loose Unit">
+                <RuleState
+                  enabled={ruleValue(
+                    Boolean(product.inventoryLooseUnitEnabled),
+                  )}
+                />
+                {product.inventoryLooseUnitEnabled ? (
+                  <RuleDetail
+                    label="Unit"
+                    value={(product.inventoryLooseUnit ?? "").toUpperCase()}
                   />
-                  {product.inventoryLooseUnitEnabled ? (
-                    <RuleDetail
-                      label="Unit"
-                      value={(product.inventoryLooseUnit ?? "").toUpperCase()}
-                    />
-                  ) : null}
-                </RuleCell>
-                <RuleCell label="Return Policy">
-                  <RuleState enabled={Boolean(product.returnPolicyEnabled)} />
-                </RuleCell>
-                <RuleCell label="Empty Pack Return">
-                  <RuleState enabled={Boolean(product.isReturnablePack)} />
-                  {product.isReturnablePack ? (
-                    <RuleDetail
-                      label="Empty Pack Price"
-                      value={
-                        formatBDT(product.defaultPackDepositAmount) ?? "Not set"
-                      }
-                    />
-                  ) : null}
-                </RuleCell>
-                <RuleCell label="Batch Tracking">
-                  <RuleState enabled={product.trackingType === "batch"} />
-                </RuleCell>
-                <RuleCell label="Damage Tracking">
-                  <RuleState enabled={Boolean(product.damageControlEnabled)} />
-                </RuleCell>
-                <RuleCell label="Expiry Tracking">
-                  <RuleState enabled={Boolean(product.expiryEnabled)} />
-                </RuleCell>
-                <RuleCell label="Minimum Order Qty">
-                  <RuleState enabled={Boolean(product.minimumOrderEnabled)} />
-                  {product.minimumOrderEnabled ? (
-                    <RuleDetail label="Minimum Order" value={minimumOrder} />
-                  ) : null}
-                </RuleCell>
-                <RuleCell label="Delivery Cost">
-                  <p className="mt-1.5 text-sm text-muted-foreground">
-                    Not set for this product
-                  </p>
-                </RuleCell>
-                <div aria-hidden="true" className="border-b max-sm:hidden" />
-              </div>
-            </Section>
-          )}
+                ) : null}
+              </RuleCell>
+              <RuleCell label="Return Policy">
+                <RuleState
+                  enabled={ruleValue(Boolean(product.returnPolicyEnabled))}
+                />
+              </RuleCell>
+              <RuleCell label="Empty Pack Return">
+                <RuleState
+                  enabled={ruleValue(Boolean(product.isReturnablePack))}
+                />
+                {product.isReturnablePack ? (
+                  <RuleDetail
+                    label="Empty Pack Price"
+                    value={
+                      formatBDT(product.defaultPackDepositAmount) ?? "Not set"
+                    }
+                  />
+                ) : null}
+              </RuleCell>
+              <RuleCell label="Batch Tracking">
+                <RuleState
+                  enabled={ruleValue(product.trackingType === "batch")}
+                />
+              </RuleCell>
+              <RuleCell label="Damage Tracking">
+                <RuleState
+                  enabled={ruleValue(Boolean(product.damageControlEnabled))}
+                />
+              </RuleCell>
+              <RuleCell label="Expiry Tracking">
+                <RuleState
+                  enabled={ruleValue(Boolean(product.expiryEnabled))}
+                />
+              </RuleCell>
+              <RuleCell label="Minimum Order Qty">
+                <RuleState
+                  enabled={ruleValue(Boolean(product.minimumOrderEnabled))}
+                />
+                {product.minimumOrderEnabled ? (
+                  <RuleDetail label="Minimum Order" value={minimumOrder} />
+                ) : null}
+              </RuleCell>
+              <RuleCell label="Delivery Cost">
+                <p className="mt-1.5 text-sm text-muted-foreground">
+                  Not set for this product
+                </p>
+              </RuleCell>
+              <div aria-hidden="true" className="border-b max-sm:hidden" />
+            </div>
+          </Section>
 
           {viewer === "admin" ? (
             <AdminSections
@@ -807,7 +831,10 @@ function RuleCell({ label, children }: { label: string; children: ReactNode }) {
 }
 
 /** Read-only Enable / Disable, shown the way the product form sets it. */
-function RuleState({ enabled }: { enabled: boolean }) {
+function RuleState({ enabled }: { enabled: boolean | null }) {
+  if (enabled === null) {
+    return <p className="mt-1.5 text-sm text-muted-foreground">Not set yet</p>;
+  }
   return (
     <p className="mt-1.5 flex gap-4 text-sm">
       <span className="sr-only">{enabled ? "Enabled" : "Disabled"}</span>
