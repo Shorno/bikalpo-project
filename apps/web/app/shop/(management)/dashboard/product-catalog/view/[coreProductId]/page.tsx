@@ -25,6 +25,11 @@ export default function RetailerCatalogProductPage() {
           ) as Promise<SellerCatalogView>
         }
         catalogUrl={CATALOG_URL}
+        addBrandProduct={(productId) =>
+          orpc.shopOwner.addCatalogBrandProduct.call({ productId }) as Promise<{
+            productId: number;
+          }>
+        }
         addHref={`${CATALOG_URL}/add/${coreProductId}`}
         editHref={(productId) => `/dashboard/products/${productId}/edit`}
       />

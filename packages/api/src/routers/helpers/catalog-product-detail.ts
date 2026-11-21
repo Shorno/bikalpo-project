@@ -1,9 +1,13 @@
 import { db } from "@bikalpo-project/db";
 import {
+  adminProductGenerationTemplate,
   brand,
   catalogVariant,
   coreProductIdentity,
   product,
+  productVariantPrice,
+  shopProductGenerationTemplate,
+  warehouseProductGenerationTemplate,
 } from "@bikalpo-project/db/schema";
 import { and, asc, eq } from "drizzle-orm";
 import { z } from "zod";
@@ -115,10 +119,37 @@ export const catalogProductViewInput = z.object({
 });
 
 /**
+ * The page for a catalog item admin has not set up a brand for: what the core
+ * product itself holds, in the same shape as a brand product. There is no
+ * brand, size, price, or rule yet; the seller chooses those when adding it.
+ */
+export async function loadCatalogItemDetail(coreProductId: number) {
+  const core = await db.query.coreProductIdentity.findFirst({
+    where: eq(coreProductIdentity.id, coreProductId),
+    with: {
+      category: { with: { type: true } },
+      subCategory: true,
+    },
+  });
+  if (!core) return null;
+  return {
+    id: core.id,
+    name: core.name,
+    slug: core.slug,
+    catalogCode: core.catalogCode,
+    image: core.image,
+    description: core.description,
+    status: core.isActive ? "active" : "inactive",
+    category: core.category,
+    subCategory: core.subCategory,
+  };
+}
+
+/**
  * A seller's view of a catalog core product: the brand products admin offers
  * for it, the chosen one's detail without prices, and the seller's own copy
- * of that brand product if they already added it. `product` is null while
- * admin has not set up any brand for the core product yet.
+ * of that brand product if they already added it. While admin has not set up
+ * any brand, `product` is null and `item` holds the core product's own detail.
  */
 export async function getSellerCatalogProductView(
   owner: ProductListOwner,
@@ -157,6 +188,7 @@ export async function getSellerCatalogProductView(
     return {
       core,
       product: null,
+      item: await loadCatalogItemDetail(core.id),
       brands: [],
       selectedProductId: null,
       ownProductId: null,
@@ -179,11 +211,106 @@ export async function getSellerCatalogProductView(
   return {
     core,
     product: withoutPrices(detail),
+    item: null,
     brands: brandProducts.map((item) => ({
       productId: item.productId,
       brandName: item.brandName ?? "Unbranded",
     })),
     selectedProductId: selected.productId,
     ownProductId: ownProduct?.id ?? null,
+  };
+}
+
+/**
+ * What adding an admin brand product to a seller's products saves: the brand,
+ * the sizes admin set up for it, and the seller's own defaults for the core
+ * product (or admin's, the first time). The result goes to the same configure
+ * procedure the Add page uses. `ownProductId` is set when the seller already
+ * has that brand, so nothing needs creating.
+ */
+export async function catalogBrandProductAddInput(
+  owner: ProductListOwner,
+  adminProductId: number,
+) {
+  const adminProduct = await db.query.product.findFirst({
+    where: and(
+      eq(product.id, adminProductId),
+      eq(product.creatorSource, "admin"),
+      eq(product.status, "active"),
+    ),
+    columns: { id: true, coreProductId: true, brandId: true, catalogCode: true },
+    with: {
+      variantPrices: {
+        where: eq(productVariantPrice.isActive, true),
+        columns: { variantOptionId: true },
+      },
+    },
+  });
+  const coreProductId = adminProduct?.coreProductId;
+  const brandId = adminProduct?.brandId;
+  if (!adminProduct || !coreProductId || !brandId) return null;
+
+  const [ownProduct] = adminProduct.catalogCode
+    ? await db
+        .select({ id: product.id })
+        .from(product)
+        .where(
+          and(
+            ownerProductCondition(owner),
+            eq(product.catalogCode, adminProduct.catalogCode),
+          ),
+        )
+        .limit(1)
+    : [];
+  if (ownProduct) return { ownProductId: ownProduct.id, configure: null };
+
+  const [sellerTemplate, adminTemplate, core] = await Promise.all([
+    owner.ownerType === "shop"
+      ? db.query.shopProductGenerationTemplate.findFirst({
+          where: and(
+            eq(shopProductGenerationTemplate.coreProductId, coreProductId),
+            eq(shopProductGenerationTemplate.shopId, owner.ownerId),
+          ),
+        })
+      : db.query.warehouseProductGenerationTemplate.findFirst({
+          where: and(
+            eq(warehouseProductGenerationTemplate.coreProductId, coreProductId),
+            eq(warehouseProductGenerationTemplate.warehouseId, owner.ownerId),
+          ),
+        }),
+    db.query.adminProductGenerationTemplate.findFirst({
+      where: eq(adminProductGenerationTemplate.coreProductId, coreProductId),
+    }),
+    db.query.coreProductIdentity.findFirst({
+      where: eq(coreProductIdentity.id, coreProductId),
+      columns: { name: true, image: true, description: true },
+    }),
+  ]);
+  if (!core) return null;
+
+  const variantOptionIds = [
+    ...new Set(adminProduct.variantPrices.map((price) => price.variantOptionId)),
+  ];
+  return {
+    ownProductId: null,
+    configure: {
+      coreProductId,
+      expectedVersion: sellerTemplate?.version ?? null,
+      // The configure input schema keeps the fields it knows and fills defaults.
+      details: (sellerTemplate?.details ??
+        adminTemplate?.details ?? {
+          name: core.name,
+          image: core.image,
+          description: core.description,
+        }) as { name: string; image: string } & Record<string, unknown>,
+      brands: [
+        {
+          brandId,
+          variants: variantOptionIds.map((variantOptionId) => ({
+            variantOptionId,
+          })),
+        },
+      ],
+    },
   };
 }

@@ -1,10 +1,11 @@
 "use client";
 
 import type { getSellerCatalogProductView } from "@bikalpo-project/api/routers/helpers/catalog-product-detail";
-import { useQuery } from "@tanstack/react-query";
-import { ArrowLeft, PackagePlus, PackageSearch } from "lucide-react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
+import { toast } from "sonner";
 import { CatalogProductDetail } from "@/components/features/product/catalog-product-detail";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -21,6 +22,10 @@ type ViewInput = { coreProductId: number; productId?: number };
  * Wholesaler and retailer view of a Product Catalog item: the admin brand
  * product page (prices never sent), a picker for the brands offered, and Add
  * Product — or Edit Product once the seller has added that brand.
+ *
+ * Add Product creates the seller's copy of the chosen brand in one step. An
+ * item admin has not set up a brand for still gets the page, built from the
+ * catalog item itself; its Add Product opens the Add page to pick one brand.
  */
 export function SellerCatalogProductView({
   coreProductId,
@@ -29,14 +34,19 @@ export function SellerCatalogProductView({
   catalogUrl,
   addHref,
   editHref,
+  addBrandProduct,
 }: {
   coreProductId: number;
   queryKey: readonly unknown[];
   fetchView: (input: ViewInput) => Promise<SellerCatalogView>;
   catalogUrl: string;
+  /** The Add page, where the seller picks a brand and its sizes. */
   addHref: string;
   editHref: (productId: number) => string;
+  /** Creates the seller's copy of an admin brand product; resolves to its id. */
+  addBrandProduct: (productId: number) => Promise<{ productId: number }>;
 }) {
+  const queryClient = useQueryClient();
   const pathname = usePathname();
   const productParam = Number(useSearchParams().get("product"));
   const productId =
@@ -54,6 +64,22 @@ export function SellerCatalogProductView({
       (error as { code?: string }).code !== "NOT_FOUND" && failureCount < 2,
   });
   const view = viewQuery.data;
+  const addMutation = useMutation({
+    mutationFn: addBrandProduct,
+    onSuccess: async () => {
+      const brandName = view?.brands.find(
+        (item) => item.productId === view.selectedProductId,
+      )?.brandName;
+      toast.success(
+        brandName
+          ? `${brandName} added to your products`
+          : "Added to your products",
+      );
+      await queryClient.invalidateQueries({ queryKey: [...queryKey] });
+    },
+    onError: (error) =>
+      toast.error(error.message || "The product could not be added"),
+  });
   const reviewsQuery = useQuery({
     ...orpc.customer.getProductReviews.queryOptions({
       input: { productId: view?.selectedProductId ?? 0 },
@@ -79,33 +105,18 @@ export function SellerCatalogProductView({
   }
 
   if (!view.product || !view.selectedProductId) {
-    return (
-      <div className="mx-auto max-w-6xl space-y-4">
-        <Button asChild variant="outline" size="sm">
-          <Link href={catalogUrl}>
-            <ArrowLeft className="size-4" />
-            Back
-          </Link>
-        </Button>
-        <section className="rounded-xl border bg-card p-8 text-center shadow-sm">
-          <PackageSearch
-            aria-hidden="true"
-            className="mx-auto size-9 text-muted-foreground/50"
-          />
-          <h1 className="mt-3 text-lg font-semibold">{view.core.name}</h1>
-          <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">
-            No brand has been set up for this product in the catalog yet. You
-            can still add it to your products.
-          </p>
-          <Button asChild className="mt-5">
-            <Link href={addHref}>
-              <PackagePlus className="size-4" />
-              Add Product
-            </Link>
-          </Button>
-        </section>
-      </div>
-    );
+    return view.item ? (
+      <CatalogProductDetail
+        product={view.item}
+        reviews={[]}
+        stats={{ averageRating: 0, totalReviews: 0 }}
+        listingUrl={catalogUrl}
+        listingLabel="Product Catalog"
+        viewer="seller"
+        brandless
+        primaryAction={{ label: "Add Product", href: addHref, kind: "add" }}
+      />
+    ) : null;
   }
 
   const brandPicker =
@@ -157,7 +168,12 @@ export function SellerCatalogProductView({
               href: editHref(view.ownProductId),
               kind: "edit",
             }
-          : { label: "Add Product", href: addHref, kind: "add" }
+          : {
+              label: "Add Product",
+              kind: "add",
+              pending: addMutation.isPending,
+              onSelect: () => addMutation.mutate(view.selectedProductId),
+            }
       }
     />
   );

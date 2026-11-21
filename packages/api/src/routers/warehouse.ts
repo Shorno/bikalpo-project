@@ -39,7 +39,7 @@ import {
   resolveVariantOperations,
   resolveVariantStockSemantics,
 } from "@bikalpo-project/db/variant-definition";
-import { ORPCError } from "@orpc/server";
+import { call, ORPCError } from "@orpc/server";
 import {
   and,
   avg,
@@ -88,6 +88,7 @@ import {
   ownerProductListInput,
 } from "./helpers/owner-product-list";
 import {
+  catalogBrandProductAddInput,
   catalogProductViewInput,
   getSellerCatalogProductView,
 } from "./helpers/catalog-product-detail";
@@ -9839,6 +9840,36 @@ const pricingQueries = {
         throw new ORPCError("NOT_FOUND", { message: "Product not found" });
       }
       return view;
+    }),
+
+  /**
+   * Add Product on the catalog product page, for a brand admin already set up:
+   * creates the seller's copy with admin's sizes through the same configure
+   * step the Add page saves with, and returns the new product's id.
+   */
+  addCatalogBrandProduct: warehouseProcedure
+    .input(z.object({ productId: z.number().int().positive() }))
+    .handler(async ({ context, input }) => {
+      const owner = { ownerType: "warehouse" as const, ownerId: context.session.user.id };
+      const plan = await catalogBrandProductAddInput(owner, input.productId);
+      if (!plan) {
+        throw new ORPCError("NOT_FOUND", { message: "Product not found" });
+      }
+      if (plan.configure === null) return { productId: plan.ownProductId };
+      if (!plan.configure.brands[0]?.variants.length) {
+        throw new ORPCError("BAD_REQUEST", {
+          message: "This brand has no sizes yet. Use the Add page to choose them.",
+        });
+      }
+      await call(warehouseProductCreation.configureWarehouseCoreProducts, { ...plan.configure, variantAliases: [] }, { context });
+
+      const added = await catalogBrandProductAddInput(owner, input.productId);
+      if (!added?.ownProductId) {
+        throw new ORPCError("INTERNAL_SERVER_ERROR", {
+          message: "The product could not be added",
+        });
+      }
+      return { productId: added.ownProductId };
     }),
 
   /** Products page KPI cards: product counts and stock value. */

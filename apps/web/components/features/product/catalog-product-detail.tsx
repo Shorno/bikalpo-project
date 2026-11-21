@@ -7,6 +7,7 @@ import {
   ChevronRight,
   ExternalLink,
   ImageIcon,
+  Loader2,
   MessageSquare,
   Minus,
   PackagePlus,
@@ -135,9 +136,12 @@ function formatDate(value: string | Date | null | undefined) {
 
 export type CatalogProductAction = {
   label: string;
-  href: string;
   kind: "add" | "edit";
-};
+} & (
+  | { href: string; onSelect?: never; pending?: never }
+  /** Runs in place, e.g. adding a brand product straight to the seller's products. */
+  | { href?: never; onSelect: () => void; pending?: boolean }
+);
 
 /**
  * The catalog product page shared by admin and the seller panels, per the
@@ -156,6 +160,7 @@ export function CatalogProductDetail({
   viewer = "admin",
   primaryAction,
   brandPicker,
+  brandless = false,
 }: {
   product: DetailProduct;
   brandId?: number | null;
@@ -168,6 +173,12 @@ export function CatalogProductDetail({
   primaryAction?: CatalogProductAction;
   /** Seller panels: switches between the brands offered for this product. */
   brandPicker?: ReactNode;
+  /**
+   * A catalog item admin has not set up a brand for. There is no brand, size,
+   * price, or rule yet, so those parts are left out; the seller picks the
+   * brand when adding it.
+   */
+  brandless?: boolean;
 }) {
   const { brands, hasSingleBrand, defaultBrandId } = useMemo(
     () => resolveBrandScope(product),
@@ -206,10 +217,11 @@ export function CatalogProductDetail({
     return Array.from(new Set(all));
   }, [product.image, product.images]);
 
-  const brandName =
-    brands.find((brand) => brand.id === effectiveBrandId)?.name ??
-    product.brand?.name ??
-    "Unbranded";
+  const brandName = brandless
+    ? "Not set"
+    : (brands.find((brand) => brand.id === effectiveBrandId)?.name ??
+      product.brand?.name ??
+      "Unbranded");
 
   const productId = product.catalogCode || `PRD-${product.id}`;
   const isLpg = product.category?.type?.family === "lpg";
@@ -219,9 +231,11 @@ export function CatalogProductDetail({
     variantOptionLabel(variant.variantOption),
   );
   const inventoryUnit = inventoryUnitLabel(activeVariants);
-  const minimumOrder = product.minimumOrderEnabled
-    ? `${formatQty(product.minimumOrderQty)} ${inventoryUnit ?? "unit"}`
-    : "Not required";
+  const minimumOrder = brandless
+    ? "—"
+    : product.minimumOrderEnabled
+      ? `${formatQty(product.minimumOrderQty)} ${inventoryUnit ?? "unit"}`
+      : "Not required";
   const variantSkus = activeVariants
     .map((variant) => variant.catalogSku)
     .filter((sku): sku is string => Boolean(sku));
@@ -237,9 +251,10 @@ export function CatalogProductDetail({
   );
 
   const categoryName = product.category?.name ?? "Uncategorized";
-  const storefrontHref = product.category?.slug
-    ? `/products/${product.category.slug}/${product.slug}`
-    : null;
+  const storefrontHref =
+    !brandless && product.category?.slug
+      ? `/products/${product.category.slug}/${product.slug}`
+      : null;
   const action: CatalogProductAction = primaryAction ?? {
     label: "Edit Product",
     href: `/dashboard/admin/products/${product.id}/edit`,
@@ -264,8 +279,12 @@ export function CatalogProductDetail({
             <span>{product.subCategory.name}</span>
           </>
         ) : null}
-        <ChevronRight aria-hidden="true" className="h-3.5 w-3.5" />
-        <span>{brandName}</span>
+        {brandless ? null : (
+          <>
+            <ChevronRight aria-hidden="true" className="h-3.5 w-3.5" />
+            <span>{brandName}</span>
+          </>
+        )}
         <ChevronRight aria-hidden="true" className="h-3.5 w-3.5" />
         <span className="font-medium text-foreground">{productId}</span>
       </nav>
@@ -366,7 +385,12 @@ export function CatalogProductDetail({
           </dl>
 
           {/* Price stays masked here; admins see real prices under Pricing. */}
-          <p className="mt-5 flex items-baseline gap-2">
+          <p
+            className={cn(
+              "mt-5 flex items-baseline gap-2",
+              brandless && "hidden",
+            )}
+          >
             <span className="text-sm text-muted-foreground">Price</span>
             <span className="sr-only">Hidden</span>
             <span aria-hidden="true" className="text-2xl font-bold">
@@ -374,7 +398,12 @@ export function CatalogProductDetail({
             </span>
           </p>
 
-          <div className="mt-1.5 flex flex-wrap items-center gap-2">
+          <div
+            className={cn(
+              "mt-1.5 flex flex-wrap items-center gap-2",
+              brandless && "hidden",
+            )}
+          >
             {stats.totalReviews > 0 ? (
               <>
                 <StarRating
@@ -404,7 +433,7 @@ export function CatalogProductDetail({
               options={sizeLabels}
             />
           ) : null}
-          {isLpg ? (
+          {isLpg && !brandless ? (
             <OptionGroup
               label="Cylinder Type"
               options={cylinderTypes}
@@ -439,16 +468,27 @@ export function CatalogProductDetail({
           </div>
 
           <div className="mt-6 flex flex-wrap gap-2">
-            <Button asChild>
-              <Link href={action.href}>
-                {action.kind === "add" ? (
-                  <PackagePlus className="size-4" />
+            {action.onSelect ? (
+              <Button onClick={action.onSelect} disabled={action.pending}>
+                {action.pending ? (
+                  <Loader2 className="size-4 animate-spin" />
                 ) : (
-                  <Pencil className="size-4" />
+                  <PackagePlus className="size-4" />
                 )}
-                {action.label}
-              </Link>
-            </Button>
+                {action.pending ? "Adding…" : action.label}
+              </Button>
+            ) : (
+              <Button asChild>
+                <Link href={action.href}>
+                  {action.kind === "add" ? (
+                    <PackagePlus className="size-4" />
+                  ) : (
+                    <Pencil className="size-4" />
+                  )}
+                  {action.label}
+                </Link>
+              </Button>
+            )}
             <Button
               variant="outline"
               onClick={() => toast.info("Label printing is coming soon.")}
@@ -493,11 +533,13 @@ export function CatalogProductDetail({
               <InfoRow
                 label="Variant"
                 value={
-                  isLpg
-                    ? exchange
-                      ? "Size / Type"
-                      : "Size"
-                    : sizeLabels.join(", ") || "None"
+                  brandless
+                    ? "Chosen when you add it"
+                    : isLpg
+                      ? exchange
+                        ? "Size / Type"
+                        : "Size"
+                      : sizeLabels.join(", ") || "None"
                 }
               />
               <InfoRow label="Inventory Unit" value={inventoryUnit ?? "—"} />
@@ -526,76 +568,78 @@ export function CatalogProductDetail({
             </dl>
           </Section>
 
-          <Section title="Inventory & Product Rules">
-            {/* Two columns of rules split by row lines; the last row has none. */}
-            <div className="grid sm:grid-cols-2 sm:gap-x-10 [&>*:last-child]:border-b-0 [&>*:nth-last-child(2)]:border-b-0">
-              <RuleCell label="Variant">
-                <div className="mt-1.5 space-y-1.5 text-sm">
-                  {isLpg ? (
-                    <ValueList label="Type" values={cylinderTypes} />
+          {brandless ? null : (
+            <Section title="Inventory & Product Rules">
+              {/* Two columns of rules split by row lines; the last row has none. */}
+              <div className="grid sm:grid-cols-2 sm:gap-x-10 [&>*:last-child]:border-b-0 [&>*:nth-last-child(2)]:border-b-0">
+                <RuleCell label="Variant">
+                  <div className="mt-1.5 space-y-1.5 text-sm">
+                    {isLpg ? (
+                      <ValueList label="Type" values={cylinderTypes} />
+                    ) : null}
+                    <ValueList
+                      label={isLpg ? "Size" : "Options"}
+                      values={sizeLabels}
+                    />
+                  </div>
+                </RuleCell>
+                <RuleCell label="Conversion">
+                  <RuleState enabled={Boolean(product.conversionEnabled)} />
+                </RuleCell>
+                <RuleCell label="Inventory Unit">
+                  <p className="mt-1.5 text-sm font-medium">
+                    {inventoryUnit ?? "—"}
+                  </p>
+                </RuleCell>
+                <RuleCell label="Inventory Loose Unit">
+                  <RuleState
+                    enabled={Boolean(product.inventoryLooseUnitEnabled)}
+                  />
+                  {product.inventoryLooseUnitEnabled ? (
+                    <RuleDetail
+                      label="Unit"
+                      value={(product.inventoryLooseUnit ?? "").toUpperCase()}
+                    />
                   ) : null}
-                  <ValueList
-                    label={isLpg ? "Size" : "Options"}
-                    values={sizeLabels}
-                  />
-                </div>
-              </RuleCell>
-              <RuleCell label="Conversion">
-                <RuleState enabled={Boolean(product.conversionEnabled)} />
-              </RuleCell>
-              <RuleCell label="Inventory Unit">
-                <p className="mt-1.5 text-sm font-medium">
-                  {inventoryUnit ?? "—"}
-                </p>
-              </RuleCell>
-              <RuleCell label="Inventory Loose Unit">
-                <RuleState
-                  enabled={Boolean(product.inventoryLooseUnitEnabled)}
-                />
-                {product.inventoryLooseUnitEnabled ? (
-                  <RuleDetail
-                    label="Unit"
-                    value={(product.inventoryLooseUnit ?? "").toUpperCase()}
-                  />
-                ) : null}
-              </RuleCell>
-              <RuleCell label="Return Policy">
-                <RuleState enabled={Boolean(product.returnPolicyEnabled)} />
-              </RuleCell>
-              <RuleCell label="Empty Pack Return">
-                <RuleState enabled={Boolean(product.isReturnablePack)} />
-                {product.isReturnablePack ? (
-                  <RuleDetail
-                    label="Empty Pack Price"
-                    value={
-                      formatBDT(product.defaultPackDepositAmount) ?? "Not set"
-                    }
-                  />
-                ) : null}
-              </RuleCell>
-              <RuleCell label="Batch Tracking">
-                <RuleState enabled={product.trackingType === "batch"} />
-              </RuleCell>
-              <RuleCell label="Damage Tracking">
-                <RuleState enabled={Boolean(product.damageControlEnabled)} />
-              </RuleCell>
-              <RuleCell label="Expiry Tracking">
-                <RuleState enabled={Boolean(product.expiryEnabled)} />
-              </RuleCell>
-              <RuleCell label="Minimum Order Qty">
-                <RuleState enabled={Boolean(product.minimumOrderEnabled)} />
-                {product.minimumOrderEnabled ? (
-                  <RuleDetail label="Minimum Order" value={minimumOrder} />
-                ) : null}
-              </RuleCell>
-              <RuleCell label="Delivery Cost">
-                <p className="mt-1.5 text-sm text-muted-foreground">
-                  Not set for this product
-                </p>
-              </RuleCell>
-              <div aria-hidden="true" className="border-b max-sm:hidden" />
-            </div>
-          </Section>
+                </RuleCell>
+                <RuleCell label="Return Policy">
+                  <RuleState enabled={Boolean(product.returnPolicyEnabled)} />
+                </RuleCell>
+                <RuleCell label="Empty Pack Return">
+                  <RuleState enabled={Boolean(product.isReturnablePack)} />
+                  {product.isReturnablePack ? (
+                    <RuleDetail
+                      label="Empty Pack Price"
+                      value={
+                        formatBDT(product.defaultPackDepositAmount) ?? "Not set"
+                      }
+                    />
+                  ) : null}
+                </RuleCell>
+                <RuleCell label="Batch Tracking">
+                  <RuleState enabled={product.trackingType === "batch"} />
+                </RuleCell>
+                <RuleCell label="Damage Tracking">
+                  <RuleState enabled={Boolean(product.damageControlEnabled)} />
+                </RuleCell>
+                <RuleCell label="Expiry Tracking">
+                  <RuleState enabled={Boolean(product.expiryEnabled)} />
+                </RuleCell>
+                <RuleCell label="Minimum Order Qty">
+                  <RuleState enabled={Boolean(product.minimumOrderEnabled)} />
+                  {product.minimumOrderEnabled ? (
+                    <RuleDetail label="Minimum Order" value={minimumOrder} />
+                  ) : null}
+                </RuleCell>
+                <RuleCell label="Delivery Cost">
+                  <p className="mt-1.5 text-sm text-muted-foreground">
+                    Not set for this product
+                  </p>
+                </RuleCell>
+                <div aria-hidden="true" className="border-b max-sm:hidden" />
+              </div>
+            </Section>
+          )}
 
           {viewer === "admin" ? (
             <AdminSections

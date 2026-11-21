@@ -25,6 +25,11 @@ export default function WarehouseCatalogProductPage() {
           ) as Promise<SellerCatalogView>
         }
         catalogUrl={CATALOG_URL}
+        addBrandProduct={(productId) =>
+          (orpc.warehouse as any).addCatalogBrandProduct.call({
+            productId,
+          }) as Promise<{ productId: number }>
+        }
         addHref={`${CATALOG_URL}/add/${coreProductId}`}
         editHref={(productId) =>
           `/warehouse/dashboard/products/${productId}/edit`
