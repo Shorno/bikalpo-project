@@ -7,7 +7,10 @@ import {
 import {
   FULFILLMENT_UNITS,
   type FulfillmentUnitCode,
+  inferProductTypeFamily,
+  LOOSE_INVENTORY_UNIT_CODES,
 } from "@bikalpo-project/db/fulfillment";
+import type { VariantProductFamily } from "@bikalpo-project/db/variant-definition";
 import { useForm } from "@tanstack/react-form";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -63,6 +66,10 @@ import {
 } from "@/schema/core-product-config.schema";
 import { orpc } from "@/utils/orpc";
 import {
+  AddVariantDialog,
+  type NewVariantDefinition,
+} from "./add-variant-dialog";
+import {
   ProductEditorIdentity,
   ProductEditorSection,
 } from "./product-editor-ui";
@@ -87,8 +94,26 @@ type CoreProductConfigFormProps = {
     reloadPresetLabel?: string;
     variantAliases?: Record<number, string>;
     onVariantAliasChange?: (variantOptionId: number, alias: string) => void;
+    /** "Create brand" in the brand picker; sellers get a store-only brand. */
+    onCreateBrand?: (name: string) => Promise<BrandOption>;
+    /** "+ variant" on a brand; sellers get a store-only variant. */
+    onCreateVariant?: (
+      definition: NewVariantDefinition,
+    ) => Promise<VariantOption>;
+    /** Shown in the variant dialog: who will see a new variant. */
+    variantScopeLabel?: string;
   };
 };
+
+function slugifyBrandName(value: string) {
+  return (
+    value
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 100) || "brand"
+  );
+}
 
 type BrandOption = {
   id: number;
@@ -157,6 +182,13 @@ export default function CoreProductConfigForm({
   );
   const [saved, setSaved] = useState(false);
   const [singleSaveVersion, setSingleSaveVersion] = useState(0);
+  // Brands/variants created here show at once, before the lists refetch.
+  const [createdBrands, setCreatedBrands] = useState<BrandOption[]>([]);
+  const [createdVariants, setCreatedVariants] = useState<VariantOption[]>([]);
+  const [creatingBrand, setCreatingBrand] = useState(false);
+  const [variantDialogBrandId, setVariantDialogBrandId] = useState<
+    number | null
+  >(null);
 
   const configQuery = useQuery({
     ...orpc.adminProductConfig.get.queryOptions({ input: { coreProductId } }),
@@ -178,20 +210,36 @@ export default function CoreProductConfigForm({
   const core = configuration?.core;
   const isSingleMode = core?.brandCreationMode === "single";
   const existingBrands: ExistingBrandProduct[] = configuration?.brands ?? [];
-  const allBrands =
+  const loadedBrands =
     adapter?.brands ??
     ((Array.isArray(brandsQuery.data)
       ? brandsQuery.data
       : []) as BrandOption[]);
-  const availableVariants = useMemo(
-    () =>
-      filterVariantsForCore(
-        core,
-        adapter?.variantOptions ??
-          ((catalogOptionsQuery.data?.variantOptions ?? []) as VariantOption[]),
+  const allBrands = [
+    ...loadedBrands,
+    ...createdBrands.filter(
+      (created) => !loadedBrands.some((brand) => brand.id === created.id),
+    ),
+  ];
+  const availableVariants = useMemo(() => {
+    const loaded =
+      adapter?.variantOptions ??
+      ((catalogOptionsQuery.data?.variantOptions ?? []) as VariantOption[]);
+    return filterVariantsForCore(core, [
+      ...loaded,
+      ...createdVariants.filter(
+        (created) => !loaded.some((variant) => variant.id === created.id),
       ),
-    [adapter?.variantOptions, catalogOptionsQuery.data?.variantOptions, core],
-  );
+    ]);
+  }, [
+    adapter?.variantOptions,
+    catalogOptionsQuery.data?.variantOptions,
+    core,
+    createdVariants,
+  ]);
+  const productFamily: VariantProductFamily = core?.category?.type
+    ? (inferProductTypeFamily(core.category.type) as VariantProductFamily)
+    : "generic";
   const existingByBrandId = useMemo(
     () => new Map(existingBrands.map((brand) => [brand.brandId, brand])),
     [existingBrands],
@@ -400,6 +448,68 @@ export default function CoreProductConfigForm({
       }),
     );
     setSaved(false);
+  };
+
+  const createBrand = async (rawName: string) => {
+    const name = rawName.trim();
+    if (name.length < 2 || creatingBrand) return;
+    setCreatingBrand(true);
+    try {
+      const created: BrandOption = adapter?.onCreateBrand
+        ? await adapter.onCreateBrand(name)
+        : await orpc.brand.create
+            .call({ name, slug: slugifyBrandName(name) })
+            .then((result) => result.data as BrandOption);
+      setCreatedBrands((current) => [...current, created]);
+      if (!adapter) {
+        await queryClient.invalidateQueries({
+          queryKey: orpc.brand.getAll.queryKey(),
+        });
+      }
+      addBrand(created.id);
+      toast.success(`${created.name} added`);
+    } catch (error) {
+      toast.error(
+        error instanceof Error && error.message
+          ? error.message
+          : "The brand could not be created",
+      );
+    } finally {
+      setCreatingBrand(false);
+    }
+  };
+
+  const createVariantForBrand = async (definition: NewVariantDefinition) => {
+    const brandId = variantDialogBrandId;
+    const typeId = core?.category?.typeId;
+    let created: VariantOption;
+    if (adapter?.onCreateVariant) {
+      created = await adapter.onCreateVariant(definition);
+    } else {
+      if (!typeId) throw new Error("This core product has no Product Type");
+      created = (await orpc.adminVariantOption.create.call({
+        definition,
+        typeId,
+        categoryId: core.categoryId,
+        sortOrder: 0,
+        reuseExisting: true,
+      })) as VariantOption;
+      await queryClient.invalidateQueries({
+        queryKey: ["adminCatalogApproval", "coreProductConfigOptions"],
+      });
+    }
+    setCreatedVariants((current) => [...current, created]);
+    if (brandId != null) {
+      const brand = form.state.values.brands.find(
+        (item) => item.brandId === brandId,
+      );
+      if (
+        brand &&
+        !brand.variants.some((item) => item.variantOptionId === created.id)
+      ) {
+        toggleVariant(brandId, created.id);
+      }
+    }
   };
 
   const setBrandVariants = (brandId: number, variantOptionIds: number[]) => {
@@ -784,6 +894,9 @@ export default function CoreProductConfigForm({
                                 onSetVariants={(variantIds) =>
                                   setBrandVariants(brand.id, variantIds)
                                 }
+                                onAddVariant={() =>
+                                  setVariantDialogBrandId(brand.id)
+                                }
                               />
                             );
                           })}
@@ -983,12 +1096,46 @@ export default function CoreProductConfigForm({
                     <Input
                       value={brandSearch}
                       onChange={(event) => setBrandSearch(event.target.value)}
-                      placeholder="Search brands..."
+                      placeholder="Search or create a brand..."
                       className="pl-9"
                       autoFocus
                     />
                   </div>
                   <div className="-mx-1 max-h-[300px] space-y-1 overflow-y-auto px-1">
+                    {(() => {
+                      const typed = brandSearch.trim();
+                      const exists = allBrands.some(
+                        (brand) =>
+                          brand.name.toLowerCase() === typed.toLowerCase(),
+                      );
+                      if (typed.length < 2 || exists) return null;
+                      return (
+                        <button
+                          type="button"
+                          disabled={creatingBrand}
+                          onClick={() => void createBrand(typed)}
+                          className="flex w-full items-center gap-3 rounded-lg border border-dashed px-3 py-2.5 text-left transition-colors hover:bg-muted/80 disabled:opacity-60"
+                        >
+                          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
+                            {creatingBrand ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <Plus className="h-4 w-4" />
+                            )}
+                          </span>
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-sm font-medium">
+                              Create brand “{typed}”
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              {adapter
+                                ? "Only your store will see this brand."
+                                : "Adds a new brand to the catalog."}
+                            </p>
+                          </div>
+                        </button>
+                      );
+                    })()}
                     {addableBrands.length > 0 ? (
                       addableBrands.map((brand) => {
                         const existing = existingByBrandId.get(brand.id);
@@ -1026,13 +1173,28 @@ export default function CoreProductConfigForm({
                       })
                     ) : (
                       <p className="py-8 text-center text-sm text-muted-foreground">
-                        No matching brands are available.
+                        {brandSearch.trim().length >= 2
+                          ? "No other matching brands."
+                          : "No matching brands are available. Type a name to create one."}
                       </p>
                     )}
                   </div>
                 </div>
               </DialogContent>
             </Dialog>
+
+            <AddVariantDialog
+              open={variantDialogBrandId !== null}
+              onOpenChange={(open) => {
+                if (!open) setVariantDialogBrandId(null);
+              }}
+              family={productFamily}
+              scopeLabel={
+                adapter?.variantScopeLabel ??
+                "Adds a variant for this core product's category. It is selected for this brand."
+              }
+              onCreate={createVariantForBrand}
+            />
           </div>
         );
       }}
@@ -1051,7 +1213,9 @@ function BrandEditorCard({
   onRemove,
   onToggleVariant,
   onSetVariants,
+  onAddVariant,
 }: {
+  onAddVariant: () => void;
   brand: BrandOption;
   existing?: ExistingBrandProduct;
   selectedVariants: SelectedVariant[];
@@ -1134,8 +1298,18 @@ function BrandEditorCard({
               </div>
             )}
             {variants.length === 0 ? (
-              <div className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">
-                No variant options are available for this core identity.
+              <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-dashed p-3 text-sm text-muted-foreground">
+                <span>No variants yet for this product.</span>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-7"
+                  onClick={onAddVariant}
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  Add variant
+                </Button>
               </div>
             ) : (
               <>
@@ -1176,6 +1350,15 @@ function BrandEditorCard({
                       </button>
                     );
                   })}
+                  <button
+                    type="button"
+                    onClick={onAddVariant}
+                    className="inline-flex items-center gap-1.5 rounded-full border border-dashed px-3 py-1.5 text-sm text-primary transition-colors hover:bg-primary/5"
+                    aria-label={`Add a new variant for ${brand.name}`}
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    <span>Variant</span>
+                  </button>
                 </div>
               </>
             )}
@@ -1357,7 +1540,10 @@ function SharedTemplateEditor({
   defaults: CoreProductConfigValues["template"];
   hideDeposit?: boolean;
 }) {
-  const units = Object.values(FULFILLMENT_UNITS);
+  // Loose products are sold by weight or volume: kg, litre or ml only.
+  const units = LOOSE_INVENTORY_UNIT_CODES.map(
+    (code) => FULFILLMENT_UNITS[code],
+  );
 
   return (
     <>

@@ -98,6 +98,21 @@ import {
   getSellerCatalogProductView,
 } from "./helpers/catalog-product-detail";
 import { getOwnerProductKpis } from "./helpers/owner-product-kpis";
+import {
+  type CatalogOwner,
+  isVisibleToOwner,
+  visibleToOwner,
+} from "./helpers/catalog-owner";
+import {
+  createStoreBrand,
+  createStoreBrandInput,
+  createStoreVariant,
+  createStoreVariantInput,
+} from "./helpers/store-catalog";
+
+function warehouseOwner(warehouseId: string): CatalogOwner {
+  return { ownerType: "warehouse", ownerId: warehouseId };
+}
 import { ensureWarehouseBuyerTargetVariant } from "./helpers/b2b-buyer-target";
 import {
   convertB2bOrderToRetailInventory,
@@ -7121,7 +7136,10 @@ const catalogBrowse = {
       const userId = context.session.user.id;
       const activeBrandIds = (
         await db.query.brand.findMany({
-          where: eq(brandTable.isActive, true),
+          where: and(
+            eq(brandTable.isActive, true),
+            visibleToOwner(brandTable, warehouseOwner(userId)),
+          ),
           columns: { id: true },
         })
       ).map((row) => row.id);
@@ -7814,6 +7832,7 @@ const warehouseProductCreation = {
       const options = await db.query.variantOption.findMany({
         where: and(
           eq(variantOption.isActive, true),
+          visibleToOwner(variantOption, warehouseOwner(warehouseId)),
           or(
             and(
               sql`${variantOption.typeId} IS NULL`,
@@ -7895,6 +7914,7 @@ const warehouseProductCreation = {
         for (const option of optionRows) {
           const valid =
             option.isActive &&
+            isVisibleToOwner(option, warehouseOwner(warehouseId)) &&
             ((option.typeId === null && option.categoryId === null) ||
               (option.typeId === typeId && option.categoryId === null) ||
               (option.typeId === typeId &&
@@ -8181,10 +8201,17 @@ const warehouseProductCreation = {
           }),
         ]);
 
+      const owner = warehouseOwner(warehouseId);
       const [brands, allVariantOptions] = await Promise.all([
-        db.query.brand.findMany({ orderBy: [brandTable.name] }),
+        db.query.brand.findMany({
+          where: visibleToOwner(brandTable, owner),
+          orderBy: [brandTable.name],
+        }),
         db.query.variantOption.findMany({
-          where: eq(variantOption.isActive, true),
+          where: and(
+            eq(variantOption.isActive, true),
+            visibleToOwner(variantOption, owner),
+          ),
           orderBy: [variantOption.sortOrder, variantOption.name],
         }),
       ]);
@@ -8278,6 +8305,20 @@ const warehouseProductCreation = {
       };
     }),
 
+  /** "Create brand" in Create Product: a store-only brand for this warehouse. */
+  createWarehouseStoreBrand: warehouseProcedure
+    .input(createStoreBrandInput)
+    .handler(async ({ context, input }) =>
+      createStoreBrand(warehouseOwner(context.session.user.id), input),
+    ),
+
+  /** "+ variant" in Create Product: a store-only variant, no admin request. */
+  createWarehouseStoreVariant: warehouseProcedure
+    .input(createStoreVariantInput)
+    .handler(async ({ context, input }) =>
+      createStoreVariant(warehouseOwner(context.session.user.id), input),
+    ),
+
   /** Idempotently sync one warehouse-owned product per selected brand. */
   configureWarehouseCoreProducts: warehouseProcedure
     .input(configureWarehouseCoreSchema)
@@ -8333,6 +8374,7 @@ const warehouseProductCreation = {
           where: and(
             inArray(brandTable.id, brandIds),
             eq(brandTable.isActive, true),
+            visibleToOwner(brandTable, warehouseOwner(warehouseId)),
           ),
         });
         if (brandRows.length !== brandIds.length) {
@@ -8392,6 +8434,7 @@ const warehouseProductCreation = {
         for (const option of optionRows) {
           const valid =
             option.isActive &&
+            isVisibleToOwner(option, warehouseOwner(warehouseId)) &&
             ((option.typeId === null && option.categoryId === null) ||
               (option.typeId === typeId && option.categoryId === null) ||
               (option.typeId === typeId &&

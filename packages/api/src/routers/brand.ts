@@ -13,6 +13,7 @@ import { and, asc, desc, eq, inArray, or, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import { adminProcedure, publicProcedure } from "../index";
+import { globalCatalogOnly } from "./helpers/catalog-owner";
 import { nextSkuCode } from "./helpers/generate-sku";
 import { setBrandShortCode } from "./helpers/sellable-sku";
 
@@ -50,7 +51,9 @@ export const brandRouter = {
       description: "Get all brands ordered by display order",
     })
     .handler(async () => {
+      // Store-only brands stay private to the store that created them.
       return await db.query.brand.findMany({
+        where: globalCatalogOnly(brand),
         orderBy: [asc(brand.displayOrder)],
       });
     }),
@@ -65,7 +68,10 @@ export const brandRouter = {
     })
     .handler(async () => {
       const [brands, configuredProducts] = await Promise.all([
-        db.query.brand.findMany({ orderBy: [asc(brand.displayOrder)] }),
+        db.query.brand.findMany({
+          where: globalCatalogOnly(brand),
+          orderBy: [asc(brand.displayOrder)],
+        }),
         db.query.product.findMany({
           columns: {
             id: true,

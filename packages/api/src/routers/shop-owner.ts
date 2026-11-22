@@ -137,6 +137,7 @@ import {
 } from "../services/wholesale-checkout";
 import { shopTenantId } from "../shop-portal-scope";
 import { resolveActiveProductType } from "./helpers/application-fields";
+import { globalCatalogOnly, visibleToOwner } from "./helpers/catalog-owner";
 import { ensureShopBuyerTargetVariant } from "./helpers/b2b-buyer-target";
 import {
   getOwnerProductList,
@@ -10386,7 +10387,10 @@ const publicCatalogEndpoints = {
             })
           : Promise.resolve([]),
         db.query.brand.findMany({
-          where: eq(brand.isActive, true),
+          where: and(
+            eq(brand.isActive, true),
+            visibleToOwner(brand, { ownerType: "shop", ownerId: shopId }),
+          ),
           columns: { id: true },
         }),
       ]);
@@ -10665,6 +10669,7 @@ const publicCatalogEndpoints = {
           },
         }),
         db.query.brand.findMany({
+          where: globalCatalogOnly(brand),
           orderBy: [brand.name],
           columns: { id: true, name: true },
         }),
@@ -11151,7 +11156,11 @@ const shopProductEndpoints = {
         subCategoryId: z.number().optional(),
       }),
     )
-    .handler(async ({ input }) => {
+    .handler(async ({ input, context }) => {
+      const owner = {
+        ownerType: "shop" as const,
+        ownerId: shopTenantId(context.session.user),
+      };
       // Types
       const types = await db.query.productType.findMany({
         where: eq(productType.isActive, true),
@@ -11205,6 +11214,7 @@ const shopProductEndpoints = {
 
       // Brands
       const brands = await db.query.brand.findMany({
+        where: visibleToOwner(brand, owner),
         orderBy: [brand.displayOrder, brand.name],
         columns: { id: true, name: true, slug: true, logo: true },
       });
@@ -11229,7 +11239,7 @@ const shopProductEndpoints = {
         );
       }
       const variantOptions = await db.query.variantOption.findMany({
-        where: and(...voConditions),
+        where: and(...voConditions, visibleToOwner(variantOption, owner)),
         orderBy: [variantOption.sortOrder, variantOption.name],
         columns: {
           id: true,

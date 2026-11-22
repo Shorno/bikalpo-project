@@ -23,6 +23,7 @@ export type FulfillmentMode = (typeof FULFILLMENT_MODES)[number];
 export const FULFILLMENT_UNIT_CODES = [
   "kg",
   "liter",
+  "ml",
   "piece",
   "pack",
   "carton",
@@ -35,6 +36,9 @@ export const FULFILLMENT_UNIT_CODES = [
 ] as const;
 
 export type FulfillmentUnitCode = (typeof FULFILLMENT_UNIT_CODES)[number];
+
+/** Loose products are sold by weight or volume only. */
+export const LOOSE_INVENTORY_UNIT_CODES = ["kg", "liter", "ml"] as const satisfies readonly FulfillmentUnitCode[];
 
 export const PRODUCT_TYPE_FAMILIES = [
   "grocery",
@@ -189,6 +193,12 @@ export const FULFILLMENT_UNITS: Record<
     code: "liter",
     label: "Liter",
     shortLabel: "L",
+    quantityKind: "volume",
+  },
+  ml: {
+    code: "ml",
+    label: "Milliliter",
+    shortLabel: "ml",
     quantityKind: "volume",
   },
   piece: {

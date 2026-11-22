@@ -24,6 +24,7 @@ import {
 import { z } from "zod";
 import { adminProcedure, catalogRequesterProcedure } from "../index";
 import { assignCoreProductCode } from "./helpers/core-catalog-code";
+import { globalCatalogOnly } from "./helpers/catalog-owner";
 import { nextSkuCode } from "./helpers/generate-sku";
 import {
   ensureBrandShortCode,
@@ -186,7 +187,10 @@ async function createBrandFromPayload(
   database = db,
 ) {
   const duplicate = await database.query.brand.findFirst({
-    where: or(eq(brand.name, input.name), eq(brand.slug, input.slug)),
+    where: and(
+      or(eq(brand.name, input.name), eq(brand.slug, input.slug)),
+      globalCatalogOnly(brand),
+    ),
     columns: { id: true, name: true, slug: true },
   });
   if (duplicate) {
@@ -435,10 +439,12 @@ export const adminCatalogApprovalRouter = {
         columns: { id: true, name: true, slug: true, categoryId: true },
       }),
       db.query.brand.findMany({
+        where: globalCatalogOnly(brand),
         orderBy: [asc(brand.name)],
         columns: { id: true, name: true, slug: true },
       }),
       db.query.variantOption.findMany({
+        where: globalCatalogOnly(variantOption),
         orderBy: [asc(variantOption.sortOrder), asc(variantOption.name)],
         columns: {
           id: true,

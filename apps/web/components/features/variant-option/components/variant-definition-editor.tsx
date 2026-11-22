@@ -25,6 +25,15 @@ export const VARIANT_DEFINITION_KINDS = [
   "loose",
   "attribute",
 ] as const;
+const DEFINITION_KIND_LABELS: Record<VariantDefinitionKind, string> = {
+  measurement: "Packed (Type + Size)",
+  loose: "Loose (by weight or volume)",
+  attribute: "Attribute (e.g. clothing size)",
+};
+
+/** Loose products are sold by weight or volume only. */
+export const LOOSE_MEASUREMENT_UNITS = ["KG", "L", "ML"] as const;
+
 export const VARIANT_MEASUREMENT_UNITS = [
   "KG",
   "Gram",
@@ -286,10 +295,23 @@ export function VariantDefinitionEditor({
       </div>
 
       <Field>
-        <FieldLabel>Definition Kind *</FieldLabel>
+        <FieldLabel>Sold as *</FieldLabel>
         <Select
           value={value.kind}
-          onValueChange={(next) => set("kind", next as VariantDefinitionKind)}
+          onValueChange={(next) => {
+            const kind = next as VariantDefinitionKind;
+            // Loose stock is weight or volume only, so drop Gram/Piece.
+            const keepsUnit =
+              kind !== "loose" ||
+              (LOOSE_MEASUREMENT_UNITS as readonly string[]).includes(
+                value.measurementUnit,
+              );
+            onChange({
+              ...value,
+              kind,
+              measurementUnit: keepsUnit ? value.measurementUnit : "KG",
+            });
+          }}
           disabled={locked}
         >
           <SelectTrigger>
@@ -298,65 +320,18 @@ export function VariantDefinitionEditor({
           <SelectContent>
             {VARIANT_DEFINITION_KINDS.map((kind) => (
               <SelectItem value={kind} key={kind}>
-                {kind[0]!.toUpperCase() + kind.slice(1)}
+                {DEFINITION_KIND_LABELS[kind]}
               </SelectItem>
             ))}
           </SelectContent>
         </Select>
       </Field>
 
+      {/* Client layout: Type (container) · Size · Inventory Unit. */}
       <div className="grid gap-4 sm:grid-cols-3">
-        {(value.kind === "measurement" || value.kind === "attribute") && (
-          <Field>
-            <FieldLabel>
-              {value.kind === "attribute"
-                ? "Attribute value"
-                : "Measurement value"}{" "}
-              *
-            </FieldLabel>
-            <Input
-              value={value.value}
-              onChange={(event) => set("value", event.target.value)}
-              disabled={locked}
-              placeholder={value.kind === "attribute" ? "XL" : "12"}
-            />
-          </Field>
-        )}
-        {value.kind === "attribute" && (
-          <Field>
-            <FieldLabel>Attribute *</FieldLabel>
-            <Input
-              value={value.attribute}
-              onChange={(event) => set("attribute", event.target.value)}
-              disabled={locked}
-              placeholder="Size"
-            />
-          </Field>
-        )}
-        {(value.kind === "measurement" || value.kind === "loose") && (
-          <Field>
-            <FieldLabel>Measurement unit</FieldLabel>
-            <Select
-              value={value.measurementUnit}
-              onValueChange={(next) => set("measurementUnit", next)}
-              disabled={locked}
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {VARIANT_MEASUREMENT_UNITS.map((unit) => (
-                  <SelectItem value={unit} key={unit}>
-                    {unit}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </Field>
-        )}
         {value.kind === "measurement" && (
           <Field>
-            <FieldLabel>Container</FieldLabel>
+            <FieldLabel>Type *</FieldLabel>
             <Select
               value={value.container}
               onValueChange={(next) => set("container", next)}
@@ -374,7 +349,7 @@ export function VariantDefinitionEditor({
                 {moreContainers.length > 0 && (
                   <>
                     <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">
-                      More containers
+                      More types
                     </div>
                     {moreContainers.map((code) => (
                       <SelectItem value={code} key={code}>
@@ -385,6 +360,60 @@ export function VariantDefinitionEditor({
                 )}
               </SelectContent>
             </Select>
+          </Field>
+        )}
+        {value.kind === "attribute" && (
+          <Field>
+            <FieldLabel>Attribute *</FieldLabel>
+            <Input
+              value={value.attribute}
+              onChange={(event) => set("attribute", event.target.value)}
+              disabled={locked}
+              placeholder="Size"
+            />
+          </Field>
+        )}
+        {(value.kind === "measurement" || value.kind === "attribute") && (
+          <Field>
+            <FieldLabel>
+              {value.kind === "attribute" ? "Attribute value" : "Size"} *
+            </FieldLabel>
+            <Input
+              value={value.value}
+              onChange={(event) => set("value", event.target.value)}
+              disabled={locked}
+              inputMode={value.kind === "measurement" ? "decimal" : undefined}
+              placeholder={value.kind === "attribute" ? "XL" : "12"}
+            />
+          </Field>
+        )}
+        {(value.kind === "measurement" || value.kind === "loose") && (
+          <Field>
+            <FieldLabel>Inventory Unit *</FieldLabel>
+            <Select
+              value={value.measurementUnit}
+              onValueChange={(next) => set("measurementUnit", next)}
+              disabled={locked}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {(value.kind === "loose"
+                  ? LOOSE_MEASUREMENT_UNITS
+                  : VARIANT_MEASUREMENT_UNITS
+                ).map((unit) => (
+                  <SelectItem value={unit} key={unit}>
+                    {unit}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {value.kind === "loose" && (
+              <FieldDescription>
+                Loose products are sold by weight or volume.
+              </FieldDescription>
+            )}
           </Field>
         )}
       </div>

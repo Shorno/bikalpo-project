@@ -23,7 +23,18 @@ import { z } from "zod";
 import { shopPermissionProcedure } from "../index";
 import { recalculateOffersForShopProduct } from "../services/open-order-matching";
 import { shopTenantId } from "../shop-portal-scope";
+import {
+  type CatalogOwner,
+  isVisibleToOwner,
+  visibleToOwner,
+} from "./helpers/catalog-owner";
 import { catalogProductCode } from "./helpers/generate-sku";
+import {
+  createStoreBrand,
+  createStoreBrandInput,
+  createStoreVariant,
+  createStoreVariantInput,
+} from "./helpers/store-catalog";
 import {
   isConcreteVariantOption,
   linkProductVariantsToCatalog,
@@ -138,17 +149,26 @@ function fullTemplateDetails(
   };
 }
 
+function shopOwner(shopId: string): CatalogOwner {
+  return { ownerType: "shop", ownerId: shopId };
+}
+
 function optionIsValid(
   option: {
     isActive: boolean;
     typeId: number | null;
     categoryId: number | null;
+    ownerType?: string | null;
+    ownerId?: string | null;
   },
   typeId: number | null,
   categoryId: number,
+  owner: CatalogOwner,
 ) {
   return (
     option.isActive &&
+    // Global variants, or this shop's own store-only variants.
+    isVisibleToOwner(option, owner) &&
     ((option.typeId === null && option.categoryId === null) ||
       (option.typeId === typeId && option.categoryId === null) ||
       (option.typeId === typeId && option.categoryId === categoryId))
@@ -185,6 +205,7 @@ async function loadScopedOptions(
   optionIds: number[],
   typeId: number | null,
   categoryId: number,
+  owner: CatalogOwner,
 ): Promise<Map<number, any>> {
   const rows = optionIds.length
     ? await tx.query.variantOption.findMany({
@@ -197,7 +218,7 @@ async function loadScopedOptions(
     });
   }
   for (const option of rows) {
-    if (!optionIsValid(option, typeId, categoryId)) {
+    if (!optionIsValid(option, typeId, categoryId, owner)) {
       throw new ORPCError("BAD_REQUEST", {
         message: `Variant "${option.name}" is not available for this core product`,
       });
@@ -386,6 +407,26 @@ async function syncProductVariants({
 }
 
 export const shopProductConfigEndpoints = {
+  /** "Create brand" in Create Product: a store-only brand for this shop. */
+  createShopStoreBrand: shopPermissionProcedure(
+    "shop_product_catalog",
+    "update",
+  )
+    .input(createStoreBrandInput)
+    .handler(async ({ context, input }) =>
+      createStoreBrand(shopOwner(shopTenantId(context.session.user)), input),
+    ),
+
+  /** "+ variant" in Create Product: a store-only variant, no admin request. */
+  createShopStoreVariant: shopPermissionProcedure(
+    "shop_product_catalog",
+    "update",
+  )
+    .input(createStoreVariantInput)
+    .handler(async ({ context, input }) =>
+      createStoreVariant(shopOwner(shopTenantId(context.session.user)), input),
+    ),
+
   getShopCoreConfiguration: shopPermissionProcedure(
     "shop_product_catalog",
     "view",
@@ -447,17 +488,24 @@ export const shopProductConfigEndpoints = {
           }),
         ]);
 
+      const owner = shopOwner(shopId);
       const [brands, allVariantOptions] = await Promise.all([
-        db.query.brand.findMany({ orderBy: [brand.name] }),
+        db.query.brand.findMany({
+          where: visibleToOwner(brand, owner),
+          orderBy: [brand.name],
+        }),
         db.query.variantOption.findMany({
-          where: eq(variantOption.isActive, true),
+          where: and(
+            eq(variantOption.isActive, true),
+            visibleToOwner(variantOption, owner),
+          ),
           orderBy: [variantOption.sortOrder, variantOption.name],
         }),
       ]);
       const typeId = core.category?.typeId ?? null;
       const variantOptions = allVariantOptions.filter(
         (option) =>
-          optionIsValid(option, typeId, core.categoryId) &&
+          optionIsValid(option, typeId, core.categoryId, owner) &&
           isConcreteVariantOption(option),
       );
 
@@ -594,7 +642,11 @@ export const shopProductConfigEndpoints = {
         }
 
         const brandRows = await tx.query.brand.findMany({
-          where: and(inArray(brand.id, brandIds), eq(brand.isActive, true)),
+          where: and(
+            inArray(brand.id, brandIds),
+            eq(brand.isActive, true),
+            visibleToOwner(brand, shopOwner(shopId)),
+          ),
         });
         if (brandRows.length !== brandIds.length) {
           throw new ORPCError("BAD_REQUEST", {
@@ -614,6 +666,7 @@ export const shopProductConfigEndpoints = {
           optionIds,
           core.category?.typeId ?? null,
           core.categoryId,
+          shopOwner(shopId),
         );
         const adminProducts = await tx.query.product.findMany({
           where: and(
@@ -852,8 +905,12 @@ export const shopProductConfigEndpoints = {
           message: "Retailer product not found or is not configurable",
         });
       }
+      const owner = shopOwner(shopId);
       const allOptions = await db.query.variantOption.findMany({
-        where: eq(variantOption.isActive, true),
+        where: and(
+          eq(variantOption.isActive, true),
+          visibleToOwner(variantOption, owner),
+        ),
         orderBy: [variantOption.sortOrder, variantOption.name],
       });
       const options = allOptions.filter(
@@ -862,6 +919,7 @@ export const shopProductConfigEndpoints = {
             option,
             found.category?.typeId ?? null,
             found.categoryId,
+            owner,
           ) && isConcreteVariantOption(option),
       );
       return { product: found, options: { variantOptions: options } };
@@ -915,6 +973,7 @@ export const shopProductConfigEndpoints = {
           optionIds,
           existing.category?.typeId ?? null,
           existing.categoryId,
+          shopOwner(shopId),
         );
         await syncProductVariants({
           tx,

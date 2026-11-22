@@ -11,7 +11,8 @@ import {
   withDerivedOperationalUnit,
 } from "@bikalpo-project/db/variant-definition";
 import { ORPCError } from "@orpc/server";
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, isNull, or, sql } from "drizzle-orm";
+import { type CatalogOwner, visibleToOwner } from "./catalog-owner";
 import { nextSkuCode } from "./generate-sku";
 import type { StructuredVariantOptionInput } from "./structured-variant-option-schema";
 
@@ -66,14 +67,45 @@ export async function prepareStructuredVariantOption(
 export async function createStructuredVariantOption(
   input: StructuredVariantOptionInput,
   database: VariantOptionDatabase = db,
+  options: {
+    /** Store-only variant for this shop or warehouse; null/undefined = global. */
+    owner?: CatalogOwner | null;
+    /**
+     * Inline "+ variant" from Create Product: return a matching variant the
+     * creator can already use (global type-wide/category, or their own)
+     * instead of failing with CONFLICT.
+     */
+    reuseExisting?: boolean;
+  } = {},
 ) {
+  const owner = options.owner ?? null;
   const prepared = await prepareStructuredVariantOption(input, database);
+  if (options.reuseExisting) {
+    const usable = await database.query.variantOption.findFirst({
+      where: and(
+        eq(variantOption.canonicalSignature, prepared.signature),
+        eq(variantOption.typeId, input.typeId),
+        eq(variantOption.isActive, true),
+        input.categoryId === null
+          ? isNull(variantOption.categoryId)
+          : or(
+              isNull(variantOption.categoryId),
+              eq(variantOption.categoryId, input.categoryId),
+            ),
+        visibleToOwner(variantOption, owner),
+      ),
+    });
+    if (usable) return usable;
+  }
   const duplicateConditions = [
     eq(variantOption.canonicalSignature, prepared.signature),
     eq(variantOption.typeId, input.typeId),
     input.categoryId === null
       ? isNull(variantOption.categoryId)
       : eq(variantOption.categoryId, input.categoryId),
+    owner
+      ? eq(variantOption.ownerId, owner.ownerId)
+      : isNull(variantOption.ownerId),
   ];
   const duplicate = await database.query.variantOption.findFirst({
     where: and(...duplicateConditions),
@@ -85,17 +117,21 @@ export async function createStructuredVariantOption(
     });
   }
 
+  // Global variants take a 2-digit code within their scope; store variants
+  // take none so they never use up the shared code space.
   const skuScope =
     input.categoryId === null
       ? sql`${variantOption.typeId} = ${input.typeId} AND ${variantOption.categoryId} IS NULL`
       : sql`${variantOption.typeId} = ${input.typeId} AND ${variantOption.categoryId} = ${input.categoryId}`;
-  const skuCode = await nextSkuCode(
-    variantOption,
-    variantOption.skuCode,
-    2,
-    skuScope,
-    database,
-  );
+  const skuCode = owner
+    ? null
+    : await nextSkuCode(
+        variantOption,
+        variantOption.skuCode,
+        2,
+        sql`${skuScope} AND ${variantOption.ownerId} IS NULL`,
+        database,
+      );
 
   const [created] = await database
     .insert(variantOption)
@@ -116,6 +152,8 @@ export async function createStructuredVariantOption(
       categoryId: input.categoryId,
       sortOrder: input.sortOrder,
       skuCode,
+      ownerType: owner?.ownerType ?? null,
+      ownerId: owner?.ownerId ?? null,
     })
     .returning();
 

@@ -19,6 +19,7 @@ import {
   assignCoreProductCode,
   syncProductsToCoreProduct,
 } from "./helpers/core-catalog-code";
+import { globalCatalogOnly } from "./helpers/catalog-owner";
 import { SKU_SEGMENT_DIGITS } from "./helpers/generate-sku";
 import { setCoreProductShortCode } from "./helpers/sellable-sku";
 
@@ -133,7 +134,7 @@ export const adminCoreProductRouter = {
             ),
           ),
         db.query.brand.findMany({
-          where: eq(brand.isActive, true),
+          where: and(eq(brand.isActive, true), globalCatalogOnly(brand)),
           columns: { id: true },
         }),
       ]);

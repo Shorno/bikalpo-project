@@ -6,8 +6,11 @@ import {
     pgEnum,
     pgTable,
     serial,
+    text,
     varchar,
 } from "drizzle-orm/pg-core";
+import { user } from "./auth-schema";
+import type { CatalogOwnerType } from "./brand";
 import { timestamps } from "./columns.helpers";
 import { productType } from "./product-type";
 import { category } from "./category";
@@ -72,6 +75,13 @@ export const variantOption = pgTable("variant_option", {
 
     /** Sort order for display */
     sortOrder: integer("sort_order").default(0).notNull(),
+
+    /**
+     * Store-only variant: created inline by a shop or warehouse from Create
+     * Product and visible only to it. Both null for global (admin) variants.
+     */
+    ownerType: varchar("owner_type", { length: 20 }).$type<CatalogOwnerType>(),
+    ownerId: text("owner_id").references(() => user.id, { onDelete: "cascade" }),
 
     ...timestamps,
 });

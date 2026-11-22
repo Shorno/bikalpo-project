@@ -165,6 +165,16 @@ export default function WarehouseCoreProductConfigPage() {
             [variantOptionId]: alias,
           })),
         onConfigure: async (values) => configureMutation.mutateAsync(values),
+        // Created directly for this store; no admin request.
+        onCreateBrand: async (name) =>
+          (await orpc.warehouse.createWarehouseStoreBrand.call({ name })).brand,
+        onCreateVariant: async (definition) =>
+          orpc.warehouse.createWarehouseStoreVariant.call({
+            coreProductId,
+            definition,
+          }),
+        variantScopeLabel:
+          "Only your store will see this variant. It is selected for this brand.",
         initialBrands:
           normalizedCurrent.length > 0 ? normalizedCurrent : normalizedPreset,
         onSaved: async () => {

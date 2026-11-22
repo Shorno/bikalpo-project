@@ -26,6 +26,7 @@ import {
   prepareStructuredVariantOption,
   structuredVariantOptionInputSchema,
 } from "./helpers/structured-variant-option";
+import { globalCatalogOnly } from "./helpers/catalog-owner";
 import { resyncGeneratedVariantsForOption } from "./helpers/sync-generated-variants";
 
 const updateInput = structuredVariantOptionInputSchema.extend({
@@ -50,7 +51,8 @@ export const adminVariantOptionRouter = {
     .input(filtersInput.optional())
     .handler(async ({ input }) => {
       const filters: Partial<z.infer<typeof filtersInput>> = input ?? {};
-      const conditions: SQL[] = [];
+      // Store-only variants belong to one shop/warehouse, not the admin list.
+      const conditions: SQL[] = [globalCatalogOnly(variantOption)];
 
       // Search filter
       if (filters.search?.trim()) {
@@ -142,6 +144,7 @@ export const adminVariantOptionRouter = {
       where: and(
         isNull(variantOption.typeId),
         eq(variantOption.isActive, true),
+        globalCatalogOnly(variantOption),
       ),
       orderBy: [asc(variantOption.sortOrder), asc(variantOption.name)],
     });
@@ -238,8 +241,18 @@ export const adminVariantOptionRouter = {
    * Create a new variant option.
    */
   create: adminProcedure
-    .input(structuredVariantOptionInputSchema)
-    .handler(async ({ input }) => createStructuredVariantOption(input)),
+    .input(
+      structuredVariantOptionInputSchema.extend({
+        /** Inline "+ variant" in Create Product: reuse a matching variant. */
+        reuseExisting: z.boolean().optional(),
+      }),
+    )
+    .handler(async ({ input }) => {
+      const { reuseExisting, ...variant } = input;
+      return createStructuredVariantOption(variant, undefined, {
+        reuseExisting,
+      });
+    }),
 
   /**
    * Update an existing variant option.
@@ -286,6 +299,11 @@ export const adminVariantOptionRouter = {
     ];
 
     dupConditions.push(eq(variantOption.typeId, input.typeId));
+    dupConditions.push(
+      existing.ownerId
+        ? eq(variantOption.ownerId, existing.ownerId)
+        : isNull(variantOption.ownerId),
+    );
 
     if (input.categoryId === null) {
       dupConditions.push(isNull(variantOption.categoryId));

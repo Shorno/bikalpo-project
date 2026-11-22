@@ -49,6 +49,7 @@ import {
 } from "../services/consumer-reference-prices";
 import { getAdminProductInsights } from "./helpers/admin-product-insights";
 import { loadAdminCatalogProductDetail } from "./helpers/catalog-product-detail";
+import { globalCatalogOnly } from "./helpers/catalog-owner";
 import { assignCoreProductCode } from "./helpers/core-catalog-code";
 import { catalogProductCode } from "./helpers/generate-sku";
 import { ensureCoreProductShortCode } from "./helpers/sellable-sku";
@@ -453,7 +454,10 @@ export const productRouter = {
         }
 
         const brandRows = await tx.query.brand.findMany({
-          where: inArray(brandTable.id, brandIds),
+          where: and(
+            inArray(brandTable.id, brandIds),
+            globalCatalogOnly(brandTable),
+          ),
         });
         if (brandRows.length !== brandIds.length) {
           throw new ORPCError("BAD_REQUEST", {
@@ -487,7 +491,10 @@ export const productRouter = {
           ...new Set(variantPrices.map((row) => row.variantOptionId)),
         ];
         const variantRows = await tx.query.variantOption.findMany({
-          where: inArray(variantOption.id, requestedVariantIds),
+          where: and(
+            inArray(variantOption.id, requestedVariantIds),
+            globalCatalogOnly(variantOption),
+          ),
         });
         if (variantRows.length !== requestedVariantIds.length) {
           throw new ORPCError("BAD_REQUEST", {

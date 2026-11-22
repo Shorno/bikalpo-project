@@ -19,6 +19,7 @@ import { and, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 
 import { adminProcedure } from "../index";
+import { globalCatalogOnly } from "./helpers/catalog-owner";
 import { catalogProductCode } from "./helpers/generate-sku";
 import {
   resolveConcreteVariantForConfig,
@@ -357,6 +358,7 @@ export const adminProductConfigRouter = {
         where: and(
           inArray(brandTable.id, brandIds),
           eq(brandTable.isActive, true),
+          globalCatalogOnly(brandTable),
         ),
       });
       if (brandRows.length !== brandIds.length) {
@@ -374,7 +376,10 @@ export const adminProductConfigRouter = {
         ),
       ];
       const variantOptionRows = await db.query.variantOption.findMany({
-        where: inArray(variantOption.id, requestedVariantOptionIds),
+        where: and(
+          inArray(variantOption.id, requestedVariantOptionIds),
+          globalCatalogOnly(variantOption),
+        ),
       });
       if (variantOptionRows.length !== requestedVariantOptionIds.length) {
         throw new ORPCError("BAD_REQUEST", {

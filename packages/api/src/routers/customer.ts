@@ -118,6 +118,7 @@ import {
 import { resolveRetailerCylinderSale } from "../services/retailer-cylinder-sale";
 import { evaluateRetailerOffer } from "../services/retailer-offer-engine";
 import { buildStoreProductDetail } from "../services/retailer-store-product-detail";
+import { globalCatalogOnly } from "./helpers/catalog-owner";
 import { buildConsumerOrderJourney } from "./helpers/consumer-order-journey";
 import {
   convertEstimateToB2bOrder,
@@ -2576,6 +2577,7 @@ const queries = {
     })
     .handler(async () => {
       const brands = await db.query.brand.findMany({
+        where: globalCatalogOnly(brand),
         orderBy: [asc(brand.displayOrder)],
       });
       return { brands };
