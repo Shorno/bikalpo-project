@@ -25,7 +25,9 @@ import {
 export function RulesGrid({ children }: { children: ReactNode }) {
   const cells = Children.toArray(children);
   return (
-    <div className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border bg-border">
+    // No outer border: the section card already frames it. Only the lines
+    // between cells show, and the outer cells line up with the card edge.
+    <div className="grid grid-cols-2 gap-px bg-border [&>*:nth-child(-n+2)]:pt-0 [&>*:nth-child(even)]:pr-0 [&>*:nth-child(odd)]:pl-0">
       {cells}
       {cells.length % 2 === 1 && <div aria-hidden className="bg-card" />}
     </div>
