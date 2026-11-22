@@ -1,3 +1,4 @@
+import { withCoreTypeRuleSettings } from "./helpers/product-type-rules";
 import { db } from "@bikalpo-project/db";
 import {
   RETAILER_BRAND_CREATION_MODE,
@@ -463,7 +464,7 @@ export const shopProductConfigEndpoints = {
           eq(coreProductIdentity.creatorSource, "admin"),
         ),
         with: {
-          category: { with: { type: true } },
+          category: { with: { type: { with: { ruleSettings: true } } } },
           subCategory: true,
         },
       });
@@ -555,7 +556,10 @@ export const shopProductConfigEndpoints = {
       );
 
       return {
-        core: { ...core, brandCreationMode: RETAILER_BRAND_CREATION_MODE },
+        core: {
+          ...withCoreTypeRuleSettings(core),
+          brandCreationMode: RETAILER_BRAND_CREATION_MODE,
+        },
         version: shopTemplate?.version ?? null,
         sourceAdminTemplateVersion:
           shopTemplate?.sourceAdminTemplateVersion ??
@@ -891,11 +895,16 @@ export const shopProductConfigEndpoints = {
           name: core.category?.type?.name,
           slug: core.category?.type?.slug,
         });
-        for (const productId of new Set([...created, ...updated])) {
-          await syncWarehouseCylinderExchange(tx, {
-            productId,
-            enabled: cylinderExchangeEnabled,
-          });
+        // Each variant keeps the Exchange choice saved above (an Exchange
+        // price was entered). The product-wide switch can only turn it off:
+        // forcing it on gave priceless variants Exchange with ৳0 credit.
+        if (!cylinderExchangeEnabled) {
+          for (const productId of new Set([...created, ...updated])) {
+            await syncWarehouseCylinderExchange(tx, {
+              productId,
+              enabled: false,
+            });
+          }
         }
 
         return { created, updated, deactivated };

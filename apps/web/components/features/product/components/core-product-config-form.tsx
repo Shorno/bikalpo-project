@@ -94,6 +94,7 @@ import {
   RuleCell,
   RuleSelect,
   RulesGrid,
+  UnusedRuleCell,
   type VariantFilter,
   VariantTypeSizeFilter,
 } from "./product-rules-grid";
@@ -419,10 +420,9 @@ export default function CoreProductConfigForm({
           return;
         }
       }
-      const normalizedTemplate = mergeTemplateDetails(
-        value.template,
-        defaultValues.template,
-        core,
+      const normalizedTemplate = withoutUnusedRules(
+        mergeTemplateDetails(value.template, defaultValues.template, core),
+        typeRulesOf(core),
       );
       normalizedTemplate.deliveryCostUnit =
         resolveDeliveryUnit(
@@ -1122,6 +1122,8 @@ export default function CoreProductConfigForm({
                         form={form}
                         defaults={defaultValues.template}
                         part="rules"
+                        rules={typeRulesOf(core)}
+                        typeName={core?.category?.type?.name}
                         suggestedDeliveryUnit={suggestedDeliveryUnit}
                         variants={availableVariants}
                         variantFilter={variantFilter}
@@ -1744,6 +1746,51 @@ function mergeTemplateDetails(
   );
 }
 
+/** The product type's rule switches, as the API sends them on core.category.type. */
+type TypeRules = {
+  trackingAvailable?: boolean;
+  trackingTypes?: string[];
+  returnPolicyAvailable?: boolean;
+  expiryAvailable?: boolean;
+  damageAvailable?: boolean;
+  minimumOrderAvailable?: boolean;
+  conversionAvailable?: boolean;
+  inventoryLooseUnitAvailable?: boolean;
+  inventoryLooseUnitOptions?: string[];
+  returnablePackAvailable?: boolean;
+};
+
+function typeRulesOf(core: any): TypeRules | null {
+  return (core?.category?.type?.ruleSettings as TypeRules | undefined) ?? null;
+}
+
+/** Without settings (older API) every rule is offered, as before. */
+function usesRule(rules: TypeRules | null, key: keyof TypeRules) {
+  return rules?.[key] !== false;
+}
+
+/** Rules the product type does not use are saved off. */
+function withoutUnusedRules<T extends CoreProductConfigValues["template"]>(
+  template: T,
+  rules: TypeRules | null,
+): T {
+  if (!rules) return template;
+  const next = { ...template };
+  if (!usesRule(rules, "trackingAvailable")) next.trackingType = "none";
+  if (!usesRule(rules, "expiryAvailable")) next.expiryEnabled = false;
+  if (!usesRule(rules, "returnPolicyAvailable"))
+    next.returnPolicyEnabled = false;
+  if (!usesRule(rules, "damageAvailable")) next.damageControlEnabled = false;
+  if (!usesRule(rules, "minimumOrderAvailable"))
+    next.minimumOrderEnabled = false;
+  if (!usesRule(rules, "conversionAvailable")) next.conversionEnabled = false;
+  if (!usesRule(rules, "inventoryLooseUnitAvailable"))
+    next.inventoryLooseUnitEnabled = false;
+  if (!usesRule(rules, "returnablePackAvailable"))
+    next.isReturnablePack = false;
+  return next;
+}
+
 function SharedTemplateEditor({
   form,
   defaults,
@@ -1752,6 +1799,8 @@ function SharedTemplateEditor({
   variants = [],
   variantFilter = EMPTY_VARIANT_FILTER,
   onVariantFilterChange = () => undefined,
+  rules = null,
+  typeName = "this product type",
 }: {
   form: any;
   defaults: CoreProductConfigValues["template"];
@@ -1761,10 +1810,28 @@ function SharedTemplateEditor({
   variants?: VariantOption[];
   variantFilter?: VariantFilter;
   onVariantFilterChange?: (filter: VariantFilter) => void;
+  rules?: TypeRules | null;
+  typeName?: string;
 }) {
   // Loose products are sold by weight or volume: kg, litre or ml only.
-  const units = LOOSE_INVENTORY_UNIT_CODES.map(
-    (code) => FULFILLMENT_UNITS[code],
+  const typeLooseUnits = LOOSE_INVENTORY_UNIT_CODES.filter((code) =>
+    rules?.inventoryLooseUnitOptions?.length
+      ? rules.inventoryLooseUnitOptions.includes(code)
+      : true,
+  );
+  const units = (
+    typeLooseUnits.length ? typeLooseUnits : [...LOOSE_INVENTORY_UNIT_CODES]
+  ).map((code) => FULFILLMENT_UNITS[code]);
+  const trackingOptions = (
+    [
+      { value: "batch", label: "Enable" },
+      { value: "none", label: "Disable" },
+      { value: "serial", label: "Serial" },
+    ] as const
+  ).filter(
+    (option) =>
+      !rules?.trackingTypes?.length ||
+      rules.trackingTypes.includes(option.value),
   );
 
   return (
@@ -1816,6 +1883,7 @@ function SharedTemplateEditor({
                 onChange={onVariantFilterChange}
               />
             </RuleCell>
+            {usesRule(rules, "conversionAvailable") ? (
             <form.Field name="template.conversionEnabled">
               {(field: any) => (
                 <RuleCell label="Conversion">
@@ -1827,6 +1895,9 @@ function SharedTemplateEditor({
                 </RuleCell>
               )}
             </form.Field>
+            ) : (
+              <UnusedRuleCell label="Conversion" typeName={typeName} />
+            )}
 
             <RuleCell label="Inventory Unit">
               <InventoryUnitFilter
@@ -1835,6 +1906,7 @@ function SharedTemplateEditor({
                 onChange={onVariantFilterChange}
               />
             </RuleCell>
+            {usesRule(rules, "inventoryLooseUnitAvailable") ? (
             <form.Field name="template.inventoryLooseUnitEnabled">
               {(enabledField: any) => (
                 <RuleCell label="Inventory Loose Unit">
@@ -1860,7 +1932,11 @@ function SharedTemplateEditor({
                 </RuleCell>
               )}
             </form.Field>
+            ) : (
+              <UnusedRuleCell label="Inventory Loose Unit" typeName={typeName} />
+            )}
 
+            {usesRule(rules, "returnPolicyAvailable") ? (
             <form.Field name="template.returnPolicyEnabled">
               {(field: any) => (
                 <RuleCell label="Return Policy">
@@ -1872,6 +1948,10 @@ function SharedTemplateEditor({
                 </RuleCell>
               )}
             </form.Field>
+            ) : (
+              <UnusedRuleCell label="Return Policy" typeName={typeName} />
+            )}
+            {usesRule(rules, "returnablePackAvailable") ? (
             <form.Field name="template.isReturnablePack">
               {(returnableField: any) => (
                 <RuleCell label="Empty Pack Return">
@@ -1893,18 +1973,18 @@ function SharedTemplateEditor({
                 </RuleCell>
               )}
             </form.Field>
+            ) : (
+              <UnusedRuleCell label="Empty Pack Return" typeName={typeName} />
+            )}
 
+            {usesRule(rules, "trackingAvailable") ? (
             <form.Field name="template.trackingType">
               {(field: any) => (
                 <RuleCell label="Batch Tracking">
                   <ChoiceRadios
                     label="Batch Tracking"
                     value={field.state.value || defaults.trackingType}
-                    options={[
-                      { value: "batch", label: "Enable" },
-                      { value: "none", label: "Disable" },
-                      { value: "serial", label: "Serial" },
-                    ]}
+                    options={[...trackingOptions]}
                     onChange={(value) => {
                       field.handleChange(value);
                       if (value !== "batch") {
@@ -1915,6 +1995,10 @@ function SharedTemplateEditor({
                 </RuleCell>
               )}
             </form.Field>
+            ) : (
+              <UnusedRuleCell label="Batch Tracking" typeName={typeName} />
+            )}
+            {usesRule(rules, "damageAvailable") ? (
             <form.Field name="template.damageControlEnabled">
               {(field: any) => (
                 <RuleCell label="Damage Tracking">
@@ -1926,7 +2010,11 @@ function SharedTemplateEditor({
                 </RuleCell>
               )}
             </form.Field>
+            ) : (
+              <UnusedRuleCell label="Damage Tracking" typeName={typeName} />
+            )}
 
+            {usesRule(rules, "expiryAvailable") ? (
             <form.Field name="template.expiryEnabled">
               {(field: any) => (
                 <RuleCell label="Expiry Tracking">
@@ -1943,6 +2031,10 @@ function SharedTemplateEditor({
                 </RuleCell>
               )}
             </form.Field>
+            ) : (
+              <UnusedRuleCell label="Expiry Tracking" typeName={typeName} />
+            )}
+            {usesRule(rules, "minimumOrderAvailable") ? (
             <form.Field name="template.minimumOrderEnabled">
               {(enabledField: any) => (
                 <RuleCell label="Minimum Order qty">
@@ -1964,6 +2056,9 @@ function SharedTemplateEditor({
                 </RuleCell>
               )}
             </form.Field>
+            ) : (
+              <UnusedRuleCell label="Minimum Order qty" typeName={typeName} />
+            )}
 
             <form.Field name="template.deliveryCostUnit">
               {(field: any) => (

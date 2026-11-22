@@ -1,3 +1,4 @@
+import { withCoreTypeRuleSettings } from "./helpers/product-type-rules";
 import { db } from "@bikalpo-project/db";
 import {
   shouldDeactivateOmittedBrands,
@@ -193,6 +194,7 @@ export const adminProductConfigRouter = {
         with: {
           category: {
             columns: { id: true, name: true, slug: true, typeId: true },
+            with: { type: { with: { ruleSettings: true } } },
           },
           subCategory: { columns: { id: true, name: true } },
         },
@@ -299,7 +301,7 @@ export const adminProductConfigRouter = {
         }));
 
       return {
-        core,
+        core: withCoreTypeRuleSettings(core),
         template: {
           version: template?.version ?? null,
           details: sharedTemplateDetailsSchema.parse(

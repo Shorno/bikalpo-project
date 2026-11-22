@@ -7,6 +7,7 @@
  * - Mutations (warehouse role only — update order status)
  */
 
+import { withCoreTypeRuleSettings } from "./helpers/product-type-rules";
 import {
   buildProductTypeFulfillmentProfile,
   db,
@@ -8191,7 +8192,7 @@ const warehouseProductCreation = {
         ),
         with: {
           category: {
-            with: { type: true },
+            with: { type: { with: { ruleSettings: true } } },
           },
           subCategory: true,
         },
@@ -8300,7 +8301,10 @@ const warehouseProductCreation = {
       );
 
       return {
-        core: { ...core, brandCreationMode: WAREHOUSE_BRAND_CREATION_MODE },
+        core: {
+          ...withCoreTypeRuleSettings(core),
+          brandCreationMode: WAREHOUSE_BRAND_CREATION_MODE,
+        },
         version: warehouseTemplate?.version ?? null,
         sourceAdminTemplateVersion:
           warehouseTemplate?.sourceAdminTemplateVersion ??

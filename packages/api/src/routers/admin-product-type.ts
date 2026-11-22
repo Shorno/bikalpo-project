@@ -47,11 +47,11 @@ import {
   type ProductTypeSellerRole,
   resolveProductTypePagination,
 } from "./helpers/product-type-sellers";
-
-const TRACKING_TYPES = ["none", "batch", "serial"] as const;
-const ALL_UNIT_CODES = [...FULFILLMENT_UNIT_CODES];
-
-type RuleSettingsInput = typeof productTypeRuleSetting.$inferInsert;
+import {
+  buildDefaultRuleSettings,
+  normalizeRuleSettings,
+  TRACKING_TYPES,
+} from "./helpers/product-type-rules";
 
 const productTypeRuleSettingsSchema = z.object({
   productTypeId: z.number().int().positive(),
@@ -85,74 +85,6 @@ const productTypeRuleSettingsSchema = z.object({
     .regex(/^\d+(\.\d{1,2})?$/)
     .default("0"),
 });
-
-function buildDefaultRuleSettings<
-  T extends {
-    id: number;
-    name: string;
-    slug: string;
-    inventoryBehaviour: (typeof INVENTORY_BEHAVIOURS)[number];
-  },
->(type: T): RuleSettingsInput {
-  const profile = buildProductTypeFulfillmentProfile(type);
-  const isFoodLike =
-    profile.family === "grocery" || profile.family === "bulk_liquid";
-  const hasConversion =
-    profile.inventoryBehaviour === "auto_break" ||
-    profile.inventoryBehaviour === "loose_convert";
-  const hasLoose =
-    profile.inventoryBehaviour === "loose_convert" ||
-    profile.supportedModes.includes("loose");
-  const trackingTypes = profile.supportsTrackedAssets
-    ? [...TRACKING_TYPES]
-    : (["none", "batch"] as const);
-
-  return {
-    productTypeId: type.id,
-    trackingTypes: [...trackingTypes],
-    trackingAvailable: true,
-    defaultTrackingType:
-      profile.supportsTrackedAssets || isFoodLike ? "batch" : "none",
-    returnPolicyAvailable: true,
-    returnPolicyDefault: true,
-    expiryAvailable: true,
-    expiryDefault: isFoodLike,
-    damageAvailable: true,
-    damageDefault: true,
-    stockTrackingAvailable: true,
-    stockTrackingDefault: true,
-    minimumOrderAvailable: true,
-    minimumOrderDefault: true,
-    minimumOrderQtyDefault: "1",
-    conversionAvailable: true,
-    conversionDefault: hasConversion,
-    inventoryLooseUnitAvailable: hasLoose,
-    inventoryLooseUnitDefault: hasLoose,
-    inventoryLooseUnitOptions: ALL_UNIT_CODES,
-    defaultInventoryLooseUnit:
-      hasLoose && profile.conversionUnit ? profile.conversionUnit : "kg",
-    returnablePackAvailable: true,
-    returnablePackDefault: profile.supportsEmptyReturn,
-    defaultPackDepositAmount: "0",
-  };
-}
-
-function normalizeRuleSettings(
-  settings: typeof productTypeRuleSetting.$inferSelect | RuleSettingsInput,
-) {
-  return {
-    ...settings,
-    minimumOrderQtyDefault: String(settings.minimumOrderQtyDefault ?? "1"),
-    defaultPackDepositAmount: String(settings.defaultPackDepositAmount ?? "0"),
-    trackingAvailable: settings.trackingAvailable ?? true,
-    trackingTypes: settings.trackingTypes?.length
-      ? settings.trackingTypes
-      : ["none"],
-    inventoryLooseUnitOptions: settings.inventoryLooseUnitOptions?.length
-      ? settings.inventoryLooseUnitOptions
-      : ["kg"],
-  };
-}
 
 function decorateProductType<
   T extends {
