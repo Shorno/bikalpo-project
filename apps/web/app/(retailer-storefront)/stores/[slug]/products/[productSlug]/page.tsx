@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { StorefrontProductDetailsView } from "@/components/features/products/public-product-details-view";
+import { StoreRelatedProducts } from "@/components/features/products/store-related-products";
 import type { DetailVariant } from "@/components/features/products/trade-product-detail-client";
 import {
   isCustomerStorefrontPreview,
@@ -92,13 +93,19 @@ export default async function StoreProductDetailsPage({
       ]}
       categoryHref={categoryHref}
       previewMode={previewMode}
-      purchase={{
-        kind: "direct",
-        shopId: shop.id,
-        supportPhone: shop.phoneNumber,
-      }}
+      purchase={{ kind: "direct", shopId: shop.id }}
+      relatedProducts={
+        previewMode ? null : (
+          <StoreRelatedProducts
+            categorySlug={product.category.slug}
+            currentProductId={product.id}
+            shopId={shop.id}
+            shopSlug={slug}
+            subcategorySlug={product.subCategory?.slug}
+          />
+        )
+      }
       reviewStats={detail.reviewStats}
-      soldOrderCount={detail.soldOrderCount}
     />
   );
 }

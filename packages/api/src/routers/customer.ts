@@ -2133,7 +2133,7 @@ const queries = {
         ),
         with: {
           category: { columns: { name: true, slug: true } },
-          subCategory: { columns: { name: true } },
+          subCategory: { columns: { name: true, slug: true } },
           brand: { columns: { id: true, name: true, slug: true, logo: true } },
           images: true,
           variantPrices: true,

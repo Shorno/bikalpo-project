@@ -92,7 +92,6 @@ export async function WarehouseProductDetailPage({
         cartPath,
       }}
       reviewStats={detail.reviewStats}
-      soldOrderCount={detail.soldOrderCount}
     />
   );
 }

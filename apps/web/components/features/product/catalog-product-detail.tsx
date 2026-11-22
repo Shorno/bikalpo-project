@@ -17,7 +17,7 @@ import {
 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
-import { type ReactNode, useMemo, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
   resolveBrandScope,
@@ -44,6 +44,7 @@ import {
   variantOptionLabel,
 } from "@/lib/catalog-product-detail";
 import { cn } from "@/lib/utils";
+import { getPublicAppBaseUrl } from "@/lib/warehouse-storefront-url";
 import { orpc } from "@/utils/orpc";
 
 type FeatureItem = { key: string; value: string };
@@ -180,6 +181,14 @@ export function CatalogProductDetail({
    */
   brandless?: boolean;
 }) {
+  // Seller panels live on the shop./warehouse. subdomains, where a relative
+  // /products link would be rewritten into the portal. Resolve the public
+  // host after mount so server and client render the same first href.
+  const [publicBaseUrl, setPublicBaseUrl] = useState("");
+  useEffect(() => {
+    setPublicBaseUrl(getPublicAppBaseUrl(window.location.origin));
+  }, []);
+
   const { brands, hasSingleBrand, defaultBrandId } = useMemo(
     () => resolveBrandScope(product),
     [product],
@@ -255,7 +264,7 @@ export function CatalogProductDetail({
   const categoryName = product.category?.name ?? "Uncategorized";
   const storefrontHref =
     !brandless && product.category?.slug
-      ? `/products/${product.category.slug}/${product.slug}`
+      ? `${publicBaseUrl}/products/${product.category.slug}/${product.slug}`
       : null;
   const action: CatalogProductAction = primaryAction ?? {
     label: "Edit Product",

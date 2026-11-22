@@ -1,10 +1,10 @@
 "use client";
 
 import type { ProductFeatureGroup } from "@bikalpo-project/db/schema";
-import { ArrowLeft, Phone, Star } from "lucide-react";
+import { ArrowLeft, Star } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
-import { useCallback, useMemo, useState } from "react";
+import { type ReactNode, useCallback, useMemo, useState } from "react";
 import { ProductActions } from "@/components/features/products/product-actions";
 import { StarRating } from "@/components/features/reviews/star-rating";
 import { WarehouseProductDetailActions } from "@/components/features/warehouse/warehouse-product-detail-actions";
@@ -39,20 +39,18 @@ type StorefrontProductDetailsViewProps = {
   };
   variants: DetailVariant[];
   reviewStats: { averageRating: number; totalReviews: number };
-  soldOrderCount?: number;
   breadcrumbs: Array<{ label: string; href?: string }>;
   categoryHref: string;
   previewMode?: boolean;
-  supportPhone?: string | null;
+  /** Rendered below the Description / Reviews card. */
+  relatedProducts?: ReactNode;
   purchase?:
     | {
         kind: "open_order";
-        supportPhone?: string | null;
       }
     | {
         kind: "direct";
         shopId: string;
-        supportPhone?: string | null;
       }
     | {
         kind: "warehouse";
@@ -111,17 +109,13 @@ export function StorefrontProductDetailsView({
   product,
   variants,
   reviewStats,
-  soldOrderCount,
   breadcrumbs,
   categoryHref,
   previewMode = false,
-  supportPhone,
+  relatedProducts,
   purchase,
 }: StorefrontProductDetailsViewProps) {
-  const purchaseContext = purchase ?? {
-    kind: "open_order" as const,
-    supportPhone,
-  };
+  const purchaseContext = purchase ?? { kind: "open_order" as const };
   const initialSelection = useMemo(
     () =>
       resolveStorefrontProductSelection({
@@ -347,23 +341,14 @@ export function StorefrontProductDetailsView({
                 >
                   {formatMoney(selectedPrice)}
                 </p>
-                <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-zinc-600">
-                  <span className="inline-flex items-center gap-2">
-                    <StarRating
-                      rating={Math.round(reviewStats.averageRating)}
-                      size="sm"
-                    />
-                    <span className="font-mono tabular-nums">
-                      {reviewStats.averageRating.toFixed(1)} (
-                      {reviewStats.totalReviews.toLocaleString("en-BD")}{" "}
-                      Reviews)
-                    </span>
-                  </span>
-                  <span>
-                    Sold :{" "}
-                    <span className="font-mono tabular-nums">
-                      {(soldOrderCount ?? 0).toLocaleString("en-BD")} Orders
-                    </span>
+                <div className="mt-2 flex items-center gap-2 text-sm text-zinc-600">
+                  <StarRating
+                    rating={Math.round(reviewStats.averageRating)}
+                    size="sm"
+                  />
+                  <span className="font-mono tabular-nums">
+                    {reviewStats.averageRating.toFixed(1)} (
+                    {reviewStats.totalReviews.toLocaleString("en-BD")} Reviews)
                   </span>
                 </div>
               </div>
@@ -482,26 +467,6 @@ export function StorefrontProductDetailsView({
                     }}
                     purchaseMode={productActionsPurchase?.purchaseMode}
                     shopId={productActionsPurchase?.shopId}
-                    secondaryAction={
-                      purchaseContext.supportPhone ? (
-                        <a
-                          className="inline-flex h-12 min-w-28 items-center justify-center gap-2 rounded-md border border-zinc-300 px-5 text-base font-semibold text-zinc-900 hover:bg-zinc-50"
-                          href={`tel:${purchaseContext.supportPhone}`}
-                        >
-                          <Phone aria-hidden="true" className="size-4" />
-                          Call
-                        </a>
-                      ) : (
-                        <Link
-                          className="inline-flex h-12 min-w-28 items-center justify-center gap-2 rounded-md border border-zinc-300 px-5 text-base font-semibold text-zinc-900 hover:bg-zinc-50"
-                          href="/contact"
-                          title="Contact support"
-                        >
-                          <Phone aria-hidden="true" className="size-4" />
-                          Call
-                        </Link>
-                      )
-                    }
                     variantId={selectedVariant.id}
                   />
                 )}
@@ -587,6 +552,8 @@ export function StorefrontProductDetailsView({
             />
           )}
         </section>
+
+        {relatedProducts}
       </main>
     </div>
   );

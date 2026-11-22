@@ -1,51 +1,46 @@
 import { getReferenceProductsWithQuery } from "@/lib/public-data";
 import { CatalogProductGrid } from "./catalog-product-grid";
 import { ConsumerProductCard } from "./consumer-product-card";
+import { RelatedProductsSection } from "./related-products-section";
 
 interface RelatedProductsProps {
   categorySlug: string;
+  /** Related products come from the same sub-category when it is known. */
+  subcategorySlug?: string | null;
   currentProductId: number;
-  previewMode?: boolean;
 }
 
 export async function RelatedProducts({
   categorySlug,
+  subcategorySlug,
   currentProductId,
-  previewMode = false,
 }: RelatedProductsProps) {
   const { products } = await getReferenceProductsWithQuery(
     {
-      category: categorySlug,
-      limit: "8",
+      ...(subcategorySlug
+        ? { subcategory: subcategorySlug }
+        : { category: categorySlug }),
+      limit: "11",
       sort: "newest",
     },
     600,
-  );
+  ).catch(() => ({ products: [] }));
 
   const relatedProducts = products
     .filter((prod) => prod.id !== currentProductId)
-    .slice(0, 4);
+    .slice(0, 10);
 
   if (relatedProducts.length === 0) {
     return null;
   }
 
   return (
-    <section className="mt-12">
-      <div className="bg-white rounded-lg shadow-sm p-6 lg:p-8">
-        <h2 className="text-2xl font-bold text-gray-900 mb-6">
-          Related Products
-        </h2>
-        <CatalogProductGrid withSidebar>
-          {relatedProducts.map((prod) => (
-            <ConsumerProductCard
-              key={prod.id}
-              product={prod}
-              previewMode={previewMode}
-            />
-          ))}
-        </CatalogProductGrid>
-      </div>
-    </section>
+    <RelatedProductsSection>
+      <CatalogProductGrid>
+        {relatedProducts.map((prod) => (
+          <ConsumerProductCard key={prod.id} product={prod} />
+        ))}
+      </CatalogProductGrid>
+    </RelatedProductsSection>
   );
 }

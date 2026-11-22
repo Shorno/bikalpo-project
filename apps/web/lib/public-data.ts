@@ -97,7 +97,9 @@ export async function getActiveBrands(revalidate = 600) {
 
 export async function getPublicStoreIdentity(slug: string) {
   try {
-    const result = await getPublicOrpcClient(0).customer.getShopNavigation({ slug });
+    const result = await getPublicOrpcClient(0).customer.getShopNavigation({
+      slug,
+    });
     return result.shop;
   } catch (error) {
     if (isNotFoundError(error)) return null;
@@ -264,6 +266,7 @@ export async function getStoreCatalog(
   shopSlug: string,
   options: {
     category?: string;
+    subcategory?: string;
     productSlug?: string;
     page?: number;
     limit?: number;
@@ -276,6 +279,7 @@ export async function getStoreCatalog(
     return await client.customer.getShopBySlug({
       slug: shopSlug,
       category: options.category,
+      subcategory: options.subcategory,
       productSlug: options.productSlug,
       sort: "recommended",
       page: options.page ?? 1,

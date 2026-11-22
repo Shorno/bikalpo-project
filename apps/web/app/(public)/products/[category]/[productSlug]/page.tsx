@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { StorefrontProductDetailsView } from "@/components/features/products/public-product-details-view";
+import { RelatedProducts } from "@/components/features/products/related-products";
 import type { DetailVariant } from "@/components/features/products/trade-product-detail-client";
 import {
   isCustomerStorefrontPreview,
@@ -59,7 +60,6 @@ export default async function ProductPage({
       }}
       variants={variants}
       reviewStats={productData.reviewStats}
-      soldOrderCount={productData.soldOrderCount}
       breadcrumbs={[
         { label: "Home", href: "/" },
         { label: product.category.name, href: categoryHref },
@@ -78,7 +78,15 @@ export default async function ProductPage({
       ]}
       categoryHref={categoryHref}
       previewMode={previewMode}
-      supportPhone={process.env.NEXT_PUBLIC_SUPPORT_PHONE?.trim() || null}
+      relatedProducts={
+        previewMode ? null : (
+          <RelatedProducts
+            categorySlug={product.category.slug}
+            currentProductId={product.id}
+            subcategorySlug={product.subCategory?.slug}
+          />
+        )
+      }
     />
   );
 }

@@ -1,46 +1,45 @@
 import type { StorefrontProduct } from "@/components/storefront/retailer-storefront";
 import { getStoreCatalog } from "@/lib/public-data";
+import { RelatedProductsSection } from "./related-products-section";
 import { StoreRelatedProductsGrid } from "./store-related-products-grid";
 
 interface StoreRelatedProductsProps {
   shopId: string;
   shopSlug: string;
   categorySlug: string;
+  /** Related products come from the same sub-category when it is known. */
+  subcategorySlug?: string | null;
   currentProductId: number;
-  previewMode?: boolean;
 }
 
 export async function StoreRelatedProducts({
   shopId,
   shopSlug,
   categorySlug,
+  subcategorySlug,
   currentProductId,
-  previewMode = false,
 }: StoreRelatedProductsProps) {
   const result = await getStoreCatalog(
     shopSlug,
-    { category: categorySlug, limit: 8 },
+    subcategorySlug
+      ? { subcategory: subcategorySlug, limit: 9 }
+      : { category: categorySlug, limit: 9 },
     30,
   );
   const products = ((result?.products ?? []) as StorefrontProduct[])
     .filter((product) => product.id !== currentProductId)
-    .slice(0, 4);
+    .slice(0, 8);
 
   if (products.length === 0) return null;
 
   return (
-    <section className="mt-12">
-      <div className="rounded-lg bg-white p-6 shadow-sm lg:p-8">
-        <h2 className="mb-6 text-2xl font-bold text-gray-900">
-          Related Products
-        </h2>
-        <StoreRelatedProductsGrid
-          products={products}
-          storeSlug={shopSlug}
-          shopId={shopId}
-          previewMode={previewMode}
-        />
-      </div>
-    </section>
+    <RelatedProductsSection>
+      <StoreRelatedProductsGrid
+        products={products}
+        storeSlug={shopSlug}
+        shopId={shopId}
+        previewMode={false}
+      />
+    </RelatedProductsSection>
   );
 }
