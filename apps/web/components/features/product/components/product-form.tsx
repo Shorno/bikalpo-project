@@ -99,6 +99,20 @@ import {
   priceInputValue,
   resolveDeliveryUnit,
 } from "./product-delivery-pricing";
+import {
+  ChoiceRadios,
+  EMPTY_VARIANT_FILTER,
+  EnableDisable,
+  filterVariantsForBrand,
+  InventoryUnitFilter,
+  RuleAmount,
+  RuleCell,
+  RuleSelect,
+  RulesGrid,
+  UnusedRuleCell,
+  type VariantFilter,
+  VariantTypeSizeFilter,
+} from "./product-rules-grid";
 import type { ProductWithRelations } from "./product-columns";
 import {
   ProductEditorSection as FormSection,
@@ -463,6 +477,10 @@ export default function ProductForm({
   const [variantDialogBrandId, setVariantDialogBrandId] = useState<
     number | null
   >(null);
+  // Inventory & Product Rules: Type / Size / Inventory Unit narrow the
+  // variants each brand card offers. Not saved.
+  const [variantFilter, setVariantFilter] =
+    useState<VariantFilter>(EMPTY_VARIANT_FILTER);
 
   // === Brand configuration state ===
   const [brandConfigs, setBrandConfigs] = useState<BrandConfig[]>(() => {
@@ -1402,7 +1420,7 @@ export default function ProductForm({
         }}
       >
         <div className="mx-auto max-w-6xl px-4 py-6">
-          <div className="grid grid-cols-1 gap-6 @4xl/product-form:grid-cols-[minmax(0,1fr)_360px] @4xl/product-form:items-start">
+          <div className="grid grid-cols-1 gap-6 @4xl/product-form:grid-cols-[minmax(0,1fr)_420px] @4xl/product-form:items-start">
             {/* Product details */}
             <div className="min-w-0 space-y-6">
               {/* ── Product Information ── */}
@@ -1642,7 +1660,7 @@ export default function ProductForm({
                       <BrandConfigCard
                         key={bc.brandId}
                         config={bc}
-                        variantOptions={availableVariantOptions}
+                        variantOptions={filterVariantsForBrand(availableVariantOptions, variantFilter, bc.selectedVariantIds)}
                         isExpanded={!collapsedBrandIds.has(bc.brandId)}
                         onToggleExpand={() => toggleBrandExpanded(bc.brandId)}
                         onRemove={() => undefined}
@@ -1678,7 +1696,7 @@ export default function ProductForm({
                         <BrandConfigCard
                           key={bc.brandId}
                           config={bc}
-                          variantOptions={availableVariantOptions}
+                          variantOptions={filterVariantsForBrand(availableVariantOptions, variantFilter, bc.selectedVariantIds)}
                           isExpanded={!collapsedBrandIds.has(bc.brandId)}
                           onToggleExpand={() => toggleBrandExpanded(bc.brandId)}
                           onRemove={() => handleRemoveBrand(bc.brandId)}
@@ -1990,280 +2008,246 @@ export default function ProductForm({
               {/* ── Inventory rules ── */}
               <FormSection
                 variant="card"
-                title="Inventory Rules"
+                title="Inventory & Product Rules"
                 className="p-5 sm:px-5"
-                description="Stock, return, order, and conversion behavior."
               >
-                <div className="flex flex-col">
-                  {activeRuleSettings.trackingAvailable && (
+                <RulesGrid>
+                  <RuleCell label="Variant">
+                    <VariantTypeSizeFilter
+                      variants={availableVariantOptions}
+                      filter={variantFilter}
+                      onChange={setVariantFilter}
+                    />
+                  </RuleCell>
+                  {activeRuleSettings.conversionAvailable ? (
+                    <form.Field name="conversionEnabled">
+                      {(field) => (
+                        <RuleCell label="Conversion">
+                          <EnableDisable
+                            label="Conversion"
+                            value={field.state.value}
+                            onChange={field.handleChange}
+                          />
+                        </RuleCell>
+                      )}
+                    </form.Field>
+                  ) : (
+                    <UnusedRuleCell
+                      label="Conversion"
+                      typeName={activeTypeName}
+                    />
+                  )}
+
+                  <RuleCell label="Inventory Unit">
+                    <InventoryUnitFilter
+                      variants={availableVariantOptions}
+                      filter={variantFilter}
+                      onChange={setVariantFilter}
+                    />
+                  </RuleCell>
+                  {supportsLooseInventory ? (
+                    <form.Field name="inventoryLooseUnitEnabled">
+                      {(enabledField) => (
+                        <RuleCell label="Inventory Loose Unit">
+                          <EnableDisable
+                            label="Inventory Loose Unit"
+                            value={enabledField.state.value}
+                            onChange={enabledField.handleChange}
+                          />
+                          <form.Field name="inventoryLooseUnit">
+                            {(unitField) => (
+                              <RuleSelect
+                                label="Inventory loose unit type"
+                                value={unitField.state.value}
+                                options={looseUnitOptions}
+                                disabled={!enabledField.state.value}
+                                onChange={(value) =>
+                                  unitField.handleChange(
+                                    value as FulfillmentUnitCode,
+                                  )
+                                }
+                              />
+                            )}
+                          </form.Field>
+                        </RuleCell>
+                      )}
+                    </form.Field>
+                  ) : (
+                    <UnusedRuleCell
+                      label="Inventory Loose Unit"
+                      typeName={activeTypeName}
+                    />
+                  )}
+
+                  {activeRuleSettings.returnPolicyAvailable ? (
+                    <form.Field name="returnPolicyEnabled">
+                      {(field) => (
+                        <RuleCell label="Return Policy">
+                          <EnableDisable
+                            label="Return Policy"
+                            value={field.state.value}
+                            onChange={field.handleChange}
+                          />
+                        </RuleCell>
+                      )}
+                    </form.Field>
+                  ) : (
+                    <UnusedRuleCell
+                      label="Return Policy"
+                      typeName={activeTypeName}
+                    />
+                  )}
+                  {activeRuleSettings.returnablePackAvailable ? (
+                    <form.Field name="isReturnablePack">
+                      {(returnableField) => (
+                        <RuleCell label="Empty Pack Return">
+                          <EnableDisable
+                            label="Empty Pack Return"
+                            value={returnableField.state.value}
+                            onChange={returnableField.handleChange}
+                          />
+                          <form.Field name="defaultPackDepositAmount">
+                            {(depositField) => (
+                              <RuleAmount
+                                label="Empty Pack Price"
+                                value={depositField.state.value}
+                                disabled={!returnableField.state.value}
+                                onChange={depositField.handleChange}
+                              />
+                            )}
+                          </form.Field>
+                        </RuleCell>
+                      )}
+                    </form.Field>
+                  ) : (
+                    <UnusedRuleCell
+                      label="Empty Pack Return"
+                      typeName={activeTypeName}
+                    />
+                  )}
+
+                  {activeRuleSettings.trackingAvailable ? (
                     <form.Field name="trackingType">
                       {(field) => (
-                        <RuleControlRow
-                          description="Choose how this product is tracked in inventory."
-                          label="Batch tracking"
-                          wideControl
-                        >
-                          <Select
-                            value={field.state.value}
-                            onValueChange={(value) => {
+                        <RuleCell label="Batch Tracking">
+                          <ChoiceRadios
+                            label="Batch Tracking"
+                            value={field.state.value as string}
+                            options={(["batch", "none", "serial"] as const)
+                              .filter((type) =>
+                                (
+                                  activeRuleSettings.trackingTypes as readonly string[]
+                                ).includes(type),
+                              )
+                              .map((type) => ({
+                                value: type,
+                                label:
+                                  type === "batch"
+                                    ? "Enable"
+                                    : type === "none"
+                                      ? "Disable"
+                                      : "Serial",
+                              }))}
+                            onChange={(value) => {
                               field.handleChange(value as any);
                               if (value !== "batch") {
                                 form.setFieldValue("expiryEnabled", false);
                               }
                             }}
-                          >
-                            <SelectTrigger
-                              aria-label="Batch tracking"
-                              className="h-9 w-full"
-                            >
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {activeRuleSettings.trackingTypes.map((type) => (
-                                <SelectItem key={type} value={type}>
-                                  {type === "none"
-                                    ? "Disable"
-                                    : type === "batch"
-                                      ? "Enable"
-                                      : "Serial tracking"}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </RuleControlRow>
-                      )}
-                    </form.Field>
-                  )}
-
-                  {activeRuleSettings.returnPolicyAvailable && (
-                    <form.Field name="returnPolicyEnabled">
-                      {(field) => (
-                        <RuleControlRow
-                          description="Allow standard product returns."
-                          label="Return policy"
-                        >
-                          <Switch
-                            aria-label="Return policy"
-                            checked={field.state.value}
-                            onCheckedChange={field.handleChange}
                           />
-                        </RuleControlRow>
+                        </RuleCell>
                       )}
                     </form.Field>
+                  ) : (
+                    <UnusedRuleCell
+                      label="Batch Tracking"
+                      typeName={activeTypeName}
+                    />
+                  )}
+                  {activeRuleSettings.damageAvailable ? (
+                    <form.Field name="damageControlEnabled">
+                      {(field) => (
+                        <RuleCell label="Damage Tracking">
+                          <EnableDisable
+                            label="Damage Tracking"
+                            value={field.state.value}
+                            onChange={field.handleChange}
+                          />
+                        </RuleCell>
+                      )}
+                    </form.Field>
+                  ) : (
+                    <UnusedRuleCell
+                      label="Damage Tracking"
+                      typeName={activeTypeName}
+                    />
                   )}
 
-                  {activeRuleSettings.expiryAvailable && (
+                  {activeRuleSettings.expiryAvailable ? (
                     <form.Field name="expiryEnabled">
                       {(field) => (
-                        <RuleControlRow
-                          description="Track product expiry dates."
-                          label="Expiry tracking"
-                        >
-                          <Switch
-                            aria-label="Expiry tracking"
-                            checked={field.state.value}
-                            onCheckedChange={(checked) => {
-                              field.handleChange(checked);
-                              if (checked) {
+                        <RuleCell label="Expiry Tracking">
+                          <EnableDisable
+                            label="Expiry Tracking"
+                            value={field.state.value}
+                            onChange={(enabled) => {
+                              field.handleChange(enabled);
+                              if (enabled) {
                                 form.setFieldValue("trackingType", "batch");
                               }
                             }}
                           />
-                        </RuleControlRow>
+                        </RuleCell>
                       )}
                     </form.Field>
+                  ) : (
+                    <UnusedRuleCell
+                      label="Expiry Tracking"
+                      typeName={activeTypeName}
+                    />
                   )}
-
-                  {activeRuleSettings.damageAvailable && (
-                    <form.Field name="damageControlEnabled">
-                      {(field) => (
-                        <RuleControlRow
-                          description="Enable damage reporting for this product."
-                          label="Damage control"
-                        >
-                          <Switch
-                            aria-label="Damage control"
-                            checked={field.state.value}
-                            onCheckedChange={field.handleChange}
-                          />
-                        </RuleControlRow>
-                      )}
-                    </form.Field>
-                  )}
-
-                  {activeRuleSettings.stockTrackingAvailable && (
-                    <form.Field name="stockTrackingEnabled">
-                      {(field) => (
-                        <RuleControlRow
-                          description="Track inventory movement for this product."
-                          label="Stock tracking"
-                        >
-                          <Switch
-                            aria-label="Stock tracking"
-                            checked={field.state.value}
-                            onCheckedChange={field.handleChange}
-                          />
-                        </RuleControlRow>
-                      )}
-                    </form.Field>
-                  )}
-
-                  {activeRuleSettings.minimumOrderAvailable && (
+                  {activeRuleSettings.minimumOrderAvailable ? (
                     <form.Field name="minimumOrderEnabled">
                       {(enabledField) => (
-                        <RuleControlRow
-                          description="Apply a minimum order to generated variants."
-                          label="Minimum order qty"
-                        >
-                          <div className="flex w-full min-w-0 items-center justify-end gap-2">
-                            <Switch
-                              aria-label="Minimum order qty"
-                              checked={enabledField.state.value}
-                              onCheckedChange={enabledField.handleChange}
-                            />
-                            <form.Field name="minimumOrderQty">
-                              {(qtyField) => (
-                                <Input
-                                  aria-label="Minimum qty"
-                                  className="h-9 min-w-0 flex-1 text-right tabular-nums"
-                                  disabled={!enabledField.state.value}
-                                  min="0"
-                                  onChange={(event) =>
-                                    qtyField.handleChange(event.target.value)
-                                  }
-                                  step="0.01"
-                                  type="number"
-                                  value={qtyField.state.value}
-                                />
-                              )}
-                            </form.Field>
-                          </div>
-                        </RuleControlRow>
-                      )}
-                    </form.Field>
-                  )}
-
-                  {activeRuleSettings.conversionAvailable && (
-                    <form.Field name="conversionEnabled">
-                      {(field) => (
-                        <RuleControlRow
-                          description={conversionDescription}
-                          label="Conversion"
-                        >
-                          <Switch
-                            aria-label="Conversion"
-                            checked={field.state.value}
-                            onCheckedChange={field.handleChange}
+                        <RuleCell label="Minimum Order qty">
+                          <EnableDisable
+                            label="Minimum Order qty"
+                            value={enabledField.state.value}
+                            onChange={enabledField.handleChange}
                           />
-                        </RuleControlRow>
-                      )}
-                    </form.Field>
-                  )}
-
-                  {supportsLooseInventory && (
-                    <form.Field name="inventoryLooseUnitEnabled">
-                      {(enabledField) => (
-                        <RuleControlRow
-                          description="Enable loose inventory for weight or volume based sales."
-                          label="Inventory loose unit"
-                          wideControl
-                        >
-                          <div className="flex w-full min-w-0 items-center justify-end gap-2">
-                            <Switch
-                              aria-label="Inventory loose unit"
-                              checked={enabledField.state.value}
-                              onCheckedChange={enabledField.handleChange}
-                            />
-                            <form.Field name="inventoryLooseUnit">
-                              {(unitField) => (
-                                <Select
-                                  disabled={!enabledField.state.value}
-                                  value={unitField.state.value}
-                                  onValueChange={(value) =>
-                                    unitField.handleChange(
-                                      value as FulfillmentUnitCode,
-                                    )
-                                  }
-                                >
-                                  <SelectTrigger
-                                    aria-label="Inventory loose unit type"
-                                    className="h-9 min-w-0 flex-1"
-                                  >
-                                    <SelectValue />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    {looseUnitOptions.map((unit) => (
-                                      <SelectItem
-                                        key={unit.value}
-                                        value={unit.value}
-                                      >
-                                        {unit.label}
-                                      </SelectItem>
-                                    ))}
-                                  </SelectContent>
-                                </Select>
-                              )}
-                            </form.Field>
-                          </div>
-                        </RuleControlRow>
-                      )}
-                    </form.Field>
-                  )}
-
-                  {activeRuleSettings.returnablePackAvailable &&
-                    !isLpgRules && (
-                      <form.Field name="isReturnablePack">
-                        {(returnableField) => (
-                          <RuleControlRow
-                            description={returnableRuleDescription}
-                            label={returnableRuleLabel}
-                          >
-                            <div className="flex w-full min-w-0 items-center justify-end gap-2">
-                              <Switch
-                                aria-label={returnableRuleLabel}
-                                checked={returnableField.state.value}
-                                onCheckedChange={returnableField.handleChange}
+                          <form.Field name="minimumOrderQty">
+                            {(qtyField) => (
+                              <RuleAmount
+                                label="Minimum Order"
+                                value={qtyField.state.value}
+                                disabled={!enabledField.state.value}
+                                onChange={qtyField.handleChange}
                               />
-                              <form.Field name="defaultPackDepositAmount">
-                                {(depositField) => (
-                                  <Input
-                                    aria-label={depositLabel}
-                                    className="h-9 min-w-0 flex-1 text-right tabular-nums"
-                                    disabled={!returnableField.state.value}
-                                    min="0"
-                                    onChange={(event) =>
-                                      depositField.handleChange(
-                                        event.target.value,
-                                      )
-                                    }
-                                    step="0.01"
-                                    type="number"
-                                    value={depositField.state.value}
-                                  />
-                                )}
-                              </form.Field>
-                            </div>
-                          </RuleControlRow>
-                        )}
-                      </form.Field>
-                    )}
+                            )}
+                          </form.Field>
+                        </RuleCell>
+                      )}
+                    </form.Field>
+                  ) : (
+                    <UnusedRuleCell
+                      label="Minimum Order qty"
+                      typeName={activeTypeName}
+                    />
+                  )}
 
                   <form.Field name="deliveryCostUnit">
                     {(field) => (
-                      <RuleControlRow
-                        description="The unit delivery is charged per. It follows the variant Type until you change it."
-                        label="Delivery cost"
-                        wideControl
-                      >
+                      <RuleCell label="Delivery Cost">
                         <DeliveryUnitSelect
                           value={field.state.value}
                           suggested={suggestedDeliveryUnit}
                           onChange={field.handleChange}
+                          className="h-8 w-full text-xs"
                         />
-                      </RuleControlRow>
+                      </RuleCell>
                     )}
                   </form.Field>
-                </div>
+                </RulesGrid>
               </FormSection>
 
               {/* ── Delivery configuration ── */}
@@ -2453,45 +2437,6 @@ function StatusPill({ status }: { status: string }) {
     >
       {status}
     </span>
-  );
-}
-
-function RuleControlRow({
-  children,
-  description,
-  label,
-  wideControl = false,
-}: {
-  children: ReactNode;
-  description: string;
-  label: string;
-  wideControl?: boolean;
-}) {
-  return (
-    <div className="flex min-h-13 items-center justify-between gap-3 border-t py-3">
-      <div className="flex min-w-0 flex-1 items-center gap-1.5">
-        <FieldLabel className="text-sm font-normal">{label}</FieldLabel>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <button
-              aria-label={`${label} details`}
-              className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded text-muted-foreground/70 transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              type="button"
-            >
-              <Info className="h-3.5 w-3.5" />
-            </button>
-          </TooltipTrigger>
-          <TooltipContent className="max-w-64 text-xs" side="top">
-            {description}
-          </TooltipContent>
-        </Tooltip>
-      </div>
-      <div
-        className={`flex shrink-0 items-center justify-end gap-2 ${wideControl ? "w-40" : "w-32"}`}
-      >
-        {children}
-      </div>
-    </div>
   );
 }
 

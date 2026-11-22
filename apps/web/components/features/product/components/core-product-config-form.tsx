@@ -58,7 +58,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
-import { Switch } from "@/components/ui/switch";
 import {
   Tooltip,
   TooltipContent,
@@ -85,6 +84,19 @@ import {
   priceInputValue,
   resolveDeliveryUnit,
 } from "./product-delivery-pricing";
+import {
+  ChoiceRadios,
+  EMPTY_VARIANT_FILTER,
+  EnableDisable,
+  filterVariantsForBrand,
+  InventoryUnitFilter,
+  RuleAmount,
+  RuleCell,
+  RuleSelect,
+  RulesGrid,
+  type VariantFilter,
+  VariantTypeSizeFilter,
+} from "./product-rules-grid";
 import {
   ProductEditorIdentity,
   ProductEditorSection,
@@ -332,6 +344,10 @@ export default function CoreProductConfigForm({
     },
   });
 
+  // Inventory & Product Rules: Type / Size / Inventory Unit narrow the
+  // variants each brand card offers. Not saved.
+  const [variantFilter, setVariantFilter] =
+    useState<VariantFilter>(EMPTY_VARIANT_FILTER);
   const isCylinderVariant = (variantOptionId: number) => {
     const definition = getVariantDefinition(
       availableVariants.find((option) => option.id === variantOptionId),
@@ -860,7 +876,7 @@ export default function CoreProductConfigForm({
               }}
             >
               <div className="mx-auto max-w-6xl px-4 py-6">
-                <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_360px] lg:items-start">
+                <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_420px] lg:items-start">
                   <div className="divide-y rounded-xl border bg-card">
                     <ProductEditorSection
                       title="Identity"
@@ -1004,7 +1020,13 @@ export default function CoreProductConfigForm({
                                 brand={brand}
                                 existing={existingBrand}
                                 selectedVariants={selectedBrand.variants}
-                                variants={availableVariants}
+                                variants={filterVariantsForBrand(
+                                  availableVariants,
+                                  variantFilter,
+                                  selectedBrand.variants.map(
+                                    (variant) => variant.variantOptionId,
+                                  ),
+                                )}
                                 blockedVariants={blockedVariants}
                                 expanded={!collapsedBrands.has(brand.id)}
                                 onToggleExpanded={() =>
@@ -1077,7 +1099,6 @@ export default function CoreProductConfigForm({
                     <SharedTemplateEditor
                       form={form}
                       defaults={defaultValues.template}
-                      hideDeposit={Boolean(adapter)}
                       part="content"
                     />
 
@@ -1100,9 +1121,11 @@ export default function CoreProductConfigForm({
                       <SharedTemplateEditor
                         form={form}
                         defaults={defaultValues.template}
-                        hideDeposit={Boolean(adapter)}
                         part="rules"
                         suggestedDeliveryUnit={suggestedDeliveryUnit}
+                        variants={availableVariants}
+                        variantFilter={variantFilter}
+                        onVariantFilterChange={setVariantFilter}
                       />
                     </div>
 
@@ -1724,16 +1747,20 @@ function mergeTemplateDetails(
 function SharedTemplateEditor({
   form,
   defaults,
-  hideDeposit = false,
   part,
   suggestedDeliveryUnit = null,
+  variants = [],
+  variantFilter = EMPTY_VARIANT_FILTER,
+  onVariantFilterChange = () => undefined,
 }: {
   form: any;
   defaults: CoreProductConfigValues["template"];
-  hideDeposit?: boolean;
   /** "content" is the left column; "rules" is Inventory Rules on the right. */
   part: "content" | "rules";
   suggestedDeliveryUnit?: ReturnType<typeof suggestDeliveryCostUnit>;
+  variants?: VariantOption[];
+  variantFilter?: VariantFilter;
+  onVariantFilterChange?: (filter: VariantFilter) => void;
 }) {
   // Loose products are sold by weight or volume: kg, litre or ml only.
   const units = LOOSE_INVENTORY_UNIT_CODES.map(
@@ -1777,203 +1804,181 @@ function SharedTemplateEditor({
       )}
 
       {part === "rules" && (
-      <ProductEditorSection
-        title="Inventory rules"
-        description="Stock, return, order, and conversion behavior."
-        className="px-4 py-5 sm:px-5"
-      >
-        <div className="grid grid-cols-1 gap-x-8 sm:grid-cols-2 lg:grid-cols-1">
-          <form.Field name="template.trackingType">
-            {(field: any) => (
-              <TemplateRuleRow
-                label="Batch tracking"
-                description="Choose how this product is tracked in inventory."
-              >
-                <Select
-                  value={field.state.value || defaults.trackingType}
-                  onValueChange={(value) => {
-                    field.handleChange(value);
-                    if (value !== "batch") {
-                      form.setFieldValue("template.expiryEnabled", false);
-                    }
-                  }}
-                >
-                  <SelectTrigger className="h-9 w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">Disable</SelectItem>
-                    <SelectItem value="batch">Enable</SelectItem>
-                    <SelectItem value="serial">Serial tracking</SelectItem>
-                  </SelectContent>
-                </Select>
-              </TemplateRuleRow>
-            )}
-          </form.Field>
-          {[
-            [
-              "returnPolicyEnabled",
-              "Return policy",
-              "Allow standard product returns.",
-            ],
-            [
-              "damageControlEnabled",
-              "Damage control",
-              "Enable damage reporting for this product.",
-            ],
-            [
-              "stockTrackingEnabled",
-              "Stock tracking",
-              "Track inventory movement for this product.",
-            ],
-          ].map(([name, label, description]) => (
-            <form.Field key={name} name={`template.${name}`}>
+        <ProductEditorSection
+          title="Inventory & Product Rules"
+          className="px-4 py-5 sm:px-5"
+        >
+          <RulesGrid>
+            <RuleCell label="Variant">
+              <VariantTypeSizeFilter
+                variants={variants}
+                filter={variantFilter}
+                onChange={onVariantFilterChange}
+              />
+            </RuleCell>
+            <form.Field name="template.conversionEnabled">
               {(field: any) => (
-                <TemplateRuleRow label={label} description={description}>
-                  <Switch
-                    checked={field.state.value}
-                    onCheckedChange={field.handleChange}
+                <RuleCell label="Conversion">
+                  <EnableDisable
+                    label="Conversion"
+                    value={field.state.value}
+                    onChange={field.handleChange}
                   />
-                </TemplateRuleRow>
+                </RuleCell>
               )}
             </form.Field>
-          ))}
-          <form.Field name="template.expiryEnabled">
-            {(field: any) => (
-              <TemplateRuleRow
-                label="Expiry tracking"
-                description="Track dated batches throughout warehouse inventory."
-              >
-                <Switch
-                  checked={field.state.value}
-                  onCheckedChange={(checked) => {
-                    field.handleChange(checked);
-                    if (checked) {
-                      form.setFieldValue("template.trackingType", "batch");
-                    }
-                  }}
-                />
-              </TemplateRuleRow>
-            )}
-          </form.Field>
-          <form.Field name="template.minimumOrderEnabled">
-            {(enabled: any) => (
-              <TemplateRuleRow
-                label="Minimum order qty"
-                description="Apply a minimum order to generated variants."
-              >
-                <div className="flex w-full items-center justify-end gap-3">
-                  <Switch
-                    checked={enabled.state.value}
-                    onCheckedChange={enabled.handleChange}
-                  />
-                  <form.Field name="template.minimumOrderQty">
-                    {(qty: any) => (
-                      <Input
-                        aria-label="Minimum qty"
-                        className="h-9 flex-1 text-right"
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        disabled={!enabled.state.value}
-                        value={qty.state.value}
-                        onChange={(event) =>
-                          qty.handleChange(event.target.value)
-                        }
-                      />
-                    )}
-                  </form.Field>
-                </div>
-              </TemplateRuleRow>
-            )}
-          </form.Field>
-          <form.Field name="template.conversionEnabled">
-            {(field: any) => (
-              <TemplateRuleRow
-                label="Conversion"
-                description="Allow stock-unit conversion for this product."
-              >
-                <Switch
-                  checked={field.state.value}
-                  onCheckedChange={field.handleChange}
-                />
-              </TemplateRuleRow>
-            )}
-          </form.Field>
-          <form.Field name="template.inventoryLooseUnitEnabled">
-            {(enabled: any) => (
-              <TemplateRuleRow
-                label="Inventory loose unit"
-                description="Enable loose inventory for weight or volume based sales."
-              >
-                <div className="flex w-full items-center justify-end gap-3">
-                  <Switch
-                    checked={enabled.state.value}
-                    onCheckedChange={enabled.handleChange}
+
+            <RuleCell label="Inventory Unit">
+              <InventoryUnitFilter
+                variants={variants}
+                filter={variantFilter}
+                onChange={onVariantFilterChange}
+              />
+            </RuleCell>
+            <form.Field name="template.inventoryLooseUnitEnabled">
+              {(enabledField: any) => (
+                <RuleCell label="Inventory Loose Unit">
+                  <EnableDisable
+                    label="Inventory Loose Unit"
+                    value={enabledField.state.value}
+                    onChange={enabledField.handleChange}
                   />
                   <form.Field name="template.inventoryLooseUnit">
-                    {(unit: any) => (
-                      <UnitSelect
-                        disabled={!enabled.state.value}
-                        value={unit.state.value}
-                        units={units}
-                        onChange={unit.handleChange}
+                    {(unitField: any) => (
+                      <RuleSelect
+                        label="Inventory loose unit type"
+                        value={unitField.state.value || defaults.inventoryLooseUnit}
+                        options={units.map((unit) => ({
+                          value: unit.code,
+                          label: unit.label,
+                        }))}
+                        disabled={!enabledField.state.value}
+                        onChange={unitField.handleChange}
                       />
                     )}
                   </form.Field>
-                </div>
-              </TemplateRuleRow>
-            )}
-          </form.Field>
-          <form.Field name="template.isReturnablePack">
-            {(enabled: any) => (
-              <TemplateRuleRow
-                label="Empty cylinder return"
-                description="Buyers can choose New or Exchange"
-              >
-                <div className="flex w-full items-center justify-end gap-3">
-                  <Switch
-                    checked={enabled.state.value}
-                    onCheckedChange={enabled.handleChange}
+                </RuleCell>
+              )}
+            </form.Field>
+
+            <form.Field name="template.returnPolicyEnabled">
+              {(field: any) => (
+                <RuleCell label="Return Policy">
+                  <EnableDisable
+                    label="Return Policy"
+                    value={field.state.value}
+                    onChange={field.handleChange}
                   />
-                  {!hideDeposit && (
-                    <form.Field name="template.defaultPackDepositAmount">
-                      {(deposit: any) => (
-                        <Input
-                          className="h-9 flex-1 text-right"
-                          type="number"
-                          min="0"
-                          step="0.01"
-                          disabled={!enabled.state.value}
-                          value={deposit.state.value}
-                          onChange={(event) =>
-                            deposit.handleChange(event.target.value)
-                          }
-                        />
-                      )}
-                    </form.Field>
-                  )}
-                </div>
-              </TemplateRuleRow>
-            )}
-          </form.Field>
-          <form.Field name="template.deliveryCostUnit">
-            {(field: any) => (
-              <TemplateRuleRow
-                label="Delivery cost"
-                description="The unit delivery is charged per. It follows the variant Type until you change it."
-              >
-                <DeliveryUnitSelect
-                  value={field.state.value ?? ""}
-                  suggested={suggestedDeliveryUnit}
-                  onChange={field.handleChange}
-                  className="h-9 w-40"
-                />
-              </TemplateRuleRow>
-            )}
-          </form.Field>
-        </div>
-      </ProductEditorSection>
+                </RuleCell>
+              )}
+            </form.Field>
+            <form.Field name="template.isReturnablePack">
+              {(returnableField: any) => (
+                <RuleCell label="Empty Pack Return">
+                  <EnableDisable
+                    label="Empty Pack Return"
+                    value={returnableField.state.value}
+                    onChange={returnableField.handleChange}
+                  />
+                  <form.Field name="template.defaultPackDepositAmount">
+                    {(depositField: any) => (
+                      <RuleAmount
+                        label="Empty Pack Price"
+                        value={depositField.state.value ?? ""}
+                        disabled={!returnableField.state.value}
+                        onChange={depositField.handleChange}
+                      />
+                    )}
+                  </form.Field>
+                </RuleCell>
+              )}
+            </form.Field>
+
+            <form.Field name="template.trackingType">
+              {(field: any) => (
+                <RuleCell label="Batch Tracking">
+                  <ChoiceRadios
+                    label="Batch Tracking"
+                    value={field.state.value || defaults.trackingType}
+                    options={[
+                      { value: "batch", label: "Enable" },
+                      { value: "none", label: "Disable" },
+                      { value: "serial", label: "Serial" },
+                    ]}
+                    onChange={(value) => {
+                      field.handleChange(value);
+                      if (value !== "batch") {
+                        form.setFieldValue("template.expiryEnabled", false);
+                      }
+                    }}
+                  />
+                </RuleCell>
+              )}
+            </form.Field>
+            <form.Field name="template.damageControlEnabled">
+              {(field: any) => (
+                <RuleCell label="Damage Tracking">
+                  <EnableDisable
+                    label="Damage Tracking"
+                    value={field.state.value}
+                    onChange={field.handleChange}
+                  />
+                </RuleCell>
+              )}
+            </form.Field>
+
+            <form.Field name="template.expiryEnabled">
+              {(field: any) => (
+                <RuleCell label="Expiry Tracking">
+                  <EnableDisable
+                    label="Expiry Tracking"
+                    value={field.state.value}
+                    onChange={(enabled) => {
+                      field.handleChange(enabled);
+                      if (enabled) {
+                        form.setFieldValue("template.trackingType", "batch");
+                      }
+                    }}
+                  />
+                </RuleCell>
+              )}
+            </form.Field>
+            <form.Field name="template.minimumOrderEnabled">
+              {(enabledField: any) => (
+                <RuleCell label="Minimum Order qty">
+                  <EnableDisable
+                    label="Minimum Order qty"
+                    value={enabledField.state.value}
+                    onChange={enabledField.handleChange}
+                  />
+                  <form.Field name="template.minimumOrderQty">
+                    {(qtyField: any) => (
+                      <RuleAmount
+                        label="Minimum Order"
+                        value={qtyField.state.value ?? ""}
+                        disabled={!enabledField.state.value}
+                        onChange={qtyField.handleChange}
+                      />
+                    )}
+                  </form.Field>
+                </RuleCell>
+              )}
+            </form.Field>
+
+            <form.Field name="template.deliveryCostUnit">
+              {(field: any) => (
+                <RuleCell label="Delivery Cost">
+                  <DeliveryUnitSelect
+                    value={field.state.value ?? ""}
+                    suggested={suggestedDeliveryUnit}
+                    onChange={field.handleChange}
+                    className="h-8 w-full text-xs"
+                  />
+                </RuleCell>
+              )}
+            </form.Field>
+          </RulesGrid>
+        </ProductEditorSection>
       )}
 
       {part === "content" && (
@@ -2042,71 +2047,5 @@ function SharedTemplateEditor({
       </>
       )}
     </>
-  );
-}
-
-function TemplateRuleRow({
-  label,
-  description,
-  children,
-}: {
-  label: string;
-  description: string;
-  children: ReactNode;
-}) {
-  return (
-    <div className="flex min-h-[52px] items-center justify-between gap-4 border-t py-3">
-      <div className="flex min-w-0 items-center gap-1.5">
-        <FieldLabel className="text-sm font-normal">{label}</FieldLabel>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <button
-              aria-label={`${label} details`}
-              className="inline-flex h-5 w-5 items-center justify-center rounded text-muted-foreground/70 transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              type="button"
-            >
-              <Info className="h-3.5 w-3.5" />
-            </button>
-          </TooltipTrigger>
-          <TooltipContent className="max-w-64 text-xs" side="top">
-            {description}
-          </TooltipContent>
-        </Tooltip>
-      </div>
-      <div className="flex min-w-0 flex-1 items-center justify-end gap-3">
-        {children}
-      </div>
-    </div>
-  );
-}
-
-function UnitSelect({
-  value,
-  units,
-  onChange,
-  disabled = false,
-}: {
-  value: FulfillmentUnitCode;
-  units: Array<(typeof FULFILLMENT_UNITS)[FulfillmentUnitCode]>;
-  onChange: (value: FulfillmentUnitCode) => void;
-  disabled?: boolean;
-}) {
-  return (
-    <Select
-      disabled={disabled}
-      value={value}
-      onValueChange={(next) => onChange(next as FulfillmentUnitCode)}
-    >
-      <SelectTrigger className="h-9 w-full">
-        <SelectValue />
-      </SelectTrigger>
-      <SelectContent>
-        {units.map((unit) => (
-          <SelectItem key={unit.code} value={unit.code}>
-            {unit.label}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
   );
 }

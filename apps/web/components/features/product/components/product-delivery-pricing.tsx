@@ -94,7 +94,7 @@ export function DeliveryCostField({
   return (
     <div className="space-y-1.5">
       <label htmlFor={id} className="text-sm font-medium">
-        Default delivery cost
+        Default Delivery Cost
       </label>
       <div className="relative">
         <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-sm text-muted-foreground">
@@ -113,10 +113,6 @@ export function DeliveryCostField({
           per {unitLabel.toLowerCase()}
         </span>
       </div>
-      <p className="text-xs text-muted-foreground">
-        Optional. Charged per {unitLabel.toLowerCase()}; change the unit in
-        Inventory Rules.
-      </p>
     </div>
   );
 }
