@@ -33,6 +33,10 @@ CREATE TABLE product_variant (id integer PRIMARY KEY, product_id integer, source
   pack_type text, packaging_type text DEFAULT 'loose', price numeric(10,2), sort_order integer DEFAULT 0,
   min_margin_percent numeric(5,2), min_margin_amount numeric(10,2),
   exchange_enabled boolean DEFAULT false, exchange_credit_amount numeric(10,2) DEFAULT 0);
+CREATE TABLE inventory_movement (id integer PRIMARY KEY, owner_type text, owner_id text, variant_id integer,
+  reason text, unit_cost numeric(14,4), reverses_movement_id integer, occurred_at timestamp);
+CREATE TABLE stock_entry (id integer PRIMARY KEY, warehouse_id text, variant_id integer,
+  total_cost numeric(12,2), inventory_delta numeric(12,2), "createdAt" timestamp);
 CREATE TABLE inventory (id integer PRIMARY KEY, owner_type text, owner_id text, variant_id integer,
   retail_price numeric(10,2), updated_at timestamp DEFAULT now());
 
@@ -57,6 +61,17 @@ INSERT INTO inventory (id, owner_type, owner_id, variant_id, retail_price) VALUE
   (11, 'shop', 'shop-a', 2, null),
   (12, 'shop', 'shop-b', 3, 70),
   (13, 'warehouse', 'wh-a', 1, 3150);
+-- Shop A: cylinder bought at 1400 then 1450; the later 1500 receipt was reversed.
+-- Rice has no purchase yet. Shop B's cost must never leak into shop A.
+INSERT INTO inventory_movement VALUES
+  (1, 'shop', 'shop-a', 1, 'purchase_receipt', 1400, null, '2026-11-01'),
+  (2, 'shop', 'shop-a', 1, 'purchase_receipt', 1450, null, '2026-11-10'),
+  (3, 'shop', 'shop-a', 1, 'purchase_receipt', 1500, null, '2026-11-15'),
+  (4, 'shop', 'shop-a', 1, 'purchase_reversal', 1500, 3, '2026-11-16'),
+  (5, 'shop', 'shop-b', 3, 'purchase_receipt', 50, null, '2026-11-10'),
+  (6, 'warehouse', 'wh-a', 1, 'purchase_receipt', 1300, null, '2026-11-01');
+-- Warehouse direct stock entry is newer than its receipt: 10 cylinders for 13500.
+INSERT INTO stock_entry VALUES (1, 'wh-a', 1, 13500, 10, '2026-11-12');
 `;
 
 test("owner prices list, validate and plan only the owner's own rows", async () => {
@@ -90,6 +105,13 @@ test("owner prices list, validate and plan only the owner's own rows", async () 
     // No retail price yet: falls back to the variant base price.
     assert.equal(rice?.consumerPrice, "60.00");
     assert.equal(rice?.canEditExchange, true);
+    // Latest unreversed purchase receipt; none recorded for rice.
+    assert.equal(cylinder?.purchasePrice, "1450.00");
+    assert.equal(rice?.purchasePrice, null);
+
+    // Warehouse: the newer direct stock entry wins over the older receipt.
+    const warehouseList = await service.listOwnerPrices("warehouse", "wh-a", {});
+    assert.equal(warehouseList.items[0]?.purchasePrice, "1350.00");
 
     const search = await service.listOwnerPrices("shop", "shop-a", {
       search: "0101010101",

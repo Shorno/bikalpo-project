@@ -570,6 +570,7 @@ export function ProductPriceClient({ mode = "admin" }: { mode?: PriceMode }) {
               setEditError("");
             }}
             onSave={saveEdit}
+            showPurchase={!isAdmin}
             onCancel={() => {
               if (!busy) {
                 dirtyRef.current = false;

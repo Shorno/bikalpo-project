@@ -4,9 +4,11 @@ import {
   category,
   coreProductIdentity,
   inventory,
+  inventoryMovement,
   product,
   productType,
   productVariant,
+  stockEntry,
   subCategory,
   variantOption,
 } from "@bikalpo-project/db/schema";
@@ -14,6 +16,7 @@ import { ORPCError } from "@orpc/server";
 import {
   and,
   asc,
+  desc,
   eq,
   ilike,
   inArray,
@@ -237,6 +240,79 @@ export function createOwnerPriceService(database: typeof db) {
     asc(product.name),
   ];
 
+  /**
+   * Latest purchase cost per inventory unit for each variant, read-only.
+   *
+   * Sources: purchase receipts (inventory movements) that were not reversed,
+   * and, for warehouses, direct stock entries. The newer of the two wins, so
+   * the value follows the seller's most recent purchase automatically.
+   */
+  async function latestPurchaseCosts(
+    ownerType: PriceOwnerType,
+    ownerId: string,
+    variantIds: number[],
+  ) {
+    const costs = new Map<number, { cost: string; at: number }>();
+    if (!variantIds.length) return costs;
+    const keep = (variantId: number, cost: string | null, at: Date) => {
+      const amount = Number(cost);
+      if (!Number.isFinite(amount) || amount <= 0) return;
+      const current = costs.get(variantId);
+      if (current && current.at >= at.getTime()) return;
+      costs.set(variantId, { cost: amount.toFixed(2), at: at.getTime() });
+    };
+
+    const receipts = await database
+      .selectDistinctOn([inventoryMovement.variantId], {
+        variantId: inventoryMovement.variantId,
+        unitCost: inventoryMovement.unitCost,
+        occurredAt: inventoryMovement.occurredAt,
+      })
+      .from(inventoryMovement)
+      .where(
+        and(
+          eq(inventoryMovement.ownerType, ownerType),
+          eq(inventoryMovement.ownerId, ownerId),
+          inArray(inventoryMovement.variantId, variantIds),
+          eq(inventoryMovement.reason, "purchase_receipt"),
+          sql`NOT EXISTS (SELECT 1 FROM inventory_movement r WHERE r.reverses_movement_id = ${inventoryMovement.id} AND r.reason = 'purchase_reversal')`,
+        ),
+      )
+      .orderBy(
+        inventoryMovement.variantId,
+        desc(inventoryMovement.occurredAt),
+        desc(inventoryMovement.id),
+      );
+    for (const row of receipts) keep(row.variantId, row.unitCost, row.occurredAt);
+
+    if (ownerType === "warehouse") {
+      const entries = await database
+        .selectDistinctOn([stockEntry.variantId], {
+          variantId: stockEntry.variantId,
+          // Total cost over the quantity added, in the inventory unit.
+          unitCost: sql<
+            string | null
+          >`(${stockEntry.totalCost} / NULLIF(${stockEntry.inventoryDelta}, 0))::text`,
+          createdAt: stockEntry.createdAt,
+        })
+        .from(stockEntry)
+        .where(
+          and(
+            eq(stockEntry.warehouseId, ownerId),
+            inArray(stockEntry.variantId, variantIds),
+            sql`${stockEntry.inventoryDelta} > 0`,
+          ),
+        )
+        .orderBy(
+          stockEntry.variantId,
+          desc(stockEntry.createdAt),
+          desc(stockEntry.id),
+        );
+      for (const row of entries) keep(row.variantId, row.unitCost, row.createdAt);
+    }
+    return costs;
+  }
+
   /** Page by product so every variant of a product stays together. */
   async function listOwnerPrices(
     ownerType: PriceOwnerType,
@@ -304,8 +380,17 @@ export function createOwnerPriceService(database: typeof db) {
           )
       : [];
 
+    const purchaseCosts = await latestPurchaseCosts(
+      ownerType,
+      ownerId,
+      [...new Set(rows.map((row) => row.variantId))],
+    );
+
     return {
-      items: rows.map((row) => toPriceRow(row, ownerType, ownerId)),
+      items: rows.map((row) => ({
+        ...toPriceRow(row, ownerType, ownerId),
+        purchasePrice: purchaseCosts.get(row.variantId)?.cost ?? null,
+      })),
       stats: {
         totalProducts: totalGroups,
         totalVariants: stats?.totalVariants ?? 0,

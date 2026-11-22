@@ -41,6 +41,8 @@ export type PriceRow = {
   updatedById: string | null;
   /** Seller rows: false when the Exchange credit belongs to another creator. */
   canEditExchange?: boolean;
+  /** Seller rows: latest purchase cost per unit, read-only; null if none. */
+  purchasePrice?: string | null;
 };
 export type PriceGroup = {
   key: string;
@@ -106,7 +108,10 @@ export function ProductPriceTable({
   onDraftChange,
   onSave,
   onCancel,
+  showPurchase = false,
 }: {
+  /** Sellers see their latest purchase cost next to the selling price. */
+  showPurchase?: boolean;
   groups: PriceGroup[];
   expanded: Set<string>;
   draft: PriceDraft | null;
@@ -236,6 +241,15 @@ export function ProductPriceTable({
                                   <TableHead scope="col">Brand</TableHead>
                                 )}
                                 <TableHead scope="col">Variant</TableHead>
+                                {showPurchase && (
+                                  <TableHead
+                                    scope="col"
+                                    className="text-right"
+                                    title="Your latest purchase cost per unit. Updates when you receive a purchase."
+                                  >
+                                    Purchase
+                                  </TableHead>
+                                )}
                                 {cylinder && (
                                   <TableHead scope="col" className="text-right">
                                     Exchange
@@ -335,6 +349,13 @@ export function ProductPriceTable({
                                         </span>
                                       )}
                                     </TableCell>
+                                    {showPurchase && (
+                                      <TableCell className="text-right tabular-nums text-muted-foreground">
+                                        {row.purchasePrice
+                                          ? formatBdt(row.purchasePrice)
+                                          : "—"}
+                                      </TableCell>
+                                    )}
                                     {cylinder && (
                                       <TableCell className="text-right font-semibold tabular-nums">
                                         {editing && lockedExchange ? (
