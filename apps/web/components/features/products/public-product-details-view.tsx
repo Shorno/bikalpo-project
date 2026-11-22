@@ -42,6 +42,8 @@ type StorefrontProductDetailsViewProps = {
   breadcrumbs: Array<{ label: string; href?: string }>;
   categoryHref: string;
   previewMode?: boolean;
+  /** Where the preview banner's "Back to My Store" goes. */
+  previewBackHref?: string;
   /** Rendered below the Description / Reviews card. */
   relatedProducts?: ReactNode;
   purchase?:
@@ -112,6 +114,7 @@ export function StorefrontProductDetailsView({
   breadcrumbs,
   categoryHref,
   previewMode = false,
+  previewBackHref,
   relatedProducts,
   purchase,
 }: StorefrontProductDetailsViewProps) {
@@ -245,7 +248,14 @@ export function StorefrontProductDetailsView({
 
   return (
     <div className="min-h-screen bg-zinc-50">
-      {previewMode && <CustomerPreviewBanner />}
+      {previewMode && (
+        <CustomerPreviewBanner
+          audience={
+            purchaseContext.kind === "warehouse" ? "shop_owner" : "consumer"
+          }
+          backHref={previewBackHref}
+        />
+      )}
 
       <div className="border-b border-zinc-200 bg-white">
         <div className="site-container px-4 py-3">

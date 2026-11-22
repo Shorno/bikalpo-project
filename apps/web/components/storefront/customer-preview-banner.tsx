@@ -2,7 +2,15 @@ import { ExternalLink, Eye } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { getShopStoreDashboardUrl } from "@/lib/customer-storefront-preview";
 
-export function CustomerPreviewBanner() {
+export function CustomerPreviewBanner({
+  backHref = getShopStoreDashboardUrl(),
+  audience = "consumer",
+}: {
+  /** My Store page of the seller previewing; defaults to the shop portal. */
+  backHref?: string;
+  /** Who shops this storefront: consumers (retail) or shop owners (warehouse). */
+  audience?: "consumer" | "shop_owner";
+}) {
   return (
     <div className="border-b border-amber-200 bg-amber-50">
       <div className="site-container flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
@@ -13,8 +21,9 @@ export function CustomerPreviewBanner() {
               Customer preview
             </p>
             <p className="text-xs leading-5 text-amber-800">
-              You are viewing the consumer experience. Ordering and item
-              requests are disabled.
+              {audience === "shop_owner"
+                ? "You are viewing your storefront as shop owners see it. Ordering is disabled."
+                : "You are viewing the consumer experience. Ordering and item requests are disabled."}
             </p>
           </div>
         </div>
@@ -24,7 +33,7 @@ export function CustomerPreviewBanner() {
           variant="outline"
           className="border-amber-300 bg-white text-amber-900 hover:bg-amber-100"
         >
-          <a href={getShopStoreDashboardUrl()}>
+          <a href={backHref}>
             Back to My Store
             <ExternalLink className="ml-1.5 size-3.5" />
           </a>

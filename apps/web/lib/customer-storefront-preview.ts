@@ -55,3 +55,11 @@ export function getShopStoreDashboardUrl() {
 
   return `${shopPortalUrl.replace(/\/+$/, "")}/dashboard/stores`;
 }
+
+export function getWarehouseStoreDashboardUrl() {
+  const warehousePortalUrl =
+    process.env.NEXT_PUBLIC_WAREHOUSE_SUBDOMAIN_URL?.trim() ||
+    "http://warehouse.bikalpo.localhost:3001";
+
+  return `${warehousePortalUrl.replace(/\/+$/, "")}/dashboard/store`;
+}

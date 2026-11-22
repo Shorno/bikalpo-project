@@ -3,6 +3,8 @@
 import { Package } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { withCustomerStorefrontPreview } from "@/lib/customer-storefront-preview";
+import { cn } from "@/lib/utils";
 import { WarehouseOrderDialog } from "./warehouse-order-dialog";
 import {
   type WarehouseCylinderSaleMode,
@@ -97,10 +99,14 @@ function mapApiProduct(item: any): WarehouseProduct {
 
 function buildProductDetailHref(
   detailBasePath: string,
-  productSlug?: string | null,
+  productSlug: string | null | undefined,
+  previewMode: boolean,
 ) {
   if (!detailBasePath || !productSlug) return undefined;
-  return `${detailBasePath.replace(/\/$/, "")}/${encodeURIComponent(productSlug)}`;
+  return withCustomerStorefrontPreview(
+    `${detailBasePath.replace(/\/$/, "")}/${encodeURIComponent(productSlug)}`,
+    previewMode,
+  );
 }
 
 interface WarehouseProductGridProps {
@@ -115,7 +121,9 @@ interface WarehouseProductGridProps {
     totalPages: number;
   };
   onPageChange?: (page: number) => void;
-  mode?: "default" | "retailer" | "w2w" | "view-only";
+  /** Inside a dashboard page: drop the storefront page container. */
+  embedded?: boolean;
+  mode?: "default" | "retailer" | "w2w" | "view-only" | "preview";
   cart?: any[];
   onAddToCart?: (product: WarehouseProduct) => void;
   onUpdateQuantity?: (
@@ -132,6 +140,7 @@ export function WarehouseProductGrid({
   detailBasePath = warehouseSlug ? `/w/${warehouseSlug}/products` : "",
   pagination,
   onPageChange,
+  embedded = false,
   mode = "default",
   cart = [],
   onAddToCart,
@@ -141,6 +150,7 @@ export function WarehouseProductGrid({
   const [orderOpen, setOrderOpen] = useState(false);
 
   const products: WarehouseProduct[] = rawProducts.map(mapApiProduct);
+  const sectionClass = embedded ? "" : "site-container px-4";
 
   const handleBuyNow = (cardProduct: WarehouseProduct) => {
     const selectedVariant =
@@ -167,7 +177,7 @@ export function WarehouseProductGrid({
 
   if (isLoading) {
     return (
-      <section className="site-container px-4 py-6">
+      <section className={cn(sectionClass, !embedded && "py-6")}>
         <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4">
           {Array.from({ length: 8 }).map((_, index) => (
             <WarehouseProductCardSkeleton key={index} />
@@ -179,7 +189,7 @@ export function WarehouseProductGrid({
 
   if (products.length === 0) {
     return (
-      <section className="site-container px-4 py-12">
+      <section className={cn(sectionClass, "py-12")}>
         <div className="text-center">
           <Package className="mx-auto mb-3 h-16 w-16 text-gray-300" />
           <p className="text-lg font-medium text-gray-600">
@@ -195,7 +205,7 @@ export function WarehouseProductGrid({
 
   return (
     <>
-      <section className="site-container px-4 py-6">
+      <section className={cn(sectionClass, !embedded && "py-6")}>
         <div className="mb-4 flex items-center justify-between">
           <h2 className="text-lg font-bold text-gray-900">Products</h2>
           <span className="text-sm text-gray-500">
@@ -207,7 +217,11 @@ export function WarehouseProductGrid({
             <WarehouseProductCard
               key={product.id}
               product={product}
-              detailHref={buildProductDetailHref(detailBasePath, product.slug)}
+              detailHref={buildProductDetailHref(
+                detailBasePath,
+                product.slug,
+                mode === "preview",
+              )}
               onBuyNow={handleBuyNow}
               mode={mode}
               cart={cart}

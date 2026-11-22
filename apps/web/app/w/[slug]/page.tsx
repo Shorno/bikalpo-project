@@ -42,6 +42,7 @@ import {
   WarehouseProductCardSkeleton,
 } from "@/components/features/warehouse/warehouse-product-card";
 import { WarehouseProductGrid } from "@/components/features/warehouse/warehouse-product-grid";
+import { CustomerPreviewBanner } from "@/components/storefront/customer-preview-banner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -63,6 +64,10 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { authClient } from "@/lib/auth-client";
+import {
+  getWarehouseStoreDashboardUrl,
+  isCustomerStorefrontPreview,
+} from "@/lib/customer-storefront-preview";
 import {
   getWarehouseStorefrontCartKey,
   getWarehouseStorefrontCheckoutTarget,
@@ -101,7 +106,9 @@ export default function WarehouseStorefrontPage() {
   const { slug } = useParams<{ slug: string }>();
   const searchParams = useSearchParams();
   const queryClient = useQueryClient();
-  const isCheckoutMode = searchParams.get("checkout") === "1";
+  // The warehouse owner previewing their own storefront from My Store.
+  const previewMode = isCustomerStorefrontPreview(searchParams.get("preview"));
+  const isCheckoutMode = !previewMode && searchParams.get("checkout") === "1";
 
   const [search, setSearch] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
@@ -142,9 +149,11 @@ export default function WarehouseStorefrontPage() {
     : null;
 
   // Grid mode evaluation
-  const gridMode: "default" | "retailer" | "w2w" | "view-only" =
-    buyerContext.orderMode ??
-    (buyerContext.viewMode === "view-only" ? "view-only" : "default");
+  const gridMode: "default" | "retailer" | "w2w" | "view-only" | "preview" =
+    previewMode
+      ? "preview"
+      : (buyerContext.orderMode ??
+        (buyerContext.viewMode === "view-only" ? "view-only" : "default"));
   const hasCartAccess = gridMode === "w2w" || gridMode === "retailer";
 
   // Cart key in local storage
@@ -1780,6 +1789,12 @@ export default function WarehouseStorefrontPage() {
 
   return (
     <div className="min-h-screen bg-zinc-50/50">
+      {previewMode && (
+        <CustomerPreviewBanner
+          audience="shop_owner"
+          backHref={getWarehouseStoreDashboardUrl()}
+        />
+      )}
       {/* Warehouse Header */}
       <div className="bg-white border-b border-zinc-200">
         <div className="site-container px-4 py-8">

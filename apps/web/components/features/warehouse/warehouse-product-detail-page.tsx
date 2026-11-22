@@ -1,6 +1,10 @@
 import { notFound } from "next/navigation";
 import { StorefrontProductDetailsView } from "@/components/features/products/public-product-details-view";
 import type { DetailVariant } from "@/components/features/products/trade-product-detail-client";
+import {
+  getWarehouseStoreDashboardUrl,
+  withCustomerStorefrontPreview,
+} from "@/lib/customer-storefront-preview";
 import { getWarehouseProductDetail } from "@/lib/public-data";
 import { formatProductCode } from "@/lib/storefront-product-details";
 import type { WarehouseStorefrontProductDetail } from "@/types/warehouse-storefront";
@@ -10,6 +14,8 @@ interface WarehouseProductDetailPageProps {
   productSlug: string;
   storefrontPath: string;
   cartPath: string;
+  /** Warehouse owner viewing their own storefront from My Store. */
+  previewMode?: boolean;
 }
 
 export async function WarehouseProductDetailPage({
@@ -17,6 +23,7 @@ export async function WarehouseProductDetailPage({
   productSlug,
   storefrontPath,
   cartPath,
+  previewMode = false,
 }: WarehouseProductDetailPageProps) {
   const detail = await getWarehouseProductDetail(warehouseSlug, productSlug);
 
@@ -27,7 +34,11 @@ export async function WarehouseProductDetailPage({
   const product = detail.product as WarehouseStorefrontProductDetail;
   const warehouseName =
     detail.warehouse.warehouseName || detail.warehouse.name || "Warehouse";
-  const categoryHref = `${storefrontPath}?category=${encodeURIComponent(product.category.slug)}`;
+  const storeHref = withCustomerStorefrontPreview(storefrontPath, previewMode);
+  const categoryHref = withCustomerStorefrontPreview(
+    `${storefrontPath}?category=${encodeURIComponent(product.category.slug)}`,
+    previewMode,
+  );
   const productCode = formatProductCode(product.id);
   const variants: DetailVariant[] = product.variants.map((variant) => ({
     id: variant.id,
@@ -80,11 +91,13 @@ export async function WarehouseProductDetailPage({
       variants={variants}
       breadcrumbs={[
         { label: "Home", href: "/" },
-        { label: warehouseName, href: storefrontPath },
+        { label: warehouseName, href: storeHref },
         { label: product.category.name, href: categoryHref },
         { label: productCode },
       ]}
       categoryHref={categoryHref}
+      previewMode={previewMode}
+      previewBackHref={getWarehouseStoreDashboardUrl()}
       purchase={{
         kind: "warehouse",
         product,

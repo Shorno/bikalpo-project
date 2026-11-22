@@ -1,13 +1,19 @@
 import { WarehouseProductDetailPage } from "@/components/features/warehouse/warehouse-product-detail-page";
+import { isCustomerStorefrontPreview } from "@/lib/customer-storefront-preview";
 
 interface PageProps {
   params: Promise<{ slug: string; productSlug: string }>;
+  searchParams: Promise<{ preview?: string }>;
 }
 
 export default async function WarehouseProductDetailsRoute({
   params,
+  searchParams,
 }: PageProps) {
-  const { slug, productSlug } = await params;
+  const [{ slug, productSlug }, query] = await Promise.all([
+    params,
+    searchParams,
+  ]);
   const storefrontPath = `/w/${encodeURIComponent(slug)}`;
 
   return (
@@ -16,6 +22,7 @@ export default async function WarehouseProductDetailsRoute({
       productSlug={productSlug}
       storefrontPath={storefrontPath}
       cartPath={storefrontPath}
+      previewMode={isCustomerStorefrontPreview(query.preview)}
     />
   );
 }

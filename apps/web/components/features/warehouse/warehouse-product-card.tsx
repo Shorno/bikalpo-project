@@ -61,7 +61,8 @@ interface WarehouseProductCardProps {
   product: WarehouseProduct;
   detailHref?: string;
   onBuyNow?: (product: WarehouseProduct) => void;
-  mode?: "default" | "retailer" | "w2w" | "view-only";
+  /** `preview`: the warehouse owner's own My Store; ordering is disabled. */
+  mode?: "default" | "retailer" | "w2w" | "view-only" | "preview";
   cart?: any[];
   onAddToCart?: (product: WarehouseProduct) => void;
   onUpdateQuantity?: (
@@ -288,15 +289,27 @@ export function WarehouseProductCard({
 
         {/* Actions */}
         <div className="mt-auto pt-4">
-          {mode === "view-only" ? (
+          {mode === "view-only" || mode === "preview" ? (
             <div className="flex gap-2">
               <Button
                 variant="outline"
                 size="sm"
                 className="flex-1 h-9 text-xs font-medium border-zinc-200 text-zinc-400 gap-1.5 rounded-lg cursor-not-allowed"
                 disabled
+                title={
+                  mode === "preview"
+                    ? "Ordering is disabled in preview"
+                    : undefined
+                }
               >
-                Access Required
+                {mode === "preview" ? (
+                  <>
+                    <ShoppingCart className="w-3.5 h-3.5" />
+                    Buy Now
+                  </>
+                ) : (
+                  "Access Required"
+                )}
               </Button>
               <Button
                 variant="outline"
