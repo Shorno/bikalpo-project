@@ -7,6 +7,7 @@ import {
   LOOSE_INVENTORY_UNIT_CODES,
   type ProductTypeFulfillmentProfile,
 } from "@bikalpo-project/db/fulfillment";
+import { suggestDeliveryCostUnit } from "@bikalpo-project/db/product-delivery";
 import type { VariantProductFamily } from "@bikalpo-project/db/variant-definition";
 import { useForm } from "@tanstack/react-form";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -85,6 +86,19 @@ import {
   type NewVariantDefinition,
 } from "./add-variant-dialog";
 import DeleteProductDialog from "./delete-product-dialog";
+import {
+  DeliveryCostField,
+  DeliveryUnitSelect,
+  exchangeCreditFrom,
+  exchangePriceFrom,
+  FinalActions,
+  firstPricingError,
+  type PricingRow,
+  type PricingValue,
+  ProductPricingTable,
+  priceInputValue,
+  resolveDeliveryUnit,
+} from "./product-delivery-pricing";
 import type { ProductWithRelations } from "./product-columns";
 import {
   ProductEditorSection as FormSection,
@@ -102,6 +116,8 @@ export type VariantPriceSettings = {
   consumerPrice: string;
   exchangeEnabled: boolean;
   exchangeCreditAmount: string;
+  /** Exchange price typed in Pricing; the credit is New minus Exchange. */
+  exchangePrice?: string;
 };
 
 /** A saved brand configuration with its selected variant options */
@@ -112,10 +128,9 @@ type BrandConfig = {
   /** Which variant option IDs are included for this brand */
   selectedVariantIds: number[];
   /**
-   * Per-variant settings keyed by variantOptionId. Pricing is NOT edited in
-   * this form (it lives in the product-price space), but we keep any existing
-   * consumerPrice here so re-saving the product round-trips it instead of
-   * wiping prices already set elsewhere.
+   * Per-variant settings keyed by variantOptionId. The optional Pricing
+   * section edits consumerPrice (New) and exchangePrice; saved prices load
+   * here so re-saving the product keeps them.
    */
   variantSettings: Record<number, VariantPriceSettings>;
 };
@@ -473,9 +488,12 @@ export default function ProductForm({
         variantSettings[vp.variantOptionId] = {
           variantOptionId: vp.variantOptionId,
           brandId: pb.brandId,
-          consumerPrice: vp.consumerPrice || "",
+          consumerPrice: priceInputValue(vp.consumerPrice),
           exchangeEnabled: vp.exchangeEnabled ?? false,
           exchangeCreditAmount: String(vp.exchangeCreditAmount ?? "0"),
+          exchangePrice: vp.exchangeEnabled
+            ? exchangePriceFrom(vp.consumerPrice, vp.exchangeCreditAmount)
+            : "",
         };
       }
 
@@ -726,6 +744,73 @@ export default function ProductForm({
   const initialExpiryEnabled =
     (product as any)?.expiryEnabled ?? activeRuleDefaults.expiryEnabled;
 
+  // Pricing: one row per brand and selected variant.
+  const variantName = (variantOptionId: number) =>
+    availableVariantOptions.find((option: any) => option.id === variantOptionId)
+      ?.name ?? `Variant #${variantOptionId}`;
+  const pricingRows: PricingRow[] = brandConfigs.flatMap((config) =>
+    config.selectedVariantIds.map((variantOptionId) => ({
+      key: `${config.brandId}:${variantOptionId}`,
+      brandId: config.brandId,
+      brandName: config.brandName,
+      variantName: variantName(variantOptionId),
+      exchange: Boolean(config.variantSettings[variantOptionId]?.exchangeEnabled),
+    })),
+  );
+  const pricingValues: Record<string, PricingValue> = Object.fromEntries(
+    brandConfigs.flatMap((config) =>
+      config.selectedVariantIds.map((variantOptionId) => {
+        const settings = config.variantSettings[variantOptionId];
+        return [
+          `${config.brandId}:${variantOptionId}`,
+          {
+            newPrice: settings?.consumerPrice ?? "",
+            exchangePrice: settings?.exchangePrice ?? "",
+          },
+        ];
+      }),
+    ),
+  );
+  const handlePriceChange = (key: string, patch: Partial<PricingValue>) => {
+    const [brandId, variantOptionId] = key.split(":").map(Number) as [
+      number,
+      number,
+    ];
+    setBrandConfigs((prev) =>
+      prev.map((config) => {
+        if (config.brandId !== brandId) return config;
+        const current =
+          config.variantSettings[variantOptionId] ??
+          makeDefaultSettings(variantOptionId, brandId);
+        return {
+          ...config,
+          variantSettings: {
+            ...config.variantSettings,
+            [variantOptionId]: {
+              ...current,
+              ...(patch.newPrice !== undefined
+                ? { consumerPrice: patch.newPrice }
+                : {}),
+              ...(patch.exchangePrice !== undefined
+                ? { exchangePrice: patch.exchangePrice }
+                : {}),
+            },
+          },
+        };
+      }),
+    );
+  };
+  // Delivery is charged per the selected variants' Type unless changed.
+  const suggestedDeliveryUnit = suggestDeliveryCostUnit(
+    brandConfigs.flatMap((config) =>
+      config.selectedVariantIds.map((variantOptionId) =>
+        availableVariantOptions.find(
+          (option: any) => option.id === variantOptionId,
+        ),
+      ),
+    ),
+  );
+
   const form = useForm({
     defaultValues: {
       id: product?.id ?? 0,
@@ -795,6 +880,8 @@ export default function ProductForm({
       inventoryLooseUnit:
         (product as any)?.inventoryLooseUnit ??
         activeRuleDefaults.inventoryLooseUnit,
+      deliveryCostUnit: ((product as any)?.deliveryCostUnit ?? "") as string,
+      defaultDeliveryCost: priceInputValue((product as any)?.defaultDeliveryCost),
       visibility: (product as any)?.visibility ?? "public",
       status: (product as any)?.status ?? "active",
     },
@@ -817,21 +904,9 @@ export default function ProductForm({
         toast.error("Select at least one variant for every brand");
         return;
       }
-      if (
-        isLpgRules &&
-        brandConfigs.some((config) =>
-          config.selectedVariantIds.some((variantOptionId) => {
-            const settings = config.variantSettings[variantOptionId];
-            return (
-              settings?.exchangeEnabled &&
-              Number(settings.exchangeCreditAmount) <= 0
-            );
-          }),
-        )
-      ) {
-        toast.error(
-          "Enter an Exchange Credit greater than zero for every enabled variant",
-        );
+      const pricingError = firstPricingError(pricingRows, pricingValues);
+      if (pricingError) {
+        toast.error(pricingError);
         return;
       }
 
@@ -846,8 +921,12 @@ export default function ProductForm({
             brandId: bc.brandId,
             consumerPrice: settings.consumerPrice || "0",
             exchangeEnabled: settings.exchangeEnabled,
+            // Exchange price = New minus credit; empty prices keep no credit.
             exchangeCreditAmount: settings.exchangeEnabled
-              ? settings.exchangeCreditAmount || "0"
+              ? (exchangeCreditFrom({
+                  newPrice: settings.consumerPrice,
+                  exchangePrice: settings.exchangePrice ?? "",
+                }) ?? "0")
               : "0",
           });
         }
@@ -868,6 +947,11 @@ export default function ProductForm({
             ? brandIds
             : undefined,
         variantPrices: vpArray.length > 0 ? vpArray : undefined,
+        deliveryCostUnit: resolveDeliveryUnit(
+          value.deliveryCostUnit,
+          suggestedDeliveryUnit,
+        ),
+        defaultDeliveryCost: value.defaultDeliveryCost || null,
       };
 
       if (isEdit) {
@@ -1884,6 +1968,21 @@ export default function ProductForm({
                   </form.Field>
                 </div>
               </FormSection>
+
+              {/* ── Pricing ── */}
+              {hasSelectedCoreIdentity && (
+                <FormSection
+                  variant="card"
+                  title="Pricing"
+                  description="Optional. Sets the admin reference price; you can also set it later in Price."
+                >
+                  <ProductPricingTable
+                    rows={pricingRows}
+                    values={pricingValues}
+                    onChange={handlePriceChange}
+                  />
+                </FormSection>
+              )}
             </div>
 
             {/* Inventory and publishing */}
@@ -2148,7 +2247,49 @@ export default function ProductForm({
                         )}
                       </form.Field>
                     )}
+
+                  <form.Field name="deliveryCostUnit">
+                    {(field) => (
+                      <RuleControlRow
+                        description="The unit delivery is charged per. It follows the variant Type until you change it."
+                        label="Delivery cost"
+                        wideControl
+                      >
+                        <DeliveryUnitSelect
+                          value={field.state.value}
+                          suggested={suggestedDeliveryUnit}
+                          onChange={field.handleChange}
+                        />
+                      </RuleControlRow>
+                    )}
+                  </form.Field>
                 </div>
+              </FormSection>
+
+              {/* ── Delivery configuration ── */}
+              <FormSection
+                variant="card"
+                title="Delivery Configuration"
+                className="p-5 sm:px-5"
+              >
+                <form.Subscribe
+                  selector={(state) => state.values.deliveryCostUnit}
+                >
+                  {(deliveryCostUnit) => (
+                    <form.Field name="defaultDeliveryCost">
+                      {(field) => (
+                        <DeliveryCostField
+                          value={field.state.value}
+                          unit={resolveDeliveryUnit(
+                            deliveryCostUnit,
+                            suggestedDeliveryUnit,
+                          )}
+                          onChange={field.handleChange}
+                        />
+                      )}
+                    </form.Field>
+                  )}
+                </form.Subscribe>
               </FormSection>
 
               <FormSection
@@ -2227,6 +2368,25 @@ export default function ProductForm({
                   </form.Field>
                 </div>
               </FormSection>
+
+              {/* ── Final action ── */}
+              <div className="rounded-xl border bg-card p-4">
+                <FinalActions
+                  cancelHref={listHref}
+                  onSaveDraft={() => {
+                    form.setFieldValue("status", "draft");
+                    form.handleSubmit();
+                  }}
+                  onPublish={() => {
+                    if (editAdapter?.publishOnSave) {
+                      form.setFieldValue("status", "active");
+                    }
+                    form.handleSubmit();
+                  }}
+                  publishLabel={isEdit ? "Save changes" : "Publish product"}
+                  pending={isPending}
+                />
+              </div>
             </div>
           </div>
         </div>
@@ -2246,9 +2406,10 @@ function makeDefaultSettings(
   return {
     variantOptionId,
     brandId,
-    consumerPrice: "0",
+    consumerPrice: "",
     exchangeEnabled: false,
     exchangeCreditAmount: "0",
+    exchangePrice: "",
   };
 }
 
@@ -2508,7 +2669,8 @@ function BrandConfigCard({
                           Empty cylinder exchange
                         </p>
                         <p className="text-[11px] text-muted-foreground">
-                          Configure Exchange per exact brand and capacity.
+                          Sell as Exchange and New, or New only. Prices go in
+                          Pricing.
                         </p>
                       </div>
                       <label className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -2532,7 +2694,7 @@ function BrandConfigCard({
                           makeDefaultSettings(variantOptionId, config.brandId);
                         return (
                           <div
-                            className="grid grid-cols-[minmax(0,1fr)_auto_minmax(120px,180px)] items-center gap-3 px-3 py-2.5"
+                            className="grid grid-cols-[minmax(0,1fr)_auto_7.5rem] items-center gap-3 px-3 py-2.5"
                             key={variantOptionId}
                           >
                             <span className="truncate text-sm font-medium">
@@ -2547,26 +2709,11 @@ function BrandConfigCard({
                                 })
                               }
                             />
-                            <div className="relative">
-                              <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
-                                ৳
-                              </span>
-                              <Input
-                                aria-label={`Exchange Credit for ${option?.name ?? variantOptionId}`}
-                                className="h-8 pl-7 text-right"
-                                disabled={!settings.exchangeEnabled}
-                                min="0"
-                                onChange={(event) =>
-                                  onExchangeChange?.(variantOptionId, {
-                                    exchangeCreditAmount: event.target.value,
-                                  })
-                                }
-                                placeholder="Credit"
-                                step="0.01"
-                                type="number"
-                                value={settings.exchangeCreditAmount}
-                              />
-                            </div>
+                            <span className="text-right text-xs text-muted-foreground">
+                              {settings.exchangeEnabled
+                                ? "Exchange + New"
+                                : "New only"}
+                            </span>
                           </div>
                         );
                       })}

@@ -1,4 +1,5 @@
 import { FULFILLMENT_UNIT_CODES } from "@bikalpo-project/db/fulfillment";
+import { DELIVERY_COST_UNIT_CODES } from "@bikalpo-project/db/product-delivery";
 import * as z from "zod";
 
 const featureGroupSchema = z.object({
@@ -39,6 +40,17 @@ export const coreProductTemplateSchema = z.object({
     .string()
     .regex(/^\d+(\.\d{1,2})?$/, "Use a valid deposit amount")
     .default("0"),
+  // Delivery Configuration: unit ("" = from the variant Type) and cost.
+  deliveryCostUnit: z
+    .enum(DELIVERY_COST_UNIT_CODES)
+    .or(z.literal(""))
+    .optional()
+    .default(""),
+  defaultDeliveryCost: z
+    .string()
+    .regex(/^(\d{1,8}(\.\d{1,2})?)?$/, "Use a valid delivery cost")
+    .optional()
+    .default(""),
   visibility: z.enum(["public", "private"]).default("public"),
 });
 
@@ -51,6 +63,12 @@ export const coreProductBrandConfigSchema = z.object({
         consumerPrice: z
           .string()
           .regex(/^\d+(\.\d{1,2})?$/, "Enter a valid reference price"),
+        // Seller Pricing: New price and, for cylinders, Exchange price.
+        retailPrice: z.string().optional(),
+        exchangePrice: z.string().optional(),
+        // Filled in on save from the prices above.
+        exchangeEnabled: z.boolean().optional(),
+        exchangeCreditAmount: z.string().optional(),
       }),
     )
     .min(1, "Select at least one variant for every brand"),

@@ -10,7 +10,11 @@ import {
   inferProductTypeFamily,
   LOOSE_INVENTORY_UNIT_CODES,
 } from "@bikalpo-project/db/fulfillment";
-import type { VariantProductFamily } from "@bikalpo-project/db/variant-definition";
+import { suggestDeliveryCostUnit } from "@bikalpo-project/db/product-delivery";
+import {
+  getVariantDefinition,
+  type VariantProductFamily,
+} from "@bikalpo-project/db/variant-definition";
 import { useForm } from "@tanstack/react-form";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -69,6 +73,18 @@ import {
   AddVariantDialog,
   type NewVariantDefinition,
 } from "./add-variant-dialog";
+import {
+  DeliveryCostField,
+  DeliveryUnitSelect,
+  exchangeCreditFrom,
+  FinalActions,
+  firstPricingError,
+  type PricingRow,
+  type PricingValue,
+  ProductPricingTable,
+  priceInputValue,
+  resolveDeliveryUnit,
+} from "./product-delivery-pricing";
 import {
   ProductEditorIdentity,
   ProductEditorSection,
@@ -139,6 +155,8 @@ type VariantOption = {
 type SelectedVariant = {
   variantOptionId: number;
   consumerPrice: string;
+  retailPrice?: string;
+  exchangePrice?: string;
 };
 
 type ExistingBrandProduct = {
@@ -314,6 +332,53 @@ export default function CoreProductConfigForm({
     },
   });
 
+  const isCylinderVariant = (variantOptionId: number) => {
+    const definition = getVariantDefinition(
+      availableVariants.find((option) => option.id === variantOptionId),
+    );
+    return (
+      definition?.kind === "measurement" && definition.container === "cylinder"
+    );
+  };
+  /** Pricing rows and values for the selected brands and variants. */
+  const buildPricing = (brands: CoreProductConfigValues["brands"]) => {
+    const rows: PricingRow[] = [];
+    const values: Record<string, PricingValue> = {};
+    for (const brand of brands) {
+      const brandName =
+        allBrands.find((item) => item.id === brand.brandId)?.name ??
+        `Brand #${brand.brandId}`;
+      for (const variant of brand.variants) {
+        const key = `${brand.brandId}:${variant.variantOptionId}`;
+        rows.push({
+          key,
+          brandId: brand.brandId,
+          brandName,
+          variantName:
+            availableVariants.find(
+              (option) => option.id === variant.variantOptionId,
+            )?.name ?? `Variant #${variant.variantOptionId}`,
+          exchange: isCylinderVariant(variant.variantOptionId),
+        });
+        values[key] = {
+          newPrice: variant.retailPrice ?? "",
+          exchangePrice: variant.exchangePrice ?? "",
+        };
+      }
+    }
+    return { rows, values };
+  };
+  const suggestDeliveryUnit = (brands: CoreProductConfigValues["brands"]) =>
+    suggestDeliveryCostUnit(
+      brands.flatMap((brand) =>
+        brand.variants.map((variant) =>
+          availableVariants.find(
+            (option) => option.id === variant.variantOptionId,
+          ),
+        ),
+      ),
+    );
+
   const form = useForm({
     defaultValues,
     validators: {
@@ -330,16 +395,45 @@ export default function CoreProductConfigForm({
         toast.error(submission.message);
         return;
       }
+      if (adapter) {
+        const pricing = buildPricing(value.brands);
+        const pricingError = firstPricingError(pricing.rows, pricing.values);
+        if (pricingError) {
+          toast.error(pricingError);
+          return;
+        }
+      }
       const normalizedTemplate = mergeTemplateDetails(
         value.template,
         defaultValues.template,
         core,
       );
+      normalizedTemplate.deliveryCostUnit =
+        resolveDeliveryUnit(
+          value.template.deliveryCostUnit,
+          suggestDeliveryUnit(value.brands),
+        ) ?? "";
       configureMutation.mutate({
         coreProductId,
         expectedVersion: configuration?.template?.version ?? null,
         details: normalizedTemplate,
-        brands: value.brands,
+        brands: value.brands.map((brand) => ({
+          ...brand,
+          variants: brand.variants.map((variant) => {
+            // Exchange credit = New minus Exchange, only for cylinders.
+            const credit = isCylinderVariant(variant.variantOptionId)
+              ? exchangeCreditFrom({
+                  newPrice: variant.retailPrice ?? "",
+                  exchangePrice: variant.exchangePrice ?? "",
+                })
+              : null;
+            return {
+              ...variant,
+              exchangeEnabled: credit !== null,
+              exchangeCreditAmount: credit ?? "0",
+            };
+          }),
+        })),
       });
     },
   });
@@ -647,6 +741,35 @@ export default function CoreProductConfigForm({
         const productEditHref =
           adapter?.productEditHref ??
           ((productId: number) => `${PRODUCTS_BASE}/${productId}/edit`);
+        const pricing = buildPricing(selectedBrands);
+        const suggestedDeliveryUnit = suggestDeliveryUnit(selectedBrands);
+        const setVariantPrice = (key: string, patch: Partial<PricingValue>) => {
+          const [brandId, variantOptionId] = key.split(":").map(Number);
+          form.setFieldValue(
+            "brands",
+            form.state.values.brands.map((brand) =>
+              brand.brandId !== brandId
+                ? brand
+                : {
+                    ...brand,
+                    variants: brand.variants.map((variant) =>
+                      variant.variantOptionId !== variantOptionId
+                        ? variant
+                        : {
+                            ...variant,
+                            ...(patch.newPrice !== undefined
+                              ? { retailPrice: patch.newPrice }
+                              : {}),
+                            ...(patch.exchangePrice !== undefined
+                              ? { exchangePrice: patch.exchangePrice }
+                              : {}),
+                          },
+                    ),
+                  },
+            ),
+          );
+          setSaved(false);
+        };
 
         return (
           <div className="min-h-screen bg-muted/30">
@@ -737,7 +860,7 @@ export default function CoreProductConfigForm({
               }}
             >
               <div className="mx-auto max-w-6xl px-4 py-6">
-                <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_300px] lg:items-start">
+                <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_360px] lg:items-start">
                   <div className="divide-y rounded-xl border bg-card">
                     <ProductEditorSection
                       title="Identity"
@@ -955,10 +1078,61 @@ export default function CoreProductConfigForm({
                       form={form}
                       defaults={defaultValues.template}
                       hideDeposit={Boolean(adapter)}
+                      part="content"
                     />
+
+                    {adapter && (
+                      <ProductEditorSection
+                        title="Pricing"
+                        description="Optional. Sets your selling price; you can also set it later in Pricing."
+                      >
+                        <ProductPricingTable
+                          rows={pricing.rows}
+                          values={pricing.values}
+                          onChange={setVariantPrice}
+                        />
+                      </ProductEditorSection>
+                    )}
                   </div>
 
-                  <aside className="space-y-4 lg:sticky lg:top-[72px]">
+                  <aside className="space-y-4">
+                    <div className="rounded-xl border bg-card">
+                      <SharedTemplateEditor
+                        form={form}
+                        defaults={defaultValues.template}
+                        hideDeposit={Boolean(adapter)}
+                        part="rules"
+                        suggestedDeliveryUnit={suggestedDeliveryUnit}
+                      />
+                    </div>
+
+                    <ProductEditorSection
+                      variant="card"
+                      title="Delivery Configuration"
+                      className="px-4 py-5 sm:px-5"
+                    >
+                      <form.Subscribe
+                        selector={(state) =>
+                          state.values.template.deliveryCostUnit
+                        }
+                      >
+                        {(deliveryCostUnit) => (
+                          <form.Field name="template.defaultDeliveryCost">
+                            {(field) => (
+                              <DeliveryCostField
+                                value={field.state.value ?? ""}
+                                unit={resolveDeliveryUnit(
+                                  deliveryCostUnit,
+                                  suggestedDeliveryUnit,
+                                )}
+                                onChange={field.handleChange}
+                              />
+                            )}
+                          </form.Field>
+                        )}
+                      </form.Subscribe>
+                    </ProductEditorSection>
+
                     <div className="rounded-xl border bg-card">
                       <div className="border-b px-4 py-3">
                         <h3 className="text-sm font-semibold">Publish</h3>
@@ -1000,6 +1174,20 @@ export default function CoreProductConfigForm({
                           )}
                         </form.Field>
                       </div>
+                    </div>
+                    <div className="rounded-xl border bg-card p-4">
+                      <FinalActions
+                        cancelHref={listHref}
+                        onPublish={submitChanges}
+                        publishLabel="Save changes"
+                        pending={configureMutation.isPending}
+                        disabled={
+                          hasUnavailableVariants ||
+                          (isSingleMode &&
+                            (selectedBrands.length !== 1 ||
+                              selectedBrands[0]?.variants.length === 0))
+                        }
+                      />
                     </div>
                     <div className="rounded-xl border bg-card">
                       <div className="border-b px-4 py-3">
@@ -1510,6 +1698,8 @@ function normalizeTemplateDetails(
     inventoryLooseUnit: details?.inventoryLooseUnit || "kg",
     isReturnablePack: details?.isReturnablePack ?? false,
     defaultPackDepositAmount: String(details?.defaultPackDepositAmount ?? "0"),
+    deliveryCostUnit: details?.deliveryCostUnit ?? "",
+    defaultDeliveryCost: priceInputValue(details?.defaultDeliveryCost),
     visibility: details?.visibility ?? "public",
   };
 }
@@ -1535,10 +1725,15 @@ function SharedTemplateEditor({
   form,
   defaults,
   hideDeposit = false,
+  part,
+  suggestedDeliveryUnit = null,
 }: {
   form: any;
   defaults: CoreProductConfigValues["template"];
   hideDeposit?: boolean;
+  /** "content" is the left column; "rules" is Inventory Rules on the right. */
+  part: "content" | "rules";
+  suggestedDeliveryUnit?: ReturnType<typeof suggestDeliveryCostUnit>;
 }) {
   // Loose products are sold by weight or volume: kg, litre or ml only.
   const units = LOOSE_INVENTORY_UNIT_CODES.map(
@@ -1547,6 +1742,7 @@ function SharedTemplateEditor({
 
   return (
     <>
+      {part === "content" && (
       <ProductEditorSection
         title="Description"
         description="How this product appears to customers."
@@ -1578,12 +1774,15 @@ function SharedTemplateEditor({
           </form.Field>
         </div>
       </ProductEditorSection>
+      )}
 
+      {part === "rules" && (
       <ProductEditorSection
         title="Inventory rules"
         description="Stock, return, order, and conversion behavior."
+        className="px-4 py-5 sm:px-5"
       >
-        <div className="grid grid-cols-1 gap-x-8 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-x-8 sm:grid-cols-2 lg:grid-cols-1">
           <form.Field name="template.trackingType">
             {(field: any) => (
               <TemplateRuleRow
@@ -1758,9 +1957,27 @@ function SharedTemplateEditor({
               </TemplateRuleRow>
             )}
           </form.Field>
+          <form.Field name="template.deliveryCostUnit">
+            {(field: any) => (
+              <TemplateRuleRow
+                label="Delivery cost"
+                description="The unit delivery is charged per. It follows the variant Type until you change it."
+              >
+                <DeliveryUnitSelect
+                  value={field.state.value ?? ""}
+                  suggested={suggestedDeliveryUnit}
+                  onChange={field.handleChange}
+                  className="h-9 w-40"
+                />
+              </TemplateRuleRow>
+            )}
+          </form.Field>
         </div>
       </ProductEditorSection>
+      )}
 
+      {part === "content" && (
+      <>
       <ProductEditorSection
         title="Features"
         description="Grouped key-value specifications (e.g. Weight — 500g)."
@@ -1822,6 +2039,8 @@ function SharedTemplateEditor({
           </form.Field>
         </div>
       </ProductEditorSection>
+      </>
+      )}
     </>
   );
 }

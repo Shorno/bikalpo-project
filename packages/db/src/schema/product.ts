@@ -168,6 +168,15 @@ export const product = pgTable(
       .default("kg")
       .notNull(),
 
+    /** Unit delivery is charged per, e.g. cylinder, sack, box or kg */
+    deliveryCostUnit: varchar("delivery_cost_unit", { length: 20 }),
+
+    /** Default delivery cost for one delivery cost unit (null = not set) */
+    defaultDeliveryCost: decimal("default_delivery_cost", {
+      precision: 10,
+      scale: 2,
+    }),
+
     /** Product visibility: public or private */
     visibility: visibilityEnum("visibility").default("public").notNull(),
 

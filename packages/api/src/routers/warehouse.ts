@@ -7637,12 +7637,19 @@ import {
   variantOption,
   warehouseVariantAlias,
 } from "@bikalpo-project/db/schema";
+import {
+  deliveryColumns,
+  deliveryDetailsShape,
+  sellerRetailPrice,
+  sellerVariantPriceShape,
+} from "./helpers/product-delivery";
 
 const warehouseConfiguredVariantSchema = z.object({
   variantOptionId: z.number().int().positive(),
   color: z.string().trim().min(1).max(50).optional().nullable(),
   exchangeEnabled: z.boolean().default(false),
   exchangeCreditAmount: z.string().default("0"),
+  ...sellerVariantPriceShape,
 });
 
 const warehouseTemplateDetailsSchema = z.object({
@@ -7674,6 +7681,7 @@ const warehouseTemplateDetailsSchema = z.object({
   defaultPackDepositAmount: z.string().default("0"),
   allowedPackBrands: z.array(z.string()).default([]),
   allowedPackSizes: z.array(z.string()).default([]),
+  ...deliveryDetailsShape,
   visibility: z.enum(["public", "private"]).default("private"),
 });
 
@@ -7748,6 +7756,35 @@ function warehouseExchangeCreditAmount(input: {
   return Number.isFinite(amount) && amount >= 0 ? amount.toFixed(2) : "0.00";
 }
 
+/**
+ * Create Product "Pricing": an entered New price becomes this warehouse's
+ * selling price, and its Exchange credit (New minus Exchange) is kept with
+ * it. An empty price leaves the current price and credit as they are.
+ */
+async function applyWarehouseEnteredPrice(
+  tx: any,
+  warehouseId: string,
+  variantId: number,
+  row: z.infer<typeof warehouseConfiguredVariantSchema>,
+) {
+  const retailPrice = sellerRetailPrice(row.retailPrice);
+  if (!retailPrice) return;
+  await tx
+    .update(inventory)
+    .set({ retailPrice, updatedAt: new Date() })
+    .where(
+      and(
+        eq(inventory.ownerType, "warehouse"),
+        eq(inventory.ownerId, warehouseId),
+        eq(inventory.variantId, variantId),
+      ),
+    );
+  await tx
+    .update(productVariant)
+    .set({ exchangeCreditAmount: warehouseExchangeCreditAmount(row) })
+    .where(eq(productVariant.id, variantId));
+}
+
 function warehouseTemplateDetails(
   core: { name: string; slug: string },
   details: z.infer<typeof warehouseTemplateDetailsSchema>,
@@ -7781,6 +7818,7 @@ function warehouseTemplateDetails(
     conversionEnabled: details.conversionEnabled,
     inventoryLooseUnitEnabled: details.inventoryLooseUnitEnabled,
     inventoryLooseUnit: details.inventoryLooseUnit,
+    ...deliveryColumns(details),
     visibility: details.visibility,
     scheduledAt: null,
     status: "draft" as const,
@@ -8117,6 +8155,7 @@ const warehouseProductCreation = {
             conversionEnabled: input.details.conversionEnabled,
             inventoryLooseUnitEnabled: input.details.inventoryLooseUnitEnabled,
             inventoryLooseUnit: input.details.inventoryLooseUnit,
+            ...deliveryColumns(input.details),
             isReturnablePack: anyExchangeEnabled,
             defaultPackDepositAmount: input.details.defaultPackDepositAmount,
             allowedPackBrands: input.details.allowedPackBrands,
@@ -8237,6 +8276,28 @@ const warehouseProductCreation = {
           isConcreteVariantOption(option)
         );
       });
+      // This warehouse's selling prices, so Create Product can show them.
+      const currentVariantIds = currentProducts.flatMap((product) =>
+        product.variants.map((variant) => variant.id),
+      );
+      const priceRows = currentVariantIds.length
+        ? await db
+            .select({
+              variantId: inventory.variantId,
+              retailPrice: inventory.retailPrice,
+            })
+            .from(inventory)
+            .where(
+              and(
+                eq(inventory.ownerType, "warehouse"),
+                eq(inventory.ownerId, context.session.user.id),
+                inArray(inventory.variantId, currentVariantIds),
+              ),
+            )
+        : [];
+      const retailPriceByVariant = new Map(
+        priceRows.map((row) => [row.variantId, row.retailPrice]),
+      );
 
       return {
         core: { ...core, brandCreationMode: WAREHOUSE_BRAND_CREATION_MODE },
@@ -8295,6 +8356,9 @@ const warehouseProductCreation = {
                 variant.sourceVariantOption?.definitionKind ?? null,
               definition: variant.sourceVariantOption?.definition ?? null,
               needsReview: variant.sourceVariantOption?.needsReview ?? true,
+              exchangeEnabled: variant.exchangeEnabled,
+              exchangeCreditAmount: variant.exchangeCreditAmount,
+              retailPrice: retailPriceByVariant.get(variant.id) ?? null,
             })),
         })),
         options: { brands, variantOptions },
@@ -8558,6 +8622,7 @@ const warehouseProductCreation = {
                 inventoryLooseUnitEnabled:
                   input.details.inventoryLooseUnitEnabled,
                 inventoryLooseUnit: input.details.inventoryLooseUnit,
+                ...deliveryColumns(input.details),
                 isReturnablePack: input.details.isReturnablePack,
                 defaultPackDepositAmount:
                   input.details.defaultPackDepositAmount,
@@ -8707,6 +8772,12 @@ const warehouseProductCreation = {
                     inventory.variantId,
                   ],
                 });
+              await applyWarehouseEnteredPrice(
+                tx,
+                warehouseId,
+                existingVariant.id,
+                desired,
+              );
               continue;
             }
             const option = desiredOption;
@@ -8760,6 +8831,12 @@ const warehouseProductCreation = {
               availableQty: "0",
               retailPrice: null,
             });
+            await applyWarehouseEnteredPrice(
+              tx,
+              warehouseId,
+              variantRow!.id,
+              desired,
+            );
             sortOrder++;
           }
         }

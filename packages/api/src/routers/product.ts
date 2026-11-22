@@ -52,6 +52,10 @@ import { loadAdminCatalogProductDetail } from "./helpers/catalog-product-detail"
 import { globalCatalogOnly } from "./helpers/catalog-owner";
 import { assignCoreProductCode } from "./helpers/core-catalog-code";
 import { catalogProductCode } from "./helpers/generate-sku";
+import {
+  deliveryColumns,
+  deliveryDetailsShape,
+} from "./helpers/product-delivery";
 import { ensureCoreProductShortCode } from "./helpers/sellable-sku";
 import {
   applyGeneratedVariantExchangeSettings,
@@ -123,6 +127,7 @@ const createProductSchema = z.object({
   inventoryLooseUnitEnabled: z.boolean().default(false),
   inventoryLooseUnit: z.enum(FULFILLMENT_UNIT_CODES).default("kg"),
   // Delivery
+  ...deliveryDetailsShape,
   deliveryCostPerCarton: z.string().optional().nullable(),
   /** Total unit size in KG (e.g. 50 for 50KG carton). Used for conversion. */
   unitSize: z.string().optional().nullable(),
@@ -551,6 +556,7 @@ export const productRouter = {
           conversionEnabled: productData.conversionEnabled,
           inventoryLooseUnitEnabled: productData.inventoryLooseUnitEnabled,
           inventoryLooseUnit: productData.inventoryLooseUnit,
+          ...deliveryColumns(productData),
           visibility: productData.visibility,
           scheduledAt: productData.scheduledAt ?? null,
           status: productData.status,
@@ -649,6 +655,7 @@ export const productRouter = {
               inventoryLooseUnitEnabled:
                 templateDetails.inventoryLooseUnitEnabled,
               inventoryLooseUnit: templateDetails.inventoryLooseUnit,
+              ...deliveryColumns(templateDetails),
               visibility: templateDetails.visibility,
               scheduledAt: templateDetails.scheduledAt
                 ? new Date(templateDetails.scheduledAt)
@@ -813,6 +820,7 @@ export const productRouter = {
         .update(product)
         .set({
           ...updateData,
+          ...deliveryColumns(updateData),
           brandId: productBrandId,
           categoryId: isCoreManaged
             ? existing.categoryId

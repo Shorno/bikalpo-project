@@ -4,6 +4,10 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import CoreProductConfigForm from "@/components/features/product/components/core-product-config-form";
+import {
+  sellerPriceInputs,
+  sellerVariantPayload,
+} from "@/components/features/product/components/product-delivery-pricing";
 import { orpc } from "@/utils/orpc";
 
 const CATALOG_URL = "/warehouse/dashboard/catalog";
@@ -41,9 +45,7 @@ export default function WarehouseCoreProductConfigPage() {
         details: values.template,
         brands: values.brands.map((brand: any) => ({
           brandId: brand.brandId,
-          variants: brand.variants.map((variant: any) => ({
-            variantOptionId: variant.variantOptionId,
-          })),
+          variants: brand.variants.map(sellerVariantPayload),
         })),
         variantAliases: Object.entries(variantAliases)
           .filter(
@@ -136,6 +138,7 @@ export default function WarehouseCoreProductConfigPage() {
         .map((variant: any) => ({
           variantOptionId: variant.variantOptionId,
           consumerPrice: "0",
+          ...sellerPriceInputs(variant),
         })),
     }));
 

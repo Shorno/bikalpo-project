@@ -132,6 +132,8 @@ export type AdminProductGenerationTemplateDetails = {
   conversionEnabled: boolean;
   inventoryLooseUnitEnabled: boolean;
   inventoryLooseUnit: string;
+  deliveryCostUnit?: string | null;
+  defaultDeliveryCost?: string | null;
   visibility: "public" | "private";
   scheduledAt?: string | null;
   status: "active" | "inactive" | "draft";

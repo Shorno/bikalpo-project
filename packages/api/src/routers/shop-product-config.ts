@@ -40,6 +40,12 @@ import {
   linkProductVariantsToCatalog,
   resolveConcreteVariantForConfig,
 } from "./helpers/sync-generated-variants";
+import {
+  deliveryColumns,
+  deliveryDetailsShape,
+  sellerRetailPrice,
+  sellerVariantPriceShape,
+} from "./helpers/product-delivery";
 import { syncWarehouseCylinderExchange } from "./helpers/warehouse-cylinder-exchange";
 
 const configuredVariantSchema = z.object({
@@ -52,6 +58,7 @@ const configuredVariantSchema = z.object({
     .max(99_999_999)
     .default(0)
     .transform((value) => value.toFixed(2)),
+  ...sellerVariantPriceShape,
 });
 
 const templateDetailsSchema = z.object({
@@ -83,6 +90,7 @@ const templateDetailsSchema = z.object({
   defaultPackDepositAmount: z.string().default("0"),
   allowedPackBrands: z.array(z.string()).default([]),
   allowedPackSizes: z.array(z.string()).default([]),
+  ...deliveryDetailsShape,
   visibility: z.enum(["public", "private"]).default("private"),
 });
 
@@ -143,6 +151,7 @@ function fullTemplateDetails(
     conversionEnabled: details.conversionEnabled,
     inventoryLooseUnitEnabled: details.inventoryLooseUnitEnabled,
     inventoryLooseUnit: details.inventoryLooseUnit,
+    ...deliveryColumns(details),
     visibility: details.visibility,
     scheduledAt: null,
     status: "draft" as const,
@@ -348,6 +357,20 @@ async function syncProductVariants({
         .onConflictDoNothing({
           target: [inventory.ownerType, inventory.ownerId, inventory.variantId],
         });
+      // An empty price in Create Product keeps the current selling price.
+      const enteredPrice = sellerRetailPrice(cylinderSale.retailPrice);
+      if (enteredPrice) {
+        await tx
+          .update(inventory)
+          .set({ retailPrice: enteredPrice, updatedAt: new Date() })
+          .where(
+            and(
+              eq(inventory.ownerType, "shop"),
+              eq(inventory.ownerId, shopId),
+              eq(inventory.variantId, existing.id),
+            ),
+          );
+      }
       continue;
     }
 
@@ -399,7 +422,7 @@ async function syncProductVariants({
       ownerId: shopId,
       variantId: variantRow!.id,
       availableQty: "0",
-      retailPrice: null,
+      retailPrice: sellerRetailPrice(cylinderSale.retailPrice),
     });
   }
 
@@ -508,6 +531,28 @@ export const shopProductConfigEndpoints = {
           optionIsValid(option, typeId, core.categoryId, owner) &&
           isConcreteVariantOption(option),
       );
+      // This shop's selling prices, so Create Product can show them.
+      const currentVariantIds = currentProducts.flatMap((row) =>
+        row.variants.map((variant) => variant.id),
+      );
+      const priceRows = currentVariantIds.length
+        ? await db
+            .select({
+              variantId: inventory.variantId,
+              retailPrice: inventory.retailPrice,
+            })
+            .from(inventory)
+            .where(
+              and(
+                eq(inventory.ownerType, "shop"),
+                eq(inventory.ownerId, shopId),
+                inArray(inventory.variantId, currentVariantIds),
+              ),
+            )
+        : [];
+      const retailPriceByVariant = new Map(
+        priceRows.map((row) => [row.variantId, row.retailPrice]),
+      );
 
       return {
         core: { ...core, brandCreationMode: RETAILER_BRAND_CREATION_MODE },
@@ -564,6 +609,7 @@ export const shopProductConfigEndpoints = {
               needsReview: variant.sourceVariantOption?.needsReview ?? true,
               exchangeEnabled: variant.exchangeEnabled,
               exchangeCreditAmount: variant.exchangeCreditAmount,
+              retailPrice: retailPriceByVariant.get(variant.id) ?? null,
             })),
         })),
         options: { brands, variantOptions },
@@ -755,6 +801,7 @@ export const shopProductConfigEndpoints = {
                 inventoryLooseUnitEnabled:
                   input.details.inventoryLooseUnitEnabled,
                 inventoryLooseUnit: input.details.inventoryLooseUnit,
+                ...deliveryColumns(input.details),
                 isReturnablePack: input.details.isReturnablePack,
                 defaultPackDepositAmount:
                   input.details.defaultPackDepositAmount,
@@ -1006,6 +1053,7 @@ export const shopProductConfigEndpoints = {
             conversionEnabled: input.details.conversionEnabled,
             inventoryLooseUnitEnabled: input.details.inventoryLooseUnitEnabled,
             inventoryLooseUnit: input.details.inventoryLooseUnit,
+            ...deliveryColumns(input.details),
             isReturnablePack: anyExchangeEnabled,
             defaultPackDepositAmount: input.details.defaultPackDepositAmount,
             allowedPackBrands: input.details.allowedPackBrands,

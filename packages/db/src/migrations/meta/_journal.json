@@ -652,6 +652,13 @@
       "when": 1790553600008,
       "tag": "0093_store_brands_and_variants",
       "breakpoints": true
+    },
+    {
+      "idx": 94,
+      "version": "7",
+      "when": 1790553600009,
+      "tag": "0094_product_delivery_cost",
+      "breakpoints": true
     }
   ]
 }

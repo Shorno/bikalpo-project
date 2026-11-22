@@ -22,6 +22,10 @@ import { adminProcedure } from "../index";
 import { globalCatalogOnly } from "./helpers/catalog-owner";
 import { catalogProductCode } from "./helpers/generate-sku";
 import {
+  deliveryColumns,
+  deliveryDetailsShape,
+} from "./helpers/product-delivery";
+import {
   resolveConcreteVariantForConfig,
   syncBrandVariantPrices,
 } from "./helpers/sync-generated-variants";
@@ -65,6 +69,7 @@ const sharedTemplateDetailsSchema = z.object({
     .string()
     .regex(/^\d+(\.\d{1,2})?$/)
     .default("0"),
+  ...deliveryDetailsShape,
   visibility: z.enum(["public", "private"]).default("public"),
 });
 
@@ -574,6 +579,7 @@ export const adminProductConfigRouter = {
               conversionEnabled: details.conversionEnabled,
               inventoryLooseUnitEnabled: details.inventoryLooseUnitEnabled,
               inventoryLooseUnit: details.inventoryLooseUnit,
+              ...deliveryColumns(details),
               isReturnablePack: details.isReturnablePack,
               defaultPackDepositAmount: details.defaultPackDepositAmount,
               allowedPackBrands: details.allowedPackBrands,
