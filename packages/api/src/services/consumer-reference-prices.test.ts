@@ -23,10 +23,11 @@ CREATE TABLE product_type (id integer PRIMARY KEY, name text, slug text, fulfill
 CREATE TABLE category (id integer PRIMARY KEY, name text, type_id integer);
 CREATE TABLE sub_category (id integer PRIMARY KEY, name text);
 CREATE TABLE brand (id integer PRIMARY KEY, name text);
-CREATE TABLE core_product_identity (id integer PRIMARY KEY, name text, sku text);
+CREATE TABLE core_product_identity (id integer PRIMARY KEY, name text, sku text, catalog_code text);
 CREATE TABLE variant_option (id integer PRIMARY KEY, name text, unit text, size text, definition jsonb);
 CREATE TABLE product (id integer PRIMARY KEY, name text, sku text, category_id integer,
-  sub_category_id integer, core_product_id integer, brand_id integer, creator_source text);
+  sub_category_id integer, core_product_id integer, brand_id integer, creator_source text,
+  catalog_code text);
 CREATE TABLE product_variant_price (id integer PRIMARY KEY, product_id integer, variant_option_id integer,
   brand_id integer, consumer_price numeric(10,2), is_active boolean DEFAULT true, sort_order integer DEFAULT 0,
   created_at timestamp DEFAULT now(), updated_at timestamp DEFAULT now());
@@ -43,7 +44,7 @@ INSERT INTO product_type VALUES (1, 'LPG', 'lpg', 'lpg'), (2, 'Grocery', 'grocer
 INSERT INTO category VALUES (1, 'Gas', 1), (2, 'Food', 2);
 INSERT INTO sub_category VALUES (1, 'Household'), (2, 'Rice');
 INSERT INTO brand VALUES (1, 'Omera'), (2, 'Bashundhara'), (3, 'ACI'), (4, 'PRAN');
-INSERT INTO core_product_identity VALUES (1, 'LPG Cylinder', 'CORE-GAS'), (2, 'Miniket Rice', 'CORE-RICE');
+INSERT INTO core_product_identity VALUES (1, 'LPG Cylinder', 'CORE-GAS', '01010101'), (2, 'Miniket Rice', 'CORE-RICE', '02020101');
 INSERT INTO variant_option VALUES
   (1, '12 KG Cylinder', 'KG', '12', '{"kind":"measurement","value":"12","measurementUnit":"KG","container":"cylinder"}'),
   (2, '16 KG Cylinder', 'KG', '16', '{"kind":"measurement","value":"16","measurementUnit":"KG","container":"cylinder"}'),
@@ -55,6 +56,7 @@ INSERT INTO product VALUES
   (4, 'PRAN Miniket Rice', 'PRD-000004', 2, 2, 2, 4, 'admin'),
   (5, 'Retailer Rice', 'SHOP-5', 2, 2, 2, 3, 'shop'),
   (6, 'Gas Regulator', 'PRD-000006', 1, 1, null, 1, 'admin');
+UPDATE product SET catalog_code = '0101010101' WHERE id = 1;
 INSERT INTO product_variant_price (id, product_id, variant_option_id, brand_id, consumer_price) VALUES
   (1, 1, 1, 1, 3200), (2, 1, 2, 1, 4200), (3, 2, 1, 2, 3180),
   (4, 3, 3, 3, 60), (5, 4, 3, 4, 58), (6, 5, 3, 3, 80), (7, 6, 3, 1, 600);
@@ -132,6 +134,7 @@ test("price console groups, searches, synchronizes and logs atomically without t
           })),
           [{ productId: 3, productName: "ACI Miniket Rice", groupKey: "p:3" }],
         );
+        assert.equal(page.items[0]?.coreCatalogCode, "02020101");
         assert.equal(page.stats.totalProducts, 5);
         assert.equal(page.stats.totalVariants, 6);
         assert.equal(page.pagination.totalPages, 5);
@@ -190,6 +193,8 @@ test("price console groups, searches, synchronizes and logs atomically without t
           "Omera",
           "PRD-000001",
           "CORE-GAS",
+          "01010101",
+          "0101010101",
           "OMERA-12",
           "BARCODE-12",
           "BKV-0000000001",

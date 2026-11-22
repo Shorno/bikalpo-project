@@ -207,11 +207,11 @@ export function ProductPriceTable({
                                 <TableHead scope="col">Variant</TableHead>
                                 {cylinder && (
                                   <TableHead scope="col" className="text-right">
-                                    Exchange Price
+                                    Exchange
                                   </TableHead>
                                 )}
                                 <TableHead scope="col" className="text-right">
-                                  {cylinder ? "New Cylinder Price" : "Price"}
+                                  {cylinder ? "New" : "Price"}
                                 </TableHead>
                               </TableRow>
                             </TableHeader>
@@ -227,7 +227,7 @@ export function ProductPriceTable({
                                     autoComplete="off"
                                     disabled={saving}
                                     className={styles.priceInput}
-                                    aria-label={`${exchange ? "Exchange Price" : cylinder ? "New Cylinder Price" : "Price"} for ${row.variantName}`}
+                                    aria-label={`${exchange ? "Exchange price" : cylinder ? "New price" : "Price"} for ${row.variantName}`}
                                     aria-invalid={!!error}
                                     aria-describedby={
                                       error

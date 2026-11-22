@@ -56,7 +56,6 @@ export function ProductPriceClient() {
       typeId: parseIntParam(searchParams.get("type")),
       categoryId: parseIntParam(searchParams.get("category")),
       subCategoryId: parseIntParam(searchParams.get("subcategory")),
-      coreProductId: parseIntParam(searchParams.get("core")),
     }),
     [searchParams],
   );
@@ -95,7 +94,11 @@ export function ProductPriceClient() {
         group = {
           key: String(row.productId),
           productId: row.productId,
-          id: priceProductDisplayId(row.productId),
+          // Same Product ID the catalog shows for this product.
+          id:
+            row.coreCatalogCode ||
+            row.productCatalogCode ||
+            priceProductDisplayId(row.productId),
           label: row.productName,
           rows: [],
         };

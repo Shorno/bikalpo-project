@@ -56,6 +56,7 @@ export function createConsumerPriceService(database: typeof db) {
         productId: sql<number>`${product.id}`.as("price_product_id"),
         productName: sql<string>`${product.name}`.as("product_name"),
         productSku: product.sku,
+        productCatalogCode: product.catalogCode,
         variantOptionId: variantOption.id,
         variantName: variantOption.name,
         variantUnit: variantOption.unit,
@@ -71,6 +72,8 @@ export function createConsumerPriceService(database: typeof db) {
           "core_product_name",
         ),
         coreProductSku: coreProductIdentity.sku,
+        /** The catalog Product ID; the price page shows it as the row ID. */
+        coreCatalogCode: coreProductIdentity.catalogCode,
         primaryBrandName: brand.name,
         groupKey: groupKey.as("group_key"),
         isCylinderPricing: isCylinderPricing.as("is_cylinder_pricing"),
@@ -123,7 +126,9 @@ export function createConsumerPriceService(database: typeof db) {
         or(
           ilike(product.name, search),
           ilike(product.sku, search),
+          ilike(product.catalogCode, search),
           ilike(coreProductIdentity.sku, search),
+          ilike(coreProductIdentity.catalogCode, search),
           ilike(coreProductIdentity.name, search),
           ilike(variantOption.name, search),
           ilike(brand.name, search),

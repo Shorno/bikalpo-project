@@ -1,6 +1,5 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
 import { Search, X } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
@@ -21,7 +20,6 @@ import {
 } from "@/components/ui/select";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { ADMIN_BASE } from "@/lib/routes";
-import { orpc } from "@/utils/orpc";
 
 const ROUTE = `${ADMIN_BASE}/product-price`;
 
@@ -54,26 +52,6 @@ export function ProductPriceFilterBar({
   const typeId = searchParams.get("type") ?? "all";
   const categoryId = searchParams.get("category") ?? "all";
   const subCategoryId = searchParams.get("subcategory") ?? "all";
-  const coreProductId = searchParams.get("core") ?? "all";
-
-  const catNum =
-    categoryId && categoryId !== "all" ? Number(categoryId) : undefined;
-  const subNum =
-    subCategoryId && subCategoryId !== "all"
-      ? Number(subCategoryId)
-      : undefined;
-
-  const { data: coreData, isPending: corePending } = useQuery({
-    ...orpc.adminCoreProduct.getAll.queryOptions({
-      input: {
-        categoryId: catNum,
-        subCategoryId: subNum,
-        status: "active",
-      },
-    }),
-    enabled: !!catNum,
-  });
-  const coreProducts = coreData?.coreProducts ?? [];
 
   useEffect(() => {
     searchParamsRef.current = searchParams;
@@ -138,7 +116,6 @@ export function ProductPriceFilterBar({
     typeId !== "all" ||
     categoryId !== "all" ||
     subCategoryId !== "all" ||
-    coreProductId !== "all" ||
     !!search.trim();
 
   const clearAll = () => {
@@ -186,7 +163,7 @@ export function ProductPriceFilterBar({
       <div className="overflow-x-auto pb-1">
         <fieldset
           disabled={disabled}
-          className="grid min-w-[610px] grid-cols-4 items-end gap-2"
+          className="grid min-w-[460px] grid-cols-3 items-end gap-2"
         >
           <FilterField label="Type">
             <Select
@@ -197,7 +174,6 @@ export function ProductPriceFilterBar({
                   else p.set("type", v);
                   p.delete("category");
                   p.delete("subcategory");
-                  p.delete("core");
                 });
               }}
             >
@@ -226,7 +202,6 @@ export function ProductPriceFilterBar({
                   if (v === "all") p.delete("category");
                   else p.set("category", v);
                   p.delete("subcategory");
-                  p.delete("core");
                 });
               }}
             >
@@ -255,7 +230,6 @@ export function ProductPriceFilterBar({
                 pushUrl((p) => {
                   if (v === "all") p.delete("subcategory");
                   else p.set("subcategory", v);
-                  p.delete("core");
                 });
               }}
             >
@@ -276,42 +250,6 @@ export function ProductPriceFilterBar({
                 {subcategories.map((sc) => (
                   <SelectItem key={sc.id} value={String(sc.id)}>
                     {sc.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </FilterField>
-
-          <FilterField label="Core Identity">
-            <Select
-              value={coreProductId}
-              disabled={!catNum}
-              onValueChange={(v) => {
-                pushUrl((p) => {
-                  if (v === "all") p.delete("core");
-                  else p.set("core", v);
-                });
-              }}
-            >
-              <SelectTrigger aria-label="Core Identity">
-                <SelectValue
-                  placeholder={
-                    !catNum
-                      ? "Select category first"
-                      : corePending
-                        ? "Loading…"
-                        : "All core products"
-                  }
-                />
-              </SelectTrigger>
-              <SelectContent
-                position={isMobile ? "popper" : "item-aligned"}
-                className="max-md:max-w-[calc(100vw-2rem)] max-md:[&_[data-slot=select-item]]:whitespace-normal"
-              >
-                <SelectItem value="all">All core products</SelectItem>
-                {coreProducts.map((cp: { id: number; name: string }) => (
-                  <SelectItem key={cp.id} value={String(cp.id)}>
-                    {cp.name}
                   </SelectItem>
                 ))}
               </SelectContent>
