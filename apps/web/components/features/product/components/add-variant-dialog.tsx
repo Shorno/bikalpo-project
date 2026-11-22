@@ -139,6 +139,9 @@ export function AddVariantDialog({
           className="space-y-4"
           onSubmit={(event) => {
             event.preventDefault();
+            // The dialog portals out of the DOM, but React still bubbles the
+            // submit to an enclosing product <form>; keep it from saving.
+            event.stopPropagation();
             void submit();
           }}
         >
