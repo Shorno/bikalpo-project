@@ -1,6 +1,9 @@
 "use client";
 
-import type { AppRouterClient } from "@bikalpo-project/api/routers/index";
+import {
+  priceFromMinorUnits,
+  priceInMinorUnits,
+} from "@bikalpo-project/api/consumer-price";
 import { Check, ChevronDown, Loader2, Pencil, X } from "lucide-react";
 import { Fragment } from "react";
 import { Button } from "@/components/ui/button";
@@ -16,9 +19,29 @@ import {
 import { cn } from "@/lib/utils";
 import styles from "./product-price.module.css";
 
-export type PriceRow = Awaited<
-  ReturnType<AppRouterClient["product"]["listConsumerReferencePrices"]>
->["items"][number];
+/** Fields shared by admin reference prices and seller (shop/warehouse) prices. */
+export type PriceRow = {
+  variantPriceId: number;
+  productId: number;
+  productName: string;
+  productSku: string | null;
+  productCatalogCode: string | null;
+  coreCatalogCode: string | null;
+  consumerPrice: string;
+  exchangeEnabled: boolean;
+  /** Seller rows only. */
+  exchangeCreditAmount?: string;
+  exchangePrice: string | null;
+  isCylinderPricing: boolean;
+  brandDisplay: string;
+  variantName: string;
+  variantValue: string;
+  variantUnit: string | null;
+  updatedAt: Date | string;
+  updatedById: string | null;
+  /** Seller rows: false when the Exchange credit belongs to another creator. */
+  canEditExchange?: boolean;
+};
 export type PriceGroup = {
   key: string;
   productId: number;
@@ -53,6 +76,14 @@ export function LastUpdate({ row }: { row: PriceRow }) {
     timeStyle: "short",
     timeZone: "Asia/Dhaka",
   }).format(date);
+  // Seller prices keep no editor history, so show the date on its own.
+  if (!row.updatedById) {
+    return (
+      <span className={styles.lastUpdate} title={fullDate}>
+        {shortDate}
+      </span>
+    );
+  }
   return (
     <span
       className={styles.lastUpdate}
@@ -269,6 +300,26 @@ export function ProductPriceTable({
                                     }}
                                   />
                                 );
+                                // Locked Exchange follows the New price minus the creator's credit.
+                                const lockedExchange =
+                                  row.canEditExchange === false;
+                                const derivedExchange = () => {
+                                  if (!row.exchangeEnabled) return "—";
+                                  const next = Number(value?.consumerPrice);
+                                  if (!Number.isFinite(next) || next <= 0)
+                                    return "—";
+                                  return formatBdt(
+                                    priceFromMinorUnits(
+                                      Math.max(
+                                        0,
+                                        priceInMinorUnits(next.toFixed(2)) -
+                                          priceInMinorUnits(
+                                            row.exchangeCreditAmount ?? "0",
+                                          ),
+                                      ),
+                                    ),
+                                  );
+                                };
                                 return (
                                   <TableRow key={row.variantPriceId}>
                                     {showBrand && (
@@ -286,11 +337,20 @@ export function ProductPriceTable({
                                     </TableCell>
                                     {cylinder && (
                                       <TableCell className="text-right font-semibold tabular-nums">
-                                        {editing
-                                          ? input(true)
-                                          : row.exchangePrice == null
-                                            ? "—"
-                                            : formatBdt(row.exchangePrice)}
+                                        {editing && lockedExchange ? (
+                                          <span
+                                            className="text-muted-foreground"
+                                            title="Exchange credit is set by the product's creator; Exchange follows the New price."
+                                          >
+                                            {derivedExchange()}
+                                          </span>
+                                        ) : editing ? (
+                                          input(true)
+                                        ) : row.exchangePrice == null ? (
+                                          "—"
+                                        ) : (
+                                          formatBdt(row.exchangePrice)
+                                        )}
                                       </TableCell>
                                     )}
                                     <TableCell className="text-right font-semibold tabular-nums">

@@ -118,6 +118,11 @@ import {
   submitRetailerOffer,
   withdrawRetailerOffer,
 } from "../services/open-order-matching";
+import { updateProductReferencePricesSchema } from "../consumer-price";
+import {
+  ownerPriceListSchema,
+  ownerPriceService,
+} from "../services/owner-prices";
 import {
   appendOrderPurchaseEvent,
   recordPurchaseSubmission,
@@ -1994,6 +1999,72 @@ const mutations = {
    * Update retail selling price for a product in the shop owner's inventory.
    * Validates that the price meets the minimum margin requirement.
    */
+  /** Retail price list in the admin price-table shape. */
+  listMyPrices: permission("shop_products", "view")
+    .input(ownerPriceListSchema)
+    .handler(async ({ input, context }) => {
+      const ownerId = shopTenantId(context.session.user);
+      const [list, filterOptions] = await Promise.all([
+        ownerPriceService.listOwnerPrices("shop", ownerId, input),
+        ownerPriceService.listOwnerPriceFilters("shop", ownerId),
+      ]);
+      return { ...list, filterOptions };
+    }),
+
+  /**
+   * Save every edited variant of one product. All rows are validated
+   * (prices, required margin, exchange) before anything is written.
+   */
+  updateMyProductPrices: permission("shop_products", "update")
+    .input(updateProductReferencePricesSchema)
+    .handler(async ({ input, context }) => {
+      const ownerId = shopTenantId(context.session.user);
+      const changes = await ownerPriceService.planOwnerProductPriceUpdate(
+        "shop",
+        ownerId,
+        input,
+      );
+      const exchangeChanges = changes.filter((change) => change.exchange);
+      if (exchangeChanges.length > 0) {
+        await db.transaction(async (tx) => {
+          for (const change of exchangeChanges) {
+            await tx
+              .update(productVariant)
+              .set(change.exchange!)
+              .where(eq(productVariant.id, change.variantId));
+          }
+        });
+      }
+      // Each retail price also re-prices active open-order offers; an offer
+      // conflict rejects that price.
+      const recalculatedOrderIds = new Set<number>();
+      for (const change of changes) {
+        if (change.retailPrice == null) continue;
+        try {
+          const orderIds = await recalculateOffersForInventory(
+            change.inventoryId,
+            ownerId,
+            Number(change.retailPrice),
+          );
+          for (const orderId of orderIds) recalculatedOrderIds.add(orderId);
+        } catch (error) {
+          throw new ORPCError("CONFLICT", {
+            message:
+              error instanceof Error
+                ? error.message
+                : "The price could not be applied to active offers.",
+          });
+        }
+      }
+      for (const orderId of recalculatedOrderIds) {
+        context.realtime.emitToOrder(orderId, "open-order:offer-updated", {
+          orderId,
+          reason: "retailer_price_changed",
+        });
+      }
+      return { updated: changes.length };
+    }),
+
   updateRetailPrice: permission("shop_products", "update")
     .route({
       method: "POST",

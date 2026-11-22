@@ -19,10 +19,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useIsMobile } from "@/hooks/use-mobile";
-import { ADMIN_BASE } from "@/lib/routes";
-
-const ROUTE = `${ADMIN_BASE}/product-price`;
-
 export type CategoryOption = {
   id: number;
   name: string;
@@ -31,6 +27,8 @@ export type CategoryOption = {
 };
 
 interface ProductPriceFilterBarProps {
+  /** Page path the filters navigate within. */
+  route: string;
   types: { id: number; name: string }[];
   categories: CategoryOption[];
   beforeNavigate: () => boolean;
@@ -38,6 +36,7 @@ interface ProductPriceFilterBarProps {
 }
 
 export function ProductPriceFilterBar({
+  route,
   types,
   categories,
   beforeNavigate,
@@ -75,11 +74,11 @@ export function ProductPriceFilterBar({
       if (search.trim()) params.set("search", search.trim());
       else params.delete("search");
       mutate(params);
-      router.push(ROUTE + (params.size ? "?" + params.toString() : ""), {
+      router.push(route + (params.size ? "?" + params.toString() : ""), {
         scroll: false,
       });
     },
-    [router, search, beforeNavigate],
+    [router, search, beforeNavigate, route],
   );
 
   const changeSearch = (value: string) => {
@@ -95,7 +94,7 @@ export function ProductPriceFilterBar({
       params.delete("open");
       if (value.trim()) params.set("search", value.trim());
       else params.delete("search");
-      router.replace(ROUTE + (params.size ? "?" + params.toString() : ""), {
+      router.replace(route + (params.size ? "?" + params.toString() : ""), {
         scroll: false,
       });
     }, 300);
@@ -122,7 +121,7 @@ export function ProductPriceFilterBar({
     if (searchTimeout.current) clearTimeout(searchTimeout.current);
     if (!beforeNavigate()) return;
     setSearch("");
-    router.push(ROUTE);
+    router.push(route);
   };
 
   return (

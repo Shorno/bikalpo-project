@@ -26,7 +26,7 @@ import {
 } from "@/components/features/product-setup/setup-table-footer";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { ADMIN_BASE } from "@/lib/routes";
+import { ADMIN_BASE, WAREHOUSE_BASE } from "@/lib/routes";
 import { cn } from "@/lib/utils";
 import { orpc } from "@/utils/orpc";
 import styles from "./product-price.module.css";
@@ -37,16 +37,65 @@ import {
 import {
   type PriceDraft,
   type PriceGroup,
+  type PriceRow,
   ProductPriceTable,
 } from "./product-price-table";
 
-const ROUTE = `${ADMIN_BASE}/product-price`;
+export type PriceMode = "admin" | "shop" | "warehouse";
+
+const MODE_CONFIG: Record<
+  PriceMode,
+  {
+    route: string;
+    title: string;
+    badge: string;
+    description: string;
+    emptyText: string;
+    emptyHref: string;
+    emptyLabel: string;
+  }
+> = {
+  admin: {
+    route: `${ADMIN_BASE}/product-price`,
+    title: "Consumer Price Management",
+    badge: "Global Reference Price",
+    description: "Admin control · Global reference prices for all products.",
+    emptyText:
+      "Adjust your filters or create a product with variants to manage reference prices.",
+    emptyHref: `${ADMIN_BASE}/products/new`,
+    emptyLabel: "Add Product",
+  },
+  shop: {
+    route: "/dashboard/pricing",
+    title: "Price Management",
+    badge: "My Selling Price",
+    description: "The prices customers pay in your store.",
+    emptyText:
+      "Adjust your filters or add products from the catalog to set your selling prices.",
+    emptyHref: "/dashboard/product-catalog",
+    emptyLabel: "Browse Catalog",
+  },
+  warehouse: {
+    route: `${WAREHOUSE_BASE}/pricing`,
+    title: "Price Management",
+    badge: "My Selling Price",
+    description: "The prices shop owners pay when they order from you.",
+    emptyText:
+      "Adjust your filters or add products from the catalog to set your selling prices.",
+    emptyHref: `${WAREHOUSE_BASE}/catalog`,
+    emptyLabel: "Browse Catalog",
+  },
+};
+
 function parseIntParam(value: string | null) {
   const number = Number(value);
   return Number.isSafeInteger(number) && number > 0 ? number : undefined;
 }
 
-export function ProductPriceClient() {
+export function ProductPriceClient({ mode = "admin" }: { mode?: PriceMode }) {
+  const config = MODE_CONFIG[mode];
+  const ROUTE = config.route;
+  const isAdmin = mode === "admin";
   const searchParams = useSearchParams();
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -64,31 +113,60 @@ export function ProductPriceClient() {
   const pageSize =
     SETUP_PAGE_SIZE_OPTIONS.find((size) => size === requestedPageSize) ?? 10;
   const filterKey = JSON.stringify([filterInput, page, pageSize]);
-  const { data: typesData } = useQuery(
-    orpc.adminProductType.getAll.queryOptions({ input: {} }),
-  );
-  const types =
-    typesData?.types?.map((type) => ({ id: type.id, name: type.name })) ?? [];
-  const { data: categoriesRaw = [] } = useQuery(
-    orpc.category.getAll.queryOptions(),
-  );
-  const categories: CategoryOption[] = categoriesRaw.map((category) => ({
-    id: category.id,
-    name: category.name,
-    typeId: category.typeId ?? null,
-    subCategory:
-      category.subCategory?.map((sub) => ({ id: sub.id, name: sub.name })) ??
-      [],
-  }));
-  const { data, isLoading, isError, error, refetch } = useQuery(
-    orpc.product.listConsumerReferencePrices.queryOptions({
-      input: { ...filterInput, page, limit: pageSize },
+  // Admin filters list the whole catalog; sellers only see what they stock.
+  const { data: typesData } = useQuery({
+    ...orpc.adminProductType.getAll.queryOptions({ input: {} }),
+    enabled: isAdmin,
+  });
+  const { data: categoriesRaw = [] } = useQuery({
+    ...orpc.category.getAll.queryOptions(),
+    enabled: isAdmin,
+  });
+  const listInput = { ...filterInput, page, limit: pageSize };
+  const adminQuery = useQuery({
+    ...orpc.product.listConsumerReferencePrices.queryOptions({
+      input: listInput,
     }),
-  );
+    enabled: isAdmin,
+  });
+  const shopQuery = useQuery({
+    ...orpc.shopOwner.listMyPrices.queryOptions({ input: listInput }),
+    enabled: mode === "shop",
+  });
+  const warehouseQuery = useQuery({
+    ...orpc.warehouse.listMyPrices.queryOptions({ input: listInput }),
+    enabled: mode === "warehouse",
+  });
+  const listQuery =
+    mode === "shop"
+      ? shopQuery
+      : mode === "warehouse"
+        ? warehouseQuery
+        : adminQuery;
+  const { data, isLoading, isError, error, refetch } = listQuery;
+  const sellerFilters = (mode === "shop" ? shopQuery : warehouseQuery).data
+    ?.filterOptions;
+  const types = isAdmin
+    ? (typesData?.types?.map((type) => ({ id: type.id, name: type.name })) ??
+      [])
+    : (sellerFilters?.types ?? []);
+  const categories: CategoryOption[] = isAdmin
+    ? categoriesRaw.map((category) => ({
+        id: category.id,
+        name: category.name,
+        typeId: category.typeId ?? null,
+        subCategory:
+          category.subCategory?.map((sub) => ({
+            id: sub.id,
+            name: sub.name,
+          })) ?? [],
+      }))
+    : (sellerFilters?.categories ?? []);
+  const items = useMemo<PriceRow[]>(() => data?.items ?? [], [data?.items]);
   const stats = data?.stats;
   const groups = useMemo(() => {
     const result = new Map<number, PriceGroup>();
-    for (const row of data?.items ?? []) {
+    for (const row of items) {
       let group = result.get(row.productId);
       if (!group) {
         group = {
@@ -107,7 +185,7 @@ export function ProductPriceClient() {
       group.rows.push(row);
     }
     return [...result.values()];
-  }, [data?.items]);
+  }, [items]);
   const openParam = searchParams.get("open") ?? "";
   const [expanded, setExpanded] = useState<Set<string>>(
     () => new Set(openParam.split(",").filter(Boolean)),
@@ -127,9 +205,15 @@ export function ProductPriceClient() {
     setEditError("");
   }, [filterKey]);
   const refreshPrices = () =>
-    queryClient.invalidateQueries({ queryKey: orpc.product.key() });
-  const updateMutation = useMutation({
-    ...orpc.product.updateProductReferencePrices.mutationOptions(),
+    queryClient.invalidateQueries({
+      queryKey:
+        mode === "shop"
+          ? orpc.shopOwner.key()
+          : mode === "warehouse"
+            ? orpc.warehouse.key()
+            : orpc.product.key(),
+    });
+  const mutationCallbacks = {
     onSuccess: async () => {
       dirtyRef.current = false;
       setDraft(null);
@@ -142,7 +226,25 @@ export function ProductPriceClient() {
         error.message ||
           "Prices could not be saved. Your changes are still here; try again.",
       ),
+  };
+  const adminMutation = useMutation({
+    ...orpc.product.updateProductReferencePrices.mutationOptions(),
+    ...mutationCallbacks,
   });
+  const shopMutation = useMutation({
+    ...orpc.shopOwner.updateMyProductPrices.mutationOptions(),
+    ...mutationCallbacks,
+  });
+  const warehouseMutation = useMutation({
+    ...orpc.warehouse.updateMyProductPrices.mutationOptions(),
+    ...mutationCallbacks,
+  });
+  const updateMutation =
+    mode === "shop"
+      ? shopMutation
+      : mode === "warehouse"
+        ? warehouseMutation
+        : adminMutation;
   const busy = updateMutation.isPending;
   const beforeNavigate = useCallback(() => {
     if (busy) return false;
@@ -220,11 +322,20 @@ export function ProductPriceClient() {
   };
   const saveEdit = () => {
     if (!draft || busy) return;
+    const lockedIds = new Set(
+      items
+        .filter((item) => item.canEditExchange === false)
+        .map((item) => item.variantPriceId),
+    );
     for (const value of draft.rows) {
-      const row = data?.items.find(
+      const row = items.find(
         (item) => item.variantPriceId === value.variantPriceId,
       );
-      if (row?.exchangeEnabled && !value.exchangePrice.trim()) {
+      if (
+        row?.exchangeEnabled &&
+        !lockedIds.has(value.variantPriceId) &&
+        !value.exchangePrice.trim()
+      ) {
         setEditError(`Enter an Exchange Price for ${row.variantName}.`);
         return;
       }
@@ -233,7 +344,10 @@ export function ProductPriceClient() {
       productId: draft.productId,
       rows: draft.rows.map((row) => ({
         ...row,
-        exchangePrice: row.exchangePrice.trim() || undefined,
+        // Locked rows keep the creator's credit, so Exchange is not sent.
+        exchangePrice: lockedIds.has(row.variantPriceId)
+          ? undefined
+          : row.exchangePrice.trim() || undefined,
       })),
     });
     if (!input.success) {
@@ -243,7 +357,7 @@ export function ProductPriceClient() {
       const row =
         index == null
           ? undefined
-          : data?.items.find(
+          : items.find(
               (item) =>
                 item.variantPriceId === draft.rows[index]?.variantPriceId,
             );
@@ -303,37 +417,44 @@ export function ProductPriceClient() {
             <div>
               <div className="flex flex-wrap items-center gap-2">
                 <h1 className="text-lg font-semibold tracking-tight">
-                  Consumer Price Management
+                  {config.title}
                 </h1>
                 <Badge variant="secondary" className="font-normal">
-                  Global Reference Price
+                  {config.badge}
                 </Badge>
               </div>
               <p className="mt-0.5 text-sm text-muted-foreground">
-                Admin control · Global reference prices for all products.
+                {config.description}
               </p>
             </div>
           </div>
         </div>
-        <div className="grid grid-cols-3 divide-x border-t bg-muted/30">
-          <Insight icon={Boxes} label="Products" value={stats?.totalProducts} />
-          <Insight
-            icon={Layers3}
-            label="Variants"
-            value={stats?.totalVariants}
-          />
-          <Insight
-            icon={CalendarClock}
-            label="Last Updated"
-            text={
-              stats?.lastUpdated
-                ? format(new Date(stats.lastUpdated), "d MMM yyyy")
-                : "—"
-            }
-          />
-        </div>
+        {isAdmin && (
+          <div className="grid grid-cols-3 divide-x border-t bg-muted/30">
+            <Insight
+              icon={Boxes}
+              label="Products"
+              value={stats?.totalProducts}
+            />
+            <Insight
+              icon={Layers3}
+              label="Variants"
+              value={stats?.totalVariants}
+            />
+            <Insight
+              icon={CalendarClock}
+              label="Last Updated"
+              text={
+                stats?.lastUpdated
+                  ? format(new Date(stats.lastUpdated), "d MMM yyyy")
+                  : "—"
+              }
+            />
+          </div>
+        )}
       </header>
       <ProductPriceFilterBar
+        route={ROUTE}
         types={types}
         categories={categories}
         beforeNavigate={beforeNavigate}
@@ -423,11 +544,10 @@ export function ProductPriceClient() {
             />
             <p className="mt-3 text-sm font-semibold">No products found</p>
             <p className="mt-1 text-sm text-muted-foreground">
-              Adjust your filters or create a product with variants to manage
-              reference prices.
+              {config.emptyText}
             </p>
             <Button asChild size="sm" className="mt-4">
-              <Link href={`${ADMIN_BASE}/products/new`}>Add Product</Link>
+              <Link href={config.emptyHref}>{config.emptyLabel}</Link>
             </Button>
           </div>
         ) : (

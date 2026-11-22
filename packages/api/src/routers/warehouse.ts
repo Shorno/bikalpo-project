@@ -72,6 +72,11 @@ import {
   validateWarehouseStockTracking,
   WarehouseExpiryValidationError,
 } from "../services/warehouse-expiry";
+import { updateProductReferencePricesSchema } from "../consumer-price";
+import {
+  ownerPriceListSchema,
+  ownerPriceService,
+} from "../services/owner-prices";
 import {
   allocateCurrentStockLots,
   unitCostFromStockEntry,
@@ -10475,6 +10480,53 @@ const pricingQueries = {
   /**
    * Update the wholesale/supply price for a specific inventory item.
    */
+  /** Wholesale price list in the admin price-table shape. */
+  listMyPrices: warehouseProcedure
+    .input(ownerPriceListSchema)
+    .handler(async ({ context, input }) => {
+      const ownerId = context.session.user.id;
+      const [list, filterOptions] = await Promise.all([
+        ownerPriceService.listOwnerPrices("warehouse", ownerId, input),
+        ownerPriceService.listOwnerPriceFilters("warehouse", ownerId),
+      ]);
+      return { ...list, filterOptions };
+    }),
+
+  /** Save every edited variant of one product (New and Exchange prices). */
+  updateMyProductPrices: warehouseProcedure
+    .input(updateProductReferencePricesSchema)
+    .handler(async ({ context, input }) => {
+      const ownerId = context.session.user.id;
+      const changes = await ownerPriceService.planOwnerProductPriceUpdate(
+        "warehouse",
+        ownerId,
+        input,
+      );
+      await db.transaction(async (tx) => {
+        for (const change of changes) {
+          if (change.retailPrice != null) {
+            await tx
+              .update(inventory)
+              .set({ retailPrice: change.retailPrice, updatedAt: new Date() })
+              .where(
+                and(
+                  eq(inventory.id, change.inventoryId),
+                  eq(inventory.ownerType, "warehouse"),
+                  eq(inventory.ownerId, ownerId),
+                ),
+              );
+          }
+          if (change.exchange) {
+            await tx
+              .update(productVariant)
+              .set(change.exchange)
+              .where(eq(productVariant.id, change.variantId));
+          }
+        }
+      });
+      return { updated: changes.length };
+    }),
+
   updateWarehousePrice: warehouseProcedure
     .input(
       z.object({
