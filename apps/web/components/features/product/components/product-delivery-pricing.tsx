@@ -274,9 +274,10 @@ export function ProductPricingTable({
     : "grid-cols-[minmax(0,1fr)_minmax(0,9rem)]";
 
   return (
-    <div className="overflow-hidden rounded-lg border">
+    // No box of its own: the Pricing card already frames the rows.
+    <div>
       <div
-        className={`grid ${columns} gap-3 bg-muted/50 px-3 py-2 text-xs font-medium text-muted-foreground`}
+        className={`grid ${columns} gap-3 border-b pb-2 text-xs font-medium text-muted-foreground`}
       >
         <span>Variant</span>
         {hasExchange ? (
@@ -294,7 +295,7 @@ export function ProductPricingTable({
           return (
             <Fragment key={brandId}>
               {grouped && (
-                <div className="bg-muted/20 px-3 py-1.5 text-xs font-semibold">
+                <div className="pt-3 pb-1 text-xs font-semibold">
                   {brandRows[0]?.brandName}
                 </div>
               )}
@@ -306,7 +307,7 @@ export function ProductPricingTable({
                 const error = pricingRowError(row, value);
                 const label = `${row.brandName} ${row.variantName}`;
                 return (
-                  <div key={row.key} className="px-3 py-2">
+                  <div key={row.key} className="py-2">
                     <div className={`grid ${columns} items-center gap-3`}>
                       <span className="min-w-0 truncate text-sm">
                         {row.variantName}
