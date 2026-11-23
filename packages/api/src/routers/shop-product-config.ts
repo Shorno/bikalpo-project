@@ -4,7 +4,6 @@ import {
   RETAILER_BRAND_CREATION_MODE,
   validateBrandCreationSubmission,
 } from "@bikalpo-project/db/brand-creation";
-import { shouldEnableWarehouseCylinderExchange } from "@bikalpo-project/db/fulfillment";
 import {
   adminProductGenerationTemplate,
   brand,
@@ -47,7 +46,6 @@ import {
   sellerRetailPrice,
   sellerVariantPriceShape,
 } from "./helpers/product-delivery";
-import { syncWarehouseCylinderExchange } from "./helpers/warehouse-cylinder-exchange";
 
 const configuredVariantSchema = z.object({
   variantOptionId: z.number().int().positive(),
@@ -889,24 +887,8 @@ export const shopProductConfigEndpoints = {
             },
           });
 
-        const cylinderExchangeEnabled = shouldEnableWarehouseCylinderExchange({
-          isReturnablePack: input.details.isReturnablePack,
-          family: core.category?.type?.family,
-          name: core.category?.type?.name,
-          slug: core.category?.type?.slug,
-        });
-        // Each variant keeps the Exchange choice saved above (an Exchange
-        // price was entered). The product-wide switch can only turn it off:
-        // forcing it on gave priceless variants Exchange with ৳0 credit.
-        if (!cylinderExchangeEnabled) {
-          for (const productId of new Set([...created, ...updated])) {
-            await syncWarehouseCylinderExchange(tx, {
-              productId,
-              enabled: false,
-            });
-          }
-        }
-
+        // Exchange is saved per variant above: on only when an Exchange
+        // price was entered. Empty Pack Return does not change it.
         return { created, updated, deactivated };
       });
       const recalculatedOrderIds = new Set<number>();

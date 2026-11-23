@@ -11,7 +11,6 @@ import { withCoreTypeRuleSettings } from "./helpers/product-type-rules";
 import {
   buildProductTypeFulfillmentProfile,
   db,
-  shouldEnableWarehouseCylinderExchange,
 } from "@bikalpo-project/db";
 import {
   countAddableBrands,
@@ -153,7 +152,6 @@ import {
   resolveConcreteVariantForConfig,
 } from "./helpers/sync-generated-variants";
 import {
-  syncWarehouseCylinderExchange,
   warehouseVariantAllowsCylinderExchange,
 } from "./helpers/warehouse-cylinder-exchange";
 
@@ -7759,8 +7757,9 @@ function warehouseExchangeCreditAmount(input: {
 
 /**
  * Create Product "Pricing": an entered New price becomes this warehouse's
- * selling price, and its Exchange credit (New minus Exchange) is kept with
- * it. An empty price leaves the current price and credit as they are.
+ * selling price. The variant offers Exchange only when an Exchange price
+ * was entered too, with credit New minus Exchange. An empty price leaves
+ * the current price and Exchange as they are.
  */
 async function applyWarehouseEnteredPrice(
   tx: any,
@@ -7782,7 +7781,10 @@ async function applyWarehouseEnteredPrice(
     );
   await tx
     .update(productVariant)
-    .set({ exchangeCreditAmount: warehouseExchangeCreditAmount(row) })
+    .set({
+      exchangeEnabled: Boolean(row.exchangeEnabled),
+      exchangeCreditAmount: warehouseExchangeCreditAmount(row),
+    })
     .where(eq(productVariant.id, variantId));
 }
 
@@ -8879,16 +8881,9 @@ const warehouseProductCreation = {
             },
           });
 
+        // Exchange is set per variant from its entered prices (see
+        // applyWarehouseEnteredPrice), not from Empty Pack Return.
         for (const productId of new Set([...created, ...updated])) {
-          await syncWarehouseCylinderExchange(tx, {
-            productId,
-            enabled: shouldEnableWarehouseCylinderExchange({
-              isReturnablePack: input.details.isReturnablePack,
-              family: core.category?.type?.family,
-              name: core.category?.type?.name,
-              slug: core.category?.type?.slug,
-            }),
-          });
           await linkProductVariantsToCatalog(tx, productId);
         }
 
