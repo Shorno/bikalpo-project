@@ -121,8 +121,6 @@ type CoreProductConfigFormProps = {
     initialBrands?: CoreProductConfigValues["brands"];
     presetBrands?: CoreProductConfigValues["brands"];
     reloadPresetLabel?: string;
-    variantAliases?: Record<number, string>;
-    onVariantAliasChange?: (variantOptionId: number, alias: string) => void;
     /** "Create brand" in the brand picker; sellers get a store-only brand. */
     onCreateBrand?: (name: string) => Promise<BrandOption>;
     /** "+ variant" on a brand; sellers get a store-only variant. */
@@ -1138,53 +1136,6 @@ export default function CoreProductConfigForm({
                         </div>
                       )}
                     </ProductEditorSection>
-
-                    {adapter?.onVariantAliasChange &&
-                      (() => {
-                        const selectedVariantIds = [
-                          ...new Set(
-                            selectedBrands.flatMap((brand) =>
-                              brand.variants.map(
-                                (variant) => variant.variantOptionId,
-                              ),
-                            ),
-                          ),
-                        ];
-                        return selectedVariantIds.length > 0 ? (
-                          <ProductEditorSection
-                            title="Warehouse variant labels"
-                            description="Optional display-only aliases for this warehouse. Measurements and inventory units remain controlled by Admin Variant Setup."
-                          >
-                            <div className="grid gap-4 sm:grid-cols-2">
-                              {selectedVariantIds.map((variantOptionId) => {
-                                const option = availableVariants.find(
-                                  (item) => item.id === variantOptionId,
-                                );
-                                if (!option) return null;
-                                return (
-                                  <Field key={variantOptionId}>
-                                    <FieldLabel>{option.name}</FieldLabel>
-                                    <Input
-                                      value={
-                                        adapter.variantAliases?.[
-                                          variantOptionId
-                                        ] ?? ""
-                                      }
-                                      onChange={(event) =>
-                                        adapter.onVariantAliasChange?.(
-                                          variantOptionId,
-                                          event.target.value,
-                                        )
-                                      }
-                                      placeholder="Use admin canonical label"
-                                    />
-                                  </Field>
-                                );
-                              })}
-                            </div>
-                          </ProductEditorSection>
-                        ) : null;
-                      })()}
 
                     <SharedTemplateEditor
                       form={form}

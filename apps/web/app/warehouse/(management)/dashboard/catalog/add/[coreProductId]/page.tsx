@@ -19,6 +19,7 @@ export default function WarehouseCoreProductConfigPage() {
   const coreProductId = Number(
     useParams<{ coreProductId: string }>().coreProductId,
   );
+  // Labels saved earlier are sent back unchanged; Add has no labels section.
   const [variantAliases, setVariantAliases] = useState<Record<number, string>>(
     {},
   );
@@ -162,12 +163,6 @@ export default function WarehouseCoreProductConfigPage() {
             ? normalizedPreset
             : undefined,
         reloadPresetLabel: "Reload Admin Preset",
-        variantAliases,
-        onVariantAliasChange: (variantOptionId, alias) =>
-          setVariantAliases((current) => ({
-            ...current,
-            [variantOptionId]: alias,
-          })),
         onConfigure: async (values) => configureMutation.mutateAsync(values),
         // Created directly for this store; no admin request.
         onCreateBrand: async (name) =>
