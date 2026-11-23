@@ -102,7 +102,6 @@ import {
   ProductEditorIdentity,
   ProductEditorSection,
 } from "./product-editor-ui";
-import ProductFeaturesInput from "./product-features-input";
 
 const PRODUCTS_BASE = "/dashboard/admin/products";
 
@@ -2078,20 +2077,6 @@ function SharedTemplateEditor({
 
       {part === "content" && (
       <>
-      <ProductEditorSection
-        title="Features"
-        description="Grouped key-value specifications (e.g. Weight — 500g)."
-      >
-        <form.Field name="template.features">
-          {(field: any) => (
-            <ProductFeaturesInput
-              value={field.state.value}
-              onChange={field.handleChange}
-            />
-          )}
-        </form.Field>
-      </ProductEditorSection>
-
       <ProductEditorSection
         title="Media"
         description="Images and video for this product."

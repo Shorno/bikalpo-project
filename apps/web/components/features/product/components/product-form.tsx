@@ -118,7 +118,6 @@ import {
   ProductEditorSection as FormSection,
   ProductEditorIdentity as IdentitySummaryRow,
 } from "./product-editor-ui";
-import ProductFeaturesInput from "./product-features-input";
 
 // ============================================================
 // Types
@@ -1842,22 +1841,6 @@ export default function ProductForm({
                   </div>
                 </FormSection>
               )}
-
-              {/* ── Features ── */}
-              <FormSection
-                variant="card"
-                title="Features"
-                description="Grouped key-value specifications (e.g. Weight — 500g)."
-              >
-                <form.Field name="features">
-                  {(field) => (
-                    <ProductFeaturesInput
-                      value={field.state.value}
-                      onChange={field.handleChange}
-                    />
-                  )}
-                </form.Field>
-              </FormSection>
 
               {/* ── Media ── */}
               <FormSection
