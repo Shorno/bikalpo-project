@@ -755,7 +755,13 @@ function getActiveReferencePrices(productRow: any) {
   });
 }
 
-function getWebViewProductConditions() {
+/**
+ * Buyer-visible products. Unlisted products stay out of lists and search but
+ * open by link, so only the product page passes allowUnlisted.
+ */
+function getWebViewProductConditions(
+  { allowUnlisted = false }: { allowUnlisted?: boolean } = {},
+) {
   const scheduledCondition = or(
     isNull(product.scheduledAt),
     lte(product.scheduledAt, new Date()),
@@ -763,7 +769,9 @@ function getWebViewProductConditions() {
 
   return [
     eq(product.status, "active"),
-    eq(product.visibility, "public"),
+    allowUnlisted
+      ? inArray(product.visibility, ["public", "unlisted"])
+      : eq(product.visibility, "public"),
     scheduledCondition,
   ].filter(Boolean) as SQL[];
 }
@@ -2130,7 +2138,7 @@ const queries = {
       const found = await db.query.product.findFirst({
         where: and(
           eq(product.slug, input.slug),
-          ...getWebViewProductConditions(),
+          ...getWebViewProductConditions({ allowUnlisted: true }),
         ),
         with: {
           category: { columns: { name: true, slug: true } },
@@ -5564,7 +5572,8 @@ const mutations = {
             item.product.createdById !== item.shopId ||
             item.shopId !== userCart.directShopId ||
             item.product.status !== "active" ||
-            item.product.visibility !== "public" ||
+            (item.product.visibility !== "public" &&
+              item.product.visibility !== "unlisted") ||
             (item.product.scheduledAt != null &&
               item.product.scheduledAt > new Date()) ||
             item.variant?.productId !== item.productId ||

@@ -129,6 +129,8 @@ export function formatVariantDefinition(definition: VariantDefinition): string {
     case "loose":
       return `Loose (per ${tidy(definition.measurementUnit)})`;
     case "attribute":
+      // A combination (attribute "Colour / Size") reads as its value: "Red / M".
+      if (definition.attribute.includes(" / ")) return tidy(definition.value);
       return [definition.attribute, definition.value].map(tidy).filter(Boolean).join(" ");
   }
 }

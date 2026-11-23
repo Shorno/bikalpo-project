@@ -44,6 +44,8 @@ import {
 import {
   deliveryColumns,
   deliveryDetailsShape,
+  publishShape,
+  publishStatusFor,
   sellerRetailPrice,
   sellerVariantPriceShape,
 } from "./helpers/product-delivery";
@@ -91,10 +93,11 @@ const templateDetailsSchema = z.object({
   allowedPackBrands: z.array(z.string()).default([]),
   allowedPackSizes: z.array(z.string()).default([]),
   ...deliveryDetailsShape,
-  visibility: z.enum(["public", "private"]).default("private"),
+  visibility: z.enum(["public", "private", "unlisted"]).default("private"),
 });
 
 const configureSchema = z.object({
+  ...publishShape,
   coreProductId: z.number().int().positive(),
   expectedVersion: z.number().int().positive().optional().nullable(),
   details: templateDetailsSchema,
@@ -811,7 +814,7 @@ export const shopProductConfigEndpoints = {
                 allowedPackBrands: input.details.allowedPackBrands,
                 allowedPackSizes: input.details.allowedPackSizes,
                 visibility: input.details.visibility,
-                status: "active",
+                status: publishStatusFor(input.publish, brandRow.id, "active"),
                 inStock: false,
                 creatorSource: "shop",
                 createdById: shopId,
@@ -838,10 +841,15 @@ export const shopProductConfigEndpoints = {
             }
             created.push(inserted.id);
           } else {
-            if (targetProduct.status !== "active") {
+            const nextStatus = publishStatusFor(
+              input.publish,
+              brandRow.id,
+              "active",
+            );
+            if (targetProduct.status !== nextStatus) {
               await tx
                 .update(product)
-                .set({ status: "active" })
+                .set({ status: nextStatus })
                 .where(eq(product.id, targetProduct.id));
             }
             updated.push(targetProduct.id);

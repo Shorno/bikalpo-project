@@ -81,7 +81,7 @@ export function createRetailerOrderStockWriter(
           AND ${productVariant.productId} = ${input.productId}
           AND ${productVariant.isActive} IS TRUE
           AND ${product.status} = 'active'
-          AND ${product.visibility} = 'public'
+          AND ${product.visibility} IN ('public', 'unlisted')
           AND ${user.role} = 'shop_owner'
           AND ${user.sellerStatus} = 'approved'
       )`,

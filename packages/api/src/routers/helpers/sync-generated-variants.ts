@@ -261,6 +261,19 @@ export function buildAutoVariantRows(params: {
  *
  * Existing rows keep their consumerPrice untouched.
  */
+/** Exchange columns for a variant, only when the caller sent them. */
+function exchangeColumns(
+  desired?: { exchangeEnabled?: boolean; exchangeCreditAmount?: string },
+) {
+  if (desired?.exchangeEnabled === undefined) return {};
+  return {
+    exchangeEnabled: desired.exchangeEnabled,
+    exchangeCreditAmount: desired.exchangeEnabled
+      ? desired.exchangeCreditAmount || "0"
+      : "0.00",
+  };
+}
+
 export async function syncBrandVariantPrices(
   client: DbClient,
   params: {
@@ -269,6 +282,9 @@ export async function syncBrandVariantPrices(
     variants: Array<{
       variantOptionId: number;
       consumerPrice: string;
+      /** Left out, the variant's exchange setting is not changed. */
+      exchangeEnabled?: boolean;
+      exchangeCreditAmount?: string;
     }>;
     settings: GeneratedVariantProductSettings;
   },
@@ -367,6 +383,7 @@ export async function syncBrandVariantPrices(
         packWeightKg: resolved.weightKg || null,
         sellUnit: resolved.label,
         isActive: true,
+        ...exchangeColumns(desired),
       })
       .where(eq(productVariant.sourceVariantPriceId, row.id));
   }
@@ -400,6 +417,14 @@ export async function syncBrandVariantPrices(
 
     if (autoVariantRows.length > 0) {
       await client.insert(productVariant).values(autoVariantRows);
+    }
+    for (const price of insertedPrices) {
+      const columns = exchangeColumns(desiredByOption.get(price.variantOptionId));
+      if (Object.keys(columns).length === 0) continue;
+      await client
+        .update(productVariant)
+        .set(columns)
+        .where(eq(productVariant.sourceVariantPriceId, price.id));
     }
   }
 

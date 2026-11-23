@@ -1,4 +1,4 @@
-import { db, FULFILLMENT_UNIT_CODES } from "@bikalpo-project/db";
+import { db } from "@bikalpo-project/db";
 import { validateBrandCreationSubmission } from "@bikalpo-project/db/brand-creation";
 import {
   type AdminProductGenerationTemplateDetails,
@@ -125,14 +125,14 @@ const createProductSchema = z.object({
     .default("1"),
   conversionEnabled: z.boolean().default(false),
   inventoryLooseUnitEnabled: z.boolean().default(false),
-  inventoryLooseUnit: z.enum(FULFILLMENT_UNIT_CODES).default("kg"),
+  inventoryLooseUnit: z.string().trim().min(1).max(20).default("kg"),
   // Delivery
   ...deliveryDetailsShape,
   deliveryCostPerCarton: z.string().optional().nullable(),
   /** Total unit size in KG (e.g. 50 for 50KG carton). Used for conversion. */
   unitSize: z.string().optional().nullable(),
   // Visibility / publish
-  visibility: z.enum(["public", "private"]).default("public"),
+  visibility: z.enum(["public", "private", "unlisted"]).default("public"),
   scheduledAt: z.string().optional().nullable(), // ISO date string
   // Variant prices (brand + variant + consumer reference price)
   variantPrices: z

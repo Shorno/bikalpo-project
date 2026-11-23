@@ -1,4 +1,8 @@
-import { FULFILLMENT_UNIT_CODES } from "@bikalpo-project/db/fulfillment";
+import {
+  DELIVERY_COST_METHOD_CODES,
+  INVENTORY_UNIT_CODES,
+  parseConversionRule,
+} from "@bikalpo-project/db/product-client-options";
 import { DELIVERY_COST_UNIT_CODES } from "@bikalpo-project/db/product-delivery";
 import * as z from "zod";
 
@@ -34,7 +38,7 @@ export const coreProductTemplateSchema = z.object({
     .default("1"),
   conversionEnabled: z.boolean().default(false),
   inventoryLooseUnitEnabled: z.boolean().default(false),
-  inventoryLooseUnit: z.enum(FULFILLMENT_UNIT_CODES).default("kg"),
+  inventoryLooseUnit: z.string().trim().min(1).max(20).default("kg"),
   isReturnablePack: z.boolean().default(false),
   defaultPackDepositAmount: z
     .string()
@@ -51,7 +55,31 @@ export const coreProductTemplateSchema = z.object({
     .regex(/^(\d{1,8}(\.\d{1,2})?)?$/, "Use a valid delivery cost")
     .optional()
     .default(""),
-  visibility: z.enum(["public", "private"]).default("public"),
+  // Client layout: Delivery Cost Counting, Inventory Unit, Conversion text
+  // and the two variant attributes.
+  deliveryCostMethod: z
+    .enum(DELIVERY_COST_METHOD_CODES)
+    .or(z.literal(""))
+    .optional()
+    .default(""),
+  inventoryUnit: z
+    .enum(INVENTORY_UNIT_CODES)
+    .or(z.literal(""))
+    .optional()
+    .default(""),
+  conversionRule: z
+    .string()
+    .trim()
+    .max(60)
+    .refine(
+      (value) => value === "" || parseConversionRule(value) !== null,
+      "Write the conversion like 1 KG = 1000 G",
+    )
+    .optional()
+    .default(""),
+  variantAttr1: z.string().trim().max(50).optional().default(""),
+  variantAttr2: z.string().trim().max(50).optional().default(""),
+  visibility: z.enum(["public", "private", "unlisted"]).default("public"),
 });
 
 export const coreProductBrandConfigSchema = z.object({

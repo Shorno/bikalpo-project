@@ -7640,6 +7640,8 @@ import {
 import {
   deliveryColumns,
   deliveryDetailsShape,
+  publishShape,
+  publishStatusFor,
   sellerRetailPrice,
   sellerVariantPriceShape,
 } from "./helpers/product-delivery";
@@ -7682,7 +7684,7 @@ const warehouseTemplateDetailsSchema = z.object({
   allowedPackBrands: z.array(z.string()).default([]),
   allowedPackSizes: z.array(z.string()).default([]),
   ...deliveryDetailsShape,
-  visibility: z.enum(["public", "private"]).default("private"),
+  visibility: z.enum(["public", "private", "unlisted"]).default("private"),
 });
 
 function assertWarehouseExpiryConfiguration(
@@ -7709,6 +7711,7 @@ function validateStockTrackingOrThrow(
 }
 
 const configureWarehouseCoreSchema = z.object({
+  ...publishShape,
   coreProductId: z.number().int().positive(),
   expectedVersion: z.number().int().positive().optional().nullable(),
   details: warehouseTemplateDetailsSchema,
@@ -8638,7 +8641,7 @@ const warehouseProductCreation = {
                 allowedPackBrands: input.details.allowedPackBrands,
                 allowedPackSizes: input.details.allowedPackSizes,
                 visibility: input.details.visibility,
-                status: "active",
+                status: publishStatusFor(input.publish, brand.id, "active"),
                 inStock: false,
                 creatorSource: "warehouse",
                 createdById: warehouseId,
@@ -8669,7 +8672,7 @@ const warehouseProductCreation = {
             await tx
               .update(productTable)
               .set({
-                status: "active",
+                status: publishStatusFor(input.publish, brand.id, "active"),
                 isReturnablePack: input.details.isReturnablePack,
                 defaultPackDepositAmount:
                   input.details.defaultPackDepositAmount,

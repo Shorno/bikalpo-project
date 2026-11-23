@@ -46,6 +46,7 @@ export { trackingTypeEnum };
 export const visibilityEnum = pgEnum("product_visibility", [
   "public",
   "private",
+  "unlisted",
 ]);
 
 /** Explicit creator of an actual product row. */
@@ -167,6 +168,19 @@ export const product = pgTable(
     inventoryLooseUnit: varchar("inventory_loose_unit", { length: 20 })
       .default("kg")
       .notNull(),
+
+    /** Inventory & Product Rules → Inventory Unit (pcs, box, cyl, kg...) */
+    inventoryUnit: varchar("inventory_unit", { length: 20 }),
+
+    /** Conversion text when Conversion is enabled, e.g. "1 KG = 1000 G" */
+    conversionRule: varchar("conversion_rule", { length: 60 }),
+
+    /** The two Variant Attributes (e.g. Type and Size) */
+    variantAttr1: varchar("variant_attr_1", { length: 50 }),
+    variantAttr2: varchar("variant_attr_2", { length: 50 }),
+
+    /** Delivery Cost Counting: free, fixed_per_order, per_unit, per_kg... */
+    deliveryCostMethod: varchar("delivery_cost_method", { length: 30 }),
 
     /** Unit delivery is charged per, e.g. cylinder, sack, box or kg */
     deliveryCostUnit: varchar("delivery_cost_unit", { length: 20 }),

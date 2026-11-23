@@ -25,6 +25,8 @@ import { catalogProductCode } from "./helpers/generate-sku";
 import {
   deliveryColumns,
   deliveryDetailsShape,
+  publishShape,
+  publishStatusFor,
 } from "./helpers/product-delivery";
 import {
   resolveConcreteVariantForConfig,
@@ -71,11 +73,12 @@ const sharedTemplateDetailsSchema = z.object({
     .regex(/^\d+(\.\d{1,2})?$/)
     .default("0"),
   ...deliveryDetailsShape,
-  visibility: z.enum(["public", "private"]).default("public"),
+  visibility: z.enum(["public", "private", "unlisted"]).default("public"),
 });
 
 const configureSchema = z
   .object({
+    ...publishShape,
     coreProductId: z.number().int(),
     expectedVersion: z.number().int().positive().optional().nullable(),
     details: sharedTemplateDetailsSchema,
@@ -90,6 +93,13 @@ const configureSchema = z
                 consumerPrice: z
                   .string()
                   .regex(/^\d+(\.\d{1,2})?$/, "Enter a valid price"),
+                // Variant Pricing "Exchange Price": the credit is New minus
+                // Exchange. Left out, the variant's exchange stays as it is.
+                exchangeEnabled: z.boolean().optional(),
+                exchangeCreditAmount: z
+                  .string()
+                  .regex(/^\d+(\.\d{1,2})?$/, "Enter a valid exchange credit")
+                  .optional(),
               }),
             )
             .min(1),
@@ -112,6 +122,22 @@ const configureSchema = z
       }
     });
   });
+
+/** Exchange settings of the product variant made from a variant price. */
+function exchangeOfPrice(
+  variants: Array<{
+    sourceVariantPriceId: number | null;
+    exchangeEnabled: boolean;
+    exchangeCreditAmount: string | null;
+  }>,
+  priceId: number,
+) {
+  const variant = variants.find((row) => row.sourceVariantPriceId === priceId);
+  return {
+    exchangeEnabled: variant?.exchangeEnabled ?? false,
+    exchangeCreditAmount: variant?.exchangeCreditAmount ?? "0",
+  };
+}
 
 function slugify(str: string): string {
   return str
@@ -227,6 +253,13 @@ export const adminProductConfigRouter = {
             brand: {
               columns: { id: true, name: true, slug: true, logo: true },
             },
+            variants: {
+              columns: {
+                sourceVariantPriceId: true,
+                exchangeEnabled: true,
+                exchangeCreditAmount: true,
+              },
+            },
             variantPrices: {
               with: {
                 variantOption: {
@@ -261,6 +294,7 @@ export const adminProductConfigRouter = {
           productSlug: p.slug,
           productImage: p.image,
           status: p.status,
+          isFeatured: p.isFeatured,
           product: {
             id: p.id,
             name: p.name,
@@ -289,6 +323,7 @@ export const adminProductConfigRouter = {
             variantOptionId: vp.variantOptionId,
             variantOptionName: vp.variantOption?.name ?? null,
             consumerPrice: vp.consumerPrice,
+            ...exchangeOfPrice(p.variants, vp.id),
             isActive: vp.isActive,
             sortOrder: vp.sortOrder,
             definitionKind: vp.variantOption?.definitionKind ?? null,
@@ -494,7 +529,31 @@ export const adminProductConfigRouter = {
           if (existing) {
             // Never touch customized identity fields — only status
             // and the variant selection.
-            if (existing.status === "inactive") {
+            const published = publishStatusFor(
+              input.publish,
+              brandConfig.brandId,
+              null,
+            );
+            const featured =
+              input.publish?.brandId === brandConfig.brandId
+                ? input.publish.featured
+                : undefined;
+            if (featured !== undefined && featured !== existing.isFeatured) {
+              await tx
+                .update(product)
+                .set({ isFeatured: featured })
+                .where(eq(product.id, existing.id));
+            }
+            if (published && published !== existing.status) {
+              await tx
+                .update(product)
+                .set({ status: published })
+                .where(eq(product.id, existing.id));
+              updated.push({
+                brandId: brandConfig.brandId,
+                productId: existing.id,
+              });
+            } else if (existing.status === "inactive") {
               await tx
                 .update(product)
                 .set({ status: "active" })
@@ -561,13 +620,21 @@ export const adminProductConfigRouter = {
               coreProductId,
               creatorSource: "admin",
               createdById: context.session.user.id,
-              status: details.status,
+              status: publishStatusFor(
+                input.publish,
+                brandConfig.brandId,
+                details.status,
+              ),
               visibility: details.visibility,
               scheduledAt: details.scheduledAt
                 ? new Date(details.scheduledAt)
                 : null,
               inStock: details.inStock,
-              isFeatured: details.isFeatured,
+              isFeatured:
+                input.publish?.brandId === brandConfig.brandId &&
+                input.publish.featured !== undefined
+                  ? input.publish.featured
+                  : details.isFeatured,
               reorderLevel: details.reorderLevel,
               supplier: details.supplier ?? null,
               features: details.features,

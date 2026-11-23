@@ -5,7 +5,14 @@ import {
   VARIANT_CONTAINERS,
   type VariantOptionLike,
 } from "@bikalpo-project/db/variant-definition";
+import {
+  DELIVERY_COST_METHODS,
+  INVENTORY_UNITS,
+  LOOSE_UNITS,
+  parseConversionRule,
+} from "@bikalpo-project/db/product-client-options";
 import { Children, type ReactNode, useId } from "react";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import {
@@ -174,7 +181,12 @@ export function RuleSelect({
   disabled?: boolean;
 }) {
   return (
-    <Select value={value} onValueChange={onChange} disabled={disabled}>
+    // Radix can report "" when the value changes from outside; ignore it.
+    <Select
+      value={value}
+      onValueChange={(next) => next && onChange(next)}
+      disabled={disabled}
+    >
       <SelectTrigger aria-label={label} className="h-8 w-full text-xs">
         <SelectValue />
       </SelectTrigger>
@@ -359,5 +371,313 @@ export function InventoryUnitFilter({
       options={units}
       onChange={(unit) => onChange({ ...filter, unit, size: ALL })}
     />
+  );
+}
+
+// ── Client layout: Inventory & Product Rules ────────────────────
+
+export type ClientRuleValues = {
+  variantAttr1: string;
+  variantAttr2: string;
+  inventoryUnit: string;
+  inventoryLooseUnitEnabled: boolean;
+  inventoryLooseUnit: string;
+  conversionEnabled: boolean;
+  conversionRule: string;
+  returnPolicyEnabled: boolean;
+  isReturnablePack: boolean;
+  defaultPackDepositAmount: string;
+  trackingType: "none" | "batch" | "serial";
+  damageControlEnabled: boolean;
+  expiryEnabled: boolean;
+  minimumOrderEnabled: boolean;
+  minimumOrderQty: string;
+  deliveryCostMethod: string;
+};
+
+const NO_ATTRIBUTE = "__none__";
+
+/** "Label            ☐ Enable", the client's rule cell header. */
+function EnableHeader({
+  label,
+  checked,
+  onChange,
+}: {
+  label: string;
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+}) {
+  const id = useId();
+  return (
+    <div className="flex items-start justify-between gap-2">
+      <p className="min-w-0 text-[13px] font-medium leading-tight">{label}</p>
+      <label
+        htmlFor={id}
+        className="flex shrink-0 cursor-pointer items-center gap-1.5 text-xs text-muted-foreground"
+      >
+        <Checkbox
+          id={id}
+          checked={checked}
+          onCheckedChange={(next) => onChange(next === true)}
+        />
+        Enable
+      </label>
+    </div>
+  );
+}
+
+function EnableCell({
+  label,
+  checked,
+  onChange,
+  children,
+}: {
+  label: string;
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+  children?: ReactNode;
+}) {
+  return (
+    <div className="min-w-0 space-y-2 bg-card p-3">
+      <EnableHeader label={label} checked={checked} onChange={onChange} />
+      {children}
+    </div>
+  );
+}
+
+/** Keeps typed amounts to at most 8 digits and 2 decimals. */
+function amountInput(next: string) {
+  const tidy = next.trim();
+  return /^\d{0,8}(\.\d{0,2})?$/.test(tidy) ? tidy : null;
+}
+
+/**
+ * Inventory & Product Rules exactly as the client's layout: twelve cells in
+ * their order, each optional rule switched by an "Enable" checkbox that
+ * greys out its input when off.
+ */
+export function ClientRulesGrid({
+  values,
+  onChange,
+  attributes,
+}: {
+  values: ClientRuleValues;
+  onChange: (patch: Partial<ClientRuleValues>) => void;
+  attributes: Array<{ name: string }>;
+}) {
+  const savedOnly = [values.variantAttr1, values.variantAttr2].filter(
+    (name, index, all) =>
+      name &&
+      all.indexOf(name) === index &&
+      !attributes.some((attribute) => attribute.name === name),
+  );
+  const attributeOptions = [
+    { value: NO_ATTRIBUTE, label: "Select attribute" },
+    ...attributes.map((attribute) => ({
+      value: attribute.name,
+      label: attribute.name,
+    })),
+    // A saved attribute that is no longer listed still shows.
+    ...savedOnly.map((name) => ({ value: name, label: name })),
+  ];
+  const conversionInvalid =
+    values.conversionEnabled &&
+    values.conversionRule.trim() !== "" &&
+    parseConversionRule(values.conversionRule) === null;
+
+  return (
+    <RulesGrid>
+      <RuleCell label="Variant Attribute">
+        <RuleSelect
+          label="Variant attribute 1"
+          value={values.variantAttr1 || NO_ATTRIBUTE}
+          options={attributeOptions}
+          onChange={(value) =>
+            onChange({ variantAttr1: value === NO_ATTRIBUTE ? "" : value })
+          }
+        />
+      </RuleCell>
+      <RuleCell label="Variant Attribute">
+        <RuleSelect
+          label="Variant attribute 2"
+          value={values.variantAttr2 || NO_ATTRIBUTE}
+          options={attributeOptions}
+          onChange={(value) =>
+            onChange({ variantAttr2: value === NO_ATTRIBUTE ? "" : value })
+          }
+        />
+      </RuleCell>
+
+      <RuleCell label="Inventory Unit">
+        <RuleSelect
+          label="Inventory Unit"
+          value={values.inventoryUnit || "pcs"}
+          options={Object.entries(INVENTORY_UNITS).map(([value, label]) => ({
+            value,
+            label,
+          }))}
+          onChange={(inventoryUnit) => onChange({ inventoryUnit })}
+        />
+      </RuleCell>
+      <EnableCell
+        label="Inventory Loose Unit"
+        checked={values.inventoryLooseUnitEnabled}
+        onChange={(inventoryLooseUnitEnabled) =>
+          onChange({ inventoryLooseUnitEnabled })
+        }
+      >
+        <RuleSelect
+          label="Inventory loose unit"
+          value={
+            values.inventoryLooseUnit in LOOSE_UNITS
+              ? values.inventoryLooseUnit
+              : "kg"
+          }
+          options={Object.entries(LOOSE_UNITS).map(([value, label]) => ({
+            value,
+            label,
+          }))}
+          disabled={!values.inventoryLooseUnitEnabled}
+          onChange={(inventoryLooseUnit) => onChange({ inventoryLooseUnit })}
+        />
+      </EnableCell>
+
+      <EnableCell
+        label="Conversion"
+        checked={values.conversionEnabled}
+        onChange={(conversionEnabled) => onChange({ conversionEnabled })}
+      >
+        <Input
+          aria-label="Conversion"
+          aria-invalid={conversionInvalid || undefined}
+          className="h-8 text-xs"
+          placeholder="e.g. 1 KG = 1000 G"
+          disabled={!values.conversionEnabled}
+          value={values.conversionRule}
+          maxLength={60}
+          onChange={(event) => onChange({ conversionRule: event.target.value })}
+        />
+        {conversionInvalid && (
+          <p className="text-[11px] text-destructive">
+            Write it like 1 KG = 1000 G
+          </p>
+        )}
+      </EnableCell>
+      <EnableCell
+        label="Return Policy"
+        checked={values.returnPolicyEnabled}
+        onChange={(returnPolicyEnabled) => onChange({ returnPolicyEnabled })}
+      />
+
+      <EnableCell
+        label="Empty Pack Return"
+        checked={values.isReturnablePack}
+        onChange={(isReturnablePack) => onChange({ isReturnablePack })}
+      >
+        <Input
+          aria-label="Empty pack price"
+          inputMode="decimal"
+          className="h-8 text-xs tabular-nums"
+          placeholder="Empty pack price ৳"
+          disabled={!values.isReturnablePack}
+          value={
+            Number(values.defaultPackDepositAmount) === 0
+              ? ""
+              : values.defaultPackDepositAmount
+          }
+          onChange={(event) => {
+            const next = amountInput(event.target.value);
+            if (next !== null) {
+              onChange({ defaultPackDepositAmount: next || "0" });
+            }
+          }}
+        />
+      </EnableCell>
+      <EnableCell
+        label="Batch Tracking"
+        checked={values.trackingType !== "none"}
+        onChange={(enabled) =>
+          // Expiry dates are kept per batch, so expiry needs batches.
+          onChange(
+            enabled
+              ? {
+                  trackingType:
+                    values.trackingType === "serial" ? "serial" : "batch",
+                }
+              : { trackingType: "none", expiryEnabled: false },
+          )
+        }
+      />
+
+      <EnableCell
+        label="Damage Tracking"
+        checked={values.damageControlEnabled}
+        onChange={(damageControlEnabled) => onChange({ damageControlEnabled })}
+      />
+      <EnableCell
+        label="Expiry Tracking"
+        checked={values.expiryEnabled}
+        onChange={(expiryEnabled) =>
+          onChange(
+            expiryEnabled && values.trackingType !== "batch"
+              ? { expiryEnabled, trackingType: "batch" }
+              : { expiryEnabled },
+          )
+        }
+      />
+
+      <EnableCell
+        label="Minimum Order Qty"
+        checked={values.minimumOrderEnabled}
+        onChange={(minimumOrderEnabled) => onChange({ minimumOrderEnabled })}
+      >
+        <Input
+          aria-label="Minimum order quantity"
+          inputMode="decimal"
+          className="h-8 text-xs tabular-nums"
+          disabled={!values.minimumOrderEnabled}
+          value={values.minimumOrderQty}
+          onChange={(event) => {
+            const next = amountInput(event.target.value);
+            if (next !== null) onChange({ minimumOrderQty: next });
+          }}
+        />
+      </EnableCell>
+      <RuleCell label="Delivery Cost Counting">
+        <DeliveryMethodSelect
+          value={values.deliveryCostMethod}
+          onChange={(deliveryCostMethod) => onChange({ deliveryCostMethod })}
+        />
+      </RuleCell>
+    </RulesGrid>
+  );
+}
+
+/** Delivery Cost Counting / Delivery cost method: one value, two places. */
+export function DeliveryMethodSelect({
+  value,
+  onChange,
+  className = "h-8 w-full text-xs",
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  className?: string;
+}) {
+  return (
+    <Select
+      value={value in DELIVERY_COST_METHODS ? value : "free"}
+      onValueChange={(next) => next && onChange(next)}
+    >
+      <SelectTrigger aria-label="Delivery cost method" className={className}>
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        {Object.entries(DELIVERY_COST_METHODS).map(([code, method]) => (
+          <SelectItem key={code} value={code}>
+            {method.label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
   );
 }

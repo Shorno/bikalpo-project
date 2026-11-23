@@ -43,6 +43,7 @@ export default function WarehouseCoreProductConfigPage() {
         coreProductId,
         expectedVersion: configurationQuery.data?.version ?? null,
         details: values.template,
+        publish: values.publish,
         brands: values.brands.map((brand: any) => ({
           brandId: brand.brandId,
           variants: brand.variants.map(sellerVariantPayload),

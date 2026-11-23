@@ -1,19 +1,16 @@
 "use client";
 
+import { resolveSingleBrandVariantDefaults } from "@bikalpo-project/db/brand-creation";
+import { inferProductTypeFamily } from "@bikalpo-project/db/fulfillment";
 import {
-  resolveSingleBrandVariantDefaults,
-  validateBrandCreationSubmission,
-} from "@bikalpo-project/db/brand-creation";
-import {
-  FULFILLMENT_UNITS,
-  type FulfillmentUnitCode,
-  inferProductTypeFamily,
-  LOOSE_INVENTORY_UNIT_CODES,
-} from "@bikalpo-project/db/fulfillment";
+  DELIVERY_COST_METHODS,
+  deliveryMethodFromUnit,
+  isDeliveryCostMethod,
+} from "@bikalpo-project/db/product-client-options";
 import { suggestDeliveryCostUnit } from "@bikalpo-project/db/product-delivery";
 import {
   getVariantDefinition,
-  type VariantProductFamily,
+  type VariantDefinition,
 } from "@bikalpo-project/db/variant-definition";
 import { useForm } from "@tanstack/react-form";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -21,32 +18,18 @@ import {
   AlertTriangle,
   ArrowLeft,
   ArrowUpRight,
-  Check,
-  CheckCircle2,
-  ChevronDown,
-  ChevronRight,
-  Info,
   Loader2,
   Plus,
   RotateCcw,
-  Search,
-  X,
 } from "lucide-react";
-import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useEffect, useId, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import AdditionalImagesUploader from "@/components/AdditionalImagesUploader";
 import ImageUploader from "@/components/ImageUploader";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import RichTextEditor from "@/components/ui/rich-text-editor";
@@ -57,53 +40,44 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Separator } from "@/components/ui/separator";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+import { Textarea } from "@/components/ui/textarea";
+import { cn } from "@/lib/utils";
 import {
   type CoreProductConfigValues,
   coreProductConfigSchema,
 } from "@/schema/core-product-config.schema";
 import { orpc } from "@/utils/orpc";
 import {
-  AddVariantDialog,
-  type NewVariantDefinition,
-} from "./add-variant-dialog";
-import {
-  DeliveryCostField,
-  DeliveryUnitSelect,
   exchangeCreditFrom,
-  FinalActions,
-  firstPricingError,
-  type PricingRow,
-  type PricingValue,
-  ProductPricingTable,
+  exchangePriceFrom,
   priceInputValue,
   resolveDeliveryUnit,
 } from "./product-delivery-pricing";
 import {
-  ChoiceRadios,
-  EMPTY_VARIANT_FILTER,
-  EnableDisable,
-  filterVariantsForBrand,
-  InventoryUnitFilter,
-  RuleAmount,
-  RuleCell,
-  RuleSelect,
-  RulesGrid,
-  UnusedRuleCell,
-  type VariantFilter,
-  VariantTypeSizeFilter,
+  ClientRulesGrid,
+  type ClientRuleValues,
+  DeliveryMethodSelect,
 } from "./product-rules-grid";
 import {
-  ProductEditorIdentity,
-  ProductEditorSection,
-} from "./product-editor-ui";
+  EMPTY_VARIANT_MATRIX,
+  type MatrixVariant,
+  matrixFromVariants,
+  matrixVariants,
+  sameDefinition,
+  type VariantMatrix,
+  VariantPricing,
+  VariantTable,
+} from "./product-variant-matrix";
 
 const PRODUCTS_BASE = "/dashboard/admin/products";
+const SHORT_DESCRIPTION_LIMIT = 160;
+
+export type PublishStatus = "active" | "draft" | "inactive";
+
+/** What a save sends: the form values plus Publishing for the saved brand. */
+export type CoreProductConfigSubmit = CoreProductConfigValues & {
+  publish?: { brandId: number; status: PublishStatus; featured?: boolean };
+};
 
 type CoreProductConfigFormProps = {
   coreProductId: number;
@@ -115,20 +89,17 @@ type CoreProductConfigFormProps = {
     isError?: boolean;
     listHref: string;
     productEditHref: (productId: number) => string;
-    onConfigure: (values: CoreProductConfigValues) => Promise<unknown>;
+    onConfigure: (values: CoreProductConfigSubmit) => Promise<unknown>;
     onSaved?: () => void | Promise<void>;
     initialBrands?: CoreProductConfigValues["brands"];
     presetBrands?: CoreProductConfigValues["brands"];
     reloadPresetLabel?: string;
     variantAliases?: Record<number, string>;
     onVariantAliasChange?: (variantOptionId: number, alias: string) => void;
-    /** "Create brand" in the brand picker; sellers get a store-only brand. */
+    /** "+ Add brand" with a new name; sellers get a store-only brand. */
     onCreateBrand?: (name: string) => Promise<BrandOption>;
-    /** "+ variant" on a brand; sellers get a store-only variant. */
-    onCreateVariant?: (
-      definition: NewVariantDefinition,
-    ) => Promise<VariantOption>;
-    /** Shown in the variant dialog: who will see a new variant. */
+    /** Variants the matrix needs that do not exist yet; store-only for sellers. */
+    onCreateVariant?: (definition: VariantDefinition) => Promise<VariantOption>;
     variantScopeLabel?: string;
   };
 };
@@ -164,13 +135,6 @@ type VariantOption = {
   isActive?: boolean;
 };
 
-type SelectedVariant = {
-  variantOptionId: number;
-  consumerPrice: string;
-  retailPrice?: string;
-  exchangePrice?: string;
-};
-
 type ExistingBrandProduct = {
   brandId: number;
   brandName: string;
@@ -180,12 +144,15 @@ type ExistingBrandProduct = {
   productSlug?: string;
   productImage?: string | null;
   status: string;
+  isFeatured?: boolean;
   variantOptions: Array<{
     variantOptionId: number;
     consumerPrice: string;
     isActive: boolean;
     variantOptionName?: string | null;
     requiresDefinitionReview?: boolean;
+    exchangeEnabled?: boolean;
+    exchangeCreditAmount?: string | null;
   }>;
 };
 
@@ -198,6 +165,8 @@ type CoreProductConfiguration = {
   brands: ExistingBrandProduct[];
 };
 
+type BrandVariant = CoreProductConfigValues["brands"][number]["variants"][number];
+
 export default function CoreProductConfigForm({
   coreProductId,
   adapter,
@@ -205,20 +174,17 @@ export default function CoreProductConfigForm({
   const router = useRouter();
   const queryClient = useQueryClient();
   const seededDefaultsSignature = useRef<string | null>(null);
-  const [brandDialogOpen, setBrandDialogOpen] = useState(false);
-  const [brandSearch, setBrandSearch] = useState("");
-  const [collapsedBrands, setCollapsedBrands] = useState<Set<number>>(
-    () => new Set(),
-  );
-  const [saved, setSaved] = useState(false);
-  const [singleSaveVersion, setSingleSaveVersion] = useState(0);
   // Brands/variants created here show at once, before the lists refetch.
   const [createdBrands, setCreatedBrands] = useState<BrandOption[]>([]);
   const [createdVariants, setCreatedVariants] = useState<VariantOption[]>([]);
   const [creatingBrand, setCreatingBrand] = useState(false);
-  const [variantDialogBrandId, setVariantDialogBrandId] = useState<
-    number | null
-  >(null);
+  const [saving, setSaving] = useState(false);
+  // The one brand this form edits (the client's single Brand field).
+  const [brandId, setBrandId] = useState<number | null>(null);
+  const [brandInput, setBrandInput] = useState("");
+  const [matrix, setMatrix] = useState<VariantMatrix>(EMPTY_VARIANT_MATRIX);
+  const [status, setStatus] = useState<PublishStatus>("active");
+  const [featured, setFeatured] = useState(false);
 
   const configQuery = useQuery({
     ...orpc.adminProductConfig.get.queryOptions({ input: { coreProductId } }),
@@ -233,6 +199,11 @@ export default function CoreProductConfigForm({
     queryFn: () => orpc.adminCatalogApproval.getRequestOptions.call({}),
     enabled: !adapter,
   });
+  const attributesQuery = useQuery(orpc.variantAttribute.list.queryOptions());
+  const attributes = (attributesQuery.data ?? []) as Array<{
+    name: string;
+    options: string[];
+  }>;
 
   const configuration = (adapter?.configuration ?? configQuery.data) as
     | CoreProductConfiguration
@@ -251,24 +222,24 @@ export default function CoreProductConfigForm({
       (created) => !loadedBrands.some((brand) => brand.id === created.id),
     ),
   ];
-  const availableVariants = useMemo(() => {
-    const loaded =
-      adapter?.variantOptions ??
-      ((catalogOptionsQuery.data?.variantOptions ?? []) as VariantOption[]);
-    return filterVariantsForCore(core, [
-      ...loaded,
+  const loadedVariants =
+    adapter?.variantOptions ??
+    ((catalogOptionsQuery.data?.variantOptions ?? []) as VariantOption[]);
+  const knownVariants = useMemo(
+    () => [
+      ...loadedVariants,
       ...createdVariants.filter(
-        (created) => !loaded.some((variant) => variant.id === created.id),
+        (created) => !loadedVariants.some((variant) => variant.id === created.id),
       ),
-    ]);
-  }, [
-    adapter?.variantOptions,
-    catalogOptionsQuery.data?.variantOptions,
-    core,
-    createdVariants,
-  ]);
-  const productFamily: VariantProductFamily = core?.category?.type
-    ? (inferProductTypeFamily(core.category.type) as VariantProductFamily)
+    ],
+    [loadedVariants, createdVariants],
+  );
+  const availableVariants = useMemo(
+    () => filterVariantsForCore(core, knownVariants),
+    [core, knownVariants],
+  );
+  const productFamily = core?.category?.type
+    ? inferProductTypeFamily(core.category.type)
     : "generic";
   const existingByBrandId = useMemo(
     () => new Map(existingBrands.map((brand) => [brand.brandId, brand])),
@@ -279,6 +250,7 @@ export default function CoreProductConfigForm({
       template: normalizeTemplateDetails(
         configuration?.template?.details,
         core,
+        productFamily,
       ),
       brands: isSingleMode
         ? []
@@ -292,6 +264,13 @@ export default function CoreProductConfigForm({
                 .map((option) => ({
                   variantOptionId: option.variantOptionId,
                   consumerPrice: option.consumerPrice || "0",
+                  retailPrice: priceInputValue(option.consumerPrice),
+                  exchangePrice: option.exchangeEnabled
+                    ? exchangePriceFrom(
+                        option.consumerPrice,
+                        option.exchangeCreditAmount,
+                      )
+                    : "",
                 })),
             })) ??
           []),
@@ -302,161 +281,11 @@ export default function CoreProductConfigForm({
       configuration?.template,
       core,
       isSingleMode,
+      productFamily,
     ],
   );
 
-  const configureMutation = useMutation({
-    mutationFn: (input: {
-      coreProductId: number;
-      expectedVersion: number | null;
-      details: CoreProductConfigValues["template"];
-      brands: CoreProductConfigValues["brands"];
-    }) =>
-      adapter
-        ? adapter.onConfigure({ template: input.details, brands: input.brands })
-        : orpc.adminProductConfig.configure.call(input),
-    onSuccess: async () => {
-      setSaved(true);
-      toast.success("Shared template and brand products updated");
-      if (adapter) {
-        await adapter.onSaved?.();
-      } else {
-        await Promise.all([
-          queryClient.invalidateQueries({
-            queryKey: orpc.adminProductConfig.get.queryKey({
-              input: { coreProductId },
-            }),
-          }),
-          queryClient.invalidateQueries({
-            queryKey: orpc.adminCoreProduct.getAll.queryKey({ input: {} }),
-          }),
-        ]);
-        if (isSingleMode) {
-          router.push(`${PRODUCTS_BASE}/core/${coreProductId}`);
-        }
-      }
-      if (isSingleMode) {
-        setSingleSaveVersion((version) => version + 1);
-      }
-    },
-    onError: (error) => {
-      toast.error(error.message || "Could not save product changes");
-    },
-  });
-
-  // Inventory & Product Rules: Type / Size / Inventory Unit narrow the
-  // variants each brand card offers. Not saved.
-  const [variantFilter, setVariantFilter] =
-    useState<VariantFilter>(EMPTY_VARIANT_FILTER);
-  const isCylinderVariant = (variantOptionId: number) => {
-    const definition = getVariantDefinition(
-      availableVariants.find((option) => option.id === variantOptionId),
-    );
-    return (
-      definition?.kind === "measurement" && definition.container === "cylinder"
-    );
-  };
-  /** Pricing rows and values for the selected brands and variants. */
-  const buildPricing = (brands: CoreProductConfigValues["brands"]) => {
-    const rows: PricingRow[] = [];
-    const values: Record<string, PricingValue> = {};
-    for (const brand of brands) {
-      const brandName =
-        allBrands.find((item) => item.id === brand.brandId)?.name ??
-        `Brand #${brand.brandId}`;
-      for (const variant of brand.variants) {
-        const key = `${brand.brandId}:${variant.variantOptionId}`;
-        rows.push({
-          key,
-          brandId: brand.brandId,
-          brandName,
-          variantName:
-            availableVariants.find(
-              (option) => option.id === variant.variantOptionId,
-            )?.name ?? `Variant #${variant.variantOptionId}`,
-          exchange: isCylinderVariant(variant.variantOptionId),
-        });
-        values[key] = {
-          newPrice: variant.retailPrice ?? "",
-          exchangePrice: variant.exchangePrice ?? "",
-        };
-      }
-    }
-    return { rows, values };
-  };
-  const suggestDeliveryUnit = (brands: CoreProductConfigValues["brands"]) =>
-    suggestDeliveryCostUnit(
-      brands.flatMap((brand) =>
-        brand.variants.map((variant) =>
-          availableVariants.find(
-            (option) => option.id === variant.variantOptionId,
-          ),
-        ),
-      ),
-    );
-
-  const form = useForm({
-    defaultValues,
-    validators: {
-      // Zod defaults make its input type wider than the fully initialized form.
-      // @ts-expect-error TanStack Form validates the runtime value correctly.
-      onSubmit: coreProductConfigSchema,
-    },
-    onSubmit: async ({ value }) => {
-      const submission = validateBrandCreationSubmission(
-        isSingleMode ? "single" : "batch",
-        value.brands.length,
-      );
-      if (!submission.valid) {
-        toast.error(submission.message);
-        return;
-      }
-      if (adapter) {
-        const pricing = buildPricing(value.brands);
-        const pricingError = firstPricingError(pricing.rows, pricing.values);
-        if (pricingError) {
-          toast.error(pricingError);
-          return;
-        }
-      }
-      const normalizedTemplate = withoutUnusedRules(
-        mergeTemplateDetails(value.template, defaultValues.template, core),
-        typeRulesOf(core),
-      );
-      normalizedTemplate.deliveryCostUnit =
-        resolveDeliveryUnit(
-          value.template.deliveryCostUnit,
-          suggestDeliveryUnit(value.brands),
-        ) ?? "";
-      configureMutation.mutate({
-        coreProductId,
-        expectedVersion: configuration?.template?.version ?? null,
-        details: normalizedTemplate,
-        brands: value.brands.map((brand) => ({
-          ...brand,
-          variants: brand.variants.map((variant) => {
-            // Exchange credit = New minus Exchange, only for cylinders.
-            const credit = isCylinderVariant(variant.variantOptionId)
-              ? exchangeCreditFrom({
-                  newPrice: variant.retailPrice ?? "",
-                  exchangePrice: variant.exchangePrice ?? "",
-                })
-              : null;
-            return {
-              ...variant,
-              exchangeEnabled: credit !== null,
-              exchangeCreditAmount: credit ?? "0",
-            };
-          }),
-        })),
-      });
-    },
-  });
-
-  useEffect(() => {
-    if (singleSaveVersion === 0) return;
-    form.setFieldValue("brands", []);
-  }, [form, singleSaveVersion]);
+  const form = useForm({ defaultValues });
 
   useEffect(() => {
     if (!configuration) return;
@@ -468,100 +297,162 @@ export default function CoreProductConfigForm({
     seededDefaultsSignature.current = signature;
   }, [configuration, defaultValues, form]);
 
-  const toggleCollapsed = (brandId: number) => {
-    setCollapsedBrands((current) => {
-      const next = new Set(current);
-      if (next.has(brandId)) next.delete(brandId);
-      else next.add(brandId);
-      return next;
-    });
+  const configureMutation = useMutation({
+    mutationFn: (input: {
+      coreProductId: number;
+      expectedVersion: number | null;
+      details: CoreProductConfigValues["template"];
+      brands: CoreProductConfigValues["brands"];
+      publish: CoreProductConfigSubmit["publish"];
+    }) =>
+      adapter
+        ? adapter.onConfigure({
+            template: input.details,
+            brands: input.brands,
+            publish: input.publish,
+          })
+        : orpc.adminProductConfig.configure.call(input),
+    onSuccess: async (_result, input) => {
+      toast.success(
+        input.publish?.status === "draft"
+          ? "Draft saved"
+          : "Product published successfully",
+      );
+      if (adapter) {
+        await adapter.onSaved?.();
+        return;
+      }
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: orpc.adminProductConfig.get.queryKey({
+            input: { coreProductId },
+          }),
+        }),
+        queryClient.invalidateQueries({
+          queryKey: orpc.adminCoreProduct.getAll.queryKey({ input: {} }),
+        }),
+      ]);
+      if (isSingleMode) router.push(`${PRODUCTS_BASE}/core/${coreProductId}`);
+    },
+    onError: (error) => {
+      toast.error(error.message || "Could not save product changes");
+    },
+  });
+
+  const optionOf = (variantOptionId: number) =>
+    knownVariants.find((option) => option.id === variantOptionId);
+
+  /** Saved variants of a brand, as the matrix shows them. */
+  const matrixForBrand = (variants: BrandVariant[]) =>
+    matrixFromVariants(
+      variants.map((variant) => ({
+        option: optionOf(variant.variantOptionId),
+        newPrice: variant.retailPrice ?? "",
+        exchangePrice: variant.exchangePrice ?? "",
+      })),
+    );
+
+  /** The two Variant Attributes for a brand that has none saved. */
+  const attributesFor = (variants: BrandVariant[]) => {
+    const template = form.state.values.template;
+    if (template.variantAttr1 && template.variantAttr2) return null;
+    const definitions = variants
+      .map((variant) => getVariantDefinition(optionOf(variant.variantOptionId)))
+      .filter(Boolean) as VariantDefinition[];
+    if (definitions.length === 0) return null;
+    const combo = definitions.find(
+      (definition) =>
+        definition.kind === "attribute" && definition.attribute.includes(" / "),
+    );
+    if (combo && combo.kind === "attribute") {
+      const [first, second] = combo.attribute.split(" / ");
+      return { variantAttr1: first ?? "", variantAttr2: second ?? "" };
+    }
+    const measured = definitions.find(
+      (definition) => definition.kind === "measurement",
+    );
+    const unit =
+      measured?.kind === "measurement"
+        ? measured.measurementUnit.toLowerCase()
+        : "";
+    return {
+      variantAttr1: "Type",
+      variantAttr2:
+        productFamily === "lpg" || !measured
+          ? "Size"
+          : unit === "l" || unit === "ml" || unit.startsWith("lit")
+            ? "Capacity"
+            : "Weight",
+    };
   };
 
-  const addBrand = (brandId: number) => {
+  const selectBrand = (id: number) => {
     const current = form.state.values.brands;
-    if (current.some((brand) => brand.brandId === brandId)) return;
-
-    const existing = existingByBrandId.get(brandId);
-    const previousVariants = existing?.variantOptions
-      .filter((option) => option.isActive)
-      .map((option) => ({
-        variantOptionId: option.variantOptionId,
-        consumerPrice: option.consumerPrice || "0",
-      }));
-    const singleDefaults = resolveSingleBrandVariantDefaults({
-      brandId,
-      compatibleVariantOptionIds: availableVariants.map(
-        (variant) => variant.id,
-      ),
-      adminPresetBrands:
-        adapter?.presetBrands?.map((brand) => ({
-          brandId: brand.brandId,
-          variantOptionIds: brand.variants.map(
-            (variant) => variant.variantOptionId,
+    let variants = current.find((brand) => brand.brandId === id)?.variants;
+    if (!variants) {
+      const existing = existingByBrandId.get(id);
+      const previous = existing?.variantOptions
+        .filter((option) => option.isActive)
+        .map((option) => ({
+          variantOptionId: option.variantOptionId,
+          consumerPrice: option.consumerPrice || "0",
+        }));
+      if (previous && previous.length > 0) {
+        variants = previous;
+      } else {
+        const preset = resolveSingleBrandVariantDefaults({
+          brandId: id,
+          compatibleVariantOptionIds: availableVariants.map(
+            (variant) => variant.id,
           ),
-        })) ?? [],
-    });
-    const presetBrand = adapter?.presetBrands?.find(
-      (brand) => brand.brandId === brandId,
+          adminPresetBrands:
+            adapter?.presetBrands?.map((brand) => ({
+              brandId: brand.brandId,
+              variantOptionIds: brand.variants.map(
+                (variant) => variant.variantOptionId,
+              ),
+            })) ?? [],
+        });
+        variants = preset.variantOptionIds.map((variantOptionId) => ({
+          variantOptionId,
+          consumerPrice: "0",
+        }));
+      }
+      form.setFieldValue("brands", [
+        ...(isSingleMode ? [] : current),
+        { brandId: id, variants },
+      ]);
+    }
+    const attributesPatch = attributesFor(variants);
+    if (attributesPatch) {
+      form.setFieldValue("template.variantAttr1", attributesPatch.variantAttr1);
+      form.setFieldValue("template.variantAttr2", attributesPatch.variantAttr2);
+    }
+    setMatrix(matrixForBrand(variants));
+    const existing = existingByBrandId.get(id);
+    setStatus(
+      existing && ["active", "draft", "inactive"].includes(existing.status)
+        ? (existing.status as PublishStatus)
+        : "active",
     );
-    const singleVariants = singleDefaults.variantOptionIds.map(
-      (variantOptionId) =>
-        presetBrand?.variants.find(
-          (variant) => variant.variantOptionId === variantOptionId,
-        ) ?? { variantOptionId, consumerPrice: "0" },
-    );
-
-    form.setFieldValue("brands", [
-      ...(isSingleMode ? [] : current),
-      {
-        brandId,
-        variants: isSingleMode
-          ? singleVariants
-          : previousVariants && previousVariants.length > 0
-            ? previousVariants
-            : availableVariants.map((variant) => ({
-                variantOptionId: variant.id,
-                consumerPrice: "0",
-              })),
-      },
-    ]);
-    setBrandDialogOpen(false);
-    setBrandSearch("");
-    setSaved(false);
+    setFeatured(Boolean(existing?.isFeatured));
+    setBrandId(id);
+    setBrandInput("");
   };
 
-  const removeBrand = (brandId: number) => {
-    form.setFieldValue(
-      "brands",
-      form.state.values.brands.filter((brand) => brand.brandId !== brandId),
-    );
-    setSaved(false);
+  /** Remove clears the field; a brand added here (not saved yet) is dropped. */
+  const clearBrand = () => {
+    if (brandId !== null && !existingByBrandId.has(brandId)) {
+      form.setFieldValue(
+        "brands",
+        form.state.values.brands.filter((brand) => brand.brandId !== brandId),
+      );
+    }
+    setBrandId(null);
+    setMatrix(EMPTY_VARIANT_MATRIX);
   };
 
-  const toggleVariant = (brandId: number, variantOptionId: number) => {
-    form.setFieldValue(
-      "brands",
-      form.state.values.brands.map((brand) => {
-        if (brand.brandId !== brandId) return brand;
-        const selected = brand.variants.some(
-          (variant) => variant.variantOptionId === variantOptionId,
-        );
-        return {
-          ...brand,
-          variants: selected
-            ? brand.variants.filter(
-                (variant) => variant.variantOptionId !== variantOptionId,
-              )
-            : [...brand.variants, { variantOptionId, consumerPrice: "0" }],
-        };
-      }),
-    );
-    setSaved(false);
-  };
-
-  const createBrand = async (rawName: string) => {
-    const name = rawName.trim();
-    if (name.length < 2 || creatingBrand) return;
+  const createBrand = async (name: string) => {
     setCreatingBrand(true);
     try {
       const created: BrandOption = adapter?.onCreateBrand
@@ -575,8 +466,8 @@ export default function CoreProductConfigForm({
           queryKey: orpc.brand.getAll.queryKey(),
         });
       }
-      addBrand(created.id);
-      toast.success(`${created.name} added`);
+      selectBrand(created.id);
+      toast.success("Brand saved");
     } catch (error) {
       toast.error(
         error instanceof Error && error.message
@@ -588,13 +479,44 @@ export default function CoreProductConfigForm({
     }
   };
 
-  const createVariantForBrand = async (definition: NewVariantDefinition) => {
-    const brandId = variantDialogBrandId;
-    const typeId = core?.category?.typeId;
+  /** "+ Add brand": pick a listed brand, or create the typed one. */
+  const saveBrandInput = (allowCreate: boolean) => {
+    const name = brandInput.trim();
+    if (!name || creatingBrand) return;
+    const match = allBrands.find(
+      (brand) =>
+        brand.isActive !== false &&
+        brand.name.toLowerCase() === name.toLowerCase(),
+    );
+    if (match) {
+      if (isSingleMode && existingByBrandId.has(match.id)) {
+        toast.error(`${match.name} is already added for this product`);
+        return;
+      }
+      selectBrand(match.id);
+      return;
+    }
+    if (!allowCreate) return;
+    if (name.length < 2) {
+      toast.error("Enter a brand name");
+      return;
+    }
+    void createBrand(name);
+  };
+
+  /** An existing variant option with this structure, or a new one. */
+  const resolveVariantOption = async (
+    definition: VariantDefinition,
+  ): Promise<VariantOption> => {
+    const found = availableVariants.find((option) =>
+      sameDefinition(option, definition),
+    );
+    if (found) return found;
     let created: VariantOption;
     if (adapter?.onCreateVariant) {
       created = await adapter.onCreateVariant(definition);
     } else {
+      const typeId = core?.category?.typeId;
       if (!typeId) throw new Error("This core product has no Product Type");
       created = (await orpc.adminVariantOption.create.call({
         definition,
@@ -603,90 +525,137 @@ export default function CoreProductConfigForm({
         sortOrder: 0,
         reuseExisting: true,
       })) as VariantOption;
-      await queryClient.invalidateQueries({
-        queryKey: ["adminCatalogApproval", "coreProductConfigOptions"],
-      });
     }
     setCreatedVariants((current) => [...current, created]);
-    if (brandId != null) {
-      const brand = form.state.values.brands.find(
-        (item) => item.brandId === brandId,
-      );
-      if (
-        brand &&
-        !brand.variants.some((item) => item.variantOptionId === created.id)
-      ) {
-        toggleVariant(brandId, created.id);
-      }
-    }
+    return created;
   };
 
-  const setBrandVariants = (brandId: number, variantOptionIds: number[]) => {
-    form.setFieldValue(
-      "brands",
-      form.state.values.brands.map((brand) =>
-        brand.brandId === brandId
-          ? {
-              ...brand,
-              variants: variantOptionIds.map(
-                (variantOptionId) =>
-                  brand.variants.find(
-                    (variant) => variant.variantOptionId === variantOptionId,
-                  ) ?? { variantOptionId, consumerPrice: "0" },
-              ),
-            }
-          : brand,
-      ),
-    );
-    setSaved(false);
-  };
-
-  const submitChanges = () => {
-    const submission = validateBrandCreationSubmission(
-      isSingleMode ? "single" : "batch",
-      form.state.values.brands.length,
-    );
-    if (!submission.valid) {
-      toast.error(submission.message);
+  const save = async (mode: "draft" | "publish") => {
+    if (saving || configureMutation.isPending) return;
+    const template = form.state.values.template;
+    if (!template.name.trim()) {
+      toast.error("Enter a product name before saving");
       return;
     }
-    const allowedVariantIds = new Set(
-      availableVariants.map((variant) => variant.id),
+    if (brandId === null) {
+      toast.error("No brand selected. Add one brand to continue.");
+      return;
+    }
+    const brandVariants =
+      form.state.values.brands.find((brand) => brand.brandId === brandId)
+        ?.variants ?? [];
+    const unresolved = brandVariants.filter(
+      (variant) => !getVariantDefinition(optionOf(variant.variantOptionId)),
     );
-    const unavailableSelection = form.state.values.brands.some((brand) =>
-      brand.variants.some(
-        (variant) => !allowedVariantIds.has(variant.variantOptionId),
-      ),
-    );
-    if (unavailableSelection) {
+    if (unresolved.length > 0) {
       toast.error(
         adapter
-          ? "Ask Admin to review the selected legacy variants, or remove them before saving."
-          : "Review the selected legacy variants in Variant Setup before saving.",
+          ? "Ask Admin to review this brand's older variants before saving."
+          : "Review this brand's older variants in Variant Setup before saving.",
       );
       return;
     }
-    const normalizedValues = {
-      ...form.state.values,
-      template: mergeTemplateDetails(
-        form.state.values.template,
-        defaultValues.template,
-        core,
-      ),
-    };
-    const result = coreProductConfigSchema.safeParse(normalizedValues);
-    if (!result.success) {
-      toast.error(
-        result.error.issues[0]?.message ?? "Review the brand products",
-      );
-      return;
-    }
-    configureMutation.mutate({
-      coreProductId,
-      expectedVersion: configuration?.template?.version ?? null,
-      details: result.data.template,
-      brands: result.data.brands,
+    const { variants: wanted, error } = matrixVariants(matrix, {
+      attr1: template.variantAttr1,
+      attr2: template.variantAttr2,
+      inventoryUnit: template.inventoryUnit,
+      defaultContainer: productFamily === "lpg" ? "cylinder" : "packet",
     });
+    if (error) {
+      toast.error(error);
+      return;
+    }
+    if (wanted.length === 0) {
+      toast.error("Generate at least one variant before publishing");
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const resolved: Array<{ option: VariantOption; cell: MatrixVariant }> = [];
+      for (const cell of wanted) {
+        resolved.push({
+          option: await resolveVariantOption(cell.definition),
+          cell,
+        });
+      }
+      const ids = resolved.map((entry) => entry.option.id);
+      const duplicate = resolved.find(
+        (entry, index) => ids.indexOf(entry.option.id) !== index,
+      );
+      if (duplicate) {
+        toast.error(`${duplicate.cell.label} is listed twice`);
+        return;
+      }
+      const saved = new Map(
+        brandVariants.map((variant) => [variant.variantOptionId, variant]),
+      );
+      const variants: BrandVariant[] = resolved.map(({ option, cell }) => {
+        const previous = saved.get(option.id);
+        const credit = exchangeCreditFrom({
+          newPrice: cell.newPrice,
+          exchangePrice: cell.exchangePrice,
+        });
+        return {
+          variantOptionId: option.id,
+          // Admin: the reference price; an empty cell keeps the saved one.
+          consumerPrice: adapter
+            ? "0"
+            : priceInputValue(cell.newPrice) ||
+              priceInputValue(previous?.consumerPrice) ||
+              "0",
+          retailPrice: cell.newPrice,
+          exchangePrice: cell.exchangePrice,
+          exchangeEnabled: credit !== null,
+          exchangeCreditAmount: credit ?? "0",
+        };
+      });
+      const brands = [
+        ...(isSingleMode
+          ? []
+          : form.state.values.brands.filter(
+              (brand) => brand.brandId !== brandId,
+            )),
+        { brandId, variants },
+      ];
+      const details = {
+        ...mergeTemplateDetails(template, defaultValues.template, core, productFamily),
+        deliveryCostUnit:
+          resolveDeliveryUnit(
+            template.deliveryCostUnit,
+            suggestDeliveryCostUnit(
+              resolved.map((entry) => entry.option),
+            ),
+          ) ?? "",
+      };
+      const parsed = coreProductConfigSchema.safeParse({
+        template: details,
+        brands,
+      });
+      if (!parsed.success) {
+        toast.error(parsed.error.issues[0]?.message ?? "Review the product");
+        return;
+      }
+      configureMutation.mutate({
+        coreProductId,
+        expectedVersion: configuration?.template?.version ?? null,
+        details: parsed.data.template,
+        brands: parsed.data.brands,
+        publish: {
+          brandId,
+          status: mode === "draft" ? "draft" : status,
+          ...(adapter ? {} : { featured }),
+        },
+      });
+    } catch (error) {
+      toast.error(
+        error instanceof Error && error.message
+          ? error.message
+          : "A variant could not be created",
+      );
+    } finally {
+      setSaving(false);
+    }
   };
 
   if (
@@ -700,713 +669,460 @@ export default function CoreProductConfigForm({
     return <EditorError />;
   }
 
+  const listHref = adapter?.listHref ?? PRODUCTS_BASE;
+  const productEditHref =
+    adapter?.productEditHref ??
+    ((productId: number) => `${PRODUCTS_BASE}/${productId}/edit`);
+  const selectedBrand = allBrands.find((brand) => brand.id === brandId);
+  const editingProduct =
+    brandId !== null ? existingByBrandId.get(brandId) : undefined;
+  const pending = saving || configureMutation.isPending;
+  const brandOptions = allBrands.filter(
+    (brand) =>
+      brand.isActive !== false &&
+      (!isSingleMode || !existingByBrandId.has(brand.id)),
+  );
+
   return (
-    <form.Subscribe selector={(state) => state.values.brands}>
-      {(selectedBrands) => {
-        const selectedBrandIds = new Set(
-          selectedBrands.map((brand) => brand.brandId),
-        );
-        const availableVariantIds = new Set(
-          availableVariants.map((variant) => variant.id),
-        );
-        const unavailableVariantIds = [
-          ...new Set(
-            selectedBrands.flatMap((brand) =>
-              brand.variants
-                .map((variant) => variant.variantOptionId)
-                .filter((variantId) => !availableVariantIds.has(variantId)),
-            ),
-          ),
-        ];
-        const hasUnavailableVariants = unavailableVariantIds.length > 0;
-        const presetBrandIds = new Set(
-          adapter?.presetBrands?.map((brand) => brand.brandId) ?? [],
-        );
-        const addableBrands = allBrands
+    <form.Subscribe selector={(state) => state.values}>
+      {(values) => {
+        const template = values.template;
+        const brandVariants =
+          values.brands.find((brand) => brand.brandId === brandId)?.variants ??
+          [];
+        const blockedVariants = brandVariants
           .filter(
-            (brand) =>
-              brand.isActive !== false &&
-              !selectedBrandIds.has(brand.id) &&
-              (!isSingleMode || !existingByBrandId.has(brand.id)) &&
-              brand.name.toLowerCase().includes(brandSearch.toLowerCase()),
+            (variant) =>
+              !getVariantDefinition(optionOf(variant.variantOptionId)),
           )
-          .sort((left, right) => {
-            if (!isSingleMode) return 0;
-            return (
-              Number(presetBrandIds.has(right.id)) -
-                Number(presetBrandIds.has(left.id)) ||
-              left.name.localeCompare(right.name)
-            );
-          });
-        const pendingDeactivations = isSingleMode
-          ? []
-          : existingBrands.filter(
-              (brand) =>
-                brand.status !== "inactive" &&
-                !selectedBrandIds.has(brand.brandId),
-            );
-        const pendingCreations = selectedBrands.filter(
-          (brand) => !existingByBrandId.has(brand.brandId),
-        ).length;
-        const pendingReactivations = selectedBrands.filter(
-          (brand) =>
-            existingByBrandId.get(brand.brandId)?.status === "inactive",
-        ).length;
-        const listHref = adapter?.listHref ?? PRODUCTS_BASE;
-        const productEditHref =
-          adapter?.productEditHref ??
-          ((productId: number) => `${PRODUCTS_BASE}/${productId}/edit`);
-        const pricing = buildPricing(selectedBrands);
-        const suggestedDeliveryUnit = suggestDeliveryUnit(selectedBrands);
-        const setVariantPrice = (key: string, patch: Partial<PricingValue>) => {
-          const [brandId, variantOptionId] = key.split(":").map(Number);
-          form.setFieldValue(
-            "brands",
-            form.state.values.brands.map((brand) =>
-              brand.brandId !== brandId
-                ? brand
-                : {
-                    ...brand,
-                    variants: brand.variants.map((variant) =>
-                      variant.variantOptionId !== variantOptionId
-                        ? variant
-                        : {
-                            ...variant,
-                            ...(patch.newPrice !== undefined
-                              ? { retailPrice: patch.newPrice }
-                              : {}),
-                            ...(patch.exchangePrice !== undefined
-                              ? { exchangePrice: patch.exchangePrice }
-                              : {}),
-                          },
-                    ),
-                  },
-            ),
+          .map(
+            (variant) =>
+              editingProduct?.variantOptions.find(
+                (option) => option.variantOptionId === variant.variantOptionId,
+              )?.variantOptionName ?? `Variant #${variant.variantOptionId}`,
           );
-          setSaved(false);
+        const firstOptions =
+          attributes.find(
+            (attribute) => attribute.name === template.variantAttr1,
+          )?.options ?? [];
+        const ruleValues: ClientRuleValues = {
+          variantAttr1: template.variantAttr1 ?? "",
+          variantAttr2: template.variantAttr2 ?? "",
+          inventoryUnit: template.inventoryUnit ?? "",
+          inventoryLooseUnitEnabled: template.inventoryLooseUnitEnabled,
+          inventoryLooseUnit: template.inventoryLooseUnit,
+          conversionEnabled: template.conversionEnabled,
+          conversionRule: template.conversionRule ?? "",
+          returnPolicyEnabled: template.returnPolicyEnabled,
+          isReturnablePack: template.isReturnablePack,
+          defaultPackDepositAmount: template.defaultPackDepositAmount,
+          trackingType: template.trackingType,
+          damageControlEnabled: template.damageControlEnabled,
+          expiryEnabled: template.expiryEnabled,
+          minimumOrderEnabled: template.minimumOrderEnabled,
+          minimumOrderQty: template.minimumOrderQty,
+          deliveryCostMethod: template.deliveryCostMethod ?? "",
         };
+        const setRules = (patch: Partial<ClientRuleValues>) => {
+          for (const [key, value] of Object.entries(patch)) {
+            form.setFieldValue(`template.${key}` as any, value as any);
+          }
+        };
+        const method = isDeliveryCostMethod(template.deliveryCostMethod)
+          ? template.deliveryCostMethod
+          : "free";
+        const shortDescription = template.shortDescription ?? "";
 
         return (
           <div className="min-h-screen bg-muted/30">
-            <div className="sticky top-0 z-20 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
-              <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-2.5">
-                <div className="flex min-w-0 items-center gap-3">
+            <div className="mx-auto max-w-[1500px] px-4 py-6 sm:px-6">
+              <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex min-w-0 items-start gap-3">
                   <Button
                     asChild
                     variant="ghost"
                     size="icon"
-                    className="h-8 w-8 shrink-0"
+                    className="mt-0.5 h-8 w-8 shrink-0"
                   >
-                    <Link href={listHref} aria-label="Back to products">
+                    <Link href={listHref} aria-label="Products list">
                       <ArrowLeft className="h-4 w-4" />
                     </Link>
                   </Button>
                   <div className="min-w-0">
                     <p className="text-xs text-muted-foreground">
-                      Products <span className="opacity-50">/</span>{" "}
-                      {isSingleMode ? "Add brand" : "Edit brand products"}
+                      Products / {editingProduct ? "Edit product" : "New product"}
                     </p>
-                    <div className="flex items-center gap-2">
-                      <h1 className="truncate text-base font-semibold leading-tight">
-                        {core.name}
-                      </h1>
-                      <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
-                        {isSingleMode
-                          ? "One brand per save"
-                          : `${selectedBrands.length} brands`}
+                    <h1 className="flex items-center gap-2 text-xl font-semibold">
+                      <span className="truncate">
+                        {editingProduct ? editingProduct.productName : "New product"}
                       </span>
-                    </div>
+                      <StatusPill status={status} />
+                    </h1>
                   </div>
                 </div>
-                <div className="flex shrink-0 items-center gap-2">
-                  {!isSingleMode && adapter?.presetBrands && (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        form.setFieldValue("brands", adapter.presetBrands!);
-                        setSaved(false);
-                        toast.success(
-                          "Current admin preset loaded. Save to apply it.",
-                        );
-                      }}
-                      disabled={configureMutation.isPending}
-                    >
-                      <RotateCcw className="h-4 w-4" />
-                      {adapter.reloadPresetLabel ?? "Reload preset"}
-                    </Button>
-                  )}
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    asChild
-                    disabled={configureMutation.isPending}
-                  >
-                    <Link href={listHref}>Discard</Link>
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    onClick={submitChanges}
-                    disabled={
-                      configureMutation.isPending ||
-                      hasUnavailableVariants ||
-                      (isSingleMode &&
-                        (selectedBrands.length !== 1 ||
-                          selectedBrands[0]?.variants.length === 0))
-                    }
-                  >
-                    {configureMutation.isPending && (
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    )}
-                    Save changes
-                  </Button>
-                </div>
+                <HeaderActions
+                  listHref={listHref}
+                  pending={pending}
+                  onDraft={() => void save("draft")}
+                  onPublish={() => void save("publish")}
+                />
               </div>
-            </div>
 
-            <form
-              onSubmit={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                submitChanges();
-              }}
-            >
-              <div className="mx-auto max-w-6xl px-4 py-6">
-                <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_420px] lg:items-start">
-                  <div className="divide-y rounded-xl border bg-card">
-                    <ProductEditorSection
-                      title="Identity"
-                      description="The shared core product for these independent brand products."
-                    >
-                      <div className="space-y-4">
-                        <ProductEditorIdentity
-                          image={core.image}
-                          name={core.name}
-                          meta={[core.category?.name, core.subCategory?.name]
-                            .filter(Boolean)
-                            .join(" · ")}
+              <form
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  void save("publish");
+                }}
+                className="grid grid-cols-1 gap-[18px] lg:grid-cols-[minmax(0,1.62fr)_minmax(420px,1fr)] lg:items-start"
+              >
+                <div className="grid min-w-0 gap-4">
+                  <Card title="Product Information">
+                    <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2">
+                      <Field>
+                        <FieldLabel>
+                          Type <Required />
+                        </FieldLabel>
+                        <Input value={core.category?.type?.name ?? ""} disabled />
+                      </Field>
+                      <Field>
+                        <FieldLabel>
+                          Category <Required />
+                        </FieldLabel>
+                        <Input value={core.category?.name ?? ""} disabled />
+                      </Field>
+                      <Field>
+                        <FieldLabel>Sub category</FieldLabel>
+                        <Input value={core.subCategory?.name ?? ""} disabled />
+                      </Field>
+                      <Field>
+                        <FieldLabel>
+                          Product name <Required />
+                        </FieldLabel>
+                        <Input
+                          value={template.name}
+                          maxLength={120}
+                          onChange={(event) =>
+                            form.setFieldValue("template.name", event.target.value)
+                          }
+                          placeholder="Select or type product name"
                         />
-                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                          <form.Field name="template.name">
-                            {(field) => (
-                              <Field>
-                                <FieldLabel>Display name *</FieldLabel>
-                                <Input
-                                  value={field.state.value}
-                                  onChange={(event) =>
-                                    field.handleChange(event.target.value)
-                                  }
-                                  placeholder="Enter product display name"
-                                />
-                              </Field>
-                            )}
-                          </form.Field>
-                          <Field>
-                            <FieldLabel>Slug</FieldLabel>
-                            <Input value={core.slug ?? ""} disabled />
-                          </Field>
-                        </div>
-                      </div>
-                    </ProductEditorSection>
+                      </Field>
+                    </div>
+                  </Card>
 
-                    <ProductEditorSection
-                      title={
-                        isSingleMode
-                          ? "Brand and variants"
-                          : "Brands and variants"
-                      }
-                      description={
-                        isSingleMode
-                          ? "Choose one new brand. Admin preset variants are editable suggestions for this save."
-                          : "Choose each brand's variants. Prices are managed in Product Price."
-                      }
-                      action={
-                        (!isSingleMode || selectedBrands.length === 0) && (
+                  <Card title="Brand">
+                    <BrandField
+                      value={brandInput}
+                      onChange={setBrandInput}
+                      options={brandOptions.map((brand) => brand.name)}
+                      onSave={saveBrandInput}
+                      busy={creatingBrand}
+                    />
+                    <div className="mt-2.5">
+                      {selectedBrand ? (
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="inline-flex items-center rounded-md bg-primary/10 px-2.5 py-1 text-[13px] font-medium text-primary">
+                            {selectedBrand.name}
+                          </span>
                           <Button
                             type="button"
                             variant="outline"
                             size="sm"
                             className="h-8"
-                            onClick={() => setBrandDialogOpen(true)}
+                            onClick={clearBrand}
                           >
-                            <Plus className="h-4 w-4" />
-                            Add brand
-                          </Button>
-                        )
-                      }
-                    >
-                      {hasUnavailableVariants && (
-                        <div className="mb-4 flex gap-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-amber-950 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-100">
-                          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-                          <div className="min-w-0 space-y-1">
-                            <p className="text-sm font-semibold">
-                              Variant definition required
-                            </p>
-                            <p className="text-xs leading-relaxed text-amber-800 dark:text-amber-200">
-                              {adapter
-                                ? "One or more selected variants must be reviewed by Admin before these products can be saved. Remove them or ask Admin to add a concrete definition."
-                                : "One or more selected variants still use the legacy loose setup. Review them in Variant Setup, then return here to save this configuration."}
-                            </p>
-                            {!adapter && (
-                              <Button
-                                asChild
-                                variant="outline"
-                                size="sm"
-                                className="mt-2 h-7 border-amber-400 bg-white/70 text-amber-950 hover:bg-white dark:bg-transparent dark:text-amber-100"
-                              >
-                                <Link href="/dashboard/admin/variant-options">
-                                  Review variants
-                                  <ArrowUpRight className="h-3.5 w-3.5" />
-                                </Link>
-                              </Button>
-                            )}
-                          </div>
-                        </div>
-                      )}
-                      {selectedBrands.length === 0 ? (
-                        <div className="rounded-lg border border-dashed p-6 text-center">
-                          <p className="text-sm font-medium">
-                            No brand selected
-                          </p>
-                          <p className="mt-1 text-xs text-muted-foreground">
-                            Add a brand to start configuring its variants.
-                          </p>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            className="mt-4"
-                            onClick={() => setBrandDialogOpen(true)}
-                          >
-                            <Plus className="h-4 w-4" />
-                            Add brand
+                            Remove
                           </Button>
                         </div>
                       ) : (
-                        <div className="space-y-3">
-                          {selectedBrands.map((selectedBrand) => {
-                            const brand = allBrands.find(
-                              (item) => item.id === selectedBrand.brandId,
-                            );
-                            if (!brand) return null;
-                            const existingBrand = existingByBrandId.get(
-                              brand.id,
-                            );
-                            const blockedVariants = selectedBrand.variants
-                              .filter(
-                                (variant) =>
-                                  !availableVariantIds.has(
-                                    variant.variantOptionId,
-                                  ),
-                              )
-                              .map((variant) => ({
-                                id: variant.variantOptionId,
-                                name:
-                                  existingBrand?.variantOptions.find(
-                                    (option) =>
-                                      option.variantOptionId ===
-                                      variant.variantOptionId,
-                                  )?.variantOptionName ??
-                                  `Variant #${variant.variantOptionId}`,
-                              }));
-
-                            return (
-                              <BrandEditorCard
-                                key={brand.id}
-                                brand={brand}
-                                existing={existingBrand}
-                                selectedVariants={selectedBrand.variants}
-                                variants={filterVariantsForBrand(
-                                  availableVariants,
-                                  variantFilter,
-                                  selectedBrand.variants.map(
-                                    (variant) => variant.variantOptionId,
-                                  ),
-                                )}
-                                blockedVariants={blockedVariants}
-                                expanded={!collapsedBrands.has(brand.id)}
-                                onToggleExpanded={() =>
-                                  toggleCollapsed(brand.id)
-                                }
-                                onRemove={() => removeBrand(brand.id)}
-                                onToggleVariant={(variantId) =>
-                                  toggleVariant(brand.id, variantId)
-                                }
-                                onSetVariants={(variantIds) =>
-                                  setBrandVariants(brand.id, variantIds)
-                                }
-                                onAddVariant={() =>
-                                  setVariantDialogBrandId(brand.id)
-                                }
-                              />
-                            );
-                          })}
-                        </div>
+                        <Empty>No brand selected. Add one brand to continue.</Empty>
                       )}
-                    </ProductEditorSection>
-
-                    {adapter?.onVariantAliasChange &&
-                      (() => {
-                        const selectedVariantIds = [
-                          ...new Set(
-                            selectedBrands.flatMap((brand) =>
-                              brand.variants.map(
-                                (variant) => variant.variantOptionId,
-                              ),
-                            ),
-                          ),
-                        ];
-                        return selectedVariantIds.length > 0 ? (
-                          <ProductEditorSection
-                            title="Warehouse variant labels"
-                            description="Optional display-only aliases for this warehouse. Measurements and inventory units remain controlled by Admin Variant Setup."
-                          >
-                            <div className="grid gap-4 sm:grid-cols-2">
-                              {selectedVariantIds.map((variantOptionId) => {
-                                const option = availableVariants.find(
-                                  (item) => item.id === variantOptionId,
-                                );
-                                if (!option) return null;
-                                return (
-                                  <Field key={variantOptionId}>
-                                    <FieldLabel>{option.name}</FieldLabel>
-                                    <Input
-                                      value={
-                                        adapter.variantAliases?.[
-                                          variantOptionId
-                                        ] ?? ""
-                                      }
-                                      onChange={(event) =>
-                                        adapter.onVariantAliasChange?.(
-                                          variantOptionId,
-                                          event.target.value,
-                                        )
-                                      }
-                                      placeholder="Use admin canonical label"
-                                    />
-                                  </Field>
-                                );
-                              })}
-                            </div>
-                          </ProductEditorSection>
-                        ) : null;
-                      })()}
-
-                    <SharedTemplateEditor
-                      form={form}
-                      defaults={defaultValues.template}
-                      part="content"
-                    />
-
-                    {adapter && (
-                      <ProductEditorSection
-                        title="Pricing"
-                        description="Optional. Sets your selling price; you can also set it later in Pricing."
-                      >
-                        <ProductPricingTable
-                          rows={pricing.rows}
-                          values={pricing.values}
-                          onChange={setVariantPrice}
-                        />
-                      </ProductEditorSection>
-                    )}
-                  </div>
-
-                  <aside className="space-y-4">
-                    <div className="rounded-xl border bg-card">
-                      <SharedTemplateEditor
-                        form={form}
-                        defaults={defaultValues.template}
-                        part="rules"
-                        rules={typeRulesOf(core)}
-                        typeName={core?.category?.type?.name}
-                        suggestedDeliveryUnit={suggestedDeliveryUnit}
-                        variants={availableVariants}
-                        variantFilter={variantFilter}
-                        onVariantFilterChange={setVariantFilter}
-                      />
                     </div>
-
-                    <ProductEditorSection
-                      variant="card"
-                      title="Delivery Configuration"
-                      className="px-4 py-5 sm:px-5"
-                    >
-                      <form.Subscribe
-                        selector={(state) =>
-                          state.values.template.deliveryCostUnit
-                        }
+                    {editingProduct && (
+                      <Link
+                        href={productEditHref(editingProduct.productId)}
+                        className="mt-2 inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
                       >
-                        {(deliveryCostUnit) => (
-                          <form.Field name="template.defaultDeliveryCost">
-                            {(field) => (
-                              <DeliveryCostField
-                                value={field.state.value ?? ""}
-                                unit={resolveDeliveryUnit(
-                                  deliveryCostUnit,
-                                  suggestedDeliveryUnit,
-                                )}
-                                onChange={field.handleChange}
-                              />
-                            )}
-                          </form.Field>
-                        )}
-                      </form.Subscribe>
-                    </ProductEditorSection>
+                        Open saved product
+                        <ArrowUpRight className="h-3 w-3" />
+                      </Link>
+                    )}
+                  </Card>
 
-                    <div className="rounded-xl border bg-card">
-                      <div className="border-b px-4 py-3">
-                        <h3 className="text-sm font-semibold">Publish</h3>
+                  <Card title="Description">
+                    <Field>
+                      <FieldLabel className="flex items-center justify-between">
+                        <span>Short description</span>
+                        <span className="text-xs font-normal text-muted-foreground tabular-nums">
+                          {Math.min(shortDescription.length, SHORT_DESCRIPTION_LIMIT)}/
+                          {SHORT_DESCRIPTION_LIMIT}
+                        </span>
+                      </FieldLabel>
+                      <Textarea
+                        rows={2}
+                        maxLength={SHORT_DESCRIPTION_LIMIT}
+                        value={shortDescription}
+                        onChange={(event) =>
+                          form.setFieldValue(
+                            "template.shortDescription",
+                            event.target.value,
+                          )
+                        }
+                        placeholder="Write a concise product summary (maximum 160 characters)"
+                      />
+                    </Field>
+                    <Field className="mt-3.5">
+                      <FieldLabel>Full description</FieldLabel>
+                      <RichTextEditor
+                        value={template.description ?? ""}
+                        onChange={(value: string) =>
+                          form.setFieldValue("template.description", value)
+                        }
+                        placeholder="Describe product features, usage, specifications and benefits..."
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Recommended: 50–1,000 words. Basic formatting toolbar
+                        included.
+                      </p>
+                    </Field>
+                  </Card>
+
+                  <Card title="Media">
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <Field>
+                        <FieldLabel>Thumbnail / main image</FieldLabel>
+                        <ImageUploader
+                          value={template.image}
+                          onChange={(value: string) =>
+                            form.setFieldValue("template.image", value)
+                          }
+                          folder="products"
+                          maxSizeMB={5}
+                        />
+                      </Field>
+                      <Field>
+                        <FieldLabel>Gallery (up to 6 images)</FieldLabel>
+                        <AdditionalImagesUploader
+                          value={template.additionalImages}
+                          onChange={(value: string[]) =>
+                            form.setFieldValue(
+                              "template.additionalImages",
+                              value.slice(0, 6),
+                            )
+                          }
+                          folder="products/additional"
+                          maxSizeMB={5}
+                        />
+                      </Field>
+                    </div>
+                    <Field className="mt-3.5">
+                      <FieldLabel>Video URL</FieldLabel>
+                      <Input
+                        value={template.videoUrl ?? ""}
+                        onChange={(event) =>
+                          form.setFieldValue("template.videoUrl", event.target.value)
+                        }
+                        placeholder="https://youtube.com/watch?v=..."
+                      />
+                    </Field>
+                  </Card>
+
+                  <Card
+                    title="Variant Table"
+                    action={
+                      !isSingleMode &&
+                      adapter?.presetBrands &&
+                      brandId !== null ? (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 text-xs"
+                          onClick={() => {
+                            const preset = adapter.presetBrands?.find(
+                              (brand) => brand.brandId === brandId,
+                            );
+                            if (!preset) {
+                              toast.error("Admin has no preset for this brand");
+                              return;
+                            }
+                            setMatrix(matrixForBrand(preset.variants));
+                            toast.success("Admin preset loaded. Publish to apply it.");
+                          }}
+                        >
+                          <RotateCcw className="h-3.5 w-3.5" />
+                          {adapter.reloadPresetLabel ?? "Reload preset"}
+                        </Button>
+                      ) : undefined
+                    }
+                  >
+                    {blockedVariants.length > 0 && (
+                      <div className="mb-3 flex gap-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-amber-950 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-100">
+                        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                        <div className="min-w-0 space-y-1 text-xs">
+                          <p className="font-semibold">
+                            Variant definition required
+                          </p>
+                          <p>
+                            {adapter
+                              ? "Admin must review these older variants before this product can be saved: "
+                              : "Review these older variants in Variant Setup before saving: "}
+                            {blockedVariants.join(", ")}
+                          </p>
+                          {!adapter && (
+                            <Link
+                              href="/dashboard/admin/variant-options"
+                              className="inline-flex items-center gap-1 font-medium underline"
+                            >
+                              Review variants
+                              <ArrowUpRight className="h-3 w-3" />
+                            </Link>
+                          )}
+                        </div>
                       </div>
-                      <div className="space-y-4 p-4">
-                        <form.Field name="template.visibility">
-                          {(field) => (
-                            <div className="space-y-1.5">
-                              <FieldLabel className="text-xs text-muted-foreground">
-                                Visibility
-                              </FieldLabel>
-                              <Select
+                    )}
+                    <VariantTable
+                      attr1={template.variantAttr1 ?? ""}
+                      attr2={template.variantAttr2 ?? ""}
+                      options={firstOptions}
+                      matrix={matrix}
+                      onChange={setMatrix}
+                    />
+                  </Card>
+
+                  <Card title="Variant Pricing">
+                    <VariantPricing
+                      attr2={template.variantAttr2 ?? ""}
+                      matrix={matrix}
+                      onChange={setMatrix}
+                    />
+                  </Card>
+
+                  {adapter?.onVariantAliasChange && brandVariants.length > 0 && (
+                    <Card
+                      title="Warehouse variant labels"
+                      description="Optional display-only aliases for this warehouse."
+                    >
+                      <div className="grid gap-4 sm:grid-cols-2">
+                        {brandVariants.map((variant) => {
+                          const option = optionOf(variant.variantOptionId);
+                          if (!option) return null;
+                          return (
+                            <Field key={variant.variantOptionId}>
+                              <FieldLabel>{option.name}</FieldLabel>
+                              <Input
                                 value={
-                                  field.state.value ||
-                                  defaultValues.template.visibility
+                                  adapter.variantAliases?.[
+                                    variant.variantOptionId
+                                  ] ?? ""
                                 }
-                                onValueChange={(value) =>
-                                  field.handleChange(
-                                    value as "public" | "private",
+                                onChange={(event) =>
+                                  adapter.onVariantAliasChange?.(
+                                    variant.variantOptionId,
+                                    event.target.value,
                                   )
                                 }
-                              >
-                                <SelectTrigger className="w-full">
-                                  <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  <SelectItem value="public">Public</SelectItem>
-                                  <SelectItem value="private">
-                                    Private
-                                  </SelectItem>
-                                </SelectContent>
-                              </Select>
-                              <p className="text-xs text-muted-foreground">
-                                {field.state.value === "private"
-                                  ? "Only visible to admins"
-                                  : "Visible to all customers"}
-                              </p>
-                            </div>
-                          )}
-                        </form.Field>
+                                placeholder="Use admin canonical label"
+                              />
+                            </Field>
+                          );
+                        })}
                       </div>
-                    </div>
-                    <div className="rounded-xl border bg-card p-4">
-                      <FinalActions
-                        cancelHref={listHref}
-                        onPublish={submitChanges}
-                        publishLabel="Save changes"
-                        pending={configureMutation.isPending}
-                        disabled={
-                          hasUnavailableVariants ||
-                          (isSingleMode &&
-                            (selectedBrands.length !== 1 ||
-                              selectedBrands[0]?.variants.length === 0))
+                    </Card>
+                  )}
+                </div>
+
+                <aside className="grid min-w-0 gap-4 lg:sticky lg:top-4">
+                  <Card title="Inventory & Product Rules">
+                    <ClientRulesGrid
+                      values={ruleValues}
+                      onChange={setRules}
+                      attributes={attributes}
+                    />
+                  </Card>
+
+                  <Card title="Delivery Cost Configuration">
+                    <Field>
+                      <FieldLabel>Delivery cost method</FieldLabel>
+                      <DeliveryMethodSelect
+                        value={method}
+                        className="h-9 w-full"
+                        onChange={(value) =>
+                          form.setFieldValue("template.deliveryCostMethod", value as any)
                         }
                       />
-                    </div>
-                    <div className="rounded-xl border bg-card">
-                      <div className="border-b px-4 py-3">
-                        <h2 className="text-sm font-semibold">Changes</h2>
-                      </div>
-                      <div className="space-y-3 p-4">
-                        <ImpactRow
-                          label="New products"
-                          value={pendingCreations}
-                        />
-                        <ImpactRow
-                          label="Will reactivate"
-                          value={pendingReactivations}
-                        />
-                        <ImpactRow
-                          label="Will deactivate"
-                          value={pendingDeactivations.length}
-                        />
+                    </Field>
+                    <Field className="mt-3">
+                      <FieldLabel>Default delivery cost (৳)</FieldLabel>
+                      <Input
+                        inputMode="decimal"
+                        placeholder="Enter default cost"
+                        value={template.defaultDeliveryCost ?? ""}
+                        onChange={(event) => {
+                          const next = event.target.value.trim();
+                          if (/^\d{0,8}(\.\d{0,2})?$/.test(next)) {
+                            form.setFieldValue("template.defaultDeliveryCost", next);
+                          }
+                        }}
+                      />
+                    </Field>
+                    <p className="mt-1.5 text-xs text-muted-foreground">
+                      {DELIVERY_COST_METHODS[method].help}
+                    </p>
+                  </Card>
 
-                        {pendingDeactivations.length > 0 && (
-                          <div className="border-t pt-3">
-                            <p className="text-xs leading-relaxed text-muted-foreground">
-                              Removed brands keep their product data and can be
-                              reactivated later.
-                            </p>
-                            <div className="mt-2 flex flex-wrap gap-1.5">
-                              {pendingDeactivations.map((brand) => (
-                                <span
-                                  key={brand.brandId}
-                                  className="rounded-full bg-amber-500/10 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:text-amber-400"
-                                >
-                                  {brand.brandName}
-                                </span>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    {existingBrands.length > 0 && !isSingleMode && (
-                      <div className="rounded-xl border bg-card">
-                        <div className="border-b px-4 py-3">
-                          <h2 className="text-sm font-semibold">
-                            Generated products
-                          </h2>
-                        </div>
-                        <div className="space-y-1 p-2">
-                          {existingBrands.map((brand) => (
-                            <Link
-                              key={brand.productId}
-                              href={productEditHref(brand.productId)}
-                              className="group flex items-center justify-between gap-3 rounded-lg px-2 py-2 transition-colors hover:bg-muted/60"
-                            >
-                              <div className="min-w-0">
-                                <p className="truncate text-sm font-medium">
-                                  {brand.productName}
-                                </p>
-                                <p className="text-xs capitalize text-muted-foreground">
-                                  {brand.status}
-                                </p>
-                              </div>
-                              <ArrowUpRight className="h-4 w-4 shrink-0 text-muted-foreground" />
-                            </Link>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {saved && (
-                      <div className="flex items-start gap-3 rounded-xl border border-emerald-500/20 bg-emerald-500/5 p-4 text-emerald-700 dark:text-emerald-400">
-                        <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
-                        <p className="text-sm">Changes saved successfully.</p>
-                      </div>
-                    )}
-                  </aside>
-                </div>
-              </div>
-            </form>
-
-            <Dialog open={brandDialogOpen} onOpenChange={setBrandDialogOpen}>
-              <DialogContent className="sm:max-w-md">
-                <DialogHeader>
-                  <DialogTitle>Select brand</DialogTitle>
-                  <DialogDescription>
-                    {isSingleMode
-                      ? "Choose one brand that has not been configured yet."
-                      : "New brands create products; removed brands reuse their existing product."}
-                  </DialogDescription>
-                </DialogHeader>
-                <div className="space-y-3">
-                  <div className="relative">
-                    <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                    <Input
-                      value={brandSearch}
-                      onChange={(event) => setBrandSearch(event.target.value)}
-                      placeholder="Search or create a brand..."
-                      className="pl-9"
-                      autoFocus
-                    />
-                  </div>
-                  <div className="-mx-1 max-h-[300px] space-y-1 overflow-y-auto px-1">
-                    {(() => {
-                      const typed = brandSearch.trim();
-                      const exists = allBrands.some(
-                        (brand) =>
-                          brand.name.toLowerCase() === typed.toLowerCase(),
-                      );
-                      if (typed.length < 2 || exists) return null;
-                      return (
-                        <button
-                          type="button"
-                          disabled={creatingBrand}
-                          onClick={() => void createBrand(typed)}
-                          className="flex w-full items-center gap-3 rounded-lg border border-dashed px-3 py-2.5 text-left transition-colors hover:bg-muted/80 disabled:opacity-60"
-                        >
-                          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
-                            {creatingBrand ? (
-                              <Loader2 className="h-4 w-4 animate-spin" />
-                            ) : (
-                              <Plus className="h-4 w-4" />
-                            )}
-                          </span>
-                          <div className="min-w-0 flex-1">
-                            <p className="truncate text-sm font-medium">
-                              Create brand “{typed}”
-                            </p>
-                            <p className="text-xs text-muted-foreground">
-                              {adapter
-                                ? "Only your store will see this brand."
-                                : "Adds a new brand to the catalog."}
-                            </p>
-                          </div>
-                        </button>
-                      );
-                    })()}
-                    {addableBrands.length > 0 ? (
-                      addableBrands.map((brand) => {
-                        const existing = existingByBrandId.get(brand.id);
-                        const isAdminPreset = presetBrandIds.has(brand.id);
-                        return (
-                          <button
-                            key={brand.id}
-                            type="button"
-                            onClick={() => addBrand(brand.id)}
-                            className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-muted/80"
-                          >
-                            <BrandMark brand={brand} />
-                            <div className="min-w-0 flex-1">
-                              <p className="truncate text-sm font-medium">
-                                {brand.name}
-                              </p>
-                              <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
-                                <span>
-                                  {existing?.status === "inactive"
-                                    ? "Reactivate existing product"
-                                    : "Create independent product"}
-                                </span>
-                                {isAdminPreset && (
-                                  <span className="rounded-full bg-primary/10 px-2 py-0.5 font-medium text-primary">
-                                    Admin preset
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-                            {existing?.status === "inactive" && (
-                              <RotateCcw className="h-4 w-4 text-muted-foreground" />
-                            )}
-                          </button>
-                        );
-                      })
-                    ) : (
-                      <p className="py-8 text-center text-sm text-muted-foreground">
-                        {brandSearch.trim().length >= 2
-                          ? "No other matching brands."
-                          : "No matching brands are available. Type a name to create one."}
+                  <Card title="Publishing">
+                    <Field>
+                      <FieldLabel>Status</FieldLabel>
+                      <Select
+                        value={status}
+                        onValueChange={(value) =>
+                          value && setStatus(value as PublishStatus)
+                        }
+                      >
+                        <SelectTrigger className="w-full">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="active">Active</SelectItem>
+                          <SelectItem value="draft">Draft</SelectItem>
+                          <SelectItem value="inactive">Inactive</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </Field>
+                    <Field className="mt-3">
+                      <FieldLabel>Visibility</FieldLabel>
+                      <Select
+                        value={template.visibility || "public"}
+                        onValueChange={(value) =>
+                          value &&
+                          form.setFieldValue("template.visibility", value as any)
+                        }
+                      >
+                        <SelectTrigger className="w-full">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="public">Public</SelectItem>
+                          <SelectItem value="private">Private</SelectItem>
+                          <SelectItem value="unlisted">Unlisted</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <p className="text-xs text-muted-foreground">
+                        {VISIBILITY_HELP[template.visibility || "public"]}
                       </p>
+                    </Field>
+                    {!adapter && (
+                      <>
+                        <div className="my-4 border-t" />
+                        <FeaturedCheckbox checked={featured} onChange={setFeatured} />
+                      </>
                     )}
-                  </div>
-                </div>
-              </DialogContent>
-            </Dialog>
-
-            <AddVariantDialog
-              open={variantDialogBrandId !== null}
-              onOpenChange={(open) => {
-                if (!open) setVariantDialogBrandId(null);
-              }}
-              family={productFamily}
-              scopeLabel={
-                adapter?.variantScopeLabel ??
-                "Adds a variant for this core product's category. It is selected for this brand."
-              }
-              onCreate={createVariantForBrand}
-            />
+                  </Card>
+                </aside>
+              </form>
+            </div>
           </div>
         );
       }}
@@ -1414,221 +1130,177 @@ export default function CoreProductConfigForm({
   );
 }
 
-function BrandEditorCard({
-  brand,
-  existing,
-  selectedVariants,
-  variants,
-  blockedVariants,
-  expanded,
-  onToggleExpanded,
-  onRemove,
-  onToggleVariant,
-  onSetVariants,
-  onAddVariant,
+const VISIBILITY_HELP: Record<string, string> = {
+  public: "Public products are visible to customers.",
+  private: "Private products are hidden from customers.",
+  unlisted: "Unlisted products open by link but stay out of lists and search.",
+};
+
+function Card({
+  title,
+  description,
+  action,
+  children,
 }: {
-  onAddVariant: () => void;
-  brand: BrandOption;
-  existing?: ExistingBrandProduct;
-  selectedVariants: SelectedVariant[];
-  variants: VariantOption[];
-  blockedVariants: Array<{ id: number; name: string }>;
-  expanded: boolean;
-  onToggleExpanded: () => void;
-  onRemove: () => void;
-  onToggleVariant: (variantId: number) => void;
-  onSetVariants: (variantIds: number[]) => void;
+  title: string;
+  description?: string;
+  action?: ReactNode;
+  children: ReactNode;
 }) {
-  const selectedVariantIds = selectedVariants.map(
-    (variant) => variant.variantOptionId,
-  );
-  const allSelected =
-    variants.length > 0 && selectedVariants.length === variants.length;
-  const state = !existing
-    ? "new"
-    : existing.status === "inactive"
-      ? "reactivate"
-      : "active";
-
   return (
-    <div className="rounded-lg border bg-card">
-      <div className="group flex items-center gap-3 p-3">
-        <button
-          type="button"
-          className="flex min-w-0 flex-1 items-center gap-3 text-left"
-          onClick={onToggleExpanded}
-        >
-          {expanded ? (
-            <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
-          ) : (
-            <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+    <section className="min-w-0 rounded-[14px] border bg-card p-5 shadow-xs">
+      <div className="mb-3 flex items-start justify-between gap-3">
+        <div className="space-y-1">
+          <h2 className="text-[15px] font-semibold leading-tight">{title}</h2>
+          {description && (
+            <p className="text-xs text-muted-foreground">{description}</p>
           )}
-          <BrandMark brand={brand} />
-          <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <p className="truncate text-sm font-semibold">{brand.name}</p>
-              <StatePill state={state} />
-            </div>
-            <p className="text-xs text-muted-foreground">
-              {selectedVariants.length} variant
-              {selectedVariants.length === 1 ? "" : "s"} selected
-            </p>
-          </div>
-        </button>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          className="h-7 w-7 text-destructive/60 opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100"
-          aria-label={`Remove ${brand.name}`}
-          onClick={onRemove}
-        >
-          <X className="h-3.5 w-3.5" />
-        </Button>
+        </div>
+        {action}
       </div>
+      {children}
+    </section>
+  );
+}
 
-      {expanded && (
-        <>
-          <Separator />
-          <div className="space-y-3 p-3">
-            {blockedVariants.length > 0 && (
-              <div className="space-y-2 rounded-md border border-amber-300 bg-amber-50 p-3 dark:border-amber-800 dark:bg-amber-950/30">
-                <p className="flex items-center gap-2 text-xs font-semibold text-amber-900 dark:text-amber-100">
-                  <AlertTriangle className="h-3.5 w-3.5" />
-                  Definition required before saving
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  {blockedVariants.map((variant) => (
-                    <span
-                      key={variant.id}
-                      className="rounded-full border border-amber-300 bg-white/70 px-2.5 py-1 text-xs text-amber-900 dark:border-amber-700 dark:bg-amber-950/60 dark:text-amber-100"
-                    >
-                      {variant.name}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
-            {variants.length === 0 ? (
-              <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-dashed p-3 text-sm text-muted-foreground">
-                <span>No variants yet for this product.</span>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="h-7"
-                  onClick={onAddVariant}
-                >
-                  <Plus className="h-3.5 w-3.5" />
-                  Add variant
-                </Button>
-              </div>
-            ) : (
-              <>
-                <div className="flex items-center justify-between">
-                  <span className="text-xs text-muted-foreground">
-                    Tap a variant to include it for this brand
-                  </span>
-                  <button
-                    type="button"
-                    className="text-xs font-medium text-primary hover:underline"
-                    onClick={() =>
-                      onSetVariants(
-                        allSelected
-                          ? []
-                          : variants.map((variant) => variant.id),
-                      )
-                    }
-                  >
-                    {allSelected ? "Clear all" : "Select all"}
-                  </button>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {variants.map((variant) => {
-                    const selected = selectedVariantIds.includes(variant.id);
-                    return (
-                      <button
-                        key={variant.id}
-                        type="button"
-                        onClick={() => onToggleVariant(variant.id)}
-                        className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm transition-colors ${
-                          selected
-                            ? "border-primary bg-primary/10 font-medium text-primary"
-                            : "border-border text-muted-foreground hover:bg-muted"
-                        }`}
-                      >
-                        {selected && <Check className="h-3.5 w-3.5" />}
-                        <span>{variant.name}</span>
-                      </button>
-                    );
-                  })}
-                  <button
-                    type="button"
-                    onClick={onAddVariant}
-                    className="inline-flex items-center gap-1.5 rounded-full border border-dashed px-3 py-1.5 text-sm text-primary transition-colors hover:bg-primary/5"
-                    aria-label={`Add a new variant for ${brand.name}`}
-                  >
-                    <Plus className="h-3.5 w-3.5" />
-                    <span>Variant</span>
-                  </button>
-                </div>
-              </>
-            )}
+function Required() {
+  return <span className="text-destructive">*</span>;
+}
 
-            {selectedVariants.length === 0 && (
-              <p className="text-xs font-medium text-destructive">
-                Select at least one variant before saving.
-              </p>
-            )}
-          </div>
-        </>
-      )}
+function Empty({ children }: { children: ReactNode }) {
+  return (
+    <div className="rounded-lg border border-dashed p-5 text-center text-xs text-muted-foreground">
+      {children}
     </div>
   );
 }
 
-function BrandMark({ brand }: { brand: BrandOption }) {
-  if (brand.logo) {
-    return (
-      <Image
-        src={brand.logo}
-        alt={brand.name}
-        width={32}
-        height={32}
-        className="h-8 w-8 shrink-0 rounded-md border object-cover"
-      />
-    );
-  }
-
-  return (
-    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-muted text-xs font-semibold text-muted-foreground">
-      {brand.name.charAt(0).toUpperCase()}
-    </span>
-  );
-}
-
-function StatePill({ state }: { state: "new" | "reactivate" | "active" }) {
-  const styles = {
-    new: "bg-primary/10 text-primary",
-    reactivate: "bg-sky-500/10 text-sky-700 dark:text-sky-400",
+function StatusPill({ status }: { status: PublishStatus }) {
+  const styles: Record<PublishStatus, string> = {
     active: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",
+    draft: "bg-amber-500/10 text-amber-700 dark:text-amber-400",
+    inactive: "bg-muted text-muted-foreground",
   };
-  const labels = { new: "New", reactivate: "Reactivate", active: "Active" };
-
   return (
     <span
-      className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium ${styles[state]}`}
+      className={cn(
+        "shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium capitalize",
+        styles[status],
+      )}
     >
-      {labels[state]}
+      {status}
     </span>
   );
 }
 
-function ImpactRow({ label, value }: { label: string; value: number }) {
+function HeaderActions({
+  listHref,
+  pending,
+  onDraft,
+  onPublish,
+}: {
+  listHref: string;
+  pending: boolean;
+  onDraft: () => void;
+  onPublish: () => void;
+}) {
   return (
-    <div className="flex items-center justify-between gap-3 text-sm">
-      <span className="text-muted-foreground">{label}</span>
-      <span className="font-semibold tabular-nums">{value}</span>
+    <div className="flex shrink-0 items-center gap-2">
+      <Button type="button" variant="outline" size="sm" asChild disabled={pending}>
+        <Link href={listHref}>Discard</Link>
+      </Button>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        onClick={onDraft}
+        disabled={pending}
+      >
+        Save draft
+      </Button>
+      <Button type="button" size="sm" onClick={onPublish} disabled={pending}>
+        {pending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+        Publish
+      </Button>
+    </div>
+  );
+}
+
+function BrandField({
+  value,
+  onChange,
+  options,
+  onSave,
+  busy,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  options: string[];
+  onSave: (allowCreate: boolean) => void;
+  busy: boolean;
+}) {
+  const listId = useId();
+  return (
+    <div className="flex gap-2">
+      <Input
+        list={listId}
+        value={value}
+        placeholder="Search or type brand name"
+        onChange={(event) => onChange(event.target.value)}
+        // Picking a listed brand selects it; a new name needs "+ Add brand".
+        onBlur={() => onSave(false)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            onSave(true);
+          }
+        }}
+      />
+      <datalist id={listId}>
+        {options.map((name) => (
+          <option key={name} value={name} />
+        ))}
+      </datalist>
+      <Button
+        type="button"
+        variant="outline"
+        className="shrink-0"
+        disabled={busy}
+        onClick={() => onSave(true)}
+      >
+        {busy ? (
+          <Loader2 className="h-4 w-4 animate-spin" />
+        ) : (
+          <Plus className="h-4 w-4" />
+        )}
+        Add brand
+      </Button>
+    </div>
+  );
+}
+
+function FeaturedCheckbox({
+  checked,
+  onChange,
+}: {
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+}) {
+  const id = useId();
+  return (
+    <div className="space-y-1">
+      <label
+        htmlFor={id}
+        className="flex cursor-pointer items-center gap-2 text-sm"
+      >
+        <Checkbox
+          id={id}
+          checked={checked}
+          onCheckedChange={(next) => onChange(next === true)}
+        />
+        Featured product
+      </label>
+      <p className="text-xs text-muted-foreground">Show in featured section.</p>
     </div>
   );
 }
@@ -1639,7 +1311,7 @@ function EditorLoading() {
       <div className="flex items-center gap-3 rounded-xl border bg-card px-5 py-4">
         <Loader2 className="h-5 w-5 animate-spin text-primary" />
         <div>
-          <p className="text-sm font-medium">Loading brand products</p>
+          <p className="text-sm font-medium">Loading product</p>
           <p className="text-xs text-muted-foreground">
             Mapping brands and variant options…
           </p>
@@ -1697,11 +1369,20 @@ function filterVariantsForCore(
     .sort((left, right) => left.name.localeCompare(right.name));
 }
 
+/** The Inventory Unit an older product implies from its variants' Type. */
+function defaultInventoryUnit(family: string) {
+  return family === "lpg" ? "cyl" : "pcs";
+}
+
 function normalizeTemplateDetails(
   details: Partial<CoreProductConfigValues["template"]> | undefined,
   core: any,
+  family: string,
 ): CoreProductConfigValues["template"] {
   const expiryEnabled = details?.expiryEnabled ?? false;
+  const deliveryCostMethod = isDeliveryCostMethod(details?.deliveryCostMethod)
+    ? details.deliveryCostMethod
+    : (deliveryMethodFromUnit(details?.deliveryCostUnit) ?? "free");
   return {
     name: details?.name?.trim() || core?.name?.trim() || "Product",
     description: details?.description ?? "",
@@ -1711,29 +1392,38 @@ function normalizeTemplateDetails(
     additionalImages: details?.additionalImages ?? [],
     features: details?.features ?? [],
     trackingType: expiryEnabled ? "batch" : details?.trackingType || "none",
+    // The client's defaults: Return, Damage and Minimum Order (1) on.
     returnPolicyEnabled: details?.returnPolicyEnabled ?? true,
     expiryEnabled,
-    damageControlEnabled: details?.damageControlEnabled ?? false,
+    damageControlEnabled: details?.damageControlEnabled ?? true,
     stockTrackingEnabled: details?.stockTrackingEnabled ?? true,
     minimumOrderEnabled: details?.minimumOrderEnabled ?? true,
     minimumOrderQty: String(details?.minimumOrderQty ?? "1"),
     conversionEnabled: details?.conversionEnabled ?? false,
+    conversionRule: details?.conversionRule ?? "",
     inventoryLooseUnitEnabled: details?.inventoryLooseUnitEnabled ?? false,
     inventoryLooseUnit: details?.inventoryLooseUnit || "kg",
+    inventoryUnit: details?.inventoryUnit || defaultInventoryUnit(family),
     isReturnablePack: details?.isReturnablePack ?? false,
     defaultPackDepositAmount: String(details?.defaultPackDepositAmount ?? "0"),
     deliveryCostUnit: details?.deliveryCostUnit ?? "",
+    deliveryCostMethod,
     defaultDeliveryCost: priceInputValue(details?.defaultDeliveryCost),
+    variantAttr1:
+      details?.variantAttr1 ?? (family === "lpg" ? "Type" : ""),
+    variantAttr2:
+      details?.variantAttr2 ?? (family === "lpg" ? "Size" : ""),
     visibility: details?.visibility ?? "public",
-  };
+  } as CoreProductConfigValues["template"];
 }
 
 function mergeTemplateDetails(
   current: Partial<CoreProductConfigValues["template"]>,
   defaults: CoreProductConfigValues["template"],
   core: any,
+  family: string,
 ) {
-  return normalizeTemplateDetails(
+  const merged = normalizeTemplateDetails(
     {
       ...defaults,
       ...current,
@@ -1742,390 +1432,9 @@ function mergeTemplateDetails(
         current.inventoryLooseUnit || defaults.inventoryLooseUnit,
     },
     core,
+    family,
   );
-}
-
-/** The product type's rule switches, as the API sends them on core.category.type. */
-type TypeRules = {
-  trackingAvailable?: boolean;
-  trackingTypes?: string[];
-  returnPolicyAvailable?: boolean;
-  expiryAvailable?: boolean;
-  damageAvailable?: boolean;
-  minimumOrderAvailable?: boolean;
-  conversionAvailable?: boolean;
-  inventoryLooseUnitAvailable?: boolean;
-  inventoryLooseUnitOptions?: string[];
-  returnablePackAvailable?: boolean;
-};
-
-function typeRulesOf(core: any): TypeRules | null {
-  return (core?.category?.type?.ruleSettings as TypeRules | undefined) ?? null;
-}
-
-/** Without settings (older API) every rule is offered, as before. */
-function usesRule(rules: TypeRules | null, key: keyof TypeRules) {
-  return rules?.[key] !== false;
-}
-
-/** Rules the product type does not use are saved off. */
-function withoutUnusedRules<T extends CoreProductConfigValues["template"]>(
-  template: T,
-  rules: TypeRules | null,
-): T {
-  if (!rules) return template;
-  const next = { ...template };
-  if (!usesRule(rules, "trackingAvailable")) next.trackingType = "none";
-  if (!usesRule(rules, "expiryAvailable")) next.expiryEnabled = false;
-  if (!usesRule(rules, "returnPolicyAvailable"))
-    next.returnPolicyEnabled = false;
-  if (!usesRule(rules, "damageAvailable")) next.damageControlEnabled = false;
-  if (!usesRule(rules, "minimumOrderAvailable"))
-    next.minimumOrderEnabled = false;
-  if (!usesRule(rules, "conversionAvailable")) next.conversionEnabled = false;
-  if (!usesRule(rules, "inventoryLooseUnitAvailable"))
-    next.inventoryLooseUnitEnabled = false;
-  if (!usesRule(rules, "returnablePackAvailable"))
-    next.isReturnablePack = false;
-  return next;
-}
-
-function SharedTemplateEditor({
-  form,
-  defaults,
-  part,
-  suggestedDeliveryUnit = null,
-  variants = [],
-  variantFilter = EMPTY_VARIANT_FILTER,
-  onVariantFilterChange = () => undefined,
-  rules = null,
-  typeName = "this product type",
-}: {
-  form: any;
-  defaults: CoreProductConfigValues["template"];
-  /** "content" is the left column; "rules" is Inventory Rules on the right. */
-  part: "content" | "rules";
-  suggestedDeliveryUnit?: ReturnType<typeof suggestDeliveryCostUnit>;
-  variants?: VariantOption[];
-  variantFilter?: VariantFilter;
-  onVariantFilterChange?: (filter: VariantFilter) => void;
-  rules?: TypeRules | null;
-  typeName?: string;
-}) {
-  // Loose products are sold by weight or volume: kg, litre or ml only.
-  const typeLooseUnits = LOOSE_INVENTORY_UNIT_CODES.filter((code) =>
-    rules?.inventoryLooseUnitOptions?.length
-      ? rules.inventoryLooseUnitOptions.includes(code)
-      : true,
-  );
-  const units = (
-    typeLooseUnits.length ? typeLooseUnits : [...LOOSE_INVENTORY_UNIT_CODES]
-  ).map((code) => FULFILLMENT_UNITS[code]);
-  const trackingOptions = (
-    [
-      { value: "batch", label: "Enable" },
-      { value: "none", label: "Disable" },
-      { value: "serial", label: "Serial" },
-    ] as const
-  ).filter(
-    (option) =>
-      !rules?.trackingTypes?.length ||
-      rules.trackingTypes.includes(option.value),
-  );
-
-  return (
-    <>
-      {part === "content" && (
-      <ProductEditorSection
-        title="Description"
-        description="How this product appears to customers."
-      >
-        <div className="space-y-4">
-          <form.Field name="template.shortDescription">
-            {(field: any) => (
-              <Field>
-                <FieldLabel>Short description</FieldLabel>
-                <Input
-                  value={field.state.value ?? ""}
-                  onChange={(event) => field.handleChange(event.target.value)}
-                  placeholder="Premium quality rice for daily consumption"
-                />
-              </Field>
-            )}
-          </form.Field>
-          <form.Field name="template.description">
-            {(field: any) => (
-              <Field>
-                <FieldLabel>Full description</FieldLabel>
-                <RichTextEditor
-                  value={field.state.value ?? ""}
-                  onChange={field.handleChange}
-                  placeholder="Describe your product..."
-                />
-              </Field>
-            )}
-          </form.Field>
-        </div>
-      </ProductEditorSection>
-      )}
-
-      {part === "rules" && (
-        <ProductEditorSection
-          title="Inventory & Product Rules"
-          className="px-4 py-5 sm:px-5"
-        >
-          <RulesGrid>
-            <RuleCell label="Variant">
-              <VariantTypeSizeFilter
-                variants={variants}
-                filter={variantFilter}
-                onChange={onVariantFilterChange}
-              />
-            </RuleCell>
-            {usesRule(rules, "conversionAvailable") ? (
-            <form.Field name="template.conversionEnabled">
-              {(field: any) => (
-                <RuleCell label="Conversion">
-                  <EnableDisable
-                    label="Conversion"
-                    value={field.state.value}
-                    onChange={field.handleChange}
-                  />
-                </RuleCell>
-              )}
-            </form.Field>
-            ) : (
-              <UnusedRuleCell label="Conversion" typeName={typeName} />
-            )}
-
-            <RuleCell label="Inventory Unit">
-              <InventoryUnitFilter
-                variants={variants}
-                filter={variantFilter}
-                onChange={onVariantFilterChange}
-              />
-            </RuleCell>
-            {usesRule(rules, "inventoryLooseUnitAvailable") ? (
-            <form.Field name="template.inventoryLooseUnitEnabled">
-              {(enabledField: any) => (
-                <RuleCell label="Inventory Loose Unit">
-                  <EnableDisable
-                    label="Inventory Loose Unit"
-                    value={enabledField.state.value}
-                    onChange={enabledField.handleChange}
-                  />
-                  <form.Field name="template.inventoryLooseUnit">
-                    {(unitField: any) => (
-                      <RuleSelect
-                        label="Inventory loose unit type"
-                        value={unitField.state.value || defaults.inventoryLooseUnit}
-                        options={units.map((unit) => ({
-                          value: unit.code,
-                          label: unit.label,
-                        }))}
-                        disabled={!enabledField.state.value}
-                        onChange={unitField.handleChange}
-                      />
-                    )}
-                  </form.Field>
-                </RuleCell>
-              )}
-            </form.Field>
-            ) : (
-              <UnusedRuleCell label="Inventory Loose Unit" typeName={typeName} />
-            )}
-
-            {usesRule(rules, "returnPolicyAvailable") ? (
-            <form.Field name="template.returnPolicyEnabled">
-              {(field: any) => (
-                <RuleCell label="Return Policy">
-                  <EnableDisable
-                    label="Return Policy"
-                    value={field.state.value}
-                    onChange={field.handleChange}
-                  />
-                </RuleCell>
-              )}
-            </form.Field>
-            ) : (
-              <UnusedRuleCell label="Return Policy" typeName={typeName} />
-            )}
-            {usesRule(rules, "returnablePackAvailable") ? (
-            <form.Field name="template.isReturnablePack">
-              {(returnableField: any) => (
-                <RuleCell label="Empty Pack Return">
-                  <EnableDisable
-                    label="Empty Pack Return"
-                    value={returnableField.state.value}
-                    onChange={returnableField.handleChange}
-                  />
-                  <form.Field name="template.defaultPackDepositAmount">
-                    {(depositField: any) => (
-                      <RuleAmount
-                        label="Empty Pack Price"
-                        value={depositField.state.value ?? ""}
-                        disabled={!returnableField.state.value}
-                        onChange={depositField.handleChange}
-                      />
-                    )}
-                  </form.Field>
-                </RuleCell>
-              )}
-            </form.Field>
-            ) : (
-              <UnusedRuleCell label="Empty Pack Return" typeName={typeName} />
-            )}
-
-            {usesRule(rules, "trackingAvailable") ? (
-            <form.Field name="template.trackingType">
-              {(field: any) => (
-                <RuleCell label="Batch Tracking">
-                  <ChoiceRadios
-                    label="Batch Tracking"
-                    value={field.state.value || defaults.trackingType}
-                    options={[...trackingOptions]}
-                    onChange={(value) => {
-                      field.handleChange(value);
-                      if (value !== "batch") {
-                        form.setFieldValue("template.expiryEnabled", false);
-                      }
-                    }}
-                  />
-                </RuleCell>
-              )}
-            </form.Field>
-            ) : (
-              <UnusedRuleCell label="Batch Tracking" typeName={typeName} />
-            )}
-            {usesRule(rules, "damageAvailable") ? (
-            <form.Field name="template.damageControlEnabled">
-              {(field: any) => (
-                <RuleCell label="Damage Tracking">
-                  <EnableDisable
-                    label="Damage Tracking"
-                    value={field.state.value}
-                    onChange={field.handleChange}
-                  />
-                </RuleCell>
-              )}
-            </form.Field>
-            ) : (
-              <UnusedRuleCell label="Damage Tracking" typeName={typeName} />
-            )}
-
-            {usesRule(rules, "expiryAvailable") ? (
-            <form.Field name="template.expiryEnabled">
-              {(field: any) => (
-                <RuleCell label="Expiry Tracking">
-                  <EnableDisable
-                    label="Expiry Tracking"
-                    value={field.state.value}
-                    onChange={(enabled) => {
-                      field.handleChange(enabled);
-                      if (enabled) {
-                        form.setFieldValue("template.trackingType", "batch");
-                      }
-                    }}
-                  />
-                </RuleCell>
-              )}
-            </form.Field>
-            ) : (
-              <UnusedRuleCell label="Expiry Tracking" typeName={typeName} />
-            )}
-            {usesRule(rules, "minimumOrderAvailable") ? (
-            <form.Field name="template.minimumOrderEnabled">
-              {(enabledField: any) => (
-                <RuleCell label="Minimum Order qty">
-                  <EnableDisable
-                    label="Minimum Order qty"
-                    value={enabledField.state.value}
-                    onChange={enabledField.handleChange}
-                  />
-                  <form.Field name="template.minimumOrderQty">
-                    {(qtyField: any) => (
-                      <RuleAmount
-                        label="Minimum Order"
-                        value={qtyField.state.value ?? ""}
-                        disabled={!enabledField.state.value}
-                        onChange={qtyField.handleChange}
-                      />
-                    )}
-                  </form.Field>
-                </RuleCell>
-              )}
-            </form.Field>
-            ) : (
-              <UnusedRuleCell label="Minimum Order qty" typeName={typeName} />
-            )}
-
-            <form.Field name="template.deliveryCostUnit">
-              {(field: any) => (
-                <RuleCell label="Delivery Cost">
-                  <DeliveryUnitSelect
-                    value={field.state.value ?? ""}
-                    suggested={suggestedDeliveryUnit}
-                    onChange={field.handleChange}
-                    className="h-8 w-full text-xs"
-                  />
-                </RuleCell>
-              )}
-            </form.Field>
-          </RulesGrid>
-        </ProductEditorSection>
-      )}
-
-      {part === "content" && (
-      <>
-      <ProductEditorSection
-        title="Media"
-        description="Images and video for this product."
-      >
-        <div className="space-y-6">
-          <div className="grid gap-6 md:grid-cols-2">
-            <form.Field name="template.image">
-              {(field: any) => (
-                <Field>
-                  <FieldLabel>Thumbnail / main image</FieldLabel>
-                  <ImageUploader
-                    value={field.state.value}
-                    onChange={field.handleChange}
-                    folder="products"
-                    maxSizeMB={5}
-                  />
-                </Field>
-              )}
-            </form.Field>
-            <form.Field name="template.additionalImages">
-              {(field: any) => (
-                <Field>
-                  <FieldLabel>Gallery</FieldLabel>
-                  <AdditionalImagesUploader
-                    value={field.state.value}
-                    onChange={field.handleChange}
-                    folder="products/additional"
-                    maxSizeMB={5}
-                  />
-                </Field>
-              )}
-            </form.Field>
-          </div>
-          <form.Field name="template.videoUrl">
-            {(field: any) => (
-              <Field>
-                <FieldLabel>Video URL</FieldLabel>
-                <Input
-                  value={field.state.value ?? ""}
-                  onChange={(event) => field.handleChange(event.target.value)}
-                  placeholder="https://youtube.com/watch?v=..."
-                />
-              </Field>
-            )}
-          </form.Field>
-        </div>
-      </ProductEditorSection>
-      </>
-      )}
-    </>
-  );
+  // Conversion text is kept only while Conversion is on.
+  if (!merged.conversionEnabled) merged.conversionRule = "";
+  return merged;
 }

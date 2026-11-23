@@ -32,6 +32,7 @@ export default function RetailerCoreProductConfigPage() {
         coreProductId,
         expectedVersion: configurationQuery.data?.version ?? null,
         details: values.template,
+        publish: values.publish,
         brands: values.brands.map((brand: any) => ({
           brandId: brand.brandId,
           variants: brand.variants.map(sellerVariantPayload),

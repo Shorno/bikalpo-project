@@ -34,6 +34,7 @@ import { adminSubcategoryRouter } from "./admin-subcategory";
 import { adminTicketRouter } from "./admin-ticket";
 import { adminUserManagementRouter } from "./admin-user-management";
 import { adminVariantOptionRouter } from "./admin-variant-option";
+import { variantAttributeRouter } from "./variant-attribute";
 import { adminWarehouseAssignmentRouter } from "./admin-warehouse-assignment";
 import { auditRouter } from "./audit";
 import { balanceSheetRouter } from "./balance-sheet";
@@ -111,6 +112,7 @@ export const appRouter = {
   adminOfferTemplate: adminOfferTemplateRouter,
   adminProductType: adminProductTypeRouter,
   adminVariantOption: adminVariantOptionRouter,
+  variantAttribute: variantAttributeRouter,
   adminEmployeeReport: adminEmployeeReportRouter,
   adminBrandUpdate: adminBrandUpdateRouter,
   adminAnnouncement: adminAnnouncementRouter,

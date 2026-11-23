@@ -83,6 +83,7 @@ export * from "./tolet-rental";
 export * from "./tracking-type";
 export * from "./user-profile";
 export * from "./variant-conversion-map";
+export * from "./variant-attribute";
 export * from "./variant-option";
 export * from "./wallet";
 export * from "./warehouse-application";
