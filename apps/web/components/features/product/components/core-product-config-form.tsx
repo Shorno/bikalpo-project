@@ -29,7 +29,6 @@ import { toast } from "sonner";
 import AdditionalImagesUploader from "@/components/AdditionalImagesUploader";
 import ImageUploader from "@/components/ImageUploader";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import RichTextEditor from "@/components/ui/rich-text-editor";
@@ -55,8 +54,10 @@ import {
 } from "./product-delivery-pricing";
 import {
   ClientRulesGrid,
+  FeaturedCheckbox,
   type ClientRuleValues,
   DeliveryMethodSelect,
+  VISIBILITY_HELP,
 } from "./product-rules-grid";
 import {
   EMPTY_VARIANT_MATRIX,
@@ -1130,11 +1131,6 @@ export default function CoreProductConfigForm({
   );
 }
 
-const VISIBILITY_HELP: Record<string, string> = {
-  public: "Public products are visible to customers.",
-  private: "Private products are hidden from customers.",
-  unlisted: "Unlisted products open by link but stay out of lists and search.",
-};
 
 function Card({
   title,
@@ -1279,31 +1275,6 @@ function BrandField({
   );
 }
 
-function FeaturedCheckbox({
-  checked,
-  onChange,
-}: {
-  checked: boolean;
-  onChange: (checked: boolean) => void;
-}) {
-  const id = useId();
-  return (
-    <div className="space-y-1">
-      <label
-        htmlFor={id}
-        className="flex cursor-pointer items-center gap-2 text-sm"
-      >
-        <Checkbox
-          id={id}
-          checked={checked}
-          onCheckedChange={(next) => onChange(next === true)}
-        />
-        Featured product
-      </label>
-      <p className="text-xs text-muted-foreground">Show in featured section.</p>
-    </div>
-  );
-}
 
 function EditorLoading() {
   return (

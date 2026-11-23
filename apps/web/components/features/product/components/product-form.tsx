@@ -1,12 +1,17 @@
 "use client";
 
 import {
-  FULFILLMENT_UNITS,
   type FulfillmentUnitCode,
   inferProductTypeFamily,
-  LOOSE_INVENTORY_UNIT_CODES,
   type ProductTypeFulfillmentProfile,
 } from "@bikalpo-project/db/fulfillment";
+import {
+  DELIVERY_COST_METHODS,
+  type DeliveryCostMethod,
+  deliveryMethodFromUnit,
+  type InventoryUnitCode,
+  isDeliveryCostMethod,
+} from "@bikalpo-project/db/product-client-options";
 import { suggestDeliveryCostUnit } from "@bikalpo-project/db/product-delivery";
 import type { VariantProductFamily } from "@bikalpo-project/db/variant-definition";
 import { useForm } from "@tanstack/react-form";
@@ -69,7 +74,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
-import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Tooltip,
   TooltipContent,
@@ -87,8 +92,6 @@ import {
 } from "./add-variant-dialog";
 import DeleteProductDialog from "./delete-product-dialog";
 import {
-  DeliveryCostField,
-  DeliveryUnitSelect,
   exchangeCreditFrom,
   exchangePriceFrom,
   FinalActions,
@@ -100,18 +103,13 @@ import {
   resolveDeliveryUnit,
 } from "./product-delivery-pricing";
 import {
-  ChoiceRadios,
+  type ClientRuleValues,
+  ClientRulesGrid,
+  DeliveryMethodSelect,
   EMPTY_VARIANT_FILTER,
-  EnableDisable,
+  FeaturedCheckbox,
   filterVariantsForBrand,
-  InventoryUnitFilter,
-  RuleAmount,
-  RuleCell,
-  RuleSelect,
-  RulesGrid,
-  UnusedRuleCell,
-  type VariantFilter,
-  VariantTypeSizeFilter,
+  VISIBILITY_HELP,
 } from "./product-rules-grid";
 import type { ProductWithRelations } from "./product-columns";
 import {
@@ -476,10 +474,15 @@ export default function ProductForm({
   const [variantDialogBrandId, setVariantDialogBrandId] = useState<
     number | null
   >(null);
-  // Inventory & Product Rules: Type / Size / Inventory Unit narrow the
-  // variants each brand card offers. Not saved.
-  const [variantFilter, setVariantFilter] =
-    useState<VariantFilter>(EMPTY_VARIANT_FILTER);
+  // Inventory & Product Rules: the client's "Variant Attribute" choices.
+  const attributesQuery = useQuery(orpc.variantAttribute.list.queryOptions());
+  const variantAttributes = (attributesQuery.data ?? []) as Array<{
+    name: string;
+  }>;
+  // Products saved before the client's fields get its defaults once.
+  const [clientDefaultsFamily, setClientDefaultsFamily] = useState<
+    string | null
+  >(null);
 
   // === Brand configuration state ===
   const [brandConfigs, setBrandConfigs] = useState<BrandConfig[]>(() => {
@@ -898,6 +901,13 @@ export default function ProductForm({
         (product as any)?.inventoryLooseUnit ??
         activeRuleDefaults.inventoryLooseUnit,
       deliveryCostUnit: ((product as any)?.deliveryCostUnit ?? "") as string,
+      deliveryCostMethod: initialDeliveryMethod(product as any),
+      inventoryUnit: ((product as any)?.inventoryUnit ?? "") as
+        | InventoryUnitCode
+        | "",
+      conversionRule: ((product as any)?.conversionRule ?? "") as string,
+      variantAttr1: ((product as any)?.variantAttr1 ?? "") as string,
+      variantAttr2: ((product as any)?.variantAttr2 ?? "") as string,
       defaultDeliveryCost: priceInputValue((product as any)?.defaultDeliveryCost),
       visibility: (product as any)?.visibility ?? "public",
       status: (product as any)?.status ?? "active",
@@ -972,6 +982,7 @@ export default function ProductForm({
           suggestedDeliveryUnit,
         ),
         defaultDeliveryCost: value.defaultDeliveryCost || null,
+        conversionRule: value.conversionEnabled ? value.conversionRule : "",
       };
 
       if (isEdit) {
@@ -1102,6 +1113,32 @@ export default function ProductForm({
     form,
     isEdit,
     ruleDefaultsAppliedTypeId,
+  ]);
+
+  // The client's defaults: a cylinder unit with Type / Size for LPG, pieces
+  // otherwise. Saved values win.
+  useEffect(() => {
+    if (!activeProductType) return;
+    const family = isLpgRules ? "lpg" : "other";
+    if (clientDefaultsFamily === family) return;
+    const saved = isEdit ? (product as any) : undefined;
+    if (!saved?.inventoryUnit) {
+      form.setFieldValue("inventoryUnit", isLpgRules ? "cyl" : "pcs");
+    }
+    if (saved?.variantAttr1 == null) {
+      form.setFieldValue("variantAttr1", isLpgRules ? "Type" : "");
+    }
+    if (saved?.variantAttr2 == null) {
+      form.setFieldValue("variantAttr2", isLpgRules ? "Size" : "");
+    }
+    setClientDefaultsFamily(family);
+  }, [
+    activeProductType,
+    clientDefaultsFamily,
+    form,
+    isEdit,
+    isLpgRules,
+    product,
   ]);
 
   // Add a brand configuration
@@ -1244,29 +1281,6 @@ export default function ProductForm({
     );
   };
 
-  const supportsLooseInventory = activeRuleSettings.inventoryLooseUnitAvailable;
-  // Loose products are sold by weight or volume: kg, litre or ml only.
-  const typeLooseUnits = activeRuleSettings.inventoryLooseUnitOptions.filter(
-    (code) => (LOOSE_INVENTORY_UNIT_CODES as readonly string[]).includes(code),
-  );
-  const looseUnitOptions = (
-    typeLooseUnits.length ? typeLooseUnits : [...LOOSE_INVENTORY_UNIT_CODES]
-  ).map((code) => ({
-    value: code,
-    label: FULFILLMENT_UNITS[code]?.label ?? code,
-  }));
-  const returnableRuleLabel = isLpgRules
-    ? "Empty cylinder return"
-    : "Empty pack return";
-  const returnableRuleDescription = isLpgRules
-    ? "Buyers can choose New or Exchange"
-    : "Require returnable packaging such as jars, drums, or packs";
-  const depositLabel = isLpgRules
-    ? "Exchange Value (BDT)"
-    : "Deposit Amount (BDT)";
-  const conversionDescription =
-    "Enable unit conversion for products that need pack-to-loose or carton-to-pack handling.";
-
   const identityDescription = isEdit
     ? "The core product this listing is based on."
     : isCoreIdentityLocked
@@ -1279,7 +1293,7 @@ export default function ProductForm({
     <div className="@container/product-form min-h-screen bg-muted/30">
       {/* Command bar */}
       <div className="sticky top-0 z-20 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
-        <div className="mx-auto flex max-w-6xl flex-col items-stretch gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:py-2.5">
+        <div className="mx-auto flex max-w-[1500px] flex-col items-stretch gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:py-2.5">
           <div className="flex min-w-0 w-full items-center gap-3 sm:w-auto">
             <Button
               asChild
@@ -1368,8 +1382,8 @@ export default function ProductForm({
           form.handleSubmit();
         }}
       >
-        <div className="mx-auto max-w-6xl px-4 py-6">
-          <div className="grid grid-cols-1 gap-6 @4xl/product-form:grid-cols-[minmax(0,1fr)_420px] @4xl/product-form:items-start">
+        <div className="mx-auto max-w-[1500px] px-4 py-6">
+          <div className="grid grid-cols-1 gap-6 @5xl/product-form:grid-cols-[minmax(0,1.62fr)_minmax(420px,1fr)] @5xl/product-form:items-start">
             {/* Product details */}
             <div className="min-w-0 space-y-6">
               {/* ── Product Information ── */}
@@ -1609,7 +1623,7 @@ export default function ProductForm({
                       <BrandConfigCard
                         key={bc.brandId}
                         config={bc}
-                        variantOptions={filterVariantsForBrand(availableVariantOptions, variantFilter, bc.selectedVariantIds)}
+                        variantOptions={filterVariantsForBrand(availableVariantOptions, EMPTY_VARIANT_FILTER, bc.selectedVariantIds)}
                         isExpanded={!collapsedBrandIds.has(bc.brandId)}
                         onToggleExpand={() => toggleBrandExpanded(bc.brandId)}
                         onRemove={() => undefined}
@@ -1638,7 +1652,7 @@ export default function ProductForm({
                         <BrandConfigCard
                           key={bc.brandId}
                           config={bc}
-                          variantOptions={filterVariantsForBrand(availableVariantOptions, variantFilter, bc.selectedVariantIds)}
+                          variantOptions={filterVariantsForBrand(availableVariantOptions, EMPTY_VARIANT_FILTER, bc.selectedVariantIds)}
                           isExpanded={!collapsedBrandIds.has(bc.brandId)}
                           onToggleExpand={() => toggleBrandExpanded(bc.brandId)}
                           onRemove={() => handleRemoveBrand(bc.brandId)}
@@ -1815,11 +1829,22 @@ export default function ProductForm({
                     <form.Field name="shortDescription">
                       {(field) => (
                         <Field>
-                          <FieldLabel>Short description</FieldLabel>
-                          <Input
+                          <FieldLabel className="flex items-center justify-between">
+                            <span>Short description</span>
+                            <span className="text-xs font-normal text-muted-foreground tabular-nums">
+                              {Math.min(
+                                field.state.value.length,
+                                SHORT_DESCRIPTION_LIMIT,
+                              )}
+                              /{SHORT_DESCRIPTION_LIMIT}
+                            </span>
+                          </FieldLabel>
+                          <Textarea
+                            rows={2}
+                            maxLength={SHORT_DESCRIPTION_LIMIT}
                             value={field.state.value}
                             onChange={(e) => field.handleChange(e.target.value)}
-                            placeholder="Premium quality rice for daily consumption"
+                            placeholder="Write a concise product summary (maximum 160 characters)"
                           />
                         </Field>
                       )}
@@ -1924,274 +1949,75 @@ export default function ProductForm({
 
             {/* Inventory and publishing */}
             <div className="min-w-0 space-y-6">
-              {/* ── Inventory rules ── */}
+              {/* ── Inventory & Product Rules (client layout) ── */}
               <FormSection
                 variant="card"
                 title="Inventory & Product Rules"
                 className="p-5 sm:px-5"
               >
-                <RulesGrid>
-                  <RuleCell label="Variant">
-                    <VariantTypeSizeFilter
-                      variants={availableVariantOptions}
-                      filter={variantFilter}
-                      onChange={setVariantFilter}
-                    />
-                  </RuleCell>
-                  {activeRuleSettings.conversionAvailable ? (
-                    <form.Field name="conversionEnabled">
-                      {(field) => (
-                        <RuleCell label="Conversion">
-                          <EnableDisable
-                            label="Conversion"
-                            value={field.state.value}
-                            onChange={field.handleChange}
-                          />
-                        </RuleCell>
-                      )}
-                    </form.Field>
-                  ) : (
-                    <UnusedRuleCell
-                      label="Conversion"
-                      typeName={activeTypeName}
+                <form.Subscribe selector={(state) => state.values}>
+                  {(values) => (
+                    <ClientRulesGrid
+                      values={clientRuleValues(values)}
+                      onChange={(patch) => {
+                        for (const [key, value] of Object.entries(patch)) {
+                          form.setFieldValue(key as any, value as any);
+                        }
+                      }}
+                      attributes={variantAttributes}
                     />
                   )}
-
-                  <RuleCell label="Inventory Unit">
-                    <InventoryUnitFilter
-                      variants={availableVariantOptions}
-                      filter={variantFilter}
-                      onChange={setVariantFilter}
-                    />
-                  </RuleCell>
-                  {supportsLooseInventory ? (
-                    <form.Field name="inventoryLooseUnitEnabled">
-                      {(enabledField) => (
-                        <RuleCell label="Inventory Loose Unit">
-                          <EnableDisable
-                            label="Inventory Loose Unit"
-                            value={enabledField.state.value}
-                            onChange={enabledField.handleChange}
-                          />
-                          <form.Field name="inventoryLooseUnit">
-                            {(unitField) => (
-                              <RuleSelect
-                                label="Inventory loose unit type"
-                                value={unitField.state.value}
-                                options={looseUnitOptions}
-                                disabled={!enabledField.state.value}
-                                onChange={(value) =>
-                                  unitField.handleChange(
-                                    value as FulfillmentUnitCode,
-                                  )
-                                }
-                              />
-                            )}
-                          </form.Field>
-                        </RuleCell>
-                      )}
-                    </form.Field>
-                  ) : (
-                    <UnusedRuleCell
-                      label="Inventory Loose Unit"
-                      typeName={activeTypeName}
-                    />
-                  )}
-
-                  {activeRuleSettings.returnPolicyAvailable ? (
-                    <form.Field name="returnPolicyEnabled">
-                      {(field) => (
-                        <RuleCell label="Return Policy">
-                          <EnableDisable
-                            label="Return Policy"
-                            value={field.state.value}
-                            onChange={field.handleChange}
-                          />
-                        </RuleCell>
-                      )}
-                    </form.Field>
-                  ) : (
-                    <UnusedRuleCell
-                      label="Return Policy"
-                      typeName={activeTypeName}
-                    />
-                  )}
-                  {activeRuleSettings.returnablePackAvailable ? (
-                    <form.Field name="isReturnablePack">
-                      {(returnableField) => (
-                        <RuleCell label="Empty Pack Return">
-                          <EnableDisable
-                            label="Empty Pack Return"
-                            value={returnableField.state.value}
-                            onChange={returnableField.handleChange}
-                          />
-                          <form.Field name="defaultPackDepositAmount">
-                            {(depositField) => (
-                              <RuleAmount
-                                label="Empty Pack Price"
-                                value={depositField.state.value}
-                                disabled={!returnableField.state.value}
-                                onChange={depositField.handleChange}
-                              />
-                            )}
-                          </form.Field>
-                        </RuleCell>
-                      )}
-                    </form.Field>
-                  ) : (
-                    <UnusedRuleCell
-                      label="Empty Pack Return"
-                      typeName={activeTypeName}
-                    />
-                  )}
-
-                  {activeRuleSettings.trackingAvailable ? (
-                    <form.Field name="trackingType">
-                      {(field) => (
-                        <RuleCell label="Batch Tracking">
-                          <ChoiceRadios
-                            label="Batch Tracking"
-                            value={field.state.value as string}
-                            options={(["batch", "none", "serial"] as const)
-                              .filter((type) =>
-                                (
-                                  activeRuleSettings.trackingTypes as readonly string[]
-                                ).includes(type),
-                              )
-                              .map((type) => ({
-                                value: type,
-                                label:
-                                  type === "batch"
-                                    ? "Enable"
-                                    : type === "none"
-                                      ? "Disable"
-                                      : "Serial",
-                              }))}
-                            onChange={(value) => {
-                              field.handleChange(value as any);
-                              if (value !== "batch") {
-                                form.setFieldValue("expiryEnabled", false);
-                              }
-                            }}
-                          />
-                        </RuleCell>
-                      )}
-                    </form.Field>
-                  ) : (
-                    <UnusedRuleCell
-                      label="Batch Tracking"
-                      typeName={activeTypeName}
-                    />
-                  )}
-                  {activeRuleSettings.damageAvailable ? (
-                    <form.Field name="damageControlEnabled">
-                      {(field) => (
-                        <RuleCell label="Damage Tracking">
-                          <EnableDisable
-                            label="Damage Tracking"
-                            value={field.state.value}
-                            onChange={field.handleChange}
-                          />
-                        </RuleCell>
-                      )}
-                    </form.Field>
-                  ) : (
-                    <UnusedRuleCell
-                      label="Damage Tracking"
-                      typeName={activeTypeName}
-                    />
-                  )}
-
-                  {activeRuleSettings.expiryAvailable ? (
-                    <form.Field name="expiryEnabled">
-                      {(field) => (
-                        <RuleCell label="Expiry Tracking">
-                          <EnableDisable
-                            label="Expiry Tracking"
-                            value={field.state.value}
-                            onChange={(enabled) => {
-                              field.handleChange(enabled);
-                              if (enabled) {
-                                form.setFieldValue("trackingType", "batch");
-                              }
-                            }}
-                          />
-                        </RuleCell>
-                      )}
-                    </form.Field>
-                  ) : (
-                    <UnusedRuleCell
-                      label="Expiry Tracking"
-                      typeName={activeTypeName}
-                    />
-                  )}
-                  {activeRuleSettings.minimumOrderAvailable ? (
-                    <form.Field name="minimumOrderEnabled">
-                      {(enabledField) => (
-                        <RuleCell label="Minimum Order qty">
-                          <EnableDisable
-                            label="Minimum Order qty"
-                            value={enabledField.state.value}
-                            onChange={enabledField.handleChange}
-                          />
-                          <form.Field name="minimumOrderQty">
-                            {(qtyField) => (
-                              <RuleAmount
-                                label="Minimum Order"
-                                value={qtyField.state.value}
-                                disabled={!enabledField.state.value}
-                                onChange={qtyField.handleChange}
-                              />
-                            )}
-                          </form.Field>
-                        </RuleCell>
-                      )}
-                    </form.Field>
-                  ) : (
-                    <UnusedRuleCell
-                      label="Minimum Order qty"
-                      typeName={activeTypeName}
-                    />
-                  )}
-
-                  <form.Field name="deliveryCostUnit">
-                    {(field) => (
-                      <RuleCell label="Delivery Cost">
-                        <DeliveryUnitSelect
-                          value={field.state.value}
-                          suggested={suggestedDeliveryUnit}
-                          onChange={field.handleChange}
-                          className="h-8 w-full text-xs"
-                        />
-                      </RuleCell>
-                    )}
-                  </form.Field>
-                </RulesGrid>
+                </form.Subscribe>
               </FormSection>
 
-              {/* ── Delivery configuration ── */}
+              {/* ── Delivery Cost Configuration ── */}
               <FormSection
                 variant="card"
-                title="Delivery Configuration"
+                title="Delivery Cost Configuration"
                 className="p-5 sm:px-5"
               >
-                <form.Subscribe
-                  selector={(state) => state.values.deliveryCostUnit}
-                >
-                  {(deliveryCostUnit) => (
-                    <form.Field name="defaultDeliveryCost">
-                      {(field) => (
-                        <DeliveryCostField
-                          value={field.state.value}
-                          unit={resolveDeliveryUnit(
-                            deliveryCostUnit,
-                            suggestedDeliveryUnit,
-                          )}
-                          onChange={field.handleChange}
-                        />
-                      )}
-                    </form.Field>
-                  )}
+                <form.Subscribe selector={(state) => state.values}>
+                  {(values) => {
+                    const method = isDeliveryCostMethod(
+                      values.deliveryCostMethod,
+                    )
+                      ? values.deliveryCostMethod
+                      : "free";
+                    return (
+                      <div className="space-y-3">
+                        <Field>
+                          <FieldLabel>Delivery cost method</FieldLabel>
+                          <DeliveryMethodSelect
+                            value={method}
+                            className="h-9 w-full"
+                            onChange={(next) =>
+                              form.setFieldValue(
+                                "deliveryCostMethod",
+                                next as DeliveryCostMethod,
+                              )
+                            }
+                          />
+                        </Field>
+                        <Field>
+                          <FieldLabel>Default delivery cost (৳)</FieldLabel>
+                          <Input
+                            inputMode="decimal"
+                            placeholder="Enter default cost"
+                            value={values.defaultDeliveryCost ?? ""}
+                            onChange={(event) => {
+                              const next = event.target.value.trim();
+                              if (/^\d{0,8}(\.\d{0,2})?$/.test(next)) {
+                                form.setFieldValue("defaultDeliveryCost", next);
+                              }
+                            }}
+                          />
+                        </Field>
+                        <p className="text-xs text-muted-foreground">
+                          {DELIVERY_COST_METHODS[method].help}
+                        </p>
+                      </div>
+                    );
+                  }}
                 </form.Subscribe>
               </FormSection>
 
@@ -2209,7 +2035,9 @@ export default function ProductForm({
                         </FieldLabel>
                         <Select
                           value={field.state.value}
-                          onValueChange={(v) => field.handleChange(v as any)}
+                          onValueChange={(v) =>
+                            v && field.handleChange(v as any)
+                          }
                         >
                           <SelectTrigger className="w-full">
                             <SelectValue />
@@ -2232,7 +2060,9 @@ export default function ProductForm({
                         </FieldLabel>
                         <Select
                           value={field.state.value}
-                          onValueChange={(v) => field.handleChange(v as any)}
+                          onValueChange={(v) =>
+                            v && field.handleChange(v as any)
+                          }
                         >
                           <SelectTrigger className="w-full">
                             <SelectValue />
@@ -2240,35 +2070,30 @@ export default function ProductForm({
                           <SelectContent>
                             <SelectItem value="public">Public</SelectItem>
                             <SelectItem value="private">Private</SelectItem>
+                            <SelectItem value="unlisted">Unlisted</SelectItem>
                           </SelectContent>
                         </Select>
                         <p className="text-xs text-muted-foreground">
-                          {field.state.value === "public"
-                            ? "Visible to all customers"
-                            : "Only visible to admins"}
+                          {VISIBILITY_HELP[field.state.value] ??
+                            VISIBILITY_HELP.public}
                         </p>
                       </div>
                     )}
                   </form.Field>
 
-                  <Separator />
-
-                  <form.Field name="isFeatured">
-                    {(field) => (
-                      <div className="flex items-center justify-between gap-3">
-                        <div>
-                          <p className="text-sm font-medium">Featured</p>
-                          <p className="text-xs text-muted-foreground">
-                            Show in featured section
-                          </p>
-                        </div>
-                        <Switch
-                          checked={field.state.value}
-                          onCheckedChange={field.handleChange}
-                        />
-                      </div>
-                    )}
-                  </form.Field>
+                  {!usesExternalEditAdapter && (
+                    <>
+                      <Separator />
+                      <form.Field name="isFeatured">
+                        {(field) => (
+                          <FeaturedCheckbox
+                            checked={field.state.value}
+                            onChange={field.handleChange}
+                          />
+                        )}
+                      </form.Field>
+                    </>
+                  )}
                 </div>
               </FormSection>
 
@@ -2296,6 +2121,37 @@ export default function ProductForm({
       </form>
     </div>
   );
+}
+
+const SHORT_DESCRIPTION_LIMIT = 160;
+
+/** Delivery Cost Counting: the saved method, else the one its unit implies. */
+function initialDeliveryMethod(product: any): DeliveryCostMethod {
+  return isDeliveryCostMethod(product?.deliveryCostMethod)
+    ? product.deliveryCostMethod
+    : (deliveryMethodFromUnit(product?.deliveryCostUnit) ?? "free");
+}
+
+/** The form's rule fields in the client's grid shape. */
+function clientRuleValues(values: any): ClientRuleValues {
+  return {
+    variantAttr1: values.variantAttr1 ?? "",
+    variantAttr2: values.variantAttr2 ?? "",
+    inventoryUnit: values.inventoryUnit ?? "",
+    inventoryLooseUnitEnabled: Boolean(values.inventoryLooseUnitEnabled),
+    inventoryLooseUnit: values.inventoryLooseUnit ?? "",
+    conversionEnabled: Boolean(values.conversionEnabled),
+    conversionRule: values.conversionRule ?? "",
+    returnPolicyEnabled: Boolean(values.returnPolicyEnabled),
+    isReturnablePack: Boolean(values.isReturnablePack),
+    defaultPackDepositAmount: String(values.defaultPackDepositAmount ?? ""),
+    trackingType: values.trackingType ?? "none",
+    damageControlEnabled: Boolean(values.damageControlEnabled),
+    expiryEnabled: Boolean(values.expiryEnabled),
+    minimumOrderEnabled: Boolean(values.minimumOrderEnabled),
+    minimumOrderQty: String(values.minimumOrderQty ?? ""),
+    deliveryCostMethod: values.deliveryCostMethod ?? "free",
+  };
 }
 
 // ============================================================

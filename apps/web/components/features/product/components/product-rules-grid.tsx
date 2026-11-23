@@ -681,3 +681,37 @@ export function DeliveryMethodSelect({
     </Select>
   );
 }
+
+/** Publishing → Visibility help, as the client wrote it. */
+export const VISIBILITY_HELP: Record<string, string> = {
+  public: "Public products are visible to customers.",
+  private: "Private products are hidden from customers.",
+  unlisted: "Unlisted products open by link but stay out of lists and search.",
+};
+
+/** Publishing → "Featured product" (admin only). */
+export function FeaturedCheckbox({
+  checked,
+  onChange,
+}: {
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+}) {
+  const id = useId();
+  return (
+    <div className="space-y-1">
+      <label
+        htmlFor={id}
+        className="flex cursor-pointer items-center gap-2 text-sm"
+      >
+        <Checkbox
+          id={id}
+          checked={checked}
+          onCheckedChange={(next) => onChange(next === true)}
+        />
+        Featured product
+      </label>
+      <p className="text-xs text-muted-foreground">Show in featured section.</p>
+    </div>
+  );
+}

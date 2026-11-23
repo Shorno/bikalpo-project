@@ -8165,7 +8165,9 @@ const warehouseProductCreation = {
             inventoryLooseUnitEnabled: input.details.inventoryLooseUnitEnabled,
             inventoryLooseUnit: input.details.inventoryLooseUnit,
             ...deliveryColumns(input.details),
-            isReturnablePack: anyExchangeEnabled,
+            // Empty Pack Return as ticked; Exchange always needs it.
+            isReturnablePack:
+              input.details.isReturnablePack || anyExchangeEnabled,
             defaultPackDepositAmount: input.details.defaultPackDepositAmount,
             allowedPackBrands: input.details.allowedPackBrands,
             allowedPackSizes: input.details.allowedPackSizes,

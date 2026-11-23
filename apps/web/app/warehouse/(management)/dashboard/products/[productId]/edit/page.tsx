@@ -98,7 +98,15 @@ export default function WarehouseProductEditPage() {
               conversionEnabled: payload.conversionEnabled,
               inventoryLooseUnitEnabled: payload.inventoryLooseUnitEnabled,
               inventoryLooseUnit: payload.inventoryLooseUnit,
-              isReturnablePack: anyExchangeEnabled,
+              inventoryUnit: payload.inventoryUnit || "",
+              conversionRule: payload.conversionRule || "",
+              variantAttr1: payload.variantAttr1 || "",
+              variantAttr2: payload.variantAttr2 || "",
+              deliveryCostMethod: payload.deliveryCostMethod || "",
+              deliveryCostUnit: payload.deliveryCostUnit || "",
+              defaultDeliveryCost: payload.defaultDeliveryCost || null,
+              isReturnablePack:
+                Boolean(payload.isReturnablePack) || anyExchangeEnabled,
               defaultPackDepositAmount: String(
                 payload.defaultPackDepositAmount || "0",
               ),
