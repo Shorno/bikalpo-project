@@ -25,6 +25,7 @@ import { catalogProductCode } from "./helpers/generate-sku";
 import {
   deliveryColumns,
   deliveryDetailsShape,
+  publishFeaturedFor,
   publishShape,
   publishStatusFor,
 } from "./helpers/product-delivery";
@@ -534,10 +535,10 @@ export const adminProductConfigRouter = {
               brandConfig.brandId,
               null,
             );
-            const featured =
-              input.publish?.brandId === brandConfig.brandId
-                ? input.publish.featured
-                : undefined;
+            const featured = publishFeaturedFor(
+              input.publish,
+              brandConfig.brandId,
+            );
             if (featured !== undefined && featured !== existing.isFeatured) {
               await tx
                 .update(product)
@@ -631,10 +632,8 @@ export const adminProductConfigRouter = {
                 : null,
               inStock: details.inStock,
               isFeatured:
-                input.publish?.brandId === brandConfig.brandId &&
-                input.publish.featured !== undefined
-                  ? input.publish.featured
-                  : details.isFeatured,
+                publishFeaturedFor(input.publish, brandConfig.brandId) ??
+                details.isFeatured,
               reorderLevel: details.reorderLevel,
               supplier: details.supplier ?? null,
               features: details.features,

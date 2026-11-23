@@ -95,26 +95,46 @@ export function deliveryColumns(details: ClientDetails) {
 }
 
 /**
- * Create Product "Publishing → Status" for the brand being saved. Other
- * brands in the same save keep the usual status.
+ * Create Product "Publishing": Status and (admin) Featured. Without a
+ * brandId it applies to every brand in the save; a field left out keeps
+ * the usual behaviour.
  */
 export const publishShape = {
   publish: z
     .object({
-      brandId: z.number().int().positive(),
-      status: z.enum(["active", "draft", "inactive"]),
+      brandId: z.number().int().positive().optional(),
+      status: z.enum(["active", "draft", "inactive"]).optional(),
       /** Admin only: "Featured product". */
       featured: z.boolean().optional(),
     })
     .optional(),
 };
 
+type PublishInput =
+  | {
+      brandId?: number;
+      status?: "active" | "draft" | "inactive";
+      featured?: boolean;
+    }
+  | undefined;
+
+function publishAppliesTo(publish: PublishInput, brandId: number) {
+  return Boolean(publish) && (publish?.brandId == null || publish.brandId === brandId);
+}
+
 export function publishStatusFor<T>(
-  publish: { brandId: number; status: "active" | "draft" | "inactive" } | undefined,
+  publish: PublishInput,
   brandId: number,
   fallback: T,
 ): T | "active" | "draft" | "inactive" {
-  return publish && publish.brandId === brandId ? publish.status : fallback;
+  return publishAppliesTo(publish, brandId) && publish?.status
+    ? publish.status
+    : fallback;
+}
+
+/** Featured for this brand, or undefined when the save leaves it alone. */
+export function publishFeaturedFor(publish: PublishInput, brandId: number) {
+  return publishAppliesTo(publish, brandId) ? publish?.featured : undefined;
 }
 
 /** A positive New price to store, or null when the seller left it empty. */
