@@ -1,3 +1,4 @@
+import { withOwnerRetailPrices } from "./helpers/seller-variant-prices";
 import { withCoreTypeRuleSettings } from "./helpers/product-type-rules";
 import { db } from "@bikalpo-project/db";
 import {
@@ -960,7 +961,10 @@ export const shopProductConfigEndpoints = {
             owner,
           ) && isConcreteVariantOption(option),
       );
-      return { product: found, options: { variantOptions: options } };
+      return {
+        product: await withOwnerRetailPrices(found, "shop", shopId),
+        options: { variantOptions: options },
+      };
     }),
 
   updateShopOwnedProduct: shopPermissionProcedure("shop_products", "update")

@@ -7,6 +7,7 @@
  * - Mutations (warehouse role only — update order status)
  */
 
+import { withOwnerRetailPrices } from "./helpers/seller-variant-prices";
 import { withCoreTypeRuleSettings } from "./helpers/product-type-rules";
 import {
   buildProductTypeFulfillmentProfile,
@@ -7893,7 +7894,7 @@ const warehouseProductCreation = {
       });
 
       return {
-        product: found,
+        product: await withOwnerRetailPrices(found, "warehouse", warehouseId),
         options: {
           variantOptions: options.filter(isConcreteVariantOption),
         },
@@ -8080,6 +8081,7 @@ const warehouseProductCreation = {
                   inventory.variantId,
                 ],
               });
+            await applyWarehouseEnteredPrice(tx, warehouseId, currentRow.id, row);
             continue;
           }
           const [priceRow] = await tx
@@ -8133,6 +8135,7 @@ const warehouseProductCreation = {
             availableQty: "0",
             retailPrice: null,
           });
+          await applyWarehouseEnteredPrice(tx, warehouseId, variantRow!.id, row);
           sortOrder++;
         }
 

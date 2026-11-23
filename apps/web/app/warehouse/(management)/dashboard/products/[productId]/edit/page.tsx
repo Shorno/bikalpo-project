@@ -45,6 +45,8 @@ export default function WarehouseProductEditPage() {
       );
       return {
         ...price,
+        // The seller's own price, not the admin reference price.
+        consumerPrice: variant?.retailPrice ?? "0",
         exchangeEnabled: variant?.exchangeEnabled ?? false,
         exchangeCreditAmount: variant?.exchangeCreditAmount ?? "0",
       };
@@ -69,6 +71,7 @@ export default function WarehouseProductEditPage() {
         onUpdate: async (payload: any) => {
           const variants = (payload.variantPrices ?? []).map((row: any) => ({
             variantOptionId: row.variantOptionId,
+            retailPrice: row.consumerPrice || null,
             exchangeEnabled: Boolean(row.exchangeEnabled),
             exchangeCreditAmount: String(row.exchangeCreditAmount || "0"),
           }));

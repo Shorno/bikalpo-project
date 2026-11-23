@@ -1924,7 +1924,11 @@ export default function ProductForm({
                 <FormSection
                   variant="card"
                   title="Pricing"
-                  description="Optional. Sets the admin reference price; you can also set it later in Price."
+                  description={
+                    usesExternalEditAdapter
+                      ? "Your selling price. You can also change it later in Price."
+                      : "Optional. Sets the admin reference price; you can also set it later in Price."
+                  }
                 >
                   <ProductPricingTable
                     rows={pricingRows}
