@@ -934,19 +934,21 @@ export default function ProductForm({
         for (const voId of bc.selectedVariantIds) {
           const settings = bc.variantSettings[voId];
           if (!settings) continue;
+          // LPG sells as Exchange and New, but buyers only see Exchange
+          // once it has a price (here or later in Price); otherwise it
+          // would sell at the full New price with no credit.
+          const credit = isLpgRules
+            ? exchangeCreditFrom({
+                newPrice: settings.consumerPrice,
+                exchangePrice: settings.exchangePrice ?? "",
+              })
+            : null;
           vpArray.push({
             variantOptionId: settings.variantOptionId,
             brandId: bc.brandId,
             consumerPrice: settings.consumerPrice || "0",
-            // LPG always sells as Exchange and New.
-            exchangeEnabled: isLpgRules,
-            // Exchange price = New minus credit; empty prices keep no credit.
-            exchangeCreditAmount: isLpgRules
-              ? (exchangeCreditFrom({
-                  newPrice: settings.consumerPrice,
-                  exchangePrice: settings.exchangePrice ?? "",
-                }) ?? "0")
-              : "0",
+            exchangeEnabled: credit !== null,
+            exchangeCreditAmount: credit ?? "0",
           });
         }
       }
