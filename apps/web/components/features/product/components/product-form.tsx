@@ -146,23 +146,38 @@ type BrandConfig = {
   variantSettings: Record<number, VariantPriceSettings>;
 };
 
-type CoreProductOption = {
+type SearchCreateOption = {
   id: number;
   name: string;
 };
 
-function CoreProductCombobox({
+/**
+ * Pick from a list or type a new name: when nothing matches, an
+ * "Add …" row creates it. Used for Sub category and Core identity.
+ */
+function SearchCreateCombobox({
+  noun,
   options,
   selected,
   disabled,
+  disabledLabel,
+  creating = false,
+  clearLabel,
   onSelect,
   onCreate,
+  onClear,
 }: {
-  options: CoreProductOption[];
-  selected?: CoreProductOption;
+  noun: string;
+  options: SearchCreateOption[];
+  selected?: SearchCreateOption;
   disabled: boolean;
+  disabledLabel: string;
+  creating?: boolean;
+  /** Shown as the first row when something is selected and it can be unset. */
+  clearLabel?: string;
   onSelect: (id: number) => void;
-  onCreate: (name: string) => boolean;
+  onCreate: (name: string) => boolean | Promise<boolean>;
+  onClear?: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -171,25 +186,27 @@ function CoreProductCombobox({
     option.name.toLowerCase().includes(search.toLowerCase()),
   );
   const canCreate =
+    !creating &&
     search.length >= 2 &&
     matches.length === 0 &&
     !options.some(
       (option) => option.name.toLowerCase() === search.toLowerCase(),
     );
 
-  const choose = (id: number) => {
-    onSelect(id);
+  const close = () => {
     setQuery("");
     setOpen(false);
   };
 
-  const create = () => {
+  const choose = (id: number) => {
+    onSelect(id);
+    close();
+  };
+
+  const create = async () => {
     if (!canCreate) return;
-    const created = onCreate(search);
-    if (created) {
-      setQuery("");
-      setOpen(false);
-    }
+    const created = await onCreate(search);
+    if (created) close();
   };
 
   return (
@@ -206,17 +223,20 @@ function CoreProductCombobox({
           variant="outline"
           role="combobox"
           aria-expanded={open}
-          aria-label="Select or add a core identity"
+          aria-label={`Select or add a ${noun}`}
           disabled={disabled}
           className="w-full justify-between font-normal"
         >
           <span
             className={selected ? "truncate" : "truncate text-muted-foreground"}
           >
-            {selected?.name ??
-              (disabled ? "Select a category first" : "Search core identity")}
+            {selected?.name ?? (disabled ? disabledLabel : `Search ${noun}`)}
           </span>
-          <ChevronsUpDown className="size-4 shrink-0 text-muted-foreground" />
+          {creating ? (
+            <Loader2 className="size-4 shrink-0 animate-spin text-muted-foreground" />
+          ) : (
+            <ChevronsUpDown className="size-4 shrink-0 text-muted-foreground" />
+          )}
         </Button>
       </PopoverTrigger>
       <PopoverContent
@@ -225,18 +245,30 @@ function CoreProductCombobox({
       >
         <Command shouldFilter={false}>
           <CommandInput
-            placeholder="Search or add a core identity"
+            placeholder={`Search or add a ${noun}`}
             value={query}
             onValueChange={setQuery}
-            maxLength={150}
+            maxLength={100}
           />
           <CommandList>
             <CommandEmpty>
               {search.length < 2
-                ? "Type at least 2 characters to add a new core identity."
-                : "No core identity found."}
+                ? `Type at least 2 characters to add a new ${noun}.`
+                : `No ${noun} found.`}
             </CommandEmpty>
             <CommandGroup>
+              {selected && onClear && clearLabel && !search && (
+                <CommandItem
+                  value="clear-selection"
+                  className="text-muted-foreground"
+                  onSelect={() => {
+                    onClear();
+                    close();
+                  }}
+                >
+                  {clearLabel}
+                </CommandItem>
+              )}
               {matches.map((option) => (
                 <CommandItem
                   key={option.id}
@@ -250,12 +282,12 @@ function CoreProductCombobox({
               {canCreate && (
                 <CommandItem
                   value={`create-${search}`}
-                  onSelect={create}
+                  onSelect={() => void create()}
                   className="text-primary"
                 >
                   <Plus className="size-4" />
                   <span className="truncate">
-                    Add &ldquo;{search}&rdquo; as a new core identity
+                    Add &ldquo;{search}&rdquo; as a new {noun}
                   </span>
                 </CommandItem>
               )}
@@ -471,6 +503,10 @@ export default function ProductForm({
   const [createdBrands, setCreatedBrands] = useState<any[]>([]);
   const [createdVariants, setCreatedVariants] = useState<any[]>([]);
   const [creatingBrand, setCreatingBrand] = useState(false);
+  // Sub categories added from the Sub category search show at once.
+  const [createdSubcategories, setCreatedSubcategories] = useState<any[]>([]);
+  const [creatingSubcategory, setCreatingSubcategory] = useState(false);
+  const [pickedCoreProduct, setPickedCoreProduct] = useState<any>(null);
   const [variantDialogBrandId, setVariantDialogBrandId] = useState<
     number | null
   >(null);
@@ -566,9 +602,16 @@ export default function ProductForm({
     ...orpc.adminSubcategory.getAllGlobal.queryOptions(),
     enabled: !usesExternalEditAdapter,
   });
-  const allSubcategories = Array.isArray(subcategoriesData)
+  const loadedSubcategories = Array.isArray(subcategoriesData)
     ? subcategoriesData
     : [];
+  const allSubcategories = [
+    ...loadedSubcategories,
+    ...createdSubcategories.filter(
+      (created) =>
+        !loadedSubcategories.some((loaded: any) => loaded.id === created.id),
+    ),
+  ];
 
   // Core products filtered by category
   const coreProductsQuery = useQuery({
@@ -614,9 +657,13 @@ export default function ProductForm({
   ];
 
   // Derived: selected core product details
-  const selectedCoreProduct = coreProducts.find(
-    (cp: any) => cp.id === selectedCoreProductId,
-  );
+  // Picking a core identity also sets its sub category, which reloads the
+  // list; the picked row stands in until the reloaded list arrives.
+  const selectedCoreProduct =
+    coreProducts.find((cp: any) => cp.id === selectedCoreProductId) ??
+    (pickedCoreProduct?.id === selectedCoreProductId
+      ? pickedCoreProduct
+      : undefined);
   const lockedCoreProduct =
     editAdapter?.coreProduct ?? lockedCoreProductQuery.data?.coreProduct;
   const draftCoreCategory = allCategories.find(
@@ -993,11 +1040,6 @@ export default function ProductForm({
     },
   });
 
-  const autoGenerateSlugFromName = (value: string) => {
-    const generatedSlug = generateSlug(value);
-    form.setFieldValue("slug", generatedSlug);
-  };
-
   const applyCoreProductToForm = useCallback(
     (cp: any) => {
       if (cp.id !== selectedCoreProductId) {
@@ -1006,6 +1048,7 @@ export default function ProductForm({
         setCollapsedBrandIds(new Set());
       }
       setNewCoreProductName(null);
+      setPickedCoreProduct(cp);
       setSelectedCoreProductId(cp.id);
       setSelectedTypeId(cp.category?.typeId ?? null);
       setSelectedCategory(cp.categoryId);
@@ -1028,6 +1071,53 @@ export default function ProductForm({
       if (cp) {
         applyCoreProductToForm(cp);
       }
+    }
+  };
+
+  // Picking a sub category starts the core identity over.
+  const handleSubcategorySelect = (subCategoryId: number | null) => {
+    setSelectedSubCategoryId(subCategoryId);
+    setSelectedCoreProductId(null);
+    setNewCoreProductName(null);
+    form.setFieldValue("subCategoryId", subCategoryId ?? undefined);
+    form.setFieldValue("coreProductId", null);
+  };
+
+  /** A sub category typed in the search that is not listed is saved now. */
+  const handleSubcategoryCreate = async (rawName: string) => {
+    const name = rawName.trim();
+    if (!selectedCategory || name.length < 2 || creatingSubcategory) {
+      return false;
+    }
+    const slug = generateSlug(name);
+    if (!slug) {
+      toast.error("Enter a sub category name with letters or numbers");
+      return false;
+    }
+    setCreatingSubcategory(true);
+    try {
+      const created = await orpc.adminSubcategory.create.call({
+        name,
+        slug,
+        categoryId: selectedCategory,
+      });
+      if (!created) throw new Error("The sub category could not be added");
+      setCreatedSubcategories((current) => [...current, created]);
+      handleSubcategorySelect(created.id);
+      toast.success(`${created.name} added`);
+      await queryClient.invalidateQueries({
+        queryKey: orpc.adminSubcategory.getAllGlobal.queryKey(),
+      });
+      return true;
+    } catch (error) {
+      toast.error(
+        error instanceof Error && error.message
+          ? error.message
+          : "The sub category could not be added",
+      );
+      return false;
+    } finally {
+      setCreatingSubcategory(false);
     }
   };
 
@@ -1428,33 +1518,6 @@ export default function ProductForm({
                         Core identity could not be loaded.
                       </div>
                     )
-                  ) : hasSelectedCoreIdentity ? (
-                    <IdentitySummaryRow
-                      image={activeCoreProduct?.image}
-                      name={activeCoreProduct?.name ?? "Core identity"}
-                      meta={[
-                        activeTypeName,
-                        activeCoreProduct?.category?.name,
-                        activeCoreProduct?.subCategory?.name,
-                      ]
-                        .filter(Boolean)
-                        .join(" · ")}
-                      action={
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          className="h-8 shrink-0"
-                          onClick={() => {
-                            setSelectedCoreProductId(null);
-                            setNewCoreProductName(null);
-                            form.setFieldValue("coreProductId", null);
-                          }}
-                        >
-                          Change
-                        </Button>
-                      }
-                    />
                   ) : (
                     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                       {/* Type */}
@@ -1527,87 +1590,45 @@ export default function ProductForm({
                       {/* Sub category */}
                       <Field>
                         <FieldLabel>Sub category</FieldLabel>
-                        <Select
-                          value={
-                            selectedSubCategoryId
-                              ? String(selectedSubCategoryId)
-                              : "none"
-                          }
-                          onValueChange={(v) => {
-                            const val = v === "none" ? null : Number(v);
-                            setSelectedSubCategoryId(val);
-                            setSelectedCoreProductId(null);
-                            setNewCoreProductName(null);
-                            form.setFieldValue(
-                              "subCategoryId",
-                              val ?? undefined,
-                            );
-                            form.setFieldValue("coreProductId", null);
-                          }}
-                          disabled={filteredSubcategories.length === 0}
-                        >
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="none">All</SelectItem>
-                            {filteredSubcategories.map((sc: any) => (
-                              <SelectItem key={sc.id} value={String(sc.id)}>
-                                {sc.name}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                        <SearchCreateCombobox
+                          key={`sub-${selectedCategory ?? "none"}`}
+                          noun="sub category"
+                          options={filteredSubcategories}
+                          selected={filteredSubcategories.find(
+                            (sc: any) => sc.id === selectedSubCategoryId,
+                          )}
+                          disabled={!selectedCategory}
+                          disabledLabel="Select a category first"
+                          creating={creatingSubcategory}
+                          clearLabel="No sub category"
+                          onSelect={handleSubcategorySelect}
+                          onClear={() => handleSubcategorySelect(null)}
+                          onCreate={handleSubcategoryCreate}
+                        />
                       </Field>
 
                       {/* Core identity */}
                       <Field>
                         <FieldLabel>Core identity *</FieldLabel>
-                        <CoreProductCombobox
+                        <SearchCreateCombobox
                           key={`${selectedCategory ?? "none"}-${selectedSubCategoryId ?? "all"}`}
+                          noun="core identity"
                           options={coreProducts}
-                          selected={selectedCoreProduct}
+                          selected={
+                            hasSelectedCoreIdentity
+                              ? (activeCoreProduct as SearchCreateOption)
+                              : undefined
+                          }
                           disabled={!selectedCategory}
+                          disabledLabel="Select a category first"
                           onSelect={handleCoreProductSelect}
                           onCreate={handleCoreProductCreate}
                         />
                       </Field>
                     </div>
                   )}
-
-                  {(hasSelectedCoreIdentity || isEdit) && (
-                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                      <form.Field name="name">
-                        {(field) => (
-                          <Field>
-                            <FieldLabel>Display name *</FieldLabel>
-                            <Input
-                              value={field.state.value}
-                              onChange={(e) => {
-                                field.handleChange(e.target.value);
-                                autoGenerateSlugFromName(e.target.value);
-                              }}
-                              placeholder="Enter product display name"
-                            />
-                          </Field>
-                        )}
-                      </form.Field>
-                      <form.Field name="slug">
-                        {(field) => (
-                          <Field>
-                            <FieldLabel>Slug</FieldLabel>
-                            <Input
-                              value={field.state.value}
-                              onChange={(e) =>
-                                field.handleChange(e.target.value)
-                              }
-                              placeholder="product-slug"
-                            />
-                          </Field>
-                        )}
-                      </form.Field>
-                    </div>
-                  )}
+                  {/* Display name and slug are not shown: they come from the
+                      core identity and are kept unique when the product saves. */}
                 </div>
               </FormSection>
 
