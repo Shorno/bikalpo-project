@@ -1,3 +1,4 @@
+import { brandProductName } from "./helpers/brand-product-name";
 import { withCoreTypeRuleSettings } from "./helpers/product-type-rules";
 import { db } from "@bikalpo-project/db";
 import {
@@ -581,7 +582,7 @@ export const adminProductConfigRouter = {
 
           // === Generate a new per-brand product ===
           const details = effectiveTemplateDetails;
-          const name = `${brandRow.name} ${details.name}`;
+          const name = brandProductName(brandRow.name, details.name);
 
           const baseSlug =
             slugify(`${brandRow.slug}-${details.slug}`) ||

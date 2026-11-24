@@ -42,6 +42,10 @@ depend on each product having Size × Type variants.
   "Add …" creates it. A new sub category is saved at once; a new core
   identity is created when the product saves.
 - Display name and Slug are not shown; they come from the core identity.
+- The same four fields, in the same layout, show on every product editor:
+  admin Edit Product and the retailer / warehouse catalog Add and Edit
+  pages. There they are filled in and locked (`ProductIdentityFields`),
+  instead of the old image-and-name summary row.
 
 ## Phase 2: Variant Table, Overview and Pricing
 

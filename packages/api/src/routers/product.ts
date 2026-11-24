@@ -1,3 +1,4 @@
+import { brandProductName } from "./helpers/brand-product-name";
 import { db } from "@bikalpo-project/db";
 import { validateBrandCreationSubmission } from "@bikalpo-project/db/brand-creation";
 import {
@@ -602,7 +603,11 @@ export const productRouter = {
 
         for (const brandId of brandIds) {
           const brandRow = brandMap.get(brandId)!;
-          const name = `${brandRow.name} ${templateDetails.name}`.trim();
+          const name = brandProductName(
+            brandRow.name,
+            templateDetails.name,
+            Number.POSITIVE_INFINITY,
+          );
           if (name.length > 150) {
             throw new ORPCError("BAD_REQUEST", {
               message: `The generated product name for ${brandRow.name} exceeds 150 characters`,

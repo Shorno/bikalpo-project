@@ -127,7 +127,7 @@ import {
 import type { ProductWithRelations } from "./product-columns";
 import {
   ProductEditorSection as FormSection,
-  ProductEditorIdentity as IdentitySummaryRow,
+  ProductIdentityFields,
 } from "./product-editor-ui";
 
 // ============================================================
@@ -1650,16 +1650,11 @@ export default function ProductForm({
               >
                 <div className="space-y-4">
                   {isEdit ? (
-                    <IdentitySummaryRow
-                      image={product?.image}
-                      name={product?.name ?? "Product"}
-                      meta={[
-                        activeTypeName,
-                        product?.category?.name,
-                        (product as any)?.subCategory?.name,
-                      ]
-                        .filter(Boolean)
-                        .join(" · ")}
+                    <ProductIdentityFields
+                      type={activeTypeName}
+                      category={product?.category?.name}
+                      subCategory={(product as any)?.subCategory?.name}
+                      coreIdentity={activeCoreProduct?.name ?? product?.name}
                     />
                   ) : isCoreIdentityLocked ? (
                     isLoadingLockedCoreProduct ? (
@@ -1668,16 +1663,11 @@ export default function ProductForm({
                         Loading core identity...
                       </div>
                     ) : activeCoreProduct ? (
-                      <IdentitySummaryRow
-                        image={activeCoreProduct.image}
-                        name={activeCoreProduct.name}
-                        meta={[
-                          activeTypeName,
-                          activeCoreProduct.category?.name,
-                          activeCoreProduct.subCategory?.name,
-                        ]
-                          .filter(Boolean)
-                          .join(" · ")}
+                      <ProductIdentityFields
+                        type={activeTypeName}
+                        category={activeCoreProduct.category?.name}
+                        subCategory={activeCoreProduct.subCategory?.name}
+                        coreIdentity={activeCoreProduct.name}
                       />
                     ) : (
                       <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">

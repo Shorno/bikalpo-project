@@ -7,6 +7,7 @@
  * - Mutations (warehouse role only — update order status)
  */
 
+import { brandProductName } from "./helpers/brand-product-name";
 import { withOwnerRetailPrices } from "./helpers/seller-variant-prices";
 import { withCoreTypeRuleSettings } from "./helpers/product-type-rules";
 import {
@@ -8644,9 +8645,7 @@ const warehouseProductCreation = {
             const [inserted] = await tx
               .insert(productTable)
               .values({
-                name: `${brand.name} ${input.details.name}`
-                  .trim()
-                  .slice(0, 150),
+                name: brandProductName(brand.name, input.details.name),
                 slug,
                 description: input.details.description ?? null,
                 shortDescription: input.details.shortDescription ?? null,

@@ -34,7 +34,10 @@ export type SizeSaleTypes = {
 
 const SIZE_PATTERN = /^(\d+(?:\.\d+)?)\s*(?:kg|kgs)?$/i;
 
-/** "12 KG, 15kg, 30" → 12 KG, 15 KG, 30 KG. Anything else is invalid. */
+/**
+ * "30, 12 KG, 15kg" → 12 KG, 15 KG, 30 KG (smallest first, no repeats).
+ * Anything else is invalid.
+ */
 export function parseSizeList(text: string): {
   sizes: LpgSize[];
   invalid: string[];
@@ -54,6 +57,7 @@ export function parseSizeList(text: string): {
     if (sizes.some((size) => size.value === value)) continue;
     sizes.push({ value, label: `${value} KG` });
   }
+  sizes.sort((a, b) => Number(a.value) - Number(b.value));
   return { sizes, invalid };
 }
 
@@ -65,8 +69,8 @@ function orderTypes(types: Iterable<string>, typeOptions: readonly string[]) {
 }
 
 /**
- * Every size in the table with the Type options it is sold as. Rows with
- * no ticked Type or no size are ignored.
+ * Every size in the table with the Type options it is sold as, smallest
+ * size first. Rows with no ticked Type or no size are ignored.
  */
 export function sizeSaleTypes(
   rows: VariantTableRow[],
@@ -81,15 +85,17 @@ export function sizeSaleTypes(
       bySize.set(size.value, entry);
     }
   }
-  return [...bySize.values()].map((entry) => ({
-    size: entry.size,
-    types: orderTypes(entry.types, typeOptions),
-  }));
+  return [...bySize.values()]
+    .sort((a, b) => Number(a.size.value) - Number(b.size.value))
+    .map((entry) => ({
+      size: entry.size,
+      types: orderTypes(entry.types, typeOptions),
+    }));
 }
 
 /**
- * Saved sizes back into table rows: sizes sold the same ways share a row.
- * The table always has `rowCount` rows.
+ * Saved sizes back into table rows: sizes sold the same ways share a row,
+ * smallest size first. The table always has `rowCount` rows.
  */
 export function rowsFromSizeSaleTypes(
   entries: SizeSaleTypes[],
@@ -97,7 +103,10 @@ export function rowsFromSizeSaleTypes(
   rowCount: number,
 ): VariantTableRow[] {
   const groups = new Map<string, { types: string[]; sizes: string[] }>();
-  for (const entry of entries) {
+  const bySize = [...entries].sort(
+    (a, b) => Number(a.size.value) - Number(b.size.value),
+  );
+  for (const entry of bySize) {
     if (entry.types.length === 0) continue;
     const types = orderTypes(entry.types, typeOptions);
     const key = types.join("|");

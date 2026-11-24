@@ -19,7 +19,7 @@ test("parses typed sizes into KG and flags the rest", () => {
   const { sizes, invalid } = parseSizeList("12 KG, 15kg, 30, 12, 12.50 Kg., XL");
   assert.deepEqual(
     sizes.map((size) => size.label),
-    ["12 KG", "15 KG", "30 KG", "12.5 KG"],
+    ["12 KG", "12.5 KG", "15 KG", "30 KG"],
   );
   assert.deepEqual(invalid, ["XL"]);
 });
@@ -180,4 +180,28 @@ test("a table with no size, a bad size or Exchange above New can't save", () => 
     ) ?? "",
     /Exchange price can't be more/,
   );
+});
+
+test("sizes come out smallest first, however they were typed or saved", () => {
+  const entries = sizeSaleTypes(
+    [
+      { types: ["New"], sizes: "50, 12.5, 20" },
+      { types: ["Refill"], sizes: "5" },
+    ],
+    types,
+  );
+  assert.deepEqual(
+    entries.map((entry) => entry.size.label),
+    ["5 KG", "12.5 KG", "20 KG", "50 KG"],
+  );
+
+  const table = lpgTableFromSizes(
+    [
+      { kg: "50", saleTypePrices: { New: "9000" } },
+      { kg: "20", saleTypePrices: { New: "4000" } },
+      { kg: "12", saleTypePrices: { New: "1500" } },
+    ],
+    types,
+  );
+  assert.equal(table.rows[0]?.sizes, "12 KG, 20 KG, 50 KG");
 });

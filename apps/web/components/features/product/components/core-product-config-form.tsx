@@ -100,7 +100,7 @@ import {
   VISIBILITY_HELP,
 } from "./product-rules-grid";
 import {
-  ProductEditorIdentity,
+  ProductIdentityFields,
   ProductEditorSection,
 } from "./product-editor-ui";
 
@@ -1167,16 +1167,15 @@ export default function CoreProductConfigForm({
                 <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1.62fr)_minmax(420px,1fr)] lg:items-start">
                   <div className="divide-y rounded-xl border bg-card">
                     <ProductEditorSection
-                      title="Identity"
-                      description="The shared core product for these independent brand products."
+                      title="Product Information"
+                      description="The core product this listing is based on."
                     >
                       <div className="space-y-4">
-                        <ProductEditorIdentity
-                          image={core.image}
-                          name={core.name}
-                          meta={[core.category?.name, core.subCategory?.name]
-                            .filter(Boolean)
-                            .join(" · ")}
+                        <ProductIdentityFields
+                          type={core.category?.type?.name}
+                          category={core.category?.name}
+                          subCategory={core.subCategory?.name}
+                          coreIdentity={core.name}
                         />
                         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                           <form.Field name="template.name">

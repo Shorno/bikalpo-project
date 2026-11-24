@@ -31,7 +31,9 @@ export default function Providers({ children }: { children: React.ReactNode }) {
       <LoginRequiredProvider>
         <RouteAwareCartProvider>
           <TooltipProvider>
-            <Toaster richColors position={"top-right"} />
+            {/* Top-center: editors keep Save / Publish at the top right,
+                where a toast would cover them. */}
+            <Toaster richColors position="top-center" />
             {children}
           </TooltipProvider>
         </RouteAwareCartProvider>

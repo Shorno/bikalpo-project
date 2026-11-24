@@ -1,3 +1,4 @@
+import { brandProductName } from "./helpers/brand-product-name";
 import { withOwnerRetailPrices } from "./helpers/seller-variant-prices";
 import { withCoreTypeRuleSettings } from "./helpers/product-type-rules";
 import { db } from "@bikalpo-project/db";
@@ -820,9 +821,7 @@ export const shopProductConfigEndpoints = {
             const [inserted] = await tx
               .insert(product)
               .values({
-                name: `${brandRow.name} ${input.details.name}`
-                  .trim()
-                  .slice(0, 150),
+                name: brandProductName(brandRow.name, input.details.name),
                 slug,
                 description: input.details.description ?? null,
                 shortDescription: input.details.shortDescription ?? null,
