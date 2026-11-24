@@ -80,6 +80,8 @@ export type CatalogProduct = {
     id: number;
     name: string;
   } | null;
+  /** 13-digit codes of its sizes and Types, so a typed or scanned code finds it. */
+  productCodes?: Array<{ code: string }>;
 };
 
 type FilterOption = {
@@ -313,18 +315,25 @@ export default function ProductCatalogTable({
     onSortingChange: setSorting,
     onColumnFiltersChange: setColumnFilters,
     onPaginationChange: setPagination,
-    globalFilterFn: (row, _columnId, value) =>
-      [
+    globalFilterFn: (row, _columnId, value) => {
+      const query = normalize(String(value));
+      // A typed or scanned code may carry spaces or dashes.
+      const search = /^[\d\s-]+$/.test(query)
+        ? query.replace(/[\s-]/g, "")
+        : query;
+      return [
         productIdLabel(row.original),
         row.original.catalogCode,
         row.original.name,
         row.original.category?.type?.name,
         row.original.category?.name,
         row.original.subCategory?.name,
+        ...(row.original.productCodes ?? []).map((item) => item.code),
       ]
         .map((field) => normalize(field))
         .join(" ")
-        .includes(normalize(String(value))),
+        .includes(search);
+    },
     getCoreRowModel: getCoreRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
     getSortedRowModel: getSortedRowModel(),

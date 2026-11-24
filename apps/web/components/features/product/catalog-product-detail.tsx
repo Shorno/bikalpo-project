@@ -47,10 +47,17 @@ import { cn } from "@/lib/utils";
 import { getPublicAppBaseUrl } from "@/lib/warehouse-storefront-url";
 import { orpc } from "@/utils/orpc";
 
+type ProductCode = {
+  variantOptionId: number;
+  saleType: string | null;
+  code: string;
+};
+
 type FeatureItem = { key: string; value: string };
 type FeatureGroup = { title: string; items: FeatureItem[] };
 
 type VariantPrice = DetailVariantPrice & {
+  variantOptionId?: number | null;
   brandId?: number | null;
   isActive?: boolean | null;
   catalogSku?: string | null;
@@ -83,6 +90,8 @@ type DetailProduct = {
   brand?: { id?: number | null; name: string } | null;
   productBrands?: ProductBrandLink[];
   variantPrices?: VariantPrice[];
+  /** 13-digit code of each size and Type (Product ID + 0 + size + Type). */
+  productCodes?: ProductCode[];
   // Inventory & Product Rules, as set when the product was created.
   minimumOrderEnabled?: boolean | null;
   minimumOrderQty?: string | number | null;
@@ -235,7 +244,30 @@ export function CatalogProductDetail({
   const productId = product.catalogCode || `PRD-${product.id}`;
   const isLpg = product.category?.type?.family === "lpg";
   const exchange = hasExchangeOption(activeVariants);
-  const cylinderTypes = exchange ? ["Exchange", "New"] : ["New"];
+  // Codes of the sizes shown for this brand, in size order.
+  const productCodes = activeVariants.flatMap((variant) =>
+    (product.productCodes ?? [])
+      .filter((code) => code.variantOptionId === variant.variantOptionId)
+      .map((code) => ({
+        ...code,
+        label: [variantOptionLabel(variant.variantOption), code.saleType]
+          .filter(Boolean)
+          .join(" · "),
+      })),
+  );
+  const codedTypes = [
+    ...new Set(
+      productCodes
+        .map((code) => code.saleType)
+        .filter((type): type is string => Boolean(type)),
+    ),
+  ];
+  const cylinderTypes =
+    codedTypes.length > 0
+      ? codedTypes
+      : exchange
+        ? ["Exchange", "New"]
+        : ["New"];
   const sizeLabels = activeVariants.map((variant) =>
     variantOptionLabel(variant.variantOption),
   );
@@ -547,7 +579,7 @@ export function CatalogProductDetail({
                   brandless
                     ? "Chosen when you add it"
                     : isLpg
-                      ? exchange
+                      ? exchange || codedTypes.length > 0
                         ? "Size / Type"
                         : "Size"
                       : sizeLabels.join(", ") || "None"
@@ -572,6 +604,32 @@ export function CatalogProductDetail({
                   )
                 }
               />
+              {brandless ? null : (
+                <InfoRow
+                  label="Product Code"
+                  value={
+                    productCodes.length > 0 ? (
+                      <span className="flex flex-col gap-0.5">
+                        {productCodes.map((code) => (
+                          <span
+                            key={code.code}
+                            className="flex flex-wrap items-baseline gap-x-2"
+                          >
+                            <span className="font-mono tabular-nums">
+                              {code.code}
+                            </span>
+                            <span className="text-xs text-muted-foreground">
+                              {code.label}
+                            </span>
+                          </span>
+                        ))}
+                      </span>
+                    ) : (
+                      "—"
+                    )
+                  }
+                />
+              )}
               <InfoRow
                 label="Status"
                 value={product.status === "inactive" ? "Inactive" : "Active"}

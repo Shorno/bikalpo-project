@@ -12,7 +12,7 @@ depend on each product having Size × Type variants.
 |---|---|---|
 | 1 | Product Information card | Done: `749d418e` on `feat/create-product-identity-fields` |
 | 2 | Variant Table, Overview, Pricing (LPG) | Done in Create and Edit (uncommitted) |
-| 3 | 13-digit product code | Not started |
+| 3 | 13-digit product code | Done (uncommitted) |
 | 4 | Retailer Real-time Stock | Not started |
 | 5 | Expired products by batch | Not started |
 | 6 | Empty Pack | Not started |
@@ -112,6 +112,28 @@ Code that was changed:
 - Note: EAN-13's 13th digit is a check digit, so these 13 data digits are
   printed as Code 128, not EAN-13.
 
+Built (2026-11-24):
+
+- `packages/db/src/product-code.ts` (+ tests) builds and reads the code.
+  Codes are worked out from the core identity's code, the size code and the
+  Type, not stored, so older products have them too and they follow any
+  change. Type codes: New 01, Exchange 02, Refill 03, Regular 04, Premium
+  05, Standard 06. Products without a Type (non-LPG) use 00.
+- Types per size: the Variant Table's Types; older cylinders read as New,
+  plus Exchange when it is on.
+- Size codes (`variant_option.sku_code`) are now unique within a product
+  Type. Before, a category size and a type-wide size could share one (5.5 KG
+  and 12 KG were both 01). Migration `0097` re-coded the duplicates (5.5 KG
+  → 05, 20 KG → 06) and `structured-variant-option.ts` allocates per Type.
+- The API adds `productCodes` to the admin product list and the catalog
+  product page (`helpers/product-codes.ts`). The page lists every code with
+  its size and Type; the admin product search finds a product by a typed or
+  scanned code (spaces and dashes ignored).
+- Brands share codes: a code finds every brand under that core identity.
+  Agreed for now; to be revisited.
+- Store-only sizes (made by a shop or warehouse) have no size code, so they
+  get no product code.
+
 ## Phase 4: Retailer Real-time Stock
 
 - Columns: Product ID, Name, Stock ("90 + 30 empty"), Status icon, View.
@@ -184,3 +206,5 @@ Code that was changed:
    default), or block it?
 2. "In market": add an "empty owed, not paid" state for exchange orders?
 3. Stock Overview page: remove it, or point it to Real-time?
+4. Product code: brands under one core identity share codes (a scan shows
+   them all). Revisit later, together with the Type codes.

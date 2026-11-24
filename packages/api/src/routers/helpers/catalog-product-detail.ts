@@ -15,6 +15,7 @@ import {
   ownerProductCondition,
   type ProductListOwner,
 } from "./owner-product-list";
+import { withProductCodes } from "./product-codes";
 import { attachExchangeSettingsToVariantPrices } from "./sync-generated-variants";
 
 /**
@@ -29,6 +30,8 @@ export async function loadAdminCatalogProductDetail(productId: number) {
     with: {
       // The type's family tells the page whether this is an LPG product.
       category: { with: { type: true } },
+      // Its 8-digit code starts every 13-digit product code.
+      coreProduct: { columns: { catalogCode: true } },
       subCategory: true,
       brand: true,
       images: true,
@@ -68,7 +71,9 @@ export async function loadAdminCatalogProductDetail(productId: number) {
       row.sku,
     ]),
   );
-  const detail = attachExchangeSettingsToVariantPrices(foundProduct);
+  const detail = withProductCodes(
+    attachExchangeSettingsToVariantPrices(foundProduct),
+  );
 
   return {
     ...detail,

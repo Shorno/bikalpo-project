@@ -117,12 +117,11 @@ export async function createStructuredVariantOption(
     });
   }
 
-  // Global variants take a 2-digit code within their scope; store variants
-  // take none so they never use up the shared code space.
-  const skuScope =
-    input.categoryId === null
-      ? sql`${variantOption.typeId} = ${input.typeId} AND ${variantOption.categoryId} IS NULL`
-      : sql`${variantOption.typeId} = ${input.typeId} AND ${variantOption.categoryId} = ${input.categoryId}`;
+  // Global variants take a 2-digit size code that is unique within their
+  // Type (type-wide and category variants share it), because the 13-digit
+  // product code tells sizes apart by it. Store variants take none so they
+  // never use up the shared code space.
+  const skuScope = sql`${variantOption.typeId} = ${input.typeId}`;
   const skuCode = owner
     ? null
     : await nextSkuCode(

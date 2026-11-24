@@ -673,6 +673,13 @@
       "when": 1790553600011,
       "tag": "0096_variant_sale_type_prices",
       "breakpoints": true
+    },
+    {
+      "idx": 97,
+      "version": "7",
+      "when": 1790553600012,
+      "tag": "0097_variant_option_codes_per_type",
+      "breakpoints": true
     }
   ]
 }

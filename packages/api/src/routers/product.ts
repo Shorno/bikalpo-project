@@ -52,6 +52,7 @@ import { loadAdminCatalogProductDetail } from "./helpers/catalog-product-detail"
 import { globalCatalogOnly } from "./helpers/catalog-owner";
 import { assignCoreProductCode } from "./helpers/core-catalog-code";
 import { catalogProductCode } from "./helpers/generate-sku";
+import { withProductCodes } from "./helpers/product-codes";
 import {
   deliveryColumns,
   deliveryDetailsShape,
@@ -223,6 +224,9 @@ export const productRouter = {
               color: true,
               size: true,
               isActive: true,
+              exchangeEnabled: true,
+              exchangeCreditAmount: true,
+              sourceVariantOptionId: true,
             },
           },
           variantPrices: {
@@ -231,7 +235,11 @@ export const productRouter = {
         },
       });
 
-      return { products };
+      return {
+        products: products.map((item) =>
+          withProductCodes(attachExchangeSettingsToVariantPrices(item)),
+        ),
+      };
     }),
 
   /**
