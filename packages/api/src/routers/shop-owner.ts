@@ -141,8 +141,13 @@ import { globalCatalogOnly, visibleToOwner } from "./helpers/catalog-owner";
 import { ensureShopBuyerTargetVariant } from "./helpers/b2b-buyer-target";
 import {
   getOwnerProductList,
+  ownerProductCondition,
   ownerProductListInput,
 } from "./helpers/owner-product-list";
+import {
+  DEFAULT_LOW_STOCK_LEVEL,
+  loadRealtimeStock,
+} from "./helpers/realtime-stock";
 import {
   catalogBrandProductAddInput,
   catalogProductViewInput,
@@ -816,191 +821,60 @@ const managementQueries = {
   ),
 
   /**
-   * Real-time stock view grouped by product.
-   * Shows pack (carton-packed) vs loose breakdown at product level,
-   * with variant-level detail for the expanded view.
+   * Real-time Stock: one row per product with its stock breakdown, empties,
+   * status and per-size stock. Search and filters run on the page.
    */
-  getRealtimeStock: permission("shop_stock", "view")
+  getRealtimeStock: permission("shop_stock", "view").handler(
+    async ({ context }) => {
+      const ownerId = shopTenantId(context.session.user);
+      const products = await loadRealtimeStock({ ownerType: "shop", ownerId });
+      return { products, defaultLowStockLevel: DEFAULT_LOW_STOCK_LEVEL };
+    },
+  ),
+
+  /** One product's Real-time Stock, for its View page. */
+  getRealtimeStockProduct: permission("shop_stock", "view")
+    .input(z.object({ productId: z.number().int().positive() }))
+    .handler(async ({ context, input }) => {
+      const ownerId = shopTenantId(context.session.user);
+      const [stock] = await loadRealtimeStock(
+        { ownerType: "shop", ownerId },
+        { productId: input.productId },
+      );
+      if (!stock) {
+        throw new ORPCError("NOT_FOUND", {
+          message: "This product has no stock in your shop",
+        });
+      }
+      return { product: stock, defaultLowStockLevel: DEFAULT_LOW_STOCK_LEVEL };
+    }),
+
+  /** The product's low-stock limit; 0 goes back to the default. */
+  setProductLowStockLevel: permission("shop_stock", "update")
     .input(
       z.object({
-        search: z.string().optional(),
-        categoryId: z.number().int().optional(),
-        status: z
-          .enum(["all", "in_stock", "low", "out_of_stock"])
-          .default("all"),
+        productId: z.number().int().positive(),
+        lowStockLevel: z.number().int().min(0).max(1_000_000),
       }),
     )
     .handler(async ({ context, input }) => {
-      const userId = shopTenantId(context.session.user);
-
-      // 1. Fetch all inventory for this shop
-      const shopInventory = await db.query.inventory.findMany({
-        where: and(
-          eq(inventory.ownerType, "shop"),
-          eq(inventory.ownerId, userId),
-        ),
-        with: {
-          variant: {
-            with: {
-              product: {
-                with: {
-                  category: {
-                    columns: { id: true, name: true },
-                  },
-                },
-              },
-              brand: { columns: { id: true, name: true } },
-              sourceVariantOption: true,
-            },
-          },
-        },
-      });
-
-      // 2. Group by product
-      const LOW_STOCK_THRESHOLD = 5;
-
-      type VariantDetail = {
-        variantId: number;
-        inventoryId: number;
-        sku: string | null;
-        brandName: string | null;
-        unitLabel: string;
-        operationalUnit: string;
-        stockDisplay: string;
-        packType: string | null;
-        pcsPerPack: number;
-        availableQty: number;
-        inCartonQty: number;
-        looseQty: number;
-        retailPrice: number;
-        measurementDimension: "mass" | "volume" | "count";
-        measurementUnit: "KG" | "L" | null;
-        massKgPerUnit: number;
-        volumeLPerUnit: number;
-      };
-
-      type ProductGroup = {
-        productId: number;
-        productName: string;
-        productImage: string | null;
-        sku: string | null;
-        categoryId: number | null;
-        categoryName: string | null;
-        variants: VariantDetail[];
-      };
-
-      const productMap = new Map<number, ProductGroup>();
-
-      for (const inv of shopInventory) {
-        if (!inv.variant?.product || !inv.variant.sourceVariantOption) continue;
-        let semantics;
-        try {
-          semantics = resolveVariantStockSemantics(
-            inv.variant.sourceVariantOption,
-          );
-        } catch {
-          continue;
-        }
-
-        const prod = inv.variant.product;
-        const pid = prod.id;
-        const qty = parseFloat(inv.availableQty || "0");
-        const cartonQty = parseFloat(inv.inCartonQty || "0");
-        const isLoose = semantics.entryType === "loose";
-        const retailPrice =
-          parseFloat(inv.retailPrice || "0") ||
-          parseFloat(inv.variant.price || "0");
-
-        if (!productMap.has(pid)) {
-          productMap.set(pid, {
-            productId: pid,
-            productName: prod.name,
-            productImage: prod.image,
-            sku: prod.sku,
-            categoryId: prod.category?.id ?? null,
-            categoryName: prod.category?.name ?? null,
-            variants: [],
-          });
-        }
-
-        const group = productMap.get(pid)!;
-        group.variants.push({
-          variantId: inv.variant.id,
-          inventoryId: inv.id,
-          sku: inv.variant.sku,
-          brandName: inv.variant.brand?.name ?? null,
-          unitLabel: semantics.displayLabel,
-          packType: semantics.packType,
-          pcsPerPack: Number(inv.variant.packCountInside || 0),
-          availableQty: qty,
-          inCartonQty: cartonQty,
-          looseQty: isLoose ? qty : Math.max(0, qty - cartonQty),
-          retailPrice,
-          stockDisplay: formatVariantStockQuantity(semantics, qty),
-          operationalUnit: semantics.operationalUnit,
-          measurementDimension: semantics.measurementDimension,
-          measurementUnit: semantics.measurementUnit,
-          massKgPerUnit: semantics.massKgPerUnit,
-          volumeLPerUnit: semantics.volumeLPerUnit,
+      const ownerId = shopTenantId(context.session.user);
+      const [updated] = await db
+        .update(product)
+        .set({ reorderLevel: input.lowStockLevel })
+        .where(
+          and(
+            eq(product.id, input.productId),
+            ownerProductCondition({ ownerType: "shop", ownerId }),
+          ),
+        )
+        .returning({ id: product.id, reorderLevel: product.reorderLevel });
+      if (!updated) {
+        throw new ORPCError("NOT_FOUND", {
+          message: "Only your own products can have a low-stock limit",
         });
       }
-
-      // 3. Convert to array, apply filters
-      let products = Array.from(productMap.values());
-
-      // Search filter
-      if (input.search?.trim()) {
-        const s = input.search.toLowerCase();
-        products = products.filter(
-          (p) =>
-            p.productName.toLowerCase().includes(s) ||
-            (p.sku && p.sku.toLowerCase().includes(s)) ||
-            p.variants.some((v) => v.sku?.toLowerCase().includes(s)) ||
-            p.variants.some((v) => v.brandName?.toLowerCase().includes(s)),
-        );
-      }
-
-      // Category filter
-      if (input.categoryId) {
-        products = products.filter((p) => p.categoryId === input.categoryId);
-      }
-
-      // Status filter
-      const withStatus = products.map((p) => {
-        const quantities = p.variants.map((variant) => variant.availableQty);
-        const status: "in_stock" | "low" | "out_of_stock" = quantities.every(
-          (quantity) => quantity <= 0,
-        )
-          ? "out_of_stock"
-          : quantities.some((quantity) => quantity <= LOW_STOCK_THRESHOLD)
-            ? "low"
-            : "in_stock";
-        return { ...p, status };
-      });
-
-      const filtered =
-        input.status === "all"
-          ? withStatus
-          : withStatus.filter((p) => p.status === input.status);
-
-      // 4. Derive unique categories for filter dropdown
-      const categorySet = new Map<number, string>();
-      for (const p of Array.from(productMap.values())) {
-        if (p.categoryId && p.categoryName) {
-          categorySet.set(p.categoryId, p.categoryName);
-        }
-      }
-
-      return {
-        products: filtered.sort((a, b) =>
-          a.productName.localeCompare(b.productName),
-        ),
-        categories: Array.from(categorySet.entries()).map(([id, name]) => ({
-          id,
-          name,
-        })),
-        totalCount: filtered.length,
-      };
+      return { productId: updated.id, lowStockLevel: updated.reorderLevel };
     }),
 
   /**

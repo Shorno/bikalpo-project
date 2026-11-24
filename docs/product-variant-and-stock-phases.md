@@ -11,9 +11,9 @@ depend on each product having Size × Type variants.
 | Phase | Scope | Status |
 |---|---|---|
 | 1 | Product Information card | Done: `749d418e` on `feat/create-product-identity-fields` |
-| 2 | Variant Table, Overview, Pricing (LPG) | Done in Create and Edit (uncommitted) |
-| 3 | 13-digit product code | Done (uncommitted) |
-| 4 | Retailer Real-time Stock | Not started |
+| 2 | Variant Table, Overview, Pricing (LPG) | Done in Create and Edit: `d26732d1` |
+| 3 | 13-digit product code | Done: `9efe1189` |
+| 4 | Retailer Real-time Stock | List and View built (uncommitted); graphs later |
 | 5 | Expired products by batch | Not started |
 | 6 | Empty Pack | Not started |
 | 7 | Label printing | Not started |
@@ -150,6 +150,32 @@ Built (2026-11-24):
 - Pages: `apps/web/app/shop/(management)/dashboard/stock/` (`page.tsx`,
   `live`, `low`, `expired`, `empty-pack`, `add`). Live uses
   `shopOwner.getRealtimeStock` (`packages/api/src/routers/shop-owner.ts`).
+
+### Built (2026-11-24)
+
+- List `stock/live/page.tsx`: the catalog's search and Type / Category /
+  Sub Category filters plus Status (In Stock, Low Stock, Out of Stock,
+  Expired), [Add Stock] [Purchase], and Product ID | Product Name | Stock
+  Breakdown | Action (status icon + View). "Expired" lists any product with
+  expired stock. Graph cards (Total Units, Loose Stock trend) come later.
+- View `stock/live/[productId]/page.tsx`: name, Product ID, status, total
+  stock, empties, sold this month, the low-stock limit form, and Size |
+  Stock | Sold (this month).
+- API: `getRealtimeStock`, `getRealtimeStockProduct`,
+  `setProductLowStockLevel`, all on `helpers/realtime-stock.ts`, which the
+  warehouse page can reuse.
+- Stock Breakdown: counted units add up ("120 Cylinder"), loose stock is
+  shown apart ("120 Pack + 900 KG Loose"), and empties come from
+  `empty_pack_stock` ("(30 Empty)").
+- Status order: Out of Stock, then Expired, then Low Stock (total at or
+  below the limit), then In Stock. The limit is `product.reorderLevel`;
+  0 means the default of 5.
+- Expired, for now: an "expired" damage entry in the last 30 days. Shop
+  Add Stock does not keep expiry dates yet; Phase 5 replaces this with
+  batches.
+- Sold this month: shop orders (not cancelled or returned) since the start
+  of the month, Dhaka time.
+- Not done yet: removing the old Low Stock page and its sidebar link.
 
 ## Phase 5: Expired products by batch
 

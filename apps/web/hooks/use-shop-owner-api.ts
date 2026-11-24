@@ -142,20 +142,39 @@ export function useStockOverview() {
   );
 }
 
-/** Real-time stock grouped by product with pack/loose breakdown */
-export function useRealtimeStock(params?: {
-  search?: string;
-  categoryId?: number;
-  status?: "all" | "in_stock" | "low" | "out_of_stock";
-}) {
+/** Real-time Stock: one row per product with its breakdown and status. */
+export function useRealtimeStock() {
   return useQuery(
     orpc.shopOwner.getRealtimeStock.queryOptions({
-      input: {
-        search: params?.search,
-        categoryId: params?.categoryId,
-        status: params?.status ?? "all",
-      },
       staleTime: 1000 * 30, // 30s for real-time feel
+    }),
+  );
+}
+
+/** One product's Real-time Stock for its View page. */
+export function useRealtimeStockProduct(productId: number) {
+  return useQuery(
+    orpc.shopOwner.getRealtimeStockProduct.queryOptions({
+      input: { productId },
+      enabled: Number.isInteger(productId) && productId > 0,
+      staleTime: 1000 * 30,
+    }),
+  );
+}
+
+/** Saves a product's low-stock limit and refreshes the stock lists. */
+export function useSetProductLowStockLevel() {
+  const queryClient = useQueryClient();
+  return useMutation(
+    orpc.shopOwner.setProductLowStockLevel.mutationOptions({
+      onSuccess: () => {
+        queryClient.invalidateQueries({
+          queryKey: orpc.shopOwner.getRealtimeStock.key(),
+        });
+        queryClient.invalidateQueries({
+          queryKey: orpc.shopOwner.getRealtimeStockProduct.key(),
+        });
+      },
     }),
   );
 }

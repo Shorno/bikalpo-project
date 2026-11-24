@@ -1,211 +1,401 @@
 "use client";
 
-import {
-  BoxesIcon,
-  ChevronDown,
-  ChevronRight,
-  Package,
-  Plus,
-  Search,
-} from "lucide-react";
-import Image from "next/image";
+import { Eye, Loader2, PackagePlus, PackageSearch, ShoppingCart } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { useRouter } from "next/navigation";
+import { type ReactNode, useMemo, useState } from "react";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  CatalogActionBar,
+  CatalogFilterPanel,
+  CatalogPageHeader,
+} from "@/components/features/product/components/catalog-layout";
+import { FilterSelect } from "@/components/features/product/components/product-catalog-table";
+import {
+  formatBreakdown,
+  matchesStockSearch,
+  productIdLabel,
+  type RealtimeStockProduct,
+  STOCK_STATUS_LABELS,
+  type StockStatus,
+} from "@/components/features/stock/realtime-stock-model";
+import { StockStatusIcon } from "@/components/features/stock/stock-status-icon";
+import { Button } from "@/components/ui/button";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { useIsMobile } from "@/hooks/use-mobile";
 import { useRealtimeStock } from "@/hooks/use-shop-owner-api";
 
-const STATUS_CONFIG = {
-  in_stock: {
-    label: "In Stock",
-    className: "border-emerald-200 bg-emerald-50 text-emerald-700",
-  },
-  low: {
-    label: "Low Stock",
-    className: "border-amber-200 bg-amber-50 text-amber-700",
-  },
-  out_of_stock: {
-    label: "Out of Stock",
-    className: "border-red-200 bg-red-50 text-red-700",
-  },
-} as const;
+const ALL = "all";
+const STATUS_OPTIONS = (Object.keys(STOCK_STATUS_LABELS) as StockStatus[]).map(
+  (status) => ({ id: status, name: STOCK_STATUS_LABELS[status] }),
+);
+
+type Option = { id: number | string; name: string };
+
+function uniqueOptions(items: Array<Option | null>) {
+  const options = new Map<number | string, string>();
+  for (const item of items) if (item) options.set(item.id, item.name);
+  return Array.from(options, ([id, name]) => ({ id, name })).sort((a, b) =>
+    a.name.localeCompare(b.name),
+  );
+}
+
+const option = (id: number | null, name: string | null) =>
+  id != null && name ? { id, name } : null;
+
+/** "Expired" lists every product with expired stock, whatever else it is. */
+function matchesStatus(product: RealtimeStockProduct, status: string) {
+  if (status === ALL) return true;
+  if (status === "expired") return product.expired;
+  return product.status === status;
+}
 
 export default function StockLivePage() {
+  const isMobile = useIsMobile();
+  const { data, isLoading, isError, error, refetch } = useRealtimeStock();
+  const products = (data?.products ?? []) as RealtimeStockProduct[];
+
   const [search, setSearch] = useState("");
-  const [categoryId, setCategoryId] = useState<number>();
-  const [status, setStatus] = useState<
-    "all" | "in_stock" | "low" | "out_of_stock"
-  >("all");
-  const [expandedId, setExpandedId] = useState<number | null>(null);
-  const { data, isLoading } = useRealtimeStock({
-    search: search || undefined,
-    categoryId,
-    status,
-  });
-  const products: any[] = (data as any)?.products ?? [];
-  const categories: any[] = (data as any)?.categories ?? [];
+  const [typeFilter, setTypeFilter] = useState(ALL);
+  const [categoryFilter, setCategoryFilter] = useState(ALL);
+  const [subCategoryFilter, setSubCategoryFilter] = useState(ALL);
+  const [statusFilter, setStatusFilter] = useState(ALL);
+
+  const inType = (product: RealtimeStockProduct) =>
+    typeFilter === ALL || String(product.typeId) === typeFilter;
+  const inCategory = (product: RealtimeStockProduct) =>
+    categoryFilter === ALL || String(product.categoryId) === categoryFilter;
+
+  const typeOptions = useMemo(
+    () => uniqueOptions(products.map((p) => option(p.typeId, p.typeName))),
+    [products],
+  );
+  const categoryOptions = useMemo(
+    () =>
+      uniqueOptions(
+        products
+          .filter(inType)
+          .map((p) => option(p.categoryId, p.categoryName)),
+      ),
+    // biome-ignore lint/correctness/useExhaustiveDependencies: inType reads typeFilter
+    [products, typeFilter],
+  );
+  const subCategoryOptions = useMemo(
+    () =>
+      uniqueOptions(
+        products
+          .filter((p) => inType(p) && inCategory(p))
+          .map((p) => option(p.subCategoryId, p.subCategoryName)),
+      ),
+    // biome-ignore lint/correctness/useExhaustiveDependencies: filters read state
+    [products, typeFilter, categoryFilter],
+  );
+
+  const rows = products.filter(
+    (product) =>
+      inType(product) &&
+      inCategory(product) &&
+      (subCategoryFilter === ALL ||
+        String(product.subCategoryId) === subCategoryFilter) &&
+      matchesStatus(product, statusFilter) &&
+      matchesStockSearch(product, search),
+  );
+
+  const hasFilters =
+    search !== "" ||
+    [typeFilter, categoryFilter, subCategoryFilter, statusFilter].some(
+      (value) => value !== ALL,
+    );
+  const clearFilters = () => {
+    setSearch("");
+    setTypeFilter(ALL);
+    setCategoryFilter(ALL);
+    setSubCategoryFilter(ALL);
+    setStatusFilter(ALL);
+  };
+
+  const count = (status: StockStatus) =>
+    products.filter((product) => product.status === status).length;
 
   return (
-    <div className="max-w-5xl space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="flex items-center gap-2 text-lg font-bold">
-            <BoxesIcon className="h-5 w-5 text-emerald-600" /> Real-time stock
-          </h1>
-          <p className="text-xs text-muted-foreground">
-            Inventory is shown in each configured variant&apos;s canonical unit.
-          </p>
-        </div>
-        <Button asChild size="sm">
+    <div className="@container/catalog min-w-0 space-y-4 md:space-y-5">
+      <CatalogPageHeader
+        title="Real-time Stock"
+        description="Current stock of every product you hold, with empties and status."
+        stats={[
+          { label: "Products", value: products.length },
+          { label: "Low Stock", value: count("low_stock") },
+          { label: "Out of Stock", value: count("out_of_stock") },
+        ]}
+      />
+
+      <CatalogFilterPanel
+        search={search}
+        onSearchChange={setSearch}
+        hasFilters={hasFilters}
+        onClear={clearFilters}
+        searchPlaceholder="Search name, Product ID or scan code..."
+        gridClassName="grid-cols-2 md:grid-cols-4"
+      >
+        <FilterSelect
+          compact={isMobile}
+          label="Type"
+          value={typeFilter}
+          options={typeOptions}
+          onValueChange={(value) => {
+            setTypeFilter(value);
+            setCategoryFilter(ALL);
+            setSubCategoryFilter(ALL);
+          }}
+        />
+        <FilterSelect
+          compact={isMobile}
+          label="Category"
+          value={categoryFilter}
+          options={categoryOptions}
+          onValueChange={(value) => {
+            setCategoryFilter(value);
+            setSubCategoryFilter(ALL);
+          }}
+        />
+        <FilterSelect
+          compact={isMobile}
+          label="Sub Category"
+          value={subCategoryFilter}
+          options={subCategoryOptions}
+          onValueChange={setSubCategoryFilter}
+        />
+        <FilterSelect
+          compact={isMobile}
+          label="Status"
+          value={statusFilter}
+          options={STATUS_OPTIONS}
+          onValueChange={setStatusFilter}
+        />
+      </CatalogFilterPanel>
+
+      <CatalogActionBar>
+        <Button asChild size="sm" className="max-md:min-h-11">
           <Link href="/dashboard/stock/add">
-            <Plus className="mr-1 h-4 w-4" />
-            Add stock
+            <PackagePlus className="size-4" />
+            Add Stock
           </Link>
         </Button>
-      </div>
+        <Button asChild variant="outline" size="sm" className="max-md:min-h-11">
+          <Link href="/dashboard/orders">
+            <ShoppingCart className="size-4" />
+            Purchase
+          </Link>
+        </Button>
+      </CatalogActionBar>
 
-      <div className="flex flex-col gap-2 sm:flex-row">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            className="pl-9"
-            placeholder="Search product, SKU, or brand"
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-          />
-        </div>
-        <Select
-          value={categoryId?.toString() ?? "all"}
-          onValueChange={(value) =>
-            setCategoryId(value === "all" ? undefined : Number(value))
-          }
-        >
-          <SelectTrigger className="w-full sm:w-44">
-            <SelectValue placeholder="Category" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All categories</SelectItem>
-            {categories.map((category: any) => (
-              <SelectItem key={category.id} value={String(category.id)}>
-                {category.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Select
-          value={status}
-          onValueChange={(value: typeof status) => setStatus(value)}
-        >
-          <SelectTrigger className="w-full sm:w-40">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All statuses</SelectItem>
-            <SelectItem value="in_stock">In stock</SelectItem>
-            <SelectItem value="low">Low stock</SelectItem>
-            <SelectItem value="out_of_stock">Out of stock</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
-
-      {isLoading ? (
-        <div className="rounded-xl border py-16 text-center text-sm text-muted-foreground">
-          Loading stock…
-        </div>
-      ) : products.length === 0 ? (
-        <div className="rounded-xl border border-dashed py-16 text-center">
-          <Package className="mx-auto mb-2 h-10 w-10 text-muted-foreground/40" />
-          <p className="font-medium">No stock found</p>
-        </div>
-      ) : (
-        <div className="overflow-hidden rounded-xl border bg-background">
-          {products.map((product: any) => {
-            const expanded = expandedId === product.productId;
-            const statusConfig =
-              STATUS_CONFIG[product.status as keyof typeof STATUS_CONFIG];
-            return (
-              <div key={product.productId} className="border-b last:border-b-0">
-                <button
-                  type="button"
-                  className="grid w-full grid-cols-[24px_1fr_auto] items-center gap-3 p-4 text-left hover:bg-muted/40"
-                  onClick={() =>
-                    setExpandedId(expanded ? null : product.productId)
-                  }
-                >
-                  {expanded ? (
-                    <ChevronDown className="h-4 w-4" />
-                  ) : (
-                    <ChevronRight className="h-4 w-4" />
-                  )}
-                  <div className="flex min-w-0 items-center gap-3">
-                    {product.productImage ? (
-                      <Image
-                        src={product.productImage}
-                        alt=""
-                        width={36}
-                        height={36}
-                        className="h-9 w-9 rounded-md border object-cover"
-                      />
-                    ) : (
-                      <div className="flex h-9 w-9 items-center justify-center rounded-md bg-muted">
-                        <Package className="h-4 w-4" />
-                      </div>
-                    )}
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold">
-                        {product.productName}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        {product.categoryName ?? "Uncategorized"} ·{" "}
-                        {product.variants.length} configured variant
-                        {product.variants.length === 1 ? "" : "s"}
-                      </p>
-                    </div>
-                  </div>
-                  <Badge variant="outline" className={statusConfig.className}>
-                    {statusConfig.label}
-                  </Badge>
-                </button>
-                {expanded && (
-                  <div className="border-t bg-muted/20 px-4 py-3">
-                    <div className="overflow-hidden rounded-lg border bg-background">
-                      {product.variants.map((variant: any) => (
-                        <div
-                          key={variant.variantId}
-                          className="grid gap-2 border-b px-3 py-2.5 last:border-b-0 sm:grid-cols-[1fr_auto] sm:items-center"
-                        >
-                          <div>
-                            <p className="text-sm font-medium">
-                              {variant.brandName
-                                ? `${variant.brandName} · `
-                                : ""}
-                              {variant.unitLabel}
-                            </p>
-                            <p className="text-xs text-muted-foreground">
-                              {variant.sku ?? "No SKU"} · {variant.packType}
-                            </p>
-                          </div>
-                          <div className="text-sm font-semibold tabular-nums">
-                            {variant.stockDisplay}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      )}
+      <StockTable
+        rows={rows}
+        isMobile={isMobile}
+        isLoading={isLoading}
+        isError={isError}
+        errorMessage={error?.message}
+        onRetry={() => refetch()}
+        emptyDescription={
+          products.length === 0
+            ? "Add stock to see your products here."
+            : "No product matches these filters."
+        }
+      />
     </div>
+  );
+}
+
+function StockTable({
+  rows,
+  isMobile,
+  isLoading,
+  isError,
+  errorMessage,
+  onRetry,
+  emptyDescription,
+}: {
+  rows: RealtimeStockProduct[];
+  isMobile: boolean;
+  isLoading: boolean;
+  isError: boolean;
+  errorMessage?: string;
+  onRetry: () => void;
+  emptyDescription: string;
+}) {
+  const router = useRouter();
+  const href = (product: RealtimeStockProduct) =>
+    `/dashboard/stock/live/${product.productId}`;
+
+  return (
+    <section
+      aria-label="Stock"
+      className="overflow-hidden rounded-xl border bg-card shadow-sm"
+    >
+      <Table
+        className={
+          isMobile ? "table-fixed text-[11px] leading-4" : "min-w-[720px]"
+        }
+      >
+        <caption className="sr-only">Real-time stock</caption>
+        {isMobile ? (
+          <colgroup>
+            <col className="w-[24%]" />
+            <col className="w-[34%]" />
+            <col className="w-[30%]" />
+            <col className="w-[12%]" />
+          </colgroup>
+        ) : null}
+        <TableHeader>
+          <TableRow className="hover:bg-transparent">
+            <TableHead scope="col" className={isMobile ? "px-2" : "w-36"}>
+              Product ID
+            </TableHead>
+            <TableHead scope="col" className={isMobile ? "px-1" : undefined}>
+              Product Name
+            </TableHead>
+            <TableHead scope="col" className={isMobile ? "px-1" : undefined}>
+              {isMobile ? "Stock" : "Stock Breakdown"}
+            </TableHead>
+            <TableHead
+              scope="col"
+              className={isMobile ? "px-1 text-center" : "w-40 text-right"}
+            >
+              {isMobile ? <span className="sr-only">Status</span> : "Action"}
+            </TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {isLoading ? (
+            <StatusRow>
+              <span className="inline-flex items-center gap-2 text-muted-foreground">
+                <Loader2 className="size-4 animate-spin" />
+                Loading stock…
+              </span>
+            </StatusRow>
+          ) : isError ? (
+            <StatusRow>
+              <div className="space-y-3">
+                <div>
+                  <p className="font-medium">Could not load stock</p>
+                  <p className="text-sm text-muted-foreground">
+                    {errorMessage || "Please try again."}
+                  </p>
+                </div>
+                <Button variant="outline" size="sm" onClick={onRetry}>
+                  Try again
+                </Button>
+              </div>
+            </StatusRow>
+          ) : rows.length === 0 ? (
+            <StatusRow tall>
+              <div className="flex flex-col items-center">
+                <PackageSearch className="size-8 text-muted-foreground" />
+                <p className="mt-3 font-medium">No stock found</p>
+                <p className="mt-1 max-w-md text-sm text-muted-foreground">
+                  {emptyDescription}
+                </p>
+              </div>
+            </StatusRow>
+          ) : (
+            rows.map((product) => {
+              const breakdown = formatBreakdown(product.breakdown);
+              return (
+                <TableRow
+                  key={product.productId}
+                  onClick={(event) => {
+                    if (
+                      isMobile &&
+                      !(event.target as HTMLElement).closest("a, button")
+                    ) {
+                      router.push(href(product));
+                    }
+                  }}
+                  className="max-md:cursor-pointer"
+                >
+                  <TableCell
+                    className={
+                      isMobile
+                        ? "px-2 py-2.5 font-medium tabular-nums"
+                        : "font-medium tabular-nums"
+                    }
+                  >
+                    <div className="truncate" title={productIdLabel(product)}>
+                      {productIdLabel(product)}
+                    </div>
+                  </TableCell>
+                  <TableCell className={isMobile ? "px-1" : "font-medium"}>
+                    {isMobile ? (
+                      <Link
+                        href={href(product)}
+                        title={product.name}
+                        className="block truncate font-medium text-primary underline-offset-2 hover:underline"
+                      >
+                        {product.name}
+                      </Link>
+                    ) : (
+                      product.name
+                    )}
+                  </TableCell>
+                  <TableCell
+                    className={
+                      isMobile
+                        ? "whitespace-normal break-words px-1 tabular-nums"
+                        : "tabular-nums"
+                    }
+                  >
+                    {breakdown}
+                  </TableCell>
+                  <TableCell className={isMobile ? "px-1" : undefined}>
+                    <div
+                      className={
+                        isMobile
+                          ? "flex justify-center"
+                          : "flex items-center justify-end gap-2"
+                      }
+                    >
+                      <StockStatusIcon status={product.status} />
+                      {isMobile ? null : (
+                        <Button size="sm" variant="outline" asChild>
+                          <Link href={href(product)}>
+                            <Eye className="size-4" />
+                            View
+                          </Link>
+                        </Button>
+                      )}
+                    </div>
+                  </TableCell>
+                </TableRow>
+              );
+            })
+          )}
+        </TableBody>
+      </Table>
+    </section>
+  );
+}
+
+function StatusRow({
+  tall = false,
+  children,
+}: {
+  tall?: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <TableRow>
+      <TableCell
+        colSpan={4}
+        className={`${tall ? "h-52" : "h-36"} whitespace-normal text-center`}
+      >
+        {children}
+      </TableCell>
+    </TableRow>
   );
 }
