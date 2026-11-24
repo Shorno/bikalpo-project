@@ -1,0 +1,124 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import {
+  cylinderKgOf,
+  DEFAULT_LPG_TYPE_OPTIONS,
+  parseSizeList,
+  rowsFromSizeSaleTypes,
+  salePriceError,
+  salePriceKey,
+  sizeSaleTypes,
+} from "./lpg-variant-table-model";
+
+const types = DEFAULT_LPG_TYPE_OPTIONS;
+
+test("parses typed sizes into KG and flags the rest", () => {
+  const { sizes, invalid } = parseSizeList("12 KG, 15kg, 30, 12, 12.50 Kg., XL");
+  assert.deepEqual(
+    sizes.map((size) => size.label),
+    ["12 KG", "15 KG", "30 KG", "12.5 KG"],
+  );
+  assert.deepEqual(invalid, ["XL"]);
+});
+
+test("a size only gets the Type options of the rows it is in", () => {
+  const entries = sizeSaleTypes(
+    [
+      { types: ["New", "Exchange"], sizes: "12 KG, 15 KG" },
+      { types: ["New"], sizes: "45 KG" },
+      { types: ["Refill"], sizes: "50 KG" },
+    ],
+    types,
+  );
+  assert.deepEqual(
+    entries.map((entry) => [entry.size.label, entry.types]),
+    [
+      ["12 KG", ["New", "Exchange"]],
+      ["15 KG", ["New", "Exchange"]],
+      ["45 KG", ["New"]],
+      ["50 KG", ["Refill"]],
+    ],
+  );
+});
+
+test("the same size in two rows combines their Type options", () => {
+  const entries = sizeSaleTypes(
+    [
+      { types: ["Exchange"], sizes: "12 KG" },
+      { types: ["New"], sizes: "12" },
+    ],
+    types,
+  );
+  assert.deepEqual(entries.map((entry) => entry.types), [["New", "Exchange"]]);
+});
+
+test("rows without a ticked Type or a size are ignored", () => {
+  const entries = sizeSaleTypes(
+    [
+      { types: [], sizes: "12 KG" },
+      { types: ["New"], sizes: "" },
+    ],
+    types,
+  );
+  assert.equal(entries.length, 0);
+});
+
+test("saved sizes rebuild one row per selling condition, padded", () => {
+  const rows = rowsFromSizeSaleTypes(
+    [
+      { size: { value: "12", label: "12 KG" }, types: ["Exchange", "New"] },
+      { size: { value: "45", label: "45 KG" }, types: ["New"] },
+      { size: { value: "15", label: "15 KG" }, types: ["New", "Exchange"] },
+    ],
+    types,
+    6,
+  );
+  assert.equal(rows.length, 6);
+  assert.deepEqual(rows[0], { types: ["New", "Exchange"], sizes: "12 KG, 15 KG" });
+  assert.deepEqual(rows[1], { types: ["New"], sizes: "45 KG" });
+  assert.deepEqual(rows[2], { types: [], sizes: "" });
+});
+
+test("reads the KG of cylinder variant options", () => {
+  assert.equal(
+    cylinderKgOf({
+      definition: {
+        kind: "measurement",
+        value: "12.0",
+        measurementUnit: "KG",
+        container: "cylinder",
+      },
+    }),
+    "12",
+  );
+  assert.equal(
+    cylinderKgOf({
+      definition: {
+        kind: "measurement",
+        value: "1",
+        measurementUnit: "KG",
+        container: "pack",
+      },
+    }),
+    null,
+  );
+  assert.equal(cylinderKgOf({ name: "35KG Cylinder" }), "35");
+});
+
+test("Exchange can't cost more than New for the same size", () => {
+  const entry = {
+    size: { value: "12", label: "12 KG" },
+    types: ["New", "Exchange"],
+  };
+  assert.equal(
+    salePriceError(entry, {
+      [salePriceKey("12", "New")]: "1200",
+      [salePriceKey("12", "Exchange")]: "1450",
+    }),
+    "12 KG: Exchange price can't be more than the New price.",
+  );
+  assert.equal(
+    salePriceError(entry, { [salePriceKey("12", "Exchange")]: "1450" }),
+    null,
+  );
+});

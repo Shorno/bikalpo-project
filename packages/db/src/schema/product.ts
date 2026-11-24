@@ -318,6 +318,13 @@ export const productVariantPrice = pgTable("product_variant_price", {
     .default("0")
     .notNull(),
 
+  /**
+   * LPG Variant Table: the Type options this size is sold as, each with an
+   * optional price ("" = allowed, not priced). E.g. { New: "1450",
+   * Exchange: "1200" }. Null for products that do not use the table.
+   */
+  saleTypePrices: jsonb("sale_type_prices").$type<Record<string, string>>(),
+
   /** Sort order within this product */
   sortOrder: integer("sort_order").default(0).notNull(),
 

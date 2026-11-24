@@ -1,0 +1,175 @@
+/**
+ * LPG Variant Table (client layout): each row ticks one or more Type options
+ * (New, Exchange, Refill...) and lists the sizes sold that way. A size that
+ * appears in several rows is sold every way those rows tick. Stock is kept
+ * per size; the Type only decides how a cylinder is sold and its price.
+ */
+
+export const DEFAULT_LPG_TYPE_OPTIONS = [
+  "New",
+  "Exchange",
+  "Refill",
+  "Regular",
+  "Premium",
+  "Standard",
+] as const;
+
+export type VariantTableRow = {
+  types: string[];
+  /** Comma-separated sizes as typed, e.g. "12 KG, 15 KG". */
+  sizes: string;
+};
+
+export type LpgSize = {
+  /** Kilograms as a plain number string: "12", "12.5". */
+  value: string;
+  label: string;
+};
+
+export type SizeSaleTypes = {
+  size: LpgSize;
+  /** In the order of the Type options. */
+  types: string[];
+};
+
+const SIZE_PATTERN = /^(\d+(?:\.\d+)?)\s*(?:kg|kgs)?$/i;
+
+/** "12 KG, 15kg, 30" → 12 KG, 15 KG, 30 KG. Anything else is invalid. */
+export function parseSizeList(text: string): {
+  sizes: LpgSize[];
+  invalid: string[];
+} {
+  const sizes: LpgSize[] = [];
+  const invalid: string[] = [];
+  for (const raw of text.split(",")) {
+    const part = raw.trim().replace(/[.;]+$/, "").trim();
+    if (!part) continue;
+    const match = SIZE_PATTERN.exec(part);
+    const number = match ? Number(match[1]) : Number.NaN;
+    if (!match || !Number.isFinite(number) || number <= 0) {
+      invalid.push(part);
+      continue;
+    }
+    const value = String(number);
+    if (sizes.some((size) => size.value === value)) continue;
+    sizes.push({ value, label: `${value} KG` });
+  }
+  return { sizes, invalid };
+}
+
+function orderTypes(types: Iterable<string>, typeOptions: readonly string[]) {
+  const wanted = new Set(types);
+  const known = typeOptions.filter((type) => wanted.has(type));
+  const unknown = [...wanted].filter((type) => !typeOptions.includes(type));
+  return [...known, ...unknown];
+}
+
+/**
+ * Every size in the table with the Type options it is sold as. Rows with
+ * no ticked Type or no size are ignored.
+ */
+export function sizeSaleTypes(
+  rows: VariantTableRow[],
+  typeOptions: readonly string[],
+): SizeSaleTypes[] {
+  const bySize = new Map<string, { size: LpgSize; types: Set<string> }>();
+  for (const row of rows) {
+    if (row.types.length === 0) continue;
+    for (const size of parseSizeList(row.sizes).sizes) {
+      const entry = bySize.get(size.value) ?? { size, types: new Set() };
+      for (const type of row.types) entry.types.add(type);
+      bySize.set(size.value, entry);
+    }
+  }
+  return [...bySize.values()].map((entry) => ({
+    size: entry.size,
+    types: orderTypes(entry.types, typeOptions),
+  }));
+}
+
+/**
+ * Saved sizes back into table rows: sizes sold the same ways share a row.
+ * The table always has `rowCount` rows.
+ */
+export function rowsFromSizeSaleTypes(
+  entries: SizeSaleTypes[],
+  typeOptions: readonly string[],
+  rowCount: number,
+): VariantTableRow[] {
+  const groups = new Map<string, { types: string[]; sizes: string[] }>();
+  for (const entry of entries) {
+    if (entry.types.length === 0) continue;
+    const types = orderTypes(entry.types, typeOptions);
+    const key = types.join("|");
+    const group = groups.get(key) ?? { types, sizes: [] };
+    group.sizes.push(entry.size.label);
+    groups.set(key, group);
+  }
+  const rows: VariantTableRow[] = [...groups.values()].map((group) => ({
+    types: group.types,
+    sizes: group.sizes.join(", "),
+  }));
+  while (rows.length < rowCount) rows.push({ types: [], sizes: "" });
+  return rows;
+}
+
+export function emptyVariantTableRows(rowCount: number): VariantTableRow[] {
+  return Array.from({ length: rowCount }, () => ({ types: [], sizes: "" }));
+}
+
+export function salePriceKey(sizeValue: string, type: string) {
+  return `${sizeValue}|${type}`;
+}
+
+/** The kilograms of a cylinder variant option, or null if it is not one. */
+export function cylinderKgOf(option: {
+  name?: string | null;
+  definition?: unknown;
+}): string | null {
+  const definition = option.definition as
+    | {
+        kind?: string;
+        value?: string;
+        measurementUnit?: string;
+        container?: string;
+      }
+    | null
+    | undefined;
+  if (
+    definition?.kind === "measurement" &&
+    definition.measurementUnit?.trim().toLowerCase() === "kg" &&
+    definition.container?.trim().toLowerCase() === "cylinder"
+  ) {
+    const number = Number(definition.value);
+    return Number.isFinite(number) && number > 0 ? String(number) : null;
+  }
+  if (definition?.kind) return null;
+  // Older options without a definition: read "12KG Cylinder" from the name.
+  const match = /(\d+(?:\.\d+)?)\s*kg\b/i.exec(option.name ?? "");
+  return match ? String(Number(match[1])) : null;
+}
+
+/** "" or a non-negative amount with up to 2 decimals. */
+function amount(value: string | undefined) {
+  if (!value?.trim()) return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
+/** A size sold both New and Exchange cannot have Exchange dearer than New. */
+export function salePriceError(
+  entry: SizeSaleTypes,
+  prices: Record<string, string | undefined>,
+): string | null {
+  if (!entry.types.includes("New") || !entry.types.includes("Exchange")) {
+    return null;
+  }
+  const newPrice = amount(prices[salePriceKey(entry.size.value, "New")]);
+  const exchangePrice = amount(
+    prices[salePriceKey(entry.size.value, "Exchange")],
+  );
+  if (newPrice != null && exchangePrice != null && exchangePrice > newPrice) {
+    return `${entry.size.label}: Exchange price can't be more than the New price.`;
+  }
+  return null;
+}

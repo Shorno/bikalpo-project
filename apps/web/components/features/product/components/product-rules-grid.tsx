@@ -460,10 +460,13 @@ export function ClientRulesGrid({
   values,
   onChange,
   attributes,
+  attributesLocked = false,
 }: {
   values: ClientRuleValues;
   onChange: (patch: Partial<ClientRuleValues>) => void;
   attributes: Array<{ name: string }>;
+  /** LPG: the two attributes are fixed to Type and Size. */
+  attributesLocked?: boolean;
 }) {
   const savedOnly = [values.variantAttr1, values.variantAttr2].filter(
     (name, index, all) =>
@@ -492,6 +495,7 @@ export function ClientRulesGrid({
           label="Variant attribute 1"
           value={values.variantAttr1 || NO_ATTRIBUTE}
           options={attributeOptions}
+          disabled={attributesLocked}
           onChange={(value) =>
             onChange({ variantAttr1: value === NO_ATTRIBUTE ? "" : value })
           }
@@ -502,6 +506,7 @@ export function ClientRulesGrid({
           label="Variant attribute 2"
           value={values.variantAttr2 || NO_ATTRIBUTE}
           options={attributeOptions}
+          disabled={attributesLocked}
           onChange={(value) =>
             onChange({ variantAttr2: value === NO_ATTRIBUTE ? "" : value })
           }

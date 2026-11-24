@@ -150,6 +150,14 @@ const createProductSchema = z.object({
           .regex(/^\d+(\.\d{1,2})?$/)
           .optional()
           .default("0"),
+        /** LPG Variant Table: allowed Type options → price ("" = no price). */
+        saleTypePrices: z
+          .record(
+            z.string().trim().min(1).max(50),
+            z.string().regex(/^(\d+(\.\d{1,2})?)?$/),
+          )
+          .optional()
+          .nullable(),
       }),
     )
     .optional(),
@@ -686,6 +694,7 @@ export const productRouter = {
             variants: variantsByBrand.get(brandId)!.map((row) => ({
               variantOptionId: row.variantOptionId,
               consumerPrice: row.consumerPrice,
+              saleTypePrices: row.saleTypePrices,
             })),
             settings: newProduct,
           });
@@ -885,6 +894,7 @@ export const productRouter = {
           variants: variantPrices.map((row) => ({
             variantOptionId: row.variantOptionId,
             consumerPrice: row.consumerPrice,
+            saleTypePrices: row.saleTypePrices,
           })),
           settings: updatedProduct,
         });
@@ -918,6 +928,7 @@ export const productRouter = {
               variantOptionId: vp.variantOptionId,
               brandId: vp.brandId || null,
               consumerPrice: vp.consumerPrice || "0",
+              saleTypePrices: vp.saleTypePrices ?? null,
               sortOrder: idx,
             })),
           )

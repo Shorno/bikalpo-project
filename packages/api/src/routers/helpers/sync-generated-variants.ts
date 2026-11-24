@@ -285,6 +285,8 @@ export async function syncBrandVariantPrices(
       /** Left out, the variant's exchange setting is not changed. */
       exchangeEnabled?: boolean;
       exchangeCreditAmount?: string;
+      /** LPG Variant Table Type prices. Left out, they are not changed. */
+      saleTypePrices?: Record<string, string> | null;
     }>;
     settings: GeneratedVariantProductSettings;
   },
@@ -360,10 +362,24 @@ export async function syncBrandVariantPrices(
   for (const row of retained) {
     const desired = desiredByOption.get(row.variantOptionId)!;
     const consumerPrice = desired.consumerPrice || "0";
-    if (row.consumerPrice !== consumerPrice || row.brandId !== brandId) {
+    const saleTypesChanged =
+      desired.saleTypePrices !== undefined &&
+      JSON.stringify(desired.saleTypePrices ?? null) !==
+        JSON.stringify(row.saleTypePrices ?? null);
+    if (
+      row.consumerPrice !== consumerPrice ||
+      row.brandId !== brandId ||
+      saleTypesChanged
+    ) {
       await client
         .update(productVariantPrice)
-        .set({ consumerPrice, brandId })
+        .set({
+          consumerPrice,
+          brandId,
+          ...(desired.saleTypePrices !== undefined
+            ? { saleTypePrices: desired.saleTypePrices ?? null }
+            : {}),
+        })
         .where(eq(productVariantPrice.id, row.id));
     }
     const option = voMap[row.variantOptionId];
@@ -402,6 +418,7 @@ export async function syncBrandVariantPrices(
           variantOptionId: voId,
           brandId,
           consumerPrice: desiredByOption.get(voId)?.consumerPrice || "0",
+          saleTypePrices: desiredByOption.get(voId)?.saleTypePrices ?? null,
           sortOrder: maxSortOrder + 1 + idx,
         })),
       )

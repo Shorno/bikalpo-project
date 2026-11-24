@@ -666,6 +666,13 @@
       "when": 1790553600010,
       "tag": "0095_client_create_product",
       "breakpoints": true
+    },
+    {
+      "idx": 96,
+      "version": "7",
+      "when": 1790553600011,
+      "tag": "0096_variant_sale_type_prices",
+      "breakpoints": true
     }
   ]
 }

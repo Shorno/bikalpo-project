@@ -212,7 +212,7 @@ export function firstPricingError(
   return null;
 }
 
-function PriceInput({
+export function PriceInput({
   label,
   value,
   onChange,
