@@ -68,12 +68,22 @@ export default function WarehouseProductEditPage() {
         variantOptions: data.options.variantOptions,
         productType: product.category?.type,
         publishOnSave: true,
+        // LPG: the client's Type × Size Variant Table.
+        lpgVariantTable: true,
+        onCreateVariant: async (definition: any) =>
+          orpc.warehouse.createWarehouseStoreVariant.call({
+            coreProductId: product.coreProductId,
+            definition,
+          }),
         onUpdate: async (payload: any) => {
           const variants = (payload.variantPrices ?? []).map((row: any) => ({
             variantOptionId: row.variantOptionId,
             retailPrice: row.consumerPrice || null,
             exchangeEnabled: Boolean(row.exchangeEnabled),
             exchangeCreditAmount: String(row.exchangeCreditAmount || "0"),
+            ...(row.saleTypePrices
+              ? { saleTypePrices: row.saleTypePrices }
+              : {}),
           }));
           const anyExchangeEnabled = variants.some(
             (row: { exchangeEnabled: boolean }) => row.exchangeEnabled,

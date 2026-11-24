@@ -7652,6 +7652,14 @@ const warehouseConfiguredVariantSchema = z.object({
   exchangeEnabled: z.boolean().default(false),
   exchangeCreditAmount: z.string().default("0"),
   ...sellerVariantPriceShape,
+  /** LPG Variant Table: allowed Type options → price ("" = no price). */
+  saleTypePrices: z
+    .record(
+      z.string().trim().min(1).max(50),
+      z.string().regex(/^(\d+(\.\d{1,2})?)?$/),
+    )
+    .optional()
+    .nullable(),
 });
 
 const warehouseTemplateDetailsSchema = z.object({
@@ -8063,7 +8071,13 @@ const warehouseProductCreation = {
             if (currentRow.sourceVariantPriceId) {
               await tx
                 .update(productVariantPrice)
-                .set({ isActive: true })
+                .set({
+                  isActive: true,
+                  // Saves without the Variant Table keep their Type prices.
+                  ...(row.saleTypePrices === undefined
+                    ? {}
+                    : { saleTypePrices: row.saleTypePrices }),
+                })
                 .where(
                   eq(productVariantPrice.id, currentRow.sourceVariantPriceId),
                 );
@@ -8095,6 +8109,7 @@ const warehouseProductCreation = {
               brandId: existing.brandId,
               consumerPrice: "0",
               sortOrder,
+              saleTypePrices: row.saleTypePrices ?? null,
             })
             .returning();
           const [variantRow] = await tx
@@ -8309,6 +8324,24 @@ const warehouseProductCreation = {
       const retailPriceByVariant = new Map(
         priceRows.map((row) => [row.variantId, row.retailPrice]),
       );
+      // The Variant Table's Type options and prices for each size.
+      const priceRowIds = currentProducts.flatMap((product) =>
+        product.variants
+          .map((variant) => variant.sourceVariantPriceId)
+          .filter((id): id is number => id !== null),
+      );
+      const saleTypeRows = priceRowIds.length
+        ? await db
+            .select({
+              id: productVariantPrice.id,
+              saleTypePrices: productVariantPrice.saleTypePrices,
+            })
+            .from(productVariantPrice)
+            .where(inArray(productVariantPrice.id, priceRowIds))
+        : [];
+      const saleTypePricesOf = new Map(
+        saleTypeRows.map((row) => [row.id, row.saleTypePrices]),
+      );
 
       return {
         core: {
@@ -8373,6 +8406,9 @@ const warehouseProductCreation = {
               exchangeEnabled: variant.exchangeEnabled,
               exchangeCreditAmount: variant.exchangeCreditAmount,
               retailPrice: retailPriceByVariant.get(variant.id) ?? null,
+              saleTypePrices: variant.sourceVariantPriceId
+                ? (saleTypePricesOf.get(variant.sourceVariantPriceId) ?? null)
+                : null,
             })),
         })),
         options: { brands, variantOptions },
@@ -8762,7 +8798,13 @@ const warehouseProductCreation = {
               if (existingVariant.sourceVariantPriceId) {
                 await tx
                   .update(productVariantPrice)
-                  .set({ isActive: true })
+                  .set({
+                    isActive: true,
+                    // Saves without the Variant Table keep their Type prices.
+                    ...(desired.saleTypePrices === undefined
+                      ? {}
+                      : { saleTypePrices: desired.saleTypePrices }),
+                  })
                   .where(
                     eq(
                       productVariantPrice.id,
@@ -8804,6 +8846,7 @@ const warehouseProductCreation = {
                 brandId: brand.id,
                 consumerPrice: "0",
                 sortOrder,
+                saleTypePrices: desired.saleTypePrices ?? null,
               })
               .returning();
             const [variantRow] = await tx

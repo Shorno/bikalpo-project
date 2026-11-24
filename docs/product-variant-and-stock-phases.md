@@ -86,7 +86,14 @@ Built (Edit Product, admin):
 - A removed size is turned off (`isActive` false), not deleted.
 - If a saved variant is not a cylinder size in KG, or two share a KG, Edit
   keeps the old per-brand variant list so saving can't drop it.
-- Seller and warehouse edit pages still use the old list.
+- Retailer and wholesaler use it too (2026-11-25): catalog Add
+  (`core-product-config-form.tsx`, adapter `lpgVariantTable`) and product
+  Edit (`product-form.tsx`, edit adapter `lpgVariantTable`). Missing sizes
+  are made as store-only variants. The shop and warehouse configure /
+  update APIs take and return `saleTypePrices`; New is the seller's selling
+  price and Exchange works as before. The admin core-product page keeps
+  the chips.
+- Sizes are typed as plain numbers in KG ("10, 12, 15"); "12 KG" works too.
 
 Code that was changed:
 

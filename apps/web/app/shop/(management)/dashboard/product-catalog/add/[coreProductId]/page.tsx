@@ -108,6 +108,9 @@ export default function RetailerCoreProductConfigPage() {
           variantOptionId: variant.variantOptionId,
           consumerPrice: "0",
           ...sellerPriceInputs(variant),
+          ...(variant.saleTypePrices
+            ? { saleTypePrices: variant.saleTypePrices }
+            : {}),
         })),
     }));
 
@@ -130,6 +133,8 @@ export default function RetailerCoreProductConfigPage() {
             ? normalizedPreset
             : undefined,
         reloadPresetLabel: "Reload Admin Preset",
+        // LPG: the client's Type × Size Variant Table instead of chips.
+        lpgVariantTable: true,
         onConfigure: async (values) => configureMutation.mutateAsync(values),
         // Created directly for this store; no admin request.
         onCreateBrand: async (name) =>

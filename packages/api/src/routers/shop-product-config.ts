@@ -61,6 +61,14 @@ const configuredVariantSchema = z.object({
     .default(0)
     .transform((value) => value.toFixed(2)),
   ...sellerVariantPriceShape,
+  /** LPG Variant Table: allowed Type options → price ("" = no price). */
+  saleTypePrices: z
+    .record(
+      z.string().trim().min(1).max(50),
+      z.string().regex(/^(\d+(\.\d{1,2})?)?$/),
+    )
+    .optional()
+    .nullable(),
 });
 
 const templateDetailsSchema = z.object({
@@ -337,7 +345,12 @@ async function syncProductVariants({
       if (existingPrice) {
         await tx
           .update(productVariantPrice)
-          .set({ isActive: true, sortOrder, updatedAt: new Date() })
+          .set({
+            isActive: true,
+            sortOrder,
+            updatedAt: new Date(),
+            ...saleTypePricesUpdate(cylinderSale.saleTypePrices),
+          })
           .where(eq(productVariantPrice.id, existingPrice.id));
       } else {
         await tx.insert(productVariantPrice).values({
@@ -346,6 +359,7 @@ async function syncProductVariants({
           brandId,
           consumerPrice: "0",
           sortOrder,
+          saleTypePrices: cylinderSale.saleTypePrices ?? null,
         });
       }
       await tx
@@ -385,6 +399,7 @@ async function syncProductVariants({
         brandId,
         consumerPrice: "0",
         sortOrder,
+        saleTypePrices: cylinderSale.saleTypePrices ?? null,
       })
       .returning();
     const [variantRow] = await tx
@@ -430,6 +445,13 @@ async function syncProductVariants({
   }
 
   await linkProductVariantsToCatalog(tx, targetProduct.id);
+}
+
+/** Saves were sent without the Variant Table keep their Type prices. */
+function saleTypePricesUpdate(
+  saleTypePrices: Record<string, string> | null | undefined,
+) {
+  return saleTypePrices === undefined ? {} : { saleTypePrices };
 }
 
 export const shopProductConfigEndpoints = {
@@ -556,6 +578,24 @@ export const shopProductConfigEndpoints = {
       const retailPriceByVariant = new Map(
         priceRows.map((row) => [row.variantId, row.retailPrice]),
       );
+      // The Variant Table's Type options and prices for each size.
+      const currentProductIds = currentProducts.map((row) => row.id);
+      const saleTypeRows = currentProductIds.length
+        ? await db
+            .select({
+              productId: productVariantPrice.productId,
+              variantOptionId: productVariantPrice.variantOptionId,
+              saleTypePrices: productVariantPrice.saleTypePrices,
+            })
+            .from(productVariantPrice)
+            .where(inArray(productVariantPrice.productId, currentProductIds))
+        : [];
+      const saleTypePricesOf = new Map(
+        saleTypeRows.map((row) => [
+          `${row.productId}:${row.variantOptionId}`,
+          row.saleTypePrices,
+        ]),
+      );
 
       return {
         core: {
@@ -616,6 +656,10 @@ export const shopProductConfigEndpoints = {
               exchangeEnabled: variant.exchangeEnabled,
               exchangeCreditAmount: variant.exchangeCreditAmount,
               retailPrice: retailPriceByVariant.get(variant.id) ?? null,
+              saleTypePrices:
+                saleTypePricesOf.get(
+                  `${row.id}:${variant.sourceVariantOptionId}`,
+                ) ?? null,
             })),
         })),
         options: { brands, variantOptions },

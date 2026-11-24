@@ -97,6 +97,8 @@ export const coreProductBrandConfigSchema = z.object({
         // Filled in on save from the prices above.
         exchangeEnabled: z.boolean().optional(),
         exchangeCreditAmount: z.string().optional(),
+        // LPG Variant Table: Type option → price ("" = no price).
+        saleTypePrices: z.record(z.string(), z.string()).optional(),
       }),
     )
     .min(1, "Select at least one variant for every brand"),

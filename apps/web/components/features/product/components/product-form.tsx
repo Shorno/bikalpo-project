@@ -463,6 +463,10 @@ interface ProductFormProps {
     onUpdate: (payload: any) => Promise<unknown>;
     onUpdated?: () => void | Promise<void>;
     publishOnSave?: boolean;
+    /** LPG products use the Variant Table (retailer and wholesaler Edit). */
+    lpgVariantTable?: boolean;
+    /** Sets up a size the Variant Table needs (store-only for sellers). */
+    onCreateVariant?: (definition: any) => Promise<any>;
   };
 }
 
@@ -747,13 +751,15 @@ export default function ProductForm({
   const isLpgRules =
     activeFulfillmentProfile?.family === "lpg" ||
     activeProductType?.family === "lpg";
-  // LPG uses the client's Type × Size Variant Table (admin form only;
-  // seller edit pages keep the per-brand variant list).
+  // LPG uses the client's Type × Size Variant Table (admin, and seller
+  // edit pages that opt in).
   const [savedFitsLpgTable] = useState(
     () => !isEdit || savedVariantsFitLpgTable(product),
   );
   const usesLpgVariantTable =
-    isLpgRules && !usesExternalEditAdapter && savedFitsLpgTable;
+    isLpgRules &&
+    (!usesExternalEditAdapter || Boolean(editAdapter?.lpgVariantTable)) &&
+    savedFitsLpgTable;
   const lpgTypeOptions = useMemo(() => {
     const typeAttribute = (variantAttributes as any[]).find(
       (attribute) => attribute.name === "Type",
@@ -1173,21 +1179,24 @@ export default function ProductForm({
         ids.set(entry.size.value, existing.id);
         continue;
       }
-      if (!typeId || !categoryId) {
+      const definition = {
+        kind: "measurement" as const,
+        value: entry.size.value,
+        measurementUnit: "KG",
+        container: "cylinder",
+      };
+      if (!editAdapter?.onCreateVariant && (!typeId || !categoryId)) {
         throw new Error("Select the product type and category first");
       }
-      const created = await orpc.adminVariantOption.create.call({
-        definition: {
-          kind: "measurement",
-          value: entry.size.value,
-          measurementUnit: "KG",
-          container: "cylinder",
-        },
-        typeId,
-        categoryId,
-        sortOrder: 0,
-        reuseExisting: true,
-      });
+      const created = editAdapter?.onCreateVariant
+        ? await editAdapter.onCreateVariant(definition)
+        : await orpc.adminVariantOption.create.call({
+            definition,
+            typeId,
+            categoryId,
+            sortOrder: 0,
+            reuseExisting: true,
+          });
       setCreatedVariants((current) => [...current, created]);
       ids.set(entry.size.value, created.id);
     }

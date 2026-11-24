@@ -36,7 +36,7 @@ import {
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import AdditionalImagesUploader from "@/components/AdditionalImagesUploader";
 import ImageUploader from "@/components/ImageUploader";
@@ -69,6 +69,17 @@ import {
   AddVariantDialog,
   type NewVariantDefinition,
 } from "./add-variant-dialog";
+import { LpgVariantPricing, LpgVariantTable } from "./lpg-variant-table";
+import {
+  cylinderKgOf,
+  DEFAULT_LPG_TYPE_OPTIONS,
+  emptyVariantTableRows,
+  type LpgTable,
+  lpgTableError,
+  lpgTableFromSizes,
+  saleTypePricesFor,
+  sizeSaleTypes,
+} from "./lpg-variant-table-model";
 import {
   exchangeCreditFrom,
   FinalActions,
@@ -129,6 +140,11 @@ type CoreProductConfigFormProps = {
     ) => Promise<VariantOption>;
     /** Shown in the variant dialog: who will see a new variant. */
     variantScopeLabel?: string;
+    /**
+     * LPG products use the client's Type × Size Variant Table instead of
+     * variant chips (retailer and wholesaler catalog Add).
+     */
+    lpgVariantTable?: boolean;
   };
 };
 
@@ -354,7 +370,176 @@ export default function CoreProductConfigForm({
   const attributesQuery = useQuery(orpc.variantAttribute.list.queryOptions());
   const variantAttributes = (attributesQuery.data ?? []) as Array<{
     name: string;
+    options?: unknown;
   }>;
+
+  // LPG Variant Table (retailer and wholesaler Add): one table per brand.
+  const lpgTypeOptions = useMemo(() => {
+    const typeAttribute = variantAttributes.find(
+      (attribute) => attribute.name === "Type",
+    );
+    const options = Array.isArray(typeAttribute?.options)
+      ? (typeAttribute.options as string[]).filter(Boolean)
+      : [];
+    return options.length > 0 ? options : [...DEFAULT_LPG_TYPE_OPTIONS];
+  }, [variantAttributes]);
+  const kgOfOption = (variantOptionId: number) => {
+    const option = availableVariants.find(
+      (item) => item.id === variantOptionId,
+    );
+    return option ? cylinderKgOf(option) : null;
+  };
+  // Saved variants that are not one KG cylinder size each would be dropped
+  // by the table, so those products keep the variant chips.
+  const usesLpgTable =
+    Boolean(adapter?.lpgVariantTable) &&
+    productFamily === "lpg" &&
+    defaultValues.brands.every((brand) => {
+      const kgs = brand.variants.map((variant) =>
+        kgOfOption(variant.variantOptionId),
+      );
+      return kgs.every(Boolean) && new Set(kgs).size === kgs.length;
+    });
+  const [lpgTables, setLpgTables] = useState<Record<number, LpgTable>>({});
+  /** A brand's table: edited, else read from its saved or preset sizes. */
+  const lpgTableOf = (brand: CoreProductConfigValues["brands"][number]) => {
+    const edited = lpgTables[brand.brandId];
+    if (edited) return edited;
+    const saved = brand.variants.flatMap((variant) => {
+      const kg = kgOfOption(variant.variantOptionId);
+      if (!kg) return [];
+      // Sizes saved before the table read as New (and Exchange if priced).
+      const saleTypePrices = variant.saleTypePrices ?? {
+        New: variant.retailPrice ?? "",
+        ...(variant.exchangePrice ? { Exchange: variant.exchangePrice } : {}),
+      };
+      return [{ kg, saleTypePrices }];
+    });
+    return saved.length > 0
+      ? lpgTableFromSizes(saved, lpgTypeOptions)
+      : { rows: emptyVariantTableRows(lpgTypeOptions.length), prices: {} };
+  };
+  const setLpgTable = (
+    brand: CoreProductConfigValues["brands"][number],
+    patch: Partial<LpgTable>,
+  ) => {
+    setLpgTables((current) => ({
+      ...current,
+      [brand.brandId]: { ...lpgTableOf(brand), ...patch },
+    }));
+    setSaved(false);
+  };
+  const lpgSizeCount = (brand: CoreProductConfigValues["brands"][number]) =>
+    sizeSaleTypes(lpgTableOf(brand).rows, lpgTypeOptions).length;
+
+  /** The brands' tables as variants, creating any size not yet set up. */
+  const lpgBrandVariants = async (
+    brands: CoreProductConfigValues["brands"],
+  ): Promise<CoreProductConfigValues["brands"] | null> => {
+    for (const brand of brands) {
+      const error = lpgTableError(lpgTableOf(brand), lpgTypeOptions);
+      if (error) {
+        const name =
+          allBrands.find((item) => item.id === brand.brandId)?.name ?? "Brand";
+        toast.error(brands.length > 1 ? `${name}: ${error}` : error);
+        return null;
+      }
+    }
+    const optionByKg = new Map<string, number>();
+    for (const option of availableVariants) {
+      const kg = cylinderKgOf(option);
+      if (kg && !optionByKg.has(kg)) optionByKg.set(kg, option.id);
+    }
+    const result: CoreProductConfigValues["brands"] = [];
+    for (const brand of brands) {
+      const table = lpgTableOf(brand);
+      const variants: CoreProductConfigValues["brands"][number]["variants"] =
+        [];
+      for (const entry of sizeSaleTypes(table.rows, lpgTypeOptions)) {
+        let optionId = optionByKg.get(entry.size.value);
+        if (optionId == null) {
+          const created = await createSizeOption(entry.size.value);
+          optionId = created.id;
+          optionByKg.set(entry.size.value, optionId);
+        }
+        const saleTypePrices = saleTypePricesFor(entry, table.prices);
+        const newPrice = saleTypePrices.New ?? "";
+        // Exchange can be ordered only with both New and Exchange prices.
+        const credit =
+          "Exchange" in saleTypePrices
+            ? exchangeCreditFrom({
+                newPrice,
+                exchangePrice: saleTypePrices.Exchange ?? "",
+              })
+            : null;
+        variants.push({
+          variantOptionId: optionId,
+          consumerPrice: "0",
+          retailPrice: newPrice,
+          exchangePrice: saleTypePrices.Exchange ?? "",
+          exchangeEnabled: credit !== null,
+          exchangeCreditAmount: credit ?? "0",
+          saleTypePrices,
+        });
+      }
+      result.push({ ...brand, variants });
+    }
+    return result;
+  };
+  /** A KG cylinder size the table needs but no variant option has yet. */
+  const createSizeOption = async (kg: string) => {
+    const definition: NewVariantDefinition = {
+      kind: "measurement",
+      value: kg,
+      measurementUnit: "KG",
+      container: "cylinder",
+    } as NewVariantDefinition;
+    let created: VariantOption;
+    if (adapter?.onCreateVariant) {
+      created = await adapter.onCreateVariant(definition);
+    } else {
+      const typeId = core?.category?.typeId;
+      if (!typeId || !core) throw new Error("This product has no Product Type");
+      created = (await orpc.adminVariantOption.create.call({
+        definition,
+        typeId,
+        categoryId: core.categoryId,
+        sortOrder: 0,
+        reuseExisting: true,
+      })) as VariantOption;
+    }
+    setCreatedVariants((current) => [...current, created]);
+    return created;
+  };
+  const [lpgSaving, setLpgSaving] = useState(false);
+  const submitLpgChanges = async (status?: PublishStatus) => {
+    if (lpgSaving) return;
+    const submission = validateBrandCreationSubmission(
+      isSingleMode ? "single" : "batch",
+      form.state.values.brands.length,
+    );
+    if (!submission.valid) {
+      toast.error(submission.message);
+      return;
+    }
+    let brands: CoreProductConfigValues["brands"] | null;
+    setLpgSaving(true);
+    try {
+      brands = await lpgBrandVariants(form.state.values.brands);
+    } catch (error) {
+      toast.error(
+        error instanceof Error && error.message
+          ? error.message
+          : "The sizes could not be saved",
+      );
+      return;
+    } finally {
+      setLpgSaving(false);
+    }
+    if (brands) submitChanges(status, brands);
+  };
+  const saveChanges = (status?: PublishStatus) =>
+    usesLpgTable ? void submitLpgChanges(status) : submitChanges(status);
   // Publishing: Status and (admin) Featured. Featured is sent only once it
   // is changed, so a save never clears another brand's Featured.
   const [publishStatus, setPublishStatus] = useState<PublishStatus | null>(
@@ -656,7 +841,14 @@ export default function CoreProductConfigForm({
     setSaved(false);
   };
 
-  const submitChanges = (status?: PublishStatus) => {
+  /**
+   * Saves the form. `lpgBrands` are the Variant Table's brands, already
+   * checked and turned into variants by submitLpgChanges.
+   */
+  const submitChanges = (
+    status?: PublishStatus,
+    lpgBrands?: CoreProductConfigValues["brands"],
+  ) => {
     const submission = validateBrandCreationSubmission(
       isSingleMode ? "single" : "batch",
       form.state.values.brands.length,
@@ -668,7 +860,7 @@ export default function CoreProductConfigForm({
     const allowedVariantIds = new Set(
       availableVariants.map((variant) => variant.id),
     );
-    const unavailableSelection = form.state.values.brands.some((brand) =>
+    const unavailableSelection = !lpgBrands && form.state.values.brands.some((brand) =>
       brand.variants.some(
         (variant) => !allowedVariantIds.has(variant.variantOptionId),
       ),
@@ -681,7 +873,7 @@ export default function CoreProductConfigForm({
       );
       return;
     }
-    if (adapter) {
+    if (adapter && !lpgBrands) {
       const pricing = buildPricing(form.state.values.brands);
       const pricingError = firstPricingError(pricing.rows, pricing.values);
       if (pricingError) {
@@ -691,6 +883,7 @@ export default function CoreProductConfigForm({
     }
     const normalizedValues = {
       ...form.state.values,
+      brands: lpgBrands ?? form.state.values.brands,
       template: {
         ...mergeTemplateDetails(
           form.state.values.template,
@@ -698,10 +891,12 @@ export default function CoreProductConfigForm({
           core,
           productFamily,
         ),
+        // LPG: Variant attribute 1 is Type and 2 is Size, always.
+        ...(lpgBrands ? { variantAttr1: "Type", variantAttr2: "Size" } : {}),
         deliveryCostUnit:
           resolveDeliveryUnit(
             form.state.values.template.deliveryCostUnit,
-            suggestDeliveryUnit(form.state.values.brands),
+            suggestDeliveryUnit(lpgBrands ?? form.state.values.brands),
           ) ?? "",
       },
     };
@@ -719,6 +914,8 @@ export default function CoreProductConfigForm({
       brands: result.data.brands.map((brand) => ({
         ...brand,
         variants: brand.variants.map((variant) => {
+          // The Variant Table already set Exchange from its prices.
+          if (lpgBrands) return variant;
           // Exchange credit = New minus Exchange, only for cylinders.
           const credit = isCylinderVariant(variant.variantOptionId)
             ? exchangeCreditFrom({
@@ -789,7 +986,14 @@ export default function CoreProductConfigForm({
             ),
           ),
         ];
-        const hasUnavailableVariants = unavailableVariantIds.length > 0;
+        // The Variant Table rebuilds the variants from its sizes on save.
+        const hasUnavailableVariants =
+          !usesLpgTable && unavailableVariantIds.length > 0;
+        const singleBrandEmpty =
+          selectedBrands.length !== 1 ||
+          (usesLpgTable
+            ? lpgSizeCount(selectedBrands[0]!) === 0
+            : selectedBrands[0]?.variants.length === 0);
         const presetBrandIds = new Set(
           adapter?.presetBrands?.map((brand) => brand.brandId) ?? [],
         );
@@ -902,7 +1106,7 @@ export default function CoreProductConfigForm({
                           "Current admin preset loaded. Save to apply it.",
                         );
                       }}
-                      disabled={configureMutation.isPending}
+                      disabled={configureMutation.isPending || lpgSaving}
                     >
                       <RotateCcw className="h-4 w-4" />
                       {adapter.reloadPresetLabel ?? "Reload preset"}
@@ -913,7 +1117,7 @@ export default function CoreProductConfigForm({
                     variant="ghost"
                     size="sm"
                     asChild
-                    disabled={configureMutation.isPending}
+                    disabled={configureMutation.isPending || lpgSaving}
                   >
                     <Link href={listHref}>Discard</Link>
                   </Button>
@@ -923,14 +1127,12 @@ export default function CoreProductConfigForm({
                     size="sm"
                     onClick={() => {
                       setPublishStatus("draft");
-                      submitChanges("draft");
+                      saveChanges("draft");
                     }}
                     disabled={
-                      configureMutation.isPending ||
+                      (configureMutation.isPending || lpgSaving) ||
                       hasUnavailableVariants ||
-                      (isSingleMode &&
-                        (selectedBrands.length !== 1 ||
-                          selectedBrands[0]?.variants.length === 0))
+                      (isSingleMode && singleBrandEmpty)
                     }
                   >
                     Save draft
@@ -938,16 +1140,14 @@ export default function CoreProductConfigForm({
                   <Button
                     type="button"
                     size="sm"
-                    onClick={() => submitChanges()}
+                    onClick={() => saveChanges()}
                     disabled={
-                      configureMutation.isPending ||
+                      (configureMutation.isPending || lpgSaving) ||
                       hasUnavailableVariants ||
-                      (isSingleMode &&
-                        (selectedBrands.length !== 1 ||
-                          selectedBrands[0]?.variants.length === 0))
+                      (isSingleMode && singleBrandEmpty)
                     }
                   >
-                    {configureMutation.isPending && (
+                    {(configureMutation.isPending || lpgSaving) && (
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                     )}
                     Publish
@@ -960,7 +1160,7 @@ export default function CoreProductConfigForm({
               onSubmit={(event) => {
                 event.preventDefault();
                 event.stopPropagation();
-                submitChanges();
+                saveChanges();
               }}
             >
               <div className="mx-auto max-w-[1500px] px-4 py-6">
@@ -1003,14 +1203,20 @@ export default function CoreProductConfigForm({
 
                     <ProductEditorSection
                       title={
-                        isSingleMode
-                          ? "Brand and variants"
-                          : "Brands and variants"
+                        usesLpgTable
+                          ? isSingleMode
+                            ? "Brand and Variant Table"
+                            : "Brands and Variant Tables"
+                          : isSingleMode
+                            ? "Brand and variants"
+                            : "Brands and variants"
                       }
                       description={
-                        isSingleMode
-                          ? "Choose one new brand. Admin preset variants are editable suggestions for this save."
-                          : "Choose each brand's variants. Prices are managed in Product Price."
+                        usesLpgTable
+                          ? "Pick the brand, then tick how each size is sold (New, Exchange, Refill...) and type its sizes in KG."
+                          : isSingleMode
+                            ? "Choose one new brand. Admin preset variants are editable suggestions for this save."
+                            : "Choose each brand's variants. Prices are managed in Product Price."
                       }
                       action={
                         (!isSingleMode || selectedBrands.length === 0) && (
@@ -1130,6 +1336,26 @@ export default function CoreProductConfigForm({
                                 onAddVariant={() =>
                                   setVariantDialogBrandId(brand.id)
                                 }
+                                summary={
+                                  usesLpgTable
+                                    ? `${lpgSizeCount(selectedBrand)} size${
+                                        lpgSizeCount(selectedBrand) === 1
+                                          ? ""
+                                          : "s"
+                                      } in the Variant Table`
+                                    : undefined
+                                }
+                                body={
+                                  usesLpgTable ? (
+                                    <LpgVariantTable
+                                      typeOptions={lpgTypeOptions}
+                                      rows={lpgTableOf(selectedBrand).rows}
+                                      onRowsChange={(rows) =>
+                                        setLpgTable(selectedBrand, { rows })
+                                      }
+                                    />
+                                  ) : undefined
+                                }
                               />
                             );
                           })}
@@ -1148,11 +1374,43 @@ export default function CoreProductConfigForm({
                         title="Pricing"
                         description="Optional. Sets your selling price; you can also set it later in Pricing."
                       >
-                        <ProductPricingTable
-                          rows={pricing.rows}
-                          values={pricing.values}
-                          onChange={setVariantPrice}
-                        />
+                        {usesLpgTable ? (
+                          <div className="space-y-5">
+                            {selectedBrands.map((selectedBrand) => {
+                              const table = lpgTableOf(selectedBrand);
+                              return (
+                                <div key={selectedBrand.brandId}>
+                                  {selectedBrands.length > 1 && (
+                                    <h3 className="mb-2 text-sm font-medium">
+                                      {allBrands.find(
+                                        (item) =>
+                                          item.id === selectedBrand.brandId,
+                                      )?.name ?? "Brand"}
+                                    </h3>
+                                  )}
+                                  <LpgVariantPricing
+                                    entries={sizeSaleTypes(
+                                      table.rows,
+                                      lpgTypeOptions,
+                                    )}
+                                    prices={table.prices}
+                                    onPriceChange={(key, value) =>
+                                      setLpgTable(selectedBrand, {
+                                        prices: { ...table.prices, [key]: value },
+                                      })
+                                    }
+                                  />
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <ProductPricingTable
+                            rows={pricing.rows}
+                            values={pricing.values}
+                            onChange={setVariantPrice}
+                          />
+                        )}
                       </ProductEditorSection>
                     )}
                   </div>
@@ -1181,6 +1439,7 @@ export default function CoreProductConfigForm({
                               setSaved(false);
                             }}
                             attributes={variantAttributes}
+                            attributesLocked={usesLpgTable}
                           />
                         )}
                       </form.Subscribe>
@@ -1319,16 +1578,14 @@ export default function CoreProductConfigForm({
                         cancelHref={listHref}
                         onSaveDraft={() => {
                           setPublishStatus("draft");
-                          submitChanges("draft");
+                          saveChanges("draft");
                         }}
-                        onPublish={() => submitChanges()}
+                        onPublish={() => saveChanges()}
                         publishLabel="Publish"
-                        pending={configureMutation.isPending}
+                        pending={configureMutation.isPending || lpgSaving}
                         disabled={
                           hasUnavailableVariants ||
-                          (isSingleMode &&
-                            (selectedBrands.length !== 1 ||
-                              selectedBrands[0]?.variants.length === 0))
+                          (isSingleMode && singleBrandEmpty)
                         }
                       />
                     </div>
@@ -1545,8 +1802,14 @@ function BrandEditorCard({
   onToggleVariant,
   onSetVariants,
   onAddVariant,
+  body,
+  summary,
 }: {
   onAddVariant: () => void;
+  /** Replaces the variant chips (the LPG Variant Table). */
+  body?: ReactNode;
+  /** Replaces "N variants selected". */
+  summary?: string;
   brand: BrandOption;
   existing?: ExistingBrandProduct;
   selectedVariants: SelectedVariant[];
@@ -1589,8 +1852,10 @@ function BrandEditorCard({
               <StatePill state={state} />
             </div>
             <p className="text-xs text-muted-foreground">
-              {selectedVariants.length} variant
-              {selectedVariants.length === 1 ? "" : "s"} selected
+              {summary ??
+                `${selectedVariants.length} variant${
+                  selectedVariants.length === 1 ? "" : "s"
+                } selected`}
             </p>
           </div>
         </button>
@@ -1606,7 +1871,13 @@ function BrandEditorCard({
         </Button>
       </div>
 
-      {expanded && (
+      {expanded && body ? (
+        <>
+          <Separator />
+          <div className="p-3">{body}</div>
+        </>
+      ) : null}
+      {expanded && !body && (
         <>
           <Separator />
           <div className="space-y-3 p-3">

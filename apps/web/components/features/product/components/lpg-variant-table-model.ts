@@ -113,6 +113,65 @@ export function rowsFromSizeSaleTypes(
   return rows;
 }
 
+/** A Variant Table and the prices typed in its Pricing grid. */
+export type LpgTable = {
+  rows: VariantTableRow[];
+  prices: Record<string, string>;
+};
+
+/**
+ * Saved sizes (KG + Type → price) back into a table. A size listed twice
+ * keeps its first entry; a size with no Type is left out.
+ */
+export function lpgTableFromSizes(
+  saved: Array<{ kg: string; saleTypePrices: Record<string, string> }>,
+  typeOptions: readonly string[],
+): LpgTable {
+  const entries: SizeSaleTypes[] = [];
+  const prices: Record<string, string> = {};
+  for (const item of saved) {
+    if (entries.some((entry) => entry.size.value === item.kg)) continue;
+    const types = Object.keys(item.saleTypePrices);
+    if (types.length === 0) continue;
+    entries.push({ size: { value: item.kg, label: `${item.kg} KG` }, types });
+    for (const [type, price] of Object.entries(item.saleTypePrices)) {
+      prices[salePriceKey(item.kg, type)] = price ?? "";
+    }
+  }
+  return {
+    rows: rowsFromSizeSaleTypes(entries, typeOptions, typeOptions.length),
+    prices,
+  };
+}
+
+/** Each size's Type → price map for saving ("" when not priced). */
+export function saleTypePricesFor(
+  entry: SizeSaleTypes,
+  prices: Record<string, string | undefined>,
+): Record<string, string> {
+  return Object.fromEntries(
+    entry.types.map((type) => [
+      type,
+      (prices[salePriceKey(entry.size.value, type)] ?? "").trim(),
+    ]),
+  );
+}
+
+/** Problems that stop a save: bad sizes, no size, Exchange above New. */
+export function lpgTableError(
+  table: LpgTable,
+  typeOptions: readonly string[],
+): string | null {
+  const invalid = table.rows.flatMap((row) => parseSizeList(row.sizes).invalid);
+  if (invalid.length > 0) return `Not a size in KG: ${invalid.join(", ")}`;
+  const entries = sizeSaleTypes(table.rows, typeOptions);
+  if (entries.length === 0) return "Tick a Type and enter at least one size";
+  return (
+    entries.map((entry) => salePriceError(entry, table.prices)).find(Boolean) ??
+    null
+  );
+}
+
 export function emptyVariantTableRows(rowCount: number): VariantTableRow[] {
   return Array.from({ length: rowCount }, () => ({ types: [], sizes: "" }));
 }

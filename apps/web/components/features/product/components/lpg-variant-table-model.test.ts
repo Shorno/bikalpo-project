@@ -3,10 +3,13 @@ import test from "node:test";
 import {
   cylinderKgOf,
   DEFAULT_LPG_TYPE_OPTIONS,
+  lpgTableError,
+  lpgTableFromSizes,
   parseSizeList,
   rowsFromSizeSaleTypes,
   salePriceError,
   salePriceKey,
+  saleTypePricesFor,
   sizeSaleTypes,
 } from "./lpg-variant-table-model";
 
@@ -120,5 +123,61 @@ test("Exchange can't cost more than New for the same size", () => {
   assert.equal(
     salePriceError(entry, { [salePriceKey("12", "Exchange")]: "1450" }),
     null,
+  );
+});
+
+test("plain numbers are sizes in KG", () => {
+  assert.deepEqual(
+    parseSizeList("10, 12, 15").sizes.map((size) => size.label),
+    ["10 KG", "12 KG", "15 KG"],
+  );
+});
+
+test("saved seller sizes come back as rows and prices, and save the same", () => {
+  const table = lpgTableFromSizes(
+    [
+      { kg: "12", saleTypePrices: { New: "1500", Exchange: "1200" } },
+      { kg: "15", saleTypePrices: { New: "1800", Exchange: "" } },
+      { kg: "50", saleTypePrices: { Refill: "" } },
+      { kg: "12", saleTypePrices: { Refill: "900" } },
+    ],
+    types,
+  );
+  assert.equal(table.rows.length, types.length);
+  assert.deepEqual(table.rows.slice(0, 2), [
+    { types: ["New", "Exchange"], sizes: "12 KG, 15 KG" },
+    { types: ["Refill"], sizes: "50 KG" },
+  ]);
+  assert.equal(table.prices[salePriceKey("12", "Exchange")], "1200");
+  const entries = sizeSaleTypes(table.rows, types);
+  assert.deepEqual(saleTypePricesFor(entries[0]!, table.prices), {
+    New: "1500",
+    Exchange: "1200",
+  });
+  assert.equal(lpgTableError(table, types), null);
+});
+
+test("a table with no size, a bad size or Exchange above New can't save", () => {
+  const empty = lpgTableFromSizes([], types);
+  assert.equal(
+    lpgTableError(empty, types),
+    "Tick a Type and enter at least one size",
+  );
+  assert.equal(
+    lpgTableError(
+      { rows: [{ types: ["New"], sizes: "12, big" }], prices: {} },
+      types,
+    ),
+    "Not a size in KG: big",
+  );
+  assert.match(
+    lpgTableError(
+      {
+        rows: [{ types: ["New", "Exchange"], sizes: "12" }],
+        prices: { "12|New": "1000", "12|Exchange": "1100" },
+      },
+      types,
+    ) ?? "",
+    /Exchange price can't be more/,
   );
 });

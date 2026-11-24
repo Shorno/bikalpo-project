@@ -177,12 +177,16 @@ export function sellerVariantPayload(variant: {
   retailPrice?: string;
   exchangeEnabled?: boolean;
   exchangeCreditAmount?: string;
+  saleTypePrices?: Record<string, string>;
 }) {
   return {
     variantOptionId: variant.variantOptionId,
     retailPrice: variant.retailPrice || null,
     exchangeEnabled: Boolean(variant.exchangeEnabled),
     exchangeCreditAmount: variant.exchangeCreditAmount ?? "0",
+    ...(variant.saleTypePrices
+      ? { saleTypePrices: variant.saleTypePrices }
+      : {}),
   };
 }
 

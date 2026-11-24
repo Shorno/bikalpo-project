@@ -113,7 +113,8 @@ export function LpgVariantTable({
                   <Input
                     id={sizesId}
                     value={row.sizes}
-                    placeholder="e.g. 12 KG, 15 KG"
+                    inputMode="decimal"
+                    placeholder="e.g. 10, 12, 15"
                     aria-invalid={invalid.length > 0 || undefined}
                     onChange={(event) =>
                       updateRow(index, { sizes: event.target.value })
@@ -125,7 +126,7 @@ export function LpgVariantTable({
                     </p>
                   ) : (
                     <p className="mt-1.5 text-xs text-muted-foreground">
-                      Separate sizes with commas.
+                      Sizes in KG, separated by commas.
                     </p>
                   )}
                 </div>
