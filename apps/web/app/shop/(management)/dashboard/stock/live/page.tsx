@@ -1,9 +1,14 @@
 "use client";
 
-import { Eye, Loader2, PackagePlus, PackageSearch, ShoppingCart } from "lucide-react";
+import {
+  ChevronDown,
+  Loader2,
+  PackagePlus,
+  PackageSearch,
+  ShoppingCart,
+} from "lucide-react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { type ReactNode, useMemo, useState } from "react";
+import { Fragment, type ReactNode, useMemo, useState } from "react";
 import {
   CatalogActionBar,
   CatalogFilterPanel,
@@ -18,6 +23,7 @@ import {
   STOCK_STATUS_LABELS,
   type StockStatus,
 } from "@/components/features/stock/realtime-stock-model";
+import { StockRowDetail } from "@/components/features/stock/stock-row-detail";
 import { StockStatusIcon } from "@/components/features/stock/stock-status-icon";
 import { Button } from "@/components/ui/button";
 import {
@@ -197,6 +203,7 @@ export default function StockLivePage() {
 
       <StockTable
         rows={rows}
+        defaultLowStockLevel={data?.defaultLowStockLevel ?? 5}
         isMobile={isMobile}
         isLoading={isLoading}
         isError={isError}
@@ -214,6 +221,7 @@ export default function StockLivePage() {
 
 function StockTable({
   rows,
+  defaultLowStockLevel,
   isMobile,
   isLoading,
   isError,
@@ -222,6 +230,7 @@ function StockTable({
   emptyDescription,
 }: {
   rows: RealtimeStockProduct[];
+  defaultLowStockLevel: number;
   isMobile: boolean;
   isLoading: boolean;
   isError: boolean;
@@ -229,9 +238,15 @@ function StockTable({
   onRetry: () => void;
   emptyDescription: string;
 }) {
-  const router = useRouter();
-  const href = (product: RealtimeStockProduct) =>
-    `/dashboard/stock/live/${product.productId}`;
+  // Rows open in place (client, 2026-11-25): no separate View page.
+  const [expanded, setExpanded] = useState<Set<number>>(new Set());
+  const toggle = (productId: number) =>
+    setExpanded((current) => {
+      const next = new Set(current);
+      if (next.has(productId)) next.delete(productId);
+      else next.add(productId);
+      return next;
+    });
 
   return (
     <section
@@ -306,72 +321,96 @@ function StockTable({
           ) : (
             rows.map((product) => {
               const breakdown = formatBreakdown(product.breakdown);
+              const open = expanded.has(product.productId);
+              const detailId = `stock-detail-${product.productId}`;
               return (
-                <TableRow
-                  key={product.productId}
-                  onClick={(event) => {
-                    if (
-                      isMobile &&
-                      !(event.target as HTMLElement).closest("a, button")
-                    ) {
-                      router.push(href(product));
-                    }
-                  }}
-                  className="max-md:cursor-pointer"
-                >
-                  <TableCell
-                    className={
-                      isMobile
-                        ? "px-2 py-2.5 font-medium tabular-nums"
-                        : "font-medium tabular-nums"
-                    }
+                <Fragment key={product.productId}>
+                  <TableRow
+                    onClick={(event) => {
+                      if (
+                        !(event.target as HTMLElement).closest(
+                          "a, button, input",
+                        )
+                      ) {
+                        toggle(product.productId);
+                      }
+                    }}
+                    data-state={open ? "selected" : undefined}
+                    className="cursor-pointer"
                   >
-                    <div className="truncate" title={productIdLabel(product)}>
-                      {productIdLabel(product)}
-                    </div>
-                  </TableCell>
-                  <TableCell className={isMobile ? "px-1" : "font-medium"}>
-                    {isMobile ? (
-                      <Link
-                        href={href(product)}
-                        title={product.name}
-                        className="block truncate font-medium text-primary underline-offset-2 hover:underline"
-                      >
-                        {product.name}
-                      </Link>
-                    ) : (
-                      product.name
-                    )}
-                  </TableCell>
-                  <TableCell
-                    className={
-                      isMobile
-                        ? "whitespace-normal break-words px-1 tabular-nums"
-                        : "tabular-nums"
-                    }
-                  >
-                    {breakdown}
-                  </TableCell>
-                  <TableCell className={isMobile ? "px-1" : undefined}>
-                    <div
+                    <TableCell
                       className={
                         isMobile
-                          ? "flex justify-center"
-                          : "flex items-center justify-end gap-2"
+                          ? "px-2 py-2.5 font-medium tabular-nums"
+                          : "font-medium tabular-nums"
                       }
                     >
-                      <StockStatusIcon status={product.status} />
-                      {isMobile ? null : (
-                        <Button size="sm" variant="outline" asChild>
-                          <Link href={href(product)}>
-                            <Eye className="size-4" />
-                            View
-                          </Link>
+                      <div className="truncate" title={productIdLabel(product)}>
+                        {productIdLabel(product)}
+                      </div>
+                    </TableCell>
+                    <TableCell className={isMobile ? "px-1" : "font-medium"}>
+                      <div className="truncate font-medium" title={product.name}>
+                        {product.name}
+                      </div>
+                    </TableCell>
+                    <TableCell
+                      className={
+                        isMobile
+                          ? "whitespace-normal break-words px-1 tabular-nums"
+                          : "tabular-nums"
+                      }
+                    >
+                      {breakdown}
+                    </TableCell>
+                    <TableCell className={isMobile ? "px-1" : undefined}>
+                      <div
+                        className={
+                          isMobile
+                            ? "flex items-center justify-center gap-0.5"
+                            : "flex items-center justify-end gap-2"
+                        }
+                      >
+                        <StockStatusIcon status={product.status} />
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant={isMobile ? "ghost" : "outline"}
+                          className={isMobile ? "size-7 p-0" : undefined}
+                          aria-expanded={open}
+                          aria-controls={detailId}
+                          aria-label={
+                            isMobile
+                              ? `${open ? "Hide" : "Show"} ${product.name} stock`
+                              : undefined
+                          }
+                          onClick={() => toggle(product.productId)}
+                        >
+                          {isMobile ? null : open ? "Hide" : "Details"}
+                          <ChevronDown
+                            aria-hidden="true"
+                            className={`size-4 transition-transform ${
+                              open ? "rotate-180" : ""
+                            }`}
+                          />
                         </Button>
-                      )}
-                    </div>
-                  </TableCell>
-                </TableRow>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                  {open ? (
+                    <TableRow id={detailId} className="hover:bg-transparent">
+                      <TableCell
+                        colSpan={4}
+                        className="whitespace-normal border-l-2 border-primary/60 bg-muted/30 p-0"
+                      >
+                        <StockRowDetail
+                          product={product}
+                          defaultLowStockLevel={defaultLowStockLevel}
+                        />
+                      </TableCell>
+                    </TableRow>
+                  ) : null}
+                </Fragment>
               );
             })
           )}

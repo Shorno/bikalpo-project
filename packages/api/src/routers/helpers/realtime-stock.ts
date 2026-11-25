@@ -4,6 +4,7 @@ import {
   damageEntryItem,
   emptyPackStock,
   inventory,
+  inventoryMovement,
   order,
   orderItem,
   productVariant,
@@ -11,7 +12,16 @@ import {
   warehousePosSaleItem,
 } from "@bikalpo-project/db/schema";
 import { resolveVariantStockSemantics } from "@bikalpo-project/db/variant-definition";
-import { and, eq, gte, inArray, isNotNull, notInArray, sql } from "drizzle-orm";
+import {
+  and,
+  eq,
+  gte,
+  inArray,
+  isNotNull,
+  lt,
+  notInArray,
+  sql,
+} from "drizzle-orm";
 import { kpiMonths } from "./owner-product-kpis";
 import type { ProductListOwner } from "./owner-product-list";
 
@@ -112,6 +122,13 @@ export type RealtimeStockVariant = {
   availableQty: number;
   emptyQty: number;
   soldThisMonth: number;
+  /** Sold over the same days last month, for the Sold trend arrow. */
+  soldLastMonth: number;
+  /**
+   * Stock added this month (purchases received, manual changes; returns to
+   * the supplier subtract). Against soldThisMonth it gives the Stock arrow.
+   */
+  receivedThisMonth: number;
 };
 
 export type RealtimeStockProduct = {
@@ -139,11 +156,15 @@ export type RealtimeStockProduct = {
 
 const NOT_SOLD_ORDER_STATUSES = ["cancelled", "returned"] as const;
 
-/** Quantity of each variant the owner sold (online and at the counter) since a date. */
+/**
+ * Quantity of each variant the owner sold (online and at the counter) from
+ * `since`, up to `until` when given.
+ */
 async function loadSoldQuantities(
   owner: ProductListOwner,
   variantIds: number[],
   since: Date,
+  until?: Date,
 ) {
   const sold = new Map<number, number>();
   if (variantIds.length === 0) return sold;
@@ -167,6 +188,7 @@ async function loadSoldQuantities(
           inArray(orderItem.variantId, variantIds),
           notInArray(order.status, [...NOT_SOLD_ORDER_STATUSES]),
           gte(order.createdAt, since),
+          until ? lt(order.createdAt, until) : undefined,
         ),
       )
       .groupBy(orderItem.variantId),
@@ -187,6 +209,7 @@ async function loadSoldQuantities(
           inArray(warehousePosSaleItem.variantId, variantIds),
           eq(warehousePosSale.status, "completed"),
           gte(warehousePosSale.createdAt, since),
+          until ? lt(warehousePosSale.createdAt, until) : undefined,
         ),
       )
       .groupBy(warehousePosSaleItem.variantId),
@@ -199,6 +222,40 @@ async function loadSoldQuantities(
     );
   }
   return sold;
+}
+
+/**
+ * Stock each variant gained since a date from purchases and manual changes
+ * (inventory movements other than sales, which are counted as sold).
+ */
+async function loadReceivedQuantities(
+  owner: ProductListOwner,
+  variantIds: number[],
+  since: Date,
+) {
+  const received = new Map<number, number>();
+  if (variantIds.length === 0) return received;
+  const ownerType = owner.ownerType === "warehouse" ? "warehouse" : "shop";
+  const rows = await db
+    .select({
+      variantId: inventoryMovement.variantId,
+      quantity: sql<string>`sum(case when ${inventoryMovement.direction} = 'in' then ${inventoryMovement.quantity} else -${inventoryMovement.quantity} end)`,
+    })
+    .from(inventoryMovement)
+    .where(
+      and(
+        eq(inventoryMovement.ownerType, ownerType),
+        eq(inventoryMovement.ownerId, owner.ownerId),
+        inArray(inventoryMovement.variantId, variantIds),
+        notInArray(inventoryMovement.reason, ["sale_fulfillment", "sale_return"]),
+        gte(inventoryMovement.occurredAt, since),
+      ),
+    )
+    .groupBy(inventoryMovement.variantId);
+  for (const row of rows) {
+    received.set(row.variantId, round(Number(row.quantity ?? 0)));
+  }
+  return received;
 }
 
 /** Variants with a recent "expired" damage entry (shops record these today). */
@@ -266,11 +323,21 @@ export async function loadRealtimeStock(
   });
 
   const variantIds = rows.map((row) => row.variantId);
-  const monthStart = kpiMonths(now, 1)[0]!.start;
+  const [lastMonth, thisMonth] = kpiMonths(now, 2);
+  const monthStart = thisMonth!.start;
+  // The same number of days into last month, so the Sold arrow compares
+  // like with like.
+  const lastMonthUntil = new Date(
+    Math.min(
+      lastMonth!.start.getTime() + (now.getTime() - monthStart.getTime()),
+      monthStart.getTime(),
+    ),
+  );
   const expiredSince = new Date(
     now.getTime() - EXPIRED_WARNING_DAYS * 24 * 60 * 60 * 1000,
   );
-  const [emptyRows, sold, expiredVariantIds] = await Promise.all([
+  const [emptyRows, sold, expiredVariantIds, soldBefore, received] =
+    await Promise.all([
     variantIds.length > 0
       ? db
           .select({
@@ -288,6 +355,8 @@ export async function loadRealtimeStock(
       : Promise.resolve([]),
     loadSoldQuantities(owner, variantIds, monthStart),
     loadExpiredVariantIds(owner, variantIds, expiredSince),
+    loadSoldQuantities(owner, variantIds, lastMonth!.start, lastMonthUntil),
+    loadReceivedQuantities(owner, variantIds, monthStart),
   ]);
   const emptyByVariant = new Map(
     emptyRows.map((row) => [row.variantId, row.availableQty]),
@@ -343,6 +412,8 @@ export async function loadRealtimeStock(
       availableQty: round(Number(row.availableQty ?? 0)),
       emptyQty: emptyByVariant.get(variant.id) ?? 0,
       soldThisMonth: sold.get(variant.id) ?? 0,
+      soldLastMonth: soldBefore.get(variant.id) ?? 0,
+      receivedThisMonth: received.get(variant.id) ?? 0,
     });
     products.set(item.id, entry);
   }

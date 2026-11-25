@@ -22,6 +22,10 @@ export type RealtimeStockVariant = {
   availableQty: number;
   emptyQty: number;
   soldThisMonth: number;
+  /** Sold over the same days last month. */
+  soldLastMonth: number;
+  /** Stock added this month (purchases and manual changes). */
+  receivedThisMonth: number;
 };
 
 export type RealtimeStockProduct = {
@@ -109,4 +113,53 @@ export function matchesStockSearch(
   ].some((field) =>
     (field ?? "").toLowerCase().includes(/^\d[\d\s-]*$/.test(text) ? digits : text),
   );
+}
+
+export type StockTrend = "up" | "down" | "flat";
+
+/**
+ * The Stock arrow: down when more of the size sold this month than came
+ * in, up when more came in, flat when they match (or nothing moved).
+ */
+export function stockTrend(variant: RealtimeStockVariant): StockTrend {
+  const net = variant.receivedThisMonth - variant.soldThisMonth;
+  return net > 0 ? "up" : net < 0 ? "down" : "flat";
+}
+
+/** The Sold arrow: this month so far against the same days last month. */
+export function soldTrend(variant: RealtimeStockVariant): StockTrend {
+  const change = variant.soldThisMonth - variant.soldLastMonth;
+  return change > 0 ? "up" : change < 0 ? "down" : "flat";
+}
+
+/** "Cylinder" for 12 KG Cylinder stock; "KG" for loose stock. */
+export function variantUnit(variant: RealtimeStockVariant) {
+  return variant.entryType === "loose"
+    ? variant.unit.toUpperCase()
+    : variant.unit.charAt(0).toUpperCase() + variant.unit.slice(1);
+}
+
+/**
+ * The size alone, for the Size column: "12 KG cylinder" -> "12 KG"
+ * (the unit already shows in the Stock column).
+ */
+export function variantSizeLabel(variant: RealtimeStockVariant) {
+  const unit = variant.unit.trim().toLowerCase();
+  const words = variant.label.trim().split(/\s+/);
+  const last = words.at(-1)?.toLowerCase();
+  if (unit && words.length > 1 && (last === unit || last === `${unit}s`)) {
+    return words.slice(0, -1).join(" ");
+  }
+  return variant.label;
+}
+
+/** The level the variant table is counted at: "Cylinder", "Pack"... */
+export function stockLevelName(product: RealtimeStockProduct) {
+  const units = new Set(product.variants.map(variantUnit));
+  return units.size === 1 ? [...units][0]! : "Size";
+}
+
+/** Total stock as one figure with its unit: "1,200 Cylinder". */
+export function formatTotalStock(product: RealtimeStockProduct) {
+  return formatBreakdown({ ...product.breakdown, empty: 0 });
 }

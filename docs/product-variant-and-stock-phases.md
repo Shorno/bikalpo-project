@@ -182,9 +182,8 @@ Built (2026-11-24):
   Expired), [Add Stock] [Purchase], and Product ID | Product Name | Stock
   Breakdown | Action (status icon + View). "Expired" lists any product with
   expired stock. Graph cards (Total Units, Loose Stock trend) come later.
-- View `stock/live/[productId]/page.tsx`: name, Product ID, status, total
-  stock, empties, sold this month, the low-stock limit form, and Size |
-  Stock | Sold (this month).
+- ~~View `stock/live/[productId]/page.tsx`~~: replaced on 2026-11-25, see
+  below.
 - API: `getRealtimeStock`, `getRealtimeStockProduct`,
   `setProductLowStockLevel`, all on `helpers/realtime-stock.ts`, which the
   warehouse page can reuse.
@@ -197,6 +196,22 @@ Built (2026-11-24):
 - Expired, for now: an "expired" damage entry in the last 30 days. Shop
   Add Stock does not keep expiry dates yet; Phase 5 replaces this with
   batches.
+
+### Row opens in place (client, 2026-11-25)
+
+- No View page: Details (or a click on the row) opens the product under
+  its row, laid out as the client's mockup: name + Product ID, "Core
+  Identity Level Stock" (Total Stock, Status), then "Variant Stock
+  (Cylinder level)" with Size | Stock | Sold (this month), then the
+  low-stock limit form. This replaces the line above about removing the
+  ID and the arrows.
+- Stock arrow: this month's stock in (purchases received and manual
+  changes from `inventory_movement`, supplier returns subtract) against
+  sold this month. Down = more sold than came in.
+- Sold arrow: sold this month so far against the same days last month.
+- The Size column drops the unit word ("12 KG"); the unit shows with each
+  figure. `getRealtimeStockProduct` stays on the API but the web no longer
+  calls it.
 - Sold this month: shop orders (not cancelled or returned) since the start
   of the month, Dhaka time.
 - Not done yet: removing the old Low Stock page and its sidebar link.

@@ -151,17 +151,6 @@ export function useRealtimeStock() {
   );
 }
 
-/** One product's Real-time Stock for its View page. */
-export function useRealtimeStockProduct(productId: number) {
-  return useQuery(
-    orpc.shopOwner.getRealtimeStockProduct.queryOptions({
-      input: { productId },
-      enabled: Number.isInteger(productId) && productId > 0,
-      staleTime: 1000 * 30,
-    }),
-  );
-}
-
 /** Saves a product's low-stock limit and refreshes the stock lists. */
 export function useSetProductLowStockLevel() {
   const queryClient = useQueryClient();
