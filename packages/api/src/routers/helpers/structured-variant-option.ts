@@ -11,9 +11,9 @@ import {
   withDerivedOperationalUnit,
 } from "@bikalpo-project/db/variant-definition";
 import { ORPCError } from "@orpc/server";
-import { and, eq, isNull, or, sql } from "drizzle-orm";
+import { and, eq, isNotNull, isNull, or, sql } from "drizzle-orm";
 import { type CatalogOwner, visibleToOwner } from "./catalog-owner";
-import { nextSkuCode } from "./generate-sku";
+import { lockSkuAllocation, nextSkuCode } from "./generate-sku";
 import type { StructuredVariantOptionInput } from "./structured-variant-option-schema";
 
 export type { StructuredVariantOptionInput } from "./structured-variant-option-schema";
@@ -23,6 +23,42 @@ export {
 } from "./structured-variant-option-schema";
 
 type VariantOptionDatabase = typeof db;
+
+/**
+ * The 2-digit size code for a new size. The 13-digit product code tells
+ * sizes apart by it, so every size gets one, store-only sizes included
+ * (client, 2026-11-25): one code per size within a Type. A size that is
+ * already in the Type (admin's or another store's) passes its code on, so
+ * the same 14 KG cylinder scans the same everywhere; a new size takes the
+ * next code after the Type's highest.
+ */
+export async function sizeCodeFor(
+  typeId: number,
+  signature: string,
+  database: VariantOptionDatabase = db,
+) {
+  await lockSkuAllocation(variantOption, database);
+  const sameSize = await database.query.variantOption.findFirst({
+    where: and(
+      eq(variantOption.typeId, typeId),
+      eq(variantOption.canonicalSignature, signature),
+      isNotNull(variantOption.skuCode),
+    ),
+    columns: { skuCode: true },
+    orderBy: (row, { asc, sql: raw }) => [
+      asc(raw`${row.ownerId} IS NOT NULL`),
+      asc(row.id),
+    ],
+  });
+  if (sameSize?.skuCode) return sameSize.skuCode;
+  return nextSkuCode(
+    variantOption,
+    variantOption.skuCode,
+    2,
+    sql`${variantOption.typeId} = ${typeId} AND ${variantOption.skuCode} ~ '^[0-9]+$'`,
+    database,
+  );
+}
 
 export async function prepareStructuredVariantOption(
   input: StructuredVariantOptionInput,
@@ -117,20 +153,7 @@ export async function createStructuredVariantOption(
     });
   }
 
-  // Global variants take a 2-digit size code that is unique within their
-  // Type (type-wide and category variants share it), because the 13-digit
-  // product code tells sizes apart by it. Store variants take none so they
-  // never use up the shared code space.
-  const skuScope = sql`${variantOption.typeId} = ${input.typeId}`;
-  const skuCode = owner
-    ? null
-    : await nextSkuCode(
-        variantOption,
-        variantOption.skuCode,
-        2,
-        sql`${skuScope} AND ${variantOption.ownerId} IS NULL`,
-        database,
-      );
+  const skuCode = await sizeCodeFor(input.typeId, prepared.signature, database);
 
   const [created] = await database
     .insert(variantOption)

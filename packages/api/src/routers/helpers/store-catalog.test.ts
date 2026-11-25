@@ -80,7 +80,8 @@ test("store-only brands and variants stay private and reuse matches", async () =
     assert.equal(global5.ownerId, null);
     assert.equal(global5.skuCode, "01");
 
-    // Shop A's own 12 KG variant: store-only, no shared SKU code.
+    // Shop A's own 12 KG variant: store-only, with the Type's next size
+    // code so it can have a barcode.
     const a12 = await createStructuredVariantOption(
       { ...scope, definition: cylinder("12") },
       database,
@@ -88,7 +89,7 @@ test("store-only brands and variants stay private and reuse matches", async () =
     );
     assert.equal(a12.ownerId, "shop-a");
     assert.equal(a12.ownerType, "shop");
-    assert.equal(a12.skuCode, null);
+    assert.equal(a12.skuCode, "02");
 
     // Adding it again reuses it; asking for 5 KG reuses the global one.
     const again = await createStructuredVariantOption(
@@ -112,13 +113,22 @@ test("store-only brands and variants stay private and reuse matches", async () =
     );
     assert.notEqual(b12.id, a12.id);
     assert.equal(b12.ownerId, "shop-b");
+    // The same size shares its code, so a 12 KG label scans the same in
+    // both shops; a new size takes the next code.
+    assert.equal(b12.skuCode, "02");
+    const b15 = await createStructuredVariantOption(
+      { ...scope, definition: cylinder("15") },
+      database,
+      { owner: shopB, reuseExisting: true },
+    );
+    assert.equal(b15.skuCode, "03");
 
     const visibleToB = await database.query.variantOption.findMany({
       where: visibleToOwner(schema.variantOption, shopB),
     });
     assert.deepEqual(
       visibleToB.map((row: { id: number }) => row.id).sort(),
-      [global5.id, b12.id].sort(),
+      [global5.id, b12.id, b15.id].sort(),
     );
     const adminView = await database.query.variantOption.findMany({
       where: visibleToOwner(schema.variantOption, null),
@@ -134,6 +144,8 @@ test("store-only brands and variants stay private and reuse matches", async () =
       database,
     );
     assert.equal(global12.ownerId, null);
+    // It keeps the code the stores' 12 KG already uses.
+    assert.equal(global12.skuCode, "02");
     // And a second admin create without reuse is a conflict.
     await assert.rejects(
       createStructuredVariantOption(
