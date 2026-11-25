@@ -90,7 +90,7 @@ export function StockRowDetail({
   return (
     // Sticky + w-fit keeps the panel in view when the wide stock table is
     // scrolled sideways; the row behind it carries the tint.
-    <div className="sticky left-0 w-fit max-w-full min-w-0 space-y-4 px-5 py-4 max-md:px-3 max-md:py-3">
+    <div className="sticky left-0 w-fit @3xl/catalog:mx-auto max-w-full min-w-0 space-y-4 px-5 py-4 max-md:px-3 max-md:py-3">
       <h3 className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-[15px] font-semibold">
         {product.name}
         <span className="text-sm font-medium tabular-nums text-muted-foreground">
@@ -117,8 +117,8 @@ export function StockRowDetail({
       </dl>
 
       <section aria-label={`Stock by size (${level})`}>
-        <div className="w-fit max-w-full overflow-x-auto rounded-lg border bg-card">
-          <table className="w-auto text-sm">
+        <div className="overflow-x-auto rounded-lg border bg-card">
+          <table className="w-full text-sm">
             <thead>
               <tr className="border-b text-left text-xs text-muted-foreground">
                 <th scope="col" className="min-w-28 whitespace-nowrap px-3 py-2 font-medium">
