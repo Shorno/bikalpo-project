@@ -82,6 +82,7 @@ const shopOwnerNavGroups: NavGroup[] = [
           { title: "Stock (Real-time)", url: `${D}/stock/live` },
           { title: "Low Stock", url: `${D}/stock/low` },
           { title: "Expired Products", url: `${D}/stock/expired` },
+          { title: "Batch", url: `${D}/stock/batch` },
           { title: "Empty Pack", url: `${D}/stock/empty-pack` },
           { title: "Conversions", url: `${D}/stock/conversions` },
         ],

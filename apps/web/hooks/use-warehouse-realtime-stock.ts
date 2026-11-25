@@ -10,6 +10,15 @@ export function useWarehouseRealtimeStock() {
   );
 }
 
+/** The warehouse Batch page, the same shape as the shop's. */
+export function useWarehouseBatchStock() {
+  return useQuery(
+    orpc.warehouse.getBatchStock.queryOptions({
+      staleTime: 1000 * 60, // 1 min cache
+    }),
+  );
+}
+
 /** The warehouse Expired Products list, the same shape as the shop's. */
 export function useWarehouseExpiryStock() {
   return useQuery(

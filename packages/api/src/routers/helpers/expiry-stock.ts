@@ -78,8 +78,9 @@ type VariantInfo = {
 };
 
 /** A stock-in with where it came from, newest first. */
-type SourcedStockIn = StockIn & {
+export type SourcedStockIn = StockIn & {
   batchNo: string | null;
+  manufacturedCode: string | null;
   manufactureDate: string | null;
   receivedAt: Date;
   /** Rows with the same source, batch, expiry and unit are one batch. */
@@ -96,7 +97,7 @@ const supplierLabel = (name: string | null, company: string | null) =>
  * Shop stock-ins: purchase receipts with the supplier and bill of a
  * purchase, or the seller and order number of a warehouse order.
  */
-async function loadShopStockIns(
+export async function loadShopStockIns(
   shopId: string,
   variantIds: number[],
 ): Promise<SourcedStockIn[]> {
@@ -107,6 +108,7 @@ async function loadShopStockIns(
       quantity: inventoryMovement.quantity,
       unitCost: inventoryMovement.unitCost,
       batchNo: inventoryMovement.batchNo,
+      manufacturedCode: inventoryMovement.manufacturedCode,
       manufactureDate: inventoryMovement.manufactureDate,
       expiryDate: inventoryMovement.expiryDate,
       occurredAt: inventoryMovement.occurredAt,
@@ -172,6 +174,7 @@ async function loadShopStockIns(
       unitCost: Number(row.unitCost ?? 0),
       expiryDate: row.expiryDate,
       batchNo: row.batchNo,
+      manufacturedCode: row.manufacturedCode,
       manufactureDate: row.manufactureDate,
       receivedAt: row.occurredAt,
       source: row.purchaseId
@@ -194,7 +197,7 @@ async function loadShopStockIns(
  * Warehouse stock-ins: the stock entries from Add Stock and purchase
  * receiving, with their supplier and invoice reference.
  */
-async function loadWarehouseStockIns(
+export async function loadWarehouseStockIns(
   warehouseId: string,
   variantIds: number[],
 ): Promise<SourcedStockIn[]> {
@@ -206,6 +209,7 @@ async function loadWarehouseStockIns(
       inventoryDelta: stockEntry.inventoryDelta,
       totalCost: stockEntry.totalCost,
       batchNo: stockEntry.batchNo,
+      manufacturedCode: stockEntry.manufacturedCode,
       manufactureDate: stockEntry.manufactureDate,
       expiryDate: stockEntry.expiryDate,
       reference: stockEntry.reference,
@@ -232,6 +236,7 @@ async function loadWarehouseStockIns(
       unitCost: quantity > 0 ? Number(row.totalCost ?? 0) / quantity : 0,
       expiryDate: row.expiryDate,
       batchNo: row.batchNo,
+      manufacturedCode: row.manufacturedCode,
       manufactureDate: row.manufactureDate,
       receivedAt: row.createdAt,
       source: row.receiptId ? `r${row.receiptId}` : `e${row.id}`,

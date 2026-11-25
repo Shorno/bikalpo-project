@@ -1129,6 +1129,7 @@ function OrderActions({
 
 type BatchDetails = {
   batchNo?: string;
+  manufacturedCode?: string;
   manufactureDate?: string;
   expiryDate?: string;
 };
@@ -1224,10 +1225,11 @@ function ReceiveOrderDialog({
                 />
               </div>
               {item.product?.expiryEnabled ? (
-                <div className="mt-2 grid grid-cols-3 gap-2">
+                <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
                   {(
                     [
                       ["batchNo", "Batch *", "text"],
+                      ["manufacturedCode", "Manufactured", "text"],
                       ["manufactureDate", "Mfg. date", "date"],
                       ["expiryDate", "Expiry *", "date"],
                     ] as const

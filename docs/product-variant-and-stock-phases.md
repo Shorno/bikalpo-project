@@ -365,6 +365,26 @@ reads `stock_entry` through the same helper.
 - The old `getExpiredProducts` API (damage entries) is still on the
   server but the web no longer calls it.
 
+### Batch page (client, 2026-11-25; done)
+
+- Sidebar Stock Control → Batch, retailer and warehouse (`stock/batch`,
+  `components/features/stock/batch-stock-page.tsx`), with
+  `shopOwner.getBatchStock` / `warehouse.getBatchStock`
+  (`helpers/batch-stock.ts`, `helpers/batch-groups.ts`).
+- Content exactly as the client's structure: per product size,
+  the product name and size, then Batch ID | MFG Date | EXP Date |
+  Manufactured | Stock | Action (View). View opens Batch Details: Batch
+  ID, Product, Brand/Color, Variant/Size, Manufacture Date | Received
+  Quantity, Expiry Date, Supplier, Purchase Invoice, Sold. Only batches
+  with stock left; sold oldest-first as on Expired Products.
+- "Manufactured" is the maker's lot code on the pack (e.g. XXL099):
+  migration `0099_batch_manufactured_code.sql` adds `manufactured_code`
+  to `inventory_movement`, `purchase_item` and `stock_entry`. Entered next
+  to Batch on shop Add Stock, the shop order receive dialog and warehouse
+  Add Stock (where the old "Manufactured" date label now reads "Mfg.
+  date").
+- Brand/Color: the size's brand and its colour field.
+
 ## Phase 6: Empty Pack
 
 - Product ID column.

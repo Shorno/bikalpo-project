@@ -35,8 +35,15 @@ describe("batch fields on stock-in", () => {
   });
 
   it("trims and turns blanks into null", () => {
-    expect(cleanBatchFields({ batchNo: "  ", expiryDate: " 2026-01-01 " })).toEqual({
+    expect(
+      cleanBatchFields({
+        batchNo: "  ",
+        manufacturedCode: " XXL099 ",
+        expiryDate: " 2026-01-01 ",
+      }),
+    ).toEqual({
       batchNo: null,
+      manufacturedCode: "XXL099",
       manufactureDate: null,
       expiryDate: "2026-01-01",
     });

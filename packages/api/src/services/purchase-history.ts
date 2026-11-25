@@ -169,6 +169,7 @@ export async function appendPurchaseInventoryMovement(
     variantId: number;
     /** Batch details on a stock-in (products with expiry tracking). */
     batchNo?: string | null;
+    manufacturedCode?: string | null;
     manufactureDate?: string | null;
     expiryDate?: string | null;
   },
@@ -208,6 +209,7 @@ export async function appendPurchaseInventoryMovement(
       reference: input.reference ?? null,
       reversesMovementId: input.reversesMovementId ?? null,
       batchNo: input.batchNo ?? null,
+      manufacturedCode: input.manufacturedCode ?? null,
       manufactureDate: input.manufactureDate ?? null,
       expiryDate: input.expiryDate ?? null,
       totalCost: input.totalCost.toFixed(2),

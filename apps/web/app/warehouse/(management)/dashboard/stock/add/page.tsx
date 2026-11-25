@@ -190,6 +190,7 @@ type TableRow = {
   brandName: string;
   variantId: number | null;
   batchNo: string;
+  manufacturedCode: string;
   manufactureDate: string;
   expiryDate: string;
   cartonUnitSize: string;
@@ -663,6 +664,7 @@ export default function AddStockPage() {
             : null,
         batchNo:
           selectedProduct.trackingType === "batch" ? sharedBatchNo.trim() : "",
+        manufacturedCode: "",
         manufactureDate: selectedProduct.expiryEnabled
           ? sharedManufactureDate
           : "",
@@ -797,6 +799,10 @@ export default function AddStockPage() {
               row.product.trackingType === "batch"
                 ? row.batchNo?.trim()
                 : undefined,
+            manufacturedCode:
+              row.product.trackingType === "batch"
+                ? row.manufacturedCode.trim() || undefined
+                : undefined,
             expiryDate: row.expiryDate || undefined,
             manufactureDate: row.manufactureDate || undefined,
           })),
@@ -832,6 +838,7 @@ export default function AddStockPage() {
             purchasePrice: String(price),
             reference: reference || undefined,
             batchNo: row.batchNo?.trim() || undefined,
+            manufacturedCode: row.manufacturedCode.trim() || undefined,
             expiryDate: row.expiryDate || undefined,
             manufactureDate: row.manufactureDate || undefined,
             storageAreaId: storageAreaId || undefined,
@@ -1364,13 +1371,28 @@ export default function AddStockPage() {
                                         aria-label={`Batch or lot number for ${row.product.name}`}
                                         className="h-8 font-mono text-xs"
                                       />
+                                      <span className="mb-1 mt-2 block text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                                        Manufactured
+                                      </span>
+                                      <Input
+                                        value={row.manufacturedCode}
+                                        onChange={(event) =>
+                                          updateRow(row.id, {
+                                            manufacturedCode: event.target.value,
+                                          })
+                                        }
+                                        placeholder="e.g. XXL099"
+                                        maxLength={100}
+                                        aria-label={`Manufactured code for ${row.product.name}`}
+                                        className="h-8 font-mono text-xs"
+                                      />
                                     </div>
                                   )}
                                   {row.product.expiryEnabled ? (
                                     <div className="grid grid-cols-2 gap-2">
                                       <label className="space-y-1">
                                         <span className="block text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                                          Manufactured
+                                          Mfg. date
                                         </span>
                                         <Input
                                           type="date"

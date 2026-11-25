@@ -99,6 +99,7 @@ import {
   DEFAULT_EXPIRY_ALERT_DAYS,
   EXPIRY_ALERT_DAY_OPTIONS,
 } from "./helpers/expiry-batches";
+import { loadBatchStock } from "./helpers/batch-stock";
 import { loadExpiryStock } from "./helpers/expiry-stock";
 import {
   DEFAULT_LOW_STOCK_LEVEL,
@@ -9337,6 +9338,7 @@ const stockEntryQueries = {
                   "Purchase unit cost must be greater than 0",
                 ),
               batchNo: z.string().trim().max(100).optional(),
+              manufacturedCode: z.string().trim().max(100).optional(),
               manufactureDate: warehouseStockDateSchema.optional(),
               expiryDate: warehouseStockDateSchema.optional(),
             }),
@@ -9403,6 +9405,7 @@ const stockEntryQueries = {
           perInventoryUnit: string;
         };
         batchNo?: string;
+        manufacturedCode?: string;
         manufactureDate?: string;
         expiryDate?: string;
       };
@@ -9536,6 +9539,7 @@ const stockEntryQueries = {
             totalCost: totalCost.toFixed(2),
             reference: input.reference || null,
             batchNo: line.batchNo || null,
+            manufacturedCode: line.manufacturedCode || null,
             expiryDate: line.expiryDate || null,
             manufactureDate: line.manufactureDate || null,
             storageAreaId: input.storageAreaId || null,
@@ -9588,6 +9592,7 @@ const stockEntryQueries = {
         }),
         reference: z.string().optional(),
         batchNo: z.string().optional(),
+        manufacturedCode: z.string().trim().max(100).optional(),
         expiryDate: warehouseStockDateSchema.optional(),
         manufactureDate: warehouseStockDateSchema.optional(),
         storageAreaId: z.number().int().optional(),
@@ -9796,6 +9801,7 @@ const stockEntryQueries = {
             totalCost: totalCost.toFixed(2),
             reference: input.reference || null,
             batchNo: tracking.batchNo,
+            manufacturedCode: input.manufacturedCode || null,
             expiryDate: tracking.expiryDate,
             manufactureDate: tracking.manufactureDate,
             storageAreaId: input.storageAreaId || null,
@@ -10115,6 +10121,14 @@ const pricingQueries = {
       defaultAlertDays: DEFAULT_EXPIRY_ALERT_DAYS,
     };
   }),
+
+  /** Batch page: every size holding stock from a batch, batch by batch. */
+  getBatchStock: warehouseProcedure.handler(async ({ context }) => ({
+    sizes: await loadBatchStock({
+      ownerType: "warehouse",
+      ownerId: context.session.user.id,
+    }),
+  })),
 
   /** Days before a batch's expiry date that the Expired page warns. */
   setProductExpiryAlertDays: warehouseProcedure

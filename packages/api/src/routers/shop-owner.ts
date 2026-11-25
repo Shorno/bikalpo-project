@@ -138,6 +138,7 @@ import {
   DEFAULT_EXPIRY_ALERT_DAYS,
   EXPIRY_ALERT_DAY_OPTIONS,
 } from "./helpers/expiry-batches";
+import { loadBatchStock } from "./helpers/batch-stock";
 import { loadExpiryStock } from "./helpers/expiry-stock";
 import { resolveRetailerCylinderSale } from "../services/retailer-cylinder-sale";
 import {
@@ -877,6 +878,16 @@ const managementQueries = {
         defaultAlertDays: DEFAULT_EXPIRY_ALERT_DAYS,
       };
     },
+  ),
+
+  /** Batch page: every size holding stock from a batch, batch by batch. */
+  getBatchStock: permission("shop_stock", "view").handler(
+    async ({ context }) => ({
+      sizes: await loadBatchStock({
+        ownerType: "shop",
+        ownerId: shopTenantId(context.session.user),
+      }),
+    }),
   ),
 
   /** Days before a batch's expiry date that the Expired page warns. */
@@ -2565,6 +2576,7 @@ const mutations = {
               receivedQty: z.number().min(0),
               /** Batch details, required for products with expiry tracking. */
               batchNo: z.string().max(100).optional().nullable(),
+              manufacturedCode: z.string().max(100).optional().nullable(),
               manufactureDate: z.string().max(10).optional().nullable(),
               expiryDate: z.string().max(10).optional().nullable(),
             }),
@@ -2700,7 +2712,12 @@ const mutations = {
           }),
         );
         const batch = cleanBatchFields(supplied ?? {});
-        if (batch.batchNo || batch.expiryDate || batch.manufactureDate) {
+        if (
+          batch.batchNo ||
+          batch.expiryDate ||
+          batch.manufactureDate ||
+          batch.manufacturedCode
+        ) {
           batchByItemId.set(item.id, batch);
         }
       }

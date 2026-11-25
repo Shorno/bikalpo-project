@@ -201,6 +201,8 @@ export const purchaseItem = pgTable(
 
         /** Batch tracking number */
         batchNo: varchar("batch_no", { length: 100 }),
+        /** Maker's lot code on the pack ("Manufactured", e.g. XXL099). */
+        manufacturedCode: varchar("manufactured_code", { length: 100 }),
 
         /** Product expiry date for this batch */
         expiryDate: date("expiry_date"),

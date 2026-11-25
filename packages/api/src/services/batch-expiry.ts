@@ -8,12 +8,15 @@ const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 export type BatchFields = {
   batchNo?: string | null;
+  /** Maker's lot code on the pack ("Manufactured", e.g. XXL099). */
+  manufacturedCode?: string | null;
   manufactureDate?: string | null;
   expiryDate?: string | null;
 };
 
 export type CleanBatchFields = {
   batchNo: string | null;
+  manufacturedCode: string | null;
   manufactureDate: string | null;
   expiryDate: string | null;
 };
@@ -27,6 +30,7 @@ const blankToNull = (value?: string | null) => {
 export function cleanBatchFields(fields: BatchFields): CleanBatchFields {
   return {
     batchNo: blankToNull(fields.batchNo),
+    manufacturedCode: blankToNull(fields.manufacturedCode),
     manufactureDate: blankToNull(fields.manufactureDate),
     expiryDate: blankToNull(fields.expiryDate),
   };

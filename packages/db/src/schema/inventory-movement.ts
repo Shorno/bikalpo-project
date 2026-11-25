@@ -79,6 +79,8 @@ export const inventoryMovement = pgTable(
      * A stock-in with an expiry date is one batch on the Expired page.
      */
     batchNo: varchar("batch_no", { length: 100 }),
+    /** Maker's lot code on the pack ("Manufactured", e.g. XXL099). */
+    manufacturedCode: varchar("manufactured_code", { length: 100 }),
     manufactureDate: date("manufacture_date"),
     expiryDate: date("expiry_date"),
     note: text("note"),

@@ -23,6 +23,7 @@ import {
 
 export type ManualPurchaseItemInput = ManualPurchaseLine & {
   batchNo?: string | null;
+  manufacturedCode?: string | null;
   expiryDate?: string | null;
   manufactureDate?: string | null;
 };
@@ -196,6 +197,7 @@ export async function persistManualPurchaseDraft(
     const batch = cleanBatchFields(line);
     return [{
       batchNo: batch.batchNo,
+      manufacturedCode: batch.manufacturedCode,
       brandName: variant.brand?.name ?? null,
       exchangeQty: String(line.exchangeQty ?? 0),
       expiryDate: batch.expiryDate,
@@ -347,6 +349,7 @@ export async function confirmManualPurchaseReceipt(
       unitCost: Number(item.unitCost),
       variantId: item.variantId,
       batchNo: item.batchNo,
+      manufacturedCode: item.manufacturedCode,
       manufactureDate: item.manufactureDate,
       expiryDate: item.expiryDate,
     });

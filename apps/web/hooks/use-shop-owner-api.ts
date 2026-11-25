@@ -178,6 +178,15 @@ export function useLowStockProducts() {
   );
 }
 
+/** Batch page: every size holding stock from a batch. */
+export function useBatchStock() {
+  return useQuery(
+    orpc.shopOwner.getBatchStock.queryOptions({
+      staleTime: 1000 * 60, // 1 min cache
+    }),
+  );
+}
+
 /** Expired Products: products with stock in an expired or expiring batch. */
 export function useExpiryStock() {
   return useQuery(
