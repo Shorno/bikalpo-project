@@ -188,9 +188,15 @@ export default function ProductCatalogPage() {
               Requests
             </Link>
           </Button>
+          <Button asChild size="sm" className="max-md:min-h-11">
+            <Link href="/dashboard/product-catalog/add/new">
+              <Plus className="size-4" />
+              Create Product
+            </Link>
+          </Button>
           <RequestProductModal
             trigger={
-              <Button size="sm" className="max-md:min-h-11">
+              <Button variant="outline" size="sm" className="max-md:min-h-11">
                 <Plus className="size-4" />
                 Request Product
               </Button>

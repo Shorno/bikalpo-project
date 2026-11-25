@@ -42,10 +42,23 @@ depend on each product having Size × Type variants.
   "Add …" creates it. A new sub category is saved at once; a new core
   identity is created when the product saves.
 - Display name and Slug are not shown; they come from the core identity.
-- The same four fields, in the same layout, show on every product editor:
-  admin Edit Product and the retailer / warehouse catalog Add and Edit
-  pages. There they are filled in and locked (`ProductIdentityFields`),
-  instead of the old image-and-name summary row.
+- The same four fields, in the same layout, show on every product editor.
+  Edit pages (admin and seller) show them filled in and locked
+  (`ProductIdentityFields`).
+- Retailer and warehouse Create Product (2026-11-25) works like admin's:
+  catalog "Create Product" opens `…/add/new`, and the catalog Add page keeps
+  the four pickers editable (`StoreCatalogIdentity`). Picking another core
+  identity opens its Add page. Display name and Slug are hidden everywhere;
+  the name comes from the core identity with the brand in front.
+  - "Add" in Sub category adds a shared sub category (same as admin; sub
+    categories have no store owner). A name already in the category is
+    reused.
+  - "Add" in Core identity adds a store-only core identity:
+    `creator_source` = shop / warehouse and `created_by_id` = the store, so
+    only that store sees it (`coreVisibleToOwner`). Admin's catalog still
+    lists admin core identities only. No database change was needed.
+  - A new core identity has no image, so the first save needs the main
+    image (the same rule as admin Create Product).
 
 ## Phase 2: Variant Table, Overview and Pricing
 

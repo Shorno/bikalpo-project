@@ -5,6 +5,11 @@ import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import CoreProductConfigForm from "@/components/features/product/components/core-product-config-form";
 import {
+  StoreCatalogIdentity,
+  StoreCreateProductStart,
+  storeIdentityFromCore,
+} from "@/components/features/product/components/store-catalog-identity";
+import {
   sellerPriceInputs,
   sellerVariantPayload,
 } from "@/components/features/product/components/product-delivery-pricing";
@@ -16,9 +21,9 @@ const PRODUCTS_URL = "/warehouse/dashboard/products";
 export default function WarehouseCoreProductConfigPage() {
   const router = useRouter();
   const queryClient = useQueryClient();
-  const coreProductId = Number(
-    useParams<{ coreProductId: string }>().coreProductId,
-  );
+  const coreProductParam = useParams<{ coreProductId: string }>()
+    .coreProductId;
+  const coreProductId = Number(coreProductParam);
   // Labels saved earlier are sent back unchanged; Add has no labels section.
   const [variantAliases, setVariantAliases] = useState<Record<number, string>>(
     {},
@@ -147,6 +152,19 @@ export default function WarehouseCoreProductConfigPage() {
         })),
     }));
 
+  const addHref = (id: number) => `${CATALOG_URL}/add/${id}`;
+
+  // Create Product from the catalog: pick or add the core identity first.
+  if (coreProductParam === "new") {
+    return (
+      <StoreCreateProductStart
+        kind="warehouse"
+        listHref={CATALOG_URL}
+        addHref={addHref}
+      />
+    );
+  }
+
   return (
     <CoreProductConfigForm
       coreProductId={coreProductId}
@@ -168,6 +186,15 @@ export default function WarehouseCoreProductConfigPage() {
         reloadPresetLabel: "Reload Admin Preset",
         // LPG: the client's Type × Size Variant Table instead of chips.
         lpgVariantTable: true,
+        // Type, Category, Sub category and Core identity stay editable, as
+        // in admin Create Product; a new core identity is store-only.
+        renderIdentity: (core) => (
+          <StoreCatalogIdentity
+            kind="warehouse"
+            addHref={addHref}
+            initial={storeIdentityFromCore(core)}
+          />
+        ),
         onConfigure: async (values) => configureMutation.mutateAsync(values),
         // Created directly for this store; no admin request.
         onCreateBrand: async (name) =>

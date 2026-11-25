@@ -145,6 +145,11 @@ type CoreProductConfigFormProps = {
      * variant chips (retailer and wholesaler catalog Add).
      */
     lpgVariantTable?: boolean;
+    /**
+     * Product Information body. Catalog Add passes editable Type / Category
+     * / Sub category / Core identity pickers; without it they show locked.
+     */
+    renderIdentity?: (core: any) => ReactNode;
   };
 };
 
@@ -1125,10 +1130,10 @@ export default function CoreProductConfigForm({
                     type="button"
                     variant="outline"
                     size="sm"
-                    onClick={() => {
-                      setPublishStatus("draft");
-                      saveChanges("draft");
-                    }}
+                    // The draft status goes with this save only, so a draft
+                    // save that fails does not turn a later Publish into a
+                    // draft.
+                    onClick={() => saveChanges("draft")}
                     disabled={
                       (configureMutation.isPending || lpgSaving) ||
                       hasUnavailableVariants ||
@@ -1170,34 +1175,18 @@ export default function CoreProductConfigForm({
                       title="Product Information"
                       description="The core product this listing is based on."
                     >
-                      <div className="space-y-4">
+                      {/* Display name and slug are not shown: like admin
+                          Create Product, they come from the core identity. */}
+                      {adapter?.renderIdentity ? (
+                        adapter.renderIdentity(core)
+                      ) : (
                         <ProductIdentityFields
                           type={core.category?.type?.name}
                           category={core.category?.name}
                           subCategory={core.subCategory?.name}
                           coreIdentity={core.name}
                         />
-                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                          <form.Field name="template.name">
-                            {(field) => (
-                              <Field>
-                                <FieldLabel>Display name *</FieldLabel>
-                                <Input
-                                  value={field.state.value}
-                                  onChange={(event) =>
-                                    field.handleChange(event.target.value)
-                                  }
-                                  placeholder="Enter product display name"
-                                />
-                              </Field>
-                            )}
-                          </form.Field>
-                          <Field>
-                            <FieldLabel>Slug</FieldLabel>
-                            <Input value={core.slug ?? ""} disabled />
-                          </Field>
-                        </div>
-                      </div>
+                      )}
                     </ProductEditorSection>
 
                     <ProductEditorSection
@@ -2153,6 +2142,9 @@ function mergeTemplateDetails(
   );
   // Conversion text is kept only while Conversion is on.
   if (!merged.conversionEnabled) merged.conversionRule = "";
+  // The name comes from the core identity (Display name is not shown);
+  // the server puts the brand in front.
+  if (core?.name?.trim()) merged.name = core.name.trim();
   return merged;
 }
 

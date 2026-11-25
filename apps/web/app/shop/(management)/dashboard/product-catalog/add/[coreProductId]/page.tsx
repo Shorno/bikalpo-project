@@ -4,6 +4,11 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useParams, useRouter } from "next/navigation";
 import CoreProductConfigForm from "@/components/features/product/components/core-product-config-form";
 import {
+  StoreCatalogIdentity,
+  StoreCreateProductStart,
+  storeIdentityFromCore,
+} from "@/components/features/product/components/store-catalog-identity";
+import {
   sellerPriceInputs,
   sellerVariantPayload,
 } from "@/components/features/product/components/product-delivery-pricing";
@@ -15,9 +20,9 @@ const PRODUCTS_URL = "/dashboard/products";
 export default function RetailerCoreProductConfigPage() {
   const router = useRouter();
   const queryClient = useQueryClient();
-  const coreProductId = Number(
-    useParams<{ coreProductId: string }>().coreProductId,
-  );
+  const coreProductParam = useParams<{ coreProductId: string }>()
+    .coreProductId;
+  const coreProductId = Number(coreProductParam);
 
   const configurationQuery = useQuery({
     queryKey: ["shopOwner", "getShopCoreConfiguration", { coreProductId }],
@@ -114,6 +119,19 @@ export default function RetailerCoreProductConfigPage() {
         })),
     }));
 
+  const addHref = (id: number) => `${CATALOG_URL}/add/${id}`;
+
+  // Create Product from the catalog: pick or add the core identity first.
+  if (coreProductParam === "new") {
+    return (
+      <StoreCreateProductStart
+        kind="shop"
+        listHref={CATALOG_URL}
+        addHref={addHref}
+      />
+    );
+  }
+
   return (
     <CoreProductConfigForm
       coreProductId={coreProductId}
@@ -135,6 +153,15 @@ export default function RetailerCoreProductConfigPage() {
         reloadPresetLabel: "Reload Admin Preset",
         // LPG: the client's Type × Size Variant Table instead of chips.
         lpgVariantTable: true,
+        // Type, Category, Sub category and Core identity stay editable, as
+        // in admin Create Product; a new core identity is store-only.
+        renderIdentity: (core) => (
+          <StoreCatalogIdentity
+            kind="shop"
+            addHref={addHref}
+            initial={storeIdentityFromCore(core)}
+          />
+        ),
         onConfigure: async (values) => configureMutation.mutateAsync(values),
         // Created directly for this store; no admin request.
         onCreateBrand: async (name) =>

@@ -137,7 +137,11 @@ import {
 } from "../services/wholesale-checkout";
 import { shopTenantId } from "../shop-portal-scope";
 import { resolveActiveProductType } from "./helpers/application-fields";
-import { globalCatalogOnly, visibleToOwner } from "./helpers/catalog-owner";
+import {
+  coreVisibleToOwner,
+  globalCatalogOnly,
+  visibleToOwner,
+} from "./helpers/catalog-owner";
 import { ensureShopBuyerTargetVariant } from "./helpers/b2b-buyer-target";
 import {
   getOwnerProductList,
@@ -10158,9 +10162,10 @@ const publicCatalogEndpoints = {
       const offset = (page - 1) * limit;
       const shopId = shopTenantId(context.session.user);
 
-      // 1. Build conditions for core products
+      // 1. Build conditions for core products: the admin catalog plus
+      // the core identities this shop added itself.
       const conditions: SQL[] = [
-        eq(coreProductIdentity.creatorSource, "admin"),
+        coreVisibleToOwner({ ownerType: "shop", ownerId: shopId }),
       ];
 
       if (input.coreProductId) {

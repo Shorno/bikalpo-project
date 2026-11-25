@@ -302,6 +302,12 @@ export default function WarehouseCatalogPage() {
             </Link>
           </Button>
           <Button asChild size="sm" className="max-md:min-h-11">
+            <Link href="/warehouse/dashboard/catalog/add/new">
+              <Plus className="size-4" />
+              Create Product
+            </Link>
+          </Button>
+          <Button asChild variant="outline" size="sm" className="max-md:min-h-11">
             <Link href="/warehouse/dashboard/catalog/requests">
               <Plus className="size-4" />
               Request Product

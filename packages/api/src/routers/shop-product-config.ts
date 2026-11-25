@@ -27,6 +27,7 @@ import { recalculateOffersForShopProduct } from "../services/open-order-matching
 import { shopTenantId } from "../shop-portal-scope";
 import {
   type CatalogOwner,
+  coreVisibleToOwner,
   isVisibleToOwner,
   visibleToOwner,
 } from "./helpers/catalog-owner";
@@ -34,8 +35,13 @@ import { catalogProductCode } from "./helpers/generate-sku";
 import {
   createStoreBrand,
   createStoreBrandInput,
+  createStoreCoreProduct,
+  createStoreCoreProductInput,
+  createStoreSubCategory,
+  createStoreSubCategoryInput,
   createStoreVariant,
   createStoreVariantInput,
+  storeIdentityOptions,
 } from "./helpers/store-catalog";
 import {
   isConcreteVariantOption,
@@ -476,6 +482,35 @@ export const shopProductConfigEndpoints = {
       createStoreVariant(shopOwner(shopTenantId(context.session.user)), input),
     ),
 
+  /** Type, Category, Sub category and Core identity for Create Product. */
+  getShopIdentityOptions: shopPermissionProcedure(
+    "shop_product_catalog",
+    "view",
+  ).handler(async ({ context }) =>
+    storeIdentityOptions(shopOwner(shopTenantId(context.session.user))),
+  ),
+
+  /** "Add" in the Create Product Sub category search. */
+  createShopSubCategory: shopPermissionProcedure(
+    "shop_product_catalog",
+    "update",
+  )
+    .input(createStoreSubCategoryInput)
+    .handler(async ({ input }) => createStoreSubCategory(input)),
+
+  /** "Add" in the Create Product Core identity search: store-only. */
+  createShopCoreProduct: shopPermissionProcedure(
+    "shop_product_catalog",
+    "update",
+  )
+    .input(createStoreCoreProductInput)
+    .handler(async ({ context, input }) =>
+      createStoreCoreProduct(
+        shopOwner(shopTenantId(context.session.user)),
+        input,
+      ),
+    ),
+
   getShopCoreConfiguration: shopPermissionProcedure(
     "shop_product_catalog",
     "view",
@@ -486,7 +521,7 @@ export const shopProductConfigEndpoints = {
       const core = await db.query.coreProductIdentity.findFirst({
         where: and(
           eq(coreProductIdentity.id, input.coreProductId),
-          eq(coreProductIdentity.creatorSource, "admin"),
+          coreVisibleToOwner(shopOwner(shopId)),
         ),
         with: {
           category: { with: { type: { with: { ruleSettings: true } } } },
@@ -693,7 +728,7 @@ export const shopProductConfigEndpoints = {
         const core = await tx.query.coreProductIdentity.findFirst({
           where: and(
             eq(coreProductIdentity.id, input.coreProductId),
-            eq(coreProductIdentity.creatorSource, "admin"),
+            coreVisibleToOwner(shopOwner(shopId)),
           ),
           with: { category: { with: { type: true } }, subCategory: true },
         });

@@ -102,14 +102,20 @@ import {
 import { getOwnerProductKpis } from "./helpers/owner-product-kpis";
 import {
   type CatalogOwner,
+  coreVisibleToOwner,
   isVisibleToOwner,
   visibleToOwner,
 } from "./helpers/catalog-owner";
 import {
   createStoreBrand,
   createStoreBrandInput,
+  createStoreCoreProduct,
+  createStoreCoreProductInput,
+  createStoreSubCategory,
+  createStoreSubCategoryInput,
   createStoreVariant,
   createStoreVariantInput,
+  storeIdentityOptions,
 } from "./helpers/store-catalog";
 
 function warehouseOwner(warehouseId: string): CatalogOwner {
@@ -7147,7 +7153,7 @@ const catalogBrowse = {
 
       // 1. Build core product conditions
       const coreConditions: SQL[] = [
-        eq(coreProductIdentity.creatorSource, "admin"),
+        coreVisibleToOwner(warehouseOwner(userId)),
       ];
       if (input.categoryId) {
         coreConditions.push(
@@ -8214,7 +8220,7 @@ const warehouseProductCreation = {
       const core = await db.query.coreProductIdentity.findFirst({
         where: and(
           eq(coreProductIdentity.id, input.coreProductId),
-          eq(coreProductIdentity.creatorSource, "admin"),
+          coreVisibleToOwner(warehouseOwner(warehouseId)),
         ),
         with: {
           category: {
@@ -8420,6 +8426,23 @@ const warehouseProductCreation = {
       };
     }),
 
+  /** Type, Category, Sub category and Core identity for Create Product. */
+  getWarehouseIdentityOptions: warehouseProcedure.handler(async ({ context }) =>
+    storeIdentityOptions(warehouseOwner(context.session.user.id)),
+  ),
+
+  /** "Add" in the Create Product Sub category search. */
+  createWarehouseSubCategory: warehouseProcedure
+    .input(createStoreSubCategoryInput)
+    .handler(async ({ input }) => createStoreSubCategory(input)),
+
+  /** "Add" in the Create Product Core identity search: store-only. */
+  createWarehouseCoreProduct: warehouseProcedure
+    .input(createStoreCoreProductInput)
+    .handler(async ({ context, input }) =>
+      createStoreCoreProduct(warehouseOwner(context.session.user.id), input),
+    ),
+
   /** "Create brand" in Create Product: a store-only brand for this warehouse. */
   createWarehouseStoreBrand: warehouseProcedure
     .input(createStoreBrandInput)
@@ -8451,7 +8474,7 @@ const warehouseProductCreation = {
         const core = await tx.query.coreProductIdentity.findFirst({
           where: and(
             eq(coreProductIdentity.id, input.coreProductId),
-            eq(coreProductIdentity.creatorSource, "admin"),
+            coreVisibleToOwner(warehouseOwner(warehouseId)),
           ),
           with: { category: { with: { type: true } }, subCategory: true },
         });

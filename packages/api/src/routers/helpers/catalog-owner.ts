@@ -1,5 +1,9 @@
 import { db } from "@bikalpo-project/db";
-import { brand, variantOption } from "@bikalpo-project/db/schema";
+import {
+  brand,
+  coreProductIdentity,
+  variantOption,
+} from "@bikalpo-project/db/schema";
 import type { CatalogOwnerType } from "@bikalpo-project/db/schema/brand";
 import { and, eq, isNull, or, type SQL, sql } from "drizzle-orm";
 
@@ -25,6 +29,21 @@ export function visibleToOwner(
   return or(
     isNull(table.ownerId),
     and(eq(table.ownerType, owner.ownerType), eq(table.ownerId, owner.ownerId)),
+  )!;
+}
+
+/**
+ * Core products a store can use: the admin catalog plus the core identities
+ * the store added itself from Create Product (`creator_source` = shop or
+ * warehouse, `created_by_id` = the store).
+ */
+export function coreVisibleToOwner(owner: CatalogOwner): SQL {
+  return or(
+    eq(coreProductIdentity.creatorSource, "admin"),
+    and(
+      eq(coreProductIdentity.creatorSource, owner.ownerType),
+      eq(coreProductIdentity.createdById, owner.ownerId),
+    ),
   )!;
 }
 
