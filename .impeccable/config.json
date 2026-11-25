@@ -1,0 +1,14 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "design-system-font",
+        "value": "arial",
+        "createdAt": "2026-11-25T12:08:25.087Z",
+        "reason": "Claude: printed 70x40mm barcode label uses a plain system font for label printers; not app UI"
+      }
+    ]
+  }
+}

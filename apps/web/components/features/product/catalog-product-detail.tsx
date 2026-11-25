@@ -23,6 +23,10 @@ import {
   resolveBrandScope,
   scopeVariantPrices,
 } from "@/app/(dashboard)/dashboard/admin/web-view/_lib/brand-scope";
+import {
+  type FetchPrintLabels,
+  PrintLabelsDialog,
+} from "@/components/features/labels/print-labels-dialog";
 import { StarRating } from "@/components/features/reviews/star-rating";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -144,6 +148,16 @@ function formatDate(value: string | Date | null | undefined) {
   });
 }
 
+/** Seller panels: Print Label for the seller's own copy of this product. */
+export type CatalogPrintLabels = {
+  queryKey: readonly unknown[];
+  fetchLabels: FetchPrintLabels;
+  /** The seller's own copy of this brand, if they added it. */
+  productId: number | null;
+  /** The catalog item: without their own copy, the seller's products of it. */
+  coreProductId?: number;
+};
+
 export type CatalogProductAction = {
   label: string;
   kind: "add" | "edit";
@@ -171,6 +185,7 @@ export function CatalogProductDetail({
   primaryAction,
   brandPicker,
   brandless = false,
+  printLabels,
 }: {
   product: DetailProduct;
   brandId?: number | null;
@@ -189,7 +204,9 @@ export function CatalogProductDetail({
    * brand when adding it.
    */
   brandless?: boolean;
+  printLabels?: CatalogPrintLabels;
 }) {
+  const [printOpen, setPrintOpen] = useState(false);
   // Seller panels live on the shop./warehouse. subdomains, where a relative
   // /products link would be rewritten into the portal. Resolve the public
   // host after mount so server and client render the same first href.
@@ -534,11 +551,35 @@ export function CatalogProductDetail({
             )}
             <Button
               variant="outline"
-              onClick={() => toast.info("Label printing is coming soon.")}
+              onClick={() => {
+                if (!printLabels) {
+                  toast.info("Label printing is coming soon.");
+                } else if (
+                  printLabels.productId === null &&
+                  !printLabels.coreProductId
+                ) {
+                  toast.info("Add this product to your products to print its labels.");
+                } else {
+                  setPrintOpen(true);
+                }
+              }}
             >
               <Printer className="size-4" />
               Print Label
             </Button>
+            {printLabels && (printLabels.productId || printLabels.coreProductId) ? (
+              <PrintLabelsDialog
+                open={printOpen}
+                onOpenChange={setPrintOpen}
+                queryKey={printLabels.queryKey}
+                fetchLabels={printLabels.fetchLabels}
+                filter={
+                  printLabels.productId
+                    ? { productIds: [printLabels.productId] }
+                    : { coreProductId: printLabels.coreProductId }
+                }
+              />
+            ) : null}
           </div>
         </div>
       </div>

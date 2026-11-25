@@ -8,7 +8,7 @@ import {
   ShoppingCart,
 } from "lucide-react";
 import Link from "next/link";
-import { Fragment, type ReactNode, useMemo, useState } from "react";
+import { Fragment, type ReactNode, useEffect, useMemo, useState } from "react";
 import {
   CatalogActionBar,
   CatalogFilterPanel,
@@ -18,6 +18,8 @@ import { FilterSelect } from "@/components/features/product/components/product-c
 import {
   formatBreakdown,
   matchesStockSearch,
+  narrowToScannedSize,
+  scannedCode,
   productIdLabel,
   type RealtimeStockProduct,
   STOCK_STATUS_LABELS,
@@ -137,7 +139,9 @@ export function RealtimeStockPage({
         String(product.subCategoryId) === subCategoryFilter) &&
       matchesStatus(product, statusFilter) &&
       matchesStockSearch(product, search),
-  );
+  ).map((product) => narrowToScannedSize(product, search));
+  // A scanned or typed barcode opens its product on the exact size.
+  const scanned = scannedCode(search);
 
   const hasFilters =
     search !== "" ||
@@ -228,6 +232,7 @@ export function RealtimeStockPage({
       </CatalogActionBar>
 
       <StockTable
+        openIds={scanned ? rows.map((row) => row.productId) : undefined}
         rows={rows}
         defaultLowStockLevel={data?.defaultLowStockLevel ?? 5}
         onSaveLowStockLevel={onSaveLowStockLevel}
@@ -256,6 +261,7 @@ function StockTable({
   errorMessage,
   onRetry,
   emptyDescription,
+  openIds,
 }: {
   rows: RealtimeStockProduct[];
   defaultLowStockLevel: number;
@@ -266,9 +272,18 @@ function StockTable({
   errorMessage?: string;
   onRetry: () => void;
   emptyDescription: string;
+  /** Rows to open, e.g. the products a scanned barcode found. */
+  openIds?: number[];
 }) {
   // Rows open in place (client, 2026-11-25): no separate View page.
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
+  const openKey = openIds?.join(",") ?? "";
+  useEffect(() => {
+    if (!openKey) return;
+    setExpanded(
+      (current) => new Set([...current, ...openKey.split(",").map(Number)]),
+    );
+  }, [openKey]);
   const toggle = (productId: number) =>
     setExpanded((current) => {
       const next = new Set(current);

@@ -1,3 +1,7 @@
+import {
+  type ProductCodeVariant,
+  productCodesFor,
+} from "@bikalpo-project/db/product-code";
 import { db } from "@bikalpo-project/db";
 import {
   emptyPackStock,
@@ -130,6 +134,8 @@ export type RealtimeStockVariant = {
    * the supplier subtract). Against soldThisMonth it gives the Stock arrow.
    */
   receivedThisMonth: number;
+  /** The size's 13-digit product codes (one per Type), for search by barcode. */
+  codes: string[];
 };
 
 export type RealtimeStockProduct = {
@@ -390,6 +396,40 @@ async function loadExpiredVariantIds(
 }
 
 /** The owner's stock, one row per product. Pass a product id for one product. */
+/** The 13-digit codes of one stock size, from its product's codes. */
+function variantCodes(
+  item: {
+    coreProduct?: { catalogCode: string | null } | null;
+    variantPrices?: Array<{
+      variantOptionId: number;
+      brandId: number | null;
+      saleTypePrices: unknown;
+    }>;
+  },
+  variant: {
+    brandId: number | null;
+    exchangeEnabled: boolean;
+    sourceVariantOptionId: number | null;
+    sourceVariantOption: ProductCodeVariant["variantOption"];
+  },
+) {
+  const optionId = variant.sourceVariantOptionId;
+  if (optionId == null) return [];
+  const prices = (item.variantPrices ?? []).filter(
+    (price) => price.variantOptionId === optionId,
+  );
+  const price =
+    prices.find((row) => row.brandId === variant.brandId) ?? prices[0];
+  return productCodesFor(item.coreProduct?.catalogCode, [
+    {
+      variantOptionId: optionId,
+      exchangeEnabled: variant.exchangeEnabled,
+      saleTypePrices: (price?.saleTypePrices as Record<string, string> | null) ?? null,
+      variantOption: variant.sourceVariantOption,
+    },
+  ]).map((code) => code.code);
+}
+
 export async function loadRealtimeStock(
   owner: ProductListOwner,
   options: { productId?: number; now?: Date } = {},
@@ -418,6 +458,9 @@ export async function loadRealtimeStock(
           product: {
             with: {
               coreProduct: { columns: { catalogCode: true } },
+              variantPrices: {
+                columns: { variantOptionId: true, brandId: true, saleTypePrices: true },
+              },
               category: { with: { type: { columns: { id: true, name: true } } } },
               subCategory: { columns: { id: true, name: true } },
             },
@@ -516,6 +559,7 @@ export async function loadRealtimeStock(
       soldThisMonth: sold.get(variant.id) ?? 0,
       soldLastMonth: soldBefore.get(variant.id) ?? 0,
       receivedThisMonth: received.get(variant.id) ?? 0,
+      codes: variantCodes(item, variant),
     });
     products.set(item.id, entry);
   }

@@ -68,6 +68,7 @@
     "embla-carousel-react": "^8.6.0",
     "exceljs": "^4.4.0",
     "html2canvas-pro": "^2.0.2",
+    "jsbarcode": "3.12.3",
     "leaflet": "^1.9.4",
     "lexical": "^0.39.0",
     "lucide-react": "^0.561.0",

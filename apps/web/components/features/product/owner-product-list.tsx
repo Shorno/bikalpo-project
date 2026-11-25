@@ -20,10 +20,13 @@ import {
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { type ReactNode, useEffect, useState } from "react";
-import { toast } from "sonner";
 import { CatalogFilterPanel } from "@/components/features/product/components/catalog-layout";
 import { FilterSelect } from "@/components/features/product/components/product-catalog-table";
 import { OwnerProductKpiCards } from "@/components/features/product/owner-product-kpis";
+import {
+  type FetchPrintLabels,
+  PrintLabelsDialog,
+} from "@/components/features/labels/print-labels-dialog";
 import { SetupTableFooter } from "@/components/features/product-setup/setup-table-footer";
 import { Button } from "@/components/ui/button";
 import {
@@ -88,6 +91,7 @@ export function OwnerProductList({
   fetchKpis,
   detailHref,
   addProductHref,
+  fetchPrintLabels,
 }: {
   /** Distinguishes the wholesaler and retailer caches. */
   queryKey: readonly unknown[];
@@ -95,8 +99,11 @@ export function OwnerProductList({
   fetchKpis: () => Promise<OwnerProductKpis>;
   detailHref: (productId: number) => string;
   addProductHref: string;
+  /** Print Labels: the owner's products with one label per size and Type. */
+  fetchPrintLabels: FetchPrintLabels;
 }) {
   const isMobile = useIsMobile();
+  const [printOpen, setPrintOpen] = useState(false);
   const router = useRouter();
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
@@ -192,11 +199,17 @@ export function OwnerProductList({
             variant="outline"
             size="sm"
             className="max-md:min-h-10"
-            onClick={() => toast.info("Label printing is coming soon.")}
+            onClick={() => setPrintOpen(true)}
           >
             <Printer aria-hidden="true" className="size-4" />
             Print Labels
           </Button>
+          <PrintLabelsDialog
+            open={printOpen}
+            onOpenChange={setPrintOpen}
+            queryKey={queryKey}
+            fetchLabels={fetchPrintLabels}
+          />
           <Button asChild size="sm" className="max-md:min-h-10">
             <Link href={addProductHref}>
               <PackagePlus aria-hidden="true" className="size-4" />

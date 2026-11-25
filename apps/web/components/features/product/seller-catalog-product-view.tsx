@@ -6,6 +6,7 @@ import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
+import type { FetchPrintLabels } from "@/components/features/labels/print-labels-dialog";
 import { CatalogProductDetail } from "@/components/features/product/catalog-product-detail";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -35,6 +36,7 @@ export function SellerCatalogProductView({
   addHref,
   editHref,
   addBrandProduct,
+  fetchPrintLabels,
 }: {
   coreProductId: number;
   queryKey: readonly unknown[];
@@ -45,6 +47,8 @@ export function SellerCatalogProductView({
   editHref: (productId: number) => string;
   /** Creates the seller's copy of an admin brand product; resolves to its id. */
   addBrandProduct: (productId: number) => Promise<{ productId: number }>;
+  /** Print Label for the seller's own copy of the chosen brand. */
+  fetchPrintLabels: FetchPrintLabels;
 }) {
   const queryClient = useQueryClient();
   const pathname = usePathname();
@@ -114,6 +118,12 @@ export function SellerCatalogProductView({
         listingLabel="Product Catalog"
         viewer="seller"
         brandless
+        printLabels={{
+          queryKey,
+          fetchLabels: fetchPrintLabels,
+          productId: null,
+          coreProductId,
+        }}
         primaryAction={{ label: "Add Product", href: addHref, kind: "add" }}
       />
     ) : null;
@@ -161,6 +171,12 @@ export function SellerCatalogProductView({
       listingLabel="Product Catalog"
       viewer="seller"
       brandPicker={brandPicker}
+      printLabels={{
+        queryKey,
+        fetchLabels: fetchPrintLabels,
+        productId: view.ownProductId,
+        coreProductId,
+      }}
       primaryAction={
         view.ownProductId
           ? {

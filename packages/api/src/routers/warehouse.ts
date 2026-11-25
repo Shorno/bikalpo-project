@@ -7,6 +7,10 @@
  * - Mutations (warehouse role only — update order status)
  */
 
+import {
+  loadPrintLabels,
+  printLabelsInput,
+} from "./helpers/print-labels";
 import { brandProductName } from "./helpers/brand-product-name";
 import { withOwnerRetailPrices } from "./helpers/seller-variant-prices";
 import { withCoreTypeRuleSettings } from "./helpers/product-type-rules";
@@ -10039,6 +10043,13 @@ const pricingQueries = {
         { ownerType: "warehouse", ownerId: context.session.user.id },
         input,
       ),
+    ),
+
+  /** Print label: the seller's products with one label per size and Type. */
+  getPrintLabels: warehouseProcedure
+    .input(printLabelsInput)
+    .handler(({ context, input }) =>
+      loadPrintLabels({ ownerType: "warehouse", ownerId: context.session.user.id }, input),
     ),
 
   /** Catalog product page: an admin brand product without prices, and the seller's own copy. */

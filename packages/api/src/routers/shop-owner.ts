@@ -9,6 +9,10 @@
  * - Inventory and pricing management
  */
 
+import {
+  loadPrintLabels,
+  printLabelsInput,
+} from "./helpers/print-labels";
 import { auth, setCredentialPassword } from "@bikalpo-project/auth";
 import {
   getLoginSessionExpiresAt,
@@ -10916,6 +10920,13 @@ const shopProductEndpoints = {
         { ownerType: "shop", ownerId: shopTenantId(context.session.user) },
         input,
       ),
+    ),
+
+  /** Print label: the seller's products with one label per size and Type. */
+  getPrintLabels: permission("shop_products", "view")
+    .input(printLabelsInput)
+    .handler(({ context, input }) =>
+      loadPrintLabels({ ownerType: "shop", ownerId: shopTenantId(context.session.user) }, input),
     ),
 
   /** Catalog product page: an admin brand product without prices, and the seller's own copy. */

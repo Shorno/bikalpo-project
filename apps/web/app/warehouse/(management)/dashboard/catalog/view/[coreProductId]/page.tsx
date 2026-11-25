@@ -6,6 +6,7 @@ import {
   SellerCatalogProductView,
   type SellerCatalogView,
 } from "@/components/features/product/seller-catalog-product-view";
+import type { PrintLabelProduct } from "@/components/features/labels/print-label-model";
 import { orpc } from "@/utils/orpc";
 
 const CATALOG_URL = "/warehouse/dashboard/catalog";
@@ -25,6 +26,8 @@ export default function WarehouseCatalogProductPage() {
           ) as Promise<SellerCatalogView>
         }
         catalogUrl={CATALOG_URL}
+        fetchPrintLabels={(input) =>
+          (orpc.warehouse as any).getPrintLabels.call(input) as Promise<PrintLabelProduct[]>}
         addBrandProduct={(productId) =>
           (orpc.warehouse as any).addCatalogBrandProduct.call({
             productId,

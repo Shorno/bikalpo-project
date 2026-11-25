@@ -26,6 +26,8 @@ export type RealtimeStockVariant = {
   soldLastMonth: number;
   /** Stock added this month (purchases and manual changes). */
   receivedThisMonth: number;
+  /** The size's 13-digit codes (one per Type), for search by barcode. */
+  codes?: string[];
 };
 
 export type RealtimeStockProduct = {
@@ -89,9 +91,15 @@ export function productIdLabel(product: RealtimeStockProduct) {
   return product.productCode || `#${product.productId}`;
 }
 
+/** The 13 digits of a typed or scanned product code, or null. */
+export function scannedCode(query: string) {
+  const digits = query.trim().replace(/[\s-]/g, "");
+  return /^\d{13}$/.test(digits) ? digits : null;
+}
+
 /**
- * Search by name, Product ID or a typed/scanned 13-digit product code
- * (its first 8 digits are the Product ID; brands share it for now).
+ * Search by name, Product ID or a typed/scanned 13-digit product code. A
+ * full code finds the exact size (brands share codes for now).
  */
 export function matchesStockSearch(
   product: RealtimeStockProduct,
@@ -99,10 +107,11 @@ export function matchesStockSearch(
 ) {
   const text = query.trim().toLowerCase();
   if (!text) return true;
-  const digits = text.replace(/[\s-]/g, "");
-  if (/^\d{13}$/.test(digits)) {
-    return product.productCode?.startsWith(digits.slice(0, 8)) ?? false;
+  const code = scannedCode(text);
+  if (code) {
+    return product.variants.some((variant) => variant.codes?.includes(code));
   }
+  const digits = text.replace(/[\s-]/g, "");
   return [
     product.name,
     productIdLabel(product),
@@ -113,6 +122,19 @@ export function matchesStockSearch(
   ].some((field) =>
     (field ?? "").toLowerCase().includes(/^\d[\d\s-]*$/.test(text) ? digits : text),
   );
+}
+
+/** For a scanned code, the product with only that size; otherwise as is. */
+export function narrowToScannedSize(
+  product: RealtimeStockProduct,
+  query: string,
+): RealtimeStockProduct {
+  const code = scannedCode(query);
+  if (!code) return product;
+  const variants = product.variants.filter((variant) =>
+    variant.codes?.includes(code),
+  );
+  return variants.length > 0 ? { ...product, variants } : product;
 }
 
 export type StockTrend = "up" | "down" | "flat";

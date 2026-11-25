@@ -18,6 +18,7 @@ export default function ShopProductsPage() {
       fetchKpis={() => orpc.shopOwner.getProductKpis.call()}
       detailHref={(productId) => `/dashboard/products/${productId}`}
       addProductHref="/dashboard/product-catalog"
+      fetchPrintLabels={(input) => orpc.shopOwner.getPrintLabels.call(input)}
     />
   );
 }

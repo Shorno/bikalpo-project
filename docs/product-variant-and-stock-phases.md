@@ -121,7 +121,7 @@ Code that was changed:
 - `variant_attribute` (`packages/db/src/schema/variant-attribute.ts`) holds
   attribute names and their options as plain strings.
 - `variant_option.skuCode` (`variant-option.ts`) is a 2-digit code per
-  option; store-only options get none.
+  option; store-only options got none until 2026-11-25 (see Phase 3).
 - Prices today: only New (`consumerPrice`) and Exchange
   (`exchangeEnabled` + `exchangeCreditAmount`). Refill, Regular, Premium
   and Standard have no storage.
@@ -155,8 +155,14 @@ Built (2026-11-24):
   scanned code (spaces and dashes ignored).
 - Brands share codes: a code finds every brand under that core identity.
   Agreed for now; to be revisited.
-- Store-only sizes (made by a shop or warehouse) have no size code, so they
-  get no product code.
+- Store-only sizes (made by a shop or warehouse) get a size code too
+  (client, 2026-11-25), so every size can have a barcode. Codes are one per
+  size within a Type: a size already in the Type (same canonical signature,
+  admin's or another store's) passes its code on, so the same 14 KG scans
+  the same everywhere; a new size takes the Type's next code
+  (`sizeCodeFor` in `structured-variant-option.ts`). Migration `0100` gives
+  the existing store-only sizes their codes (Gas: 14 KG → 07,
+  "Regular / 12 KG" → 08, 10 KG → 09, 15 KG → 10, 50 KG → 11).
 
 ## Phase 4: Retailer Real-time Stock
 
@@ -425,8 +431,31 @@ reads `stock_entry` through the same helper.
   price, price amount on the far right, divider line kept. Pack/unit stays
   a typed sample for now.
 - "Print label" opens a preview with the paper size (for example 70 × 40
-  mm), then prints. Today the buttons only say "coming soon"
-  (`catalog-product-detail.tsx`, `owner-product-list.tsx`).
+  mm), then prints.
+
+Built (2026-11-25), retailer and warehouse:
+
+- Label design from the client (one default design): brand; "Container:
+  number unit" (the unit is typed when printing, prefilled from the size);
+  a middle divider with the price on the right; Code 128 bars; the 13-digit
+  code underneath. 70 × 40 mm, one label per page.
+- Barcode library: JsBarcode 3.12.3 (`apps/web`), format CODE128.
+  `components/features/labels/barcode.tsx`.
+- API: `getPrintLabels` on `shopOwner` and `warehouse`
+  (`helpers/print-labels.ts` + tests). One label per active size and Type
+  of the seller's active products. Price: the Pricing table's price for
+  that Type; New (and sizes without a Type) fall back to the selling
+  price; otherwise blank. Filter by `productIds` or `coreProductId`.
+- UI: `components/features/labels/print-labels-dialog.tsx`. Tick labels,
+  type the unit, set copies (1–100), preview, Print (hidden frame,
+  `@page` 70mm × 40mm). Products page "Print Labels" opens it for every
+  product; the catalog product page "Print Label" opens it for the
+  seller's own copy of that brand, else their products of that catalog
+  item, with those labels ticked. Admin's button still says "coming soon".
+- Search by barcode: Real-time Stock rows carry each size's codes; a full
+  13-digit code (typed or scanned) shows only the products with that code,
+  opened on that size. Expired Products still matches the first 8 digits.
+- Not yet checked on a physical label printer.
 
 ## Phase 8: Warehouse
 

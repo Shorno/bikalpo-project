@@ -5,6 +5,7 @@ import {
   OwnerProductList,
   type OwnerProductListResponse,
 } from "@/components/features/product/owner-product-list";
+import type { PrintLabelProduct } from "@/components/features/labels/print-label-model";
 import { orpc } from "@/utils/orpc";
 
 const WH = "/warehouse/dashboard";
@@ -25,6 +26,8 @@ export default function WarehouseProductsPage() {
       }
       detailHref={(productId) => `${WH}/stock/product-${productId}`}
       addProductHref={`${WH}/catalog`}
+      fetchPrintLabels={(input) =>
+          (orpc.warehouse as any).getPrintLabels.call(input) as Promise<PrintLabelProduct[]>}
     />
   );
 }

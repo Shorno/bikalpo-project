@@ -25,6 +25,7 @@ export default function RetailerCatalogProductPage() {
           ) as Promise<SellerCatalogView>
         }
         catalogUrl={CATALOG_URL}
+        fetchPrintLabels={(input) => orpc.shopOwner.getPrintLabels.call(input)}
         addBrandProduct={(productId) =>
           orpc.shopOwner.addCatalogBrandProduct.call({ productId }) as Promise<{
             productId: number;

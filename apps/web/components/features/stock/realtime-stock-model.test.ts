@@ -4,6 +4,7 @@ import {
   formatBreakdown,
   formatTotalStock,
   matchesStockSearch,
+  narrowToScannedSize,
   type RealtimeStockProduct,
   type RealtimeStockVariant,
   soldTrend,
@@ -48,9 +49,25 @@ test("breakdown text follows the client's table", () => {
 test("search finds a product by name, Product ID or 13-digit code", () => {
   assert.equal(matchesStockSearch(product, "omera"), true);
   assert.equal(matchesStockSearch(product, "0202 0117"), true);
-  assert.equal(matchesStockSearch(product, "0202011700302"), true);
-  assert.equal(matchesStockSearch(product, "0202011800302"), false);
   assert.equal(matchesStockSearch(product, "rice"), false);
+});
+
+test("a full 13-digit code finds the exact size", () => {
+  const twoSizes: RealtimeStockProduct = {
+    ...product,
+    variants: [
+      size({ variantId: 1, label: "12 KG", codes: ["0202011700101", "0202011700102"] }),
+      size({ variantId: 2, label: "35 KG", codes: ["0202011700301", "0202011700302"] }),
+    ],
+  };
+  assert.equal(matchesStockSearch(twoSizes, "0202011700302"), true);
+  assert.equal(matchesStockSearch(twoSizes, "0202 0117 0030 2"), true);
+  assert.equal(matchesStockSearch(twoSizes, "0202011700402"), false);
+  assert.deepEqual(
+    narrowToScannedSize(twoSizes, "0202011700302").variants.map((v) => v.label),
+    ["35 KG"],
+  );
+  assert.equal(narrowToScannedSize(twoSizes, "omera").variants.length, 2);
 });
 
 const size = (patch: Partial<RealtimeStockVariant>): RealtimeStockVariant => ({
