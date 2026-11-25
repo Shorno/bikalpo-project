@@ -1,5 +1,5 @@
-import { EmptyPackManagement } from "@/components/features/stock/empty-pack-management";
+import { EmptyPackPage } from "@/components/features/stock/empty-pack-page";
 
 export default function RetailerEmptyPackPage() {
-  return <EmptyPackManagement />;
+  return <EmptyPackPage />;
 }

@@ -1,6 +1,5 @@
 import { db } from "@bikalpo-project/db";
 import {
-  brand,
   category,
   emptyPackMovement,
   emptyPackStock,
@@ -10,13 +9,14 @@ import {
   product,
   productType,
   productVariant,
-  user,
 } from "@bikalpo-project/db/schema";
+import { resolveVariantStockSemantics } from "@bikalpo-project/db/variant-definition";
 import { ORPCError } from "@orpc/server";
 import { and, eq, inArray, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import { shopOrWarehousePermissionProcedure } from "../index";
 import { shopOrWarehouseOwnerScope } from "../shop-portal-scope";
+import { buildEmptyPackList, type EmptyPackSize } from "./helpers/empty-pack-list";
 
 function resolveOwner(user: { id: string; role?: string | null }) {
   return shopOrWarehouseOwnerScope(user, "inventory");
@@ -25,33 +25,21 @@ function resolveOwner(user: { id: string; role?: string | null }) {
 const actionSchema = z.enum(["damage", "supplier_return", "sale_application"]);
 
 export const emptyPackManagementRouter = {
+  /**
+   * Empty Pack page (client, 2026-11-25): every returnable-pack product
+   * (LPG cylinders) with each size's total and how many empties are still
+   * owed by customers on Exchange sales (In Market).
+   */
   getSummary: shopOrWarehousePermissionProcedure(
     "shop_stock",
     "view",
     "inventory",
   ).handler(async ({ context }) => {
     const { ownerId, ownerType } = resolveOwner(context.session.user);
-    const [owner] = await db
-      .select({
-        name: user.name,
-        shopName: user.shopName,
-        warehouseName: user.warehouseName,
-      })
-      .from(user)
-      .where(eq(user.id, ownerId))
-      .limit(1);
-
     const [fullRows, emptyRows] = await Promise.all([
       db
         .select({
-          variantId: productVariant.id,
-          productId: product.id,
-          productName: product.name,
-          productImage: product.image,
-          sku: productVariant.sku,
-          unitLabel: productVariant.unitLabel,
-          weightKg: productVariant.weightKg,
-          brandName: brand.name,
+          variantId: inventory.variantId,
           availableQty: inventory.availableQty,
           reservedQty: inventory.reservedQty,
         })
@@ -60,13 +48,6 @@ export const emptyPackManagementRouter = {
         .innerJoin(product, eq(productVariant.productId, product.id))
         .leftJoin(category, eq(product.categoryId, category.id))
         .leftJoin(productType, eq(category.typeId, productType.id))
-        .leftJoin(
-          brand,
-          eq(
-            brand.id,
-            sql`COALESCE(${productVariant.brandId}, ${product.brandId})`,
-          ),
-        )
         .where(
           and(
             eq(inventory.ownerType, ownerType),
@@ -79,32 +60,10 @@ export const emptyPackManagementRouter = {
         ),
       db
         .select({
-          variantId: productVariant.id,
-          productId: product.id,
-          productName: product.name,
-          productImage: product.image,
-          sku: productVariant.sku,
-          unitLabel: productVariant.unitLabel,
-          weightKg: productVariant.weightKg,
-          brandName: brand.name,
+          variantId: emptyPackStock.variantId,
           availableQty: emptyPackStock.availableQty,
-          damagedQty: emptyPackStock.damagedQty,
-          returnedQty: emptyPackStock.returnedQty,
-          appliedToSalesQty: emptyPackStock.appliedToSalesQty,
         })
         .from(emptyPackStock)
-        .innerJoin(
-          productVariant,
-          eq(emptyPackStock.variantId, productVariant.id),
-        )
-        .innerJoin(product, eq(productVariant.productId, product.id))
-        .leftJoin(
-          brand,
-          eq(
-            brand.id,
-            sql`COALESCE(${productVariant.brandId}, ${product.brandId})`,
-          ),
-        )
         .where(
           and(
             eq(emptyPackStock.ownerType, ownerType),
@@ -113,173 +72,85 @@ export const emptyPackManagementRouter = {
         ),
     ]);
 
-    const variantIds = Array.from(
-      new Set([...fullRows, ...emptyRows].map((row) => row.variantId)),
+    const fullByVariant = new Map(
+      fullRows.map((row) => [
+        row.variantId,
+        Number(row.availableQty || 0) + Number(row.reservedQty || 0),
+      ]),
     );
-    const marketRows =
-      variantIds.length === 0
-        ? []
-        : await db
-            .select({
-              variantId: orderItem.variantId,
-              orderNumber: order.orderNumber,
-              saleMode: orderItem.cylinderSaleMode,
-              quantity: orderItem.quantity,
-              modifiedQty: orderItem.modifiedQty,
-              deliveredQty: orderItem.deliveredQty,
-              convertedToNewQty: orderItem.convertedToNewQty,
-            })
-            .from(orderItem)
-            .innerJoin(order, eq(orderItem.orderId, order.id))
-            .where(
-              and(
-                inArray(orderItem.variantId, variantIds),
-                eq(order.status, "delivered"),
-                ownerType === "shop"
-                  ? and(eq(order.shopId, ownerId), eq(order.orderType, "b2c"))
-                  : and(
-                      eq(order.warehouseId, ownerId),
-                      eq(order.orderType, "b2b"),
-                    ),
-              ),
-            );
-
-    type VariantSummary = {
-      variantId: number;
-      productId: number;
-      productName: string;
-      productImage: string | null;
-      sku: string;
-      unitLabel: string;
-      brandName: string;
-      fullQty: number;
-      emptyQty: number;
-      inMarketQty: number;
-      totalQty: number;
-      orderIds: string[];
-      damagedQty: number;
-      returnedQty: number;
-      appliedToSalesQty: number;
-    };
-    const variants = new Map<number, VariantSummary>();
-    const ensureVariant = (
-      row: (typeof fullRows)[number] | (typeof emptyRows)[number],
-    ) => {
-      let current = variants.get(row.variantId);
-      if (!current) {
-        current = {
-          variantId: row.variantId,
-          productId: row.productId,
-          productName: row.productName,
-          productImage: row.productImage,
-          sku: row.sku || `VAR-${row.variantId}`,
-          unitLabel:
-            row.unitLabel ||
-            (Number(row.weightKg || 0) > 0
-              ? `${Number(row.weightKg)} KG`
-              : "Cylinder"),
-          brandName: row.brandName || "Unbranded",
-          fullQty: 0,
-          emptyQty: 0,
-          inMarketQty: 0,
-          totalQty: 0,
-          orderIds: [],
-          damagedQty: 0,
-          returnedQty: 0,
-          appliedToSalesQty: 0,
-        };
-        variants.set(row.variantId, current);
-      }
-      return current;
-    };
-    for (const row of fullRows) {
-      ensureVariant(row).fullQty =
-        Number(row.availableQty || 0) + Number(row.reservedQty || 0);
-    }
-    for (const row of emptyRows) {
-      const current = ensureVariant(row);
-      current.emptyQty = row.availableQty;
-      current.damagedQty = row.damagedQty;
-      current.returnedQty = row.returnedQty;
-      current.appliedToSalesQty = row.appliedToSalesQty;
-    }
-    for (const row of marketRows) {
-      if (!row.variantId) continue;
-      const current = variants.get(row.variantId);
-      if (!current) continue;
-      const soldQty = Number(
-        row.deliveredQty ?? row.modifiedQty ?? row.quantity,
-      );
-      const outstanding =
-        row.saleMode === "exchange"
-          ? Number(row.convertedToNewQty || 0)
-          : soldQty;
-      if (outstanding <= 0) continue;
-      current.inMarketQty += outstanding;
-      current.orderIds.push(row.orderNumber);
-    }
-    for (const current of variants.values()) {
-      current.totalQty =
-        current.fullQty + current.emptyQty + current.inMarketQty;
-      current.orderIds = Array.from(new Set(current.orderIds));
-    }
-
-    const productMap = new Map<
-      number,
-      {
-        productId: number;
-        productName: string;
-        productImage: string | null;
-        sku: string;
-        variants: VariantSummary[];
-        fullQty: number;
-        emptyQty: number;
-        inMarketQty: number;
-        totalQty: number;
-        orderIds: string[];
-      }
-    >();
-    for (const variant of variants.values()) {
-      const current = productMap.get(variant.productId) ?? {
-        productId: variant.productId,
-        productName: variant.productName,
-        productImage: variant.productImage,
-        sku: variant.sku,
-        variants: [],
-        fullQty: 0,
-        emptyQty: 0,
-        inMarketQty: 0,
-        totalQty: 0,
-        orderIds: [],
-      };
-      current.variants.push(variant);
-      current.fullQty += variant.fullQty;
-      current.emptyQty += variant.emptyQty;
-      current.inMarketQty += variant.inMarketQty;
-      current.totalQty += variant.totalQty;
-      current.orderIds.push(...variant.orderIds);
-      current.orderIds = Array.from(new Set(current.orderIds));
-      productMap.set(variant.productId, current);
-    }
-    const products = Array.from(productMap.values()).sort((a, b) =>
-      a.productName.localeCompare(b.productName),
+    const emptyByVariant = new Map(
+      emptyRows.map((row) => [row.variantId, Number(row.availableQty || 0)]),
     );
+    const variantIds = [
+      ...new Set([...fullByVariant.keys(), ...emptyByVariant.keys()]),
+    ];
+    if (variantIds.length === 0) return { products: [] };
 
-    return {
-      ownerType,
-      storeName:
-        ownerType === "warehouse"
-          ? owner?.warehouseName || owner?.name || "Warehouse"
-          : owner?.shopName || owner?.name || "Retail Store",
-      asOf: new Date(),
-      summary: {
-        fullQty: products.reduce((sum, item) => sum + item.fullQty, 0),
-        emptyQty: products.reduce((sum, item) => sum + item.emptyQty, 0),
-        inMarketQty: products.reduce((sum, item) => sum + item.inMarketQty, 0),
-        totalQty: products.reduce((sum, item) => sum + item.totalQty, 0),
-      },
-      products,
-    };
+    const [variantRows, sales] = await Promise.all([
+      db.query.productVariant.findMany({
+        where: inArray(productVariant.id, variantIds),
+        with: {
+          sourceVariantOption: true,
+          product: {
+            with: {
+              coreProduct: { columns: { catalogCode: true } },
+              category: { columns: { id: true, name: true } },
+              subCategory: { columns: { id: true, name: true } },
+            },
+          },
+        },
+      }),
+      db
+        .select({
+          variantId: orderItem.variantId,
+          orderNumber: order.orderNumber,
+          saleMode: orderItem.cylinderSaleMode,
+          missingEmptyQty: orderItem.convertedToNewQty,
+        })
+        .from(orderItem)
+        .innerJoin(order, eq(orderItem.orderId, order.id))
+        .where(
+          and(
+            inArray(orderItem.variantId, variantIds),
+            eq(order.status, "delivered"),
+            eq(orderItem.cylinderSaleMode, "exchange"),
+            ownerType === "shop"
+              ? and(eq(order.shopId, ownerId), eq(order.orderType, "b2c"))
+              : and(eq(order.warehouseId, ownerId), eq(order.orderType, "b2b")),
+          ),
+        ),
+    ]);
+
+    const sizes: EmptyPackSize[] = [];
+    for (const variant of variantRows) {
+      const item = variant.product;
+      if (!item) continue;
+      let label = variant.unitLabel || `${Number(variant.weightKg || 0)} KG`;
+      if (variant.sourceVariantOption) {
+        try {
+          label = resolveVariantStockSemantics(variant.sourceVariantOption)
+            .displayLabel;
+        } catch {
+          // Keep the stored label for an option that no longer resolves.
+        }
+      }
+      sizes.push({
+        variantId: variant.id,
+        productId: item.id,
+        productCode:
+          item.coreProduct?.catalogCode ?? item.catalogCode ?? item.sku ?? null,
+        productName: item.name,
+        label,
+        categoryId: item.category?.id ?? null,
+        categoryName: item.category?.name ?? null,
+        subCategoryId: item.subCategory?.id ?? null,
+        subCategoryName: item.subCategory?.name ?? null,
+        fullQty: fullByVariant.get(variant.id) ?? 0,
+        emptyQty: emptyByVariant.get(variant.id) ?? 0,
+      });
+    }
+
+    return { products: buildEmptyPackList(sizes, sales) };
   }),
 
   recordAction: shopOrWarehousePermissionProcedure(

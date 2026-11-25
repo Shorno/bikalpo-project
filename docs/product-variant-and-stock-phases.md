@@ -15,7 +15,7 @@ depend on each product having Size × Type variants.
 | 3 | 13-digit product code | Done: `9efe1189` |
 | 4 | Retailer Real-time Stock | Done: `3aa6b50e`, rows open in place `bca2a40e`; graphs later |
 | 5 | Expired products by batch | Done: `1ac5859f` |
-| 6 | Empty Pack | Not started |
+| 6 | Empty Pack | Done (2026-11-25); no actions yet |
 | 7 | Label printing | Not started |
 | 8 | Warehouse copy of phases 4–7 | Real-time Stock `4381c1bd`; Expired Products done (2026-11-25) |
 
@@ -393,6 +393,29 @@ reads `stock_entry` through the same helper.
   price. If they paid, it is not in market. A warning shows on receipt.
 - Today `empty-pack-management.ts` counts `convertedToNewQty` (empties not
   returned and charged as New) as in market, which does not match.
+
+### Built (2026-11-25)
+
+- New rule from the client (2026-11-25), replacing the one above: In
+  Market = empties still owed on an Exchange sale. 10 exchanged, 10
+  returned → 0; none returned → 10; 5 returned → 5. New sales owe none.
+  The delivery hand-off already records this per order line: expected
+  empties − collected = `convertedToNewQty`; that is what is counted.
+- Page `stock/empty-pack`, retailer and warehouse
+  (`components/features/stock/empty-pack-page.tsx`, replaces
+  `empty-pack-management.tsx`): search, Category / Sub Category /
+  Variant filters, then the Empty Pack List: ID (Product ID) | Name |
+  Variant | Total | In Market. A product with several sizes opens them
+  underneath; hovering In Market lists the order IDs. No Action buttons
+  yet (requirement not settled); `recordAction` stays on the server.
+- Total = full in stock + empties in hand + In Market (unchanged).
+- API: `emptyPackManagement.getSummary` reshaped
+  (`helpers/empty-pack-list.ts`).
+- Warehouse In Market is always 0 for now: warehouse deliveries credit
+  every expected empty and do not record a shortfall.
+- Checked in Chrome on both. No delivered Exchange order is short of
+  empties yet, so In Market shows 0 everywhere; the counting is covered
+  by unit tests.
 
 ## Phase 7: Label printing
 
