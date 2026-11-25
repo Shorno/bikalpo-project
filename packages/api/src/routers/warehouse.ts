@@ -96,6 +96,11 @@ import {
   ownerProductListInput,
 } from "./helpers/owner-product-list";
 import {
+  DEFAULT_EXPIRY_ALERT_DAYS,
+  EXPIRY_ALERT_DAY_OPTIONS,
+} from "./helpers/expiry-batches";
+import { loadExpiryStock } from "./helpers/expiry-stock";
+import {
   DEFAULT_LOW_STOCK_LEVEL,
   loadRealtimeStock,
 } from "./helpers/realtime-stock";
@@ -10093,6 +10098,59 @@ const pricingQueries = {
     });
     return { products, defaultLowStockLevel: DEFAULT_LOW_STOCK_LEVEL };
   }),
+
+  /**
+   * Expired Products: products with expiry tracking holding stock in a
+   * batch past, or within the alert days of, its expiry date. The same
+   * shape as the shop's.
+   */
+  getExpiryStock: warehouseProcedure.handler(async ({ context }) => {
+    const products = await loadExpiryStock({
+      ownerType: "warehouse",
+      ownerId: context.session.user.id,
+    });
+    return {
+      products,
+      alertDayOptions: [...EXPIRY_ALERT_DAY_OPTIONS],
+      defaultAlertDays: DEFAULT_EXPIRY_ALERT_DAYS,
+    };
+  }),
+
+  /** Days before a batch's expiry date that the Expired page warns. */
+  setProductExpiryAlertDays: warehouseProcedure
+    .input(
+      z.object({
+        productId: z.number().int().positive(),
+        alertDays: z
+          .number()
+          .int()
+          .refine(
+            (days) => (EXPIRY_ALERT_DAY_OPTIONS as readonly number[]).includes(days),
+            "Choose one of the alert options",
+          ),
+      }),
+    )
+    .handler(async ({ context, input }) => {
+      const [updated] = await db
+        .update(product)
+        .set({ expiryAlertDays: input.alertDays })
+        .where(
+          and(
+            eq(product.id, input.productId),
+            ownerProductCondition({
+              ownerType: "warehouse",
+              ownerId: context.session.user.id,
+            }),
+          ),
+        )
+        .returning({ id: product.id, alertDays: product.expiryAlertDays });
+      if (!updated) {
+        throw new ORPCError("NOT_FOUND", {
+          message: "Only your own products can have an expiry alert",
+        });
+      }
+      return { productId: updated.id, alertDays: updated.alertDays };
+    }),
 
   /** The product's low-stock limit; 0 goes back to the default. */
   setProductLowStockLevel: warehouseProcedure

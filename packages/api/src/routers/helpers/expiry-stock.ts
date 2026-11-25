@@ -4,6 +4,7 @@ import {
   inventoryMovement,
   order,
   purchase,
+  stockEntry,
   supplier,
   user,
 } from "@bikalpo-project/db/schema";
@@ -37,6 +38,8 @@ export type ExpiryBatch = {
   variants: string[];
   /** Each variant's stock left in this batch, for Create Damage. */
   parts: { variantId: number; leftQty: number }[];
+  /** Warehouse stock entries in this batch, for its Create Damage. */
+  stockEntryIds: number[];
   unit: string;
   receivedQty: number;
   soldQty: number;
@@ -73,6 +76,171 @@ type VariantInfo = {
   label: string;
   unit: string;
 };
+
+/** A stock-in with where it came from, newest first. */
+type SourcedStockIn = StockIn & {
+  batchNo: string | null;
+  manufactureDate: string | null;
+  receivedAt: Date;
+  /** Rows with the same source, batch, expiry and unit are one batch. */
+  source: string;
+  supplierName: string | null;
+  invoiceNo: string | null;
+  stockEntryId: number | null;
+};
+
+const supplierLabel = (name: string | null, company: string | null) =>
+  [...new Set([name, company].filter(Boolean))].join(" - ") || null;
+
+/**
+ * Shop stock-ins: purchase receipts with the supplier and bill of a
+ * purchase, or the seller and order number of a warehouse order.
+ */
+async function loadShopStockIns(
+  shopId: string,
+  variantIds: number[],
+): Promise<SourcedStockIn[]> {
+  const rows = await db
+    .select({
+      id: inventoryMovement.id,
+      variantId: inventoryMovement.variantId,
+      quantity: inventoryMovement.quantity,
+      unitCost: inventoryMovement.unitCost,
+      batchNo: inventoryMovement.batchNo,
+      manufactureDate: inventoryMovement.manufactureDate,
+      expiryDate: inventoryMovement.expiryDate,
+      occurredAt: inventoryMovement.occurredAt,
+      purchaseId: inventoryMovement.purchaseId,
+      orderId: inventoryMovement.orderId,
+    })
+    .from(inventoryMovement)
+    .where(
+      and(
+        eq(inventoryMovement.ownerType, "shop"),
+        eq(inventoryMovement.ownerId, shopId),
+        eq(inventoryMovement.direction, "in"),
+        eq(inventoryMovement.reason, "purchase_receipt"),
+        inArray(inventoryMovement.variantId, variantIds),
+      ),
+    )
+    .orderBy(desc(inventoryMovement.occurredAt), desc(inventoryMovement.id));
+
+  const dated = rows.filter((row) => row.expiryDate);
+  const purchaseIds = [
+    ...new Set(dated.map((row) => row.purchaseId).filter((id) => id != null)),
+  ] as number[];
+  const orderIds = [
+    ...new Set(dated.map((row) => row.orderId).filter((id) => id != null)),
+  ] as number[];
+  const [purchaseRows, orderRows] = await Promise.all([
+    purchaseIds.length
+      ? db
+          .select({
+            id: purchase.id,
+            invoiceNo: purchase.supplierInvoiceNo,
+            purchaseNumber: purchase.purchaseNumber,
+            supplierName: supplier.name,
+            supplierCompany: supplier.company,
+          })
+          .from(purchase)
+          .leftJoin(supplier, eq(purchase.supplierId, supplier.id))
+          .where(inArray(purchase.id, purchaseIds))
+      : Promise.resolve([]),
+    orderIds.length
+      ? db
+          .select({
+            id: order.id,
+            orderNumber: order.orderNumber,
+            sellerShop: user.shopName,
+            sellerName: user.name,
+          })
+          .from(order)
+          .leftJoin(user, eq(order.warehouseId, user.id))
+          .where(inArray(order.id, orderIds))
+      : Promise.resolve([]),
+  ]);
+  const purchaseById = new Map(purchaseRows.map((row) => [row.id, row]));
+  const orderById = new Map(orderRows.map((row) => [row.id, row]));
+
+  return rows.map((row) => {
+    const bought = row.purchaseId ? purchaseById.get(row.purchaseId) : null;
+    const ordered = row.orderId ? orderById.get(row.orderId) : null;
+    return {
+      id: row.id,
+      variantId: row.variantId,
+      quantity: Number(row.quantity),
+      unitCost: Number(row.unitCost ?? 0),
+      expiryDate: row.expiryDate,
+      batchNo: row.batchNo,
+      manufactureDate: row.manufactureDate,
+      receivedAt: row.occurredAt,
+      source: row.purchaseId
+        ? `p${row.purchaseId}`
+        : row.orderId
+          ? `o${row.orderId}`
+          : `m${row.id}`,
+      supplierName: bought
+        ? supplierLabel(bought.supplierName, bought.supplierCompany)
+        : (ordered?.sellerShop ?? ordered?.sellerName ?? null),
+      invoiceNo: bought
+        ? (bought.invoiceNo ?? bought.purchaseNumber ?? null)
+        : (ordered?.orderNumber ?? null),
+      stockEntryId: null,
+    };
+  });
+}
+
+/**
+ * Warehouse stock-ins: the stock entries from Add Stock and purchase
+ * receiving, with their supplier and invoice reference.
+ */
+async function loadWarehouseStockIns(
+  warehouseId: string,
+  variantIds: number[],
+): Promise<SourcedStockIn[]> {
+  const rows = await db
+    .select({
+      id: stockEntry.id,
+      receiptId: stockEntry.receiptId,
+      variantId: stockEntry.variantId,
+      inventoryDelta: stockEntry.inventoryDelta,
+      totalCost: stockEntry.totalCost,
+      batchNo: stockEntry.batchNo,
+      manufactureDate: stockEntry.manufactureDate,
+      expiryDate: stockEntry.expiryDate,
+      reference: stockEntry.reference,
+      createdAt: stockEntry.createdAt,
+      supplierName: supplier.name,
+      supplierCompany: supplier.company,
+    })
+    .from(stockEntry)
+    .leftJoin(supplier, eq(stockEntry.supplierId, supplier.id))
+    .where(
+      and(
+        eq(stockEntry.warehouseId, warehouseId),
+        inArray(stockEntry.variantId, variantIds),
+      ),
+    )
+    .orderBy(desc(stockEntry.createdAt), desc(stockEntry.id));
+
+  return rows.map((row) => {
+    const quantity = Number(row.inventoryDelta ?? 0);
+    return {
+      id: row.id,
+      variantId: row.variantId,
+      quantity,
+      unitCost: quantity > 0 ? Number(row.totalCost ?? 0) / quantity : 0,
+      expiryDate: row.expiryDate,
+      batchNo: row.batchNo,
+      manufactureDate: row.manufactureDate,
+      receivedAt: row.createdAt,
+      source: row.receiptId ? `r${row.receiptId}` : `e${row.id}`,
+      supplierName: supplierLabel(row.supplierName, row.supplierCompany),
+      invoiceNo: row.reference,
+      stockEntryId: row.id,
+    };
+  });
+}
 
 export async function loadExpiryStock(
   owner: ProductListOwner,
@@ -127,82 +295,12 @@ export async function loadExpiryStock(
   }
   if (variants.size === 0) return [];
 
-  const stockIns = await db
-    .select({
-      id: inventoryMovement.id,
-      variantId: inventoryMovement.variantId,
-      quantity: inventoryMovement.quantity,
-      unitCost: inventoryMovement.unitCost,
-      batchNo: inventoryMovement.batchNo,
-      manufactureDate: inventoryMovement.manufactureDate,
-      expiryDate: inventoryMovement.expiryDate,
-      occurredAt: inventoryMovement.occurredAt,
-      purchaseId: inventoryMovement.purchaseId,
-      orderId: inventoryMovement.orderId,
-    })
-    .from(inventoryMovement)
-    .where(
-      and(
-        eq(inventoryMovement.ownerType, ownerType),
-        eq(inventoryMovement.ownerId, owner.ownerId),
-        eq(inventoryMovement.direction, "in"),
-        eq(inventoryMovement.reason, "purchase_receipt"),
-        inArray(inventoryMovement.variantId, [...variants.keys()]),
-      ),
-    )
-    .orderBy(desc(inventoryMovement.occurredAt), desc(inventoryMovement.id));
-
-  const left = allocateBatches(
-    stockIns.map(
-      (row): StockIn => ({
-        id: row.id,
-        variantId: row.variantId,
-        quantity: Number(row.quantity),
-        unitCost: Number(row.unitCost ?? 0),
-        expiryDate: row.expiryDate,
-      }),
-    ),
-    available,
-  );
-
-  // Where each batch came from: the supplier and bill of a purchase, or
-  // the seller and order number of a warehouse order.
+  const stockIns =
+    ownerType === "warehouse"
+      ? await loadWarehouseStockIns(owner.ownerId, [...variants.keys()])
+      : await loadShopStockIns(owner.ownerId, [...variants.keys()]);
+  const left = allocateBatches(stockIns, available);
   const dated = stockIns.filter((row) => row.expiryDate);
-  const purchaseIds = [
-    ...new Set(dated.map((row) => row.purchaseId).filter((id) => id != null)),
-  ] as number[];
-  const orderIds = [
-    ...new Set(dated.map((row) => row.orderId).filter((id) => id != null)),
-  ] as number[];
-  const [purchaseRows, orderRows] = await Promise.all([
-    purchaseIds.length
-      ? db
-          .select({
-            id: purchase.id,
-            invoiceNo: purchase.supplierInvoiceNo,
-            purchaseNumber: purchase.purchaseNumber,
-            supplierName: supplier.name,
-            supplierCompany: supplier.company,
-          })
-          .from(purchase)
-          .leftJoin(supplier, eq(purchase.supplierId, supplier.id))
-          .where(inArray(purchase.id, purchaseIds))
-      : Promise.resolve([]),
-    orderIds.length
-      ? db
-          .select({
-            id: order.id,
-            orderNumber: order.orderNumber,
-            sellerShop: user.shopName,
-            sellerName: user.name,
-          })
-          .from(order)
-          .leftJoin(user, eq(order.warehouseId, user.id))
-          .where(inArray(order.id, orderIds))
-      : Promise.resolve([]),
-  ]);
-  const purchaseById = new Map(purchaseRows.map((row) => [row.id, row]));
-  const orderById = new Map(orderRows.map((row) => [row.id, row]));
 
   const batchesByProduct = new Map<number, Map<string, ExpiryBatch>>();
   for (const row of dated) {
@@ -211,29 +309,17 @@ export async function loadExpiryStock(
     if (!info || leftQty <= 0 || !row.expiryDate) continue;
     const alertDays =
       products.get(info.productId)?.expiryAlertDays ?? DEFAULT_EXPIRY_ALERT_DAYS;
-    const source = row.purchaseId
-      ? `p${row.purchaseId}`
-      : row.orderId
-        ? `o${row.orderId}`
-        : `m${row.id}`;
-    const key = [source, row.batchNo ?? "", row.expiryDate, info.unit].join("|");
+    const key = [row.source, row.batchNo ?? "", row.expiryDate, info.unit].join("|");
     const byKey = batchesByProduct.get(info.productId) ?? new Map();
-    const bought = row.purchaseId ? purchaseById.get(row.purchaseId) : null;
-    const ordered = row.orderId ? orderById.get(row.orderId) : null;
     const batch: ExpiryBatch = byKey.get(key) ?? {
       key,
       batchNo: row.batchNo,
-      supplierName: bought
-        ? [...new Set([bought.supplierName, bought.supplierCompany].filter(Boolean))].join(
-            " - ",
-          ) || null
-        : (ordered?.sellerShop ?? ordered?.sellerName ?? null),
-      invoiceNo: bought
-        ? (bought.invoiceNo ?? bought.purchaseNumber ?? null)
-        : (ordered?.orderNumber ?? null),
-      receivedAt: row.occurredAt.toISOString(),
+      supplierName: row.supplierName,
+      invoiceNo: row.invoiceNo,
+      receivedAt: row.receivedAt.toISOString(),
       variants: [],
       parts: [],
+      stockEntryIds: [],
       unit: info.unit,
       receivedQty: 0,
       soldQty: 0,
@@ -243,6 +329,7 @@ export async function loadExpiryStock(
       daysLeft: daysBetween(today, row.expiryDate),
       status: expiryStatus(row.expiryDate, today, alertDays),
     };
+    if (row.stockEntryId != null) batch.stockEntryIds.push(row.stockEntryId);
     if (!batch.variants.includes(info.label)) batch.variants.push(info.label);
     const part = batch.parts.find((entry) => entry.variantId === row.variantId);
     if (part) part.leftQty = round(part.leftQty + leftQty);

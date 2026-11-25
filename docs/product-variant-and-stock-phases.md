@@ -14,10 +14,10 @@ depend on each product having Size × Type variants.
 | 2 | Variant Table, Overview, Pricing (LPG) | Done in Create and Edit: `d26732d1` |
 | 3 | 13-digit product code | Done: `9efe1189` |
 | 4 | Retailer Real-time Stock | Done: `3aa6b50e`, rows open in place `bca2a40e`; graphs later |
-| 5 | Expired products by batch | Built (2026-11-25), not committed; see below |
+| 5 | Expired products by batch | Done: `1ac5859f` |
 | 6 | Empty Pack | Not started |
 | 7 | Label printing | Not started |
-| 8 | Warehouse copy of phases 4–7 | Real-time Stock done: `4381c1bd` |
+| 8 | Warehouse copy of phases 4–7 | Real-time Stock `4381c1bd`; Expired Products done (2026-11-25) |
 
 ## Decisions from the meeting
 
@@ -400,6 +400,29 @@ reads `stock_entry` through the same helper.
 - Warehouse "Expired": a batch (`stock_entry.expiry_date`, product
   expiry on) past its date that still has stock, allocated oldest-first
   the way the Expired Products page does.
+
+### Expired Products (done, 2026-11-25)
+
+- `warehouse/(management)/dashboard/stock/expired` now uses the same
+  `ExpiryStockPage` as the shop, with `warehouse.getExpiryStock` and
+  `warehouse.setProductExpiryAlertDays`. The old warehouse page (status
+  tabs, loss value, Return to Supplier, Apply Discount) is replaced.
+- `loadExpiryStock` reads the warehouse's batches from `stock_entry`
+  (Add Stock and purchase receiving already ask for batch and expiry on
+  expiry products): supplier from the entry, invoice from its reference,
+  entries of one receipt with the same batch, expiry and unit as one row.
+- Create Damage opens the warehouse damage form with
+  `?type=expired&stockEntryIds=…`; it picks the expired batches once an
+  entry mode is chosen. The quantity is typed there, as before.
+- Warehouse Real-time Stock "Expired" uses the same Dhaka date as the
+  Expired page.
+- Checked in Chrome as the warehouse (Algoverse): Omera LPG (batch-14,
+  5 left, expired 16 Aug) and Fresh LPG (batch-14, 10 left, 17 Aug);
+  alert dropdown saved 15 days and was set back to 10; Create Damage
+  listed Omera batch-14 with 5 cylinders (not submitted). Not checked:
+  phone width.
+- The old `warehouse.getExpiredProducts` API stays: the warehouse
+  Inventory page (`dashboard/inventory`) still uses it.
 
 ## Answered (2026-11-24)
 

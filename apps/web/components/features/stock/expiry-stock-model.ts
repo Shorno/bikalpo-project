@@ -15,6 +15,8 @@ export type ExpiryBatch = {
   receivedAt: string;
   variants: string[];
   parts: { variantId: number; leftQty: number }[];
+  /** Warehouse stock entries in this batch (empty for a shop). */
+  stockEntryIds: number[];
   unit: string;
   receivedQty: number;
   soldQty: number;
@@ -123,10 +125,29 @@ export function expiredDamageQuery(product: ExpiryProduct) {
     type: "expired",
     q: product.name,
     items: [...qtyByVariant].map(([id, qty]) => `${id}:${qty}`).join(","),
-    note: `Expired batch ${batches
-      .map((batch) => batch.batchNo)
-      .filter(Boolean)
-      .join(", ")}`.trim(),
+    note: expiredBatchNote(batches),
   });
   return params.toString();
+}
+
+function expiredBatchNote(batches: ExpiryBatch[]) {
+  return `Expired batch ${batches
+    .map((batch) => batch.batchNo)
+    .filter(Boolean)
+    .join(", ")}`.trim();
+}
+
+/**
+ * Warehouse Create Damage link: its damage form loads the expired stock
+ * entries themselves.
+ */
+export function warehouseExpiredDamageQuery(product: ExpiryProduct) {
+  const ids = product.batches
+    .filter((batch) => batch.status === "expired")
+    .flatMap((batch) => batch.stockEntryIds);
+  if (ids.length === 0) return null;
+  return new URLSearchParams({
+    type: "expired",
+    stockEntryIds: ids.join(","),
+  }).toString();
 }

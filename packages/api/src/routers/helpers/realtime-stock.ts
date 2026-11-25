@@ -24,7 +24,6 @@ import {
   sql,
 } from "drizzle-orm";
 import { allocateCurrentStockLots } from "../../services/warehouse-stock-lots";
-import { localDateString } from "../../utils/date";
 import { allocateBatches, dhakaDate } from "./expiry-batches";
 import { kpiMonths } from "./owner-product-kpis";
 import type { ProductListOwner } from "./owner-product-list";
@@ -289,7 +288,7 @@ async function loadWarehouseExpiredVariantIds(
       ),
     )
     .orderBy(desc(stockEntry.createdAt), desc(stockEntry.id));
-  const today = localDateString(new Date());
+  const today = dhakaDate(new Date());
   const expiredRows = rows.filter(
     (row) => row.expiryEnabled && row.expiryDate && row.expiryDate < today,
   );
