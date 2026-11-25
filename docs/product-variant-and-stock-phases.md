@@ -200,11 +200,10 @@ Built (2026-11-24):
 ### Row opens in place (client, 2026-11-25)
 
 - No View page: Details (or a click on the row) opens the product under
-  its row, laid out as the client's mockup: name + Product ID, "Core
-  Identity Level Stock" (Total Stock, Status), then "Variant Stock
-  (Cylinder level)" with Size | Stock | Sold (this month), then the
-  low-stock limit form. This replaces the line above about removing the
-  ID and the arrows.
+  its row: name + Product ID, Total Stock, Status with the low-stock limit
+  form beside it, then Size | Stock | Sold (this month). No section
+  headings or icons (client, 2026-11-25). This replaces the line above
+  about removing the ID and the arrows.
 - Stock arrow: this month's stock in (purchases received and manual
   changes from `inventory_movement`, supplier returns subtract) against
   sold this month. Down = more sold than came in.

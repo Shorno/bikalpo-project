@@ -1,13 +1,6 @@
 "use client";
 
-import {
-  ArrowDown,
-  ArrowUp,
-  BarChart3,
-  Loader2,
-  Minus,
-  ReceiptText,
-} from "lucide-react";
+import { ArrowDown, ArrowUp, Loader2, Minus } from "lucide-react";
 import { type FormEvent, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -99,42 +92,32 @@ export function StockRowDetail({
     // scrolled sideways; the row behind it carries the tint.
     <div className="sticky left-0 w-fit max-w-full min-w-0 space-y-4 px-5 py-4 max-md:px-3 max-md:py-3">
       <h3 className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-[15px] font-semibold">
-        <ReceiptText
-          aria-hidden="true"
-          className="size-4 shrink-0 self-center text-muted-foreground"
-        />
         {product.name}
         <span className="text-sm font-medium tabular-nums text-muted-foreground">
           {productIdLabel(product)}
         </span>
       </h3>
 
-      <section aria-label="Core identity level stock" className="space-y-2">
-        <h4 className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-          Core Identity Level Stock
-        </h4>
-        <dl className="grid gap-1.5 text-sm">
-          <div className="flex items-center gap-2">
-            <dt className="w-24 shrink-0 text-muted-foreground">Total Stock:</dt>
-            <dd className="font-semibold tabular-nums">
-              {formatTotalStock(product)}
-            </dd>
-          </div>
-          <div className="flex items-center gap-2">
-            <dt className="w-24 shrink-0 text-muted-foreground">Status:</dt>
-            <dd>
-              <StockStatusBadge status={product.status} />
-            </dd>
-          </div>
-        </dl>
-      </section>
+      <dl className="grid gap-1.5 text-sm">
+        <div className="flex items-center gap-2">
+          <dt className="w-24 shrink-0 text-muted-foreground">Total Stock:</dt>
+          <dd className="font-semibold tabular-nums">
+            {formatTotalStock(product)}
+          </dd>
+        </div>
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
+          <dt className="w-24 shrink-0 text-muted-foreground">Status:</dt>
+          <dd>
+            <StockStatusBadge status={product.status} />
+          </dd>
+          <dd className="sm:ml-4">
+            <LowStockLimit product={product} defaultLevel={defaultLowStockLevel} />
+          </dd>
+        </div>
+      </dl>
 
-      <section aria-label="Variant stock" className="space-y-2">
-        <h4 className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-          <BarChart3 aria-hidden="true" className="size-3.5" />
-          Variant Stock ({level} level)
-        </h4>
-        <div className="overflow-x-auto rounded-lg border bg-card">
+      <section aria-label={`Stock by size (${level})`}>
+        <div className="w-fit max-w-full overflow-x-auto rounded-lg border bg-card">
           <table className="w-auto text-sm">
             <thead>
               <tr className="border-b text-left text-xs text-muted-foreground">
@@ -185,8 +168,6 @@ export function StockRowDetail({
           </table>
         </div>
       </section>
-
-      <LowStockLimit product={product} defaultLevel={defaultLowStockLevel} />
     </div>
   );
 }
@@ -224,7 +205,7 @@ function LowStockLimit({
   return (
     <form
       onSubmit={onSubmit}
-      className="flex flex-wrap items-center gap-2 border-t pt-3 text-sm"
+      className="flex flex-wrap items-center gap-2 text-sm"
     >
       <Label htmlFor={inputId} className="font-normal text-muted-foreground">
         Low stock at
