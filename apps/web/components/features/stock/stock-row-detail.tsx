@@ -6,7 +6,6 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { useSetProductLowStockLevel } from "@/hooks/use-shop-owner-api";
 import { cn } from "@/lib/utils";
 import {
   formatQuantity,
@@ -21,6 +20,7 @@ import {
   variantSizeLabel,
   variantUnit,
 } from "./realtime-stock-model";
+import type { SaveLowStockLevel } from "./realtime-stock-page";
 import { StockStatusBadge } from "./stock-status-icon";
 
 const TREND_ICON = { up: ArrowUp, down: ArrowDown, flat: Minus } as const;
@@ -79,9 +79,11 @@ function soldExplain(variant: RealtimeStockVariant) {
 export function StockRowDetail({
   product,
   defaultLowStockLevel,
+  onSaveLowStockLevel,
 }: {
   product: RealtimeStockProduct;
   defaultLowStockLevel: number;
+  onSaveLowStockLevel: SaveLowStockLevel;
 }) {
   const level = stockLevelName(product);
   const showBrand =
@@ -111,7 +113,11 @@ export function StockRowDetail({
             <StockStatusBadge status={product.status} />
           </dd>
           <dd className="sm:ml-4">
-            <LowStockLimit product={product} defaultLevel={defaultLowStockLevel} />
+            <LowStockLimit
+              product={product}
+              defaultLevel={defaultLowStockLevel}
+              onSave={onSaveLowStockLevel}
+            />
           </dd>
         </div>
       </dl>
@@ -176,14 +182,16 @@ export function StockRowDetail({
 function LowStockLimit({
   product,
   defaultLevel,
+  onSave,
 }: {
   product: RealtimeStockProduct;
   defaultLevel: number;
+  onSave: SaveLowStockLevel;
 }) {
   const saved = product.lowStockLevel > 0 ? String(product.lowStockLevel) : "";
   const [value, setValue] = useState(saved);
   useEffect(() => setValue(saved), [saved]);
-  const mutation = useSetProductLowStockLevel();
+  const [saving, setSaving] = useState(false);
 
   const trimmed = value.trim();
   const level = trimmed === "" ? 0 : Number(trimmed);
@@ -193,13 +201,11 @@ function LowStockLimit({
   const onSubmit = (event: FormEvent) => {
     event.preventDefault();
     if (invalid) return;
-    mutation.mutate(
-      { productId: product.productId, lowStockLevel: level },
-      {
-        onSuccess: () => toast.success("Low stock limit saved"),
-        onError: (err) => toast.error(err.message || "Could not save"),
-      },
-    );
+    setSaving(true);
+    onSave({ productId: product.productId, lowStockLevel: level })
+      .then(() => toast.success("Low stock limit saved"))
+      .catch((err: Error) => toast.error(err.message || "Could not save"))
+      .finally(() => setSaving(false));
   };
 
   return (
@@ -219,18 +225,14 @@ function LowStockLimit({
         aria-invalid={invalid}
         className="h-8 w-24 tabular-nums"
       />
-      <span className="text-muted-foreground">
-        {stockLevelName(product)} or fewer
-        {saved === "" ? ` (default ${defaultLevel})` : ""}
-      </span>
       <Button
         type="submit"
         size="sm"
         variant="outline"
         className="h-8"
-        disabled={invalid || trimmed === saved || mutation.isPending}
+        disabled={invalid || trimmed === saved || saving}
       >
-        {mutation.isPending ? <Loader2 className="size-4 animate-spin" /> : null}
+        {saving ? <Loader2 className="size-4 animate-spin" /> : null}
         Save
       </Button>
       {invalid ? (

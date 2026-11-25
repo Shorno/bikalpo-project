@@ -201,7 +201,7 @@ Built (2026-11-24):
 
 - No View page: the View button (or a click on the row) opens the product under
   its row: name + Product ID, Total Stock, Status with the low-stock limit
-  form beside it, then Size | Stock | Sold (this month). No section
+  ("Low stock at [n] Save") beside it, then Size | Stock | Sold (this month). No section
   headings or icons (client, 2026-11-25). This replaces the line above
   about removing the ID and the arrows.
 - Stock arrow: this month's stock in (purchases received and manual
@@ -252,6 +252,17 @@ Built (2026-11-24):
 
 - Copy phases 4–7 to the warehouse pages; retailer and warehouse stock
   work the same way.
+
+### Real-time Stock (done, 2026-11-25)
+
+- `warehouse/(management)/dashboard/stock/live` uses the same
+  `RealtimeStockPage` as the shop (`components/features/stock/`), with
+  `warehouse.getRealtimeStock` and `warehouse.setProductLowStockLevel`.
+  The sidebar's "Stock" entry now opens it as "Stock (Real-time)"; the
+  old `stock/list` page stays for the links that still point to it.
+- Warehouse "Expired": a batch (`stock_entry.expiry_date`, product
+  expiry on) past its date that still has stock, allocated oldest-first
+  the way the Expired Products page does.
 
 ## Answered (2026-11-24)
 

@@ -92,8 +92,13 @@ import {
 import { localDateStamp } from "../utils/date";
 import {
   getOwnerProductList,
+  ownerProductCondition,
   ownerProductListInput,
 } from "./helpers/owner-product-list";
+import {
+  DEFAULT_LOW_STOCK_LEVEL,
+  loadRealtimeStock,
+} from "./helpers/realtime-stock";
 import {
   catalogBrandProductAddInput,
   catalogProductViewInput,
@@ -10076,6 +10081,48 @@ const pricingQueries = {
       ownerId: context.session.user.id,
     }),
   ),
+
+  /**
+   * Real-time Stock: one row per product with its stock breakdown, empties,
+   * status and per-size stock, the same as the shop page.
+   */
+  getRealtimeStock: warehouseProcedure.handler(async ({ context }) => {
+    const products = await loadRealtimeStock({
+      ownerType: "warehouse",
+      ownerId: context.session.user.id,
+    });
+    return { products, defaultLowStockLevel: DEFAULT_LOW_STOCK_LEVEL };
+  }),
+
+  /** The product's low-stock limit; 0 goes back to the default. */
+  setProductLowStockLevel: warehouseProcedure
+    .input(
+      z.object({
+        productId: z.number().int().positive(),
+        lowStockLevel: z.number().int().min(0).max(1_000_000),
+      }),
+    )
+    .handler(async ({ context, input }) => {
+      const [updated] = await db
+        .update(product)
+        .set({ reorderLevel: input.lowStockLevel })
+        .where(
+          and(
+            eq(product.id, input.productId),
+            ownerProductCondition({
+              ownerType: "warehouse",
+              ownerId: context.session.user.id,
+            }),
+          ),
+        )
+        .returning({ id: product.id, reorderLevel: product.reorderLevel });
+      if (!updated) {
+        throw new ORPCError("NOT_FOUND", {
+          message: "Only your own products can have a low-stock limit",
+        });
+      }
+      return { productId: updated.id, lowStockLevel: updated.reorderLevel };
+    }),
 
   /** Paginated configured-variant rows for the warehouse Products screen. */
   getWarehouseProductList: warehouseProcedure
