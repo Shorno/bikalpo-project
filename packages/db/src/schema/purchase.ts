@@ -205,6 +205,9 @@ export const purchaseItem = pgTable(
         /** Product expiry date for this batch */
         expiryDate: date("expiry_date"),
 
+        /** Manufacture date for this batch (optional) */
+        manufactureDate: date("manufacture_date"),
+
         /** Number of empty packs returned to supplier on this item */
         returnPackQty: decimal("return_pack_qty", { precision: 12, scale: 2 })
             .default("0")

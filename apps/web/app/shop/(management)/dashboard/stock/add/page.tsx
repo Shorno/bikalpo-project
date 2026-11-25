@@ -23,6 +23,7 @@ import { client } from "@/utils/orpc";
 type StockProduct = {
   id: number;
   name: string;
+  expiryEnabled?: boolean;
   variants: Array<{
     brandName: string | null;
     currentStock: number;
@@ -38,6 +39,7 @@ type PurchaseRow = {
   batchNo: string;
   exchangeQty: string;
   expiryDate: string;
+  manufactureDate: string;
   id: string;
   inventoryId: string;
   quantity: string;
@@ -49,6 +51,7 @@ const createRow = (): PurchaseRow => ({
   batchNo: "",
   exchangeQty: "0",
   expiryDate: "",
+  manufactureDate: "",
   id: crypto.randomUUID(),
   inventoryId: "",
   quantity: "",
@@ -74,7 +77,7 @@ export default function AddStockPage() {
   const suppliers = supplierData ?? [];
   const paymentAccounts = accountData?.paymentAccounts ?? [];
   const variants = useMemo(
-    () => products.flatMap((product) => product.variants.map((variant) => ({ ...variant, productName: product.name }))),
+    () => products.flatMap((product) => product.variants.map((variant) => ({ ...variant, productName: product.name, expiryEnabled: product.expiryEnabled === true }))),
     [products],
   );
   const variantsByInventory = useMemo(
@@ -115,10 +118,23 @@ export default function AddStockPage() {
   };
 
   const buildInput = () => {
-    const items = rows.filter((row) => row.inventoryId && toAmount(row.quantity) > 0).map((row) => ({
-      batchNo: row.batchNo || null,
+    const filled = rows.filter((row) => row.inventoryId && toAmount(row.quantity) > 0);
+    // Products with expiry tracking are stocked by batch (client, 2026-11-24).
+    for (const row of filled) {
+      const variant = variantsByInventory.get(row.inventoryId);
+      if (!variant?.expiryEnabled) continue;
+      const label = `${variant.productName} ${variant.unitLabel}`;
+      if (!row.batchNo.trim()) throw new Error(`${label}: enter a batch number`);
+      if (!row.expiryDate) throw new Error(`${label}: enter an expiry date`);
+      if (row.manufactureDate && row.expiryDate < row.manufactureDate) {
+        throw new Error(`${label}: expiry date is before the manufacture date`);
+      }
+    }
+    const items = filled.map((row) => ({
+      batchNo: row.batchNo.trim() || null,
       exchangeQty: entryMode === "exchange" ? toAmount(row.exchangeQty) : 0,
       expiryDate: row.expiryDate || null,
+      manufactureDate: row.manufactureDate || null,
       inventoryId: Number(row.inventoryId),
       quantity: toAmount(row.quantity),
       unitCost: toAmount(row.unitCost),
@@ -211,7 +227,7 @@ export default function AddStockPage() {
           <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between"><div><h2 className="text-base font-semibold">Item Entry</h2><p className="text-sm text-muted-foreground">Every row creates a variant-level inventory movement.</p></div><Input className="w-full sm:max-w-sm" onChange={(event) => setProductSearch(event.target.value)} placeholder="Search products or brands" value={productSearch} /></div>
           <div className="overflow-x-auto rounded-md border">
             <table className="w-full min-w-[1050px] text-sm">
-              <thead className="bg-muted/50 text-left text-xs uppercase text-muted-foreground"><tr><th className="px-3 py-3">SKU / Product *</th><th className="px-3 py-3">Brand</th><th className="px-3 py-3">Size</th><th className="px-3 py-3">Qty *</th>{entryMode === "exchange" && <th className="px-3 py-3">Exchange</th>}<th className="px-3 py-3">Price *</th><th className="px-3 py-3">Batch</th><th className="px-3 py-3">Expiry</th><th /></tr></thead>
+              <thead className="bg-muted/50 text-left text-xs uppercase text-muted-foreground"><tr><th className="px-3 py-3">SKU / Product *</th><th className="px-3 py-3">Brand</th><th className="px-3 py-3">Size</th><th className="px-3 py-3">Qty *</th>{entryMode === "exchange" && <th className="px-3 py-3">Exchange</th>}<th className="px-3 py-3">Price *</th><th className="px-3 py-3">Batch</th><th className="px-3 py-3">Mfg. Date</th><th className="px-3 py-3">Expiry</th><th /></tr></thead>
               <tbody>{rows.map((row) => {
                 const selected = variantsByInventory.get(row.inventoryId);
                 return <tr className="border-t" key={row.id}>
@@ -220,8 +236,14 @@ export default function AddStockPage() {
                   <td className="px-3 py-2"><Input className="w-24" inputMode="decimal" onChange={(event) => updateRow(row.id, "quantity", event.target.value)} value={row.quantity} /></td>
                   {entryMode === "exchange" && <td className="px-3 py-2"><Input className="w-24" inputMode="decimal" onChange={(event) => updateRow(row.id, "exchangeQty", event.target.value)} value={row.exchangeQty} /></td>}
                   <td className="px-3 py-2"><Input className="w-28" inputMode="decimal" onChange={(event) => updateRow(row.id, "unitCost", event.target.value)} value={row.unitCost} /></td>
-                  <td className="px-3 py-2"><Input className="w-32" onChange={(event) => updateRow(row.id, "batchNo", event.target.value)} value={row.batchNo} /></td>
-                  <td className="px-3 py-2"><Input className="w-36" onChange={(event) => updateRow(row.id, "expiryDate", event.target.value)} type="date" value={row.expiryDate} /></td>
+                  <td className="px-3 py-2"><Input aria-label="Batch number" aria-required={selected?.expiryEnabled} className="w-32" onChange={(event) => updateRow(row.id, "batchNo", event.target.value)} placeholder={selected?.expiryEnabled ? "Required" : undefined} value={row.batchNo} /></td>
+                  {selected?.expiryEnabled ? <>
+                    <td className="px-3 py-2"><Input aria-label="Manufacture date" className="w-36" onChange={(event) => updateRow(row.id, "manufactureDate", event.target.value)} type="date" value={row.manufactureDate} /></td>
+                    <td className="px-3 py-2"><Input aria-label="Expiry date" aria-required className="w-36" onChange={(event) => updateRow(row.id, "expiryDate", event.target.value)} type="date" value={row.expiryDate} /></td>
+                  </> : <>
+                    <td className="px-3 py-2 text-muted-foreground" title="Expiry tracking is off for this product">-</td>
+                    <td className="px-3 py-2 text-muted-foreground" title="Expiry tracking is off for this product">-</td>
+                  </>}
                   <td className="px-3 py-2"><Button aria-label="Remove row" disabled={rows.length === 1} onClick={() => setRows((current) => current.filter((item) => item.id !== row.id))} size="icon" variant="ghost"><Trash2 /></Button></td>
                 </tr>;
               })}</tbody>

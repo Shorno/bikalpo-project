@@ -128,7 +128,17 @@ import {
   recordPurchaseSubmission,
 } from "../services/purchase-history";
 import { recordPurchaseSettlement } from "../services/purchase-payment";
+import {
+  batchFieldErrors,
+  type CleanBatchFields,
+  cleanBatchFields,
+} from "../services/batch-expiry";
 import { recognizePlatformPurchaseReceipt } from "../services/purchase-receipt";
+import {
+  DEFAULT_EXPIRY_ALERT_DAYS,
+  EXPIRY_ALERT_DAY_OPTIONS,
+} from "./helpers/expiry-batches";
+import { loadExpiryStock } from "./helpers/expiry-stock";
 import { resolveRetailerCylinderSale } from "../services/retailer-cylinder-sale";
 import {
   buildWholesaleCheckoutQuote,
@@ -851,6 +861,56 @@ const managementQueries = {
         });
       }
       return { product: stock, defaultLowStockLevel: DEFAULT_LOW_STOCK_LEVEL };
+    }),
+
+  /**
+   * Expired Products by batch: products with expiry tracking that hold
+   * stock in a batch past, or within the alert days of, its expiry date.
+   */
+  getExpiryStock: permission("shop_stock", "view").handler(
+    async ({ context }) => {
+      const ownerId = shopTenantId(context.session.user);
+      const products = await loadExpiryStock({ ownerType: "shop", ownerId });
+      return {
+        products,
+        alertDayOptions: [...EXPIRY_ALERT_DAY_OPTIONS],
+        defaultAlertDays: DEFAULT_EXPIRY_ALERT_DAYS,
+      };
+    },
+  ),
+
+  /** Days before a batch's expiry date that the Expired page warns. */
+  setProductExpiryAlertDays: permission("shop_stock", "update")
+    .input(
+      z.object({
+        productId: z.number().int().positive(),
+        alertDays: z
+          .number()
+          .int()
+          .refine(
+            (days) => (EXPIRY_ALERT_DAY_OPTIONS as readonly number[]).includes(days),
+            "Choose one of the alert options",
+          ),
+      }),
+    )
+    .handler(async ({ context, input }) => {
+      const ownerId = shopTenantId(context.session.user);
+      const [updated] = await db
+        .update(product)
+        .set({ expiryAlertDays: input.alertDays })
+        .where(
+          and(
+            eq(product.id, input.productId),
+            ownerProductCondition({ ownerType: "shop", ownerId }),
+          ),
+        )
+        .returning({ id: product.id, alertDays: product.expiryAlertDays });
+      if (!updated) {
+        throw new ORPCError("NOT_FOUND", {
+          message: "Only your own products can have an expiry alert",
+        });
+      }
+      return { productId: updated.id, alertDays: updated.alertDays };
     }),
 
   /** The product's low-stock limit; 0 goes back to the default. */
@@ -2503,6 +2563,10 @@ const mutations = {
             z.object({
               itemId: z.number(),
               receivedQty: z.number().min(0),
+              /** Batch details, required for products with expiry tracking. */
+              batchNo: z.string().max(100).optional().nullable(),
+              manufactureDate: z.string().max(10).optional().nullable(),
+              expiryDate: z.string().max(10).optional().nullable(),
             }),
           )
           .optional(),
@@ -2593,6 +2657,57 @@ const mutations = {
         );
       });
 
+      // Products with expiry tracking are received by batch (client,
+      // 2026-11-24): each newly received line needs a batch and expiry date.
+      const receivingItems = existingOrder.items.filter((item) => {
+        const row = receiptRows.find((receipt) => receipt.itemId === item.id);
+        return (row?.receivedQty ?? 0) > Number(item.receivedQty ?? 0);
+      });
+      const productIds = [
+        ...new Set(
+          receivingItems
+            .map((item) => item.productId)
+            .filter((id): id is number => typeof id === "number"),
+        ),
+      ];
+      const expiryProducts = new Set(
+        productIds.length
+          ? (
+              await db
+                .select({ id: product.id })
+                .from(product)
+                .where(
+                  and(
+                    inArray(product.id, productIds),
+                    eq(product.expiryEnabled, true),
+                  ),
+                )
+            ).map((row) => row.id)
+          : [],
+      );
+      const batchByItemId = new Map<number, CleanBatchFields>();
+      const batchErrors: string[] = [];
+      for (const item of receivingItems) {
+        const supplied = (input.receivedItems ?? []).find(
+          (receipt) => receipt.itemId === item.id,
+        );
+        const expiryEnabled =
+          item.productId != null && expiryProducts.has(item.productId);
+        batchErrors.push(
+          ...batchFieldErrors(supplied ?? {}, {
+            expiryEnabled,
+            label: item.productName,
+          }),
+        );
+        const batch = cleanBatchFields(supplied ?? {});
+        if (batch.batchNo || batch.expiryDate || batch.manufactureDate) {
+          batchByItemId.set(item.id, batch);
+        }
+      }
+      if (batchErrors.length > 0) {
+        throw new ORPCError("BAD_REQUEST", { message: batchErrors.join("; ") });
+      }
+
       const receivedAt = new Date();
       await db.transaction(async (tx) => {
         const claimed = await tx
@@ -2626,6 +2741,7 @@ const mutations = {
           ownerId: userId,
           ownerType: "shop",
           receivedAt,
+          batchByItemId,
         });
         if (
           fullyReceived &&
@@ -3423,7 +3539,12 @@ const orderQueries = {
           items: {
             with: {
               product: {
-                columns: { id: true, name: true, image: true },
+                columns: {
+                  id: true,
+                  name: true,
+                  image: true,
+                  expiryEnabled: true,
+                },
               },
               variant: {
                 columns: {
@@ -11467,6 +11588,7 @@ const shopProductEndpoints = {
                   slug: true,
                   image: true,
                   categoryId: true,
+                  expiryEnabled: true,
                 },
                 with: {
                   category: {
@@ -11498,6 +11620,8 @@ const shopProductEndpoints = {
           name: string;
           image: string | null;
           category: { id: number; name: string } | null;
+          /** Expiry tracking on: Add Stock asks for batch and dates. */
+          expiryEnabled: boolean;
           variants: {
             variantId: number;
             inventoryId: number;
@@ -11536,6 +11660,7 @@ const shopProductEndpoints = {
             name: prod.name,
             image: prod.image,
             category: prod.category,
+            expiryEnabled: prod.expiryEnabled,
             variants: [],
           });
         }

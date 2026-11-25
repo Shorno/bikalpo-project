@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -79,6 +79,55 @@ export default function CreateDamageEntryPage() {
   );
 
   const createMutation = useCreateDamageEntry();
+
+  // Opened from Expired Products (?type=expired&q=<product>&items=<variantId>:<qty>,…):
+  // set the type, find the product and add its expired batches.
+  const prefill = useRef<{ items: Map<number, number>; applied: boolean } | null>(null);
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("type") === "expired") setDamageType("expired");
+    const note = params.get("note");
+    if (note) setDescription(note);
+    const query = params.get("q");
+    if (query) {
+      setSearchTerm(query);
+      setDebouncedSearch(query);
+    }
+    const items = new Map<number, number>();
+    for (const part of (params.get("items") ?? "").split(",")) {
+      const [variantId, qty] = part.split(":").map(Number);
+      if (variantId && qty && qty > 0) items.set(variantId, qty);
+    }
+    if (items.size > 0) prefill.current = { items, applied: false };
+  }, []);
+  useEffect(() => {
+    const pending = prefill.current;
+    if (!pending || pending.applied || allVariants.length === 0) return;
+    const matches = allVariants.filter((variant: any) =>
+      pending.items.has(variant.variantId),
+    );
+    if (matches.length === 0) return;
+    pending.applied = true;
+    setSelectedItems((current) => [
+      ...current,
+      ...matches
+        .filter((variant: any) => !current.some((item) => item.inventoryId === variant.inventoryId))
+        .map((variant: any) => ({
+          inventoryId: variant.inventoryId,
+          variantId: variant.variantId,
+          sku: variant.sku,
+          unitLabel: variant.unitLabel,
+          weightKg: variant.weightKg,
+          productName: variant.productName,
+          productImage: variant.productImage,
+          brandName: variant.brandName,
+          currentQty: variant.availableQty,
+          qty: String(Math.min(pending.items.get(variant.variantId) ?? 0, variant.availableQty)),
+          unitPrice: variant.retailPrice?.toString() || "0",
+          note: "",
+        })),
+    ]);
+  }, [allVariants]);
 
   const handleSearchInput = useCallback((value: string) => {
     setSearchTerm(value);

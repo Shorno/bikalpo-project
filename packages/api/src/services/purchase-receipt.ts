@@ -1,3 +1,4 @@
+import type { CleanBatchFields } from "./batch-expiry";
 import {
   inventory,
   inventoryMovement,
@@ -25,6 +26,8 @@ export async function recognizePlatformPurchaseReceipt(
     orderId: number;
     ownerId: string;
     ownerType: "shop" | "warehouse";
+    /** Batch details per order item, for products with expiry tracking. */
+    batchByItemId?: Map<number, CleanBatchFields>;
     receivedAt: Date;
   },
 ) {
@@ -160,6 +163,7 @@ export async function recognizePlatformPurchaseReceipt(
       unit: item.inventoryUnit ?? item.quantityUnit ?? "unit",
       unitCost: delta.value / movementQty,
       variantId: targetVariantId,
+      ...input.batchByItemId?.get(item.id),
     });
   }
 

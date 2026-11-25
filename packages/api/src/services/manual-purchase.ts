@@ -14,6 +14,7 @@ import {
   type ManualPurchaseLine,
   verifyManualPurchaseInput,
 } from "./manual-purchase-domain";
+import { batchFieldErrors, cleanBatchFields } from "./batch-expiry";
 import { postPurchaseJournal } from "./purchase-accounting";
 import {
   appendManualPurchaseEvent,
@@ -23,6 +24,7 @@ import {
 export type ManualPurchaseItemInput = ManualPurchaseLine & {
   batchNo?: string | null;
   expiryDate?: string | null;
+  manufactureDate?: string | null;
 };
 
 export type ManualPurchaseInput = {
@@ -117,6 +119,22 @@ export async function persistManualPurchaseDraft(
   if (input.paymentAccountId && !paymentAccount) {
     errors.push("Payment account does not belong to this business");
   }
+  // Products with expiry tracking need a batch and expiry date per line.
+  const inventoryForLine = new Map<number, any>(
+    inventoryRows.map((row: any) => [row.id, row]),
+  );
+  for (const line of input.items) {
+    const variant = inventoryForLine.get(line.inventoryId)?.variant;
+    if (!variant) continue;
+    errors.push(
+      ...batchFieldErrors(line, {
+        expiryEnabled: variant.product?.expiryEnabled === true,
+        label: [variant.product?.name, variant.unitLabel]
+          .filter(Boolean)
+          .join(" "),
+      }),
+    );
+  }
 
   const verificationStatus = errors.length === 0 ? "verified" : "on_hold";
   const purchaseDate = input.purchaseDate || localDateString();
@@ -175,11 +193,13 @@ export async function persistManualPurchaseDraft(
     const inventoryRow = inventoryById.get(line.inventoryId);
     if (!inventoryRow?.variant) return [];
     const variant = inventoryRow.variant;
+    const batch = cleanBatchFields(line);
     return [{
-      batchNo: line.batchNo ?? null,
+      batchNo: batch.batchNo,
       brandName: variant.brand?.name ?? null,
       exchangeQty: String(line.exchangeQty ?? 0),
-      expiryDate: line.expiryDate ?? null,
+      expiryDate: batch.expiryDate,
+      manufactureDate: batch.manufactureDate,
       productName: variant.product?.name ?? "Product",
       purchaseId: saved.id,
       quantity: line.quantity.toFixed(2),
@@ -305,6 +325,8 @@ export async function confirmManualPurchaseReceipt(
       .update(inventory)
       .set({ availableQty: quantityAfter.toFixed(4), updatedAt: receivedAt })
       .where(eq(inventory.id, inventoryRow.id));
+    // Two batches of one size on a bill: the next line adds to this total.
+    inventoryRow.availableQty = quantityAfter.toFixed(4);
     await tx
       .update(purchaseItem)
       .set({ receivedQty: item.quantity, updatedAt: receivedAt })
@@ -324,6 +346,9 @@ export async function confirmManualPurchaseReceipt(
       unit: item.quantityUnit,
       unitCost: Number(item.unitCost),
       variantId: item.variantId,
+      batchNo: item.batchNo,
+      manufactureDate: item.manufactureDate,
+      expiryDate: item.expiryDate,
     });
   }
 

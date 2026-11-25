@@ -1,5 +1,6 @@
 "use client";
 
+import { toast } from "sonner";
 import type { LucideIcon } from "lucide-react";
 import {
   AlertTriangle,
@@ -156,6 +157,9 @@ export default function PurchaseOrderDetailPage() {
   const [receivedItems, setReceivedItems] = useState<Record<number, number>>(
     {},
   );
+  const [batchDetails, setBatchDetails] = useState<
+    Record<number, BatchDetails>
+  >({});
 
   const receiveMutation = useMarkPurchaseReceived();
   const cancelMutation = useCancelPurchaseOrder();
@@ -213,6 +217,7 @@ export default function PurchaseOrderDetailPage() {
       items[item.id] = item.modifiedQty ?? item.quantity;
     }
     setReceivedItems(items);
+    setBatchDetails({});
     setShowReceiveDialog(true);
   };
 
@@ -220,7 +225,17 @@ export default function PurchaseOrderDetailPage() {
     const received = Object.entries(receivedItems).map(([id, quantity]) => ({
       itemId: Number(id),
       receivedQty: quantity,
+      ...batchDetails[Number(id)],
     }));
+    // Products with expiry tracking are received by batch.
+    for (const item of order.items || []) {
+      if (!item.product?.expiryEnabled) continue;
+      const batch = batchDetails[item.id];
+      if (!batch?.batchNo?.trim() || !batch.expiryDate) {
+        toast.error(`${item.productName}: enter the batch number and expiry date`);
+        return;
+      }
+    }
 
     receiveMutation.mutate(
       { orderId: order.id, receivedItems: received },
@@ -393,6 +408,8 @@ export default function PurchaseOrderDetailPage() {
         items={order.items || []}
         receivedItems={receivedItems}
         setReceivedItems={setReceivedItems}
+        batchDetails={batchDetails}
+        setBatchDetails={setBatchDetails}
         pending={receiveMutation.isPending}
         onConfirm={handleReceive}
       />
@@ -1110,12 +1127,20 @@ function OrderActions({
   );
 }
 
+type BatchDetails = {
+  batchNo?: string;
+  manufactureDate?: string;
+  expiryDate?: string;
+};
+
 function ReceiveOrderDialog({
   open,
   onOpenChange,
   items,
   receivedItems,
   setReceivedItems,
+  batchDetails,
+  setBatchDetails,
   pending,
   onConfirm,
 }: {
@@ -1126,9 +1151,18 @@ function ReceiveOrderDialog({
   setReceivedItems: React.Dispatch<
     React.SetStateAction<Record<number, number>>
   >;
+  batchDetails: Record<number, BatchDetails>;
+  setBatchDetails: React.Dispatch<
+    React.SetStateAction<Record<number, BatchDetails>>
+  >;
   pending: boolean;
   onConfirm: () => void;
 }) {
+  const setBatch = (itemId: number, field: keyof BatchDetails, value: string) =>
+    setBatchDetails((current) => ({
+      ...current,
+      [itemId]: { ...current[itemId], [field]: value },
+    }));
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="overflow-hidden p-0 sm:max-w-lg">
@@ -1149,7 +1183,8 @@ function ReceiveOrderDialog({
             const matches = currentQuantity === expectedQuantity;
 
             return (
-              <div key={item.id} className="flex items-center gap-3 px-5 py-3">
+              <div key={item.id} className="px-5 py-3">
+              <div className="flex items-center gap-3">
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-medium text-foreground">
                     {item.productName}
@@ -1187,6 +1222,30 @@ function ReceiveOrderDialog({
                   )}
                   aria-hidden="true"
                 />
+              </div>
+              {item.product?.expiryEnabled ? (
+                <div className="mt-2 grid grid-cols-3 gap-2">
+                  {(
+                    [
+                      ["batchNo", "Batch *", "text"],
+                      ["manufactureDate", "Mfg. date", "date"],
+                      ["expiryDate", "Expiry *", "date"],
+                    ] as const
+                  ).map(([field, label, type]) => (
+                    <label key={field} className="space-y-1 text-xs text-muted-foreground">
+                      <span>{label}</span>
+                      <Input
+                        type={type}
+                        className="h-8 text-sm"
+                        value={batchDetails[item.id]?.[field] ?? ""}
+                        onChange={(event) =>
+                          setBatch(item.id, field, event.target.value)
+                        }
+                      />
+                    </label>
+                  ))}
+                </div>
+              ) : null}
               </div>
             );
           })}

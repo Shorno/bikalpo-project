@@ -167,6 +167,10 @@ export async function appendPurchaseInventoryMovement(
     unit: string;
     unitCost: number;
     variantId: number;
+    /** Batch details on a stock-in (products with expiry tracking). */
+    batchNo?: string | null;
+    manufactureDate?: string | null;
+    expiryDate?: string | null;
   },
 ) {
   if (input.quantity <= 0) return null;
@@ -203,6 +207,9 @@ export async function appendPurchaseInventoryMovement(
       reason: input.reason ?? "purchase_receipt",
       reference: input.reference ?? null,
       reversesMovementId: input.reversesMovementId ?? null,
+      batchNo: input.batchNo ?? null,
+      manufactureDate: input.manufactureDate ?? null,
+      expiryDate: input.expiryDate ?? null,
       totalCost: input.totalCost.toFixed(2),
       unit: input.unit,
       unitCost: input.unitCost.toFixed(4),

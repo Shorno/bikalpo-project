@@ -3,6 +3,8 @@ export type ManualPurchaseLine = {
   quantity: number;
   unitCost: number;
   exchangeQty?: number;
+  /** One size may come in more than one batch on the same bill. */
+  batchNo?: string | null;
 };
 
 export type ManualPurchaseTotals = {
@@ -64,15 +66,20 @@ export function verifyManualPurchaseInput(input: {
   }
   if (input.items.length === 0) errors.push("Add at least one purchase item");
 
-  const inventoryIds = new Set<number>();
+  const lineKeys = new Set<string>();
   for (const [index, item] of input.items.entries()) {
     if (!Number.isInteger(item.inventoryId) || item.inventoryId <= 0) {
       errors.push(`Line ${index + 1} has an invalid product variant`);
     }
-    if (inventoryIds.has(item.inventoryId)) {
-      errors.push(`Line ${index + 1} duplicates another product variant`);
+    const lineKey = `${item.inventoryId}|${item.batchNo?.trim() ?? ""}`;
+    if (lineKeys.has(lineKey)) {
+      errors.push(
+        item.batchNo?.trim()
+          ? `Line ${index + 1} repeats another line's variant and batch`
+          : `Line ${index + 1} duplicates another product variant`,
+      );
     }
-    inventoryIds.add(item.inventoryId);
+    lineKeys.add(lineKey);
     if (!Number.isFinite(item.quantity) || item.quantity <= 0) {
       errors.push(`Line ${index + 1} quantity must be greater than zero`);
     }

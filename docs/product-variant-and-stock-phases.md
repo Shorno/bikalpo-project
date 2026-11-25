@@ -13,11 +13,11 @@ depend on each product having Size × Type variants.
 | 1 | Product Information card | Done: `749d418e` on `feat/create-product-identity-fields` |
 | 2 | Variant Table, Overview, Pricing (LPG) | Done in Create and Edit: `d26732d1` |
 | 3 | 13-digit product code | Done: `9efe1189` |
-| 4 | Retailer Real-time Stock | List and View built (uncommitted); graphs later |
-| 5 | Expired products by batch | Not started |
+| 4 | Retailer Real-time Stock | Done: `3aa6b50e`, rows open in place `bca2a40e`; graphs later |
+| 5 | Expired products by batch | Built (2026-11-25), not committed; see below |
 | 6 | Empty Pack | Not started |
 | 7 | Label printing | Not started |
-| 8 | Warehouse copy of phases 4–7 | Not started |
+| 8 | Warehouse copy of phases 4–7 | Real-time Stock done: `4381c1bd` |
 
 ## Decisions from the meeting
 
@@ -193,9 +193,8 @@ Built (2026-11-24):
 - Status order: Out of Stock, then Expired, then Low Stock (total at or
   below the limit), then In Stock. The limit is `product.reorderLevel`;
   0 means the default of 5.
-- Expired, for now: an "expired" damage entry in the last 30 days. Shop
-  Add Stock does not keep expiry dates yet; Phase 5 replaces this with
-  batches.
+- Expired: stock left in a batch past its expiry date (Phase 5). This
+  replaced the old rule (an "expired" damage entry in the last 30 days).
 
 ### Row opens in place (client, 2026-11-25)
 
@@ -217,16 +216,154 @@ Built (2026-11-24):
 
 ## Phase 5: Expired products by batch
 
-- One row per batch: batch ID, supplier, date received, invoice number,
-  variants (comma separated), expiry date, received and sold quantities.
-- Warning 10 or 20 days before expiry; red ✕ once expired.
-- Sold quantity is kept per batch, because a sold batch no longer needs
-  expiry tracking.
-- Today: no batch table with sold quantity. Batch data sits on
-  `stock_entry` (warehouse) and `purchase_item` (shop). The warehouse page
-  estimates what is left per batch with `allocateCurrentStockLots`
-  (`packages/api/src/services/warehouse-stock-lots.ts`). The shop expired
-  page reads damage entries, not batches.
+### What the client decided (review, 2026-11-24)
+
+- Same variant is bought several times, so expiry is tracked per batch.
+  Rony bhai first said batches would be too messy, then agreed: "then the
+  batch is needed".
+- The expiry date is entered when stock is added.
+- Warning 10 or 20 days before expiry (red ✕ once expired, ⚠ before).
+- The list stays like the other stock pages (search, filters); View opens
+  the batches inside the row, not on a new page.
+- A batch shows: batch ID, supplier, date received, invoice number,
+  variants (comma separated) and expiry date.
+- Sold is counted per batch: once a batch is sold, its expiry no longer
+  matters.
+- The detail page's extra product information (product ID block, etc.)
+  is not needed there.
+
+### What the code had before Phase 5
+
+- Shop Add Stock (`stock/add`) is a manual purchase: supplier, bill no.
+  and date per purchase; Batch and Expiry per row, saved on
+  `purchase_item` (`services/manual-purchase.ts`). No manufacture date.
+  Receiving writes `inventory_movement` (`purchase_receipt`) with
+  `purchase_item_id`, but not the batch or expiry.
+- Receiving a warehouse order (`shopOwner.markPurchaseReceived`) takes no
+  batch or expiry at all.
+- Sales (online and POS) take stock from the variant total; no sale
+  records which batch it came from.
+- The shop Expired page reads "expired" damage entries, not batches.
+- Live data (2026-11-25, read only): `purchase_item` is empty, the shop
+  has 2 receipt movements (both warehouse orders, no batch), and only 3
+  products (all warehouse) have expiry tracking on. Shop expiry tracking
+  starts with new stock; today's stock shows as "no batch".
+- The warehouse already estimates what is left in each batch
+  (`allocateCurrentStockLots`): today's stock is matched to the newest
+  receipts, so the oldest batches are counted as sold first.
+
+### Plan
+
+**1. Data (one migration, needs approval; the DB is shared with live)**
+
+- `inventory_movement`: add nullable `batch_no`, `manufacture_date`,
+  `expiry_date`. A batch is a stock-in movement with an expiry date;
+  supplier and invoice come from its purchase or order.
+- `product`: add `expiry_alert_days` (default 10), set per product like
+  the low-stock limit.
+- Additive and nullable only; nothing existing changes.
+
+**2. Recording batches when stock comes in**
+
+- Add Stock: rows for products with Expiry Tracking on show Batch,
+  Mfg. date (optional) and Expiry (both required); other rows hide
+  them. The receipt copies them onto the movement.
+- Receive warehouse order: the same three inputs on lines whose product
+  has expiry on.
+- One server check for both paths: dates are `YYYY-MM-DD`, expiry not
+  before manufacture, batch and expiry required when expiry is on.
+
+**3. What is left in each batch, and Sold**
+
+- Use the warehouse method: match today's stock to the newest batches;
+  Left = matched quantity, Sold = Received − Left. Every sale channel
+  already lowers the total, so no sale code changes.
+- Stock beyond all batches is older, unbatched stock and is not shown.
+- Batches with nothing left drop off the page.
+- Limit: it assumes oldest-first selling. Recording the batch on each
+  sale and damage (exact counts) is a later step if the client needs it.
+
+**4. API** (`helpers/expiry-stock.ts`, owner-generic for Phase 8)
+
+- `shopOwner.getExpiryStock`: products with a batch that is expired or
+  inside its alert window and still has stock, with their batches.
+- `shopOwner.setProductExpiryAlertDays`.
+- Status: Expired when expiry is before today (Dhaka time); Expiring
+  when within the product's alert days.
+
+**5. Page** (`stock/expired`, same shell as Real-time Stock)
+
+- Search (name, Product ID, scan code); filters Category, Sub Category.
+- Header counts: Products, Expired, Expiring soon.
+- Columns: Product ID | Product Name | Expired Qty | Last Expiry |
+  Action (✕ or ⚠ + View).
+  - Expired Qty: what is left in the flagged batches ("20 Cylinder").
+  - Last Expiry: the most urgent date among them.
+- View opens the row (centered panel, like Real-time Stock):
+  - Name and Product ID; Status badge with "Alert [10] days before
+    Save" beside it.
+  - Batch table: Batch | Variants | Sold / Received | Left | Expiry.
+    Under the batch ID, one muted line: supplier · invoice · received
+    date. Same batch and expiry → one row with variants comma
+    separated.
+  - Action: [Create Damage], opening the damage form filled with the
+    expired batches (the form learns to read those values).
+- Not in the first version: Return to Supplier (today it only returns a
+  whole warehouse order) and Apply Discount (nothing to build on yet),
+  the product information block, Total order (30 days).
+
+**6. Real-time Stock**
+
+- Its "Expired" status switches from damage entries to these batches.
+
+**7. Checks**
+
+- Unit tests for batch matching and status dates.
+- In Chrome: a product with expiry on, two batches (one past, one in 5
+  days), sell some at POS, check Left/Sold, the alert setting and
+  Create Damage.
+
+**Order of work:** 1 → 2 → 3/4 → 5 → 6. The warehouse page (Phase 8)
+reads `stock_entry` through the same helper.
+
+### Answers (2026-11-25)
+
+- Alert days: per product, a dropdown like the low-stock limit
+  (5, 7, 10, 15, 20, 30 days; default 10). Saves on change.
+- Last Expiry: the most urgent date of the flagged batches.
+- Warehouse orders: the retailer types batch and expiry when receiving,
+  the same as Add Stock.
+- Which products: the ones with Expiry Tracking on in the product's
+  Inventory & Product Rules (create / edit). Turning it on also turns on
+  Batch Tracking.
+
+### Built (2026-11-25)
+
+- Migration `0098_batch_expiry_tracking.sql` (applied with approval):
+  batch, manufacture and expiry dates on `inventory_movement`,
+  manufacture date on `purchase_item`, `product.expiry_alert_days`.
+- Add Stock: Mfg. Date and Expiry show only for expiry products; Batch
+  and Expiry are required there. The same size can now come in two
+  batches on one bill (the duplicate check looks at size + batch, and
+  the receipt adds both lines to the stock).
+- Receive warehouse order: Batch, Mfg. date and Expiry on expiry lines.
+- API: `shopOwner.getExpiryStock`, `shopOwner.setProductExpiryAlertDays`
+  (`helpers/expiry-stock.ts`, `helpers/expiry-batches.ts`,
+  `services/batch-expiry.ts`).
+- Page `stock/expired` (`components/features/stock/expiry-stock-page.tsx`,
+  `expiry-row-detail.tsx`): as planned above. Expired Qty is what is
+  left in the expired batches, or in the expiring ones while none has
+  expired. Create Damage opens the damage form filled in: type Expired,
+  the product, each size's quantity, and the batch numbers in the note.
+- Real-time Stock "Expired" (shop) now comes from the batches.
+- Checked in Chrome as the test retailer: Petromax LPG with expiry on,
+  batches PX-OLD-01 (expired 20 Nov, 6 left) and PX-NEW-02 (29 Nov,
+  "In 4 days"); alert dropdown saves; Create Damage fills 6 Cylinder;
+  Real-time Stock shows Expired. Not checked: phone width, selling
+  some at POS.
+- Left out, as planned: Return to Supplier, Apply Discount.
+- The old `getExpiredProducts` API (damage entries) is still on the
+  server but the web no longer calls it.
 
 ## Phase 6: Empty Pack
 

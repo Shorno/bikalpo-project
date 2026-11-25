@@ -54,6 +54,26 @@ test("puts invalid manual purchases on hold", () => {
   assert.ok(result.errors.some((message) => message.includes("price")));
 });
 
+test("allows one size in two batches, not the same batch twice", () => {
+  const twoBatches = verifyManualPurchaseInput({
+    items: [
+      { inventoryId: 1, quantity: 6, unitCost: 100, batchNo: "A-1" },
+      { inventoryId: 1, quantity: 4, unitCost: 100, batchNo: "A-2" },
+    ],
+    supplierId: 3,
+  });
+  assert.equal(twoBatches.isValid, true);
+
+  const sameBatch = verifyManualPurchaseInput({
+    items: [
+      { inventoryId: 1, quantity: 6, unitCost: 100, batchNo: "A-1" },
+      { inventoryId: 1, quantity: 4, unitCost: 100, batchNo: " A-1 " },
+    ],
+    supplierId: 3,
+  });
+  assert.ok(sameBatch.errors.some((message) => message.includes("batch")));
+});
+
 test("requires an account only when money is paid", () => {
   assert.equal(
     verifyManualPurchaseInput({ items, paidAmount: 0, supplierId: 3 }).isValid,

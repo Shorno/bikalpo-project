@@ -1,6 +1,7 @@
 import { relations } from "drizzle-orm";
 import {
   type AnyPgColumn,
+  date,
   decimal,
   index,
   integer,
@@ -73,6 +74,13 @@ export const inventoryMovement = pgTable(
       { onDelete: "set null" },
     ),
     reference: varchar("reference", { length: 180 }),
+    /**
+     * Batch details on a stock-in, for products with expiry tracking on.
+     * A stock-in with an expiry date is one batch on the Expired page.
+     */
+    batchNo: varchar("batch_no", { length: 100 }),
+    manufactureDate: date("manufacture_date"),
+    expiryDate: date("expiry_date"),
     note: text("note"),
     idempotencyKey: varchar("idempotency_key", { length: 180 }).notNull(),
     createdById: text("created_by_id").references(() => user.id, {
@@ -95,6 +103,11 @@ export const inventoryMovement = pgTable(
     index("inventoryMovement_purchase_idx").on(
       table.purchaseId,
       table.occurredAt,
+    ),
+    index("inventoryMovement_owner_expiry_idx").on(
+      table.ownerType,
+      table.ownerId,
+      table.expiryDate,
     ),
   ],
 );

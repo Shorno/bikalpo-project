@@ -82,8 +82,9 @@ const manualPurchaseInput = z.object({
       z.object({
         batchNo: z.string().max(100).optional().nullable(),
         exchangeQty: z.number().min(0).default(0),
-        expiryDate: z.string().optional().nullable(),
+        expiryDate: z.string().max(10).optional().nullable(),
         inventoryId: z.number().int().positive(),
+        manufactureDate: z.string().max(10).optional().nullable(),
         quantity: z.number().positive(),
         unitCost: z.number().min(0),
       }),

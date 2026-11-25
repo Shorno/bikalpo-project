@@ -178,12 +178,28 @@ export function useLowStockProducts() {
   );
 }
 
-/** Expired products from damage entries + expiry watchlist */
-export function useExpiredProducts() {
+/** Expired Products: products with stock in an expired or expiring batch. */
+export function useExpiryStock() {
   return useQuery(
-    orpc.shopOwner.getExpiredProducts.queryOptions({
-      input: undefined,
-      staleTime: 1000 * 60 * 2, // 2 min cache
+    orpc.shopOwner.getExpiryStock.queryOptions({
+      staleTime: 1000 * 60, // 1 min cache
+    }),
+  );
+}
+
+/** Saves how many days before expiry a product shows as expiring. */
+export function useSetProductExpiryAlertDays() {
+  const queryClient = useQueryClient();
+  return useMutation(
+    orpc.shopOwner.setProductExpiryAlertDays.mutationOptions({
+      onSuccess: () => {
+        queryClient.invalidateQueries({
+          queryKey: orpc.shopOwner.getExpiryStock.key(),
+        });
+        queryClient.invalidateQueries({
+          queryKey: orpc.shopOwner.getRealtimeStock.key(),
+        });
+      },
     }),
   );
 }
@@ -397,7 +413,13 @@ export function useMarkPurchaseReceived() {
   return useMutation({
     mutationFn: (input: {
       orderId: number;
-      receivedItems?: { itemId: number; receivedQty: number }[];
+      receivedItems?: {
+        itemId: number;
+        receivedQty: number;
+        batchNo?: string | null;
+        manufactureDate?: string | null;
+        expiryDate?: string | null;
+      }[];
     }) => orpc.shopOwner.markPurchaseReceived.call(input),
     onSuccess: (data) => {
       toast.success(data.message || "Order received successfully");

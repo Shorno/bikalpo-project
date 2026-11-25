@@ -133,6 +133,9 @@ export const product = pgTable(
     /** Whether expiry tracking is enabled */
     expiryEnabled: boolean("expiry_enabled").default(false).notNull(),
 
+    /** Days before a batch's expiry date that the Expired page warns. */
+    expiryAlertDays: integer("expiry_alert_days").default(10).notNull(),
+
     /** Whether damage control is enabled */
     damageControlEnabled: boolean("damage_control_enabled")
       .default(false)

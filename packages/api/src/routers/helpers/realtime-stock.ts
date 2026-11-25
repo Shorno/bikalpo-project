@@ -1,7 +1,5 @@
 import { db } from "@bikalpo-project/db";
 import {
-  damageEntry,
-  damageEntryItem,
   emptyPackStock,
   inventory,
   inventoryMovement,
@@ -27,6 +25,7 @@ import {
 } from "drizzle-orm";
 import { allocateCurrentStockLots } from "../../services/warehouse-stock-lots";
 import { localDateString } from "../../utils/date";
+import { allocateBatches, dhakaDate } from "./expiry-batches";
 import { kpiMonths } from "./owner-product-kpis";
 import type { ProductListOwner } from "./owner-product-list";
 
@@ -38,8 +37,6 @@ import type { ProductListOwner } from "./owner-product-list";
 
 /** Used while a product has no low-stock limit of its own. */
 export const DEFAULT_LOW_STOCK_LEVEL = 5;
-/** An "expired" damage entry this recent marks the product as expired. */
-export const EXPIRED_WARNING_DAYS = 30;
 
 export type StockStatus = "in_stock" | "low_stock" | "out_of_stock" | "expired";
 
@@ -66,7 +63,7 @@ function round(value: number) {
   return Math.round(value * 100) / 100;
 }
 
-function unitName(unit: string) {
+export function unitName(unit: string) {
   const trimmed = unit.trim();
   if (!trimmed) return "Unit";
   if (/^(kg|l|g|ml)$/i.test(trimmed)) return trimmed.toUpperCase();
@@ -320,35 +317,77 @@ async function loadWarehouseExpiredVariantIds(
 }
 
 /**
- * Variants with expired stock: for a shop, a recent "expired" damage entry
- * (shops do not keep expiry dates yet); for a warehouse, a batch past its
- * expiry date that still has stock.
+ * Shop variants still holding stock from a batch past its expiry date
+ * (Phase 5): the batch and expiry typed when the stock came in, with the
+ * oldest batches counted as sold first, as on Expired Products.
  */
+async function loadShopExpiredVariantIds(shopId: string, variantIds: number[]) {
+  const rows = await db
+    .select({
+      id: inventoryMovement.id,
+      variantId: inventoryMovement.variantId,
+      quantity: inventoryMovement.quantity,
+      unitCost: inventoryMovement.unitCost,
+      expiryDate: inventoryMovement.expiryDate,
+      expiryEnabled: product.expiryEnabled,
+    })
+    .from(inventoryMovement)
+    .innerJoin(productVariant, eq(inventoryMovement.variantId, productVariant.id))
+    .innerJoin(product, eq(productVariant.productId, product.id))
+    .where(
+      and(
+        eq(inventoryMovement.ownerType, "shop"),
+        eq(inventoryMovement.ownerId, shopId),
+        eq(inventoryMovement.direction, "in"),
+        eq(inventoryMovement.reason, "purchase_receipt"),
+        inArray(inventoryMovement.variantId, variantIds),
+      ),
+    )
+    .orderBy(desc(inventoryMovement.occurredAt), desc(inventoryMovement.id));
+  const today = dhakaDate(new Date());
+  const expiredRows = rows.filter(
+    (row) => row.expiryEnabled && row.expiryDate && row.expiryDate < today,
+  );
+  if (expiredRows.length === 0) return new Set<number>();
+
+  const available = await db
+    .select({ variantId: inventory.variantId, qty: inventory.availableQty })
+    .from(inventory)
+    .where(
+      and(
+        eq(inventory.ownerType, "shop"),
+        eq(inventory.ownerId, shopId),
+        inArray(inventory.variantId, variantIds),
+      ),
+    );
+  const left = allocateBatches(
+    rows.map((row) => ({
+      id: row.id,
+      variantId: row.variantId,
+      quantity: Number(row.quantity),
+      unitCost: Number(row.unitCost ?? 0),
+      expiryDate: row.expiryDate,
+    })),
+    new Map(available.map((row) => [row.variantId, Number(row.qty)])),
+  );
+  return new Set(
+    expiredRows
+      .filter((row) => (left.get(row.id) ?? 0) > 0)
+      .map((row) => row.variantId),
+  );
+}
+
+/** Variants holding stock from a batch past its expiry date. */
 async function loadExpiredVariantIds(
   owner: ProductListOwner,
   variantIds: number[],
-  since: Date,
 ) {
   if (variantIds.length === 0) return new Set<number>();
   if (owner.ownerType === "warehouse") {
     return loadWarehouseExpiredVariantIds(owner.ownerId, variantIds);
   }
   if (owner.ownerType !== "shop") return new Set<number>();
-  const sinceDate = since.toISOString().slice(0, 10);
-  const rows = await db
-    .selectDistinct({ variantId: damageEntryItem.variantId })
-    .from(damageEntryItem)
-    .innerJoin(damageEntry, eq(damageEntryItem.damageEntryId, damageEntry.id))
-    .where(
-      and(
-        eq(damageEntry.shopId, owner.ownerId),
-        eq(damageEntry.damageType, "expired"),
-        eq(damageEntry.status, "active"),
-        gte(damageEntry.entryDate, sinceDate),
-        inArray(damageEntryItem.variantId, variantIds),
-      ),
-    );
-  return new Set(rows.map((row) => row.variantId));
+  return loadShopExpiredVariantIds(owner.ownerId, variantIds);
 }
 
 /** The owner's stock, one row per product. Pass a product id for one product. */
@@ -400,9 +439,6 @@ export async function loadRealtimeStock(
       monthStart.getTime(),
     ),
   );
-  const expiredSince = new Date(
-    now.getTime() - EXPIRED_WARNING_DAYS * 24 * 60 * 60 * 1000,
-  );
   const [emptyRows, sold, expiredVariantIds, soldBefore, received] =
     await Promise.all([
     variantIds.length > 0
@@ -421,7 +457,7 @@ export async function loadRealtimeStock(
           )
       : Promise.resolve([]),
     loadSoldQuantities(owner, variantIds, monthStart),
-    loadExpiredVariantIds(owner, variantIds, expiredSince),
+    loadExpiredVariantIds(owner, variantIds),
     loadSoldQuantities(owner, variantIds, lastMonth!.start, lastMonthUntil),
     loadReceivedQuantities(owner, variantIds, monthStart),
   ]);
