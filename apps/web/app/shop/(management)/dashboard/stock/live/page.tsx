@@ -381,12 +381,12 @@ function StockTable({
                           aria-controls={detailId}
                           aria-label={
                             isMobile
-                              ? `${open ? "Hide" : "Show"} ${product.name} stock`
+                              ? `${open ? "Hide" : "View"} ${product.name} stock`
                               : undefined
                           }
                           onClick={() => toggle(product.productId)}
                         >
-                          {isMobile ? null : open ? "Hide" : "Details"}
+                          {isMobile ? null : open ? "Hide" : "View"}
                           <ChevronDown
                             aria-hidden="true"
                             className={`size-4 transition-transform ${

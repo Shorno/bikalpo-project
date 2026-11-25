@@ -199,7 +199,7 @@ Built (2026-11-24):
 
 ### Row opens in place (client, 2026-11-25)
 
-- No View page: Details (or a click on the row) opens the product under
+- No View page: the View button (or a click on the row) opens the product under
   its row: name + Product ID, Total Stock, Status with the low-stock limit
   form beside it, then Size | Stock | Sold (this month). No section
   headings or icons (client, 2026-11-25). This replaces the line above
